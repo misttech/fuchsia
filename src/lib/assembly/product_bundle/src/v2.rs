@@ -59,25 +59,13 @@ pub struct ProductBundleV2 {
     #[serde(default)]
     pub system_a: Option<Vec<Image>>,
 
-    /// The platform tools for interacting with images in system_a.
-    #[serde(default)]
-    pub platform_tools_a: Vec<Utf8PathBuf>,
-
     /// An assembled system that should be placed in slot B on the target.
     #[serde(default)]
     pub system_b: Option<Vec<Image>>,
 
-    /// The platform tools for interacting with images in system_b.
-    #[serde(default)]
-    pub platform_tools_b: Vec<Utf8PathBuf>,
-
     /// An assembled system that should be placed in slot R on the target.
     #[serde(default)]
     pub system_r: Option<Vec<Image>>,
-
-    /// The platform tools for interacting with images in system_r.
-    #[serde(default)]
-    pub platform_tools_r: Vec<Utf8PathBuf>,
 
     /// Version information for this product bundle.
     #[serde(default)]
@@ -510,9 +498,6 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![],
             update_package_hash: None,
             virtual_devices_path: None,
@@ -571,9 +556,6 @@ mod tests {
             ]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![],
             update_package_hash: None,
             virtual_devices_path: Some("device".into()),
@@ -615,9 +597,6 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![],
             update_package_hash: None,
             virtual_devices_path: None,
@@ -664,9 +643,6 @@ mod tests {
             ]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![],
             update_package_hash: None,
             virtual_devices_path: Some(vd_manifest),
@@ -690,9 +666,6 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: dir.join("repository"),
@@ -732,9 +705,6 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: "repository".into(),

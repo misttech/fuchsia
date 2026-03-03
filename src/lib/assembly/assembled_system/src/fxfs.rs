@@ -166,7 +166,6 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
         let base_package =
             construct_base_package(&mut assembled_system, dir, "system_image", &product_config)

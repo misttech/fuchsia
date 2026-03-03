@@ -65,11 +65,6 @@ pub struct AssembledSystem {
 
     /// Release information for all input artifacts that contributed to this system.
     pub system_release_info: SystemReleaseInfo,
-
-    /// A list of platform tools that are required to build the system.
-    #[walk_paths]
-    #[serde(default)]
-    pub platform_tools: Vec<Utf8PathBuf>,
 }
 
 impl AssembledSystem {
@@ -82,10 +77,6 @@ impl AssembledSystem {
         base_package_name: Option<String>,
         assembly_mode: AssemblyMode,
     ) -> Result<Self> {
-        let fxfs_pbtool_path = Utf8PathBuf::from_path_buf(
-            tools.get_tool_path("fxfs_pbtool").context("Getting fxfs_pbtool path")?,
-        )
-        .map_err(|e| anyhow::anyhow!("Tool path is not valid UTF-8: {:?}", e))?;
         let mut system = Self {
             images: vec![],
             board_name: image_assembly_config.board_name.clone(),
@@ -94,7 +85,6 @@ impl AssembledSystem {
                 .as_ref()
                 .map(|p| DirectoryPathBuf::new(p.clone())),
             system_release_info: image_assembly_config.system_release_info.clone(),
-            platform_tools: vec![fxfs_pbtool_path],
         };
 
         let base_package_name =
@@ -361,7 +351,6 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
         let expected_manifest = AssembledSystem {
             images: vec![
@@ -380,23 +369,9 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
 
         let manifest = manifest.relativize(Utf8PathBuf::from("path/to")).unwrap();
         assert_eq!(expected_manifest, manifest);
-    }
-
-    #[test]
-    fn test_deserialization_backwards_compatibility() {
-        let json_data = serde_json::json!({
-            "images": [],
-            "board_name": "my_board",
-            "system_release_info": SystemReleaseInfo::new_for_testing(),
-        });
-        let result: Result<AssembledSystem, _> = serde_json::from_value(json_data);
-        assert!(result.is_ok(), "Deserialization failed with: {:?}", result.err());
-        let system = result.unwrap();
-        assert!(system.platform_tools.is_empty());
     }
 }

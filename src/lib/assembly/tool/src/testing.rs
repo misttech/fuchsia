@@ -65,10 +65,6 @@ impl ToolProvider for FakeToolProvider {
     fn log(&self) -> &ToolCommandLog {
         &self.log
     }
-
-    fn get_tool_path(&self, name: &str) -> Result<PathBuf> {
-        Ok(PathBuf::from(format!("./host_x64/{}", name)))
-    }
 }
 
 /// A fake tool that does not execute a command, but only writes it to the |log|.
@@ -136,10 +132,6 @@ mod test {
         let tool = tools.get_tool_with_path("my_tool_with_path".into()).unwrap();
         assert!(tool.run(&["cat".into()]).is_ok());
         drop(tool);
-
-        let tool_path = tools.get_tool_path("my_tool_path").unwrap();
-        assert_eq!(tool_path.to_str().unwrap(), "./host_x64/my_tool_path");
-        drop(tool_path);
 
         assert_eq!(&expected_log, tools.log());
     }

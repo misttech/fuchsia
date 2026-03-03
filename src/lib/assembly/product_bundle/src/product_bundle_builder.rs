@@ -285,21 +285,9 @@ impl ProductBundleBuilder {
             product_version: product_bundle_version,
             partitions,
             sdk_version,
-            system_a: system_a.as_ref().map(|s| s.images.clone()),
-            platform_tools_a: system_a
-                .as_ref()
-                .map(|s| s.platform_tools.clone())
-                .unwrap_or_default(),
-            system_b: system_b.as_ref().map(|s| s.images.clone()),
-            platform_tools_b: system_b
-                .as_ref()
-                .map(|s| s.platform_tools.clone())
-                .unwrap_or_default(),
-            system_r: system_r.as_ref().map(|s| s.images.clone()),
-            platform_tools_r: system_r
-                .as_ref()
-                .map(|s| s.platform_tools.clone())
-                .unwrap_or_default(),
+            system_a: system_a.map(|s| s.images),
+            system_b: system_b.map(|s| s.images),
+            system_r: system_r.map(|s| s.images),
             repositories,
             update_package_hash,
             virtual_devices_path,
@@ -541,21 +529,7 @@ fn write_assembled_system(
             new_images.push(image);
         }
 
-        // Copy the platform tools to the `out_dir`.
-        let mut new_platform_tools = Vec::new();
-        for tool in system.platform_tools.into_iter() {
-            let dest = copy_file(&tool, &out_dir)?;
-            new_platform_tools.push(dest);
-        }
-
-        Ok((
-            Some(AssembledSystem {
-                images: new_images,
-                platform_tools: new_platform_tools,
-                ..system
-            }),
-            packages,
-        ))
+        Ok((Some(AssembledSystem { images: new_images, ..system }), packages))
     } else {
         Ok((None, vec![]))
     }
@@ -678,7 +652,6 @@ mod test {
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_path)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
 
         let product_bundle_path = tempdir.join("pb");
@@ -696,9 +669,6 @@ mod test {
             system_a: Some(vec![]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![],
             update_package_hash: None,
             virtual_devices_path: None,
@@ -762,7 +732,6 @@ mod test {
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_path)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
 
         // Construct the PB.
@@ -803,9 +772,6 @@ mod test {
             }]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: product_bundle_path.join("repository"),

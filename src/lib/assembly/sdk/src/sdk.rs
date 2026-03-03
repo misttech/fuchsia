@@ -29,7 +29,8 @@ impl SdkToolProvider {
 
 impl ToolProvider for SdkToolProvider {
     fn get_tool(&self, name: &str) -> Result<Box<dyn Tool>> {
-        let path = self.get_tool_path(name)?;
+        let path = ffx_config::get_host_tool(&self.context, name.as_ref())
+            .context(format!("Getting host tool from the SDK: {}", name))?;
         self.get_tool_with_path(path)
     }
 
@@ -41,12 +42,6 @@ impl ToolProvider for SdkToolProvider {
 
     fn log(&self) -> &ToolCommandLog {
         &self.log
-    }
-
-    fn get_tool_path(&self, name: &str) -> Result<PathBuf> {
-        let path = ffx_config::get_host_tool(&self.context, name.as_ref())
-            .with_context(|| format!("Getting host tool from the SDK: {}", name))?;
-        Ok(path)
     }
 }
 

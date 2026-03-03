@@ -270,7 +270,6 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
         construct_zbi(
             zbi_tool,
@@ -302,7 +301,6 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
         construct_zbi(
             zbi_tool,
@@ -386,7 +384,6 @@ mod tests {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
-            platform_tools: vec![],
         };
         let signed_zbi_path =
             vendor_sign_zbi(signing_tool, &mut assembled_system, dir, &zbi, &zbi_path).unwrap();

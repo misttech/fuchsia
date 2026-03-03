@@ -107,17 +107,12 @@ template("platform_artifacts") {
     assembly_tool_path =
         get_label_info(assembly_tool_target, "root_out_dir") + "/assembly"
 
-    fxfs_pbtool_target = "//src/storage/fxfs/fxfs_pbtool($host_toolchain)"
-    fxfs_pbtool_path =
-        get_label_info(fxfs_pbtool_target, "root_out_dir") + "/fxfs_pbtool"
-
     # Add all the platform host tools.
     deps += [
       assembly_tool_target,
       blobfs_tool_target,
       cmc_tool_target,
       fvm_tool_target,
-      fxfs_pbtool_target,
       zbi_tool_target,
     ]
     inputs = [
@@ -126,7 +121,6 @@ template("platform_artifacts") {
       fvm_tool_path,
       zbi_tool_path,
       cmc_tool_path,
-      fxfs_pbtool_path,
     ]
     foreach(tool, inputs) {
       args += [

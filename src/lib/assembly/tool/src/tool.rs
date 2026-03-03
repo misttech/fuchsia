@@ -21,9 +21,6 @@ pub trait ToolProvider: DynClone {
 
     /// Get the log of the commands that have been run.
     fn log(&self) -> &ToolCommandLog;
-
-    /// Get the path to a tool.
-    fn get_tool_path(&self, name: &str) -> Result<PathBuf>;
 }
 
 /// A single tool that can be run.

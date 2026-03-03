@@ -27,7 +27,7 @@ impl PlatformToolProvider {
 
 impl ToolProvider for PlatformToolProvider {
     fn get_tool(&self, name: &str) -> Result<Box<dyn Tool>> {
-        let path = self.get_tool_path(name)?;
+        let path = self.tools_dir.join(name).as_std_path().to_path_buf();
         self.get_tool_with_path(path)
     }
 
@@ -38,10 +38,6 @@ impl ToolProvider for PlatformToolProvider {
 
     fn log(&self) -> &ToolCommandLog {
         &self.log
-    }
-
-    fn get_tool_path(&self, name: &str) -> Result<PathBuf> {
-        Ok(self.tools_dir.join(name).as_std_path().to_path_buf())
     }
 }
 
