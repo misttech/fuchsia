@@ -80,6 +80,15 @@ pub enum Direction {
     Write,
 }
 
+impl Direction {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        }
+    }
+}
+
 // All task descriptors have a constant act
 const TASK_DESCRIPTOR_ACT: u8 = 0b101;
 
