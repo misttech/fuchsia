@@ -37,7 +37,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     """
 
     DEVICE_TESTS_IN_INPUT = 1
-    HOST_TESTS_IN_INPUT = 3
+    HOST_TESTS_IN_INPUT = 4
     E2E_TESTS_IN_INPUT = 1
     TOTAL_TESTS_IN_INPUT = DEVICE_TESTS_IN_INPUT + HOST_TESTS_IN_INPUT
     TOTAL_NON_E2E_TESTS_IN_INPUT = TOTAL_TESTS_IN_INPUT - E2E_TESTS_IN_INPUT
@@ -818,6 +818,15 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     "//src/tests/end_to_end:example_e2e_test",
                     "--default",
                     "//build/images/updates",
+                ),
+                (
+                    "fx",
+                    "--dir",
+                    self.out_dir,
+                    "build",
+                    "--host",
+                    "--quiet",
+                    "@@//build/bazel/host_tests/cc_tests:static_test",
                 ),
                 (
                     "fx",

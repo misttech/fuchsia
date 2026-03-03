@@ -64,5 +64,14 @@
             "path": "host_x64/example_e2e_test",
             "os": "linux"
         }
+    },
+    {
+        "environments": [],
+        "test": {
+            "name": "host_cc_tests.static_test",
+            "label": "@@//build/bazel/host_tests/cc_tests:static_test",
+            "path": "bazel_execroot/_main/bazel-out/k8-opt/bin/build/bazel/host_tests/cc_tests/static_test",
+            "os": "linux"
+        }
     }
 ]

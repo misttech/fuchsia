@@ -1039,31 +1039,37 @@ class AsyncMain:
         assert exec_env is not None
         allow_build_updates = self._flags.build_updates
 
-        # Labels start with // and end with a toolchain, starting with
+        # Bazel labels start with @@ and have no toolchain suffix.
+        # GN Labels start with // and end with a toolchain, starting with
         # '('. Both toolchain and '//' need to be omitted for building
         # device tests through fx build.
-        label_to_rule = re.compile(r"//([^()]+)\((.+)\)")
-        build_targets_by_toolchain: defaultdict[str, list[str]] = defaultdict(
-            list
-        )
+        gn_label_to_rule = re.compile(r"//([^()]+)\((.+)\)")
+        build_bazel_targets: list[str] = []
+        build_gn_targets_by_toolchain: defaultdict[
+            str, list[str]
+        ] = defaultdict(list)
         for selection in tests.selected:
-            label = (
-                selection.build.test.package_label or selection.build.test.label
-            )
-            match = label_to_rule.match(label)
+            test_label = selection.build.test.label
+            if test_label.startswith("@@"):
+                build_bazel_targets.append(test_label)
+                continue
+
+            label = selection.build.test.package_label or test_label
+            match = gn_label_to_rule.match(label)
 
             if match:
                 target = match.group(1)
                 toolchain = match.group(2)
                 assert isinstance(toolchain, str)
 
-                build_targets_by_toolchain[toolchain].append(f"//{target}")
+                build_gn_targets_by_toolchain[toolchain].append(f"//{target}")
             else:
                 recorder.emit_warning_message(f"Unknown entry {selection}")
                 return False
 
+        # First build a command line to build GN targets, if needed.
         build_command_line = []
-        for key, vals in sorted(list(build_targets_by_toolchain.items())):
+        for key, vals in sorted(list(build_gn_targets_by_toolchain.items())):
             if "fuchsia:" in key:
                 # Use --default instead of fuchsia toolchains, otherwise some
                 # ZBI tests fail to build.
@@ -1122,18 +1128,34 @@ class AsyncMain:
 
         await asyncio.sleep(0.1)
 
-        return_code = await run_build_with_suspended_output(
-            exec_env,
-            build_command_line,
-            show_output=not exec_env.log_to_stdout(),
-        )
+        if build_command_line:
+            return_code = await run_build_with_suspended_output(
+                exec_env,
+                build_command_line,
+                show_output=not exec_env.log_to_stdout(),
+            )
 
-        error = None
-        if return_code != 0:
-            error = f"Build returned non-zero exit code {return_code}"
-        if error is not None:
-            recorder.emit_end(error, id=build_id)
-            return False
+            error = None
+            if return_code != 0:
+                error = f"Build returned non-zero exit code {return_code}"
+            if error is not None:
+                recorder.emit_end(error, id=build_id)
+                return False
+
+        # Second, launch another command line to build and export Bazel host tests
+        if build_bazel_targets:
+            return_code = await run_build_with_suspended_output(
+                exec_env,
+                ["--host", "--quiet"] + build_bazel_targets,
+                show_output=not exec_env.log_to_stdout(),
+            )
+
+            error = None
+            if return_code != 0:
+                error = f"Build returned non-zero exit code {return_code}"
+            if error is not None:
+                recorder.emit_end(error, id=build_id)
+                return False
 
         if tests.has_device_test():
             try:

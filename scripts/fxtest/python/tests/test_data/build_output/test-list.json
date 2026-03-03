@@ -42,6 +42,13 @@
                 "//src/tests/end_to_end:example_e2e_test(//build/toolchain/host:x64)"
             ],
             "tags": []
+        },
+        {
+            "name": "host_cc_tests.static_test",
+            "labels": [
+                "@@//build/bazel/host_tests/cc_tests:static_test"
+            ],
+            "tags": []
         }
     ]
 }

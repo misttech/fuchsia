@@ -273,5 +273,5 @@ class Test:
             raise ValueError(
                 f"Test '{e.args[0]} was found in "
                 + "tests.json, but not test-list.json.\nYou may need to run "
-                + "`fx build :test-list` or a full `fx build`."
+                + "`fx build //:test-list` or a full `fx build`."
             )
