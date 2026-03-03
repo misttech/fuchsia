@@ -723,7 +723,7 @@ class AsyncFuchsiaDevice(
             # devices in infrastructure that currently experience stalls during
             # boot but eventually settle.
             with common.time_limit(
-                timeout=180,
+                timeout=600,
                 exception_message=f"Timeout occurred during the health check of '{self._device_info.name}'",
             ):
                 _LOGGER.info(
