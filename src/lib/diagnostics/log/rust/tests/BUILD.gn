@@ -1,0 +1,74 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_test.gni")
+
+rustc_binary("logger_rust_bin") {
+  name = "logger_rust"
+  edition = "2024"
+  source_root = "src/logger_rust.rs"
+  sources = [ "src/logger_rust.rs" ]
+  deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+executable("logger_cpp_bin") {
+  output_name = "logger_cpp"
+  sources = [ "logger_cpp.cc" ]
+  deps = [ "//sdk/lib/syslog/cpp" ]
+}
+
+fuchsia_component("logger_rust") {
+  testonly = true
+  manifest = "meta/logger_rust.cml"
+  deps = [ ":logger_rust_bin" ]
+  check_includes = false  # see logger_rust.cml
+}
+
+fuchsia_component("logger_cpp") {
+  testonly = true
+  manifest = "meta/logger_cpp.cml"
+  deps = [ ":logger_cpp_bin" ]
+  check_includes = false  # see logger_cpp.cml
+}
+
+rustc_test("log_integration_test_bin") {
+  name = "log_integration_test"
+  edition = "2024"
+  source_root = "src/lib.rs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//src/lib/diagnostics/reader/rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/sys/lib/cm_rust/testing",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:test-case",
+  ]
+}
+
+fuchsia_test_component("component") {
+  component_name = "log_integration_test"
+  manifest = "meta/test.cml"
+  deps = [ ":log_integration_test_bin" ]
+}
+
+fuchsia_test_package("log_integration_test") {
+  test_components = [ ":component" ]
+  deps = [
+    ":logger_cpp",
+    ":logger_rust",
+  ]
+  subpackages = [ "//src/diagnostics/archivist:archivist-for-embedding" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":log_integration_test" ]
+}

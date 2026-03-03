@@ -11,6 +11,7 @@ group("tests") {
   deps = [
     ":diagnostics-log-tests",
     ":diagnostics_log_lib_test($host_toolchain)",
+    "tests",
   ]
 }
 
