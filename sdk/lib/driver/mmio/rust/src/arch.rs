@@ -25,7 +25,14 @@ mod ops {
             unsafe { core::ptr::write_volatile($ptr.as_ptr(), $value) }
         };
     }
-    pub(super) use {load_op, store_op};
+
+    macro_rules! write_barrier_op {
+        () => {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Release)
+        };
+    }
+
+    pub(super) use {load_op, store_op, write_barrier_op};
 }
 
 // KVM on x86 doesn't support Mmio using vector registers. Specify the instructions for this
@@ -85,7 +92,16 @@ mod ops {
         }
     }
 
-    pub(super) use {load_op, store_op};
+    macro_rules! write_barrier_op {
+        () => {
+            // Safety: N/A; see [`crate::arch::write_barrier`].
+            unsafe {
+                core::arch::asm!("sfence", options(nostack, preserves_flags));
+            }
+        };
+    }
+
+    pub(super) use {load_op, store_op, write_barrier_op};
 }
 
 // rustc/llvm may generate instructions that are incompatible with being run in certain
@@ -145,10 +161,19 @@ mod ops {
         }
     }
 
-    pub(super) use {load_op, store_op};
+    macro_rules! write_barrier_op {
+        () => {
+            // Safety: N/A; see [`crate::arch::write_barrier`].
+            unsafe {
+                core::arch::asm!("dsb st", options(nostack, preserves_flags));
+            }
+        };
+    }
+
+    pub(super) use {load_op, store_op, write_barrier_op};
 }
 
-use ops::{load_op, store_op};
+use ops::{load_op, store_op, write_barrier_op};
 
 macro_rules! load_fn {
     ($name:ident, $type:tt) => {
@@ -191,3 +216,10 @@ store_fn! {u8, store8}
 store_fn! {u16, store16}
 store_fn! {u32, store32}
 store_fn! {u64, store64}
+
+#[inline]
+pub(crate) fn write_barrier() {
+    // Note that there are no safety requirements for issuing a write barrier, as this operation is
+    // outside the scope of Rust's memory model.
+    write_barrier_op!()
+}

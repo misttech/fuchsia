@@ -115,6 +115,10 @@ impl<Claim> UnsafeMmio for Memory<Claim> {
             arch::store64(ptr, v);
         }
     }
+
+    fn write_barrier(&self) {
+        arch::write_barrier();
+    }
 }
 
 /// Represents a mutable borrow for the lifetime `'a`.

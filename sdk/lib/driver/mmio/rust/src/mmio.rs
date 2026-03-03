@@ -249,6 +249,10 @@ pub trait Mmio {
     fn store64(&mut self, offset: usize, value: u64) {
         self.try_store64(offset, value).unwrap();
     }
+
+    /// Issues a memory write barrier.  It is guaranteed that all stores preceding this barrier will
+    /// appear to have happened before all stores following this barrier.
+    fn write_barrier(&self);
 }
 
 /// An MMIO region from which ownership of disjoint sub-regions can be split off.

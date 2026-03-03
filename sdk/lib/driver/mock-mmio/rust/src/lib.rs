@@ -25,8 +25,8 @@
 //! let mmio = new_mock_mmio(&ops, len);
 //! assert_eq!(mmio.load32(64), 0xabcd_u32);
 //! ```
-use mmio::region::{MmioRegion, UnsafeMmio};
 use mmio::MmioSplit;
+use mmio::region::{MmioRegion, UnsafeMmio};
 use mockall::mock;
 use std::ops::Deref;
 
@@ -41,6 +41,8 @@ mock! {
         pub fn store16(&self, addr: usize, value: u16);
         pub fn store32(&self, addr: usize, value: u32);
         pub fn store64(&self, addr: usize, value: u64);
+
+        pub fn write_barrier(&self);
     }
 }
 
@@ -100,14 +102,18 @@ impl<O: Deref<Target = MockMemoryOps>> UnsafeMmio for MockMmio<O> {
     unsafe fn store64_unchecked(&self, offset: usize, value: u64) {
         self.ops.store64(offset, value)
     }
+
+    fn write_barrier(&self) {
+        self.ops.write_barrier();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use mmio::Mmio;
-    use mockall::predicate::eq;
     use mockall::Sequence;
+    use mockall::predicate::eq;
 
     #[test]
     fn test_mock_ops() {

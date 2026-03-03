@@ -98,6 +98,10 @@ pub trait UnsafeMmio {
     /// # Safety
     /// See the trait-level documentation.
     unsafe fn store64_unchecked(&self, offset: usize, v: u64);
+
+    /// Issues a memory write barrier.  It is guaranteed that all stores preceding this barrier will
+    /// appear to have happened before all stores following this barrier.
+    fn write_barrier(&self);
 }
 
 /// An `MmioRegion` provides a safe implementation of [Mmio] and [MmioSplit] on top of an
@@ -282,6 +286,10 @@ impl<Impl: UnsafeMmio, Owner: Borrow<Impl>> Mmio for MmioRegion<Impl, Owner> {
         }
         Ok(())
     }
+
+    fn write_barrier(&self) {
+        self.owner.borrow().write_barrier();
+    }
 }
 
 impl<Impl: UnsafeMmio, Owner: Borrow<Impl> + Clone> MmioSplit for MmioRegion<Impl, Owner> {
@@ -427,6 +435,10 @@ mod tests {
         unsafe fn store64_unchecked(&self, offset: usize, v: u64) {
             assert_eq!(offset % 8, 0);
             self.store::<8>(offset, v.to_le_bytes())
+        }
+
+        fn write_barrier(&self) {
+            // NOP
         }
     }
 
@@ -575,6 +587,10 @@ mod tests {
             }
 
             unsafe fn store64_unchecked(&self, _offset: usize, _value: u64) {
+                unreachable!()
+            }
+
+            fn write_barrier(&self) {
                 unreachable!()
             }
         }
