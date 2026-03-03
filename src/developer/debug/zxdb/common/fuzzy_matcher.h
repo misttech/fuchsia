@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_E2E_TESTS_FUZZY_MATCHER_H_
-#define SRC_DEVELOPER_DEBUG_E2E_TESTS_FUZZY_MATCHER_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_COMMON_FUZZY_MATCHER_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_COMMON_FUZZY_MATCHER_H_
 
-#include <initializer_list>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -32,4 +31,4 @@ class FuzzyMatcher {
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_E2E_TESTS_FUZZY_MATCHER_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_COMMON_FUZZY_MATCHER_H_

@@ -28,7 +28,8 @@ struct CommandLineOptions {
   std::optional<std::string> embedded_mode_context;
   std::optional<std::string> core;
   std::vector<std::string> attach;
-  std::vector<std::string> script_files;
+  std::vector<std::string> config_files;
+  std::optional<std::string> script_file;
   std::vector<std::string> execute_commands;
   std::optional<std::string> symbol_cache;
   std::vector<std::string> symbol_index_files;

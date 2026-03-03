@@ -11,6 +11,7 @@
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/lib/fxl/macros.h"
+#include "src/lib/fxl/observer_list.h"
 #include "src/lib/line_input/modal_line_input.h"
 
 namespace zxdb {
@@ -22,12 +23,19 @@ class Session;
 
 class Console : debug::LogBackend {
  public:
+  class OutputObserver {
+   public:
+    virtual void OnOutput(const OutputBuffer& output) {}
+  };
+
   explicit Console(Session* session);
   virtual ~Console();
 
   static Console* get() { return singleton_; }
 
   ConsoleContext& context() { return context_; }
+
+  fxl::ObserverList<OutputObserver>& output_observers() { return output_observers_; }
 
   fxl::WeakPtr<Console> GetWeakPtr();
 
@@ -92,6 +100,8 @@ class Console : debug::LogBackend {
  protected:
   static Console* singleton_;
   ConsoleContext context_;
+
+  fxl::ObserverList<OutputObserver> output_observers_;
 
  private:
   bool OutputEnabled();

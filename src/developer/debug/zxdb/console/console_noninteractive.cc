@@ -20,6 +20,10 @@ void ConsoleNoninteractive::Quit() { debug::MessageLoop::Current()->QuitNow(); }
 
 void ConsoleNoninteractive::Write(const OutputBuffer& output, bool add_newline) {
   output.WriteToStdout(add_newline);
+
+  for (auto& observer : output_observers_) {
+    observer.OnOutput(output);
+  }
 }
 
 void ConsoleNoninteractive::ModalGetOption(const line_input::ModalPromptOptions& options,

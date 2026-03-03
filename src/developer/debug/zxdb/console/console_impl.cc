@@ -154,6 +154,9 @@ void ConsoleImpl::Write(const OutputBuffer& output, bool add_newline) {
   if (InputEnabled())
     line_input_.Show();
 
+  for (auto& observer : output_observers_)
+    observer.OnOutput(output);
+
   if (old_bits & O_NONBLOCK)
     fcntl(STDOUT_FILENO, F_SETFL, old_bits);
 }

@@ -27,17 +27,11 @@ class MockConsole : public Console {
     OutputBuffer output;
   };
 
-  class OutputObserver {
-   public:
-    virtual void OnOutput(const OutputBuffer& output) {}
-  };
-
   explicit MockConsole(Session* session) : Console(session), session_(session) {}
   ~MockConsole() override = default;
 
   const OutputBuffer& output_buffer() { return output_buffer_; }
   Session* session() { return session_; }
-  fxl::ObserverList<OutputObserver>& output_observers() { return output_observers_; }
 
   // Returns true if there are any output events waiting to be read.
   bool HasOutputEvent() const { return !output_queue_.empty(); }
@@ -93,8 +87,6 @@ class MockConsole : public Console {
   bool waiting_for_output_ = false;
 
   line_input::ModalLineInput::ModalCompletionCallback last_modal_cb_;
-
-  fxl::ObserverList<OutputObserver> output_observers_;
 };
 
 }  // namespace zxdb

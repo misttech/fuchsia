@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/e2e_tests/fuzzy_matcher.h"
+#include "src/developer/debug/zxdb/common/fuzzy_matcher.h"
 
 #include <iostream>
 #include <string>
@@ -14,6 +14,11 @@ namespace zxdb {
 
 bool FuzzyMatcher::MatchesLine(const std::vector<std::string_view>& substrs,
                                bool allow_out_of_order) {
+  if (allow_out_of_order) {
+    content_.clear();
+    content_.seekg(0, std::ios_base::beg);
+  }
+
   while (content_) {
     std::string line;
     std::getline(content_, line);
@@ -25,12 +30,6 @@ bool FuzzyMatcher::MatchesLine(const std::vector<std::string_view>& substrs,
     }
 
     if (pos != std::string::npos) {
-      if (allow_out_of_order && content_.peek()) {
-        // Only reset the stream pointer to the beginning if out-of-order output is allowed and
-        // there are still more bytes to read. We don't want to infinitely loop over the final
-        // match.
-        content_.seekg(0, std::ios_base::beg);
-      }
       return true;
     }
   }

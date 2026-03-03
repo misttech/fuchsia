@@ -28,6 +28,7 @@
 #include "src/developer/debug/zxdb/console/console_noninteractive.h"
 #include "src/developer/debug/zxdb/console/fd_streamer.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/console/script_runner.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/debug_adapter/server.h"
 #include "src/developer/debug/zxdb/local_agent.h"
@@ -57,7 +58,7 @@ Err SetupActions(const CommandLineOptions& options, std::vector<std::string>* ac
   if (options.unix_connect)
     actions->push_back(VerbToString(Verb::kConnect) + " -q -u " + *options.unix_connect);
 
-  for (const auto& script_file : options.script_files) {
+  for (const auto& script_file : options.config_files) {
     ErrOr<std::vector<std::string>> cmds_or = ReadCommandsFromFile(script_file);
     if (cmds_or.has_error())
       return cmds_or.err();
@@ -271,8 +272,22 @@ int ConsoleMain(int argc, const char* argv[]) {
       file_streamers.emplace_back(StreamFDToConsole(std::move(fd), console.get()));
     }
 
+    auto on_ready = [&]() {
+      // Display the first prompt to the screen
+      InitConsole(*console);
+
+      // The console is now ready for interactive input.
+      if (options.signal_when_ready) {
+        int rv = kill(options.signal_when_ready, SIGUSR1);
+        if (rv != 0) {
+          LOGS(Error) << "Failed to send SIGUSR1: " << strerror(errno);
+        }
+      }
+    };
+
     // Run the actions and then initialize the console to enter interactive mode. Errors in
     // running actions should be fatal and quit the debugger.
+    std::unique_ptr<ScriptRunner> script_runner;
     RunCommandSequence(
         console.get(), std::move(actions),
         fxl::MakeRefCounted<ConsoleCommandContext>(console.get(), [&](const Err& err) {
@@ -280,15 +295,19 @@ int ConsoleMain(int argc, const char* argv[]) {
             ret_code = 1;
             loop.QuitNow();
           } else {
-            // Display the first prompt to the screen
-            InitConsole(*console);
-
-            // The console is now ready for interactive input.
-            if (options.signal_when_ready) {
-              int rv = kill(options.signal_when_ready, SIGUSR1);
-              if (rv != 0) {
-                LOGS(Error) << "Failed to send SIGUSR1: " << strerror(errno);
-              }
+            if (options.script_file) {
+              script_runner = std::make_unique<ScriptRunner>(session.get(), console.get());
+              script_runner->Run(*options.script_file, [&](bool success) {
+                if (!success) {
+                  ret_code = 1;
+                  loop.QuitNow();
+                } else {
+                  // Successful script completion.
+                  on_ready();
+                }
+              });
+            } else {
+              on_ready();
             }
           }
         }));

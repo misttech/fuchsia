@@ -68,11 +68,23 @@ const char kAttachHelp[] = R"(  --attach=<koid|filter>
       "attach" command in the console. Multiple attaches can be specified to
       match more than one process.)";
 
-const char kScriptFileHelp[] = R"(  --script-file=<file>
-  -S <file>
+const char kConfigFileHelp[] = R"(  --config-file=<file>
       Reads a script file from a file. The file must contains valid zxdb
       commands as they would be input from the command line. They will be
-      executed sequentially.)";
+      executed sequentially without waiting for completion.)";
+
+const char kScriptFileHelp[] = R"(  --script-file=<file>
+  -S <file>
+      Reads and executes a script file. A script file is a sequence of plain
+      text lines. Lines beginning with "[zxdb]" are interpreted as commands to
+      be interpreted. What follows each of these lines is any number of lines
+      (with no prefix) that will be fuzzy matched against the output of the
+      prior command before executing the next command (again on a line starting
+      with "[zxdb]"). This is different than --config-file since it waits on
+      some output of each command before executing the next.
+
+      See examples in //src/developer/debug/examples.
+      )";
 
 const char kExecuteCommandHelp[] = R"(  --execute=<command>
   -e <command>
@@ -165,7 +177,8 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
   parser.AddSwitch("embedded-mode-context", 0, kEmbeddedModeContextHelp,
                    &CommandLineOptions::embedded_mode_context);
   parser.AddSwitch("attach", 'a', kAttachHelp, &CommandLineOptions::attach);
-  parser.AddSwitch("script-file", 'S', kScriptFileHelp, &CommandLineOptions::script_files);
+  parser.AddSwitch("config-file", 0, kConfigFileHelp, &CommandLineOptions::config_files);
+  parser.AddSwitch("script-file", 'S', kScriptFileHelp, &CommandLineOptions::script_file);
   parser.AddSwitch("execute", 'e', kExecuteCommandHelp, &CommandLineOptions::execute_commands);
   parser.AddSwitch("symbol-index", 0, kSymbolIndexHelp, &CommandLineOptions::symbol_index_files);
   parser.AddSwitch("symbol-path", 's', kSymbolPathHelp, &CommandLineOptions::symbol_paths);
@@ -218,7 +231,7 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
     std::error_code ec;
     if (std::filesystem::exists(zxdbrc, ec)) {
       // zxdbrc is expected to execute first.
-      options->script_files.insert(options->script_files.begin(), zxdbrc);
+      options->config_files.insert(options->config_files.begin(), zxdbrc);
     }
   }
 
