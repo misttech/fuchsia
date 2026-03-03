@@ -9,7 +9,6 @@ from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew.affordances.connectivity.bluetooth.utils import types as bt_types
-from honeydew.fuchsia_device import fuchsia_device
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ class BluetoothGapAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `device` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
     def test_bluetooth_accept_pairing(self) -> None:
         """Test case for bluetooth.accept_pairing()"""

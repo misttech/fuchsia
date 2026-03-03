@@ -8,7 +8,6 @@ import logging
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, signals, test_runner
 from mobly_controller import openwrt_ap
 from mobly_controller.access_point.access_point_config import (
@@ -43,7 +42,7 @@ class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 "At least one OpenWRT access point is required"
             )
 
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
         self.openwrt_ap = self.openwrt_aps[0]
 

@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
 
@@ -29,7 +28,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def write_output(self, cmd_output: str, filename: str) -> None:
         """Writes the command output to a dedicated file for investigation."""

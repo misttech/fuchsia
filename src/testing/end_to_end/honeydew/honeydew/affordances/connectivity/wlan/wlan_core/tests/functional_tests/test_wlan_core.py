@@ -15,7 +15,6 @@ from mobly import asserts, signals, test_runner
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
-from honeydew.fuchsia_device import fuchsia_device
 
 
 class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -29,7 +28,7 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             * Assigns `access_point` variable with AccessPoint object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
         access_points: list[
             access_point.AccessPoint

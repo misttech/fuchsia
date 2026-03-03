@@ -7,7 +7,6 @@ import logging
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.auxiliary_devices.power_switch import power_switch
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -48,7 +47,7 @@ class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
         self._power_switch: power_switch.PowerSwitch
         self._outlet: int | None
         (self._power_switch, self._outlet) = self._lookup_power_switch(self.dut)

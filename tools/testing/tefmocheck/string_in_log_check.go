@@ -449,7 +449,7 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		&stringInLogCheck{
 			// LINT.IfChange
 			String: "honeydew.errors.HealthCheckError: health check failed on",
-			// LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device_impl.py)
+			// LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py)
 			Type: swarmingOutputType,
 		},
 		&stringInLogCheck{

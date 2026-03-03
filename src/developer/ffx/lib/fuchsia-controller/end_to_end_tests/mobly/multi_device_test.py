@@ -118,7 +118,7 @@ class MultiDeviceTest(fuchsia_async_extension.AsyncBaseTestClass):
         return res
 
     async def setup_class(self) -> None:
-        self.fuchsia_devices: list[BluetoothDevice] = [
+        self.fuchsia_devices = [
             self._setup_device(x)
             for x in await self.register_controller(fuchsia_device)
         ]

@@ -175,7 +175,7 @@ affordance by creating `HelloWorld` affordance.
 12. Update [FuchsiaDevice](../honeydew/fuchsia_device/fuchsia_device.py) ABC
     class to add `HelloWorld` as an affordance of this `FuchsiaDevice` class
 
-13. Update [FuchsiaDeviceImpl](../honeydew/fuchsia_device/fuchsia_device_impl.py)
+13. Update [FuchsiaDevice](../honeydew/fuchsia_device/fuchsia_device.py)
     implementation class to return `HelloWorldUsingFfx` as implementation for
     `HelloWorld` affordance
 

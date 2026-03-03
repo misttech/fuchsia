@@ -20,7 +20,6 @@ import fuchsia_async_extension
 import honeydew
 import test_data
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from perf_publish import publish
 from reporting import metrics
@@ -241,7 +240,7 @@ class IperfServer:
 class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
-        self._device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self._device = self.fuchsia_devices[0]
         self._protocol = Protocol.from_str(self.user_params["protocol"])
         self._direction = Direction.from_str(self.user_params["direction"])
         self._netstack3 = self.user_params["netstack"] == "netstack3"

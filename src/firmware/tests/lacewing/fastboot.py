@@ -9,7 +9,6 @@ import re
 from typing import Tuple
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 
 # Required fastboot variables.
@@ -89,7 +88,7 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """Initializes all DUT(s)"""
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
         # TODO(http://b/276740268#comment33): add support for rebooting into
         # fastboot here and leaving the device in fastboot mode for the entire

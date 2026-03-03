@@ -12,7 +12,6 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.ui.screenshot import types
 from honeydew.affordances.ui.user_input import types as ui_custom_types
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.utils import common
 
 TOUCH_APP = (
@@ -34,7 +33,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()

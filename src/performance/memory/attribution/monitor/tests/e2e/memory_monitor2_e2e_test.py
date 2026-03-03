@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts, test_runner
@@ -31,7 +30,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def write_output(self, cmd_output: str, filename: str) -> None:
         """Writes the command output to a dedicated file for investigation."""

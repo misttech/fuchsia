@@ -10,7 +10,6 @@ from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew.affordances.session import errors as session_errors
-from honeydew.fuchsia_device import fuchsia_device
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def test_add_component_without_started_session(self) -> None:
         """Test case for calling session.add_component() without started

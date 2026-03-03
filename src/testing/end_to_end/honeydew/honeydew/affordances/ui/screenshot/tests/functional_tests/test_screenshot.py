@@ -10,7 +10,6 @@ import time
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +30,7 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()

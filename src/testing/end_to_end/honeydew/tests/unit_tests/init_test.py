@@ -11,7 +11,7 @@ import fuchsia_controller_py as fuchsia_controller
 
 import honeydew
 from honeydew import errors
-from honeydew.fuchsia_device import fuchsia_device_impl
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import ffx_impl
 from honeydew.transports.fuchsia_controller import errors as fc_errors
@@ -78,7 +78,7 @@ class InitTests(unittest.TestCase):
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
             ),
-            fuchsia_device_impl.FuchsiaDeviceImpl,
+            FuchsiaDevice,
         )
 
         mock_fc_context.assert_called_once_with(
@@ -116,7 +116,7 @@ class InitTests(unittest.TestCase):
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
             ),
-            fuchsia_device_impl.FuchsiaDeviceImpl,
+            FuchsiaDevice,
         )
 
         mock_fc_context.assert_called_once_with(
@@ -129,7 +129,7 @@ class InitTests(unittest.TestCase):
         mock_ffx_check_connection.assert_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        FuchsiaDevice,
         "__init__",
         side_effect=fc_errors.FuchsiaControllerConnectionError("Error"),
         autospec=True,

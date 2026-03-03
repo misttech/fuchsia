@@ -38,7 +38,7 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running the testsuite."""
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def spawn_ffx(self, args: list[str]) -> SpawnedFfx:
         """Run ffx in the specific way we need, not the standard Honeydew way.

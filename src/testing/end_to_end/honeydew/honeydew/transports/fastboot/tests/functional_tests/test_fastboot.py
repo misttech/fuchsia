@@ -8,8 +8,6 @@ import logging
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device import fuchsia_device
-
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -25,7 +23,7 @@ class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
               transport (as it may involve device reboots)
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
         # Calling some fastboot method here, so that Fastboot __init__ gets called which will
         # retrieve the fastboot node-id.

@@ -11,7 +11,6 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
 
@@ -37,7 +36,7 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def teardown_test(self) -> None:
         self.dut.session.cleanup()

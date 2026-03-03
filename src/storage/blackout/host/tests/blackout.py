@@ -17,7 +17,6 @@ import random
 import fidl_fuchsia_blackout_test as blackout
 import fuchsia_async_extension
 import honeydew.utils.common
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx.errors import FfxCommandError
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, test_runner
@@ -30,7 +29,7 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
     def setup_class(self) -> None:
         super().setup_class()
 
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
         asserts.abort_class_if(
             "component_name" not in self.user_params, "Missing component name!"
         )

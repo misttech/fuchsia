@@ -13,7 +13,6 @@ from fuchsia_base_test import fuchsia_base_test
 from mobly import test_runner
 
 from honeydew.affordances.virtual_audio.types import WaitForQuietResult
-from honeydew.fuchsia_device import fuchsia_device
 
 _AUDIO_FILE_INPUT = "audio_runtime_deps/sine_wave.wav"
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `device` variable with FuchsiaDevice object
         """
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()

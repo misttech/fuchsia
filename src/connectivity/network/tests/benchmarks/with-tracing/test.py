@@ -6,7 +6,6 @@ import os
 import pathlib
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 
 
@@ -20,7 +19,7 @@ from mobly import asserts, test_runner
 class NetstackBenchmarksWithTracingTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
         self.skip_netstack2 = self.user_params["skip_netstack2"]
 
     def test_loopback_socket_benchmarks_with_tracing(self) -> None:

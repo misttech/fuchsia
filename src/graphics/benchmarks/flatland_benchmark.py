@@ -12,7 +12,6 @@ from pathlib import Path
 
 import test_data
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 from perf_publish import publish
 from reporting import metrics
@@ -41,7 +40,7 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
 
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
         self.dut.session.ensure_started()
 

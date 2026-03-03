@@ -23,7 +23,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     OperatingState,
     SecurityType,
 )
-from honeydew.fuchsia_device import fuchsia_device
 
 # Time to wait for a WLAN interface to become available.
 WLAN_INTERFACE_TIMEOUT = 30
@@ -50,7 +49,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.device = self.fuchsia_devices[0]
 
         # Wait for a WLAN interface to become available.
         interfaces: list[InterfaceProperties] = []

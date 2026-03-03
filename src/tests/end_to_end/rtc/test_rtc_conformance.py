@@ -10,7 +10,6 @@ import random
 from typing import Any, Literal
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def setup_class(self) -> None:
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
 
     def teardown_class(self) -> None:
         """Post-test teardown logic.

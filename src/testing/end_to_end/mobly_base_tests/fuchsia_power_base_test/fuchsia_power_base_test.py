@@ -49,7 +49,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         self.ffx_test_url = self.user_params["ffx_test_url"]
         self.ffx_test_args = self.user_params["ffx_test_args"]
         self.timeout_sec = self.user_params["timeout_sec"]
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]  # type: ignore[name-defined]
+        self.device = self.fuchsia_devices[0]  # type: ignore[name-defined]
 
     def _find_measurepower_path(self) -> str:
         path = os.environ.get("MEASUREPOWER_PATH")

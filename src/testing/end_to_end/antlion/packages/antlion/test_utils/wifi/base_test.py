@@ -105,9 +105,7 @@ class WifiBaseTest(BaseTestClass):
         self.attenuators: list[Attenuator] = register_controller(
             controllers.attenuator
         )
-        self.fuchsia_devices: list[FuchsiaDevice] = register_controller(
-            controllers.fuchsia_device
-        )
+        self.fuchsia_devices = register_controller(controllers.fuchsia_device)
         self.iperf_clients: list[IPerfClientBase] = register_controller(
             controllers.iperf_client
         )

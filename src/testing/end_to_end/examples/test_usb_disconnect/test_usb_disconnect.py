@@ -8,7 +8,6 @@ import time
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import expects, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
-        self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        self.dut = self.fuchsia_devices[0]
         self._usb_power_hub: usb_power_hub.UsbPowerHub
         self._usb_port: int | None
         (self._usb_power_hub, self._usb_port) = self._lookup_usb_power_hub(

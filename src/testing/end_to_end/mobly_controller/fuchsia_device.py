@@ -9,7 +9,7 @@ from typing import Any
 
 import honeydew
 from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
-from honeydew.fuchsia_device.fuchsia_device_impl import FuchsiaDeviceImpl
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.typing import custom_types
 from honeydew.utils import properties
@@ -27,7 +27,7 @@ _FFX_CONFIG_PROXY_TIMEOUT_SECS: int = 30
 
 def create(
     configs: list[dict[str, Any]],
-) -> list[FuchsiaDeviceImpl]:
+) -> list[FuchsiaDevice]:
     """Create Fuchsia device controller(s) and returns them.
 
     Required for Mobly controller registration.

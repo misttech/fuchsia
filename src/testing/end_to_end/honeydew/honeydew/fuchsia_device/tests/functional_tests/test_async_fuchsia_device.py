@@ -12,7 +12,7 @@ import fuchsia_inspect
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device.fuchsia_device_impl import FuchsiaDeviceImpl
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         """
         super().setup_class()
         fd = self.fuchsia_devices[0]
-        assert isinstance(fd, FuchsiaDeviceImpl)
+        assert isinstance(fd, FuchsiaDevice)
         self.device = fd.as_async()
 
     def test_board(self) -> None:
