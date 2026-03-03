@@ -9,6 +9,7 @@ Symbols:
   - { Name: magma_buffer_collection_set_constraints2, Type: Func }
   - { Name: magma_buffer_constraints_release2, Type: Func }
   - { Name: magma_buffer_constraints_set_colorspaces2, Type: Func }
+  - { Name: magma_buffer_constraints_set_format, Type: Func }
   - { Name: magma_buffer_constraints_set_format2, Type: Func }
   - { Name: magma_buffer_export, Type: Func }
   - { Name: magma_buffer_get_cache_policy, Type: Func }

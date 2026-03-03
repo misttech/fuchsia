@@ -65,15 +65,17 @@ class TestPlatformSysmemConnection {
               connection->CreateBufferConstraints(&buffer_constraints, &constraints).get());
 
     // Create a set of basic 512x512 RGBA image constraints.
-    magma_image_format_constraints_t image_constraints{};
+    magma_image_format_constraints2_t image_constraints{};
     image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
     image_constraints.has_format_modifier = false;
     image_constraints.format_modifier = 0;
     image_constraints.width = 512;
     image_constraints.height = 512;
-    image_constraints.layers = 1;
+    image_constraints.plane_count = 1;
     image_constraints.bytes_per_row_divisor = 1;
     image_constraints.min_bytes_per_row = 0;
+    image_constraints.pad_for_block_width = 0;
+    image_constraints.pad_for_block_height = 0;
 
     EXPECT_NE(MAGMA_STATUS_OK, constraints->SetImageFormatConstraints(1, &image_constraints).get());
     EXPECT_EQ(MAGMA_STATUS_OK, constraints->SetImageFormatConstraints(0, &image_constraints).get());
@@ -119,15 +121,17 @@ class TestPlatformSysmemConnection {
     uint32_t in_color_space = MAGMA_COLORSPACE_REC709;
     EXPECT_NE(MAGMA_STATUS_OK, constraints->SetColorSpaces(0, 1, &in_color_space).get());
 
-    magma_image_format_constraints_t image_constraints{};
+    magma_image_format_constraints2_t image_constraints{};
     image_constraints.image_format = MAGMA_FORMAT_I420;
     image_constraints.has_format_modifier = false;
     image_constraints.format_modifier = 0;
     image_constraints.width = 512;
     image_constraints.height = 512;
-    image_constraints.layers = 1;
+    image_constraints.plane_count = 1;
     image_constraints.bytes_per_row_divisor = 1;
     image_constraints.min_bytes_per_row = 0;
+    image_constraints.pad_for_block_width = 0;
+    image_constraints.pad_for_block_height = 0;
 
     EXPECT_EQ(MAGMA_STATUS_OK, constraints->SetImageFormatConstraints(0, &image_constraints).get());
 
@@ -184,15 +188,17 @@ class TestPlatformSysmemConnection {
               connection->CreateBufferConstraints(&buffer_constraints, &constraints).get());
 
     // Create Intel X-tiling
-    magma_image_format_constraints_t image_constraints{};
+    magma_image_format_constraints2_t image_constraints{};
     image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
     image_constraints.has_format_modifier = true;
     image_constraints.format_modifier = MAGMA_FORMAT_MODIFIER_INTEL_X_TILED;
     image_constraints.width = 512;
     image_constraints.height = 512;
-    image_constraints.layers = 1;
+    image_constraints.plane_count = 1;
     image_constraints.bytes_per_row_divisor = 1;
     image_constraints.min_bytes_per_row = 0;
+    image_constraints.pad_for_block_width = 0;
+    image_constraints.pad_for_block_height = 0;
 
     EXPECT_EQ(MAGMA_STATUS_OK, constraints->SetImageFormatConstraints(0, &image_constraints).get());
     EXPECT_EQ(MAGMA_STATUS_OK, collection->SetConstraints(constraints.get()).get());
@@ -314,17 +320,19 @@ class TestPlatformSysmemConnection {
               connection->CreateBufferConstraints(&buffer_constraints, &constraints).get());
 
     // Create a set of basic 512x512 RGBA image constraints.
-    magma_image_format_constraints_t image_constraints{};
+    magma_image_format_constraints2_t image_constraints{};
     image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
     image_constraints.has_format_modifier = false;
     image_constraints.format_modifier = 0;
     image_constraints.width = 512;
     image_constraints.height = 512;
-    image_constraints.layers = 1;
+    image_constraints.plane_count = 1;
     image_constraints.bytes_per_row_divisor = 1;
     image_constraints.min_bytes_per_row = 0;
+    image_constraints.pad_for_block_width = 0;
+    image_constraints.pad_for_block_height = 0;
 
-    magma_image_format_constraints_t nv12_image_constraints = image_constraints;
+    magma_image_format_constraints2_t nv12_image_constraints = image_constraints;
     nv12_image_constraints.image_format = MAGMA_FORMAT_NV12;
 
     EXPECT_EQ(MAGMA_STATUS_OK, constraints->SetImageFormatConstraints(0, &image_constraints).get());
@@ -384,15 +392,17 @@ class TestPlatformSysmemConnection {
     // There are too many and they can't be merged so expected to fail below during SetConstraints.
     for (uint32_t i = 0; i < kTooManySeparateSysmemImageFormatConstraints; i++) {
       // Create a set of basic 512x512 RGBA image constraints.
-      magma_image_format_constraints_t image_constraints{};
+      magma_image_format_constraints2_t image_constraints{};
       image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
       image_constraints.has_format_modifier = true;
       image_constraints.format_modifier = i;
       image_constraints.width = 512;
       image_constraints.height = 512;
-      image_constraints.layers = 1;
+      image_constraints.plane_count = 1;
       image_constraints.bytes_per_row_divisor = 1;
       image_constraints.min_bytes_per_row = 0;
+      image_constraints.pad_for_block_width = 0;
+      image_constraints.pad_for_block_height = 0;
 
       EXPECT_EQ(MAGMA_STATUS_OK,
                 constraints->SetImageFormatConstraints(i, &image_constraints).get());
@@ -421,15 +431,17 @@ class TestPlatformSysmemConnection {
     constexpr uint32_t kImageHeight = 16;
     // There are too many but they can be merged so SetConstraints is expected to succeed below.
     for (uint32_t i = 0; i <= kTooManySeparateSysmemImageFormatConstraints; i++) {
-      magma_image_format_constraints_t image_constraints{};
+      magma_image_format_constraints2_t image_constraints{};
       image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
       image_constraints.has_format_modifier = false;
       image_constraints.format_modifier = 0;
       image_constraints.width = kImageWidth;
       image_constraints.height = kImageHeight;
-      image_constraints.layers = 1;
+      image_constraints.plane_count = 1;
       image_constraints.bytes_per_row_divisor = 1 << (i / 8);
       image_constraints.min_bytes_per_row = 0;
+      image_constraints.pad_for_block_width = 0;
+      image_constraints.pad_for_block_height = 0;
 
       EXPECT_EQ(MAGMA_STATUS_OK,
                 constraints->SetImageFormatConstraints(i, &image_constraints).get());

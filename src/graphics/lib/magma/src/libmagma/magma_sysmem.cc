@@ -172,11 +172,33 @@ magma_status_t magma_sysmem_connection_create_buffer_constraints(
   return MAGMA_STATUS_OK;
 }
 
+magma_status_t magma_buffer_constraints_set_format(
+    magma_sysmem_buffer_constraints_t constraints, uint32_t index,
+    const magma_image_format_constraints2_t* format_constraints) {
+  auto buffer_constraints = reinterpret_cast<magma_sysmem::PlatformBufferConstraints*>(constraints);
+  return buffer_constraints->SetImageFormatConstraints(index, format_constraints).get();
+}
+
+// DEPRECATED
 magma_status_t magma_buffer_constraints_set_format2(
     magma_sysmem_buffer_constraints_t constraints, uint32_t index,
     const magma_image_format_constraints_t* format_constraints) {
   auto buffer_constraints = reinterpret_cast<magma_sysmem::PlatformBufferConstraints*>(constraints);
-  return buffer_constraints->SetImageFormatConstraints(index, format_constraints).get();
+
+  magma_image_format_constraints2_t format_constraints2 = {
+      .image_format = format_constraints->image_format,
+      .has_format_modifier = format_constraints->has_format_modifier,
+      .format_modifier = format_constraints->format_modifier,
+      .width = format_constraints->width,
+      .height = format_constraints->height,
+      .plane_count = format_constraints->layers,
+      .bytes_per_row_divisor = format_constraints->bytes_per_row_divisor,
+      .min_bytes_per_row = format_constraints->min_bytes_per_row,
+      .pad_for_block_width = 0,
+      .pad_for_block_height = 0,
+  };
+
+  return buffer_constraints->SetImageFormatConstraints(index, &format_constraints2).get();
 }
 
 magma_status_t magma_buffer_constraints_set_colorspaces2(

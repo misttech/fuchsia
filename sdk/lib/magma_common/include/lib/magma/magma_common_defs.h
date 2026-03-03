@@ -34,7 +34,7 @@ extern "C" {
 // This version should be incremented whenever the Magma API changes.
 // Note, for changes to magma.h that only advance the Fuchsia API level,
 // this IFTTT can be ignored.
-#define MAGMA_API_VERSION 12
+#define MAGMA_API_VERSION 13
 // LINT.ThenChange(magma_common_defs.h)
 
 // LINT.IfChange

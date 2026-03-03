@@ -36,7 +36,7 @@ class PlatformBufferConstraints {
   virtual ~PlatformBufferConstraints() {}
 
   virtual magma::Status SetImageFormatConstraints(
-      uint32_t index, const magma_image_format_constraints_t* format_constraints) = 0;
+      uint32_t index, const magma_image_format_constraints2_t* format_constraints) = 0;
 
   virtual magma::Status SetColorSpaces(uint32_t index, uint32_t color_space_count,
                                        const uint32_t* color_spaces) = 0;

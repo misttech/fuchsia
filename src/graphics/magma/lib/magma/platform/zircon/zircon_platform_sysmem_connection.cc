@@ -190,9 +190,12 @@ class ZirconPlatformBufferConstraints : public PlatformBufferConstraints {
   }
 
   Status SetImageFormatConstraints(
-      uint32_t index, const magma_image_format_constraints_t* format_constraints) override {
+      uint32_t index, const magma_image_format_constraints2_t* format_constraints) override {
     using fuchsia_sysmem::wire::ColorSpaceType;
     using fuchsia_sysmem::wire::PixelFormatType;
+
+    ZX_ASSERT(format_constraints->pad_for_block_width == 0);
+    ZX_ASSERT(format_constraints->pad_for_block_height == 0);
 
     if (index != raw_image_constraints_.size()) {
       return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Format constraint gaps or changes not allowed");
@@ -258,7 +261,7 @@ class ZirconPlatformBufferConstraints : public PlatformBufferConstraints {
     } else {
       constraints.pixel_format.format_modifier.value = format_constraints->format_modifier;
     }
-    constraints.layers = format_constraints->layers;
+    constraints.layers = format_constraints->plane_count;
     constraints.bytes_per_row_divisor = format_constraints->bytes_per_row_divisor;
     raw_image_constraints_.push_back(constraints);
 

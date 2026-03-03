@@ -36,8 +36,7 @@ typedef struct magma_image_plane {
   uint32_t byte_offset;
 } magma_image_plane_t;
 
-// A basic set of constraints on an image format. Corresponds to
-// `fuchsia.sysmem.ImageFormatConstraints`.
+// DEPRECATED: use magma_image_format_constraints2.
 typedef struct magma_image_format_constraints {
   uint32_t image_format;
   magma_bool_t has_format_modifier;
@@ -48,6 +47,21 @@ typedef struct magma_image_format_constraints {
   uint32_t bytes_per_row_divisor;
   uint32_t min_bytes_per_row;
 } magma_image_format_constraints_t;
+
+// A basic set of constraints on an image format. Corresponds to
+// `fuchsia.sysmem2.ImageFormatConstraints`.
+typedef struct magma_image_format_constraints2 {
+  uint32_t image_format;
+  magma_bool_t has_format_modifier;
+  uint64_t format_modifier;
+  uint32_t width;
+  uint32_t height;
+  uint32_t plane_count;
+  uint32_t bytes_per_row_divisor;
+  uint32_t min_bytes_per_row;
+  uint32_t pad_for_block_width;
+  uint32_t pad_for_block_height;
+} magma_image_format_constraints2_t;
 
 // Signals what struct members are valid on `magma_buffer_format_constraints_t`.
 typedef uint32_t magma_buffer_format_constraint_options_t;
@@ -226,6 +240,20 @@ MAGMA_EXPORT magma_status_t magma_sysmem_connection_create_buffer_constraints(
     magma_sysmem_buffer_constraints_t* constraints_out);
 
 ///
+/// \brief Set information about a format slot on the constraints. The sysmem driver will choose one
+///        format slot to use when creating the image.  May not be called after
+///        `magma_buffer_collection_set_constraints` using these constraints.
+/// \param connection The connection for the constraints.
+/// \param constraints Constraints to modify.
+/// \param index The format slot index to set. A format slot index may only be set once.
+/// \param format_constraints constraints on the image format.
+///
+MAGMA_EXPORT magma_status_t magma_buffer_constraints_set_format(
+    magma_sysmem_buffer_constraints_t constraints, uint32_t index,
+    const magma_image_format_constraints2_t* format_constraints) MAGMA_AVAILABLE_SINCE(NEXT);
+
+///
+/// DEPRECATED: use magma_buffer_constraints_set_format.
 /// \brief Set information about a format slot on the constraints. The sysmem driver will choose one
 ///        format slot to use when creating the image.  May not be called after
 ///        `magma_buffer_collection_set_constraints` using these constraints.

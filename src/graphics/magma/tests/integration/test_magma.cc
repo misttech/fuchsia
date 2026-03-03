@@ -1045,18 +1045,20 @@ class TestConnection {
                                    connection, &buffer_constraints, &constraints));
 
     // Create a set of basic 512x512 RGBA image constraints.
-    magma_image_format_constraints_t image_constraints{};
+    magma_image_format_constraints2_t image_constraints{};
     image_constraints.image_format = MAGMA_FORMAT_R8G8B8A8;
     image_constraints.has_format_modifier = use_format_modifier;
     image_constraints.format_modifier = use_format_modifier ? MAGMA_FORMAT_MODIFIER_LINEAR : 0;
     image_constraints.width = 512;
     image_constraints.height = 512;
-    image_constraints.layers = 1;
+    image_constraints.plane_count = 1;
     image_constraints.bytes_per_row_divisor = 1;
     image_constraints.min_bytes_per_row = 0;
+    image_constraints.pad_for_block_width = 0;
+    image_constraints.pad_for_block_height = 0;
 
     EXPECT_EQ(MAGMA_STATUS_OK,
-              magma_buffer_constraints_set_format2(constraints, 0, &image_constraints));
+              magma_buffer_constraints_set_format(constraints, 0, &image_constraints));
 
     uint32_t color_space_in = MAGMA_COLORSPACE_SRGB;
     EXPECT_EQ(MAGMA_STATUS_OK,

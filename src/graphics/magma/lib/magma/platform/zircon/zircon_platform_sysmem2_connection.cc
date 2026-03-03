@@ -262,7 +262,7 @@ class ZirconPlatformSysmem2BufferConstraints : public PlatformBufferConstraints 
   }
 
   Status SetImageFormatConstraints(
-      uint32_t index, const magma_image_format_constraints_t* format_constraints) override {
+      uint32_t index, const magma_image_format_constraints2_t* format_constraints) override {
     using fuchsia_images2::ColorSpace;
     using fuchsia_images2::PixelFormat;
 
@@ -283,6 +283,13 @@ class ZirconPlatformSysmem2BufferConstraints : public PlatformBufferConstraints 
     if (format_constraints->width > 0 || format_constraints->height > 0) {
       constraints.required_max_size() = {format_constraints->width, format_constraints->height};
     }
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    if (format_constraints->pad_for_block_width > 0 ||
+        format_constraints->pad_for_block_height > 0) {
+      constraints.pad_for_block_size() = {format_constraints->pad_for_block_width,
+                                          format_constraints->pad_for_block_height};
+    }
+#endif
 
     bool is_yuv = false;
     static const magma_format_t yuv_formats[] = {
