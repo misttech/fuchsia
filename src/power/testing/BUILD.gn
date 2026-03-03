@@ -15,6 +15,7 @@ group("tests") {
     "fake-battery:tests",
     "fake-domain-controller:tests",
     "fake-powersensor:tests",
+    "fake-shutdown-shim:tests",
     "system-integration:tests",
     "thermal-test-control:tests",
     "topology-test-daemon:tests",
