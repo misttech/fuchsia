@@ -464,13 +464,6 @@ for f in $(list_optional_features); do
   track-feature-status "${f}" "${_disabled_env_name}" &
 done
 
-if [[ "${command_name}" != "add-internal-tools" ]] && is_googler && fx-build-dir-if-present && [[ -f "${FUCHSIA_BUILD_DIR}/args.gn" ]]; then
-  args_gn_content="$(<"${FUCHSIA_BUILD_DIR}/args.gn")"
-  if [[ "${args_gn_content}" != *"vendor/google/tools/"* ]]; then
-    fx-warn "Missing host_label to internal tools in args.gn. Please run 'fx add-internal-tools'"
-  fi
-fi
-
 export FX_ENTRY_CMD="$command_name"
 
 declare -r cmd_and_args="$*"
