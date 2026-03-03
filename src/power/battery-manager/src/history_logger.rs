@@ -254,6 +254,7 @@ pub struct BatteryInfoRecorders {
     remaining_capacity: RefCell<NumericStateRecorder<u32>>,
     present_current: RefCell<NumericStateRecorder<i32>>,
     average_current: RefCell<NumericStateRecorder<i32>>,
+    time_to_full: RefCell<NumericStateRecorder<u64>>,
     fault_detector: Rc<FaultDetector>,
     crash_reporter: Rc<CrashReporter>,
 }
@@ -274,6 +275,7 @@ impl BatteryInfoRecorders {
         let mut remaining_capacity_opts = PersistenceOptions::new("remaining_capacity".to_string());
         let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
         let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
+        let mut time_to_full_opts = PersistenceOptions::new("time_to_full".to_string());
 
         let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs.clone());
 
@@ -291,6 +293,8 @@ impl BatteryInfoRecorders {
                 present_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             average_current_opts =
                 average_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            time_to_full_opts =
+                time_to_full_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
         }
 
         let raw_level_percent_recorder = Self::create_recorder(
@@ -329,6 +333,12 @@ impl BatteryInfoRecorders {
             MAX_POWER_CONSUMPTION_MEASUREMENTS,
             average_current_opts,
         );
+        let time_to_full_recorder = Self::create_recorder(
+            "time_to_full",
+            units!(Seconds),
+            MAX_POWER_CONSUMPTION_MEASUREMENTS,
+            time_to_full_opts,
+        );
 
         Self {
             raw_level_percent: RefCell::new(raw_level_percent_recorder),
@@ -339,6 +349,7 @@ impl BatteryInfoRecorders {
             remaining_capacity: RefCell::new(remaining_capacity_recorder),
             present_current: RefCell::new(present_current_recorder),
             average_current: RefCell::new(average_current_recorder),
+            time_to_full: RefCell::new(time_to_full_recorder),
             fault_detector,
             crash_reporter,
         }
@@ -375,6 +386,20 @@ impl BatteryInfoRecorders {
                 }
                 *previous_level = Some(val);
                 self.level_percent.borrow_mut().record(val);
+
+                if let Some(fidl_fuchsia_power_battery::TimeRemaining::FullCharge(nanos)) =
+                    info.time_remaining
+                {
+                    match u64::try_from(nanos) {
+                        Ok(nanos_u64) => {
+                            let seconds = std::time::Duration::from_nanos(nanos_u64).as_secs();
+                            self.time_to_full.borrow_mut().record(seconds);
+                        }
+                        Err(_) => {
+                            error!("Received negative time remaining: {}", nanos);
+                        }
+                    }
+                }
             }
         }
     }
