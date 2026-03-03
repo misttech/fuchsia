@@ -28,6 +28,8 @@ use fidl_fuchsia_hardware_power_statecontrol::{
 };
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
+use gcs::client::Client;
+use pbms::{AuthFlowChoice, handle_new_access_token};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{Write, stderr, stdin, stdout};
@@ -35,9 +37,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use structured_ui::{Interface, TextUi};
 use target_holders::moniker;
+use tempfile::TempDir;
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
+use url::Url;
 
 const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
 
@@ -206,6 +210,53 @@ async fn preprocess_flash_cmd(
     i_cmd: &FlashCommand,
 ) -> Result<FlashCommand> {
     let cmd: &mut FlashCommand = &mut i_cmd.clone();
+
+    if cmd.product_bundle.is_some()
+        && cmd.product_bundle.clone().unwrap().starts_with("\"")
+        && cmd.product_bundle.clone().unwrap().ends_with("\"")
+    {
+        let cleaned_product_bundle = cmd
+            .product_bundle
+            .clone()
+            .unwrap()
+            .strip_prefix('"')
+            .unwrap()
+            .strip_suffix('"')
+            .unwrap()
+            .to_string();
+        log::debug!(
+            "Passed product bundle was wrapped in quotes, trimming it to: {}",
+            cleaned_product_bundle
+        );
+        cmd.product_bundle = Some(cleaned_product_bundle);
+    }
+
+    // Download product bundle from gs:// if necessary.
+    if let Some(product_bundle) = &cmd.product_bundle {
+        if product_bundle.starts_with("gs://") {
+            let dir = TempDir::new()?.into_path();
+            let file_name =
+                product_bundle.split('/').next_back().ok_or_else(|| anyhow!("Invalid GS URL"))?;
+            let local_path = dir.join(file_name);
+
+            let client = Client::initial()?;
+            let url = Url::parse(product_bundle).context("parsing gs url")?;
+            let bucket = url.host_str().context("getting bucket from gs url")?;
+            let object = &url.path()[1..]; // Strip leading slash
+
+            log::debug!("Downloading {}...", product_bundle);
+            let access_token =
+                handle_new_access_token(&AuthFlowChoice::Pkce, &structured_ui::MockUi::new())
+                    .await
+                    .context("Getting new access token.")?;
+            client.set_access_token(access_token).await;
+            client.fetch_without_progress(bucket, object, &local_path).await?;
+            log::debug!("Downloaded to {}", local_path.display());
+
+            cmd.product_bundle = Some(local_path.to_string_lossy().to_string());
+        }
+    }
+
     match cmd.authorized_keys.as_ref() {
         Some(ssh) => {
             let ssh_file = match std::fs::canonicalize(ssh) {
@@ -278,25 +329,6 @@ async fn preprocess_flash_cmd(
         cmd.product_bundle = Some(product_path);
     }
 
-    if cmd.product_bundle.is_some()
-        && cmd.product_bundle.clone().unwrap().starts_with("\"")
-        && cmd.product_bundle.clone().unwrap().ends_with("\"")
-    {
-        let cleaned_product_bundle = cmd
-            .product_bundle
-            .clone()
-            .unwrap()
-            .strip_prefix('"')
-            .unwrap()
-            .strip_suffix('"')
-            .unwrap()
-            .to_string();
-        log::debug!(
-            "Passed product bundle was wrapped in quotes, trimming it to: {}",
-            cleaned_product_bundle
-        );
-        cmd.product_bundle = Some(cleaned_product_bundle);
-    }
     Ok(cmd.to_owned())
 }
 
