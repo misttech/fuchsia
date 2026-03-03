@@ -28,7 +28,7 @@ use fidl_fuchsia_hardware_power_statecontrol::{
 };
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
-use gcs::client::Client;
+use gcs::client::{Client, ProgressResponse};
 use pbms::{AuthFlowChoice, handle_new_access_token};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -250,7 +250,26 @@ async fn preprocess_flash_cmd(
                     .await
                     .context("Getting new access token.")?;
             client.set_access_token(access_token).await;
-            client.fetch_without_progress(bucket, object, &local_path).await?;
+            let mut input = stdin();
+            let mut output = stdout();
+            let mut err_out = stderr();
+            let ui = TextUi::new(&mut input, &mut output, &mut err_out);
+            client
+                .fetch_with_progress(bucket, object, &local_path, &|progress| {
+                    let mut p = structured_ui::Progress::builder();
+                    p.title("Downloading product bundle from GCS");
+                    p.entry(progress.name, progress.at, progress.of, progress.units);
+                    ui.present(&structured_ui::Presentation::Progress(p))?;
+                    Ok(ProgressResponse::Continue)
+                })
+                .await?;
+
+            let mut p = structured_ui::Progress::builder();
+            p.title("Downloading product bundle from GCS");
+            let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
+            p.entry(object, size, size, "bytes");
+            ui.present(&structured_ui::Presentation::Progress(p))?;
+
             log::debug!("Downloaded to {}", local_path.display());
 
             cmd.product_bundle = Some(local_path.to_string_lossy().to_string());
