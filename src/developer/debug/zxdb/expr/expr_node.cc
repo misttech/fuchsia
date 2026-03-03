@@ -47,17 +47,6 @@ bool BaseTypeCanBeArrayIndex(const BaseType* type) {
          bt == BaseType::kBaseTypeUnsignedChar;
 }
 
-void DoResolveConcreteMember(const fxl::RefPtr<EvalContext>& context, const ExprValue& value,
-                             const ParsedIdentifier& member, EvalCallback cb) {
-  if (PrettyType* pretty = context->GetPrettyTypeManager().GetForType(value.type())) {
-    if (auto getter = pretty->GetMember(member.GetFullName())) {
-      return getter(context, value, std::move(cb));
-    }
-  }
-
-  return ResolveMember(context, value, member, std::move(cb));
-}
-
 // Prints the expression, or if null, ";".
 void PrintExprOrSemicolon(std::ostream& out, int indent, const fxl::RefPtr<ExprNode>& expr) {
   if (expr) {
@@ -443,8 +432,8 @@ void FunctionCallExprNode::EmitBytecode(VmStream& stream) const {
           params_and_object.pop_back();
 
           if (params_and_object.size() != 0) {
-            // TODO(https://fxbug.dev/42132103): Member functions require a |this| pointer in C++ and a
-            // (typically) |self| reference in Rust.
+            // TODO(https://fxbug.dev/42132103): Member functions require a |this| pointer in C++
+            // and a (typically) |self| reference in Rust.
 
             // Currently we do not support any parameters. This can be handled in the future if
             // needed.
@@ -720,22 +709,53 @@ void MemberAccessExprNode::EmitBytecode(VmStream& stream) const {
   stream.push_back(VmOp::MakeAsyncCallback1(
       [by_pointer, member = member_](const fxl::RefPtr<EvalContext>& context, ExprValue base_value,
                                      EvalCallback cb) mutable {
-        // Rust references can be accessed with '.'
         if (!by_pointer) {
           fxl::RefPtr<Type> concrete_base = context->GetConcreteType(base_value.type());
 
-          if (!concrete_base || concrete_base->tag() != DwarfTag::kPointerType ||
-              concrete_base->GetLanguage() != DwarfLang::kRust ||
-              concrete_base->GetAssignedName().substr(0, 1) != "&") {
-            return DoResolveConcreteMember(context, base_value, member, std::move(cb));
+          if (concrete_base && concrete_base->GetLanguage() == DwarfLang::kRust &&
+              concrete_base->tag() == DwarfTag::kPointerType &&
+              concrete_base->GetAssignedName().substr(0, 1) == "&") {
+            // This is a Rust reference, which can be dereferenced with '.'
+            by_pointer = true;
           }
         }
 
         PrettyType::EvalFunction getter = [member](const fxl::RefPtr<EvalContext>& context,
                                                    const ExprValue& value, EvalCallback cb) {
-          DoResolveConcreteMember(context, value, member, std::move(cb));
+          if (PrettyType* pretty = context->GetPrettyTypeManager().GetForType(value.type())) {
+            if (auto getter = pretty->GetMember(member.GetFullName())) {
+              return getter(context, value, std::move(cb));
+            }
+          }
+
+          if (const Collection* coll = value.type()->As<Collection>()) {
+            if (coll->GetSpecialType() == Collection::SpecialType::kRustEnum) {
+              ErrOrValue variant_result = ResolveSingleVariantValue(context, value);
+              if (variant_result.has_error()) {
+                return cb(std::move(variant_result));
+              }
+              ExprValue variant_value = variant_result.take_value();
+
+              // Check for pretty printing one more time, in particular for the case of tuples:
+              // GetMember on PrettyRustTuple is what knows how to handle numbered fields.
+              if (PrettyType* pretty =
+                      context->GetPrettyTypeManager().GetForType(variant_value.type())) {
+                if (auto getter = pretty->GetMember(member.GetFullName())) {
+                  return getter(context, variant_value, std::move(cb));
+                }
+              }
+
+              return ResolveMember(context, variant_value, member, std::move(cb));
+            }
+          }
+
+          return ResolveMember(context, value, member, std::move(cb));
         };
         PrettyType::EvalFunction derefer = ResolvePointer;
+
+        if (!by_pointer) {
+          return getter(context, base_value, std::move(cb));
+        }
 
         if (PrettyType* pretty = context->GetPrettyTypeManager().GetForType(base_value.type())) {
           derefer = pretty->GetDereferencer();

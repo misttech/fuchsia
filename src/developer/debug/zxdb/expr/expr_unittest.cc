@@ -522,4 +522,28 @@ TEST_F(ExprTest, VoidPointerArithmetic) {
   EXPECT_TRUE(called);
 }
 
+TEST_F(ExprTest, RustEnumMemberAccess) {
+  auto eval_context = fxl::MakeRefCounted<MockEvalContext>();
+  eval_context->set_language(ExprLanguage::kRust);
+
+  auto enum_type = MakeTestRustEnum();
+
+  // Point{x:12, y:13}: two 32-bit values following the 32-bit discriminant of 1.
+  ExprValue point_value(enum_type, {1, 0, 0, 0, 12, 0, 0, 0, 13, 0, 0, 0});
+  eval_context->AddVariable("e", point_value);
+  auto result = Eval("e.x", eval_context);
+  ASSERT_TRUE(result.ok()) << result.err().msg();
+  int64_t value = 0;
+  ASSERT_TRUE(result.value().PromoteTo64(&value).ok());
+  EXPECT_EQ(value, 12);
+
+  // Scalar(123): a single 32-bit value following the 32-bit discriminant of 0.
+  ExprValue scalar_value(enum_type, {0, 0, 0, 0, 123, 0, 0, 0, 0, 0, 0, 0});
+  eval_context->AddVariable("e", scalar_value);
+  result = Eval("e.0", eval_context);
+  ASSERT_TRUE(result.ok()) << result.err().msg();
+  ASSERT_TRUE(result.value().PromoteTo64(&value).ok());
+  EXPECT_EQ(value, 123);
+}
+
 }  // namespace zxdb
