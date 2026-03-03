@@ -11,6 +11,7 @@
 
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 
 namespace forensics {
@@ -38,7 +39,7 @@ fuchsia::feedback::LastReboot GetLastRebootGraceful(
 }
 
 fuchsia::feedback::LastReboot GetLastRebootUnGraceful(
-    const feedback::ZirconRebootReason reboot_reason,
+    const feedback::ZirconShutdownReason reboot_reason,
     const std::optional<zx::duration> uptime = std::nullopt,
     const std::optional<zx::duration> runtime = std::nullopt) {
   auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
@@ -66,7 +67,7 @@ TEST(LastRebootInfoProviderTest, Succeed_Graceful) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotGraceful) {
-  const auto last_reboot = GetLastRebootUnGraceful(feedback::ZirconRebootReason::kKernelPanic);
+  const auto last_reboot = GetLastRebootUnGraceful(feedback::ZirconShutdownReason::kKernelPanic);
 
   ASSERT_TRUE(last_reboot.has_graceful());
   EXPECT_FALSE(last_reboot.graceful());
@@ -131,7 +132,7 @@ TEST(LastRebootInfoProviderTest, Succeed_DoesNotHaveRuntime) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotParseable) {
-  const auto last_reboot = GetLastRebootUnGraceful(feedback::ZirconRebootReason::kNotParseable);
+  const auto last_reboot = GetLastRebootUnGraceful(feedback::ZirconShutdownReason::kNotParseable);
 
   EXPECT_FALSE(last_reboot.has_graceful());
   EXPECT_FALSE(last_reboot.has_reason());

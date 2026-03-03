@@ -17,6 +17,7 @@ source_set("reboot_log") {
     "graceful_shutdown_info.h",
     "reboot_log.cc",
     "reboot_log.h",
+    "zircon_shutdown_reason.h",
   ]
 
   public_deps = [

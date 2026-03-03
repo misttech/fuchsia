@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
@@ -18,7 +19,7 @@ namespace {
 
 TEST(FinalZirconShutdownInfoTest, NotParseable) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kNotParseable,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kNotParseable,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -35,7 +36,7 @@ TEST(FinalZirconShutdownInfoTest, NotParseable) {
 TEST(FinalZirconShutdownInfoTest, Cold) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
       std::make_unique<FinalZirconShutdownInfo>(
-          ZirconRebootReason::kCold, std::make_optional(GracefulShutdownAction::kPoweroff));
+          ZirconShutdownReason::kCold, std::make_optional(GracefulShutdownAction::kPoweroff));
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kCold);
@@ -45,7 +46,7 @@ TEST(FinalZirconShutdownInfoTest, Cold) {
 
 TEST(FinalZirconShutdownInfoTest, Spontaneous) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kUnknown,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -63,7 +64,7 @@ TEST(FinalZirconShutdownInfoTest, Spontaneous) {
 
 TEST(FinalZirconShutdownInfoTest, BriefPowerLoss) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kUnknown,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -82,7 +83,7 @@ TEST(FinalZirconShutdownInfoTest, BriefPowerLoss) {
 
 TEST(FinalZirconShutdownInfoTest, HardReset) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kUnknown,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -100,7 +101,7 @@ TEST(FinalZirconShutdownInfoTest, HardReset) {
 
 TEST(FinalZirconShutdownInfoTest, KernelPanic) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kKernelPanic,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kKernelPanic,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -118,7 +119,7 @@ TEST(FinalZirconShutdownInfoTest, KernelPanic) {
 
 TEST(FinalZirconShutdownInfoTest, OOM) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kOOM,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kOOM,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -136,7 +137,7 @@ TEST(FinalZirconShutdownInfoTest, OOM) {
 
 TEST(FinalZirconShutdownInfoTest, HardwareWatchdogTimeout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kHwWatchdog,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kHwWatchdog,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -154,7 +155,7 @@ TEST(FinalZirconShutdownInfoTest, HardwareWatchdogTimeout) {
 
 TEST(FinalZirconShutdownInfoTest, SoftwareWatchdogTimeout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kSwWatchdog,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kSwWatchdog,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -172,7 +173,7 @@ TEST(FinalZirconShutdownInfoTest, SoftwareWatchdogTimeout) {
 
 TEST(FinalZirconShutdownInfoTest, Brownout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kBrownout,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kBrownout,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -188,7 +189,7 @@ TEST(FinalZirconShutdownInfoTest, Brownout) {
 
 TEST(FinalZirconShutdownInfoTest, RootJobTermination) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconRebootReason::kRootJobTermination,
+      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kRootJobTermination,
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
@@ -206,13 +207,13 @@ TEST(FinalZirconShutdownInfoTest, RootJobTermination) {
 }
 
 TEST(FinalZirconShutdownInfoDeathTest, NoCrash) {
-  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconRebootReason::kNoCrash,
+  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconShutdownReason::kNoCrash,
                                         /*graceful_shutdown_action=*/std::nullopt)),
                "");
 }
 
 TEST(FinalZirconShutdownInfoDeathTest, NotSet) {
-  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconRebootReason::kNotSet,
+  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconShutdownReason::kNotSet,
                                         /*graceful_shutdown_action=*/std::nullopt)),
                "");
 }

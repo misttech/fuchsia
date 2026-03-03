@@ -8,13 +8,14 @@
 
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 
 namespace forensics::feedback {
 namespace {
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationSpontaneous) {
   EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
                                                          /*graceful_shutdown_action=*/std::nullopt),
                                  SpontaneousRebootReason::kSpontaneous),
       "spontaneous");
@@ -22,7 +23,7 @@ TEST(AnnotationsTest, LastRebootReasonAnnotationSpontaneous) {
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationBriefPowerLoss) {
   EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
                                                          /*graceful_shutdown_action=*/std::nullopt),
                                  SpontaneousRebootReason::kBriefPowerLoss),
       "brief loss of power");
@@ -30,7 +31,7 @@ TEST(AnnotationsTest, LastRebootReasonAnnotationBriefPowerLoss) {
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationHardReset) {
   EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
                                                          /*graceful_shutdown_action=*/std::nullopt),
                                  SpontaneousRebootReason::kHardReset),
       "hard reset");

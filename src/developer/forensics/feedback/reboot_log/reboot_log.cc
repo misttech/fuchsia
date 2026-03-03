@@ -11,6 +11,7 @@
 
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/join_strings.h"
@@ -36,48 +37,48 @@ zx::duration ExtractTime(const std::string_view line) {
   return zx::msec(std::stoll(line_copy));
 }
 
-ZirconRebootReason ExtractZirconRebootReason(const std::string_view line) {
+ZirconShutdownReason ExtractZirconShutdownReason(const std::string_view line) {
   if (line == "ZIRCON REBOOT REASON (NO CRASH)") {
-    return ZirconRebootReason::kNoCrash;
+    return ZirconShutdownReason::kNoCrash;
   } else if (line == "ZIRCON REBOOT REASON (KERNEL PANIC)") {
-    return ZirconRebootReason::kKernelPanic;
+    return ZirconShutdownReason::kKernelPanic;
   } else if (line == "ZIRCON REBOOT REASON (OOM)") {
-    return ZirconRebootReason::kOOM;
+    return ZirconShutdownReason::kOOM;
   } else if (line == "ZIRCON REBOOT REASON (SW WATCHDOG)") {
-    return ZirconRebootReason::kSwWatchdog;
+    return ZirconShutdownReason::kSwWatchdog;
   } else if (line == "ZIRCON REBOOT REASON (HW WATCHDOG)") {
-    return ZirconRebootReason::kHwWatchdog;
+    return ZirconShutdownReason::kHwWatchdog;
   } else if (line == "ZIRCON REBOOT REASON (BROWNOUT)") {
-    return ZirconRebootReason::kBrownout;
+    return ZirconShutdownReason::kBrownout;
   } else if (line == "ZIRCON REBOOT REASON (UNKNOWN)") {
-    return ZirconRebootReason::kUnknown;
+    return ZirconShutdownReason::kUnknown;
   } else if (line == "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)") {
-    return ZirconRebootReason::kRootJobTermination;
+    return ZirconShutdownReason::kRootJobTermination;
   }
 
   FX_LOGS(ERROR) << "Failed to extract a reboot reason from Zircon reboot log";
-  return ZirconRebootReason::kNotParseable;
+  return ZirconShutdownReason::kNotParseable;
 }
 
-ZirconRebootReason ExtractZirconRebootInfo(const std::string& path,
-                                           std::optional<std::string>* content,
-                                           std::optional<zx::duration>* uptime,
-                                           std::optional<zx::duration>* runtime,
-                                           std::optional<std::string>* crashed_process) {
+ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
+                                             std::optional<std::string>* content,
+                                             std::optional<zx::duration>* uptime,
+                                             std::optional<zx::duration>* runtime,
+                                             std::optional<std::string>* crashed_process) {
   if (!files::IsFile(path)) {
     *content = "ZIRCON REBOOT REASON (COLD)";
-    return ZirconRebootReason::kCold;
+    return ZirconShutdownReason::kCold;
   }
 
   std::string file_content;
   if (!files::ReadFileToString(path, &file_content)) {
     FX_LOGS(ERROR) << "Failed to read Zircon reboot log from " << path;
-    return ZirconRebootReason::kNotParseable;
+    return ZirconShutdownReason::kNotParseable;
   }
 
   if (file_content.empty()) {
     FX_LOGS(ERROR) << "Found empty Zircon reboot log at " << path;
-    return ZirconRebootReason::kNotParseable;
+    return ZirconShutdownReason::kNotParseable;
   }
 
   *content = file_content;
@@ -89,7 +90,7 @@ ZirconRebootReason ExtractZirconRebootInfo(const std::string& path,
 
   if (lines.size() == 0) {
     FX_LOGS(ERROR) << "Zircon reboot log has no content";
-    return ZirconRebootReason::kNotSet;
+    return ZirconShutdownReason::kNotSet;
   }
 
   // We expect the format to be:
@@ -100,7 +101,7 @@ ZirconRebootReason ExtractZirconRebootInfo(const std::string& path,
   // <SOME UPTIME>
   // RUNTIME (ms)
   // <SOME RUNTIME>
-  const auto reason = ExtractZirconRebootReason(lines[0]);
+  const auto reason = ExtractZirconShutdownReason(lines[0]);
 
   if (lines.size() < 3) {
     FX_LOGS(ERROR) << "Zircon reboot log is missing uptime information";
@@ -235,20 +236,20 @@ std::optional<GracefulShutdownInfo> ExtractGracefulShutdownInfo(
 }
 
 std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
-    const ZirconRebootReason zircon_reason,
+    const ZirconShutdownReason zircon_reason,
     const std::optional<GracefulShutdownInfo>& graceful_info, const bool not_a_fdr) {
   switch (zircon_reason) {
-    case ZirconRebootReason::kKernelPanic:
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
-    case ZirconRebootReason::kRootJobTermination:
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kKernelPanic:
+    case ZirconShutdownReason::kOOM:
+    case ZirconShutdownReason::kHwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
+    case ZirconShutdownReason::kBrownout:
+    case ZirconShutdownReason::kUnknown:
+    case ZirconShutdownReason::kRootJobTermination:
+    case ZirconShutdownReason::kNotParseable:
       return std::make_unique<FinalZirconShutdownInfo>(zircon_reason,
                                                        /*graceful_shutdown_action=*/std::nullopt);
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
       // reasons more informative than just "cold."
       if (graceful_info.has_value() && graceful_info->action == GracefulShutdownAction::kPoweroff) {
@@ -258,7 +259,7 @@ std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
       return std::make_unique<FinalZirconShutdownInfo>(
           zircon_reason,
           graceful_info.has_value() ? std::make_optional(graceful_info->action) : std::nullopt);
-    case ZirconRebootReason::kNoCrash: {
+    case ZirconShutdownReason::kNoCrash: {
       if (graceful_info.has_value()) {
         return std::make_unique<FinalGracefulShutdownInfo>(graceful_info->action,
                                                            graceful_info->reasons, not_a_fdr);
@@ -266,7 +267,7 @@ std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
       return std::make_unique<FinalGracefulShutdownInfo>(
           std::nullopt, std::vector<GracefulShutdownReason>(), not_a_fdr);
     }
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "|zircon_reason| must be set";
       return nullptr;
   }

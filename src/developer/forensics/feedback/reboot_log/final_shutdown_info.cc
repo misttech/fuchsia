@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
@@ -29,11 +30,11 @@ std::string GetSpontaneousRebootCrashSignature(
 }  // namespace
 
 FinalZirconShutdownInfo::FinalZirconShutdownInfo(
-    const ZirconRebootReason zircon_reason,
+    const ZirconShutdownReason zircon_reason,
     std::optional<GracefulShutdownAction> graceful_shutdown_action)
     : zircon_reason_(zircon_reason), graceful_shutdown_action_(graceful_shutdown_action) {
-  FX_CHECK(zircon_reason_ != ZirconRebootReason::kNoCrash);
-  FX_CHECK(zircon_reason_ != ZirconRebootReason::kNotSet);
+  FX_CHECK(zircon_reason_ != ZirconShutdownReason::kNoCrash);
+  FX_CHECK(zircon_reason_ != ZirconShutdownReason::kNotSet);
 }
 
 FinalGracefulShutdownInfo::FinalGracefulShutdownInfo(
@@ -43,7 +44,7 @@ FinalGracefulShutdownInfo::FinalGracefulShutdownInfo(
   final_reason_ = ConsolidateGracefulShutdownReasons(reasons);
 }
 
-bool FinalZirconShutdownInfo::IsOom() const { return zircon_reason_ == ZirconRebootReason::kOOM; }
+bool FinalZirconShutdownInfo::IsOom() const { return zircon_reason_ == ZirconShutdownReason::kOOM; }
 
 bool FinalGracefulShutdownInfo::IsOom() const {
   return final_reason_ == FinalGracefulShutdownReason::kOutOfMemory;
@@ -51,19 +52,19 @@ bool FinalGracefulShutdownInfo::IsOom() const {
 
 bool FinalZirconShutdownInfo::IsCrash() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kKernelPanic:
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
-    case ZirconRebootReason::kRootJobTermination:
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kKernelPanic:
+    case ZirconShutdownReason::kOOM:
+    case ZirconShutdownReason::kHwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
+    case ZirconShutdownReason::kBrownout:
+    case ZirconShutdownReason::kUnknown:
+    case ZirconShutdownReason::kRootJobTermination:
+    case ZirconShutdownReason::kNotParseable:
       return true;
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       return false;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return false;
@@ -98,19 +99,19 @@ bool FinalGracefulShutdownInfo::IsCrash() const {
 
 std::optional<bool> FinalZirconShutdownInfo::OptionallyGraceful() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kCold:
-    case ZirconRebootReason::kKernelPanic:
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kCold:
+    case ZirconShutdownReason::kKernelPanic:
+    case ZirconShutdownReason::kOOM:
+    case ZirconShutdownReason::kHwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
+    case ZirconShutdownReason::kBrownout:
+    case ZirconShutdownReason::kUnknown:
+    case ZirconShutdownReason::kRootJobTermination:
       return false;
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return std::nullopt;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return std::nullopt;
@@ -145,19 +146,19 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyGraceful() const {
 
 std::optional<bool> FinalZirconShutdownInfo::OptionallyPlanned() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kCold:
-    case ZirconRebootReason::kKernelPanic:
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kCold:
+    case ZirconShutdownReason::kKernelPanic:
+    case ZirconShutdownReason::kOOM:
+    case ZirconShutdownReason::kHwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
+    case ZirconShutdownReason::kBrownout:
+    case ZirconShutdownReason::kUnknown:
+    case ZirconShutdownReason::kRootJobTermination:
       return false;
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return std::nullopt;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return std::nullopt;
@@ -192,28 +193,28 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyPlanned() const {
 
 std::string FinalZirconShutdownInfo::ToRebootReasonString() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       return "COLD";
-    case ZirconRebootReason::kKernelPanic:
+    case ZirconShutdownReason::kKernelPanic:
       return "KERNEL PANIC";
-    case ZirconRebootReason::kOOM:
+    case ZirconShutdownReason::kOOM:
       return "OOM";
-    case ZirconRebootReason::kHwWatchdog:
+    case ZirconShutdownReason::kHwWatchdog:
       return "HARDWARE WATCHDOG TIMEOUT";
-    case ZirconRebootReason::kSwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
       return "SOFTWARE WATCHDOG TIMEOUT";
-    case ZirconRebootReason::kBrownout:
+    case ZirconShutdownReason::kBrownout:
       return "BROWNOUT";
-    case ZirconRebootReason::kUnknown:
+    case ZirconShutdownReason::kUnknown:
       return "SPONTANEOUS";
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kRootJobTermination:
       return "ROOT JOB TERMINATION";
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return "NOT PARSEABLE";
-    case ZirconRebootReason::kNoCrash:
+    case ZirconShutdownReason::kNoCrash:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with kNoCrash";
       return "FATAL ERROR";
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with kNotSet";
       return "FATAL ERROR";
   }
@@ -264,26 +265,26 @@ std::string FinalGracefulShutdownInfo::ToRebootReasonString() const {
 
 std::optional<fuchsia::feedback::RebootReason> FinalZirconShutdownInfo::ToFidlRebootReason() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       return fuchsia::feedback::RebootReason::COLD;
-    case ZirconRebootReason::kKernelPanic:
+    case ZirconShutdownReason::kKernelPanic:
       return fuchsia::feedback::RebootReason::KERNEL_PANIC;
-    case ZirconRebootReason::kOOM:
+    case ZirconShutdownReason::kOOM:
       return fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY;
-    case ZirconRebootReason::kHwWatchdog:
+    case ZirconShutdownReason::kHwWatchdog:
       return fuchsia::feedback::RebootReason::HARDWARE_WATCHDOG_TIMEOUT;
-    case ZirconRebootReason::kSwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
       return fuchsia::feedback::RebootReason::SOFTWARE_WATCHDOG_TIMEOUT;
-    case ZirconRebootReason::kBrownout:
+    case ZirconShutdownReason::kBrownout:
       return fuchsia::feedback::RebootReason::BROWNOUT;
-    case ZirconRebootReason::kUnknown:
+    case ZirconShutdownReason::kUnknown:
       return fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS;
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kRootJobTermination:
       return fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION;
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return std::nullopt;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return std::nullopt;
@@ -335,26 +336,26 @@ std::optional<fuchsia::feedback::RebootReason> FinalGracefulShutdownInfo::ToFidl
 
 cobalt::LastRebootReason FinalZirconShutdownInfo::ToCobaltLastRebootReason() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       return cobalt::LastRebootReason::kCold;
-    case ZirconRebootReason::kKernelPanic:
+    case ZirconShutdownReason::kKernelPanic:
       return cobalt::LastRebootReason::kKernelPanic;
-    case ZirconRebootReason::kOOM:
+    case ZirconShutdownReason::kOOM:
       return cobalt::LastRebootReason::kSystemOutOfMemory;
-    case ZirconRebootReason::kHwWatchdog:
+    case ZirconShutdownReason::kHwWatchdog:
       return cobalt::LastRebootReason::kHardwareWatchdogTimeout;
-    case ZirconRebootReason::kSwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
       return cobalt::LastRebootReason::kSoftwareWatchdogTimeout;
-    case ZirconRebootReason::kBrownout:
+    case ZirconShutdownReason::kBrownout:
       return cobalt::LastRebootReason::kBrownout;
-    case ZirconRebootReason::kUnknown:
+    case ZirconShutdownReason::kUnknown:
       return cobalt::LastRebootReason::kBriefPowerLoss;
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kRootJobTermination:
       return cobalt::LastRebootReason::kRootJobTermination;
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return cobalt::LastRebootReason::kUnknown;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return cobalt::LastRebootReason::kUnknown;
@@ -406,23 +407,23 @@ cobalt::LastRebootReason FinalGracefulShutdownInfo::ToCobaltLastRebootReason() c
 
 std::string FinalZirconShutdownInfo::ToCrashProgramName() const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return "reboot-log";
-    case ZirconRebootReason::kKernelPanic:
+    case ZirconShutdownReason::kKernelPanic:
       return "kernel";
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
+    case ZirconShutdownReason::kHwWatchdog:
+    case ZirconShutdownReason::kBrownout:
+    case ZirconShutdownReason::kUnknown:
       return "device";
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kOOM:
+    case ZirconShutdownReason::kSwWatchdog:
+    case ZirconShutdownReason::kRootJobTermination:
       return "system";
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       FX_LOGS(FATAL) << "Not expecting a program name request for cold boot";
       return "FATAL ERROR";
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return "FATAL ERROR";
@@ -462,29 +463,29 @@ std::string FinalZirconShutdownInfo::ToCrashSignature(
     const SpontaneousRebootReason spontaneous_reboot_reason,
     const std::optional<std::string>& critical_process) const {
   switch (zircon_reason_) {
-    case ZirconRebootReason::kNotParseable:
+    case ZirconShutdownReason::kNotParseable:
       return "fuchsia-reboot-log-not-parseable";
-    case ZirconRebootReason::kUnknown:
+    case ZirconShutdownReason::kUnknown:
       return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason);
-    case ZirconRebootReason::kKernelPanic:
+    case ZirconShutdownReason::kKernelPanic:
       return "fuchsia-kernel-panic";
-    case ZirconRebootReason::kOOM:
+    case ZirconShutdownReason::kOOM:
       return "fuchsia-oom";
-    case ZirconRebootReason::kHwWatchdog:
+    case ZirconShutdownReason::kHwWatchdog:
       return "fuchsia-hw-watchdog-timeout";
-    case ZirconRebootReason::kSwWatchdog:
+    case ZirconShutdownReason::kSwWatchdog:
       return "fuchsia-sw-watchdog-timeout";
-    case ZirconRebootReason::kBrownout:
+    case ZirconShutdownReason::kBrownout:
       return "fuchsia-brownout";
-    case ZirconRebootReason::kRootJobTermination:
+    case ZirconShutdownReason::kRootJobTermination:
       return (!critical_process.has_value())
                  ? "fuchsia-root-job-termination"
                  : std::string("fuchsia-reboot-").append(*critical_process).append("-terminated");
-    case ZirconRebootReason::kCold:
+    case ZirconShutdownReason::kCold:
       FX_LOGS(FATAL) << "Not expecting a crash for reason: kCold";
       return "FATAL ERROR";
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
+    case ZirconShutdownReason::kNoCrash:
+    case ZirconShutdownReason::kNotSet:
       FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
                      << ToRebootReasonString();
       return "FATAL ERROR";

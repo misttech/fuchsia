@@ -9,6 +9,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/fxl/strings/substitute.h"
 #include "src/lib/timekeeper/async_test_clock.h"
@@ -41,7 +42,7 @@ class MainServiceTest : public UnitTestFixture {
                 LastReboot::Options{
                     .is_first_instance = kIsFirstInstance,
                     .reboot_log = RebootLog(std::make_unique<FinalZirconShutdownInfo>(
-                                                ZirconRebootReason::kCold,
+                                                ZirconShutdownReason::kCold,
                                                 /*graceful_shutdown_action=*/std::nullopt),
                                             "reboot log",
                                             /*dlog=*/std::nullopt,

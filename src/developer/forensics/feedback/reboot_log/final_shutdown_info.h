@@ -12,6 +12,7 @@
 
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
+#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
@@ -53,30 +54,16 @@ class FinalShutdownInfo {
 
   // Creates a crash signature for the underlying shutdown reason and action, if applicable.
   //
-  // Note: |critical_process| is only supported for |ZirconRebootReason::kRootJobTermination|.
+  // Note: |critical_process| is only supported for |ZirconShutdownReason::kRootJobTermination|.
   virtual std::string ToCrashSignature(
       SpontaneousRebootReason spontaneous_reboot_reason,
       const std::optional<std::string>& critical_process) const = 0;
 };
 
-enum class ZirconRebootReason : std::uint8_t {
-  kNotSet,
-  kCold,
-  kNoCrash,
-  kKernelPanic,
-  kOOM,
-  kHwWatchdog,
-  kSwWatchdog,
-  kBrownout,
-  kUnknown,
-  kRootJobTermination,
-  kNotParseable,
-};
-
 class FinalZirconShutdownInfo : public FinalShutdownInfo {
  public:
   // |zircon_reason| cannot be kNotSet nor kNoCrash.
-  explicit FinalZirconShutdownInfo(ZirconRebootReason zircon_reason,
+  explicit FinalZirconShutdownInfo(ZirconShutdownReason zircon_reason,
                                    std::optional<GracefulShutdownAction> graceful_shutdown_action);
 
   bool IsOom() const override;
@@ -104,7 +91,7 @@ class FinalZirconShutdownInfo : public FinalShutdownInfo {
                                const std::optional<std::string>& critical_process) const override;
 
  private:
-  ZirconRebootReason zircon_reason_;
+  ZirconShutdownReason zircon_reason_;
   std::optional<GracefulShutdownAction> graceful_shutdown_action_;
 };
 
