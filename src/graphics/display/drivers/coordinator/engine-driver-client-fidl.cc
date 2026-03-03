@@ -82,10 +82,10 @@ void EngineDriverClientFidl::ApplyConfiguration(const DriverDisplayConfig& drive
   fuchsia_hardware_display_engine::wire::DisplayConfig fidl_config =
       ToFidlDisplayConfig(driver_display_config, layers, arena);
 
-  fdf::WireUnownedResult<::fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
+  fdf::WireUnownedResult<::fuchsia_hardware_display_engine::Engine::SubmitConfiguration>
       fidl_transport_result =
-          fidl_engine_.buffer(arena)->ApplyConfiguration(fidl_config, config_stamp.ToFidl());
-  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling ApplyConfiguration: %s",
+          fidl_engine_.buffer(arena)->SubmitConfiguration(fidl_config, config_stamp.ToFidl());
+  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SubmitConfiguration: %s",
                 fidl_transport_result.FormatDescription().c_str());
 }
 

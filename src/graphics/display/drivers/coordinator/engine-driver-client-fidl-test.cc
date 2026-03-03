@@ -383,10 +383,10 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
   };
   constexpr display::DriverConfigStamp kConfigStamp(42);
 
-  mock_.ExpectApplyConfiguration(
-      [&](fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
+  mock_.ExpectSubmitConfiguration(
+      [&](fuchsia_hardware_display_engine::wire::EngineSubmitConfigurationRequest* request,
           fdf::Arena& arena,
-          testing::MockEngineFidl::ApplyConfigurationCompleter::Sync& completer) {
+          testing::MockEngineFidl::SubmitConfigurationCompleter::Sync& completer) {
         EXPECT_EQ(display::DisplayId(request->display_config.display_id),
                   kDisplayConfig.display_id);
 

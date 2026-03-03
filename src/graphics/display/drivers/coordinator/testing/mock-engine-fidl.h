@@ -47,9 +47,9 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   using CheckConfigurationChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineCheckConfigurationRequest* request,
       fdf::Arena& arena, CheckConfigurationCompleter::Sync& completer)>;
-  using ApplyConfigurationChecker = fit::function<void(
-      fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
-      fdf::Arena& arena, ApplyConfigurationCompleter::Sync& completer)>;
+  using SubmitConfigurationChecker = fit::function<void(
+      fuchsia_hardware_display_engine::wire::EngineSubmitConfigurationRequest* request,
+      fdf::Arena& arena, SubmitConfigurationCompleter::Sync& completer)>;
   using SetBufferCollectionConstraintsChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineSetBufferCollectionConstraintsRequest* request,
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer)>;
@@ -80,7 +80,7 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void ExpectImportImageForCapture(ImportImageForCaptureChecker checker);
   void ExpectReleaseImage(ReleaseImageChecker checker);
   void ExpectCheckConfiguration(CheckConfigurationChecker checker);
-  void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
+  void ExpectSubmitConfiguration(SubmitConfigurationChecker checker);
   void ExpectSetBufferCollectionConstraints(SetBufferCollectionConstraintsChecker checker);
   void ExpectSetDisplayPowerMode(SetDisplayPowerModeChecker checker);
   void ExpectSetMinimumRgb(SetMinimumRgbChecker checker);
@@ -114,9 +114,9 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void CheckConfiguration(
       fuchsia_hardware_display_engine::wire::EngineCheckConfigurationRequest* request,
       fdf::Arena& arena, CheckConfigurationCompleter::Sync& completer) override;
-  void ApplyConfiguration(
-      fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
-      fdf::Arena& arena, ApplyConfigurationCompleter::Sync& completer) override;
+  void SubmitConfiguration(
+      fuchsia_hardware_display_engine::wire::EngineSubmitConfigurationRequest* request,
+      fdf::Arena& arena, SubmitConfigurationCompleter::Sync& completer) override;
   void SetBufferCollectionConstraints(
       fuchsia_hardware_display_engine::wire::EngineSetBufferCollectionConstraintsRequest* request,
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer) override;

@@ -254,7 +254,7 @@ open protocol EngineListener {
         ///
         /// Must be valid. Engine drivers must not send VSync notifications for
         /// displays that haven't received a configuration via
-        /// [`Engine.ApplyConfiguration`], as that would waste system resources.
+        /// [`Engine.SubmitConfiguration`], as that would waste system resources.
         config_stamp ConfigStamp;
     });
 
@@ -381,7 +381,7 @@ open protocol Engine {
     /// The implementation must ignore any Sysmem information around weak VMO
     /// handles. Display stack consumers are responsible for ensuring that weak
     /// VMOs are closed in a timely manner, which may involve calling
-    /// [`Engine.ReleaseImage`] and [`Engine.ApplyConfiguration`].
+    /// [`Engine.ReleaseImage`] and [`Engine.SubmitConfiguration`].
     flexible ImportImage(struct {
         // TODO(https://fxbug.dev/329163718): Some of the information in
         // `image_metadata` was negotiated by sysmem. The display coordinator or
@@ -419,7 +419,7 @@ open protocol Engine {
     /// The implementation must ignore any Sysmem information around weak VMO
     /// handles. Display stack consumers are responsible for ensuring that weak
     /// VMOs are closed in a timely manner, which may involve calling
-    /// [`Engine.ReleaseImage`] and [`Engine.ApplyConfiguration`].
+    /// [`Engine.ReleaseImage`] and [`Engine.SubmitConfiguration`].
     flexible ImportImageForCapture(struct {
         /// Identifies a previously imported BufferCollection.
         ///
@@ -446,7 +446,7 @@ open protocol Engine {
         /// successful [`DisplayEngine.ImportImage`] call.
         ///
         /// The buffer must not be used by a display configuration that is
-        /// applied or waiting to be applied.
+        /// queued or latched.
         ///
         /// When the call completes, the ID is no longer assigned to the
         /// imported image. The ID may be reused by a future call to
@@ -474,7 +474,7 @@ open protocol Engine {
     }) -> () error fuchsia.hardware.display.types.ConfigResult;
 
     /// Submits a configuration for future presentation on a display.
-    flexible ApplyConfiguration(struct {
+    flexible SubmitConfiguration(struct {
         /// The display configuration to be submitted for presentation.
         ///
         /// Must be derived from a configuration that was validated via
@@ -489,7 +489,7 @@ open protocol Engine {
         /// configurations that reference an unassigned DisplayId.
         display_config DisplayConfig;
 
-        /// Identifies the configuration to be applied. Must be a valid value.
+        /// Identifies the configuration to be submitted. Must be a valid value.
         /// Must be strictly increasing across calls.
         config_stamp ConfigStamp;
     }) -> ();
@@ -558,13 +558,13 @@ open protocol Engine {
     /// Capture support is reported in [`EngineInfo.is_capture_supported`]
     /// returned by [`Engine.CompleteCoordinatorConnection`].
     ///
-    /// This call must only be issued after a configuration has been applied to
+    /// This call must only be issued after a configuration has been submitted to
     /// the display.
     ///
     /// Fails with ZX_ERR_IO_REFUSED if the display engine hardware failed to
     /// start the capture. This error could point to a systemic issue, such as
-    /// the system having insufficient DRAM bandwidth to capture the currently
-    /// applied display configuration. This error could also be caused by a
+    /// the system having insufficient DRAM bandwidth to capture the most recent
+    /// submitted display configuration. This error could also be caused by a
     /// temporary hardware failure.
     flexible StartCapture(struct {
         /// Identifies a previously imported display capture output buffer.

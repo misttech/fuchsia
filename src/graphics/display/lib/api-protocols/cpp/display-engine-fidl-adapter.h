@@ -59,9 +59,9 @@ class DisplayEngineFidlAdapter : public fdf::WireServer<fuchsia_hardware_display
   void CheckConfiguration(
       fuchsia_hardware_display_engine::wire::EngineCheckConfigurationRequest* request,
       fdf::Arena& arena, CheckConfigurationCompleter::Sync& completer) override;
-  void ApplyConfiguration(
-      fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
-      fdf::Arena& arena, ApplyConfigurationCompleter::Sync& completer) override;
+  void SubmitConfiguration(
+      fuchsia_hardware_display_engine::wire::EngineSubmitConfigurationRequest* request,
+      fdf::Arena& arena, SubmitConfigurationCompleter::Sync& completer) override;
   void SetBufferCollectionConstraints(
       fuchsia_hardware_display_engine::wire::EngineSetBufferCollectionConstraintsRequest* request,
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer) override;

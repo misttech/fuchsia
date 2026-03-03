@@ -167,9 +167,9 @@ void DisplayEngineFidlAdapter::CheckConfiguration(
   completer.buffer(arena).ReplySuccess();
 }
 
-void DisplayEngineFidlAdapter::ApplyConfiguration(
-    fuchsia_hardware_display_engine::wire::EngineApplyConfigurationRequest* request,
-    fdf::Arena& arena, ApplyConfigurationCompleter::Sync& completer) {
+void DisplayEngineFidlAdapter::SubmitConfiguration(
+    fuchsia_hardware_display_engine::wire::EngineSubmitConfigurationRequest* request,
+    fdf::Arena& arena, SubmitConfigurationCompleter::Sync& completer) {
   fuchsia_hardware_display_engine::wire::DisplayConfig& display_config = request->display_config;
 
   // The display coordinator currently uses zero-display configs to blank a

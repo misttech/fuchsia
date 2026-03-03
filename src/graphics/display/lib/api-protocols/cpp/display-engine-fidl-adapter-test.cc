@@ -605,9 +605,9 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationSingleLayer) {
   });
 
   fdf::Arena arena('TEST');
-  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
-      fidl_transport_result = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
-                                                                             kConfigStamp.ToFidl());
+  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SubmitConfiguration>
+      fidl_transport_result = fidl_client_.buffer(arena)->SubmitConfiguration(
+          fidl_display_config, kConfigStamp.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 }
 
@@ -641,9 +641,9 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationMultiLayer) {
   });
 
   fdf::Arena arena('TEST');
-  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::ApplyConfiguration>
-      fidl_transport_result = fidl_client_.buffer(arena)->ApplyConfiguration(fidl_display_config,
-                                                                             kConfigStamp.ToFidl());
+  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SubmitConfiguration>
+      fidl_transport_result = fidl_client_.buffer(arena)->SubmitConfiguration(
+          fidl_display_config, kConfigStamp.ToFidl());
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 }
 
