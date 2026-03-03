@@ -44,6 +44,8 @@ std::string Units::ToString(BaseUnit base) {
       return "Hz";
     case BaseUnit::Joules:
       return "J";
+    case BaseUnit::Seconds:
+      return "s";
     case BaseUnit::Watts:
       return "W";
     case BaseUnit::Volts:

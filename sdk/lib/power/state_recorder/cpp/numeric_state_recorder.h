@@ -56,6 +56,9 @@ class Units {
   static Units Joules(std::optional<DecimalPrefix> prefix = std::nullopt) {
     return Units(BaseUnit::Joules, prefix);
   }
+  static Units Seconds(std::optional<DecimalPrefix> prefix = std::nullopt) {
+    return Units(BaseUnit::Seconds, prefix);
+  }
   static Units Watts(std::optional<DecimalPrefix> prefix = std::nullopt) {
     return Units(BaseUnit::Watts, prefix);
   }
@@ -78,6 +81,7 @@ class Units {
     Amps,
     Hertz,
     Joules,
+    Seconds,
     Watts,
     Volts,
     Celsius,
