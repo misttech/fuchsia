@@ -29,6 +29,10 @@ constexpr uint32_t kTzConfigHwForRamDumpFuncId = 0xc2000109;
 // 2 value type parameters, see encoding in lib/qualcomm/smc/smc.h
 constexpr uint32_t kTzConfigHwForRamDumpParamId = 0x2;
 
+// Vendor-specific (bit 31) SYSTEM_RESET2 reset type to request a warm reset on Moonflower.
+// The architectural SYSTEM_WARM_RESET type (0x0) is not supported by the firmware.
+constexpr uint32_t kVendorSpecificWarmResetType = 0x80000000;
+
 int64_t moonflower_config_hw_for_ram_dump(uint64_t disable_wd_dbg, uint64_t boot_partition_sel) {
   arm_smccc_result_t res = arm_smccc_smc(kTzConfigHwForRamDumpFuncId, kTzConfigHwForRamDumpParamId,
                                          disable_wd_dbg, boot_partition_sel, 0, 0, 0, 0);
@@ -49,8 +53,9 @@ zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
   LTRACEF("flags %#x\n", static_cast<uint32_t>(flags));
 
   // Hit the reboot switch
-  // Call through to SYSTEM_RESET2 with a vendor specific reset type (bit 31 set).
-  return psci_system_reset2_raw(0x80000000, 0);
+  // TODO(https://fxbug.dev/489021658): Reboot using cold/hard reset (PSCI SYSTEM_RESET)
+  // for graceful reboots.
+  return psci_system_reset2_raw(kVendorSpecificWarmResetType, 0);
 }
 
 zx_status_t moonflower_power_shutdown() {
