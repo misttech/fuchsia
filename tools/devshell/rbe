@@ -97,10 +97,6 @@ action="$1"
 shift
 action_args=("$@")
 
-function is_googler() {
-  which gcert > /dev/null 2>&1
-}
-
 gcloud=
 
 function ensure_gcloud() {

@@ -785,6 +785,10 @@ function check-ssh-config {
   fi
 }
 
+function is_googler() {
+  which gcert > /dev/null 2>&1
+}
+
 function fx-target-finder-resolve {
   if [[ $# -ne 1 ]]; then
     fx-error "Invalid arguments to fx-target-finder-resolve: [$*]"
