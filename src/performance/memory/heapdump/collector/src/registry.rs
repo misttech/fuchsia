@@ -354,8 +354,6 @@ async fn take_and_send_live_snapshots(
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use super::*;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
@@ -364,6 +362,7 @@ mod tests {
     use futures::pin_mut;
     use heapdump_snapshot::ThreadInfo;
     use itertools::{Itertools, assert_equal};
+    use std::rc::Rc;
     use test_case::test_case;
     use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 
