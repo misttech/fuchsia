@@ -29,6 +29,19 @@ constexpr uint32_t kTzConfigHwForRamDumpFuncId = 0xc2000109;
 // 2 value type parameters, see encoding in lib/qualcomm/smc/smc.h
 constexpr uint32_t kTzConfigHwForRamDumpParamId = 0x2;
 
+// SMC64 fast call (0xc), SiP Service Call (0x2), I/O service (0x05), function 0x02
+constexpr uint32_t kTzIoAccessWriteFuncId = 0xc2000502;
+constexpr uint32_t kTzIoAccessWriteParamId = 0x2;
+
+// Download/debug mode that is entered after a warm reset.
+enum class MoonflowerDownloadMode : uint8_t {
+  kNoDump = 0x00,
+  kEdl = 0x01,
+  kFullDump = 0x10,
+  kMiniDump = 0x20,
+};
+constexpr paddr_t kMoonflowerDownloadModeAddr = 0x003d3000;
+
 // Vendor-specific (bit 31) SYSTEM_RESET2 reset type to request a warm reset on Moonflower.
 // The architectural SYSTEM_WARM_RESET type (0x0) is not supported by the firmware.
 constexpr uint32_t kVendorSpecificWarmResetType = 0x80000000;
@@ -36,6 +49,12 @@ constexpr uint32_t kVendorSpecificWarmResetType = 0x80000000;
 int64_t moonflower_config_hw_for_ram_dump(uint64_t disable_wd_dbg, uint64_t boot_partition_sel) {
   arm_smccc_result_t res = arm_smccc_smc(kTzConfigHwForRamDumpFuncId, kTzConfigHwForRamDumpParamId,
                                          disable_wd_dbg, boot_partition_sel, 0, 0, 0, 0);
+  return static_cast<int64_t>(res.x0);
+}
+
+int64_t moonflower_io_write(paddr_t paddr, uint32_t val) {
+  arm_smccc_result_t res =
+      arm_smccc_smc(kTzIoAccessWriteFuncId, kTzIoAccessWriteParamId, paddr, val, 0, 0, 0, 0);
   return static_cast<int64_t>(res.x0);
 }
 
@@ -47,10 +66,22 @@ void moonflower_configure_hw_for_shutdown() {
     dprintf(INFO, "POWER: Failed to configure moonflower for shutdown/reboot: %" PRId64 "\n", r);
 }
 
+// Configures the download/debug mode that is entered after a warm reset.
+void moonflower_set_download_mode(MoonflowerDownloadMode mode) {
+  uint32_t val = static_cast<uint32_t>(mode);
+  int64_t r = moonflower_io_write(kMoonflowerDownloadModeAddr, val);
+  if (r)
+    dprintf(INFO, "POWER: Failed to set moonflower download mode to 0x%x: %" PRId64 "\n", val, r);
+}
+
 zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
   // Reboot reason is written to spmi-sdam nvmem cell inside the qcom-reboot-reason driver
   // (nothing to do here)
   LTRACEF("flags %#x\n", static_cast<uint32_t>(flags));
+
+  // Avoid entering ramdump/debug mode for graceful reboots
+  moonflower_set_download_mode(MoonflowerDownloadMode::kNoDump);
+  moonflower_configure_hw_for_shutdown();
 
   // Hit the reboot switch
   // TODO(https://fxbug.dev/489021658): Reboot using cold/hard reset (PSCI SYSTEM_RESET)
