@@ -553,6 +553,7 @@ pub async fn run_resolver_service(
                         &pkg_cache,
                         eager_package_manager.as_ref().as_ref(),
                         cobalt_sender.clone(),
+                        &inspect,
                     )
                     .await;
                     let () =

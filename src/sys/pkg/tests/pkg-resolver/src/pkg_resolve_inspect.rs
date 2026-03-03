@@ -48,6 +48,7 @@ async fn initial_inspect_state() {
                 active_package_resolves: {},
                 raw_queue: {},
                 successful_resolves: {},
+                successful_subpackage_resolves: {},
             },
             blob_fetcher: {
                 blob_header_timeout_seconds: 30u64,

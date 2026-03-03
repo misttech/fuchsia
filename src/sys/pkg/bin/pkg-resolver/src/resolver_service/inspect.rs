@@ -10,6 +10,9 @@ use futures::future::BoxFuture;
 use {fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg};
 
 const SUCCESSFUL_RESOLVE_HISTORY: usize = 100;
+// Subpackage resolves never require network interactions or writing to storage and should always
+// succeed (unless the request is bad), so we don't need to save as many.
+const SUCCESSFUL_SUBPACKAGE_RESOLVE_HISTORY: usize = 50;
 
 fn now_monotonic_nanos() -> i64 {
     zx::MonotonicInstant::get().into_nanos()
@@ -20,10 +23,12 @@ fn now_monotonic_nanos() -> i64 {
 pub struct ResolverService {
     /// How many times the resolver service has fallen back to the
     /// cache package set due to a remote repository returning NOT_FOUND.
-    /// TODO(https://fxbug.dev/42127880): remove this stat when we remove this cache fallback behavior.
+    /// TODO(https://fxbug.dev/42127880): remove this stat when we remove this cache fallback
+    /// behavior.
     cache_fallbacks_due_to_not_found: inspect_util::Counter,
     active_package_resolves: Node,
     successful_resolves: Mutex<fuchsia_inspect_contrib::nodes::BoundedListNode>,
+    successful_subpackage_resolves: Mutex<fuchsia_inspect_contrib::nodes::BoundedListNode>,
     _node: Node,
 }
 
@@ -40,6 +45,12 @@ impl ResolverService {
                 node.create_child("successful_resolves"),
                 SUCCESSFUL_RESOLVE_HISTORY,
             )),
+            successful_subpackage_resolves: Mutex::new(
+                fuchsia_inspect_contrib::nodes::BoundedListNode::new(
+                    node.create_child("successful_subpackage_resolves"),
+                    SUCCESSFUL_SUBPACKAGE_RESOLVE_HISTORY,
+                ),
+            ),
             _node: node,
         }
     }
@@ -103,6 +114,21 @@ impl ResolverService {
                 node.record_string("intermediate_error", format!("{intermediate_error:#}"));
             }
             node.record_string("hash", blob.to_string());
+            node.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
+            node.record_int("start_boot_ns", start_ts.into_nanos())
+        });
+    }
+
+    /// Record a successful subpackage package resolve in the rolling log.
+    pub fn successful_subpackage_resolve(
+        &self,
+        url: &fuchsia_url::RelativePackageUrl,
+        context: Option<&fidl_fuchsia_pkg_ext::BlobId>,
+        start_ts: zx::BootInstant,
+    ) {
+        self.successful_subpackage_resolves.lock().add_entry(|node| {
+            node.record_string("requested_url", url.to_string());
+            node.record_string("context", format!("{:?}", context));
             node.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
             node.record_int("start_boot_ns", start_ts.into_nanos())
         });
@@ -307,6 +333,38 @@ mod tests {
                             "hash":
                                 "0101010101010101010101010101010101010101010101010101010101010101",
                             "start_boot_ns": AnyProperty,
+                            "end_boot_ns": AnyProperty,
+                        }
+                    }
+                }
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn successful_subpackage_resolve() {
+        let inspector = Inspector::default();
+        let resolver_service =
+            ResolverService::from_node(inspector.root().create_child("resolver_service"));
+
+        resolver_service.successful_subpackage_resolve(
+            &"the-package-name".parse().unwrap(),
+            Some(&[0; 32].into()),
+            zx::BootInstant::from_nanos(3),
+        );
+
+        assert_data_tree!(
+            inspector,
+            root: {
+                resolver_service: contains {
+                    successful_subpackage_resolves: {
+                        "0": {
+                            "requested_url": "the-package-name",
+                            "context":
+                                "Some(\
+                                 0000000000000000000000000000000000000000000000000000000000000000\
+                                 )",
+                            "start_boot_ns": 3i64,
                             "end_boot_ns": AnyProperty,
                         }
                     }

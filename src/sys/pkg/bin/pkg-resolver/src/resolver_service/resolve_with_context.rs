@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::QueuedResolver;
+use super::{QueuedResolver, ResolverServiceInspectState};
 use crate::eager_package_manager::EagerPackageManager;
 use anyhow::anyhow;
-use log::{error, info};
+use log::error;
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg,
     fidl_fuchsia_pkg_ext as pkg,
@@ -20,6 +20,7 @@ pub(super) async fn resolve_with_context(
     pkg_cache: &pkg::cache::Client,
     eager_package_manager: Option<&async_lock::RwLock<EagerPackageManager<QueuedResolver>>>,
     cobalt_sender: fidl_contrib::protocol_connector::ProtocolSender<fmetrics::MetricEvent>,
+    inspect: &ResolverServiceInspectState,
 ) -> Result<fpkg::ResolutionContext, pkg::ResolveError> {
     match fuchsia_url::PackageUrl::parse(&package_url)
         .map_err(|e| super::handle_bad_package_url_error(e, &package_url))?
@@ -43,7 +44,7 @@ pub(super) async fn resolve_with_context(
             .await
         }
         fuchsia_url::PackageUrl::Relative(url) => {
-            resolve_relative(&url, &context, dir, pkg_cache).await
+            resolve_relative(&url, &context, dir, pkg_cache, inspect).await
         }
     }
 }
@@ -53,7 +54,9 @@ async fn resolve_relative(
     context: &fpkg::ResolutionContext,
     dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     pkg_cache: &pkg::cache::Client,
+    inspect: &ResolverServiceInspectState,
 ) -> Result<fpkg::ResolutionContext, pkg::ResolveError> {
+    let start_ts = zx::BootInstant::get();
     let context = pkg::ResolutionContext::try_from(context).map_err(|e| {
         error!("failed to parse relative url {} context {:?}: {:#}", url, context, anyhow!(e));
         pkg::ResolveError::InvalidContext
@@ -71,7 +74,7 @@ async fn resolve_relative(
             fidl_err
         })?;
 
-    info!("resolved relative url {} with parent {:?}", url, context.blob_id());
+    inspect.successful_subpackage_resolve(url, context.blob_id(), start_ts);
 
     Ok(child_context.into())
 }
