@@ -388,12 +388,13 @@ mod tests {
             Box::new(|_| {}),
             Default::default(),
         );
+        let buffer = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::clone(&stats));
         let container = Arc::new(LogsArtifactsContainer::new(
             identity,
             std::iter::empty(),
             severity,
             Arc::clone(&stats),
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), stats),
+            buffer,
             None,
         ));
         // Connect out LogSink under test and take its events channel.

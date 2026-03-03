@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// FilterCursor is a cursor that returns all logs optionally filtered by component selectors.
 #[pin_project]
@@ -185,11 +185,12 @@ pub struct Message<'a> {
 impl Message<'_> {
     /// Returns the component and FXT bytes.  The FXT record is validated to be the correct length
     /// and type.
-    fn parse(&self) -> Result<(&Arc<ComponentIdentity>, &[u8]), MessageError> {
+    fn parse(&self) -> Result<(&Arc<ComponentIdentity>, u64, &[u8]), MessageError> {
         // SAFETY: We hold a lock which prevents the buffer from being drained so
         // it should be safe to read this range.
         let (container, data, _) =
             unsafe { self.inner.parse_message(self.message.index..self.inner.last_scanned) };
+        let container_id = container;
         let (header, _) = Header::read_from_prefix(data)
             .map_err(|_| MessageError::from(ParseError::InvalidHeader))?;
         let msg_len = header.size_words() as usize * 8;
@@ -200,7 +201,7 @@ impl Message<'_> {
             return Err(ParseError::InvalidRecordType.into());
         }
         let container = self.inner.containers.get(container).unwrap();
-        Ok((&container.identity, &data[..msg_len]))
+        Ok((&container.identity, container_id.0 as u64, &data[..msg_len]))
     }
 }
 
@@ -208,7 +209,7 @@ impl TryFrom<Message<'_>> for LogsData {
     type Error = MessageError;
 
     fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
-        let (container, data) = value.parse()?;
+        let (container, _tag, data) = value.parse()?;
         let mut data = diagnostics_message::from_structured(container.as_ref().into(), data)?;
         if value.dropped > 0 {
             data.metadata
@@ -226,6 +227,7 @@ pub struct FxtMessage {
     data: Box<[u8]>,
     dropped: u64,
     component_identity: Arc<ComponentIdentity>,
+    tag: u64,
 }
 
 impl FxtMessage {
@@ -233,11 +235,15 @@ impl FxtMessage {
         &self.data
     }
 
+    pub fn tag(&self) -> u64 {
+        self.tag
+    }
+
     pub fn dropped(&self) -> u64 {
         self.dropped
     }
 
-    pub fn component_identity(&self) -> &ComponentIdentity {
+    pub fn component_identity(&self) -> &Arc<ComponentIdentity> {
         &self.component_identity
     }
 
@@ -250,10 +256,17 @@ impl TryFrom<Message<'_>> for FxtMessage {
     type Error = MessageError;
 
     fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
-        let (component, data) = value.parse()?;
+        let (component, tag, data) = value.parse()?;
+        let mut data: Box<[u8]> = data.into();
+        if data.len() >= 8 {
+            let mut header = Header::read_from_bytes(&data[0..8]).unwrap();
+            header.set_tag(tag as u32);
+            data[0..8].copy_from_slice(header.as_bytes());
+        }
         Ok(FxtMessage {
-            data: data.into(),
+            data,
             dropped: value.dropped,
+            tag,
             component_identity: Arc::clone(component),
         })
     }

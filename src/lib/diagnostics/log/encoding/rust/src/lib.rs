@@ -8,7 +8,7 @@
 
 use bitfield::bitfield;
 use std::borrow::{Borrow, Cow};
-use zerocopy::{FromBytes, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 mod constants;
 pub mod encode;
@@ -276,6 +276,10 @@ impl From<bool> for Value<'static> {
 /// The maximum value acceptable for `size_words` below.
 pub const MAX_SIZE_WORDS: u16 = 4095;
 
+/// The bit in the tag that indicates the record is a control message, rather than a FXT record
+/// produced by a component.
+pub const LOG_CONTROL_BIT: u32 = 1 << 31;
+
 bitfield! {
     /// A header in the tracing format. Expected to precede every Record and Argument.
     ///
@@ -285,7 +289,7 @@ bitfield! {
     ///
     /// [Record headers]: https://fuchsia.dev/fuchsia-src/development/tracing/trace-format#record_header
     /// [Argument headers]: https://fuchsia.dev/fuchsia-src/development/tracing/trace-format#argument_header
-    #[derive(IntoBytes, FromBytes, KnownLayout)]
+    #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
     pub struct Header(u64);
     impl Debug;
 
@@ -303,6 +307,9 @@ bitfield! {
 
     /// Reserved for record-type-specific data.
     u16, value_ref, set_value_ref: 47, 32;
+
+    /// Tag for the record, if any.
+    pub u32, tag, set_tag: 47, 16;
 
     /// Severity of the record, if any.
     pub u8, severity, set_severity: 63, 56;

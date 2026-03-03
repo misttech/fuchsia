@@ -710,7 +710,12 @@ impl MutableBuffer for Cursor<ResizableBuffer> {
     }
 
     unsafe fn advance_cursor(&mut self, n: usize) {
-        self.set_position(self.position() + n as u64);
+        let new_pos = self.position() as usize + n;
+        let vec = &mut self.get_mut().0;
+        if new_pos > vec.len() {
+            vec.resize(new_pos, 0);
+        }
+        self.set_position(new_pos as u64);
     }
 
     unsafe fn put_slice_at(&mut self, to_put: &[u8], offset: usize) {

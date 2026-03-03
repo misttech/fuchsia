@@ -310,7 +310,12 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
             extend_fxt_record(
                 item.component_identity(),
                 item.dropped(),
-                &ExtendRecordOpts { component_url: true, moniker: true, rolled_out: true },
+                &ExtendRecordOpts {
+                    component_url: true,
+                    moniker: true,
+                    rolled_out: true,
+                    subscribe_to_manifest: false,
+                },
                 buffer,
             );
             Poll::Ready(Some(0))

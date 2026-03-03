@@ -373,19 +373,20 @@ impl LogsRepositoryState {
             .expect("failed to attach component log stats");
         stats.set_url(&identity.url);
         let stats = Arc::new(stats);
+        let buffer = shared_buffer.new_container_buffer(Arc::clone(&identity), Arc::clone(&stats));
         let container = Arc::new(LogsArtifactsContainer::new(
             Arc::clone(&identity),
             self.interest_registrations.values().flat_map(|s| s.iter()),
             initial_interest,
-            Arc::clone(&stats),
-            shared_buffer.new_container_buffer(Arc::clone(&identity), stats),
+            stats,
+            buffer,
             Some(Box::new(move |c| {
                 if let Some(repo) = repo.upgrade() {
                     repo.on_container_inactive(&c.identity)
                 }
             })),
         ));
-        self.logs_data_store.insert(identity, Arc::clone(&container));
+        self.logs_data_store.insert(Arc::clone(&identity), Arc::clone(&container));
         container
     }
 
