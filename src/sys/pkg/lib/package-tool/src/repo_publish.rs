@@ -1377,6 +1377,9 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
             repositories: vec![
                 Repository {
                     name: "fuchsia.com".into(),
@@ -1466,6 +1469,9 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: pb_metadata_dir,
@@ -1554,6 +1560,9 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: pb_metadata_dir,
@@ -1623,6 +1632,9 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: pb_metadata_dir,
@@ -1681,6 +1693,9 @@ mod tests {
             system_a: None,
             system_b: None,
             system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
             repositories: vec![Repository {
                 name: "fuchsia.com".into(),
                 metadata_path: pb_metadata_dir,

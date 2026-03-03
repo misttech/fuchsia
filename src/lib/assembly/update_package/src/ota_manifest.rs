@@ -255,6 +255,7 @@ mod tests {
             board_name: "board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         });
 
         let partitions = PartitionsConfig {
@@ -387,6 +388,7 @@ mod tests {
             board_name: "board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         });
 
         // System R images
@@ -404,6 +406,7 @@ mod tests {
             board_name: "board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         });
 
         let fake_bootloader = NamedTempFile::new().unwrap();
@@ -558,6 +561,7 @@ mod tests {
             board_name: "board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         });
 
         // System R images
@@ -575,6 +579,7 @@ mod tests {
             board_name: "board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         });
 
         let fake_bootloader = NamedTempFile::new().unwrap();
