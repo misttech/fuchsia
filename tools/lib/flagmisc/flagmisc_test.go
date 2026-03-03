@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+func TestFlagImplementations(t *testing.T) {
+	// Sanity check that these types do indeed implement flag.Value. This would
+	// otherwise give a compile-time error.
+	var _ flag.Value = (*StringsValue)(nil)
+	var _ flag.Value = (*StringMapValue)(nil)
+}
+
 func assertEqual(t *testing.T, a, b string) {
 	if a != b {
 		t.Errorf("expected the following to be the same:\n%q\n%q\n", a, b)
@@ -22,16 +29,19 @@ func setAndCompare(t *testing.T, f flag.Value, val, expected string) {
 	assertEqual(t, expected, f.String())
 }
 
-func TestFlagImplementations(t *testing.T) {
-	// Sanity check that these types do indeed implement flag.Value. This would
-	// otherwise give a compile-time error.
-	var _ flag.Value = (*StringsValue)(nil)
-}
-
 func TestStringsValue(t *testing.T) {
 	rs := &StringsValue{}
 	assertEqual(t, rs.String(), "")
 	setAndCompare(t, rs, "a", "a")
 	setAndCompare(t, rs, "b", "a, b")
 	setAndCompare(t, rs, "c", "a, b, c")
+}
+
+func TestStringMapValue(t *testing.T) {
+	mf := &StringMapValue{}
+	assertEqual(t, mf.String(), "map[]")
+	*mf = nil
+	setAndCompare(t, mf, "a=b", "map[a:b]")
+	setAndCompare(t, mf, "c=d", "map[a:b c:d]")
+	setAndCompare(t, mf, "e=f", "map[a:b c:d e:f]")
 }

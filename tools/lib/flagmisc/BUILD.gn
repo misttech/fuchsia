@@ -42,7 +42,7 @@ if (is_host) {
 }
 
 go_library("flagmisc") {
-  sources = [ "strings.go" ]
+  sources = [ "flagmisc.go" ]
   importpath = "go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
   visibility = [ "*" ]
 }

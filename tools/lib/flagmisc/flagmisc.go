@@ -5,6 +5,7 @@
 package flagmisc
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -23,4 +24,28 @@ func (s *StringsValue) String() string {
 		return ""
 	}
 	return strings.Join([]string(*s), ", ")
+}
+
+// StringMapValue implements flag.Value so it may be treated as a flag type.
+type StringMapValue map[string]string
+
+// Set implements flag.Value.Set.
+func (m *StringMapValue) Set(value string) error {
+	if *m == nil {
+		*m = StringMapValue{}
+	}
+	if value == "" {
+		return nil
+	}
+	key, value, ok := strings.Cut(value, "=")
+	if !ok {
+		return fmt.Errorf("invalid map item: %s", value)
+	}
+	(*m)[key] = value
+	return nil
+}
+
+// String implements flag.Value.String.
+func (m *StringMapValue) String() string {
+	return fmt.Sprintf("%v", *m)
 }

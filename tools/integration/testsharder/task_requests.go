@@ -15,6 +15,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder/proto"
+	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
@@ -85,7 +86,7 @@ func GetBotanistConfig(shard *Shard, buildDir string, tools build.Tools) error {
 	return nil
 }
 
-func GetBotDimensions(shard *Shard, params *proto.Params) {
+func GetBotDimensions(shard *Shard, params *proto.Params, botDimensionOverrides flagmisc.StringMapValue) {
 	dimensions := map[string]string{"pool": params.Pool}
 	isEmuType := shard.Env.TargetsEmulator()
 	testBotCpu := shard.HostCPU
@@ -122,6 +123,12 @@ func GetBotDimensions(shard *Shard, params *proto.Params) {
 		dimensions["gce"] = "1"
 		dimensions["cores"] = "8"
 	}
+
+	// Apply bot dimension overrides
+	for key, value := range botDimensionOverrides {
+		dimensions[key] = value
+	}
+
 	shard.BotDimensions = dimensions
 }
 

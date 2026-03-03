@@ -52,6 +52,7 @@ type testsharderFlags struct {
 	depsFile                    string
 	ignoreMultiplyIsolatedLimit bool
 	allowedDeviceTypes          flagmisc.StringsValue
+	botDimensionsOverride       flagmisc.StringMapValue
 }
 
 func parseFlags() testsharderFlags {
@@ -69,6 +70,7 @@ func parseFlags() testsharderFlags {
 	flag.StringVar(&flags.depsFile, "deps-file", "", "path to a file to write all the builder deps to in the format expected from `cas archive -paths-json`.")
 	flag.BoolVar(&flags.ignoreMultiplyIsolatedLimit, "ignore-multiply-limit", false, "whether to ignore the limit on multiplied runs per isolated test")
 	flag.Var(&flags.allowedDeviceTypes, "allowed-device-type", "the device types to run tests on. If disabled_device_types is set in the testsharder params, that will take precedence.")
+	flag.Var(&flags.botDimensionsOverride, "bot-dimension", "swarming dimension of the bot to run tests on: id, pool, etc. Set a key-value pair (e.g., -bot-dimension key=value). Can be repeated.")
 
 	flag.Usage = usage
 
@@ -459,7 +461,7 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		if err := testsharder.ConstructTestsJSON(s, flags.buildDir); err != nil {
 			return err
 		}
-		testsharder.GetBotDimensions(s, params)
+		testsharder.GetBotDimensions(s, params, flags.botDimensionsOverride)
 		if err := testsharder.GetBotanistConfig(s, flags.buildDir, m.Tools()); err != nil {
 			return err
 		}

@@ -14,6 +14,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder/proto"
+	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 )
 
@@ -236,14 +237,26 @@ func TestGetBotanistConfig(t *testing.T) {
 
 func TestGetBotDimensions(t *testing.T) {
 	testCases := []struct {
-		name       string
-		env        build.Environment
-		os         string
-		cpu        string
-		expectsSSH bool
-		params     *proto.Params
-		want       map[string]string
+		name                  string
+		env                   build.Environment
+		os                    string
+		cpu                   string
+		botDimensionOverrides flagmisc.StringMapValue
+		expectsSSH            bool
+		params                *proto.Params
+		want                  map[string]string
 	}{
+		{
+			name:                  "x64 emulator with id bot dimension override",
+			env:                   x64EmuEnv,
+			cpu:                   "x64",
+			botDimensionOverrides: flagmisc.StringMapValue{"id": "fuchsia-pasture-1-1-01-fuchsia-6712-3456-7890"},
+			expectsSSH:            true,
+			params: &proto.Params{
+				Pool: "pool",
+			},
+			want: map[string]string{"id": "fuchsia-pasture-1-1-01-fuchsia-6712-3456-7890", "pool": "pool", "kvm": "1", "os": "Debian", "gce": "1", "cores": "8", "cpu": "x64"},
+		},
 		{
 			name:       "x64 emulator with ssh",
 			env:        x64EmuEnv,
@@ -352,7 +365,7 @@ func TestGetBotDimensions(t *testing.T) {
 				ExpectsSSH: tc.expectsSSH,
 				HostCPU:    GetHostCPU(tc.env, tc.params.UseTcg),
 			}
-			GetBotDimensions(shard, tc.params)
+			GetBotDimensions(shard, tc.params, tc.botDimensionOverrides)
 			if diff := cmp.Diff(tc.want, shard.BotDimensions); diff != "" {
 				t.Errorf("Wrong bot dimensions (-want +got):\n%s", diff)
 			}

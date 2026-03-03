@@ -55,6 +55,7 @@ go_library("testsharder_lib") {
     "//tools/integration/fint:proto_lib",
     "//tools/lib/color",
     "//tools/lib/ffxutil",
+    "//tools/lib/flagmisc",
     "//tools/lib/logger",
     "//tools/metadata:proto_lib",
     "//tools/testing/runtests",
