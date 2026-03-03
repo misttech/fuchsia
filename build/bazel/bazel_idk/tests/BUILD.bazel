@@ -790,7 +790,12 @@ cc_binary(
     deps = [
         "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-    ],
+    ] + select(
+        {
+            "@platforms//os:fuchsia": ["//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing"],
+            "//conditions:default": [],
+        },
+    ),
 )
 
 filegroup(
@@ -862,6 +867,7 @@ filegroup(
         # Bindings for a library with dependencies.
         # It also depends on "zx", which is handled uniquely.
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing",
         # A library with indirect dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",
         # TODO(https://fxbug.dev/454977301): Uncomment once FIDL for drivers is supported.
