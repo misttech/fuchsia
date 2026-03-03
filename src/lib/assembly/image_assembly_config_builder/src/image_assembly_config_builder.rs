@@ -1915,6 +1915,26 @@ mod tests {
         assert_eq!(result.qemu_kernel, vars.outdir.join("path/to/qemu/kernel"));
     }
 
+    #[test]
+    fn test_aib_not_allowed_on_user() {
+        let vars = TempdirPathsForTest::new();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(
+            BuildType::User,
+            FeatureSetLevel::Standard,
+            "my_board".into(),
+            None::<Utf8PathBuf>,
+            FilesystemImageMode::default(),
+            AssemblyMode::default(),
+            SystemReleaseInfo::new_for_testing(),
+        );
+        let mut bundle = AssemblyInputBundle::default();
+        bundle.allowed_in.insert(FeatureSetLevel::Standard, vec![BuildType::Eng]);
+
+        let result = builder.add_parsed_bundle(&vars.outdir, bundle);
+        assert!(result.is_err());
+    }
+
     fn setup_builder(
         vars: &TempdirPathsForTest,
         bundles: Vec<AssemblyInputBundle>,

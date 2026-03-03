@@ -845,8 +845,27 @@ class AIBCreatorIncludeRulesTest(unittest.TestCase):
             creator.add_auto_include_in("utility::user")
 
             # This should fail because scrutiny_required and auto_include_in are mutually exclusive
-            # from assembly.assembly_input_bundle import AssemblyInputBundleCreationException
             with self.assertRaises(AssemblyInputBundleCreationException):
                 creator.build()
+        finally:
+            outdir.cleanup()
+
+    def test_experimental_fails_on_user(self) -> None:
+        outdir = tempfile.TemporaryDirectory()
+        try:
+            creator = AIBCreator(outdir.name, experimental=True)
+            creator.add_allowed_in("standard::user")
+
+            with self.assertRaises(AssemblyInputBundleCreationException):
+                creator.build()
+        finally:
+            outdir.cleanup()
+
+    def test_testonly_fails_on_user(self) -> None:
+        outdir = tempfile.TemporaryDirectory()
+        try:
+            creator = AIBCreator(outdir.name, testonly=True)
+            with self.assertRaises(ValueError):
+                creator.add_allowed_in("standard::user")
         finally:
             outdir.cleanup()
