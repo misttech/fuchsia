@@ -255,6 +255,8 @@ impl<I: Interface + ?Sized> Session<I> {
         fifo: zx::Fifo<BlockFifoRequest, BlockFifoResponse>,
     ) -> Result<(), zx::Status> {
         scopeguard::defer! {
+            // Ensure that we always clean up active requests for this session upon FIFO
+            // termination.
             self.helper.drop_active_requests(|session| *session == self as *const _ as usize);
         }
 

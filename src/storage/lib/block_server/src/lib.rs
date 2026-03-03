@@ -1072,8 +1072,36 @@ impl<SM: SessionManager> SessionHelper<SM> {
         Ok((request, remainder))
     }
 
+    /// Drops all requests for which `pred` is true.
+    ///
+    /// NOTE: This should only be called once we are certain that the requests will not be
+    /// completed asynchronously  Otherwise, requests might be completed twice.
     fn drop_active_requests(&self, pred: impl Fn(&SM::Session) -> bool) {
         self.session_manager().active_requests().0.lock().requests.retain(|_, r| !pred(&r.session));
+    }
+
+    /// Closes all grouped requests for which `pred` is true and which are held open pending the
+    /// completion of their group.
+    ///
+    /// Normally, a request is dropped from ActiveRequests when it is completed.  However, if a
+    /// request is part of a group, it will not be dropped until a request with GROUP_LAST arrives.
+    /// If we're shutting down a session, the client may not ever send the GROUP_LAST, so we need to
+    /// be sure to close these grouped requests.
+    ///
+    /// This is called during session shutdown in situations where [`Self::drop_active_requests`]
+    /// cannot be used (e.g. for the callback interface, which hands off the responsibility of
+    /// completing requests to its concrete implementation and cannot control when requests are
+    /// completed relative to session shutdown).
+    fn close_active_groups(&self, pred: impl Fn(&SM::Session) -> bool) {
+        self.session_manager().active_requests().0.lock().requests.retain(|_, request| {
+            if !pred(&request.session) || request.req_id.is_some() {
+                return true;
+            }
+            // Mark the group as completed, and immediately drop any which have no outstanding
+            // requests (since they will otherwise never be dropped).
+            request.req_id = Some(u32::MAX);
+            request.count > 0
+        });
     }
 }
 

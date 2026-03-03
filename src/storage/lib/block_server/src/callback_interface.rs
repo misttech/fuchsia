@@ -43,7 +43,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
 
     /// Starts a batch of requests.  The implementation may block if there are too many in-flight
     /// requests, providing pushback.  The interface is responsible for eventually calling
-    /// [`SessionManager::complete_request`] for each request.
+    /// [`SessionManager::complete_request`] for each request (even during server shutdown).
     fn on_requests(&self, requests: &[Request]);
 }
 
@@ -272,7 +272,10 @@ impl<I: Interface + ?Sized> Session<I> {
     pub fn run(self: &Arc<Self>) {
         self.fifo_loop();
         self.abort_handle.abort();
-        self.helper.drop_active_requests(|s| Arc::ptr_eq(s, self));
+        // NB: We cannot call [`drop_active_requests`] here, because requests which have already
+        // been submitted are no longer in control by this thread, and will be later completed by
+        // another thread.  If we dropped them here, then they would be completed twice.
+        self.helper.close_active_groups(|s| Arc::ptr_eq(s, self));
     }
 
     fn fifo_loop(self: &Arc<Self>) {
@@ -887,5 +890,138 @@ mod tests {
         fifo.read(&mut resp).unwrap();
         assert_eq!(resp[0].reqid, 128);
         assert_eq!(resp[0].status, zx::sys::ZX_ERR_IO);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_teardown_with_active_requests() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface { request_sender: tx });
+        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+
+        let sm_clone = session_manager.clone();
+        let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
+        let server_task = fasync::Task::spawn(async move {
+            let server = crate::BlockServer::new(512, sm_clone);
+            server.handle_requests(stream).await.unwrap();
+        });
+
+        let (session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::SessionMarker>();
+        proxy.open_session(session_server_end).unwrap();
+
+        let fifo_handle = session_proxy.get_fifo().await.unwrap().unwrap();
+        let fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest> = zx::Fifo::from(fifo_handle);
+
+        let vmo = zx::Vmo::create(8192).unwrap();
+        let vmo_id = session_proxy
+            .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let req = BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: fblock::BlockOpcode::Read.into_primitive(),
+                ..Default::default()
+            },
+            reqid: 129,
+            group: 0,
+            vmoid: vmo_id.id,
+            length: 1,
+            vmo_offset: 0,
+            dev_offset: 0,
+            trace_flow_id: 0,
+            ..Default::default()
+        };
+        // Start a request and wait until it's been submitted.
+        fifo.write(&[req]).unwrap();
+        let r = rx.recv().unwrap();
+
+        // Close the client, which will eventually cause the FIFO loop to exit.
+        drop(session_proxy);
+        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+
+        // Complete the request, simulating a completion after the FIFO loop has exited.
+        session_manager.complete_request(r.request_id, zx::Status::OK);
+
+        drop(proxy);
+        fasync::unblock(move || session_manager.terminate()).await;
+        server_task.await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_teardown_with_active_grouped_requests() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface { request_sender: tx });
+        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+
+        let sm_clone = session_manager.clone();
+        let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
+        let server_task = fasync::Task::spawn(async move {
+            let server = crate::BlockServer::new(512, sm_clone);
+            server.handle_requests(stream).await.unwrap();
+        });
+
+        let (session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::SessionMarker>();
+        proxy.open_session(session_server_end).unwrap();
+
+        let fifo_handle = session_proxy.get_fifo().await.unwrap().unwrap();
+        let fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest> = zx::Fifo::from(fifo_handle);
+
+        let vmo = zx::Vmo::create(8192).unwrap();
+        let vmo_id = session_proxy
+            .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut req = BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: fblock::BlockOpcode::Read.into_primitive(),
+                flags: fblock::BlockIoFlag::GROUP_ITEM.bits(),
+                ..Default::default()
+            },
+            reqid: 1,
+            group: 1,
+            vmoid: vmo_id.id,
+            length: 1,
+            vmo_offset: 0,
+            dev_offset: 0,
+            trace_flow_id: 0,
+            ..Default::default()
+        };
+
+        // Start two groups of requests and wait until they're been submitted.
+        fifo.write(&[req]).unwrap();
+        req.reqid = 2;
+        req.group = 2;
+        fifo.write(&[req]).unwrap();
+        let r1 = rx.recv().unwrap();
+        let r2 = rx.recv().unwrap();
+        req.reqid = 3;
+        req.group = 2;
+        fifo.write(&[req]).unwrap();
+        let r3 = rx.recv().unwrap();
+
+        // Complete requests 1,2.  This leaves two groups in the following states:
+        // - Group 1: 0 active requests, still waiting for END
+        // - Group 2: 1 active request, still waiting for END
+        // Neither group will be able to complete yet.
+        session_manager.complete_request(r1.request_id, zx::Status::OK);
+        session_manager.complete_request(r2.request_id, zx::Status::OK);
+
+        // Close the client, which will eventually cause the FIFO loop to exit.
+        // Group 1 should complete now.  Group 2 can't yet.
+        drop(session_proxy);
+        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+
+        // At some later time, complete request 3, which should complete group 2.
+        session_manager.complete_request(r3.request_id, zx::Status::OK);
+
+        drop(proxy);
+
+        fasync::unblock(move || session_manager.terminate()).await;
+        server_task.await;
     }
 }

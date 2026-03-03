@@ -37,7 +37,8 @@ pub struct Callbacks {
     /// not retain references to `requests` after it returns.  The implementation must ensure that
     /// [`block_server_send_reply`] is called exactly once with the request ID of each entry in
     /// `requests`, regardless of its status; this call can be asynchronous but must occur before
-    /// [`block_server_delete`] is called.
+    /// [`block_server_delete`] is called.  Note that a reply must be sent for every request before
+    /// shutdown.
     pub on_requests:
         unsafe extern "C" fn(context: *mut c_void, requests: *mut Request, request_count: usize),
     /// Logs `message` to the implementation's logger.  The implementation must not retain
