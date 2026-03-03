@@ -140,7 +140,8 @@ OutputBuffer ScriptRunner::GetFailureContext() {
          collected_output_ +
          "============================== END OUTPUT ==============================\n" +
          "You may want to check the output order in the script matches the generated "
-         "output, or use ## allow-out-of-order-output.";
+         "output, or use ## allow-out-of-order-output. See https://fuchsia.dev/fuchsia-src/development/debugger/scripting "
+         "for more examples.";
 }
 
 void ScriptRunner::Fail(const std::string& message) {

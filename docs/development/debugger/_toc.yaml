@@ -30,6 +30,8 @@ toc:
   path: /docs/development/debugger/exceptions.md
 - title: "Advanced topics"
   path: /docs/development/debugger/advanced.md
+- title: "Automating zxdb with scripts"
+  path: /docs/development/debugger/scripting.md
 - title: "Troubleshooting zxdb"
   path: /docs/development/debugger/troubleshooting.md
 - title: "Tutorial: Debug tests using zxdb"
