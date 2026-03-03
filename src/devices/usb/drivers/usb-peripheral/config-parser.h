@@ -7,10 +7,12 @@
 
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire_types.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdint.h>
 
 #include <cstdint>
 #include <map>
+#include <ranges>
 #include <string_view>
 #include <vector>
 
@@ -104,12 +106,106 @@ constexpr peripheral::wire::FunctionDescriptor kTestFunctionDescriptor = {
     .interface_protocol = 0,
 };
 
+struct FunctionDefinition {
+  uint8_t tag_mask;
+  fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor descriptor;
+  std::string_view description;
+};
+
+const std::map<std::string_view, FunctionDefinition> kAllFunctions = {
+    {"cdc",
+     {
+         .tag_mask = kCdcMask,
+         .descriptor = kCDCFunctionDescriptor,
+         .description = kCDCProductDescription,
+     }},
+    {"ums",
+     {
+         .tag_mask = kUmsMask,
+         .descriptor = kUMSFunctionDescriptor,
+         .description = kUMSProductDescription,
+     }},
+    {"rndis",
+     {
+         .tag_mask = kRndisMask,
+         .descriptor = kRNDISFunctionDescriptor,
+         .description = kRNDISProductDescription,
+     }},
+    {"adb",
+     {
+         .tag_mask = kAdbMask,
+         .descriptor = kADBFunctionDescriptor,
+         .description = kADBProductDescription,
+     }},
+    {"fastboot",
+     {
+         .tag_mask = kFastbootMask,
+         .descriptor = kFastbootFunctionDescriptor,
+         .description = kFastbootProductDescription,
+     }},
+    {"test",
+     {
+         .tag_mask = kTestMask,
+         .descriptor = kTestFunctionDescriptor,
+         .description = kTestProductDescription,
+     }},
+    {"vsock_bridge",
+     {
+         .tag_mask = kVsockBridgeMask,
+         .descriptor = kFfxFunctionDescriptor,
+         .description = kVsockBridgeProductDescription,
+     }},
+};
+
 // Class for generating USB peripheral config struct.
 // Currently supports getting a CDC Ethernet config by default, or parse the boot args
 // `driver.usb.peripheral` string to compose different functionality.
 class PeripheralConfigParser {
  public:
-  zx_status_t AddFunctions(const std::vector<std::string>& functions);
+  template <std::ranges::range R>
+  zx_status_t AddFunctions(R&& functions) {
+    TRACE_DURATION("usb-peripheral", __func__);
+
+    if (functions.empty()) {
+      fdf::info("No functions found");
+      return ZX_OK;
+    }
+
+    // resolve and then sort the functions by their product ids so that they are added and combined
+    // in a predictable order.
+    std::vector<FunctionDefinition> function_defs;
+    for (const auto& subrange : functions) {
+      const std::string_view function{subrange.begin(), subrange.end()};
+      const auto& function_def = kAllFunctions.find(function);
+      if (function_def != kAllFunctions.end()) {
+        if (!kPidLookup.contains(function_def->second.tag_mask)) {
+          fdf::error("No supported USB PID for function {}", function);
+          return ZX_ERR_INVALID_ARGS;
+        }
+        function_defs.push_back(function_def->second);
+      } else {
+        fdf::error("Function not supported: {}", function);
+        return ZX_ERR_INVALID_ARGS;
+      }
+    }
+
+    std::ranges::sort(function_defs, [](FunctionDefinition& left, FunctionDefinition& right) {
+      return kPidLookup.at(left.tag_mask) < kPidLookup.at(right.tag_mask);
+    });
+
+    zx_status_t status = ZX_OK;
+    for (const auto& function : function_defs) {
+      function_configs_.push_back(function.descriptor);
+      status = SetCompositeProductDescription(function.tag_mask, function.description);
+
+      if (status != ZX_OK) {
+        fdf::error("Failed to set product description for function: {}", function.description);
+        return status;
+      }
+    }
+
+    return ZX_OK;
+  }
 
   uint16_t vid() const { return GOOGLE_USB_VID; }
   uint16_t pid() const { return pid_; }

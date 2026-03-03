@@ -43,7 +43,6 @@ source_set("common") {
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.usb:fuchsia.usb_cpp",
     "//src/devices/usb/lib/usb:cdc",
-    "//src/devices/usb/lib/usb:peripheral",
   ]
   public_deps = [
     ":usb-peripheral-config",
@@ -59,6 +58,7 @@ source_set("common") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/metadata/cpp",
+    "//src/devices/usb/lib/usb:peripheral",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb-monitor-util:usb-monitor-util-dfv2",
     "//zircon/system/ulib/fbl",

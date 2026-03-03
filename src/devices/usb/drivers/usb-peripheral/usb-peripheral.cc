@@ -168,8 +168,18 @@ zx::result<> UsbPeripheral::Start() {
   }
 
   auto config = take_config<usb_peripheral_config::Config>();
+
   PeripheralConfigParser peripheral_config = {};
-  zx_status_t status = peripheral_config.AddFunctions(config.functions());
+
+  zx_status_t status;
+  if (!config.kboot_functions().empty()) {
+    fdf::debug("-driver.usb.peripheral kboot overrides: {}", config.kboot_functions());
+    status = peripheral_config.AddFunctions(
+        config.kboot_functions() | std::views::split(','));
+  } else {
+    status = peripheral_config.AddFunctions(std::views::all(config.functions()));
+  }
+
   if (status != ZX_OK) {
     fdf::error("Failed to add usb functions from structured config: {}",
                zx_status_get_string(status));

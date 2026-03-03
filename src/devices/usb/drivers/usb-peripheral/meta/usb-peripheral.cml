@@ -35,6 +35,14 @@
             ],
         },
         {
+            config: "fuchsia.driver.usb.peripheral",
+            availability: "optional",
+            key: "kboot_functions",
+            type: "string",
+            max_size: 256,
+            default: "",
+        },
+        {
             config: "fuchsia.usb.PeripheralConfig.Functions",
             availability: "optional",
             key: "functions",

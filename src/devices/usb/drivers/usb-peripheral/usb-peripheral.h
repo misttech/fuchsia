@@ -268,7 +268,7 @@ class UsbPeripheral : public fdf::DriverBase,
 };
 
 inline UsbPeripheral::UsbPeripheral(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+                                    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 }  // namespace usb_peripheral

@@ -22,10 +22,12 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <usb/peripheral.h>
 #include <usb/usb.h>
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-function.h"
 #include "src/lib/testing/predicates/status.h"
+#include "usb/descriptors.h"
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
@@ -174,32 +176,46 @@ class UsbPeripheralTestConfig {
   using EnvironmentType = UsbPeripheralTestEnvironment;
 };
 
+template <bool manage_lifetime>
 class UsbPeripheralHarness : public ::testing::Test {
  public:
   void SetUp() override {
     driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(kSerialNumber); });
 
-    ASSERT_OK(driver_test_.StartDriverWithCustomStartArgs([](auto& start_args) {
-      start_args.config().emplace(usb_peripheral_config::Config{}.ToVmo());
-    }));
+    if constexpr (manage_lifetime) {
+      StartDriverWithConfig(usb_peripheral_config::Config{});
+    }
+  }
+
+  void StartDriverWithConfig(const usb_peripheral_config::Config& config) {
+    ASSERT_OK(driver_test_.StartDriverWithCustomStartArgs(
+        [&](auto& start_args) { start_args.config().emplace(config.ToVmo()); }));
 
     dci_.Bind(driver_test_.RunInEnvironmentTypeContext<fidl::ClientEnd<fdci::UsbDciInterface>>(
         [](auto& env) { return env.TakeDciClient(); }));
   }
 
-  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+  void TearDown() override {
+    if constexpr (manage_lifetime) {
+      ASSERT_OK(driver_test_.StopDriver());
+    }
+  }
 
  protected:
   static constexpr std::string_view kSerialNumber = "Test serial number";
 
   fidl::WireSyncClient<fdci::UsbDciInterface>& dci() { return dci_; }
+  fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig>& dut() { return driver_test_; }
 
  private:
   fidl::WireSyncClient<fdci::UsbDciInterface> dci_;
   fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig> driver_test_;
 };
 
-TEST_F(UsbPeripheralHarness, AddsCorrectSerialNumberMetadata) {
+using UnmanagedUsbPeripheralTest = UsbPeripheralHarness<false>;
+using ManagedUsbPeripheralTest = UsbPeripheralHarness<true>;
+
+TEST_F(ManagedUsbPeripheralTest, AddsCorrectSerialNumberMetadata) {
   fdescriptor::wire::UsbSetup setup;
   setup.w_length = 256;
   setup.w_value = 0x3 | (USB_DT_STRING << 8);
@@ -222,7 +238,7 @@ TEST_F(UsbPeripheralHarness, AddsCorrectSerialNumberMetadata) {
   }
 }
 
-TEST_F(UsbPeripheralHarness, WorksWithVendorSpecificCommandWhenConfigurationIsZero) {
+TEST_F(ManagedUsbPeripheralTest, WorksWithVendorSpecificCommandWhenConfigurationIsZero) {
   fdescriptor::wire::UsbSetup setup;
   setup.w_length = 256;
   setup.w_value = 0x3 | (USB_DT_STRING << 8);
@@ -235,6 +251,38 @@ TEST_F(UsbPeripheralHarness, WorksWithVendorSpecificCommandWhenConfigurationIsZe
       dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
   ASSERT_TRUE(result->is_error());
   ASSERT_EQ(ZX_ERR_BAD_STATE, result->error_value());
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"ums"};
+  config.kboot_functions() = "cdc,adb";
+  StartDriverWithConfig(config);
+
+  fdescriptor::wire::UsbSetup setup;
+  setup.w_length = sizeof(usb_device_descriptor_t);
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = USB_DT_DEVICE << 8;
+  setup.w_index = 0;
+  setup.w_length = sizeof(usb_device_descriptor_t);
+
+  fidl::Arena arena;
+  std::vector<uint8_t> unused;
+  fidl::WireUnownedResult result =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+
+  ASSERT_TRUE(result.ok());
+  ASSERT_FALSE(result->is_error());
+  ASSERT_EQ(sizeof(usb_device_descriptor_t), result->value()->read.size());
+
+  usb_device_descriptor_t desc;
+  std::memcpy(&desc, result->value()->read.data(), sizeof(usb_device_descriptor_t));
+
+  // Determined by config.kboot_functions() above.
+  ASSERT_EQ(GOOGLE_USB_CDC_AND_ADB_PID, desc.id_product);
+
+  ASSERT_OK(dut().StopDriver());
 }
 
 }  // namespace usb_peripheral::test
