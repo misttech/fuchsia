@@ -4,6 +4,8 @@
 
 #include "src/lib/unwinder/arm_ehabi_unwinder.h"
 
+#include <safemath/safe_math.h>
+
 #include "src/lib/unwinder/arm_ehabi_module.h"
 #include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
@@ -63,7 +65,7 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const LoadedElfModule& loaded_elf_mo
     return ehabi_module.error_value();
   }
 
-  return ehabi_module->ehabi_module->Step(stack, current, next);
+  return ehabi_module->get().Step(stack, current, next);
 }
 
 void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
@@ -107,59 +109,45 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const LoadedElfModule& elf_
     return cb(result.error_value(), Registers(current.arch()));
   }
 
-  ArmEhAbiModule* ehabi_module = result.value().ehabi_module;
+  const ArmEhAbiModule& ehabi_module = result.value();
 
   uint64_t sp;
   if (auto err = current.GetSP(sp); err.has_err()) {
-    return cb(err, Registers(current.arch()));
+    cb(err, Registers(current.arch()));
+    return;
   }
 
-  constexpr uint32_t kDefaultStackSize = 8192;
-  if (result.value().should_synchronize_stack) {
-    stack->FetchMemoryRanges({{sp, kDefaultStackSize}}, [=, cb = std::move(cb)]() mutable {
-      ehabi_module->AsyncStep(stack, current, std::move(cb));
-    });
-  } else {
-    ehabi_module->AsyncStep(stack, current, std::move(cb));
-  }
+  constexpr uint32_t kDefaultStackSize = 4096;
+  stack->FetchMemoryRanges({{sp, kDefaultStackSize}}, [=, cb = std::move(cb)]() mutable {
+    ehabi_module.AsyncStep(stack, current, std::move(cb));
+  });
 }
 
-fit::result<Error, ArmEhAbiUnwinder::EhAbiModuleResult>
+fit::result<Error, ArmEhAbiUnwinder::ArmEhAbiModuleRef>
 ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(const LoadedElfModule& loaded_elf_module) {
   // The ModuleCache keeps a record of all the modules, so it can properly find the right module
   // for this PC. Since we don't have to keep track of anything other than the 32 bit modules
-  // here we can just index on the load address of the already found module.
-  auto it = module_map_.find(static_cast<uint32_t>(loaded_elf_module.load_address()));
+  // here we can just index on the load address of the already found module. Use checked_cast here
+  // since we should never get this far unless we think we have a 32 bit module, which implies that
+  // there should also be a 32 bit PC.
+  auto found = module_map_.find(safemath::checked_cast<uint32_t>(loaded_elf_module.load_address()));
 
-  EhAbiModuleResult result;
-
-  if (it == module_map_.end()) {
-    // Need to insert this module.
-    auto ehabi_module = std::make_unique<ArmEhAbiModule>(loaded_elf_module);
-
-    if (auto err = ehabi_module->Load(); err.has_err()) {
-      // Now try with the debug info memory if it's available.
-      if (loaded_elf_module.debug_info_memory()) {
-        ehabi_module = std::make_unique<ArmEhAbiModule>(loaded_elf_module);
-        if (auto debug_err = ehabi_module->Load(); debug_err.has_err()) {
-          return fit::error(Error("Failed to load .ARM.exidx sections: stripped binary: " +
-                                  err.msg() + "; unstripped binary: " + debug_err.msg()));
-        }
-      } else {
-        return fit::error(err);
-      }
+  if (found == module_map_.end()) {
+    auto res = ArmEhAbiModule::FromLoadedElfModule(loaded_elf_module);
+    if (res.is_error()) {
+      return res.take_error();
     }
 
-    // If either of the above worked, then we have a valid ARM EH ABI module to add to our
-    // cache.
-    it = module_map_
-             .insert(std::make_pair(loaded_elf_module.load_address(), std::move(ehabi_module)))
-             .first;
-    result.should_synchronize_stack = true;
+    auto inserted = module_map_.emplace(static_cast<uint32_t>(loaded_elf_module.load_address()),
+                                        std::move(*res));
+
+    // We have a new, valid ArmEhAbiModule which has been successfully loaded, insert it into the
+    // map.
+    return fit::ok(ArmEhAbiModuleRef(*inserted.first->second));
   }
 
-  result.ehabi_module = it->second.get();
-  return fit::ok(result);
+  // Already have inserted this one into our cache, return that.
+  return fit::ok(ArmEhAbiModuleRef(*found->second));
 }
 
 }  // namespace unwinder

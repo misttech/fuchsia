@@ -81,12 +81,15 @@ TEST(ArmEhAbiParser, CollectInstructionsTableLookup) {
   FileMemory memory(GetTestFilePath());
 
   // Use the higher level Module class to figure out what the offset is for us so we don't have to
-  // do it by hand.
-  Module elf_module(0x0, &memory, Module::AddressMode::kProcess);
+  // do it by hand. Since this is using a file rather than a properly loaded ELF file, the load
+  // address is 0. These tests can be improved in the future to accommodate a non-zero load address.
+  constexpr uint32_t kLoadAddress = 0x0;
+  Module elf_module(kLoadAddress, &memory, Module::AddressMode::kProcess);
   LoadedElfModule loaded_elf_module(elf_module);
   ASSERT_TRUE(loaded_elf_module.Load().is_ok());
-  ArmEhAbiModule ehabi_module(loaded_elf_module);
-  ASSERT_TRUE(ehabi_module.Load().ok());
+  ArmEhAbiModule ehabi_module(loaded_elf_module, loaded_elf_module.binary_memory(),
+                              static_cast<uint32_t>(loaded_elf_module.load_address()));
+  ASSERT_TRUE(ehabi_module.Load().is_ok());
 
   constexpr uint32_t kTargetPc = 0x13e54;
 

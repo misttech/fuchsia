@@ -47,9 +47,10 @@ TEST(ArmEhAbiModule, Search) {
   Module elf_module(0, &memory, Module::AddressMode::kProcess);
   LoadedElfModule loaded_elf_module(elf_module);
   ASSERT_TRUE(loaded_elf_module.Load().is_ok());
-  ArmEhAbiModule ehabi_module(loaded_elf_module);
+  ArmEhAbiModule ehabi_module(loaded_elf_module, loaded_elf_module.binary_memory(),
+                              static_cast<uint32_t>(loaded_elf_module.load_address()));
 
-  ASSERT_TRUE(ehabi_module.Load().ok());
+  ASSERT_TRUE(ehabi_module.Load().is_ok());
 
   ArmEhAbiModule::IdxHeader entry;
 

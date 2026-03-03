@@ -18,18 +18,16 @@ inline int32_t DecodePrel31(uint32_t ptr) { return static_cast<int32_t>(SignExte
 
 class ArmEhAbiModule {
  public:
-  explicit ArmEhAbiModule(const LoadedElfModule& loaded_elf_module)
-      : loaded_elf_module_(loaded_elf_module),
-        elf_(loaded_elf_module_.binary_memory()),
-        elf_ptr_(static_cast<uint32_t>(loaded_elf_module_.load_address())) {}
+  // Constructs, validates, and loads a new |ArmEhAbiModule| from the given |loaded_elf_module|.
+  // Returns any errors that occur in any of the above steps, and releases any allocated memory.
+  // The object is guaranteed to be valid if this function returns fit::ok().
+  static fit::result<Error, std::unique_ptr<ArmEhAbiModule>> FromLoadedElfModule(
+      const LoadedElfModule& loaded_elf_module);
 
-  // Load the .ARM.exidx binary search table.
-  [[nodiscard]] Error Load();
-
-  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
+  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next) const;
 
   void AsyncStep(AsyncMemory* stack, const Registers& current,
-                 fit::callback<void(Error, Registers)>);
+                 fit::callback<void(Error, Registers)>) const;
 
   struct IdxHeaderData {
     uint32_t fn_addr = 0;
@@ -52,13 +50,21 @@ class ArmEhAbiModule {
   };
 
  private:
+  // Construct via |FromLoadedElfModule|.
+  explicit ArmEhAbiModule(const LoadedElfModule& loaded_elf_module, Memory* memory,
+                          uint32_t load_address)
+      : loaded_elf_module_(loaded_elf_module), elf_(memory), elf_ptr_(load_address) {}
+
   FRIEND_TEST(ArmEhAbiModule, Search);
   FRIEND_TEST(ArmEhAbiParser, CollectInstructionsTableLookup);
 
-  // Performs an upper bounds search for PC in the exidx table.
-  Error Search(uint32_t pc, IdxHeader& entry);
+  // Load the .ARM.exidx binary search table.
+  fit::result<Error> Load();
 
-  fit::result<Error, IdxHeader> PrepareToStep(const Registers& current);
+  // Performs an upper bounds search for PC in the exidx table.
+  Error Search(uint32_t pc, IdxHeader& entry) const;
+
+  fit::result<Error, IdxHeader> PrepareToStep(const Registers& current) const;
 
   const LoadedElfModule& loaded_elf_module_;
   Memory* const elf_ = nullptr;

@@ -6,47 +6,92 @@
 
 #include <elf.h>
 
+#include <limits>
+#include <memory>
+
 #include <safemath/checked_math.h>
 
 #include "src/lib/unwinder/arm_ehabi_parser.h"
 #include "src/lib/unwinder/elf_utils.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
 
-Error ArmEhAbiModule::Load() {
+// static.
+fit::result<Error, std::unique_ptr<ArmEhAbiModule>> ArmEhAbiModule::FromLoadedElfModule(
+    const LoadedElfModule& loaded_elf_module) {
+  if (loaded_elf_module.load_address() > std::numeric_limits<uint32_t>::max()) {
+    return fit::error(Error("Load address too big to be 32 bit module!"));
+  }
+
+  if (!loaded_elf_module.binary_memory() && !loaded_elf_module.debug_info_memory()) {
+    return fit::error(Error("No valid memory to use!"));
+  }
+
+  auto try_load_from_memory =
+      [loaded_elf_module](Memory* elf) -> fit::result<Error, std::unique_ptr<ArmEhAbiModule>> {
+    auto ehabi_module = std::unique_ptr<ArmEhAbiModule>(new ArmEhAbiModule(
+        loaded_elf_module, elf, static_cast<uint32_t>(loaded_elf_module.load_address())));
+
+    if (auto err = ehabi_module->Load(); err.is_error()) {
+      return err.take_error();
+    }
+
+    return fit::ok(std::move(ehabi_module));
+  };
+
+  // Unlike CFI, where .debug_frame will contain higher quality unwind tables in the face of
+  // limited/no size restrictions when compared to .eh_frame, we have no preference for either
+  // binary or debug_info memory objects, which will contain the same unwinding instructions. So it
+  // is just a matter of where it is present.
+  fit::result<Error, std::unique_ptr<ArmEhAbiModule>> result =
+      fit::error(Error("Failed to load from both binary and debug-info memory!"));
+  if (loaded_elf_module.binary_memory()) {
+    result = try_load_from_memory(loaded_elf_module.binary_memory());
+  }
+
+  // Loading from the live binary memory didn't work or was not available. Try debug_info memory.
+  if (result.is_error() && loaded_elf_module.debug_info_memory()) {
+    result = try_load_from_memory(loaded_elf_module.binary_memory());
+  }
+
+  return result;
+}
+
+fit::result<Error> ArmEhAbiModule::Load() {
   Elf32_Ehdr ehdr;
   if (auto err = elf_->Read(elf_ptr_, ehdr); err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
   if (ehdr.e_ident[EI_MAG0] != ELFMAG0 || ehdr.e_ident[EI_MAG1] != ELFMAG1 ||
       ehdr.e_ident[EI_MAG2] != ELFMAG2 || ehdr.e_ident[EI_MAG3] != ELFMAG3) {
-    return Error("Invalid ELF header!");
+    return fit::error(Error("Invalid ELF header!"));
   }
 
   if (!elf_utils::VerifyElfIdentification<Elf32_Ehdr>(ehdr, elf_utils::ElfClass::k32Bit)) {
-    return Error("This doesn't look like an ELF module.");
+    return fit::error(Error("This doesn't look like an ELF module."));
   }
 
   auto phdr = loaded_elf_module_.GetSegmentByType(PT_ARM_EXIDX);
   if (phdr.is_error()) {
-    return phdr.error_value();
+    return phdr.take_error();
   }
 
   if (!safemath::CheckAdd(elf_ptr_, phdr->p_vaddr).AssignIfValid(&arm_exidx_start_)) {
-    return Error("Overflowed while finding .ARM.exidx start.");
+    return fit::error(Error("Overflowed while finding .ARM.exidx start."));
   }
 
   if (!safemath::CheckAdd(arm_exidx_start_, phdr->p_memsz).AssignIfValid(&arm_exidx_end_)) {
-    return Error("Overflowed while finding .ARM.exidx end.");
+    return fit::error(Error("Overflowed while finding .ARM.exidx end."));
   }
 
-  return Success();
+  return fit::ok();
 }
 
-Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
+Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) const {
   uint32_t low = 0;
   uint32_t high = (arm_exidx_end_ - arm_exidx_start_) / sizeof(IdxHeaderData);
 
@@ -123,7 +168,7 @@ Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
 }
 
 fit::result<Error, ArmEhAbiModule::IdxHeader> ArmEhAbiModule::PrepareToStep(
-    const Registers& current) {
+    const Registers& current) const {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
     return fit::error(err);
@@ -137,7 +182,7 @@ fit::result<Error, ArmEhAbiModule::IdxHeader> ArmEhAbiModule::PrepareToStep(
   return fit::ok(entry);
 }
 
-Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next) {
+Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next) const {
   IdxHeader entry;
   if (auto result = PrepareToStep(current); result.is_ok()) {
     entry = result.value();
@@ -151,7 +196,7 @@ Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& n
 }
 
 void ArmEhAbiModule::AsyncStep(AsyncMemory* stack, const Registers& current,
-                               fit::callback<void(Error, Registers)> cb) {
+                               fit::callback<void(Error, Registers)> cb) const {
   IdxHeader entry;
   if (auto result = PrepareToStep(current); result.is_ok()) {
     entry = result.value();

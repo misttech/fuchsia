@@ -36,11 +36,8 @@ class ArmEhAbiUnwinder : public UnwinderBase {
                  fit::callback<void(Error, Registers)> cb);
 
   // Looksup the EhAbiModule.
-  struct EhAbiModuleResult {
-    ArmEhAbiModule* ehabi_module = nullptr;
-    bool should_synchronize_stack = false;
-  };
-  fit::result<Error, EhAbiModuleResult> GetEhAbiModuleFromModuleInfo(
+  using ArmEhAbiModuleRef = std::reference_wrapper<const ArmEhAbiModule>;
+  fit::result<Error, ArmEhAbiModuleRef> GetEhAbiModuleFromModuleInfo(
       const LoadedElfModule& elf_module);
 
   // Lazily loaded.
