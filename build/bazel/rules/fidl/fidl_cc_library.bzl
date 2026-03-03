@@ -16,35 +16,46 @@ _FidlCcCodegenInfo = provider(
     },
 )
 
-def _typed_deps(deps, binding_type):
-    """Converts a list of FIDL library labels to bindings-type-specific cc_library() labels.
+def _get_flavored_deps(deps, bindings_flavor):
+    """Converts a list of FIDL library labels to bindings-flavor-specific cc_library() labels.
 
     Args:
       deps: List of `Label`s, each representing a FIDL library target.
-      binding_type: String indicating the binding type (e.g., "cpp").
+      bindings_flavor: String indicating the binding flavor (e.g., "cpp").
 
     Returns:
       List of `Label`s, where each original FIDL library label is transformed
-      into the corresponding bindings-type-specific cc_library() label.
+      into the corresponding bindings-flavor-specific cc_library() label.
     """
     result = []
     for dep in deps:
-        dep_label = _get_fidl_cc_lib_name(dep.name, binding_type)
+        dep_label = _get_fidl_cc_lib_name(dep.name, bindings_flavor)
         dep_with_binding = "//%s:%s" % (dep.package, dep_label)
         result.append(dep_with_binding)
     return result
 
-def _get_fidl_cc_lib_name(fidl_target_name, binding_type):
-    """Returns the cc_library() name for a FIDL library and binding type.
+def _get_fidl_cc_lib_name(fidl_target_name, bindings_flavor):
+    """Returns the cc_library() name for a FIDL library and binding flavor.
 
     Args:
       fidl_target_name: String name of the FIDL library target.
-      binding_type: String indicating the binding type (e.g., "cpp").
+      bindings_flavor: String indicating the binding flavor (e.g., "cpp").
 
     Returns:
       String name of the cc_library() target.
     """
-    return "{fidl}_{binding_type}".format(fidl = fidl_target_name, binding_type = binding_type)
+    return "{fidl}_{bindings_flavor}".format(fidl = fidl_target_name, bindings_flavor = bindings_flavor)
+
+def _get_root_path(bindings_flavor):
+    """Returns the root path for the generated FIDL bindings files.
+
+    Args:
+      bindings_flavor: String indicating the binding flavor (e.g., "cpp").
+
+    Returns:
+      String root path for the generated FIDL bindings files.
+    """
+    return "bindings/" + bindings_flavor
 
 def fidl_cpp_family(
         name,
@@ -75,14 +86,103 @@ def fidl_cpp_family(
         fail("At least one of `enable_cpp` or `enable_hlcpp` must be true.")
 
     if enable_cpp:
-        natural_bindings_type = "cpp"
-        _fidl_cc_library(
-            name = _get_fidl_cc_lib_name(name, natural_bindings_type),
+        cpp_bindings_flavor = "cpp"
+        cpp_lib_name = _get_fidl_cc_lib_name(name, cpp_bindings_flavor)
+
+        cpp_codegen_name = "%s_generated_fidl_cc_bindings" % cpp_lib_name
+        cpp_sources_name = "%s_sources" % cpp_lib_name
+
+        generated_header_files = [
+            "common_types.h",
+            "common_types_format.h",
+            "fidl.h",
+            "markers.h",
+            "natural_messaging.h",
+            "natural_ostream.h",
+            "natural_types.h",
+            "type_conversions.h",
+            "wire_messaging.h",
+            "wire_types.h",
+            "wire.h",
+        ]
+        generated_source_files = [
+            "common_types.cc",
+            "natural_ostream.cc",
+            "natural_types.cc",
+            "type_conversions.cc",
+            "wire_types.cc",
+        ] + select({
+            "@platforms//os:fuchsia": [
+                "natural_messaging.cc",
+                "wire_messaging.cc",
+            ],
+            "//conditions:default": [],
+        })
+        additional_deps = [
+            "//sdk/lib/fidl/cpp:cpp_base",
+            "//sdk/lib/fidl/cpp:natural_ostream",
+            "//sdk/lib/fidl/cpp/wire",
+            "//sdk/lib/fit",
+        ] + select({
+            "@platforms//os:fuchsia": [
+                "//sdk/lib/fidl",
+                "//sdk/lib/fidl/cpp",
+            ],
+            "//conditions:default": [],
+        })
+
+        if contains_drivers:
+            generated_header_files += ["driver/wire.h"] + select({
+                "@platforms//os:fuchsia": [
+                    "driver/fidl.h",
+                    "driver/natural_messaging.h",
+                    "driver/wire_messaging.h",
+                ],
+                "//conditions:default": [],
+            })
+            generated_source_files += select({
+                "@platforms//os:fuchsia": [
+                    "driver/natural_messaging.cc",
+                    "driver/wire_messaging.cc",
+                ],
+                "//conditions:default": [],
+            })
+            additional_deps += [
+                "//sdk/lib/fidl_driver",
+                "//sdk/lib/fidl_driver:fidl_driver_natural",
+            ]
+
+        # TODO(https://fxbug.dev/454977301): Output the following for the test library:
+        # "test_base.h",
+        # "wire_test_base.h",
+
+        # TODO(https://fxbug.dev/454977301): Output "hlcpp_conversion.h" when `enable_hlcpp` is true.
+
+        _generate_fidl_cc_bindings(
+            name = cpp_codegen_name,
             fidl_library_name = fidl_library_name,
             fidl_ir_json = fidl_ir_json,
-            deps = deps,
-            binding_type = natural_bindings_type,
+            bindings_flavor = cpp_bindings_flavor,
             contains_drivers = contains_drivers,
+            generated_header_files = generated_header_files,
+            generated_source_files = generated_source_files,
+            testonly = testonly,
+        )
+
+        _sources_wrapper(
+            name = cpp_sources_name,
+            generated_fidl_cc_bindings = ":%s" % cpp_codegen_name,
+            testonly = testonly,
+        )
+
+        _fidl_cc_library(
+            name = cpp_lib_name,
+            fidl_library_name = fidl_library_name,
+            fidl_deps = deps,
+            bindings_flavor = cpp_bindings_flavor,
+            hdrs = [":%s" % cpp_codegen_name],
+            srcs = [":%s" % cpp_sources_name],
+            additional_deps = additional_deps,
             testonly = testonly,
             visibility = visibility,
         )
@@ -94,10 +194,11 @@ def fidl_cpp_family(
 def _fidl_cc_library(
         name,
         fidl_library_name,
-        fidl_ir_json,
-        deps,
-        binding_type,
-        contains_drivers,
+        fidl_deps,
+        bindings_flavor,
+        hdrs,
+        srcs,
+        additional_deps,
         testonly,
         visibility):
     """Generate a `cc_library()` providing the generated C++ bindings for a given FIDL library.
@@ -105,141 +206,50 @@ def _fidl_cc_library(
     Args:
       name: String name of the `cc_library()` target.
       fidl_library_name: String name of the FIDL library for which bindings are generated.
-      fidl_ir_json: `Label` pointing to a single file containing the FIDL IR
-        representation of the `fidl_library_name` library.
-      deps: List of `Label`s for FIDL libraries that the `fidl_library_name` library depends on.
-      contains_drivers: Boolean indicating whether the `fidl_library_name`
-        library supports drivers.
-      binding_type: String indicating the binding type (e.g., "cpp").
+      fidl_deps: List of `Label`s for FIDL libraries that the
+        `fidl_library_name` library depends on.
+      bindings_flavor: String name of the FIDL bindings flavor (e.g., "cpp").
+      hdrs: List of `Label`s for the generated header files.
+      srcs: List of `Label`s for the generated source files.
+      additional_deps: List of `Label`s for additional dependencies of the generated files.
       testonly: Usual meaning.
       visibility: Usual meaning.
     """
 
-    # TODO(https://fxbug.dev/454977301): Support HLCPP.
-    if binding_type != "cpp":
-        fail("HLCPP bindings are not supported yet.")
-
-    gen_name = "%s_generated_fidl_cc_bindings" % name
-    sources_name = "%s_sources" % name
-
-    _generate_fidl_cc_bindings(
-        name = gen_name,
-        fidl_library_name = fidl_library_name,
-        fidl_ir_json = fidl_ir_json,
-        binding_type = binding_type,
-        contains_drivers = contains_drivers,
-    )
-
-    _sources_wrapper(
-        name = sources_name,
-        generated_fidl_cc_bindings = ":%s" % gen_name,
-    )
-
-    cc_library(
-        name = name,
-        hdrs = [
-            ":%s" % gen_name,
-        ],
-        srcs = [
-            ":%s" % sources_name,
-        ],
-        # This is necessary in order to locate generated headers.
-        strip_include_prefix = gen_name + "." + binding_type,
-        deps = _typed_deps(deps, binding_type) + get_deps_for_generated_files(contains_drivers),
-        testonly = testonly,
-        visibility = visibility,
-    )
-
-def get_deps_for_generated_files(contains_drivers):
-    """Returns the deps corresponding to the files returned by `_generate_fidl_cc_bindings()`."""
-    deps = [
-        "//sdk/lib/fidl/cpp:cpp_base",
-        "//sdk/lib/fidl/cpp:natural_ostream",
-        "//sdk/lib/fidl/cpp/wire",
-        "//sdk/lib/fit",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//sdk/lib/fidl",
-            "//sdk/lib/fidl/cpp",
-        ],
-        "//conditions:default": [],
-    })
-
-    if contains_drivers:
-        deps += [
-            "//sdk/lib/fidl_driver",
-            "//sdk/lib/fidl_driver:fidl_driver_natural",
-        ]
-
-    return deps
+    if fidl_library_name == "zx":
+        # The zx FIDL library isn't generated with C++ fidlgens.
+        # Create an empty library.
+        if fidl_deps != []:
+            fail("zx FIDL library should not have any dependencies.")
+        cc_library(
+            name = name,
+            testonly = testonly,
+            visibility = visibility,
+        )
+    else:
+        cc_library(
+            name = name,
+            hdrs = hdrs,
+            srcs = srcs,
+            deps = _get_flavored_deps(fidl_deps, bindings_flavor) + additional_deps,
+            # This is necessary in order to locate generated headers.
+            strip_include_prefix = _get_root_path(bindings_flavor),
+            testonly = testonly,
+            visibility = visibility,
+        )
 
 def _generate_fidl_cc_bindings_impl(ctx):
     ir = ctx.file.fidl_ir_json
-    name = ctx.attr.fidl_library_name
+    fidl_library_name = ctx.attr.fidl_library_name
 
-    base_path = ctx.attr.name + "." + ctx.attr.binding_type
-
-    # TODO(https://fxbug.dev/454977301): Get the actual value.
-    is_fuchsia = True
-
-    header_files = [
-        "common_types.h",
-        "common_types_format.h",
-        "fidl.h",
-        "markers.h",
-        "natural_messaging.h",
-        "natural_ostream.h",
-        "natural_types.h",
-        "type_conversions.h",
-        "wire_messaging.h",
-        "wire_types.h",
-        "wire.h",
-    ]
-    source_files = [
-        "common_types.cc",
-        "natural_ostream.cc",
-        "natural_types.cc",
-        "type_conversions.cc",
-        "wire_types.cc",
-    ]
-
-    if is_fuchsia:
-        source_files += [
-            "natural_messaging.cc",
-            "wire_messaging.cc",
-        ]
-
-    if ctx.attr.contains_drivers:
-        header_files += ["driver/wire.h"]
-
-        if is_fuchsia:
-            header_files += [
-                "driver/fidl.h",
-                "driver/natural_messaging.h",
-                "driver/wire_messaging.h",
-            ]
-            source_files += [
-                "driver/natural_messaging.cc",
-                "driver/wire_messaging.cc",
-            ]
-
-    # TODO(https://fxbug.dev/454977301): Output the following for the test library:
-    # "test_base.h",
-    # "wire_test_base.h",
-
-    # TODO(https://fxbug.dev/454977301): Output "hlcpp_conversion.h" when `enable_hlcpp` is true.
-
-    # TODO(https://fxbug.dev/42060065): Better workaround for skipping codegen for zx.
-    if name == "zx":
-        source_files = ["markers.h"]
-
-    dir = base_path + "/fidl/" + name + "/cpp"
+    root_path = _get_root_path(ctx.attr.bindings_flavor)
+    dir = root_path + "/fidl/" + fidl_library_name + "/cpp"
 
     headers = []
     sources = []
-    for header in header_files:
+    for header in ctx.attr.generated_header_files:
         headers.append(ctx.actions.declare_file(dir + "/" + header))
-    for source in source_files:
+    for source in ctx.attr.generated_source_files:
         sources.append(ctx.actions.declare_file(dir + "/" + source))
 
     ctx.actions.run(
@@ -250,7 +260,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
             "--clang-format-path",
             ctx.executable._clang_format.path,
             "--root",
-            paths.join(ctx.bin_dir.path, ctx.label.workspace_root, ctx.label.package, base_path),
+            paths.join(ctx.bin_dir.path, ctx.label.workspace_root, ctx.label.package, root_path),
 
             # TODO(https://fxbug.dev/454977301): Support experiments.
             # if (defined(invoker.experiments)) {
@@ -287,14 +297,22 @@ _generate_fidl_cc_bindings = rule(
             allow_single_file = True,
             mandatory = True,
         ),
-        "binding_type": attr.string(
-            doc = "Type of bindings to expose",
+        "bindings_flavor": attr.string(
+            doc = "The flavor of bindings to generate.",
             mandatory = True,
             values = ["cpp"],
         ),
         "contains_drivers": attr.bool(
             doc = "Indicates if any of the FIDL files contain the driver transport or " +
                   "references to the driver transport.",
+            mandatory = True,
+        ),
+        "generated_header_files": attr.string_list(
+            doc = "List of header files that will be generated.",
+            mandatory = True,
+        ),
+        "generated_source_files": attr.string_list(
+            doc = "List of source files that will be generated.",
             mandatory = True,
         ),
         "_fidlgen_cpp": attr.label(
