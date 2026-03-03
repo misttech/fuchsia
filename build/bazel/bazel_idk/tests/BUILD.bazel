@@ -887,6 +887,7 @@ genrule(
         # Test linking on the host toolchain where possible.
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_source_library_zx",
+        ":test_executable_using_fidl_cc",
 
         # These libraries have Fuchsia-only dependencies and thus cannot be
         # linked into the executable on the host toolchain.

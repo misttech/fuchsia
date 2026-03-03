@@ -187,9 +187,11 @@ def _generate_fidl_cc_bindings_impl(ctx):
         "common_types_format.h",
         "fidl.h",
         "markers.h",
+        "natural_messaging.h",
         "natural_ostream.h",
         "natural_types.h",
         "type_conversions.h",
+        "wire_messaging.h",
         "wire_types.h",
         "wire.h",
     ]
@@ -202,10 +204,6 @@ def _generate_fidl_cc_bindings_impl(ctx):
     ]
 
     if is_fuchsia:
-        header_files += [
-            "natural_messaging.h",
-            "wire_messaging.h",
-        ]
         source_files += [
             "natural_messaging.cc",
             "wire_messaging.cc",
