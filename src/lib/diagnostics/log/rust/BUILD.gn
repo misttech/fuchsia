@@ -68,7 +68,7 @@ rustc_library("rust") {
 # support. This exists mostly to support driver libraries that don't use
 # this feature are forbidden from linking the symbol zx_take_startup_handle.
 rustc_library("no_startup_handle") {
-  name = "diagnostics_log"
+  name = "driver_diagnostics_log"
   edition = "2024"
   deps = LIB_DEPS
   sources = LIB_SOURCES

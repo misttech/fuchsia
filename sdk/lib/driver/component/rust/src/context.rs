@@ -121,8 +121,8 @@ impl DriverContext {
             }
         };
 
-        if let Err(e) = diagnostics_log::initialize(
-            diagnostics_log::PublishOptions::default()
+        if let Err(e) = driver_diagnostics_log::initialize(
+            driver_diagnostics_log::PublishOptions::default()
                 .use_log_sink(log_client)
                 .tags(&["driver", driver_name]),
         ) {

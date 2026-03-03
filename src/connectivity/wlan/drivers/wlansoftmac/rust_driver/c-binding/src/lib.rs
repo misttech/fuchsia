@@ -5,7 +5,7 @@
 //! C bindings for wlansoftmac-rust crate.
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use diagnostics_log::PublishOptions;
+use driver_diagnostics_log::PublishOptions;
 use fuchsia_async::LocalExecutor;
 use log::{error, info};
 use std::ffi::c_void;
@@ -81,10 +81,10 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
             return;
         }
         // Initialize logging with a tag that can be used to filter for forwarding to console
-        diagnostics_log::initialize_sync(
+        driver_diagnostics_log::initialize_sync(
             PublishOptions::default()
                 .tags(&["wlan"])
-                .enable_metatag(diagnostics_log::Metatag::Target),
+                .enable_metatag(driver_diagnostics_log::Metatag::Target),
         );
     });
 

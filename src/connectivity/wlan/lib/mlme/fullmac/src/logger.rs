@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_log::PublishOptions;
+use driver_diagnostics_log::PublishOptions;
 use std::sync::Once;
 
 static LOGGER_ONCE: Once = Once::new();
@@ -15,10 +15,10 @@ pub fn init() {
         // Initialize logging with a tag that can be used to filter for forwarding to console
         // Ignore failures as they might occur due to previously installed logger by the driver
         // host.
-        if let Err(e) = diagnostics_log::initialize(
+        if let Err(e) = driver_diagnostics_log::initialize(
             PublishOptions::default()
                 .tags(&["wlan"])
-                .enable_metatag(diagnostics_log::Metatag::Target),
+                .enable_metatag(driver_diagnostics_log::Metatag::Target),
         ) {
             eprintln!("Error initializing logging at driver startup: {e}");
         }
