@@ -62,6 +62,8 @@ idk_cc_source_library(
         "include/lib/fidl/cpp/wire/status.h",
         "include/lib/fidl/cpp/wire/string_view.h",
         "include/lib/fidl/cpp/wire/traits.h",
+        "include/lib/fidl/cpp/wire/transaction.h",
+        "include/lib/fidl/cpp/wire/unknown_interactions.h",
         "include/lib/fidl/cpp/wire/vector_view.h",
         "include/lib/fidl/cpp/wire/wire_coding_common.h",
         "include/lib/fidl/cpp/wire/wire_coding_traits.h",
@@ -82,9 +84,7 @@ idk_cc_source_library(
         "include/lib/fidl/cpp/wire/server.h",
         "include/lib/fidl/cpp/wire/service_handler.h",
         "include/lib/fidl/cpp/wire/sync_call.h",
-        "include/lib/fidl/cpp/wire/transaction.h",
         "include/lib/fidl/cpp/wire/unknown_interaction_handler.h",
-        "include/lib/fidl/cpp/wire/unknown_interactions.h",
     ],
     hdrs_for_internal_use = [
         "include/lib/fidl/cpp/wire/internal/transport.h",

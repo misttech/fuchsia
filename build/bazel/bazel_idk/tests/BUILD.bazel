@@ -896,6 +896,10 @@ genrule(
         ":test_shared_library_zx",
         ":test_static_library_zx",
 
+        # Exercise FIDL bindings.
+        # Bindings for a library with dependencies.
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+
         # Other libraries.
         "//sdk/lib/fidl",
         "//sdk/lib/fidl/cpp:cpp_base",
