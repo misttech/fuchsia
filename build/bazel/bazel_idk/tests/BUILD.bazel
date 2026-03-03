@@ -783,6 +783,16 @@ cc_binary(
     deps = [":imported-test-static-library"],
 )
 
+cc_binary(
+    name = "test_executable_using_fidl_cc",
+    testonly = True,
+    srcs = ["fidl_test.cc"],
+    deps = [
+        "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+    ],
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
@@ -799,6 +809,7 @@ filegroup(
         ":test_executable_using_cc_source_library_zx",
         ":test_executable_using_cc_static_library_zx",
         ":test_executable_using_imported_cc_static_library",
+        ":test_executable_using_fidl_cc",
 
         # Verify that the file paths of prebuilt libraries are correct.
         ":verify_test_shared_library_file_path",
@@ -845,11 +856,16 @@ filegroup(
         ":build_only_tests_on_host_toolchain",
 
         # Exercise FIDL.
-        # TODO(https://fxbug.dev/428285014): Remove once we are building elsewhere.
+        # TODO(https://fxbug.dev/428285014): Remove these once we are building them elsewhere.
         "//examples/fidl/fuchsia.examples.docs",
         "//examples/fidl/fuchsia.examples.docs:versioning",
-        # This tests indirect FIDL library dependencies.
+        # Bindings for a library with dependencies.
+        # It also depends on "zx", which is handled uniquely.
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        # A library with indirect dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",
+        # TODO(https://fxbug.dev/454977301): Uncomment once FIDL for drivers is supported.
+        # "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
 
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.

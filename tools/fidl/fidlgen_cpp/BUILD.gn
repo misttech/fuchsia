@@ -203,6 +203,10 @@ if (is_host) {
     sdk_area = "FIDL"
     category = "partner"
     sdk_name = "fidlgen_cpp"
+    visibility = [
+      "*",
+      "//build/bazel/rules/fidl/*",
+    ]
     deps = [
       "//tools/fidl/fidlgen_cpp/codegen",
       "//tools/fidl/lib/fidlgen_cpp",

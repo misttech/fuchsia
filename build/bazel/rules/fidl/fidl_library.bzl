@@ -14,6 +14,7 @@ load(
     "json_encode_dict_values",
 )
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
+load(":fidl_cc_library.bzl", "fidl_cpp_family")
 load(":fidl_ir.bzl", "fidl_ir")
 
 # LINT.IfChange(determine_fidlc_versioned_arg)
@@ -302,13 +303,18 @@ def _fidl_library_impl(
         # TODO(https://fxbug.dev/428285014): Implement compatibility tests.
         pass
 
-    if enable_cpp:
-        # TODO(https://fxbug.dev/454977301): Implement C++ bindings.
-        pass
-
-    if enable_hlcpp:
-        # TODO(https://fxbug.dev/454977301): Implement HLCPP bindings.
-        print("HLCPP bindings are not yet supported (%s)." % library_name)
+    if enable_cpp or enable_hlcpp:
+        fidl_cpp_family(
+            name = name,
+            fidl_library_name = library_name,
+            fidl_ir_json = fidl_ir_json,
+            deps = deps,
+            contains_drivers = contains_drivers,
+            enable_cpp = enable_cpp,
+            enable_hlcpp = enable_hlcpp,
+            testonly = testonly,
+            visibility = visibility,
+        )
 
     if enable_rust:
         # TODO(https://fxbug.dev/454452299): Implement Rust bindings.
@@ -316,15 +322,15 @@ def _fidl_library_impl(
 
     if enable_rust_next:
         # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings.
-        print("Next-generation Rust bindings are not yet supported (%s)." % library_name)
+        print("Next-generation Rust bindings are not yet supported (https://fxbug.dev/454452299): %s." % library_name)
 
     if enable_bindlib:
-        # TODO(https://fxbug.dev/454451664): Implement bindlib bindings.
+        # TODO(https://fxbug.dev/442640067): Implement bindlib bindings.
         pass
 
     if enable_banjo:
         # TODO(https://fxbug.dev/428285014): Implement Banjo bindings if necessary.
-        print("Banjo bindings are not yet supported (%s)." % library_name)
+        print("Banjo bindings are not yet supported (https://fxbug.dev/428285014): %s." % library_name)
 
     if enable_zither:
         zither_library(
@@ -401,7 +407,8 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/428285014): This target may not be needed since
     # dependencies should always be on the bindings or IDK targets. It may still
     # be useful to have something like it to group together dependencies on
-    # other targets for the bindings and IDK atom target to depend on.
+    # other targets for the bindings and IDK atom target to depend on to ensure
+    # linting, etc. are always performed (avoiding https://fxbug.dev/381123422).
     native.filegroup(
         name = name,
         srcs = [compilation_target_name] + deps,
