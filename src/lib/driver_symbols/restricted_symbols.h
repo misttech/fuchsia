@@ -1369,7 +1369,6 @@ inline constexpr std::string_view kRestrictedLibcSymbols[] = {
     "y1f",
     "yn",
     "ynf",
-    "zx_take_startup_handle",
     "zx_utc_reference_get",
     "zx_utc_reference_swap",
     // keep-sorted end

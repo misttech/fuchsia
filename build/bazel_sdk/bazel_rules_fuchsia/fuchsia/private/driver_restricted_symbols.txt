@@ -1165,7 +1165,6 @@ yn
 ynf
 _zx_job_default
 _zx_process_self
-zx_take_startup_handle
 _zx_utc_reference_get
 zx_utc_reference_get
 _zx_utc_reference_swap
