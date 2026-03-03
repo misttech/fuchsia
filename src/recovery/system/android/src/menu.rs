@@ -12,6 +12,8 @@ pub const MAIN_MENU: &[MenuItem] = &[
 
 pub const WIPE_DATA_MENU: &[MenuItem] = &[MenuItem::WipeDataCancel, MenuItem::WipeDataConfirm];
 
+pub const PROMPT_WIPE_DATA_MENU: &[MenuItem] = &[MenuItem::Reboot, MenuItem::WipeData];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItem {
     Reboot,

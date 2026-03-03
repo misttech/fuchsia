@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
-use bootloader_message::BootloaderMessage;
+use bootloader_message::{BootloaderMessage, RecoveryActionHandler};
 use carnelian::app::ViewCreationParameters;
 use carnelian::color::Color;
 use carnelian::drawing::{DisplayRotation, FontFace};
@@ -21,6 +21,7 @@ use carnelian::{
 };
 use euclid::size2;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_hardware_power_statecontrol::ShutdownAction;
 use fidl_fuchsia_input_report::ConsumerControlButton;
 use fidl_fuchsia_recovery_android::{UpdaterMarker, UpdaterRequest, UpdaterRequestStream};
 use futures::channel::mpsc;
@@ -106,13 +107,15 @@ struct RecoveryViewAssistant {
     menu: Menu,
     logs: Option<Vec<String>>,
     wheel_diff: i32,
-    message: Option<&'static str>,
+    message: Option<String>,
     waiting_for_confirmation: bool,
     // tuple of touch contact id, start location, current location
     active_contact: Option<(input::touch::ContactId, IntPoint, IntPoint)>,
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
+    main_menu_items: &'static [menu::MenuItem],
+    main_menu_message: Option<String>,
 }
 
 impl RecoveryViewAssistant {
@@ -151,17 +154,15 @@ impl RecoveryViewAssistant {
             sideload_request_receiver,
             exposed_dir,
             svc_dir,
+            main_menu_items: menu::MAIN_MENU,
+            main_menu_message: None,
         };
-        for arg in bootloader_message.recovery_args() {
-            match arg {
-                "--wipe_data" => {
-                    assistant.handle_message(carnelian::make_message(RecoveryMessages::WipeData))
-                }
-                "--sideload" => assistant.on_select_sideload(false),
-                "--sideload_auto_reboot" => assistant.on_select_sideload(true),
-                _ => {}
-            }
-        }
+
+        // *NOTE*: Handling recovery actions may trigger immediate action without user intervention
+        // depending on what actions were specified in the bootloader message. Recovery actions can
+        // also change the state of the main menu presented to the user.
+        bootloader_message.handle_recovery_actions(&mut assistant);
+
         Ok(assistant)
     }
 
@@ -183,28 +184,29 @@ impl RecoveryViewAssistant {
         match self.menu.current_item() {
             menu::MenuItem::Reboot => {
                 self.log("Rebooting...");
-                self.view_sender.queue_message(RecoveryMessages::Reboot);
+                let action = ShutdownAction::Reboot;
+                self.view_sender.queue_message(RecoveryMessages::Shutdown { action });
             }
             menu::MenuItem::RebootBootloader => {
                 self.log("Rebooting to bootloader...");
-                self.view_sender.queue_message(RecoveryMessages::RebootBootloader);
-            }
-            menu::MenuItem::Sideload => {
-                self.on_select_sideload(false);
+                let action = ShutdownAction::RebootToBootloader;
+                self.view_sender.queue_message(RecoveryMessages::Shutdown { action });
             }
             menu::MenuItem::PowerOff => {
                 self.log("Powering off...");
-                self.view_sender.queue_message(RecoveryMessages::PowerOff);
+                let action = ShutdownAction::Poweroff;
+                self.view_sender.queue_message(RecoveryMessages::Shutdown { action });
+            }
+            menu::MenuItem::Sideload => {
+                self.sideload(/*auto_reboot=*/ false);
             }
             menu::MenuItem::WipeData => {
                 self.menu = Menu::new(menu::WIPE_DATA_MENU);
-                self.message = Some("Wipe all user data?\n  THIS CAN NOT BE UNDONE!");
+                self.message = Some("Wipe all user data?\n  THIS CAN NOT BE UNDONE!".to_string());
                 self.request_render();
             }
             menu::MenuItem::WipeDataCancel => {
-                self.menu = Menu::new(menu::MAIN_MENU);
-                self.message = None;
-                self.request_render();
+                self.restore_main_menu();
             }
             menu::MenuItem::WipeDataConfirm => {
                 self.view_sender.queue_message(RecoveryMessages::WipeData);
@@ -212,13 +214,10 @@ impl RecoveryViewAssistant {
         }
     }
 
-    fn on_select_sideload(&mut self, auto_reboot: bool) {
-        self.log("Now send the package you want to apply to the device with \"adb sideload <filename>\"...");
-        self.view_sender.queue_message(if auto_reboot {
-            RecoveryMessages::SideloadAutoReboot
-        } else {
-            RecoveryMessages::Sideload
-        });
+    fn restore_main_menu(&mut self) {
+        self.menu = Menu::new(self.main_menu_items);
+        self.message = self.main_menu_message.clone();
+        self.request_render();
     }
 }
 
@@ -334,7 +333,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                                         builder.space(size2(size.width * 0.1, text_size));
                                         builder.text(
                                             self.font_face.clone(),
-                                            message,
+                                            message.as_str(),
                                             text_size,
                                             Point::zero(),
                                             TextFacetOptions {
@@ -505,9 +504,7 @@ impl ViewAssistant for RecoveryViewAssistant {
             {
                 self.waiting_for_confirmation = false;
                 self.logs = None;
-                self.menu = Menu::new(menu::MAIN_MENU);
-                self.message = None;
-                self.request_render();
+                self.restore_main_menu();
             }
             return Ok(());
         }
@@ -555,32 +552,7 @@ impl ViewAssistant for RecoveryViewAssistant {
             RecoveryMessages::TaskDone => {
                 self.waiting_for_confirmation = true;
             }
-            RecoveryMessages::Reboot => {
-                let view_sender = self.view_sender.clone();
-                fasync::Task::local(async move {
-                    if let Err(e) = power::reboot().await {
-                        view_sender.queue_message(RecoveryMessages::Log(format!(
-                            "Failed to reboot: {e:#}"
-                        )));
-                    }
-                    view_sender.queue_message(RecoveryMessages::TaskDone);
-                })
-                .detach();
-            }
-            RecoveryMessages::RebootBootloader => {
-                let view_sender = self.view_sender.clone();
-                fasync::Task::local(async move {
-                    if let Err(e) = power::reboot_to_bootloader().await {
-                        view_sender.queue_message(RecoveryMessages::Log(format!(
-                            "Failed to reboot to bootloader: {e:#}"
-                        )));
-                    }
-                    view_sender.queue_message(RecoveryMessages::TaskDone);
-                })
-                .detach();
-            }
-            recovery_message @ (RecoveryMessages::Sideload
-            | RecoveryMessages::SideloadAutoReboot) => {
+            RecoveryMessages::Sideload { auto_reboot } => {
                 let view_sender = self.view_sender.clone();
                 let sideload_request_receiver = Arc::clone(&self.sideload_request_receiver);
                 let exposed_dir = Arc::clone(&self.exposed_dir);
@@ -610,22 +582,20 @@ impl ViewAssistant for RecoveryViewAssistant {
                     if let Err(e) = responder.send() {
                         log::error!("Error sending response for Update: {e:?}");
                     }
-                    view_sender.queue_message(
-                        if recovery_message == RecoveryMessages::SideloadAutoReboot {
-                            RecoveryMessages::Reboot
-                        } else {
-                            RecoveryMessages::TaskDone
-                        },
-                    );
+                    view_sender.queue_message(if auto_reboot {
+                        RecoveryMessages::Shutdown { action: ShutdownAction::Reboot }
+                    } else {
+                        RecoveryMessages::TaskDone
+                    });
                 })
                 .detach();
             }
-            RecoveryMessages::PowerOff => {
+            RecoveryMessages::Shutdown { action } => {
                 let view_sender = self.view_sender.clone();
                 fasync::Task::local(async move {
-                    if let Err(e) = power::power_off().await {
+                    if let Err(e) = power::shutdown(action).await {
                         view_sender.queue_message(RecoveryMessages::Log(format!(
-                            "Failed to power off: {e:#}"
+                            "Failed to send shutdown message: {e:#}"
                         )));
                     }
                     view_sender.queue_message(RecoveryMessages::TaskDone);
@@ -649,16 +619,50 @@ impl ViewAssistant for RecoveryViewAssistant {
     }
 }
 
+impl RecoveryActionHandler for RecoveryViewAssistant {
+    fn wipe_data(&mut self) {
+        // We immediately start the wipe data flow in this case without user intervention.
+        log::info!("Starting factory data reset...");
+        self.handle_message(carnelian::make_message(RecoveryMessages::WipeData))
+    }
+
+    fn sideload(&mut self, auto_reboot: bool) {
+        log::info!("Preparing to sideload (auto_reboot={auto_reboot}).");
+        self.log(
+            "Now send the package you want to apply to the device with \
+\"adb sideload <filename>\"...",
+        );
+        self.view_sender.queue_message(RecoveryMessages::Sideload { auto_reboot });
+    }
+
+    fn prompt_and_wipe_data(&mut self, reason: Option<&str>) {
+        log::info!("Previous boot failed, prompting user to wipe data (reason={reason:?}).");
+        // NOTE: This message differs slightly from the official Android one to improve readability
+        // on devices with smaller screens. The original string specified in Android recovery can
+        // be found at:
+        // https://cs.android.com/android/platform/superproject/main/+/main:bootable/recovery/recovery.cpp;drc=61197364367c9e404c7da6900658f1b16c42d0da;l=205
+        let msg = format!(
+            "Android boot failure, factory reset may be required. {}{}",
+            if reason.is_some() { "\nReason: " } else { "" },
+            reason.unwrap_or("")
+        );
+        self.main_menu_message = Some(msg);
+        self.main_menu_items = menu::PROMPT_WIPE_DATA_MENU;
+        self.restore_main_menu();
+    }
+
+    fn other(&mut self, arg: &str, reason: Option<&str>) {
+        log::warn!("Unknown recovery action: {arg} (reason: {reason:?})");
+    }
+}
+
 #[derive(PartialEq, Eq)]
 enum RecoveryMessages {
     Log(String),
     ReplaceLastLog(String),
     TaskDone,
-    Reboot,
-    RebootBootloader,
-    Sideload,
-    SideloadAutoReboot,
-    PowerOff,
+    Shutdown { action: ShutdownAction },
+    Sideload { auto_reboot: bool },
     WipeData,
 }
 

@@ -6,37 +6,12 @@ use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol as fpower_statecontrol;
 use fuchsia_component::client::connect_to_protocol;
 
-pub async fn reboot() -> Result<(), Error> {
+pub async fn shutdown(action: fpower_statecontrol::ShutdownAction) -> Result<(), Error> {
     let proxy = connect_to_protocol::<fpower_statecontrol::AdminMarker>()?;
+    log::info!("Shutting down system with action {:?}", action);
     proxy
         .shutdown(&fpower_statecontrol::ShutdownOptions {
-            action: Some(fpower_statecontrol::ShutdownAction::Reboot),
-            reasons: Some(vec![fpower_statecontrol::ShutdownReason::DeveloperRequest]),
-            ..Default::default()
-        })
-        .await?
-        .map_err(zx::Status::from_raw)?;
-    Ok(())
-}
-
-pub async fn reboot_to_bootloader() -> Result<(), Error> {
-    let proxy = connect_to_protocol::<fpower_statecontrol::AdminMarker>()?;
-    proxy
-        .shutdown(&fpower_statecontrol::ShutdownOptions {
-            action: Some(fpower_statecontrol::ShutdownAction::RebootToBootloader),
-            reasons: Some(vec![fpower_statecontrol::ShutdownReason::DeveloperRequest]),
-            ..Default::default()
-        })
-        .await?
-        .map_err(zx::Status::from_raw)?;
-    Ok(())
-}
-
-pub async fn power_off() -> Result<(), Error> {
-    let proxy = connect_to_protocol::<fpower_statecontrol::AdminMarker>()?;
-    proxy
-        .shutdown(&fpower_statecontrol::ShutdownOptions {
-            action: Some(fpower_statecontrol::ShutdownAction::Poweroff),
+            action: Some(action),
             reasons: Some(vec![fpower_statecontrol::ShutdownReason::DeveloperRequest]),
             ..Default::default()
         })

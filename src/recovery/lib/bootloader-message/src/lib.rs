@@ -29,6 +29,8 @@ impl Default for BootloaderMessageRaw {
     }
 }
 
+const REASON_PREFIX: &str = "--reason=";
+
 /// Processed bootloader message.
 #[derive(Debug, Clone, Default)]
 pub struct BootloaderMessage {
@@ -45,8 +47,25 @@ impl BootloaderMessage {
 
     /// Returns an iterator over all arguments specified in the bootloader message's recovery field.
     /// Arguments are assumed to use a newline character (`\n`) as a delimiter.
-    pub fn recovery_args(&self) -> impl Iterator<Item = &str> {
+    fn recovery_args(&self) -> impl Iterator<Item = &str> {
         self.recovery.split('\n')
+    }
+
+    fn reason(&self) -> Option<&str> {
+        self.recovery_args().find_map(|arg| arg.strip_prefix(REASON_PREFIX))
+    }
+
+    pub fn handle_recovery_actions(&self, handler: &mut impl RecoveryActionHandler) {
+        let reason = self.reason();
+        for arg in self.recovery_args().filter(|arg| !arg.starts_with(REASON_PREFIX)) {
+            match arg {
+                "--wipe_data" => handler.wipe_data(),
+                "--sideload" => handler.sideload(/*auto_reboot=*/ false),
+                "--sideload_auto_reboot" => handler.sideload(/*auto_reboot=*/ true),
+                "--prompt_and_wipe_data" => handler.prompt_and_wipe_data(reason),
+                _ => handler.other(arg, reason),
+            }
+        }
     }
 }
 
@@ -96,6 +115,21 @@ fn bytes_to_string(buf: &[u8]) -> String {
     } else {
         buf.as_bstr().to_string()
     }
+}
+
+/// Handler for actions which are specified in the bootloader recovery message.
+pub trait RecoveryActionHandler {
+    /// Invoked when the "wipe_data" recovery action is encountered.
+    fn wipe_data(&mut self);
+
+    /// Invoked when the "sideload" or "sideload_auto_reboot" recovery action is encountered.
+    fn sideload(&mut self, auto_reboot: bool);
+
+    /// Invoked when the "prompt_and_wipe_data" recovery action is encountered.
+    fn prompt_and_wipe_data(&mut self, reason: Option<&str>);
+
+    /// Invoked when an unknown recovery action is encountered.
+    fn other(&mut self, arg: &str, reason: Option<&str>);
 }
 
 #[cfg(test)]
