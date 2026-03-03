@@ -212,7 +212,9 @@ def run_mypy_on_library_target(
     # Temporary directory to stage the source tree for Mypy checks,
     # including sources of itself and all the libraries it imports.
     tmp_dir = gen_dir / f"{target_name}_lib_mypy"
-    os.makedirs(tmp_dir, exist_ok=True)
+    if tmp_dir.exists():
+        package_python_binary.remove_dir(str(tmp_dir))
+    os.makedirs(tmp_dir)
 
     # Mapping from the temp dir source file paths to the original source file paths
     src_map: dict[str, str] = {}
