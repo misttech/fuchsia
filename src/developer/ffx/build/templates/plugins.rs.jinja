@@ -14,7 +14,7 @@ pub async fn ffx_plugin_impl(
   match Some(_cmd.subcommand) {
 {% endif %}
 {% for plugin in plugins %}
-    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_impl(_env, c).await.map_err(fho::Error::from),
+    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_impl(_env, *c.0).await.map_err(fho::Error::from),
 {% endfor %}
     // This handles everything that does not match. This falls through to not implemented.
     None => (),
@@ -41,7 +41,7 @@ pub fn ffx_plugin_redact_args(
   match Some(&_cmd.subcommand) {
 {% endif %}
 {% for plugin in plugins %}
-    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return _app.redact_subcmd(c),
+    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return _app.redact_subcmd(&*c.0),
 {% endfor %}
     None => {},
   }
@@ -64,7 +64,7 @@ pub fn ffx_plugin_supports_structured_output(
 {% endif %}
 
 {% for plugin in plugins %}
-    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_supports_structured_output(c),
+    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_supports_structured_output(&*c.0),
 {% endfor %}
     None => (),
   };
@@ -93,7 +93,7 @@ pub fn ffx_plugin_has_schema(
 {% endif %}
 
 {% for plugin in plugins %}
-    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_has_schema(c),
+    Some({{suite_subcommand_lib}}::SubCommand::{{plugin.enum}}(c)) => return {{plugin.lib}}_suite::ffx_plugin_has_schema(&*c.0),
 {% endfor %}
     None => (),
   };

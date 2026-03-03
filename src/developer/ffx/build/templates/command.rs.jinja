@@ -1,9 +1,37 @@
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
+#[derive(Debug, PartialEq)]
+pub struct Boxed<T>(pub Box<T>);
+
+impl<T: argh::FromArgs> argh::FromArgs for Boxed<T> {
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
+        T::from_args(command_name, args).map(|t| Boxed(Box::new(t)))
+    }
+    fn redact_arg_values(
+        command_name: &[&str],
+        args: &[&str],
+    ) -> Result<Vec<String>, argh::EarlyExit> {
+        T::redact_arg_values(command_name, args)
+    }
+}
+
+impl<T: argh::SubCommand> argh::SubCommand for Boxed<T> {
+    const COMMAND: &'static argh::CommandInfo = T::COMMAND;
+}
+
+impl<T: argh::ArgsInfo> argh::ArgsInfo for Boxed<T> {
+    fn get_args_info() -> argh::CommandInfoWithArgs {
+        T::get_args_info()
+    }
+}
+
+{% set deps_list = deps | list %}
+{% for dep in deps_list %}
+pub type Boxed{{dep.enum}} = Boxed<{{dep.lib}}::FfxPluginCommand>;
+{% endfor %}
+
 #[derive(argh::ArgsInfo, argh::FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum SubCommand {
-{% for dep in deps %}
-  {{dep.enum}}({{dep.lib}}::FfxPluginCommand),
+{% for dep in deps_list %}
+  {{dep.enum}}(Boxed{{dep.enum}}),
 {% endfor %}
 }
