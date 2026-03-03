@@ -51,9 +51,9 @@ impl SimulatedBatteryInfoSource {
         Ok(())
     }
 
-    async fn set_remaining_capacity(&self, remaining_capacity: u32) -> Result<(), Error> {
+    async fn set_remaining_charge(&self, remaining_charge: u32) -> Result<(), Error> {
         let mut battery_info = self.battery_info.lock().await;
-        battery_info.remaining_capacity_uah = Some(remaining_capacity);
+        battery_info.remaining_charge_uah = Some(remaining_charge);
         battery_info.timestamp = get_current_time();
         drop(battery_info);
         self.notify_battery_info_changed().await?;
@@ -171,8 +171,8 @@ impl SimulatedBatteryInfoSource {
                 spower::BatterySimulatorRequest::SetPresentVoltageMv { voltage, .. } => {
                     self.set_present_voltage(voltage).await?;
                 }
-                spower::BatterySimulatorRequest::SetRemainingCapacityUah { capacity, .. } => {
-                    self.set_remaining_capacity(capacity).await?;
+                spower::BatterySimulatorRequest::SetRemainingChargeUah { charge, .. } => {
+                    self.set_remaining_charge(charge).await?;
                 }
                 spower::BatterySimulatorRequest::SetLevelStatus { level_status, .. } => {
                     self.set_level_status(level_status).await?;

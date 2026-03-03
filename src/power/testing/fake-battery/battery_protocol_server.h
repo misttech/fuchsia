@@ -42,7 +42,7 @@ class BatteryProtocolServer : public fidl::Server<fuchsia_power_battery::Battery
       .time_remaining =
           fuchsia_power_battery::TimeRemaining::WithFullCharge(zx::sec(59).to_nsecs()),
       .present_voltage_mv = 4752,
-      .remaining_capacity_uah = 382000,
+      .remaining_charge_uah = 382000,
       .full_capacity_uah = 420000,
       .temperature_mc = 380,
       .present_charging_current_ua = 250014,

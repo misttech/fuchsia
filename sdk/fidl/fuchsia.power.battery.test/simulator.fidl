@@ -70,10 +70,10 @@ closed protocol BatterySimulatorController {
         voltage uint32;
     });
 
-    /// Sets Remaining Capacity Uah. This should be called after
+    /// Sets Remaining Charge Uah. This should be called after
     /// DisconnectRealBattery
-    strict SetRemainingCapacityUah(struct {
-        capacity uint32;
+    strict SetRemainingChargeUah(struct {
+        charge uint32;
     });
 
     /// Sets the BatterySpec
