@@ -5,6 +5,17 @@ across one or more reboots. If you need to track failure states, historical
 metrics, or other telemetry that must survive a restart, configure this service
 to save your data automatically.
 
+## Behavior and use cases
+
+Persistence is particularly useful for recovering diagnostic data after:
+
+- **Unexpected reboots:** Persistence saves data periodically based on your
+  configured frequency and survives device restarts.
+- **Component crashes:** Persistence never drops a value once it has been
+  saved. For example, if your component publishes data in the first sample, but
+  drops that data or crashes prior to the next sample, Persistence retains the
+  original data in the persistence file.
+
 ## Quickstart guide
 
 To configure Persistence to save your component's Inspect data, follow these
@@ -144,3 +155,15 @@ if not used carefully.
 - **Data minimization**: Only persist the data that you need to debug your
   component. Avoid persisting unnecessary data, as this can increase the privacy
   risk.
+
+## FAQ
+
+### Does Persistence work with Lazy Nodes?
+
+Yes. Persistence provides built-in support for Inspect [Lazy Nodes][lazy-nodes-link].
+Persistence registers its required selectors and fetch frequencies with the
+Archivist. At each interval, the Archivist actively queries the component's
+selectors, which triggers the evaluation of any Lazy Nodes, allowing the system
+to save their dynamically generated data.
+
+[lazy-nodes-link]: /docs/development/diagnostics/inspect/quickstart.md#dynamic-values
