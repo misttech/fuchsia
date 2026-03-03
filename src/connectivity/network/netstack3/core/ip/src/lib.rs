@@ -132,10 +132,10 @@ pub mod icmp {
     };
     pub use crate::internal::icmp::{
         EchoTransportContextMarker, IcmpBindingsContext, IcmpBindingsTypes, IcmpError,
-        IcmpErrorHandler, IcmpHandlerIpExt, IcmpIpTransportContext, IcmpState, IcmpStateContext,
-        Icmpv4Error, Icmpv4StateBuilder, Icmpv6Error, InnerIcmpContext, InnerIcmpv4Context,
-        NdpCounters, NdpMessage, NdpRxCounters, NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
-        send_ndp_packet,
+        IcmpErrorHandler, IcmpHandlerIpExt, IcmpIpTransportContext, IcmpSendContext, IcmpState,
+        IcmpStateContext, Icmpv4Error, Icmpv4StateBuilder, Icmpv6Error, InnerIcmpContext,
+        InnerIcmpv4Context, NdpCounters, NdpMessage, NdpRxCounters, NdpTxCounters,
+        REQUIRED_NDP_IP_PACKET_HOP_LIMIT, send_ndp_packet,
     };
 
     /// ICMP test utilities.

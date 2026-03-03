@@ -25,8 +25,8 @@ use netstack3_icmp_echo::{
 use netstack3_ip::device::{self, IpDeviceBindingsContext, IpDeviceIpExt};
 use netstack3_ip::gmp::{IgmpCounters, MldCounters};
 use netstack3_ip::icmp::{
-    self, IcmpIpTransportContext, IcmpRxCounters, IcmpState, IcmpTxCounters, Icmpv4Error,
-    Icmpv6Error, InnerIcmpContext, InnerIcmpv4Context, NdpCounters,
+    self, IcmpIpTransportContext, IcmpRxCounters, IcmpSendContext, IcmpState, IcmpTxCounters,
+    Icmpv4Error, Icmpv6Error, InnerIcmpContext, InnerIcmpv4Context, NdpCounters,
 };
 use netstack3_ip::multicast_forwarding::MulticastForwardingState;
 use netstack3_ip::raw::RawIpSocketMap;
@@ -732,7 +732,13 @@ impl<
             }
         }
     }
+}
 
+impl<BC, L> IcmpSendContext<Ipv4, BC> for CoreCtx<'_, BC, L>
+where
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IcmpTokenBucket<Ipv4>>,
+{
     fn with_error_send_bucket_mut<O, F: FnOnce(&mut TokenBucket<BC::Instant>) -> O>(
         &mut self,
         cb: F,
@@ -805,7 +811,13 @@ impl<
             }
         }
     }
+}
 
+impl<BC, L> IcmpSendContext<Ipv6, BC> for CoreCtx<'_, BC, L>
+where
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IcmpTokenBucket<Ipv6>>,
+{
     fn with_error_send_bucket_mut<O, F: FnOnce(&mut TokenBucket<BC::Instant>) -> O>(
         &mut self,
         cb: F,

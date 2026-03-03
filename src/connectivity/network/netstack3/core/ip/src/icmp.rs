@@ -656,7 +656,7 @@ pub trait IcmpErrorHandler<I: IcmpHandlerIpExt, BC>: DeviceIdContext<AnyDevice> 
     );
 }
 
-impl<BC: IcmpBindingsContext, CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>>
+impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv4, BC> + CounterContext<IcmpTxCounters<Ipv4>>>
     IcmpErrorHandler<Ipv4, BC> for CC
 {
     fn send_icmp_error_message<B: BufferMut>(
@@ -695,7 +695,7 @@ impl<BC: IcmpBindingsContext, CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTx
     }
 }
 
-impl<BC: IcmpBindingsContext, CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>>
+impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv6, BC> + CounterContext<IcmpTxCounters<Ipv6>>>
     IcmpErrorHandler<Ipv6, BC> for CC
 {
     fn send_icmp_error_message<B: BufferMut>(
@@ -816,13 +816,6 @@ where
         original_body: &[u8],
         err: I::ErrorCode,
     );
-
-    /// Calls the function with a mutable reference to ICMP error send tocket
-    /// bucket.
-    fn with_error_send_bucket_mut<O, F: FnOnce(&mut TokenBucket<BC::Instant>) -> O>(
-        &mut self,
-        cb: F,
-    ) -> O;
 }
 
 /// The execution context for ICMPv4.
@@ -833,11 +826,19 @@ pub trait InnerIcmpv4Context<BC: IcmpBindingsTypes>: InnerIcmpContext<Ipv4, BC> 
     fn should_send_timestamp_reply(&self) -> bool;
 }
 
-/// The execution context for ICMPv6.
-///
-/// `InnerIcmpv6Context` is a shorthand for a larger collection of traits.
-pub trait InnerIcmpv6Context<BC: IcmpBindingsTypes>: InnerIcmpContext<Ipv6, BC> {}
-impl<BC: IcmpBindingsTypes, CC: InnerIcmpContext<Ipv6, BC>> InnerIcmpv6Context<BC> for CC {}
+/// Context for sending ICMP messages.
+pub trait IcmpSendContext<I, BC>: IpSocketHandler<I, BC>
+where
+    I: IpLayerIpExt,
+    BC: IcmpBindingsTypes,
+{
+    /// Calls the function with a mutable reference to ICMP error send tocket
+    /// bucket.
+    fn with_error_send_bucket_mut<O, F: FnOnce(&mut TokenBucket<BC::Instant>) -> O>(
+        &mut self,
+        cb: F,
+    ) -> O;
+}
 
 /// Attempt to send an ICMP or ICMPv6 error message, applying a rate limit.
 ///
@@ -1411,7 +1412,7 @@ fn send_neighbor_advertisement<
 fn receive_ndp_packet<
     B: SplitByteSlice,
     BC: IcmpBindingsContext + NdpBindingsContext<CC::DeviceId>,
-    CC: InnerIcmpv6Context<BC>
+    CC: InnerIcmpContext<Ipv6, BC>
         + Ipv6DeviceHandler<BC>
         + IpDeviceHandler<Ipv6, BC>
         + IpDeviceIngressStateContext<Ipv6>
@@ -1913,7 +1914,7 @@ fn receive_ndp_packet<
 
 impl<
     BC: IcmpBindingsContext + NdpBindingsContext<CC::DeviceId>,
-    CC: InnerIcmpv6Context<BC>
+    CC: InnerIcmpContext<Ipv6, BC>
         + InnerIcmpContext<Ipv6, BC>
         + Ipv6DeviceHandler<BC>
         + IpDeviceHandler<Ipv6, BC>
@@ -2223,7 +2224,7 @@ fn send_icmp_reply<I, BC, CC, S, F, O>(
 /// original IPv4 packet and then delegating to the context.
 fn receive_icmpv4_error<
     BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC>,
+    CC: InnerIcmpContext<Ipv4, BC>,
     B: SplitByteSlice,
     M: IcmpMessage<Ipv4, Body<B> = OriginalPacket<B>>,
 >(
@@ -2265,7 +2266,7 @@ fn receive_icmpv4_error<
 /// the original IPv6 packet and then delegating to the context.
 fn receive_icmpv6_error<
     BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC>,
+    CC: InnerIcmpContext<Ipv6, BC>,
     B: SplitByteSlice,
     M: IcmpMessage<Ipv6, Body<B> = OriginalPacket<B>>,
 >(
@@ -2311,11 +2312,7 @@ fn receive_icmpv6_error<
     })
 }
 
-fn send_icmpv4_error_message<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
+fn send_icmpv4_error_message<B, BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
@@ -2326,7 +2323,11 @@ fn send_icmpv4_error_message<
     mut original_packet: B,
     header_len: usize,
     marks: &Marks,
-) {
+) where
+    B: BufferMut,
+    BC: IcmpBindingsContext,
+    CC: IcmpSendContext<Ipv4, BC> + CounterContext<IcmpTxCounters<Ipv4>>,
+{
     // TODO(https://fxbug.dev/42177876): Come up with rules for when to send ICMP
     // error messages.
 
@@ -2378,11 +2379,7 @@ fn send_icmpv4_error_message<
     }
 }
 
-fn send_icmpv6_error_message<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
+fn send_icmpv6_error_message<B, BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
@@ -2393,7 +2390,11 @@ fn send_icmpv6_error_message<
     original_packet: B,
     allow_dst_multicast: bool,
     marks: &Marks,
-) {
+) where
+    B: BufferMut,
+    BC: IcmpBindingsContext,
+    CC: IcmpSendContext<Ipv6, BC> + CounterContext<IcmpTxCounters<Ipv6>>,
+{
     // TODO(https://fxbug.dev/42177876): Come up with rules for when to send ICMP
     // error messages.
 
@@ -2856,7 +2857,11 @@ mod tests {
                 )
             }
         }
+    }
 
+    impl<I: IpLayerIpExt + IcmpTestIpExt> IcmpSendContext<I, FakeIcmpBindingsCtx<I>>
+        for FakeIcmpCoreCtx<I>
+    {
         fn with_error_send_bucket_mut<O, F: FnOnce(&mut TokenBucket<FakeInstant>) -> O>(
             &mut self,
             cb: F,
