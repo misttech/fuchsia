@@ -1,4 +1,4 @@
-# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Abstract base class for Fuchsia device."""
@@ -30,9 +30,6 @@ from honeydew.affordances.virtual_audio import audio
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
-from honeydew.auxiliary_devices.usb_power_hub import (
-    usb_power_hub as usb_power_hub_interface,
-)
 from honeydew.transports.fastboot import fastboot as fastboot_transport
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -44,7 +41,7 @@ from honeydew.typing import custom_types
 from honeydew.utils import properties
 
 
-class FuchsiaDevice(abc.ABC):
+class AsyncFuchsiaDevice(abc.ABC):
     """Abstract base class for Fuchsia device.
 
     This class contains abstract methods that are supported by every device
@@ -421,55 +418,6 @@ class FuchsiaDevice(abc.ABC):
     @abc.abstractmethod
     def reboot(self) -> None:
         """Soft reboot the device."""
-
-    @abc.abstractmethod
-    def register_on_device_resume_fn(
-        self,
-        fn: Callable[[], None],
-    ) -> None:
-        """Register a function to be called after device is resumed.
-
-        Args:
-            fn: Function to be called after device is resumed.
-        """
-
-    @abc.abstractmethod
-    def set_usb_power_hub(
-        self,
-        usb_power_hub: usb_power_hub_interface.UsbPowerHub,
-        port: int | None = None,
-    ) -> None:
-        """Set the USB power hub for the device.
-
-        Args:
-            usb_power_hub: Implementation of UsbPowerHub interface.
-            port (int): If required by USB power hub hardware, port on
-                USB power hub hardware where this fuchsia device is connected.
-        """
-
-    @abc.abstractmethod
-    def suspend(self) -> None:
-        """Suspend the device by disconnecting USB power.
-
-        Requires USB power hub to be set using set_usb_power_hub. This will
-        run all registered on_device_suspend_fns before disconnecting USB
-        power. Note that this does not guarantee the device actually
-        suspends, just that it will have the opportunity to.
-
-        Raises:
-            NotSupportedError: If USB power hub not set.
-        """
-
-    @abc.abstractmethod
-    def resume(self) -> None:
-        """Resume the device by reconnecting USB power.
-
-        Requires USB power hub to be set using set_usb_power_hub. This will
-        run all registered on_device_resume_fns after reconnecting USB power.
-
-        Raises:
-            NotSupportedError: If USB power hub not set.
-        """
 
     @abc.abstractmethod
     def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:

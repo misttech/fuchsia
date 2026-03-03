@@ -122,6 +122,8 @@ python_library("honeydew_no_testonly") {
     "auxiliary_devices/usb_power_hub/usb_power_hub_using_dmc.py",
     "errors.py",
     "fuchsia_device/__init__.py",
+    "fuchsia_device/async_fuchsia_device.py",
+    "fuchsia_device/async_fuchsia_device_impl.py",
     "fuchsia_device/fuchsia_device.py",
     "fuchsia_device/fuchsia_device_impl.py",
     "transports/__init__.py",

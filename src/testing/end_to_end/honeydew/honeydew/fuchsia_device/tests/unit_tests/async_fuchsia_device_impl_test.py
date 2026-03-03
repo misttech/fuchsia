@@ -1,7 +1,7 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for honeydew.fuchsia_device.fuchsia_device_impl.py."""
+"""Unit tests for honeydew.fuchsia_device.async_fuchsia_device_impl.py."""
 
 import base64
 import ipaddress
@@ -47,8 +47,13 @@ from honeydew.affordances.virtual_audio import audio_using_fuchsia_controller
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
-from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
-from honeydew.fuchsia_device import fuchsia_device_impl
+from honeydew.fuchsia_device import (
+    async_fuchsia_device as async_fuchsia_device_interface,
+)
+from honeydew.fuchsia_device import (
+    async_fuchsia_device_impl,
+    fuchsia_device_impl,
+)
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
@@ -242,11 +247,11 @@ def _file_attr_resp(
         )
 
 
-class FuchsiaDeviceImplTests(unittest.TestCase):
-    """Unit tests for honeydew.fuchsia_device.fuchsia_device_impl.py."""
+class AsyncFuchsiaDeviceImplTests(unittest.TestCase):
+    """Unit tests for honeydew.fuchsia_device.async_fuchsia_device_impl.py."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.fd_fc_obj: fuchsia_device_impl.FuchsiaDeviceImpl
+        self.fd_fc_obj: async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl
         super().__init__(*args, **kwargs)
 
     def setUp(self) -> None:
@@ -283,7 +288,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
                 autospec=True,
             ) as mock_sl4f_check_connection,
         ):
-            self.fd_fc_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
+            sync_fd_fc_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     ip_port=_INPUT_ARGS["device_ip"],
@@ -301,6 +306,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
                     }
                 },
             )
+            self.fd_fc_obj = sync_fd_fc_obj.as_async()
 
             mock_fc_create_context.assert_called_once_with(
                 self.fd_fc_obj.fuchsia_controller
@@ -343,7 +349,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
                 autospec=True,
             ) as mock_sl4f_check_connection,
         ):
-            self.fd_sl4f_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
+            sync_fd_sl4f_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     ip_port=None,
@@ -361,6 +367,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
                     }
                 },
             )
+            self.fd_sl4f_obj = sync_fd_sl4f_obj.as_async()
 
             mock_fc_create_context.assert_called_once_with(
                 self.fd_sl4f_obj.fuchsia_controller
@@ -376,10 +383,10 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_device_is_a_fuchsia_device(self) -> None:
         """Test case to make sure DUT is a fuchsia device"""
         self.assertIsInstance(
-            self.fd_fc_obj, fuchsia_device_interface.FuchsiaDevice
+            self.fd_fc_obj, async_fuchsia_device_interface.AsyncFuchsiaDevice
         )
         self.assertIsInstance(
-            self.fd_sl4f_obj, fuchsia_device_interface.FuchsiaDevice
+            self.fd_sl4f_obj, async_fuchsia_device_interface.AsyncFuchsiaDevice
         )
 
     # List all the tests related to transports
@@ -763,12 +770,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_board(self, mock_ffx_get_target_board: mock.Mock) -> None:
-        """Testcase for FuchsiaDevice.board property"""
+        """Testcase for AsyncFuchsiaDevice.board property"""
         self.assertEqual(self.fd_fc_obj.board, _MOCK_ARGS["board"])
         mock_ffx_get_target_board.assert_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_product_info",
         return_value={
             "manufacturer": "default-manufacturer",
@@ -778,11 +785,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_manufacturer(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.manufacturer property"""
+        """Testcase for AsyncFuchsiaDevice.manufacturer property"""
         self.assertEqual(self.fd_fc_obj.manufacturer, "default-manufacturer")
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_product_info",
         return_value={
             "manufacturer": "default-manufacturer",
@@ -792,7 +799,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_model(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.model property"""
+        """Testcase for AsyncFuchsiaDevice.model property"""
         self.assertEqual(self.fd_fc_obj.model, "default-model")
 
     @mock.patch.object(
@@ -802,12 +809,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_product(self, mock_ffx_get_target_product: mock.Mock) -> None:
-        """Testcase for FuchsiaDevice.product property"""
+        """Testcase for AsyncFuchsiaDevice.product property"""
         self.assertEqual(self.fd_fc_obj.product, _MOCK_ARGS["product"])
         mock_ffx_get_target_product.assert_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_product_info",
         return_value={
             "manufacturer": "default-manufacturer",
@@ -817,11 +824,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_product_name(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.product_name property"""
+        """Testcase for AsyncFuchsiaDevice.product_name property"""
         self.assertEqual(self.fd_fc_obj.product_name, "default-product-name")
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_device_info_from_fidl",
         return_value={
             "serial_number": "default-serial-number",
@@ -829,12 +836,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_serial_number(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.serial_number property"""
+        """Testcase for AsyncFuchsiaDevice.serial_number property"""
         self.assertEqual(self.fd_fc_obj.serial_number, "default-serial-number")
 
     # List all the tests related to dynamic properties
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_build_info",
         return_value={
             "version": "1.2.3",
@@ -842,11 +849,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_firmware_version(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.firmware_version property"""
+        """Testcase for AsyncFuchsiaDevice.firmware_version property"""
         self.assertEqual(self.fd_fc_obj.firmware_version, "1.2.3")
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_last_reboot_info",
         return_value={
             "reason": 9,
@@ -854,7 +861,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_last_reboot_reason(self, *unused_args: Any) -> None:
-        """Testcase for FuchsiaDevice.last_reboot_reason property"""
+        """Testcase for AsyncFuchsiaDevice.last_reboot_reason property"""
         self.assertEqual(self.fd_fc_obj.last_reboot_reason, "USER_REQUEST")
 
     # List all the tests related to affordances
@@ -895,7 +902,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         self,
         parameterized_dict: dict[str, Any],
     ) -> None:
-        """Testcase for FuchsiaDevice.close()"""
+        """Testcase for AsyncFuchsiaDevice.close()"""
         # Reset the `_on_device_close_fns` variable at the beginning of the test
         self.fd_fc_obj._on_device_close_fns = []
 
@@ -929,7 +936,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_check_connection: mock.Mock,
         mock_sl4f_check_connection: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.health_check() when transport is set to
+        """Testcase for AsyncFuchsiaDevice.health_check() when transport is set to
         Fuchsia-Controller"""
         self.fd_fc_obj.health_check()
         mock_ffx_check_connection.assert_called_once_with(self.fd_fc_obj.ffx)
@@ -959,7 +966,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_check_connection: mock.Mock,
         mock_sl4f_check_connection: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.health_check() when transport is set to
+        """Testcase for AsyncFuchsiaDevice.health_check() when transport is set to
         Fuchsia-Controller-Preferred"""
         self.fd_sl4f_obj.health_check()
 
@@ -987,7 +994,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.health_check() raising HealthCheckError"""
+        """Testcase for AsyncFuchsiaDevice.health_check() raising HealthCheckError"""
         with self.assertRaises(errors.HealthCheckError):
             self.fd_fc_obj.health_check()
 
@@ -1179,7 +1186,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         name_func=_custom_test_name_func,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_send_log_command",
         autospec=True,
     )
@@ -1188,7 +1195,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         parameterized_dict: dict[str, Any],
         mock_send_log_command: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.log_message_to_device()"""
+        """Testcase for AsyncFuchsiaDevice.log_message_to_device()"""
         self.fd_fc_obj.log_message_to_device(
             level=parameterized_dict["log_level"],
             message=parameterized_dict["log_message"],
@@ -1228,7 +1235,9 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         name_func=_custom_test_name_func,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl, "health_check", autospec=True
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
+        "health_check",
+        autospec=True,
     )
     @mock.patch.object(
         fuchsia_controller_impl.FuchsiaControllerImpl,
@@ -1247,7 +1256,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_create_context: mock.Mock,
         mock_health_check: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.on_device_boot() when transport is set to
+        """Testcase for AsyncFuchsiaDevice.on_device_boot() when transport is set to
         Fuchsia-Controller"""
         # Reset the `_on_device_boot_fns` variable at the beginning of the test
         self.fd_fc_obj._on_device_boot_fns = []
@@ -1270,7 +1279,9 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_sl4f_start_server.assert_not_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl, "health_check", autospec=True
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
+        "health_check",
+        autospec=True,
     )
     @mock.patch.object(
         fuchsia_controller_impl.FuchsiaControllerImpl,
@@ -1288,7 +1299,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_create_context: mock.Mock,
         mock_sl4f_health_check: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.on_device_boot() when transport is set to
+        """Testcase for AsyncFuchsiaDevice.on_device_boot() when transport is set to
         Fuchsia-Controller-Preferred"""
         self.fd_sl4f_obj.on_device_boot()
 
@@ -1299,20 +1310,22 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_sl4f_health_check.assert_called_once_with(self.fd_sl4f_obj)
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl, "on_device_boot", autospec=True
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
+        "on_device_boot",
+        autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "wait_for_online",
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "wait_for_offline",
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "log_message_to_device",
         autospec=True,
     )
@@ -1323,7 +1336,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.power_cycle()"""
+        """Testcase for AsyncFuchsiaDevice.power_cycle()"""
         power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
         self.fd_fc_obj.power_cycle(power_switch=power_switch, outlet=5)
 
@@ -1333,25 +1346,27 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_on_device_boot.assert_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl, "on_device_boot", autospec=True
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
+        "on_device_boot",
+        autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "wait_for_online",
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "wait_for_offline",
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_send_reboot_command",
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "log_message_to_device",
         autospec=True,
     )
@@ -1363,7 +1378,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.reboot()"""
+        """Testcase for AsyncFuchsiaDevice.reboot()"""
         self.fd_fc_obj.reboot()
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
@@ -1373,11 +1388,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_on_device_boot.assert_called()
 
     def test_register_for_on_device_boot(self) -> None:
-        """Testcase for FuchsiaDevice.register_for_on_device_boot()"""
+        """Testcase for AsyncFuchsiaDevice.register_for_on_device_boot()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
 
     def test_register_for_on_device_close(self) -> None:
-        """Testcase for FuchsiaDevice.register_for_on_device_close()"""
+        """Testcase for AsyncFuchsiaDevice.register_for_on_device_close()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
         self.fd_fc_obj.close()
 
@@ -1403,7 +1418,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         name_func=_custom_test_name_func,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "_send_snapshot_command",
         return_value=_BASE64_ENCODED_BYTES,
         autospec=True,
@@ -1415,7 +1430,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_makedirs: mock.Mock,
         mock_send_snapshot_command: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.snapshot()"""
+        """Testcase for AsyncFuchsiaDevice.snapshot()"""
         directory: str = parameterized_dict["directory"]
         optional_params: dict[str, Any] = parameterized_dict["optional_params"]
 
@@ -1448,7 +1463,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_offline_success(
         self, mock_ffx_wait_for_rcs_disconnection: mock.Mock
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_offline() success case"""
+        """Testcase for AsyncFuchsiaDevice.wait_for_offline() success case"""
         self.fd_fc_obj.wait_for_offline()
 
         mock_ffx_wait_for_rcs_disconnection.assert_called()
@@ -1462,7 +1477,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_offline_fail(
         self, mock_ffx_wait_for_rcs_disconnection: mock.Mock
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_offline() failure case"""
+        """Testcase for AsyncFuchsiaDevice.wait_for_offline() failure case"""
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go offline"
         ):
@@ -1471,7 +1486,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_wait_for_rcs_disconnection.assert_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "resolve_device_ip",
         autospec=True,
     )
@@ -1485,7 +1500,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_wait_for_rcs_connection: mock.Mock,
         mock_resolve_device_ip: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_online() success case when the
+        """Testcase for AsyncFuchsiaDevice.wait_for_online() success case when the
         IP address is specified."""
         self.fd_fc_obj.wait_for_online()
 
@@ -1495,7 +1510,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_resolve_device_ip.assert_not_called()
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "resolve_device_ip",
         autospec=True,
     )
@@ -1509,7 +1524,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_wait_for_rcs_connection: mock.Mock,
         mock_resolve_device_ip: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_online() success case when the
+        """Testcase for AsyncFuchsiaDevice.wait_for_online() success case when the
         IP address is not specified."""
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
@@ -1533,7 +1548,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_online() failure case"""
+        """Testcase for AsyncFuchsiaDevice.wait_for_online() failure case"""
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go online"
         ):
@@ -1562,7 +1577,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_buildinfo_provider: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._build_info property"""
+        """Testcase for AsyncFuchsiaDevice._build_info property"""
         # pylint: disable=protected-access
         self.assertEqual(self.fd_fc_obj._build_info, _MOCK_BUILD_INFO)
 
@@ -1587,7 +1602,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_buildinfo_provider: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._build_info property when the get_info
+        """Testcase for AsyncFuchsiaDevice._build_info property when the get_info
         FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         mock_buildinfo_provider.side_effect = ZxStatus(
@@ -1615,7 +1630,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_hwinfo_device: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._device_info property"""
+        """Testcase for AsyncFuchsiaDevice._device_info property"""
         # pylint: disable=protected-access
         self.assertEqual(
             self.fd_fc_obj._device_info_from_fidl,
@@ -1641,7 +1656,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_hwinfo_device: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._device_info property when the get_info
+        """Testcase for AsyncFuchsiaDevice._device_info property when the get_info
         FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         mock_hwinfo_device.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
@@ -1667,7 +1682,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_hwinfo_product: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._product_info property"""
+        """Testcase for AsyncFuchsiaDevice._product_info property"""
         # pylint: disable=protected-access
         self.assertEqual(
             self.fd_fc_obj._product_info,
@@ -1693,7 +1708,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_hwinfo_product: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._product_info property when the get_info
+        """Testcase for AsyncFuchsiaDevice._product_info property when the get_info
         FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         mock_hwinfo_product.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
@@ -1740,7 +1755,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         parameterized_dict: dict[str, Any],
         mock_rcs_log_message: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_log_command()"""
+        """Testcase for AsyncFuchsiaDevice._send_log_command()"""
         self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
         # pylint: disable=protected-access
         self.fd_fc_obj._send_log_command(
@@ -1759,7 +1774,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_send_log_command_error(
         self, mock_rcs_log_message: mock.Mock
     ) -> None:
-        """Testcase for FuchsiaDevice._send_log_command() when the log FIDL call
+        """Testcase for AsyncFuchsiaDevice._send_log_command() when the log FIDL call
         raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
@@ -1788,7 +1803,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_reboot_command()"""
+        """Testcase for AsyncFuchsiaDevice._send_reboot_command()"""
         # pylint: disable=protected-access
         self.fd_fc_obj._send_reboot_command()
 
@@ -1810,7 +1825,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_reboot_command() when the reboot
+        """Testcase for AsyncFuchsiaDevice._send_reboot_command() when the reboot
         FIDL call raises a non-ZX_ERR_PEER_CLOSED error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
@@ -1836,7 +1851,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_reboot_command() when the reboot
+        """Testcase for AsyncFuchsiaDevice._send_reboot_command() when the reboot
         FIDL call raises a ZX_ERR_PEER_CLOSED error.  This error should not
         result in `FuchsiaControllerError` being raised."""
         mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
@@ -1876,7 +1891,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -1892,7 +1907,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command()"""
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command()"""
         # pylint: disable=protected-access
         data = self.fd_fc_obj._send_snapshot_command()
         self.assertEqual(len(data), 15)
@@ -1912,7 +1927,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -1928,7 +1943,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command() when the
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the
         get_snapshot FIDL call raises an exception.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
@@ -1955,7 +1970,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -1971,7 +1986,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command() when the get_attributes
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the get_attributes
         FIDL call raises an exception.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
@@ -1997,7 +2012,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -2013,7 +2028,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command() when the get_attributes
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the get_attributes
         FIDL call returns a non-OK status code.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
@@ -2045,7 +2060,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -2061,7 +2076,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command() when the read
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the read
         FIDL call raises an exception.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
@@ -2098,7 +2113,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl,
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
         "health_check",
         autospec=True,
     )
@@ -2114,7 +2129,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_connect_device_proxy: mock.Mock,
         *unused_args: Any,
     ) -> None:
-        """Testcase for FuchsiaDevice._send_snapshot_command() when the number
+        """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the number
         of bytes read from channel doesn't match the file's content size."""
         # pylint: disable=protected-access
         with self.assertRaises(fc_errors.FuchsiaControllerError):
@@ -2129,7 +2144,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_is_starnix_device(self, mock_ffx: mock.Mock) -> None:
-        """Testcase for FuchsiaDevice.is_starnix_device()"""
+        """Testcase for AsyncFuchsiaDevice.is_starnix_device()"""
         self.assertTrue(self.fd_fc_obj.is_starnix_device())
 
         mock_ffx.assert_called_once()
@@ -2143,7 +2158,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_is_starnix_device_unsupported_error(
         self, mock_ffx: mock.Mock
     ) -> None:
-        """Testcase for FuchsiaDevice.is_starnix_device()"""
+        """Testcase for AsyncFuchsiaDevice.is_starnix_device()"""
         self.assertFalse(self.fd_fc_obj.is_starnix_device())
 
         mock_ffx.assert_called_once()
@@ -2155,18 +2170,20 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_is_starnix_device_error(self, mock_ffx: mock.Mock) -> None:
-        """Testcase for FuchsiaDevice.is_starnix_device()"""
+        """Testcase for AsyncFuchsiaDevice.is_starnix_device()"""
         with self.assertRaises(errors.FuchsiaDeviceError):
             self.fd_fc_obj.is_starnix_device()
 
         mock_ffx.assert_called_once()
 
     def test_register_for_on_device_ip_change(self) -> None:
-        """Testcase for FuchsiaDevice.register_for_on_device_ip_change()"""
+        """Testcase for AsyncFuchsiaDevice.register_for_on_device_ip_change()"""
         self.fd_fc_obj.register_for_on_device_ip_change(fn=lambda x: None)
 
     @mock.patch.object(
-        fuchsia_device_impl.FuchsiaDeviceImpl, "health_check", autospec=True
+        async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl,
+        "health_check",
+        autospec=True,
     )
     @mock.patch.object(
         ffx_impl.FfxImpl,
@@ -2179,7 +2196,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_run: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.resolve_device_ip()"""
+        """Testcase for AsyncFuchsiaDevice.resolve_device_ip()"""
         with mock.patch.object(self.fd_fc_obj, "_on_device_ip_change_fns"):
             self.fd_fc_obj.resolve_device_ip()
         mock_ffx_run.assert_called_once_with(

@@ -12,12 +12,12 @@ import fuchsia_inspect
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
+from honeydew.fuchsia_device.fuchsia_device_impl import FuchsiaDeviceImpl
 from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-# Note - Following destructive APIs in FuchsiaDevice class should have its own
+# Note - Following destructive APIs in AsyncFuchsiaDevice class should have its own
 # test class to make sure failure of those destructive APIs does not impact
 # the rest of the non-destructive APIs tests:
 # * `reboot()` - Test class is @ <>/end_to_end/examples/test_soft_reboot/
@@ -28,9 +28,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 #   * `wait_for_offline()`
 
 # Note - Do not add separate functional test for `close()` as it will clean up
-# the FuchsiaDevice Honeydew object and thus any subsequent calls will fail.
+# the AsyncFuchsiaDevice Honeydew object and thus any subsequent calls will fail.
 # `close()` is called anyway when Mobly calls `destroy()` defined in the
-# FuchsiaDevice mobly controller
+# AsyncFuchsiaDevice mobly controller
 
 # Note - `register_for_on_device_boot()` has been fully tested using unit test
 
@@ -43,23 +43,23 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # pylint: disable=pointless-statement
-class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
-    """FuchsiaDevice tests"""
+class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
+    """AsyncFuchsiaDevice tests"""
 
     def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns device variable with FuchsiaDevice object
+            * Assigns device variable with AsyncFuchsiaDevice object
               Note - If there are multiple Fuchsia devices listed in mobly
                      testbed then first device will be used.
             * Assigns device_config variable with testbed config associated with
               this device
         """
         super().setup_class()
-        self.device: fuchsia_device_interface.FuchsiaDevice = (
-            self.fuchsia_devices[0]
-        )
+        fd = self.fuchsia_devices[0]
+        assert isinstance(fd, FuchsiaDeviceImpl)
+        self.device = fd.as_async()
 
     def test_board(self) -> None:
         """Test case for board"""

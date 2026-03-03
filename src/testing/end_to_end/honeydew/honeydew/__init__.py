@@ -7,6 +7,10 @@ import logging
 from typing import Any
 
 from honeydew import errors
+from honeydew.fuchsia_device import (
+    async_fuchsia_device as async_fuchsia_device_interface,
+)
+from honeydew.fuchsia_device import async_fuchsia_device_impl
 from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
 from honeydew.fuchsia_device import fuchsia_device_impl
 from honeydew.transports.ffx.config import FfxConfigData
@@ -17,6 +21,10 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _CUSTOM_FUCHSIA_DEVICE_CLASS: type[
     fuchsia_device_interface.FuchsiaDevice
 ] = fuchsia_device_impl.FuchsiaDeviceImpl
+
+_CUSTOM_ASYNC_FUCHSIA_DEVICE_CLASS: type[
+    async_fuchsia_device_interface.AsyncFuchsiaDevice
+] = async_fuchsia_device_impl.AsyncFuchsiaDeviceImpl
 
 
 # The return type of this function can change at runtime with register_custom_fuchsia_device which
@@ -91,9 +99,9 @@ def create_device(
 
         device_class = get_custom_fuchsia_device()
         return device_class(
-            device_info,
-            ffx_config_data,
-            config,
+            device_info=device_info,
+            ffx_config_data=ffx_config_data,
+            config=config,
         )
     except errors.HoneydewError as err:
         raise errors.FuchsiaDeviceError(
