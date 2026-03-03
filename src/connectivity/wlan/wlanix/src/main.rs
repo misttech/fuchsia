@@ -50,7 +50,7 @@ const IFACE_NAME: &str = "wlan";
 async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiStaIfaceRequest,
     iface_manager: Arc<I>,
-    _power_manager: Arc<P>,
+    power_manager: Arc<P>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WifiStaIfaceRequest::GetName { responder } => {
@@ -118,6 +118,8 @@ async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
             responder.send(result).context("send GetApfPacketFilterSupport response")?;
         }
         fidl_wlanix::WifiStaIfaceRequest::InstallApfPacketFilter { responder, payload } => {
+            let _wake_lease =
+                power_manager.take_wake_lease("wlanix-install-apf-packet-filter").await;
             let (iface, _) = get_iface_and_log(
                 "fidl_wlanix::WifiStaIfaceRequest::InstallApfPacketFilter",
                 iface_manager,
@@ -140,6 +142,8 @@ async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
             responder.send(result).context("send InstallApfPacketFilter response")?;
         }
         fidl_wlanix::WifiStaIfaceRequest::ReadApfPacketFilterData { responder } => {
+            let _wake_lease =
+                power_manager.take_wake_lease("wlanix-read-apf-packet-filter-data").await;
             let (iface, _) = get_iface_and_log(
                 "fidl_wlanix::WifiStaIfaceRequest::ReadApfPacketFilterData",
                 iface_manager,
@@ -813,13 +817,14 @@ fn send_disconnect_event<C: ClientIface>(
     iface.on_disconnect(source);
 }
 
-async fn handle_client_connect_transactions<C: ClientIface>(
+async fn handle_client_connect_transactions<C: ClientIface, P: PowerManager>(
     mut ctx: ConnectionContext,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     wifi_state: Arc<Mutex<WifiState>>,
     telemetry_sender: TelemetrySender,
     iface: Arc<C>,
     iface_id: u16,
+    power_manager: Arc<P>,
 ) {
     // If we receive a disconnect but attempt to reconnect, we will deliver the
     // disconnect event later if the reconnect attempt fails.
@@ -833,6 +838,8 @@ async fn handle_client_connect_transactions<C: ClientIface>(
         };
         match req {
             Ok(fidl_sme::ConnectTransactionEvent::OnConnectResult { result }) => {
+                let _wake_lease =
+                    power_manager.take_wake_lease("wlanix-process-connect-result").await;
                 match (disconnect_with_ongoing_reconnect.as_ref(), result.is_reconnect) {
                     (Some(info), true) => {
                         if result.code == fidl_fuchsia_wlan_ieee80211::StatusCode::Success {
@@ -861,6 +868,7 @@ async fn handle_client_connect_transactions<C: ClientIface>(
                 }
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnRoamResult { result }) => {
+                let _wake_lease = power_manager.take_wake_lease("wlanix-process-roam-result").await;
                 match result.status_code {
                     fidl_fuchsia_wlan_ieee80211::StatusCode::Success => {
                         info!("Connection roamed successfully");
@@ -894,6 +902,7 @@ async fn handle_client_connect_transactions<C: ClientIface>(
                 }
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnDisconnect { info }) => {
+                let _wake_lease = power_manager.take_wake_lease("wlanix-process-disconnect").await;
                 let connected_duration = fasync::BootInstant::now() - ctx.most_recent_connect_time;
                 telemetry_sender.send(TelemetryEvent::Disconnect {
                     info: wlan_telemetry::DisconnectInfo {
@@ -1207,6 +1216,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                     telemetry_sender,
                     Arc::clone(&iface),
                     iface_id,
+                    Arc::clone(&power_manager),
                 )
                 .await;
             }
@@ -3377,6 +3387,9 @@ mod tests {
         );
         assert_matches!(test_helper.exec.run_until_stalled(&mut install_fut), Poll::Pending);
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-install-apf-packet-filter".to_string()));
+        drop(power_manager_calls);
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         assert_matches!(iface_calls.lock().last().unwrap(), ClientIfaceCall::InstallApfPacketFilter(program) => assert_eq!(program, &test_program));
         assert_matches!(
@@ -3388,6 +3401,9 @@ mod tests {
         assert_matches!(test_helper.exec.run_until_stalled(&mut read_fut), Poll::Pending);
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-read-apf-packet-filter-data".to_string()));
+        drop(power_manager_calls);
         assert_matches!(
             iface_calls.lock().last().unwrap(),
             ClientIfaceCall::ReadApfPacketFilterData
@@ -4072,6 +4088,10 @@ mod tests {
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
         let mut next_callback_fut = test_helper.supplicant_sta_iface_callback_stream.next();
 
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-process-disconnect".to_string()));
+        drop(power_manager_calls);
+
         assert_matches!(
             test_helper.exec.run_until_stalled(&mut next_callback_fut),
             Poll::Ready(Some(Ok(
@@ -4193,6 +4213,11 @@ mod tests {
             .expect("Failed to send ConnectResult for reconnect");
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-process-disconnect".to_string()));
+        assert!(power_manager_calls.contains(&"wlanix-process-connect-result".to_string()));
+        drop(power_manager_calls);
+
         if expect_disconnect {
             assert_matches!(
                 test_helper.exec.run_until_stalled(&mut next_callback_fut),
@@ -4258,6 +4283,37 @@ mod tests {
             ClientIfaceCall::OnSignalReport { ind } => ind
         );
         assert_eq!(signal_report_ind, mocked_signal_report);
+    }
+
+    #[fuchsia::test]
+    fn test_supplicant_sta_roam_result() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+        let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
+
+        establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
+
+        let mocked_roam_result = fidl_sme::RoamResult {
+            bssid: [0; 6],
+            status_code: fidl_fuchsia_wlan_ieee80211::StatusCode::Success,
+            original_association_maintained: false,
+            bss_description: None,
+            disconnect_info: None,
+            is_credential_rejected: false,
+        };
+        {
+            let client_iface = test_helper.iface_manager.get_client_iface();
+            let transaction_handle = client_iface.transaction_handle.lock();
+            let control_handle = transaction_handle.as_ref().expect("No control handle found");
+            control_handle
+                .send_on_roam_result(&mocked_roam_result)
+                .expect("Failed to send OnRoamResult");
+        }
+
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-process-roam-result".to_string()));
+        drop(power_manager_calls);
     }
 
     #[test_case(true)]
