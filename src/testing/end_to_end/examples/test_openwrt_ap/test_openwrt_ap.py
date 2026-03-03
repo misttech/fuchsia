@@ -9,18 +9,18 @@ import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from mobly import asserts, signals, test_runner
-from mobly_controller import openwrt_ap
-from mobly_controller.access_point.access_point_config import (
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     Security,
 )
-from mobly_controller.access_point.openwrt_lib import OpenwrtAp
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
+class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
@@ -30,8 +30,8 @@ class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
             raise signals.TestAbortClass(
                 "At least one Fuchsia device is required"
             )
-        self.openwrt_aps: list[OpenwrtAp] | None = self.register_controller(
-            openwrt_ap
+        self.openwrt_aps: list[OpenWrtAP] | None = self.register_controller(
+            openwrt_access_point
         )
         if not self.fuchsia_devices:
             raise signals.TestAbortClass(
@@ -69,6 +69,8 @@ class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
             import asyncio
 
             await asyncio.sleep(2)
+
+        self.log.info("Found SSID: %s", wifi_config.ssid)
 
         # TODO: https://fxbug.dev/487800358 - Create and use to_fidl() function.
         if wifi_config.security == Security.WPA2:
@@ -163,11 +165,6 @@ class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 band=Band.BAND_2G,
             )
         )
-
-    def teardown_class(self) -> None:
-        super().teardown_class()
-        if self.openwrt_ap:
-            self.openwrt_ap.close()
 
 
 if __name__ == "__main__":

@@ -26,11 +26,10 @@ python_library("mobly_controller_no_testonly") {
   library_name = "mobly_controller"
   sources = [
     "__init__.py",
-    "access_point/__init__.py",
-    "access_point/access_point_config.py",
-    "access_point/openwrt_lib.py",
     "fuchsia_device.py",
-    "openwrt_ap.py",
+    "openwrt_access_point/__init__.py",
+    "openwrt_access_point/lib/__init__.py",
+    "openwrt_access_point/lib/access_point_config.py",
   ]
   source_root = "."
   library_deps = [
