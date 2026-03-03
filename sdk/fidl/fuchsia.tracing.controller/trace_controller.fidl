@@ -228,6 +228,12 @@ open protocol SessionManager {
         result StopResult;
     }) error RecordingError;
 
+    /// Aborts an ongoing trace session without saving results.
+    @available(added=NEXT)
+    flexible AbortTraceSession(struct {
+        task_id uint64;
+    }) -> () error RecordingError;
+
     /// Returns the status of the current trace session.
     flexible Status() -> (TraceStatus) error RecordingError;
 };

@@ -54,6 +54,14 @@
       "short": null,
       "description": "retain raw FIDL-related trace arguments after symbolization. Defaults to false.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--abort",
+      "short": null,
+      "description": "stop the currently running background trace session. Discard the trace data. Defaults to false.",
+      "hidden": false
     }
   ],
   "notes": [],

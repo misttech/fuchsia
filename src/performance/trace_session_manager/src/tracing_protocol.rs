@@ -82,6 +82,23 @@ impl TracingProtocol {
                         .map_err(Into::into);
                 }
             }
+            SessionManagerRequest::AbortTraceSession { responder, .. } => {
+                log::info!("AbortTraceSession called");
+                if let Some(TraceTaskEntry { task, .. }) = self.task_entry.write().await.take() {
+                    let task_result = task.abort().await;
+                    responder
+                        .send(match task_result {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(e.into()),
+                        })
+                        .map_err(Into::into)
+                } else {
+                    log::warn!("no trace task found");
+                    return responder
+                        .send(Err(RecordingError::NoSuchTraceFile))
+                        .map_err(Into::into);
+                }
+            }
             SessionManagerRequest::Status { responder } => {
                 log::info!("Status called");
                 if let Some(ref entry) = *self.task_entry.read().await {
@@ -151,7 +168,10 @@ impl TracingProtocol {
                 }
                 Ok(())
             }
-            SessionManagerRequest::_UnknownMethod { .. } => todo!(),
+            SessionManagerRequest::_UnknownMethod { ordinal, .. } => {
+                log::error!("Received unknown SessionManager method with ordinal: {}", ordinal);
+                Ok(())
+            }
         }
     }
 

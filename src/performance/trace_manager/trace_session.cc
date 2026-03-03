@@ -472,6 +472,8 @@ void TraceSession::OnProviderStopped(TraceProviderBundle* bundle, bool write_res
       auto& tracee = std::get<std::unique_ptr<Tracee>>(*it);
       if (!tracee->results_written()) {
         if (!WriteProviderData(tracee.get())) {
+          FX_LOGS(INFO) << "Aborting in OnProviderStopped due to WriteProviderData failed for "
+                        << *tracee->bundle();
           Abort();
           return;
         }
@@ -566,6 +568,8 @@ void TraceSession::CheckAllProvidersStopped() {
 }
 
 void TraceSession::NotifyStopped() {
+  FX_DCHECK(state_ == State::kStopped);
+
   if (stop_callback_) {
     FX_LOGS(DEBUG) << "Marking session as having stopped";
     session_stop_timeout_.Cancel();
@@ -615,10 +619,10 @@ void TraceSession::OnProviderTerminated(TraceProviderBundle* bundle) {
       // If the last Stop request saved the results, don't save them again.
       // But don't write results if the tracee was never started.
       if (tracee->was_started() && !tracee->results_written()) {
-        if (!WriteProviderData(tracee.get())) {
-          Abort();
-          return;
-        }
+        // Since the provider is terminated, ignore any error writing
+        // provider data. This is most likely caused by the socket
+        // being closed. WriteProviderData will log the details.
+        WriteProviderData(tracee.get());
       }
     }
     tracees_.erase(it);

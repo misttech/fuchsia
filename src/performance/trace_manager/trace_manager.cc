@@ -175,6 +175,13 @@ void TraceController::StopTracing(StopTracingRequest& request,
 }
 
 void TraceController::TerminateTracing(fit::closure cb) {
+  if (!session_) {
+    FX_LOGS(INFO) << "TerminateTracing called but session_ is already null";
+    FX_DCHECK(cb);
+    cb();
+    return;
+  }
+
   // Check the state first because the log messages are useful, but not if
   // tracing has ended.
   if (session_->state() == TraceSession::State::kTerminating) {
