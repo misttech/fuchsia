@@ -27,6 +27,8 @@ constexpr int kForceNumberHex = kPrintCommandSwitchBase + 5;
 constexpr int kForceNumberBin = kPrintCommandSwitchBase + 6;
 constexpr int kMaxArraySize = kPrintCommandSwitchBase + 7;
 constexpr int kRawOutput = kPrintCommandSwitchBase + 8;
+constexpr int kDepth = kPrintCommandSwitchBase + 9;
+constexpr int kPointerDepth = kPrintCommandSwitchBase + 10;
 
 }  // namespace
 
@@ -40,16 +42,27 @@ void AppendPrintCommandSwitches(VerbRecord* record) {
   record->switches.emplace_back(kForceNumberHex, false, "", 'x');
   record->switches.emplace_back(kForceNumberBin, false, "", 'b');
   record->switches.emplace_back(kMaxArraySize, true, "max-array");
+  record->switches.emplace_back(kDepth, true, "depth");
+  record->switches.emplace_back(kPointerDepth, true, "pointer-depth");
 }
 
 ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd) {
   ConsoleFormatOptions options;
 
-  // These defaults currently don't have exposed options. A pointer expand depth of one allows
-  // local variables and "this" to be expanded without expanding anything else. Often pointed-to
-  // classes are less useful and can be very large.
   options.pointer_expand_depth = 1;
   options.max_depth = 16;
+  if (cmd.HasSwitch(kPointerDepth)) {
+    int size = 0;
+    if (Err err = StringToInt(cmd.GetSwitchValue(kPointerDepth), &size); err.has_error())
+      return err;
+    options.pointer_expand_depth = size;
+  }
+  if (cmd.HasSwitch(kDepth)) {
+    int size = 0;
+    if (Err err = StringToInt(cmd.GetSwitchValue(kDepth), &size); err.has_error())
+      return err;
+    options.max_depth = size;
+  }
 
   // All current users of this want the smart form.
   //

@@ -34,6 +34,15 @@ ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd);
   "      output harder to read, but the default is sometimes insufficient.\n" \
   "      This also applies to strings.\n"                                     \
   "\n"                                                                        \
+  "  --depth=<number>\n"                                                      \
+  "      Specifies the maximum depth of struct expansion. By default this\n"  \
+  "      is 16. Specifying a smaller value can be useful to reduce the\n"     \
+  "      amount of superfluous information.\n"                                \
+  "\n"                                                                        \
+  "  --pointer-depth=<number>\n"                                              \
+  "      Specifies the maximum depth of pointers to dereference. By\n"        \
+  "      default this is 1.\n"                                                \
+  "\n"                                                                        \
   "  -r\n"                                                                    \
   "  --raw\n"                                                                 \
   "      Bypass pretty-printers and show the raw type information.\n"         \
