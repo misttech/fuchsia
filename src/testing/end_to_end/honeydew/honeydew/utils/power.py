@@ -101,7 +101,7 @@ def suspend_resume(
         deadline: this will idle for increasing durations, up to this deadline.
     """
     if deadline is None:
-        deadline = Deadline.from_duration(SUSPEND_RESUME_DEFAULT_TIMEOUT)
+        deadline = Deadline.from_timeout(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
     try:
         device.ffx.run(
@@ -124,14 +124,12 @@ def suspend_resume(
         _LOGGER.info("Suspension attempt %s...", attempt + 1)
         before_off_charger_stats = get_sag_suspend_stats(device)
 
-        sleep_deadline = deadline.subdeadline_from_duration(
+        sleep_deadline = deadline.subdeadline_with_timeout(
             SUSPEND_RESUME_BASE_IDLE_DURATION * (2**attempt)
         )
         try:
             device.suspend()
-            control_flows.sleep_for_duration(
-                sleep_deadline.remaining_duration()
-            )
+            control_flows.sleep_until_deadline(sleep_deadline)
         finally:
             device.resume()
 

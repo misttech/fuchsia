@@ -77,7 +77,7 @@ def retry_until_deadline(
         ):
             raise
         except Exception as e:  # pylint: disable=broad-exception-caught
-            if deadline.is_due() or deadline.remaining_duration() < retry_delay:
+            if deadline.is_due_before(retry_delay):
                 raise e
             else:
                 _LOGGER.info(
@@ -163,7 +163,7 @@ def retry_for_duration(
 ) -> Any:
     """Calls |retry_until_deadline| with a deadline based on |duration|"""
     return retry_until_deadline(
-        task, Deadline.from_duration(duration), retry_delay, backoff
+        task, Deadline.from_timeout(duration), retry_delay, backoff
     )
 
 
@@ -184,10 +184,9 @@ def repeat_until_deadline(
             "Repeating %s for the %s time", _pretty_func_name(task), count
         )
         task()
-        if repeat_delay < deadline.remaining_duration():
-            sleep_for_duration(repeat_delay)
-        else:
+        if deadline.is_due_before(repeat_delay):
             break
+        sleep_for_duration(repeat_delay)
 
 
 def repeat_for_duration(
@@ -196,7 +195,7 @@ def repeat_for_duration(
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:
     """Calls |repeat_until_deadline| with a deadline based on |duration|"""
-    repeat_until_deadline(task, Deadline.from_duration(duration), repeat_delay)
+    repeat_until_deadline(task, Deadline.from_timeout(duration), repeat_delay)
 
 
 def sleep_until_deadline(deadline: Deadline) -> None:
@@ -205,22 +204,25 @@ def sleep_until_deadline(deadline: Deadline) -> None:
     This function generates logs at intervals to prevent swarming from thinking
     we're frozen and timing us out.
     """
-    _LOGGER.debug("Sleeping for %s...", deadline.remaining_duration())
+    if deadline == Deadline.infinite():
+        raise ValueError("Cannot sleep for an infinite duration.")
+
+    _LOGGER.debug("Sleeping until %s...", deadline)
 
     first_iteration = True
     while not deadline.is_due():
         if not first_iteration:
-            _LOGGER.info(
-                "Still sleeping... %s remaining", deadline.remaining_duration()
-            )
+            _LOGGER.info("Still sleeping... %s", deadline)
 
         # Sleep for no longer than _IDLE_LOGGING_PERIOD, to ensure swarming
         # doesn't time us out.
-        time.sleep(
-            min(
-                deadline.remaining_duration(), _IDLE_LOGGING_PERIOD
-            ).total_seconds()
-        )
+        remaining = deadline.remaining_duration()
+        assert (
+            remaining is not None
+        ), "We checked that the deadline was not infinite"
+
+        sleep_duration = min(remaining, _IDLE_LOGGING_PERIOD)
+        time.sleep(max(0, sleep_duration.total_seconds()))
         first_iteration = False
     _LOGGER.debug("Done sleeping!")
 
@@ -231,7 +233,7 @@ def sleep_for_duration(duration: timedelta) -> None:
     This function generates logs at intervals to prevent swarming from thinking
     we're frozen and timing us out.
     """
-    return sleep_until_deadline(Deadline.from_duration(duration))
+    return sleep_until_deadline(Deadline.from_timeout(duration))
 
 
 def _pretty_func_name(func: Callable[..., Any]) -> str:

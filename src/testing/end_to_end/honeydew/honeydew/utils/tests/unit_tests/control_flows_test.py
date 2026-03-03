@@ -4,7 +4,7 @@
 """Tests for control_flows.py"""
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from mobly import signals
@@ -88,7 +88,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -114,7 +116,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_never_succeeds_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -143,7 +147,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_with_deadline_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -174,7 +180,7 @@ class RetryTest(unittest.TestCase):
     def test_retry_until_deadline_succeeds_on_first_try(
         self, mock_sleep: mock.Mock
     ) -> None:
-        deadline = Deadline.from_duration(timedelta(seconds=100))
+        deadline = Deadline.from_timeout(timedelta(seconds=100))
         mock_task = mock.Mock(return_value=1)
         retry_until_deadline(
             task=mock_task,
@@ -207,7 +213,7 @@ class RetryTest(unittest.TestCase):
         ):
             retry_until_deadline(
                 task=mock_task,
-                deadline=Deadline.from_duration(timedelta(seconds=10)),
+                deadline=Deadline.from_timeout(timedelta(seconds=10)),
                 retry_delay=timedelta(seconds=1),
             )
 
@@ -223,7 +229,7 @@ class RetryTest(unittest.TestCase):
         )
         retry_until_deadline(
             task=mock_task,
-            deadline=Deadline.from_duration(timedelta(seconds=10)),
+            deadline=Deadline.from_timeout(timedelta(seconds=10)),
             retry_delay=timedelta(seconds=1),
         )
 
@@ -235,7 +241,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_with_sleep(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -245,7 +253,7 @@ class RetryTest(unittest.TestCase):
         mock_task = mock.Mock(
             side_effect=[RuntimeError("Triggers a retry"), True]
         )
-        deadline = Deadline.from_duration(timedelta(seconds=100))
+        deadline = Deadline.from_timeout(timedelta(seconds=100))
 
         expected_sleep_duration = 45
         retry_until_deadline(
@@ -263,7 +271,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -273,7 +283,7 @@ class RetryTest(unittest.TestCase):
         mock_task = mock.Mock(
             side_effect=4 * [RuntimeError("Triggers a retry")] + [True]
         )
-        deadline = Deadline.from_duration(timedelta(seconds=100))
+        deadline = Deadline.from_timeout(timedelta(seconds=100))
         retry_until_deadline(
             task=mock_task,
             deadline=deadline,
@@ -295,7 +305,9 @@ class RetryTest(unittest.TestCase):
     def test_retry_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
 
         def advance_now(delta: float) -> None:
             mock_datetime.now.return_value += timedelta(seconds=delta)
@@ -305,8 +317,8 @@ class RetryTest(unittest.TestCase):
         mock_task = mock.Mock(
             side_effect=4 * [RuntimeError("Triggers a retry")] + [True]
         )
-        deadline = Deadline.from_duration(
-            timedelta(seconds=25 + 50 + 100 + 200)
+        deadline = Deadline.from_timeout(
+            timedelta(seconds=25 + 50 + 100 + 200 + 1)
         )
         retry_until_deadline(
             task=mock_task,
@@ -338,8 +350,10 @@ class RetryTest(unittest.TestCase):
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
         mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
-        deadline = Deadline.from_duration(timedelta(seconds=10))
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
+        deadline = Deadline.from_timeout(timedelta(seconds=10))
 
         # Script datetime.now() to jump past the deadline after the task triggers twice
         def sleep_func(d: timedelta) -> None:
@@ -369,8 +383,10 @@ class RepeatTest(unittest.TestCase):
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
         mock_task = mock.Mock()
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
-        deadline = Deadline.from_duration(timedelta(seconds=10))
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
+        deadline = Deadline.from_timeout(timedelta(seconds=10))
 
         def advance_now(delta: timedelta) -> None:
             mock_datetime.now.return_value += delta
@@ -391,7 +407,7 @@ class RepeatTest(unittest.TestCase):
         self, mock_sleep: mock.Mock
     ) -> None:
         mock_task = mock.Mock()
-        deadline = Deadline.from_duration(timedelta(seconds=0))
+        deadline = Deadline.from_timeout(timedelta(seconds=0))
 
         repeat_until_deadline(
             task=mock_task,
@@ -410,8 +426,10 @@ class RepeatTest(unittest.TestCase):
         mock_task = mock.Mock(
             side_effect=4 * [None] + [RuntimeError("Expected")]
         )
-        mock_datetime.now.return_value = datetime(2024, 7, 10)
-        deadline = Deadline.from_duration(timedelta(seconds=10))
+        mock_datetime.now.return_value = datetime(
+            2024, 7, 10, tzinfo=timezone.utc
+        )
+        deadline = Deadline.from_timeout(timedelta(seconds=10))
 
         def advance_now(delta: timedelta) -> None:
             mock_datetime.now.return_value += delta

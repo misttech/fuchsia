@@ -5,7 +5,7 @@
 
 import datetime
 import unittest
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest import mock
 
@@ -115,7 +115,7 @@ class PowerTests(unittest.TestCase):
             power.get_sag_suspend_stats(self.mock_device)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_exception_during_suspend(
         self,
@@ -124,9 +124,9 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() when suspend fails."""
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
-        deadline = Deadline.from_duration(timedelta(seconds=5))
+        deadline = Deadline.from_timeout(timedelta(seconds=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -149,7 +149,7 @@ class PowerTests(unittest.TestCase):
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_success(
         self,
@@ -158,9 +158,9 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() success."""
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
-        deadline = Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_timeout(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -185,8 +185,8 @@ class PowerTests(unittest.TestCase):
         self.mock_device.resume.assert_called_once()
         self.assertEqual(mock_get_stats.call_count, 2)
 
-    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch("honeydew.utils.deadline.datetime")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_retry_success(
         self,
@@ -195,9 +195,9 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() with a retry."""
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
-        deadline = Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_timeout(timedelta(minutes=5))
 
         stats_before_1 = power.SagSuspendStats(
             success_count=10,
@@ -239,7 +239,7 @@ class PowerTests(unittest.TestCase):
         self.assertEqual(mock_get_stats.call_count, 4)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_timeout(
         self,
@@ -248,16 +248,16 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() timeout."""
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         t_due = t0 + timedelta(minutes=10)
 
-        def mock_now() -> datetime.datetime:
+        def mock_now(tz: datetime.timezone | None = None) -> datetime.datetime:
             if mock_sleep.call_count > 0:
                 return t_due
             return t0
 
         mock_datetime.now.side_effect = mock_now
-        deadline = Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_timeout(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -288,7 +288,7 @@ class PowerTests(unittest.TestCase):
     # TODO(https://fxbug.dev/485577846): This will need updating once we have
     # a way to drop the power lease even if it's already missing.
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_ffx_error_handled(
         self,
@@ -298,9 +298,9 @@ class PowerTests(unittest.TestCase):
     ) -> None:
         """Test case for suspend_resume() when ffx session drop-power-lease fails."""
         self.mock_device.ffx.run.side_effect = RuntimeError("ffx failed")
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
-        deadline = Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_timeout(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -325,7 +325,7 @@ class PowerTests(unittest.TestCase):
         self.mock_device.resume.assert_called_once()
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_for_duration")
+    @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_no_deadline(
         self,
@@ -334,7 +334,7 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() without a deadline."""
-        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
 
         stats_before = power.SagSuspendStats(
