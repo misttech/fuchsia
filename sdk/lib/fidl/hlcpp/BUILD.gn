@@ -133,7 +133,7 @@ if (is_fuchsia) {
       "//zircon/system/ulib/zx",
     ]
 
-    public_configs = [ "//sdk/config" ]
+    public_configs = [ ":config" ]
 
     visibility = hlcpp_visibility
   }
@@ -155,7 +155,7 @@ if (is_fuchsia) {
       "internal/synchronous_proxy.cc",
     ]
 
-    public_configs = [ "//sdk/config" ]
+    public_configs = [ ":config" ]
 
     public_deps = [
       ":hlcpp_base",
@@ -204,10 +204,7 @@ sdk_source_set("hlcpp_base") {
     "message_buffer.cc",
   ]
 
-  public_configs = [
-    "//sdk/config",
-    ":config",
-  ]
+  public_configs = [ ":config" ]
 
   public_deps = [
     "//sdk/lib/fidl_base",

@@ -16,4 +16,6 @@ source_set("testing") {
     "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_hlcpp",
     "//src/lib/fxl",
   ]
+
+  public_configs = [ "//sdk/config" ]
 }
