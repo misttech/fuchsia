@@ -2155,4 +2155,70 @@ pub(super) mod tests {
         assert_eq!(format!("{:?}", AccessVector::NONE), "AccessVector(00000000)");
         assert_eq!(format!("{:?}", AccessVector::ALL), "AccessVector(ffffffff)");
     }
+
+    #[test]
+    fn policy_genfscon_root_path() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate selinux policy");
+
+        {
+            let context = policy.genfscon_label_for_fs_and_path(
+                "fs_with_path_rules".into(),
+                "/".into(),
+                None,
+            );
+            assert_eq!(
+                policy.serialize_security_context(&context.unwrap()),
+                b"system_u:object_r:fs_with_path_rules_t:s0"
+            )
+        }
+        {
+            let context = policy.genfscon_label_for_fs_and_path(
+                "fs_2_with_path_rules".into(),
+                "/".into(),
+                None,
+            );
+            assert_eq!(
+                policy.serialize_security_context(&context.unwrap()),
+                b"system_u:object_r:fs_2_with_path_rules_t:s0"
+            )
+        }
+    }
+
+    #[test]
+    fn policy_genfscon_subpaths() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate selinux policy");
+
+        let path_label_expectations = [
+            // Matching paths defined in the policy:
+            //    /a1/    -> fs_with_path_rules_a1_t
+            //    /a1/b/c -> fs_with_path_rules_a1_b_c_t
+            ("/a1/", "system_u:object_r:fs_with_path_rules_a1_t:s0"),
+            ("/a1/b", "system_u:object_r:fs_with_path_rules_a1_t:s0"),
+            ("/a1/b/c", "system_u:object_r:fs_with_path_rules_a1_b_c_t:s0"),
+            // Matching paths defined in the policy:
+            //    /a2/b    -> fs_with_path_rules_a2_b_t
+            ("/a2/", "system_u:object_r:fs_with_path_rules_t:s0"),
+            ("/a2/b/c/d", "system_u:object_r:fs_with_path_rules_a2_b_t:s0"),
+            // Matching paths defined in the policy:
+            //    /a3    -> fs_with_path_rules_a3_t
+            ("/a3/b/c/d", "system_u:object_r:fs_with_path_rules_a3_t:s0"),
+        ];
+        for (path, expected_label) in path_label_expectations {
+            let context = policy.genfscon_label_for_fs_and_path(
+                "fs_with_path_rules".into(),
+                path.into(),
+                None,
+            );
+            assert_eq!(
+                policy.serialize_security_context(&context.unwrap()),
+                expected_label.as_bytes()
+            )
+        }
+    }
 }
