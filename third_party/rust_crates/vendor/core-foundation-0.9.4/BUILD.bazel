@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "iana-time-zone",
-    package_url = "https://github.com/strawlab/iana-time-zone",
-    package_version = "0.1.61",
+    package_name = "core-foundation",
+    package_url = "https://github.com/servo/core-foundation-rs",
+    package_version = "0.9.4",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "iana_time_zone",
+    name = "core_foundation",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,7 +53,8 @@ rust_library(
         ],
     ),
     crate_features = [
-        "fallback",
+        "default",
+        "link",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
@@ -62,7 +63,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=iana-time-zone",
+        "crate-name=core-foundation",
         "manual",
         "noclippy",
         "norustfmt",
@@ -75,14 +76,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.61",
-    deps = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
-        ],
-        "//conditions:default": [],
-    }),
+    version = "0.9.4",
+    deps = [
+        "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",
+        "//third_party/rust_crates/vendor/libc-0.2.182:libc",
+    ],
 )

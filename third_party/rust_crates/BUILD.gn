@@ -4397,55 +4397,57 @@ rustc_library("const-oid-v0_9_6") {
   applicable_licenses = [ ":const-oid-v0_9_6.license" ]
 }
 
-license("core-foundation-v0_9_2.license") {
+license("core-foundation-v0_9_4.license") {
   public_package_name = "core_foundation"
   license_files = [
-    "//third_party/rust_crates/vendor/core-foundation-0.9.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/core-foundation-0.9.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/core-foundation-0.9.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/core-foundation-0.9.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("core-foundation-v0_9_2") {
+rustc_library("core-foundation-v0_9_4") {
   crate_name = "core_foundation"
   source_root =
-      "//third_party/rust_crates/vendor/core-foundation-0.9.2/src/lib.rs"
-  output_name = "core_foundation-1793acbfd0376d1a"
-  edition = "2015"
+      "//third_party/rust_crates/vendor/core-foundation-0.9.4/src/lib.rs"
+  output_name = "core_foundation-f9e1f1978da592dd"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":core-foundation-sys-v0_8_3" ]
+  deps += [ ":core-foundation-sys-v0_8_7" ]
   deps += [ ":libc-v0_2_182" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1793acbfd0376d1a",
-    "-Cextra-filename=-1793acbfd0376d1a",
+    "-Cmetadata=f9e1f1978da592dd",
+    "-Cextra-filename=-f9e1f1978da592dd",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"link\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":core-foundation-v0_9_2.license" ]
+  applicable_licenses = [ ":core-foundation-v0_9_4.license" ]
 }
 
-license("core-foundation-sys-v0_8_3.license") {
+license("core-foundation-sys-v0_8_7.license") {
   public_package_name = "core_foundation_sys"
   license_files = [
-    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("core-foundation-sys-v0_8_3") {
+rustc_library("core-foundation-sys-v0_8_7") {
   crate_name = "core_foundation_sys"
   source_root =
-      "//third_party/rust_crates/vendor/core-foundation-sys-0.8.3/src/lib.rs"
-  output_name = "core_foundation_sys-4cac9aebdc1fb14"
-  edition = "2015"
+      "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7/src/lib.rs"
+  output_name = "core_foundation_sys-6927fb967bafc451"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -4456,8 +4458,10 @@ rustc_library("core-foundation-sys-v0_8_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4cac9aebdc1fb14",
-    "-Cextra-filename=-4cac9aebdc1fb14",
+    "-Cmetadata=6927fb967bafc451",
+    "-Cextra-filename=-6927fb967bafc451",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"link\"",
   ]
   if (current_os == "mac") {
     rustflags += [ "-lframework=CoreFoundation" ]
@@ -4465,7 +4469,7 @@ rustc_library("core-foundation-sys-v0_8_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":core-foundation-sys-v0_8_3.license" ]
+  applicable_licenses = [ ":core-foundation-sys-v0_8_7.license" ]
 }
 
 license("coset-v0_3_8.license") {
@@ -8782,7 +8786,7 @@ rustc_library("iana-time-zone-v0_1_61") {
     deps += [ ":wasm-bindgen-v0_2_91" ]
   }
   if (current_os == "mac" || false) {
-    deps += [ ":core-foundation-sys-v0_8_3" ]
+    deps += [ ":core-foundation-sys-v0_8_7" ]
   }
   if (false) {
     deps += [ ":android_system_properties-v0_1_5" ]
@@ -16519,8 +16523,8 @@ rustc_library("security-framework-v2_3_1") {
 
   deps = []
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":core-foundation-sys-v0_8_3" ]
-  deps += [ ":core-foundation-v0_9_2" ]
+  deps += [ ":core-foundation-sys-v0_8_7" ]
+  deps += [ ":core-foundation-v0_9_4" ]
   deps += [ ":libc-v0_2_182" ]
   deps += [ ":security-framework-sys-v2_4_2" ]
 
@@ -16557,7 +16561,7 @@ rustc_library("security-framework-sys-v2_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":core-foundation-sys-v0_8_3" ]
+  deps += [ ":core-foundation-sys-v0_8_7" ]
   deps += [ ":libc-v0_2_182" ]
 
   rustenv = []
