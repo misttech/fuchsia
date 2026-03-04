@@ -316,6 +316,37 @@ fx create-pb-zip -o <path-to-pb-zip>
 This command creates a zip file containing the product bundle in the
 path you specified.
 
+### Building and uploading a product bundle ZIP file {#building-and-uploading-a-product-bundle-zip-file}
+
+The `fx build-and-upload` command provides a convenient way to build Fuchsia,
+create a product bundle ZIP file, and upload it to a Google Cloud Storage (GCS)
+bucket in a single step.
+
+```posix-terminal
+fx build-and-upload
+```
+
+By default, this command uploads the product bundle to the
+`gs://fuchsia-build-stage` bucket. However, you can specify a different GCS
+bucket using the `--bucket` (or `-b`) flag:
+
+```posix-terminal
+fx build-and-upload --bucket gs://<bucket-name>
+```
+
+Once the upload is complete, the printed GS URL can be used directly with `ffx`
+commands for flashing a target device or starting the emulator, for example:
+
+```none {:.devsite-disable-click-to-copy}
+# Flash a target device
+$ ffx target flash -b gs://fuchsia-build-stage/pb.zip
+```
+
+```none {:.devsite-disable-click-to-copy}
+# Start the emulator
+$ ffx emu start gs://fuchsia-build-stage/pb.zip -H
+```
+
 ## Prepare a Zedboot USB drive {#prepare-zedboot}
 
 The exact preparation required to flash Fuchsia onto a target device varies by
