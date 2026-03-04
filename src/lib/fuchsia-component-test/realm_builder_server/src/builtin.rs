@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl::endpoints::ServerEnd;
 use log::*;
 use std::collections::HashMap;
@@ -59,11 +59,14 @@ async fn read_only_directory_helper(
     let directory_hashmap = directory_contents_to_hashmap(directory_contents)?;
     let directory = build_directory(directory_hashmap)?;
     let execution_scope_dropper = ExecutionScopeDropper { execution_scope: ExecutionScope::new() };
-    let top_directory = simpledir::simple();
+    let directory_name_clone = directory_name.clone();
+    let top_directory = simpledir::Simple::new_with_not_found_handler(move |path| {
+        warn!(
+            "nonexistent path {:?} accessed in read only directory {:?}",
+            path, directory_name_clone
+        );
+    });
     top_directory.clone().add_entry(&directory_name, directory)?;
-    top_directory.clone().set_not_found_handler(Box::new(move |path| {
-        warn!("nonexistent path {:?} accessed in read only directory {:?}", path, directory_name);
-    }));
     vfs::directory::serve_on(
         top_directory,
         fio::PERM_READABLE,
@@ -92,7 +95,7 @@ fn directory_contents_to_hashmap(
                         return Err(format_err!(
                             "directory_contents invalid, {:?} is inside of a file",
                             entry.file_path
-                        ))
+                        ));
                     }
                 };
             } else {

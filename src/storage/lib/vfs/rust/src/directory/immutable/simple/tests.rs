@@ -169,15 +169,12 @@ async fn one_file_open_missing() {
 
 #[fuchsia::test]
 async fn one_file_open_missing_not_found_handler() {
-    let dir = pseudo_directory! {
-        "file" => file::read_only("Content"),
-    };
-
     let last_handler_value = Arc::new(Mutex::new(None));
     let last_handler_value_clone = last_handler_value.clone();
-    dir.clone().set_not_found_handler(Box::new(move |path| {
+    let dir = Simple::new_with_not_found_handler(move |path| {
         *last_handler_value_clone.lock() = Some(path.to_string());
-    }));
+    });
+    dir.add_entry("file", file::read_only("Content")).unwrap();
 
     let root = serve(dir, fio::PERM_READABLE);
     assert_open_file_err(&root, "file2", fio::PERM_READABLE, Status::NOT_FOUND).await;

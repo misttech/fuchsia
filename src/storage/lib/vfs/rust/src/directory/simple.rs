@@ -44,7 +44,7 @@ pub struct Simple {
     // The inode for this directory. This should either be unique within this VFS, or INO_UNKNOWN.
     inode: u64,
 
-    not_found_handler: Mutex<Option<Box<dyn FnMut(&str) + Send + Sync + 'static>>>,
+    not_found_handler: Option<Box<dyn Fn(&str) + Send + Sync + 'static>>,
 }
 
 struct Inner {
@@ -62,19 +62,19 @@ impl Simple {
         Arc::new(Simple {
             inner: Mutex::new(Inner { entries: BTreeMap::new(), watchers: Watchers::new() }),
             inode,
-            not_found_handler: Mutex::new(None),
+            not_found_handler: None,
         })
     }
 
-    /// The provided function will be called whenever this VFS receives an open request for a path
-    /// that is not present in the VFS. The function is invoked with the full path of the missing
-    /// entry, relative to the root of this VFS. Typically this function is used for logging.
-    pub fn set_not_found_handler(
-        self: Arc<Self>,
-        handler: Box<dyn FnMut(&str) + Send + Sync + 'static>,
-    ) {
-        let mut this = self.not_found_handler.lock();
-        this.replace(handler);
+    /// Creates a new directory with the provided function that will be called whenever this VFS
+    /// receives an open request for a path that is not present in the directory. The handler is
+    /// invoked with the full path of the missing entry, relative to the root.
+    pub fn new_with_not_found_handler(handler: impl Fn(&str) + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(Simple {
+            inner: Mutex::new(Inner { entries: BTreeMap::new(), watchers: Watchers::new() }),
+            inode: fio::INO_UNKNOWN,
+            not_found_handler: Some(Box::new(handler)),
+        })
     }
 
     /// Returns the entry identified by `name`.
@@ -164,7 +164,7 @@ impl Simple {
                 //   - we're at an intermediate directory and the next entry doesn't exist, or
                 //   - we're at the last directory and the next entry doesn't exist and creating the
                 //     entry wasn't requested.
-                if let Some(not_found_handler) = &mut *self.not_found_handler.lock() {
+                if let Some(not_found_handler) = &self.not_found_handler {
                     not_found_handler(path_ref.as_str());
                 }
                 Err(Status::NOT_FOUND)
@@ -426,18 +426,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn not_found_handler() {
-        let dir = Simple::new();
         let path_mutex = Arc::new(Mutex::new(None));
         let path_mutex_clone = path_mutex.clone();
-        dir.clone().set_not_found_handler(Box::new(move |path| {
+        let dir = Simple::new_with_not_found_handler(move |path| {
             *path_mutex_clone.lock() = Some(path.to_string());
-        }));
+        });
 
-        let sub_dir = Simple::new();
         let path_mutex_clone = path_mutex.clone();
-        sub_dir.clone().set_not_found_handler(Box::new(move |path| {
+        let sub_dir = Simple::new_with_not_found_handler(move |path| {
             *path_mutex_clone.lock() = Some(path.to_string());
-        }));
+        });
         dir.add_entry("dir", sub_dir).expect("add entry with valid filename should succeed");
 
         dir.add_entry("file", file::read_only(b"test"))

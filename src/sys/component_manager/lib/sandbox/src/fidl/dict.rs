@@ -71,7 +71,11 @@ impl Dict {
         scope: ExecutionScope,
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        let directory = pfs::simple();
+        let directory = if let Some(handler) = self.lock().not_found.take() {
+            pfs::Simple::new_with_not_found_handler(handler)
+        } else {
+            pfs::Simple::new()
+        };
         for (key, value) in self.drain() {
             let dir_entry = match value {
                 Capability::Dictionary(value) => {
@@ -86,13 +90,6 @@ impl Dict {
                 .expect("dictionary values must be unique")
         }
 
-        let not_found = self.lock().not_found.take();
-        directory.clone().set_not_found_handler(Box::new(move |path| {
-            if let Some(not_found) = not_found.as_ref() {
-                not_found(path);
-            }
-        }));
-
         Ok(directory)
     }
 }
@@ -103,7 +100,24 @@ impl RemotableCapability for Dict {
         scope: ExecutionScope,
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        let directory = pfs::simple();
+        let self_clone = self.clone();
+        let directory = pfs::Simple::new_with_not_found_handler(move |path| {
+            // We hold a reference to the dictionary in this closure to solve an ownership problem.
+            // In `try_into_directory_entry` we return a `pfs::Simple` that provides a directory
+            // projection of a dictionary. The directory is live-updated, so that as items are
+            // added to or removed from the dictionary the directory contents are updated to match.
+            //
+            // The live-updating semantics introduce a problem: when all references to a dictionary
+            // reach the end of their lifetime and the dictionary is dropped, all entries in the
+            // dictionary are marked as removed. This means if one creates a dictionary, adds
+            // entries to it, turns it into a directory, and drops the only dictionary reference,
+            // then the directory is immediately emptied of all of its contents.
+            //
+            // Ideally at least one reference to the dictionary would be kept alive as long as the
+            // directory exists. We accomplish that by giving the directory ownership over a
+            // reference to the dictionary here.
+            self_clone.not_found(path);
+        });
         let weak_dir: Weak<pfs::Simple> = Arc::downgrade(&directory);
         let (error_sender, error_receiver) = oneshot::channel();
         let error_sender = Mutex::new(Some(error_sender));
@@ -160,23 +174,6 @@ impl RemotableCapability for Dict {
                 EntryUpdate::Idle => (),
             }
             UpdateNotifierRetention::Retain
-        }));
-        directory.clone().set_not_found_handler(Box::new(move |path| {
-            // We hold a reference to the dictionary in this closure to solve an ownership problem.
-            // In `try_into_directory_entry` we return a `pfs::Simple` that provides a directory
-            // projection of a dictionary. The directory is live-updated, so that as items are
-            // added to or removed from the dictionary the directory contents are updated to match.
-            //
-            // The live-updating semantics introduce a problem: when all references to a dictionary
-            // reach the end of their lifetime and the dictionary is dropped, all entries in the
-            // dictionary are marked as removed. This means if one creates a dictionary, adds
-            // entries to it, turns it into a directory, and drops the only dictionary reference,
-            // then the directory is immediately emptied of all of its contents.
-            //
-            // Ideally at least one reference to the dictionary would be kept alive as long as the
-            // directory exists. We accomplish that by giving the directory ownership over a
-            // reference to the dictionary here.
-            self.not_found(path);
         }));
         if let Some(Ok(error)) = error_receiver.now_or_never() {
             // We encountered an error processing the initial contents of this dictionary. Let's

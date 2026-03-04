@@ -577,14 +577,12 @@ impl<ServiceObjTy: ServiceObjTrait> ServiceFs<ServiceObjTy> {
 }
 
 fn new_simple_dir() -> Arc<PseudoDir> {
-    let dir = PseudoDir::new();
-    dir.clone().set_not_found_handler(Box::new(move |path| {
+    PseudoDir::new_with_not_found_handler(move |path| {
         warn!(
             "ServiceFs received request to `{}` but has not been configured to serve this path.",
             path
         );
-    }));
-    dir
+    })
 }
 
 /// `ProtocolConnector` allows connecting to capabilities exposed by ServiceFs
