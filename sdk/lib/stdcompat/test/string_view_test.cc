@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/stdcompat/string_view.h>
+#include <lib/stdcompat/version.h>
 
 #include <cstring>
 #include <limits>
@@ -111,6 +112,70 @@ TEST(StringViewTest, Contains) {
   constexpr const char* kCstringQueryMissing = "foobar";
   EXPECT_TRUE(cpp23::contains(kString, kCstringQueryPresent));
   EXPECT_FALSE(cpp23::contains(kString, kCstringQueryMissing));
+}
+
+TEST(StringViewTest, CalledWithString) {
+  constexpr std::string_view kString = "abcdef";
+  const std::string str{kString};
+  EXPECT_TRUE(cpp20::starts_with(str, kString));
+  EXPECT_TRUE(cpp20::starts_with(str, str.c_str()));
+  EXPECT_TRUE(cpp20::starts_with(str, kString.front()));
+  EXPECT_TRUE(cpp20::ends_with(str, kString));
+  EXPECT_TRUE(cpp20::ends_with(str, str.c_str()));
+  EXPECT_TRUE(cpp20::ends_with(str, kString.back()));
+  EXPECT_TRUE(cpp23::contains(str, kString));
+  EXPECT_TRUE(cpp23::contains(str, str.c_str()));
+  EXPECT_TRUE(cpp23::contains(str, kString.front()));
+
+  constexpr std::wstring_view kWString = L"abcdef";
+  const std::wstring wstr{kWString};
+  EXPECT_TRUE(cpp20::starts_with(wstr, kWString));
+  EXPECT_TRUE(cpp20::starts_with(wstr, wstr.c_str()));
+  EXPECT_TRUE(cpp20::starts_with(wstr, kWString.front()));
+  EXPECT_TRUE(cpp20::ends_with(wstr, kWString));
+  EXPECT_TRUE(cpp20::ends_with(wstr, wstr.c_str()));
+  EXPECT_TRUE(cpp20::ends_with(wstr, kWString.back()));
+  EXPECT_TRUE(cpp23::contains(wstr, kWString));
+  EXPECT_TRUE(cpp23::contains(wstr, wstr.c_str()));
+  EXPECT_TRUE(cpp23::contains(wstr, kWString.front()));
+
+#if __cpp_char8_t >= 201811L
+  constexpr std::u8string_view kU8String = u8"abcdef";
+  const std::u8string u8str{kU8String};
+  EXPECT_TRUE(cpp20::starts_with(u8str, kU8String));
+  EXPECT_TRUE(cpp20::starts_with(u8str, u8str.c_str()));
+  EXPECT_TRUE(cpp20::starts_with(u8str, kU8String.front()));
+  EXPECT_TRUE(cpp20::ends_with(u8str, kU8String));
+  EXPECT_TRUE(cpp20::ends_with(u8str, u8str.c_str()));
+  EXPECT_TRUE(cpp20::ends_with(u8str, kU8String.back()));
+  EXPECT_TRUE(cpp23::contains(u8str, kU8String));
+  EXPECT_TRUE(cpp23::contains(u8str, u8str.c_str()));
+  EXPECT_TRUE(cpp23::contains(u8str, kU8String.front()));
+#endif
+
+  constexpr std::u16string_view kU16String = u"abcdef";
+  const std::u16string u16str{kU16String};
+  EXPECT_TRUE(cpp20::starts_with(u16str, kU16String));
+  EXPECT_TRUE(cpp20::starts_with(u16str, u16str.c_str()));
+  EXPECT_TRUE(cpp20::starts_with(u16str, kU16String.front()));
+  EXPECT_TRUE(cpp20::ends_with(u16str, kU16String));
+  EXPECT_TRUE(cpp20::ends_with(u16str, u16str.c_str()));
+  EXPECT_TRUE(cpp20::ends_with(u16str, kU16String.back()));
+  EXPECT_TRUE(cpp23::contains(u16str, kU16String));
+  EXPECT_TRUE(cpp23::contains(u16str, u16str.c_str()));
+  EXPECT_TRUE(cpp23::contains(u16str, kU16String.front()));
+
+  constexpr std::u32string_view kU32String = U"abcdef";
+  const std::u32string u32str{kU32String};
+  EXPECT_TRUE(cpp20::starts_with(u32str, kU32String));
+  EXPECT_TRUE(cpp20::starts_with(u32str, u32str.c_str()));
+  EXPECT_TRUE(cpp20::starts_with(u32str, kU32String.front()));
+  EXPECT_TRUE(cpp20::ends_with(u32str, kU32String));
+  EXPECT_TRUE(cpp20::ends_with(u32str, u32str.c_str()));
+  EXPECT_TRUE(cpp20::ends_with(u32str, kU32String.back()));
+  EXPECT_TRUE(cpp23::contains(u32str, kU32String));
+  EXPECT_TRUE(cpp23::contains(u32str, u32str.c_str()));
+  EXPECT_TRUE(cpp23::contains(u32str, kU32String.front()));
 }
 
 }  // namespace
