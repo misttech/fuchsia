@@ -242,6 +242,13 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
 
   void ResetOwnerIfNoWaiters() TA_EXCL(chainlock_transaction_token, get_lock());
 
+  // Check invariants before returning to the pool.
+  void AssertSafeForPooling() const TA_NO_THREAD_SAFETY_ANALYSIS {
+    DEBUG_ASSERT_MSG(owner_ == nullptr, "Cannot recycle an OwnedWaitQueue that has an owner.");
+    DEBUG_ASSERT_MSG(IsEmpty(), "Cannot recycle an OwnedWaitQueue that has waiters.");
+    DEBUG_ASSERT_MSG(!InContainer(), "Cannot recycle an OwnedWaitQueue that is owned by a thread.");
+  }
+
   // Block the current thread on this wait queue, and re-assign ownership to
   // the specified thread (or remove ownership if new_owner is null);  If a
   // cycle would have been produced by this operation, no changes are made and
