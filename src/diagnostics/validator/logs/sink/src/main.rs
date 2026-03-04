@@ -628,20 +628,18 @@ impl TestRecord {
                         return Ok(None);
                     }
                 }
-                Argument::File(_) => {
-                    if error_or_file_line_rules_apply {
-                        sorted_args
-                            .insert(name, fvalidate::Value::Text(STUB_ERROR_FILENAME.into()));
-                    } else {
-                        sorted_args.insert(name, utils::value_to_fidl(argument.value()));
-                    }
+                Argument::File(_) if error_or_file_line_rules_apply => {
+                    sorted_args.insert(name, fvalidate::Value::Text(STUB_ERROR_FILENAME.into()));
                 }
-                Argument::Line(_) => {
-                    if error_or_file_line_rules_apply {
-                        sorted_args.insert(name, fvalidate::Value::UnsignedInt(STUB_ERROR_LINE));
-                    } else {
-                        sorted_args.insert(name, utils::value_to_fidl(argument.value()));
-                    }
+                arg @ Argument::File(_) => {
+                    sorted_args.insert(name, utils::value_to_fidl(arg.value()));
+                }
+
+                Argument::Line(_) if error_or_file_line_rules_apply => {
+                    sorted_args.insert(name, fvalidate::Value::UnsignedInt(STUB_ERROR_LINE));
+                }
+                arg @ Argument::Line(_) => {
+                    sorted_args.insert(name, utils::value_to_fidl(arg.value()));
                 }
                 _ => {
                     sorted_args.insert(name, utils::value_to_fidl(argument.value()));
