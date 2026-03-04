@@ -49,8 +49,7 @@ std::pair<zx::ticks, std::vector<uint64_t>> SampleThread(const zx::unowned_proce
   }
 
   // Skip threads that are not actively running or blocked
-  if (!((thread_info.state == ZX_THREAD_STATE_RUNNING) ||
-        (thread_info.state & ZX_THREAD_STATE_BLOCKED))) {
+  if (thread_info.state != ZX_THREAD_STATE_RUNNING) {
     return {zx::ticks(), std::vector<uint64_t>()};
   }
 

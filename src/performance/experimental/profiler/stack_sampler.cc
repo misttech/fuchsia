@@ -166,16 +166,22 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
     unwinder::Unwinder unwinder(target.unwinder_data->modules);
     std::vector<Sample>& process_samples = samples_[target.pid];
     for (const auto& [tid, thread] : target.threads) {
-      if (!thread.restricted_state_addr.has_value()) {
-        if (zx::result<> res = RefreshMappings(target); res.is_error()) {
-          FX_PLOGS(WARNING, res.status_value()) << "Failed to refresh mappings for thread: " << tid;
-          return zx::ok();
-        }
+      zx_info_thread_t thread_info;
+      zx_status_t status = thread.handle.get_info(ZX_INFO_THREAD, &thread_info, sizeof(thread_info),
+                                                  nullptr, nullptr);
+      if (status != ZX_OK) {
+        FX_PLOGS(ERROR, status) << "unable to get thread info for thread " << thread.handle.get()
+                                << ", skipping";
+        continue;  // Skip this thread.
+      }
+      // Skip threads that are not actively running or blocked
+      if (thread_info.state != ZX_THREAD_STATE_RUNNING) {
+        continue;
       }
 
       // Suspend thread
       zx::suspend_token suspend_token;
-      zx_status_t status = thread.handle.suspend(&suspend_token);
+      status = thread.handle.suspend(&suspend_token);
       if (status != ZX_OK) {
         FX_PLOGS(ERROR, status) << "Failed to suspend thread: " << tid;
         continue;
