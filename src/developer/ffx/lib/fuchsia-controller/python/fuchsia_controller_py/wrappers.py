@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import asyncio
+import functools
+import types
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
 import fuchsia_async_extension
@@ -96,6 +98,72 @@ class AsyncAdapter:
             pass  # expected
 
 
+class BoundAsyncMethod:
+    """Represents the asyncmethod bound to a specific instance."""
+
+    def __init__(
+        self, descriptor: "AsyncMethodDescriptor", instance: Any
+    ) -> None:
+        self._descriptor = descriptor
+        self.__self__ = instance
+        self.__func__ = descriptor
+        functools.update_wrapper(self, descriptor)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._descriptor(self.__self__, *args, **kwargs)
+
+    def unwrap_from_asyncmethod(self) -> Callable[..., Any]:
+        """Returns the original async function, explicitly bound to the instance."""
+        return types.MethodType(self._descriptor.__wrapped__, self.__self__)
+
+
+class AsyncMethodDescriptor:
+    """The descriptor that replaces the standard @asyncmethod wrapper function."""
+
+    def __init__(self, func: Callable[..., Any]) -> None:
+        self.__wrapped__ = func
+        self._is_outermost_decorator = False
+        functools.update_wrapper(self, func)
+
+    def __set_name__(self, owner: Any, name: str) -> None:
+        self._is_outermost_decorator = True
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if not self._is_outermost_decorator:
+            raise RuntimeError(
+                f"The method '{self.__wrapped__.__name__}' is wrapped incorrectly. "
+                "@asyncmethod MUST be the outermost decorator. Please flip the "
+                "decorator order."
+            )
+
+        coro = self.__wrapped__(*args, **kwargs)
+        try:
+            loop = getattr(args[0], "_async_adapter_loop")  # args[0] == self
+        except AttributeError as e:
+            raise AsyncAdapterError(
+                "`asyncmethod` was used outside of an `AsyncAdapter`. "
+                "Your class must inherit from "
+                "`fuchsia_controller_py.wrappers.AsyncAdapter` to use this "
+                "decorator. If you're already inheriting this and you're "
+                "seeing this exception, put `AsyncAdapter` first in your "
+                "inheritance order."
+            ) from e
+
+        return loop.run_until_complete(coro)
+
+    def __get__(self, instance: Any, owner: Any = None) -> Any:
+        # Accessed on the class directly (e.g. AsyncAdapter.my_method)
+        if instance is None:
+            return self
+        # Accessed on the instance (e.g. self.my_method)
+        return BoundAsyncMethod(self, instance)
+
+    def unwrap_from_asyncmethod(self) -> Callable[..., Any]:
+        # This unwrap is trivial because there is not an instance of the
+        # class that the wrapper is bound to yet.
+        return self.__wrapped__
+
+
 def asyncmethod(
     func: Callable[_Params, Coroutine[_Yield, _Send, _Ret]],
 ) -> Callable[_Params, _Ret]:
@@ -103,21 +171,4 @@ def asyncmethod(
 
     This should ONLY be used with classes that inherit `AsyncAdapter`.
     """
-
-    def wrapper(*args: _Params.args, **kwargs: _Params.kwargs) -> _Ret:
-        coro = func(*args, **kwargs)
-        try:
-            loop = getattr(args[0], "_async_adapter_loop")  # args[0] == self
-        except AttributeError as e:
-            raise AsyncAdapterError(
-                "`asyncmethod` was used outside of an `AsyncAdapter`. "
-                + "Your class must inherit from "
-                + "`fuchsia_controller_py.wrappers.AsyncAdapter` to use this "
-                + "decorator. If you're already inheriting this and you're "
-                + "seeing this exception, put `AsyncAdapter` first in your "
-                + "inheritance order."
-            ) from e
-
-        return loop.run_until_complete(coro)
-
-    return wrapper
+    return AsyncMethodDescriptor(func)
