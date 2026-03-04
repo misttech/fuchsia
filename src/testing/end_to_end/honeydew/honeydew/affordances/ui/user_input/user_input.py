@@ -18,6 +18,114 @@ DEFAULTS: dict[str, Any] = {
 }
 
 
+class AsyncTouchDevice(abc.ABC):
+    """Abstract base class for an async UserInput Touch."""
+
+    @abc.abstractmethod
+    async def tap(
+        self,
+        location: types.Coordinate,
+        tap_event_count: int = DEFAULTS["TAP_EVENT_COUNT"],
+        duration_ms: int = DEFAULTS["TAP_DURATION_MS"],
+        duration_of_one_tap_ms: int = DEFAULTS["ONE_TAP_DURATION_MS"],
+    ) -> None:
+        """Instantiates Taps at coordinates (x, y) for a touchscreen with
+           default or custom width, height, duration, and tap event counts.
+
+        Args:
+            location: tap location in X, Y axis coordinate.
+
+            tap_event_count: Number of tap events to send (`duration` is
+                divided over the tap events), defaults to 1.
+
+            duration_ms: Duration of the event(s) in milliseconds, defaults to
+                300.
+
+            duration_of_one_tap_ms: Duration of 1 event(s) in milliseconds,
+                defaults to 0.
+
+        Raises:
+            UserInputError: if failed tap operation.
+        """
+
+    @abc.abstractmethod
+    async def swipe(
+        self,
+        start_location: types.Coordinate,
+        end_location: types.Coordinate,
+        move_event_count: int,
+        duration_ms: int = DEFAULTS["SWIPE_DURATION_MS"],
+    ) -> None:
+        """Instantiates a swipe event sequence that starts at `start_location` and ends at
+           `end_location`, with a total number of move events equal to `move_event_count`.
+
+           Events are injected with no explicit delay in between.
+
+        Args:
+            start_location: swipe start location in X, Y axis coordinate.
+
+            end_location: swipe end location in X, Y axis coordinate.
+
+            move_event_count: Number of move events.
+
+            duration_ms: Duration of the swipe gesture in milliseconds, defaults to 0.
+
+        Raises:
+            UserInputError: if failed swipe operation.
+        """
+
+
+class AsyncKeyboardDevice(abc.ABC):
+    """Abstract base class for an async UserInput Keyboard or Button."""
+
+    @abc.abstractmethod
+    async def key_press(
+        self,
+        key_code: int,
+    ) -> None:
+        """Instantiates key press includes down and up.
+
+        Args:
+            key_code: key code you can find in fuchsia.input.Key
+
+        Raises:
+            UserInputError: if failed key press operation.
+        """
+
+
+class AsyncUserInput(abc.ABC):
+    """Abstract base class for an async UserInput affordance."""
+
+    @abc.abstractmethod
+    def create_touch_device(
+        self,
+        touch_screen_size: types.Size = DEFAULTS["TOUCH_SCREEN_SIZE"],
+    ) -> AsyncTouchDevice:
+        """Create a virtual touch device for testing touch input.
+
+        Args:
+            touch_screen_size: resolution of the touch screen, defaults to
+                1000 x 1000.
+
+        Returns:
+            AsyncTouchDevice object.
+
+        Raises:
+            UserInputError: if failed to create virtual touch device.
+        """
+
+    @abc.abstractmethod
+    def create_keyboard_device(self) -> AsyncKeyboardDevice:
+        """Create a virtual keyboard device for testing keyboard input.
+
+        Returns:
+            AsyncKeyboardDevice object.
+
+        Raises:
+            UserInputError: if failed to create virtual keyboard device.
+        """
+
+
 class TouchDevice(abc.ABC):
     """Abstract base class for UserInput Touch."""
 
@@ -74,6 +182,10 @@ class TouchDevice(abc.ABC):
             UserInputError: if failed swipe operation.
         """
 
+    @abc.abstractmethod
+    def as_async(self) -> AsyncTouchDevice:
+        """Returns the async version of TouchDevice."""
+
 
 class KeyboardDevice(abc.ABC):
     """Abstract base class for UserInput Keyboard or Button."""
@@ -91,6 +203,10 @@ class KeyboardDevice(abc.ABC):
         Raises:
             UserInputError: if failed key press operation.
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncKeyboardDevice:
+        """Returns the async version of KeyboardDevice."""
 
 
 class UserInput(affordance.Affordance):
@@ -118,3 +234,7 @@ class UserInput(affordance.Affordance):
         Raises:
             UserInputError: if failed to create virtual keyboard device.
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncUserInput:
+        """Returns the async version of UserInput."""

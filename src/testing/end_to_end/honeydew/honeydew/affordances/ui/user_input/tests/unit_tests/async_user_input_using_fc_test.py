@@ -21,25 +21,25 @@ from honeydew.typing import custom_types
 
 
 # pylint: disable=protected-access
-class UserInputFCTests(unittest.TestCase):
+class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.ui.user_input.py."""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         super().setUp()
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
         self.ffx_transport_obj = mock.MagicMock(spec=ffx_transport.FFX)
 
-    def test_verify_supported_no_virtual_device_support_raise_error(
+    async def test_verify_supported_no_virtual_device_support_raise_error(
         self,
     ) -> None:
-        """Test for user_input_using_fc.UserInputUsingFc() method raise error without virtual device
+        """Test for user_input_using_fc.AsyncUserInputUsingFc() method raise error without virtual device
         support."""
 
         self.ffx_transport_obj.run.return_value = '{"instances": []}'
         with self.assertRaises(errors.NotSupportedError):
-            user_input_using_fc.UserInputUsingFc(
+            user_input_using_fc.AsyncUserInputUsingFc(
                 device_name="fuchsia-emulator",
                 fuchsia_controller=self.fc_transport_obj,
                 ffx_transport=self.ffx_transport_obj,
@@ -49,19 +49,19 @@ class UserInputFCTests(unittest.TestCase):
             ["component", "list"]
         )
 
-    def test_verify_supported_no_raise(self) -> None:
-        """Test for user_input_using_fc.UserInputUsingFc() method not raise error with virtual
+    async def test_verify_supported_no_raise(self) -> None:
+        """Test for user_input_using_fc.AsyncUserInputUsingFc() method not raise error with virtual
         device support."""
         self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
-        user_input_using_fc.UserInputUsingFc(
+        user_input_using_fc.AsyncUserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,
         )
 
-    def user_input(self) -> user_input_using_fc.UserInputUsingFc:
+    def user_input(self) -> user_input_using_fc.AsyncUserInputUsingFc:
         self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
-        return user_input_using_fc.UserInputUsingFc(
+        return user_input_using_fc.AsyncUserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,
@@ -73,10 +73,11 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_create_touch_device(self, register_touch_screen) -> None:  # type: ignore[no-untyped-def]
+    async def test_create_touch_device(self, register_touch_screen) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.create_touch_device() method."""
 
         touch_device = self.user_input().create_touch_device()
+        await touch_device.make_ready()
 
         self.fc_transport_obj.connect_device_proxy.assert_called_once_with(
             custom_types.FidlEndpoint(
@@ -86,7 +87,7 @@ class UserInputFCTests(unittest.TestCase):
 
         register_touch_screen.assert_called_once()
 
-        self.assertIsNotNone(touch_device._inner._touch_screen_proxy)
+        self.assertIsNotNone(touch_device._touch_screen_proxy)
 
     @mock.patch.object(
         f_test_input.TouchScreenClient,
@@ -99,11 +100,11 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_tap_only_required(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
+    async def test_tap_only_required(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.tap() method with only required params."""
 
         touch_device = self.user_input().create_touch_device()
-        touch_device.tap(location=ui_custom_types.Coordinate(x=1, y=2))
+        await touch_device.tap(location=ui_custom_types.Coordinate(x=1, y=2))
         simulate_touch_event.assert_has_calls(
             [
                 mock.call(
@@ -136,13 +137,13 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_tap_all_params(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
+    async def test_tap_all_params(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.tap() method with all params."""
 
         touch_device = self.user_input().create_touch_device(
             touch_screen_size=ui_custom_types.Size(width=3, height=4),
         )
-        touch_device.tap(
+        await touch_device.tap(
             location=ui_custom_types.Coordinate(x=1, y=2),
             tap_event_count=3,
             duration_ms=6,
@@ -212,13 +213,13 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_swipe(self, unused_register_touch_screen, simulate_swipe) -> None:  # type: ignore[no-untyped-def]
+    async def test_swipe(self, unused_register_touch_screen, simulate_swipe) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.swipe() method."""
 
         touch_device = self.user_input().create_touch_device(
             touch_screen_size=ui_custom_types.Size(width=4, height=5),
         )
-        touch_device.swipe(
+        await touch_device.swipe(
             start_location=ui_custom_types.Coordinate(x=1, y=2),
             end_location=ui_custom_types.Coordinate(x=3, y=4),
             move_event_count=2,
@@ -245,13 +246,13 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_swipe_with_duration(self, unused_register_touch_screen, simulate_swipe) -> None:  # type: ignore[no-untyped-def]
+    async def test_swipe_with_duration(self, unused_register_touch_screen, simulate_swipe) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.swipe() method with duration."""
 
         touch_device = self.user_input().create_touch_device(
             touch_screen_size=ui_custom_types.Size(width=4, height=5),
         )
-        touch_device.swipe(
+        await touch_device.swipe(
             start_location=ui_custom_types.Coordinate(x=1, y=2),
             end_location=ui_custom_types.Coordinate(x=3, y=4),
             move_event_count=2,
@@ -274,10 +275,12 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_create_keyboard_device(self, register_keyboard) -> None:  # type: ignore[no-untyped-def]
+    async def test_create_keyboard_device(self, register_keyboard) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.create_keyboard_device() method."""
 
         keyboard_device = self.user_input().create_keyboard_device()
+        await keyboard_device.make_ready()
+
         self.fc_transport_obj.connect_device_proxy.assert_called_once_with(
             custom_types.FidlEndpoint(
                 "/core/ui", "fuchsia.ui.test.input.Registry"
@@ -285,7 +288,7 @@ class UserInputFCTests(unittest.TestCase):
         )
         register_keyboard.assert_called_once()
 
-        self.assertIsNotNone(keyboard_device._inner._keyboard_proxy)
+        self.assertIsNotNone(keyboard_device._keyboard_proxy)
 
     @mock.patch.object(
         f_test_input.KeyboardClient,
@@ -298,11 +301,11 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_key_press(self, unused_register_keyboard, simulate_key_press) -> None:  # type: ignore[no-untyped-def]
+    async def test_key_press(self, unused_register_keyboard, simulate_key_press) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.key_press() method."""
 
         keyboard_device = self.user_input().create_keyboard_device()
-        keyboard_device.key_press(
+        await keyboard_device.key_press(
             key_code=0xFFFF0002,  # Power
         )
         simulate_key_press.assert_has_calls(

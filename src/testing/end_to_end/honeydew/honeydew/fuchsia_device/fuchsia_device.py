@@ -33,7 +33,7 @@ from honeydew.affordances.session import session
 from honeydew.affordances.starnix import starnix
 from honeydew.affordances.tracing import tracing, tracing_using_fc
 from honeydew.affordances.ui.screenshot import screenshot
-from honeydew.affordances.ui.user_input import user_input
+from honeydew.affordances.ui.user_input import user_input, user_input_using_fc
 from honeydew.affordances.virtual_audio import audio
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
@@ -286,7 +286,11 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def user_input(self) -> user_input.UserInput:
-        return self._inner.user_input
+        return user_input_using_fc.UserInputUsingFc(
+            device_name=self.device_name,
+            fuchsia_controller=self.fuchsia_controller,
+            ffx_transport=self.ffx,
+        )
 
     @properties.Affordance
     def bluetooth_avrcp(self) -> avrcp.Avrcp:

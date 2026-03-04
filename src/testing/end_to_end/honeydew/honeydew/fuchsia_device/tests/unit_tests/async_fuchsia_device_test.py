@@ -639,7 +639,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(
             self.fd_fc_obj.user_input,
-            user_input_using_fc.UserInputUsingFc,
+            user_input_using_fc.AsyncUserInputUsingFc,
         )
 
     def test_bluetooth_avrcp_fc_transport(self) -> None:

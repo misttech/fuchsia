@@ -568,13 +568,13 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def user_input(self) -> user_input.UserInput:
+    def user_input(self) -> user_input.AsyncUserInput:
         """Returns an user input affordance object.
 
         Returns:
-            user_input.UserInput object
+            user_input.AsyncUserInput object
         """
-        return user_input_using_fc.UserInputUsingFc(
+        return user_input_using_fc.AsyncUserInputUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
