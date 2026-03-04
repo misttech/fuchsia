@@ -389,6 +389,10 @@ template("gvisor_test_package") {
     if (defined(invoker.test_specs)) {
       forward_variables_from(invoker.test_specs, "*", [ "log_settings" ])
     }
+
+    if (!defined(package_resolution_timeout_secs)) {
+      package_resolution_timeout_secs = 660
+    }
   }
 
   _container_config_component = "${target_name}_config"

@@ -132,4 +132,8 @@ fuchsia_test_package("starnix_syscalls_rust_tests") {
     ":fscrypt_test_resource",
     "//src/lib/testing/expectation:expectation_comparer",
   ]
+
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

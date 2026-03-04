@@ -533,6 +533,8 @@ fuchsia_test_package("linux_syscalls_cpp_tests") {
       # Tests exercise failure cases, so ERROR logs are expected.
       max_severity = "ERROR"
     }
+
+    package_resolution_timeout_secs = 660
   }
 }
 
@@ -569,6 +571,8 @@ fuchsia_test_package("starnix_syscalls_cpp_flaky_tests") {
       # Flaky tests need additional diagnostics.
       min_severity = "DEBUG"
     }
+
+    package_resolution_timeout_secs = 660
   }
 }
 
@@ -603,6 +607,8 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
       # Tests exercise failure cases, so ERROR logs are expected.
       max_severity = "ERROR"
     }
+
+    package_resolution_timeout_secs = 660
   }
 }
 
@@ -638,6 +644,8 @@ if (current_cpu == "arm64") {
         # Tests exercise failure cases, so ERROR logs are expected.
         max_severity = "ERROR"
       }
+
+      package_resolution_timeout_secs = 660
     }
   }
 
@@ -673,6 +681,8 @@ if (current_cpu == "arm64") {
         # Tests exercise failure cases, so ERROR logs are expected.
         max_severity = "ERROR"
       }
+
+      package_resolution_timeout_secs = 660
     }
   }
 }

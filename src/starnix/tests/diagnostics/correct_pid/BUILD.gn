@@ -75,4 +75,7 @@ fuchsia_test_package("starnix_pid_diagnostics_test") {
     "//src/starnix/containers/debian:debian_package",
     "//src/performance/trace_manager:package_hermetic",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

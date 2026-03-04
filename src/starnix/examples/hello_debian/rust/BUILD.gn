@@ -39,6 +39,9 @@ fuchsia_test_package("starnix_hello_debian_rust_integration_test") {
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }
 
 group("tests") {

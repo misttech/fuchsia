@@ -121,5 +121,6 @@ fuchsia_test_package("starnix_memory_attribution_test") {
     log_settings = {
       max_severity = "ERROR"
     }
+    package_resolution_timeout_secs = 660
   }
 }

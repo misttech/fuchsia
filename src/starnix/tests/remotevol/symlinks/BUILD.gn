@@ -80,4 +80,7 @@ remotevol_tests_group("starnix_remotevol_locked_symlink_integration_test") {
     "//src/storage/fxfs/test-fxfs:test-fxfs-package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

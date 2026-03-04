@@ -107,6 +107,9 @@ if (host_os == "linux" && host_cpu == "x64") {
 
     subpackages = starnix_test_subpackages +
                   [ "//src/starnix/containers/debian:debian_package" ]
+    test_specs = {
+      package_resolution_timeout_secs = 660
+    }
   }
 }
 
@@ -131,6 +134,8 @@ fuchsia_test_package("starnix_kgsl_tests_32") {
       max_severity = "ERROR"
     }
     environments = [ sorrel_env ]
+
+    package_resolution_timeout_secs = 660
   }
 }
 
@@ -152,6 +157,7 @@ fuchsia_test_package("starnix_kgsl_tests") {
       max_severity = "ERROR"
     }
     environments = [ sorrel_env ]
+    package_resolution_timeout_secs = 660
   }
 }
 
@@ -196,6 +202,7 @@ fuchsia_test_package("starnix_magma_tests") {
       sorrel_env,
       vim3_env,
     ]
+    package_resolution_timeout_secs = 660
   }
 }
 

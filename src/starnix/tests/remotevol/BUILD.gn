@@ -113,6 +113,9 @@ remotevol_tests_group("starnix_remotevol_shutdown_integration_test") {
     "//src/storage/fxfs/test-fxfs:test-fxfs-package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }
 
 remotevol_tests_group("starnix_remotevol_key_file_integration_test") {
@@ -123,4 +126,7 @@ remotevol_tests_group("starnix_remotevol_key_file_integration_test") {
     "//src/storage/fxfs/test-fxfs:test-fxfs-package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

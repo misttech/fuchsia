@@ -12,6 +12,8 @@ import("//build/components.gni")
 #     Default: false
 #   kernel_base_manifest (required)
 #     Path to the base kernel manifest to build the test package.
+#   test_specs (optional)
+#     The test_specs gets forwarded as-is.
 template("remotevol_test_package") {
   _use_inline_encryption = false
   if (defined(invoker.use_inline_encryption)) {
@@ -78,6 +80,7 @@ template("remotevol_test_package") {
                            [
                              "use_inline_encryption",
                              "kernel_base_manifest",
+                             "test_specs",
                            ])
     if (!defined(deps)) {
       deps = []

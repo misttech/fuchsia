@@ -36,4 +36,8 @@ fuchsia_test_package("starnix-vdso_time-tests") {
 
   subpackages = starnix_test_subpackages
   subpackages += [ "//src/starnix/containers/debian:debian_package" ]
+
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

@@ -60,4 +60,7 @@ fuchsia_test_package("starnix_crash_report_test") {
     "//src/starnix/containers/debian:debian_package",
     "//src/starnix/kernel:starnix_kernel_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

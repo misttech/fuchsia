@@ -59,6 +59,9 @@ fuchsia_test_package("starnix_hello_debian_cpp_integration_test") {
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }
 
 fuchsia_test_component("hello_debian32_cpp_integration") {
@@ -80,6 +83,7 @@ fuchsia_test_package("starnix_hello_debian32_cpp_integration_test") {
   ]
   test_specs = {
     environments = arch32_envs
+    package_resolution_timeout_secs = 660
   }
 }
 

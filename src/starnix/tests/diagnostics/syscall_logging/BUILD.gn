@@ -64,4 +64,7 @@ fuchsia_test_package("starnix_syscall_logging_test") {
     "//src/performance/trace_manager:package_hermetic",
   ]
   deps = [ ":workload" ]
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
 }

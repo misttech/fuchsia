@@ -75,6 +75,8 @@ fuchsia_test_package("iptables_tests") {
     log_settings = {
       max_severity = "ERROR"
     }
+
+    package_resolution_timeout_secs = 660
   }
 }
 
