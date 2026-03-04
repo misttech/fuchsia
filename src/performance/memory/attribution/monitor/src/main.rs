@@ -29,7 +29,7 @@ use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_kernel as fkernel,
     fidl_fuchsia_memory_attribution as fattribution,
     fidl_fuchsia_memory_attribution_plugin as fattribution_plugin,
-    fidl_fuchsia_memorypressure as _, fidl_fuchsia_metrics as fmetrics,
+    fidl_fuchsia_metrics as fmetrics,
 };
 
 mod attribution_client;
