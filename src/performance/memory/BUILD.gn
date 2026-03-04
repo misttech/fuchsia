@@ -11,6 +11,7 @@ group("tests") {
     "memory_mapped_vmo:tests",
     "pprof:tests",
     "sampler:tests",
+    "stacktrack:tests",
     "thrasher:tests",
   ]
 }
