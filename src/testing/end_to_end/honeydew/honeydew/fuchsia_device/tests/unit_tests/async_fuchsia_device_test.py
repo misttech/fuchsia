@@ -593,7 +593,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_run.assert_called_once()
 
     @mock.patch.object(
-        rtc_using_fc.RtcUsingFc,
+        rtc_using_fc.AsyncRtcUsingFc,
         "__init__",
         autospec=True,
         return_value=None,
@@ -603,12 +603,12 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         implemented using fuchsia-controller"""
         self.assertIsInstance(
             self.fd_fc_obj.rtc,
-            rtc_using_fc.RtcUsingFc,
+            rtc_using_fc.AsyncRtcUsingFc,
         )
         mock_rtc_fc_init.assert_called_once_with(
             self.fd_fc_obj.rtc,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj.as_sync(),
+            reboot_affordance=self.fd_fc_obj,
         )
 
     def test_tracing(self) -> None:

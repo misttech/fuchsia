@@ -543,15 +543,15 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def rtc(self) -> rtc.Rtc:
-        """Returns an Rtc affordance object.
+    def rtc(self) -> rtc.AsyncRtc:
+        """Returns an RTC affordance object.
 
         Returns:
-            rtc.Rtc object
+            rtc.AsyncRtc object
         """
-        return rtc_using_fc.RtcUsingFc(
+        return rtc_using_fc.AsyncRtcUsingFc(
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
+            reboot_affordance=self,
         )
 
     @properties.Affordance

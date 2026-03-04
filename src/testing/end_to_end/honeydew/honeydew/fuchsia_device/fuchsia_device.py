@@ -28,7 +28,7 @@ from honeydew.affordances.location import location
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
 )
-from honeydew.affordances.rtc import rtc
+from honeydew.affordances.rtc import rtc, rtc_using_fc
 from honeydew.affordances.session import session
 from honeydew.affordances.starnix import starnix
 from honeydew.affordances.tracing import tracing
@@ -266,7 +266,15 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def rtc(self) -> rtc.Rtc:
-        return self._inner.rtc
+        """Returns an RTC affordance object.
+
+        Returns:
+            rtc.AsyncRtc object
+        """
+        return rtc_using_fc.RtcUsingFc(
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
 
     @properties.Affordance
     def tracing(self) -> tracing.Tracing:

@@ -20,6 +20,80 @@ from honeydew.typing import custom_types
 CAPABILITY = "fuchsia.hardware.rtc.Service/default/device"
 
 
+class AsyncRtcUsingFc(rtc.AsyncRtc):
+    """Async affordance for the fuchsia.hardware.rtc.Device protocol."""
+
+    def __init__(
+        self,
+        fuchsia_controller: fuchsia_controller_lib.FuchsiaController,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+    ) -> None:
+        """Initializer."""
+        self._controller = fuchsia_controller
+        self.verify_supported()
+        # This needs to be called once upon __init__(), and any time the device
+        # is rebooted. On reboot, the connection is lost and needs to be
+        # re-established.
+        self._connect_proxy()
+        reboot_affordance.register_for_on_device_boot(self._connect_proxy)
+
+    def verify_supported(self) -> None:
+        """Check if RTC is supported on the DUT.
+        Raises:
+            NotSupportedError: RTC affordance is not supported by Fuchsia device.
+        """
+        # TODO(http://b/409624089): Implement the method logic
+
+    def _connect_proxy(self) -> None:
+        """Connect the RTC Device protocol proxy."""
+        ep_old = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_OLD, CAPABILITY)
+        ep_new = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_NEW, CAPABILITY)
+        try:
+            self._proxy: frtc.DeviceClient = frtc.DeviceClient(
+                self._controller.connect_device_proxy(ep_old)
+            )
+        except RuntimeError:
+            # Try connecting through the other moniker.
+            try:
+                self._proxy = frtc.DeviceClient(
+                    self._controller.connect_device_proxy(ep_new)
+                )
+            except RuntimeError:
+                raise HoneydewRtcError(
+                    "Failed to connect to either moniker."
+                ) from None
+
+    # Protocol methods.
+    async def get(self) -> datetime.datetime:
+        """See base class."""
+        try:
+            response = (await self._proxy.get()).unwrap()
+        except (AssertionError, ZxStatus) as e:
+            msg = f"Device.Get() error {e}"
+            raise HoneydewRtcError(msg) from e
+
+        time = response.rtc
+        return datetime.datetime(
+            time.year,
+            time.month,
+            time.day,
+            time.hours,
+            time.minutes,
+            time.seconds,
+        )
+
+    async def set(self, time: datetime.datetime) -> None:
+        """See base class."""
+        ftime = frtc.Time(
+            time.second, time.minute, time.hour, time.day, time.month, time.year
+        )
+        try:
+            (await self._proxy.set2(rtc=ftime)).unwrap()
+        except (AssertionError, ZxStatus) as e:
+            msg = f"Device.Set2() error {e}"
+            raise HoneydewRtcError(msg) from e
+
+
 class RtcUsingFc(rtc.Rtc):
     """Affordance for the fuchsia.hardware.rtc.Device protocol."""
 
@@ -42,76 +116,31 @@ class RtcUsingFc(rtc.Rtc):
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Initializer."""
-        self._controller = fuchsia_controller
-        self.verify_supported()
-        # This needs to be called once upon __init__(), and any time the device
-        # is rebooted. On reboot, the connection is lost and needs to be
-        # re-established.
-        self._connect_proxy()
-        reboot_affordance.register_for_on_device_boot(self._connect_proxy)
+        self._inner = AsyncRtcUsingFc(
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+        )
 
     def verify_supported(self) -> None:
         """Check if RTC is supported on the DUT.
         Raises:
             NotSupportedError: RTC affordance is not supported by Fuchsia device.
         """
-        # TODO(http://b/409624089): Implement the method logic
-
-    def _connect_proxy(self) -> None:
-        """Connect the RTC Device protocol proxy."""
-        ep_old = custom_types.FidlEndpoint(
-            self.__class__.MONIKER_OLD, CAPABILITY
-        )
-        ep_new = custom_types.FidlEndpoint(
-            self.__class__.MONIKER_NEW, CAPABILITY
-        )
-        try:
-            self._proxy: frtc.DeviceClient = frtc.DeviceClient(
-                self._controller.connect_device_proxy(ep_old)
-            )
-        except RuntimeError:
-            # Try connecting through the other moniker.
-            try:
-                self._proxy = frtc.DeviceClient(
-                    self._controller.connect_device_proxy(ep_new)
-                )
-            except RuntimeError:
-                raise HoneydewRtcError(
-                    "Failed to connect to either moniker."
-                ) from None
+        self._inner.verify_supported()
 
     # Protocol methods.
     def get(self) -> datetime.datetime:
         """See base class."""
-        try:
-            response = (
-                fuchsia_async_extension.get_loop()
-                .run_until_complete(self._proxy.get())
-                .unwrap()
-            )
-        except (AssertionError, ZxStatus) as e:
-            msg = f"Device.Get() error {e}"
-            raise HoneydewRtcError(msg) from e
-
-        time = response.rtc
-        return datetime.datetime(
-            time.year,
-            time.month,
-            time.day,
-            time.hours,
-            time.minutes,
-            time.seconds,
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get()
         )
 
     def set(self, time: datetime.datetime) -> None:
         """See base class."""
-        ftime = frtc.Time(
-            time.second, time.minute, time.hour, time.day, time.month, time.year
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set(time)
         )
-        try:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._proxy.set2(rtc=ftime)
-            ).unwrap()
-        except (AssertionError, ZxStatus) as e:
-            msg = f"Device.Set2() error {e}"
-            raise HoneydewRtcError(msg) from e
+
+    def as_async(self) -> AsyncRtcUsingFc:
+        """Returns the async version of Rtc."""
+        return self._inner
