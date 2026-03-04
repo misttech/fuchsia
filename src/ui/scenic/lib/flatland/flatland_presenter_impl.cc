@@ -65,8 +65,7 @@ void FlatlandPresenterImpl::ScheduleUpdateForSession(zx::time requested_presenta
                     thiz->frame_scheduler_.RegisterPresent(id_pair.session_id, {},
                                                            id_pair.present_id);
                     thiz->frame_scheduler_.ScheduleUpdateForSession(
-                        schedule_asap ? zx::time(0) : requested_presentation_time, id_pair,
-                        !unsquashable, schedule_asap);
+                        requested_presentation_time, id_pair, !unsquashable, schedule_asap);
                   });
 }
 

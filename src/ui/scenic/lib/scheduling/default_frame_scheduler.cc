@@ -85,14 +85,27 @@ PresentId DefaultFrameScheduler::RegisterPresent(SessionId session_id,
 }
 
 std::pair<zx::time, zx::time> DefaultFrameScheduler::ComputePresentationAndWakeupTimesForTargetTime(
-    const zx::time requested_presentation_time) const {
-  const zx::time last_vsync_time = vsync_timing_->last_vsync_time();
-  const zx::duration vsync_interval = vsync_timing_->vsync_interval();
+    const zx::time& requested_presentation_time, bool schedule_asap) const {
+  const zx::time& last_vsync_time = vsync_timing_->last_vsync_time();
+  const zx::duration& vsync_interval = vsync_timing_->vsync_interval();
   FX_DCHECK(vsync_interval.get() >= 0);
   FX_DCHECK(last_vsync_time.get() >= 0);
-  const zx::time now = zx::time(async_now(dispatcher_));
+  const zx::time& now = zx::time(async_now(dispatcher_));
 
-  PredictedTimes times =
+  if (schedule_asap) {
+    // If the client requested a future time, we should respect it. We only want to schedule ASAP
+    // if the requested time is effectively "now" (i.e. within the current vsync interval), or
+    // explicitly 0.
+    const zx::time next_vsync_time = last_vsync_time + vsync_interval;
+    if (requested_presentation_time <= next_vsync_time) {
+      // We target scheduling the frame as soon as possible, i.e. "now". However, kernel CPU
+      // scheduling delays might result in new_target_presentation_time being in the past. We pick
+      // the earlier time to avoid violating the DCHECK invariant in ApplyUpdates().
+      return std::make_pair(next_vsync_time, std::min(now, next_vsync_time));
+    }
+  }
+
+  const PredictedTimes& times =
       frame_predictor_->GetPrediction({.now = now,
                                        .requested_presentation_time = requested_presentation_time,
                                        .last_vsync_time = last_vsync_time,
@@ -105,13 +118,7 @@ void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time, b
   FX_DCHECK(HaveUpdatableSessions() || render_continuously_ || !last_frame_is_presented_);
 
   auto [new_target_presentation_time, new_wakeup_time] =
-      ComputePresentationAndWakeupTimesForTargetTime(requested_presentation_time);
-  if (schedule_asap) {
-    // We target scheduling the frame as soon as possible. However, there may be scheduling delays
-    // such that the earlier calculated `new_target_presentation_time` is now in the past. In that
-    // case, we should use whichever is earlier.
-    new_wakeup_time = std::min(new_target_presentation_time, zx::time(async_now(dispatcher_)));
-  }
+      ComputePresentationAndWakeupTimesForTargetTime(requested_presentation_time, schedule_asap);
 
   TRACE_DURATION(
       "gfx", "DefaultFrameScheduler::RequestFrame", "requested presentation time",

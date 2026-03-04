@@ -104,7 +104,7 @@ class DefaultFrameScheduler final : public FrameScheduler {
   // that is early enough to start rendering in order to hit the target presentation time. These
   // times are guaranteed to be in the future.
   std::pair<zx::time, zx::time> ComputePresentationAndWakeupTimesForTargetTime(
-      zx::time requested_presentation_time) const;
+      const zx::time& requested_presentation_time, bool schedule_asap) const;
 
   // Executes updates that are scheduled up to and including a given presentation time.
   bool ApplyUpdates(zx::time target_presentation_time, zx::time latched_time,

@@ -8,9 +8,15 @@ library fuchsia.ui.composition;
 /// to the `fuchsia.ui.composition.Flatland` service instead of connecting via the factory.
 @available(added=HEAD)
 type TrustedFlatlandConfig = resource table {
-    /// If true, a frame will be scheduled to be presented as soon as all acquire fences are
-    /// signaled, instead of waiting for other clients to present in the same vsync. This can reduce
-    /// latency for this client, but may increase power consumption.
+    /// If true and `requested_presentation_time` in [`fuchsia.ui.composition/Flatland.Present`] is
+    /// set to 0 or less than or equal to the nearest presentation time, a frame will be scheduled
+    /// to be presented as soon as all acquire fences are signaled, instead of waiting for other
+    /// clients to present within the same vsync. This allows the caller to decide when to wake up
+    /// for preparing a frame.
+    ///
+    /// If `requested_presentation_time` is set to a value greater than the nearest presentation
+    /// time, this flag will have no effect and the wakeup time decision will be made by the
+    /// scheduler.
     ///
     /// If absent, `schedule_asap` is false.
     1: schedule_asap bool;

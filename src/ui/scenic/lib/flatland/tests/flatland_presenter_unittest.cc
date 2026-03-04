@@ -118,14 +118,14 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
                                       /*release_fences=*/{}, /*schedule_asap=*/kScheduleAsap);
   RunLoopUntilIdle();
 
-  // zx::time is zeroed.
-  EXPECT_EQ(last_presentation_time, zx::time(0));
+  // zx::time is passed through.
+  EXPECT_EQ(last_presentation_time, kPresentationTime);
   EXPECT_EQ(last_id_pair, kIdPair2);
   EXPECT_EQ(last_squashable, !kUnsquashable);
   EXPECT_EQ(last_schedule_asap, kScheduleAsap);
 }
 
-TEST_F(FlatlandPresenterTest, ScheduleAsapModifiesPresentationTime) {
+TEST_F(FlatlandPresenterTest, ScheduleAsapDoesNotModifyPresentationTime) {
   scheduling::test::MockFrameScheduler frame_scheduler;
 
   // Capture the relevant arguments of the ScheduleUpdateForSession() call.
@@ -161,8 +161,8 @@ TEST_F(FlatlandPresenterTest, ScheduleAsapModifiesPresentationTime) {
                                       /*release_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
-  // zx::time is zeroed.
-  EXPECT_EQ(last_presentation_time, zx::time(0));
+  // zx::time is passed through.
+  EXPECT_EQ(last_presentation_time, kPresentationTime);
   EXPECT_EQ(last_id_pair, kIdPair);
   EXPECT_EQ(last_squashable, !kUnsquashable);
   EXPECT_EQ(last_schedule_asap, kScheduleAsap);
