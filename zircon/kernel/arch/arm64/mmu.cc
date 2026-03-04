@@ -2357,7 +2357,7 @@ zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write) 
 }
 
 ArmArchVmAspace::ArmArchVmAspace(vaddr_t base, size_t size, ArmAspaceType type, page_alloc_fn_t paf)
-    : test_page_alloc_func_(paf), type_(type), base_(base), size_(size) {}
+    : type_(type), test_page_alloc_func_(paf), base_(base), size_(size) {}
 
 ArmArchVmAspace::ArmArchVmAspace(vaddr_t base, size_t size, uint mmu_flags, page_alloc_fn_t paf)
     : ArmArchVmAspace(base, size, AspaceTypeFromFlags(mmu_flags), paf) {}

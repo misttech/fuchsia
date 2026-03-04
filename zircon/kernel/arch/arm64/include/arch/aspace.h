@@ -18,7 +18,7 @@
 #include <vm/arch_vm_aspace.h>
 #include <vm/mapping_cursor.h>
 
-enum class ArmAspaceType {
+enum class ArmAspaceType : uint8_t {
   kUser,        // Userspace address space.
   kKernel,      // Kernel address space.
   kGuest,       // Second-stage address space.
@@ -205,6 +205,32 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // data fields
   fbl::Canary<fbl::magic("VAAS")> canary_;
 
+  // The number of times entries in the top level page are referenced by other page tables.
+  // Unified page tables increment and decrement this value on their associated shared and
+  // restricted page tables, so we must hold the lock_ when doing so.
+  uint32_t num_references_ TA_GUARDED(lock_) = 0;
+
+  // Pointers to the shared and restricted aspaces referenced by this aspace if it is unified.
+  // These fields are set by InitUnified and should not be modified anywhere else.
+  ArmArchVmAspace* shared_aspace_ = nullptr;
+  ArmArchVmAspace* restricted_aspace_ = nullptr;
+
+  // The role this aspace plays in unified aspaces, if any. This should only set by the `Init*`
+  // functions and should not be modified anywhere else.
+  ArmAspaceRole role_ = ArmAspaceRole::kIndependent;
+
+  // Type of address space.
+  const ArmAspaceType type_;
+
+  // Whether or not changes to this instance are allowed.
+  bool updates_enabled_ = true;
+
+  // Whether not this has been accessed since |AccessedSinceLastCheck| was called. This is updated
+  // by MarkAccessed, and anywhere a mapping is installed with the AF flag set.
+  bool accessed_since_last_check_ TA_GUARDED(lock_) = false;
+
+  uint16_t asid_ = MMU_ARM64_UNUSED_ASID;
+
   mutable DECLARE_CRITICAL_MUTEX(ArmArchVmAspace) lock_;
 
   // Tracks the number of pending access faults. A non-zero value informs the access harvester to
@@ -227,13 +253,8 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
     ArmArchVmAspace* aspace_;
   };
 
-  // Whether or not changes to this instance are allowed.
-  bool updates_enabled_ = true;
-
   // Page allocate function, if set will be used instead of the default allocator
   const page_alloc_fn_t test_page_alloc_func_ = nullptr;
-
-  uint16_t asid_ = MMU_ARM64_UNUSED_ASID;
 
   // Pointer to the translation table.
   paddr_t tt_phys_ = 0;
@@ -243,9 +264,6 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // Upper bound of the number of pages allocated to back the translation
   // table.
   size_t pt_pages_ = 0;
-
-  // Type of address space.
-  const ArmAspaceType type_;
 
   // Range of address space.
   const vaddr_t base_ = 0;
@@ -259,24 +277,6 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
 
   // Number of CPUs this aspace is currently active on.
   ktl::atomic<uint32_t> num_active_cpus_ = 0;
-
-  // Whether not this has been accessed since |AccessedSinceLastCheck| was called. This is updated
-  // by MarkAccessed, and anywhere a mapping is installed with the AF flag set.
-  bool accessed_since_last_check_ TA_GUARDED(lock_) = false;
-
-  // The number of times entries in the top level page are referenced by other page tables.
-  // Unified page tables increment and decrement this value on their associated shared and
-  // restricted page tables, so we must hold the lock_ when doing so.
-  uint32_t num_references_ TA_GUARDED(lock_) = 0;
-
-  // The role this aspace plays in unified aspaces, if any. This should only set by the `Init*`
-  // functions and should not be modified anywhere else.
-  ArmAspaceRole role_ = ArmAspaceRole::kIndependent;
-
-  // Pointers to the shared and restricted aspaces referenced by this aspace if it is unified.
-  // These fields are set by InitUnified and should not be modified anywhere else.
-  ArmArchVmAspace* shared_aspace_ = nullptr;
-  ArmArchVmAspace* restricted_aspace_ = nullptr;
 };
 
 inline ArmArchVmAspace::AutoPendingAccessFault::AutoPendingAccessFault(ArmArchVmAspace* aspace)
