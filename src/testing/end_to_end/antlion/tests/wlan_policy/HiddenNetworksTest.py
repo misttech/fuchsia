@@ -9,7 +9,10 @@ import time
 
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyControllerError,
 )
@@ -21,6 +24,11 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import signals, test_runner
+from mobly_controller.access_point.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
 
 # These tests should have a longer timeout for connecting than normal connect
 # tests because the device should probabilistically perform active scans for
@@ -41,24 +49,43 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
         self.log = logging.getLogger()
+
         # Start an AP with a hidden network
-        self.access_point = self.access_points[0]
-        self.hidden_ssid = rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
-        self.hidden_password = rand_ascii_str(
-            hostapd_constants.AP_PASSPHRASE_LENGTH_2G
-        )
-        self.access_point.stop_all_aps()
-        setup_ap(
-            self.access_point,
-            "whirlwind",
-            hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            self.hidden_ssid,
-            hidden=True,
-            security=Security(
-                security_mode=SecurityMode.WPA2,
-                password=self.hidden_password,
-            ),
-        )
+        # TODO(https://fxbug.dev/489256041): Delete references to old AP when OpenWRT migration
+        # is complete.
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+            config = AccessPointConfig.generate(
+                band=Band.BAND_2G,
+                security=Security.WPA2,
+                ssid=AccessPointConfig.random_string(),
+                password=AccessPointConfig.random_string(),
+                hidden=True,
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+            self.hidden_ssid = config.ssid
+            self.hidden_password = config.password
+        elif self.access_points:
+            self.hidden_ssid = rand_ascii_str(
+                hostapd_constants.AP_SSID_LENGTH_2G
+            )
+            self.hidden_password = rand_ascii_str(
+                hostapd_constants.AP_PASSPHRASE_LENGTH_2G
+            )
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+            setup_ap(
+                self.access_point,
+                "whirlwind",
+                hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                self.hidden_ssid,
+                hidden=True,
+                security=HostapdSecurity(
+                    security_mode=SecurityMode.WPA2,
+                    password=self.hidden_password,
+                ),
+            )
 
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
@@ -71,7 +98,8 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             fd.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
 
     def teardown_class(self) -> None:
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point") and self.access_point:
+            self.access_point.stop_all_aps()
 
     # Tests
 

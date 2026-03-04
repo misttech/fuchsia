@@ -28,6 +28,8 @@ class Security(enum.StrEnum):
     WPA2_WPA3 = "sae-mixed"
 
 
+# TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
+# default 2g/5g channels.
 @dataclasses.dataclass
 class AccessPointConfig:
     """Configuration required to set up an Access Point.
@@ -38,6 +40,7 @@ class AccessPointConfig:
         band: The Wi-Fi frequency band
         channel: The specific channel within the band
         security: The security encryption protocol
+        hidden: Whether the network should be hidden
     """
 
     ssid: str
@@ -45,6 +48,7 @@ class AccessPointConfig:
     channel: int
     security: Security
     password: str | None = None
+    hidden: bool = False
 
     @classmethod
     def random_string(cls, length: int = 8) -> str:
@@ -67,6 +71,7 @@ class AccessPointConfig:
         band: Band,
         ssid: str,
         password: str | None = None,
+        hidden: bool = False,
     ) -> "AccessPointConfig":
         """Creates an AccessPointConfig, optionally randomizing the SSID and password.
 
@@ -75,6 +80,7 @@ class AccessPointConfig:
             band: The Wi-Fi frequency band.
             ssid: The Service Set Identifier. Randomized if not provided.
             password: The password. Randomized if not provided and security requires it.
+            hidden: Whether the network should be hidden. Defaults to False.
 
         Returns:
             An AccessPointConfig object.
@@ -95,4 +101,5 @@ class AccessPointConfig:
             band=band,
             channel=channel,
             security=security,
+            hidden=hidden,
         )

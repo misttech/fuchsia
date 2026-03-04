@@ -9,7 +9,7 @@ import time
 from typing import Any, Dict, List
 
 from libs.ssh import connection, settings
-from libs.types import ControllerConfig
+from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -23,7 +23,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"
 
 
-def create(configs: List[Dict[str, Any]]) -> List["OpenWrtAP"]:
+def create(configs: List[ControllerConfig]) -> List["OpenWrtAP"]:
     """Creates OpenWRT controller objects from testbed configs.
 
     Args:
@@ -50,7 +50,7 @@ def destroy(objects: List["OpenWrtAP"]) -> None:
         ap.ssh.close()
 
 
-def get_info(objects: List["OpenWrtAP"]) -> List[str]:
+def get_info(objects: List["OpenWrtAP"]) -> List[Json]:
     """Gets information from OpenWRT controller objects.
 
     Args:
@@ -110,6 +110,8 @@ class OpenWrtAP:
         if config.security == Security.NONE:
             self.ssh.run(f"uci delete wireless.{iface}.key || true")
         self.ssh.run(f"uci set wireless.{radio}.channel='{config.channel}'")
+        hidden = "1" if config.hidden else "0"
+        self.ssh.run(f"uci set wireless.{iface}.hidden='{hidden}'")
         self.ssh.run("uci commit wireless")
         self.start_wifi()
 
