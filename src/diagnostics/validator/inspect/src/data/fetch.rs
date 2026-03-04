@@ -75,7 +75,7 @@ impl LazyNodeFetcher {
             if subset.is_empty() {
                 return Ok(names);
             }
-            names.extend(subset.into_iter());
+            names.extend(subset);
         }
     }
 

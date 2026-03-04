@@ -194,10 +194,10 @@ pub(crate) fn validate_action(
             }
         }
         // Make sure Error-level alerts have a file_bug field.
-        ActionConfig::Alert { severity, file_bug, .. } => {
-            if *severity == Severity::Error && file_bug.is_none() {
-                bail!("Error severity requires file_bug field in {}", action_name);
-            }
+        ActionConfig::Alert { severity, file_bug, .. }
+            if *severity == Severity::Error && file_bug.is_none() =>
+        {
+            bail!("Error severity requires file_bug field in {}", action_name);
         }
         _ => {}
     }
