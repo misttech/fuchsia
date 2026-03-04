@@ -6,6 +6,7 @@
 
 import unittest
 
+from reporting import metrics as reporting_metrics
 from trace_processing import trace_model
 from trace_processing.metrics import memory
 
@@ -55,7 +56,21 @@ class MemoryTest(unittest.TestCase):
     def test_process_metrics(self) -> None:
         model = self.construct_trace_model(100)
         metrics = memory.MemoryMetricsProcessor().process_metrics(model)
-        self.assertEqual(metrics, [])
+        self.assertEqual(
+            metrics,
+            [
+                reporting_metrics.TestCaseResult(
+                    label="Memory/System/StallTimeSome",
+                    unit=reporting_metrics.Unit.nanoseconds,
+                    values=(99,),
+                ),
+                reporting_metrics.TestCaseResult(
+                    label="Memory/System/PageRefaults",
+                    unit=reporting_metrics.Unit.count,
+                    values=(99,),
+                ),
+            ],
+        )
 
     def test_process_freeform_metrics(self) -> None:
         processor = memory.MemoryMetricsProcessor()

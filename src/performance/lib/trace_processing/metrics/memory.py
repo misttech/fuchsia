@@ -5,6 +5,8 @@
 """Computes metrics from memory traces."""
 
 import collections
+from dataclasses import dataclass
+from typing import MutableSequence
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
@@ -26,6 +28,36 @@ CUMULATIVE_METRIC_NAMES = {
 }
 
 
+@dataclass
+class StructuredMetricName:
+    structured_name: str
+    unit: metrics.Unit
+
+
+# Names and units of the metrics we will export as structured metrics.
+# The key is the name of the metric in the trace, and the value is a StructuredMetricName object.
+STRUCTURED_METRIC_NAMES = {
+    "stall_time_some_ns": StructuredMetricName(
+        "Memory/System/StallTimeSome", metrics.Unit.nanoseconds
+    ),
+    "stall_time_full_ns": StructuredMetricName(
+        "Memory/System/StallTimeFull", metrics.Unit.nanoseconds
+    ),
+    "compression_time": StructuredMetricName(
+        "Memory/System/CompressionTime", metrics.Unit.nanoseconds
+    ),
+    "decompression_time": StructuredMetricName(
+        "Memory/System/DecompressionTime", metrics.Unit.nanoseconds
+    ),
+    "page_refaults": StructuredMetricName(
+        "Memory/System/PageRefaults", metrics.Unit.count
+    ),
+    "total_heap_bytes": StructuredMetricName(
+        "Memory/System/ZirconHeapBytes", metrics.Unit.bytes
+    ),
+}
+
+
 def safe_divide(numerator: float, denominator: float) -> float | None:
     """Divides numerator by denominator, returning None if denominator is 0."""
     if denominator == 0:
@@ -34,15 +66,30 @@ def safe_divide(numerator: float, denominator: float) -> float | None:
         return numerator / denominator
 
 
+def cumulative_metrics_value(
+    values: list[tuple[trace_time.TimePoint, int | float]]
+) -> tuple[int | float, float | None]:
+    """Returns the change and the rate for the specified cumulative metric."""
+    (t0, v0), (t1, v1) = values[0], values[-1]
+    return (v1 - v0, safe_divide(v1 - v0, (t1 - t0).to_nanoseconds()))
+
+
 def cumulative_metrics_json(
     values: list[tuple[trace_time.TimePoint, int | float]]
 ) -> metrics.JSON:
     """Returns a JSON object holding the change and the rate for the specified cumulative metric."""
-    (t0, v0), (t1, v1) = values[0], values[-1]
+    (delta, rate) = cumulative_metrics_value(values)
     return {
-        "Delta": v1 - v0,
-        "Rate": safe_divide(v1 - v0, (t1 - t0).to_nanoseconds()),
+        "Delta": delta,
+        "Rate": rate,
     }
+
+
+def gauges_metrics_values(
+    values: list[tuple[trace_time.TimePoint, int | float]]
+) -> list[int | float]:
+    """Returns a JSON object holding the standard metric value keyed by metric name."""
+    return list(v[1] for v in values)
 
 
 def gauges_metrics_json(
@@ -50,7 +97,7 @@ def gauges_metrics_json(
 ) -> metrics.JSON:
     """Returns a JSON object holding the standard metric value keyed by metric name."""
     results = trace_utils.standard_metrics_set(
-        values=list(v[1] for v in values),
+        values=gauges_metrics_values(values),
         label_prefix="",
         unit=metrics.Unit.bytes,
     )
@@ -60,7 +107,9 @@ def gauges_metrics_json(
 class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
     """Computes statistics for values published by zircon kernel.
 
-    Returns a freeform metric JSON object with nested structure with the following path:
+    Returns both freeform metrics and structured metrics.
+
+    Freeform metrics is a JSON object with nested structure with the following path:
 
     "kernel" / field name / statistic label / float value
 
@@ -116,3 +165,37 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
                 }
             ),
         )
+
+    def process_metrics(
+        self, model: trace_model.Model
+    ) -> MutableSequence[metrics.TestCaseResult]:
+        series_by_name = collections.defaultdict(list)
+        for event in trace_utils.filter_events(
+            model.all_events(),
+            category=MEMORY_SYSTEM_CATEGORY,
+            type=trace_model.CounterEvent,
+        ):
+            if event.name in KERNEL_EVENT_NAMES:
+                for name, value in event.args.items():
+                    if name in STRUCTURED_METRIC_NAMES:
+                        series_by_name[name].append((event.start, value))
+
+        results = []
+        for name, series in series_by_name.items():
+            if name in CUMULATIVE_METRIC_NAMES:
+                results.append(
+                    metrics.TestCaseResult(
+                        label=STRUCTURED_METRIC_NAMES[name].structured_name,
+                        values=[cumulative_metrics_value(series)[0]],
+                        unit=STRUCTURED_METRIC_NAMES[name].unit,
+                    )
+                )
+            else:
+                results.append(
+                    metrics.TestCaseResult(
+                        label=STRUCTURED_METRIC_NAMES[name].structured_name,
+                        values=gauges_metrics_values(series),
+                        unit=STRUCTURED_METRIC_NAMES[name].unit,
+                    )
+                )
+        return results
