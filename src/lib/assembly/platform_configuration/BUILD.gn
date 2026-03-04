@@ -6,10 +6,22 @@ import("//build/rust/rustc_library.gni")
 
 assert(is_host, "Assembly libraries are host-only")
 
+declare_args() {
+  # If true, forcefully enables Heapdump for the entire system (including
+  # component_manager and all other monikers) during assembly of eng standard
+  # builds.
+  enable_assembly_heapdump = false
+}
+
 rustc_library("platform_configuration") {
   edition = "2024"
   name = "assembly_platform_configuration"
   with_unit_tests = true
+
+  features = []
+  if (enable_assembly_heapdump) {
+    features += [ "enable_assembly_heapdump" ]
+  }
 
   sources = [
     "src/common.rs",

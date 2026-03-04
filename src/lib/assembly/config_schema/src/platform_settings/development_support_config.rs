@@ -155,7 +155,7 @@ pub struct StorageToolsConfig {
     pub enable_partitioning_tools: bool,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct HeapdumpConfig {
     /// Whether component manager will be instrumented.

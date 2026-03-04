@@ -36,9 +36,16 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         let gendir = context.get_gendir().context("Getting gendir for component subsystem")?;
 
         // If heapdump has been enabled on at least one program, verify that it's allowed and
-        // include the bundle containing heapdump's collector package.
-        let tracing_config = &config.development_support.tracing;
-        let heapdump_config = &config.development_support.heapdump;
+        // include the bundle containing heapdump's collector package. If the
+        // "enable_assembly_heapdump" feature is on, forcefully enable it in compatible builds.
+        let mut heapdump_config = config.development_support.heapdump.clone();
+        if cfg!(feature = "enable_assembly_heapdump")
+            && *context.build_type == BuildType::Eng
+            && *context.feature_set_level == FeatureSetLevel::Standard
+        {
+            heapdump_config.component_manager = true;
+            heapdump_config.monikers = vec!["/**".to_string()];
+        };
         if heapdump_config.is_enabled() {
             context.ensure_build_type_and_feature_set_level(
                 &[BuildType::Eng],
@@ -49,6 +56,7 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         }
 
         // Select the component manager bundle to use.
+        let tracing_config = &config.development_support.tracing;
         if heapdump_config.component_manager {
             builder.platform_bundle("component_manager_with_tracing_and_heapdump")?;
         } else if matches!(tracing_config, TracingConfig::Enabled { component_manager: true, .. }) {
