@@ -71,13 +71,14 @@ enum FDomainConnectionError {
 #[derive(Debug)]
 pub struct SshConnector {
     overnet_cmd: Option<Child>,
+    fdomain_cmd: Option<Child>,
     target: ScopedSocketAddr,
     env_context: EnvironmentContext,
 }
 
 impl SshConnector {
     pub fn new(target: ScopedSocketAddr, env_context: &EnvironmentContext) -> Result<Self> {
-        Ok(Self { overnet_cmd: None, target, env_context: env_context.clone() })
+        Ok(Self { overnet_cmd: None, fdomain_cmd: None, target, env_context: env_context.clone() })
     }
 
     /// This is mainly for diagnostics/reporting info to the user. This takes the usual command
@@ -179,12 +180,12 @@ impl SshConnector {
     }
 
     async fn connect_fdomain(&mut self) -> Result<FDomainConnection, FDomainConnectionError> {
-        self.overnet_cmd = Some(
+        self.fdomain_cmd = Some(
             start_fdomain_ssh_command(self.target.clone(), &self.env_context)
                 .await
                 .map_err(|x| FDomainConnectionError::ConnectionError(x.into()))?,
         );
-        let cmd = self.overnet_cmd.as_mut().unwrap();
+        let cmd = self.fdomain_cmd.as_mut().unwrap();
         let mut stdout = BufReader::with_capacity(
             BUFFER_SIZE,
             cmd.stdout.take().expect("process should have stdout"),
@@ -367,24 +368,32 @@ impl TargetConnector for SshConnector {
 
 impl Drop for SshConnector {
     fn drop(&mut self) {
-        if let Some(mut cmd) = self.overnet_cmd.take() {
+        for (name, mut cmd) in self
+            .overnet_cmd
+            .take()
+            .into_iter()
+            .map(|x| ("Overnet", x))
+            .chain(self.fdomain_cmd.take().into_iter().map(|x| ("FDomain", x)))
+        {
             let pid = Pid::from_raw(cmd.id().unwrap() as i32);
             match cmd.try_wait() {
                 Ok(Some(result)) => {
-                    log::info!("FidlPipe exited with {}", result);
+                    log::info!("{name} FidlPipe exited with {}", result);
                 }
                 Ok(None) => {
                     let _ = kill(pid, SIGKILL)
-                        .map_err(|e| log::warn!("failed to kill FidlPipe command: {:?}", e));
-                    let _ = waitpid(pid, None)
-                        .map_err(|e| log::warn!("failed to clean up FidlPipe command: {:?}", e));
+                        .map_err(|e| log::warn!("failed to kill {name} FidlPipe command: {:?}", e));
+                    let _ = waitpid(pid, None).map_err(|e| {
+                        log::warn!("failed to clean up {name} FidlPipe command: {:?}", e)
+                    });
                 }
                 Err(e) => {
                     log::warn!("failed to soft-wait FidlPipe command: {:?}", e);
                     let _ = kill(pid, SIGKILL)
-                        .map_err(|e| log::warn!("failed to kill FidlPipe command: {:?}", e));
-                    let _ = waitpid(pid, None)
-                        .map_err(|e| log::warn!("failed to clean up FidlPipe command: {:?}", e));
+                        .map_err(|e| log::warn!("failed to kill {name} FidlPipe command: {:?}", e));
+                    let _ = waitpid(pid, None).map_err(|e| {
+                        log::warn!("failed to clean up {name} FidlPipe command: {:?}", e)
+                    });
                 }
             };
         }
