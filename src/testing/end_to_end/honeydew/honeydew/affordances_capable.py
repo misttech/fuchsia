@@ -73,6 +73,10 @@ class RebootCapableDevice(abc.ABC):
     def wait_for_online(self) -> None:
         """Wait for Fuchsia device to go online."""
 
+    @abc.abstractmethod
+    def as_async(self) -> AsyncRebootCapableDevice:
+        pass
+
 
 class AsyncFuchsiaDeviceLogger(abc.ABC):
     """Abstract base class which contains methods for logging message to fuchsia

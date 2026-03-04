@@ -4,7 +4,9 @@
 """Bluetooth Common affordance implementation using SL4F."""
 
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any
+
+import fuchsia_async_extension
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
@@ -47,9 +49,217 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
         sl4f: sl4f_transport.SL4F,
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
+        self.__inner = AsyncBluetoothCommonUsingSl4f(
+            device_name,
+            sl4f,
+            reboot_affordance.as_async(),
+        )
+
+    def sys_init(self) -> None:
+        """Initializes bluetooth stack.
+
+        Note: This method is called automatically:
+            1. During this class initialization
+            2. After the device reboot
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        self.__inner.sys_init()
+
+    def accept_pairing(
+        self,
+        input_mode: bluetooth_types.BluetoothAcceptPairing,
+        output_mode: bluetooth_types.BluetoothAcceptPairing,
+        timeout_sec: float | None = None,
+    ) -> None:
+        """Sets device to accept Bluetooth pairing.
+
+        Args:
+            input_mode: input mode of device
+            output_mode: output mode of device
+            timeout_sec: timeout duration in seconds
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.accept_pairing(input_mode, output_mode, timeout_sec)
+        )
+
+    def connect_device(
+        self,
+        identifier: str,
+        connection_type: bluetooth_types.BluetoothConnectionType,
+        timeout_sec: float | None = None,
+    ) -> None:
+        """Connect device to target remote device via Bluetooth.
+
+        Args:
+            identifier: the identifier of target remote device.
+            connection_type: type of bluetooth connection
+            timeout_sec: timeout duration in seconds
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.connect_device(
+                identifier, connection_type, timeout_sec
+            )
+        )
+
+    def forget_device(
+        self, identifier: str, timeout_sec: float | None = None
+    ) -> None:
+        """Forget device to target remote device via Bluetooth.
+
+        Args:
+            identifier: the identifier of target remote device.
+            timeout_sec: timeout duration in seconds
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.forget_device(identifier, timeout_sec)
+        )
+
+    def get_active_adapter_address(
+        self, timeout_sec: float | None = None
+    ) -> str:
+        """Retrieves the active adapter mac address
+
+        Args:
+            timeout_sec: timeout duration in seconds
+
+        Sample result:
+            {"result": "[address (public) 20:1F:3B:62:E9:D2]"}
+        Returns:
+            The mac address of the active adapter
+
+        Raises:
+            BluetoothError: On failure.
+            KeyError: On unexpected SL4F response
+            AttributeError: On unexpected SL4F response
+            IndexError: On unexpected SL4F response
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.get_active_adapter_address(timeout_sec)
+        )
+
+    def get_connected_devices(self) -> list[str]:
+        """Retrieves all connected remote devices.
+
+        Returns:
+            A list of all connected devices by identifier. If none,
+            then returns empty list.
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.get_connected_devices()
+        )
+
+    def get_known_remote_devices(
+        self, timeout_sec: float | None = None
+    ) -> dict[str, Any]:
+        """Retrieves all known remote devices received by device.
+        Args:
+            timeout_sec: timeout duration in seconds
+
+        Returns:
+            A dict of all known remote devices.
+
+        Raises:
+            BluetoothError: On failure.
+            KeyError: If the Sl4f call returns no "result".
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.get_known_remote_devices(timeout_sec)
+        )
+
+    def pair_device(
+        self,
+        identifier: str,
+        connection_type: bluetooth_types.BluetoothConnectionType,
+        timeout_sec: float | None = None,
+    ) -> None:
+        """Pair device to target remote device via Bluetooth.
+
+        Args:
+            identifier: the identifier of target remote device.
+            connection_type: type of bluetooth connection
+            timeout_sec: timeout duration in seconds
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.pair_device(identifier, connection_type, timeout_sec)
+        )
+
+    def request_discovery(self, discovery: bool) -> None:
+        """Requests Bluetooth Discovery on Bluetooth capable device.
+
+        Args:
+            discovery: True to start discovery, False to stop discovery.
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.request_discovery(discovery)
+        )
+
+    def set_discoverable(
+        self,
+        discoverable: bool,
+    ) -> None:
+        """Sets device to be discoverable by others.
+
+        Args:
+            discoverable: True to be discoverable by others, False to be not
+                          discoverable by others.
+
+        Raises:
+            BluetoothError: On failure.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.set_discoverable(discoverable)
+        )
+
+    def run_pairing_delegate(self, timeout_sec: float | None = None) -> None:
+        """Function to run pairing delegate server calls.
+        Args:
+            timeout_sec: timeout duration in seconds
+
+        Fuchsia Controller only implementation
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.__inner.run_pairing_delegate(timeout_sec)
+        )
+
+
+class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
+    """Bluetooth Common affordance implementation using SL4F.
+
+    Args:
+        device_name: Device name returned by `ffx target list`.
+        sl4f: SL4F transport.
+        reboot_affordance: Object that implements RebootCapableDevice.
+    """
+
+    def __init__(
+        self,
+        device_name: str,
+        sl4f: sl4f_transport.SL4F,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+    ) -> None:
         self._name: str = device_name
         self._sl4f: sl4f_transport.SL4F = sl4f
-        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
             reboot_affordance
         )
 
@@ -76,11 +286,11 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete sys_init SL4F call on {self._name}."
             ) from e
 
-    def accept_pairing(
+    async def accept_pairing(
         self,
         input_mode: bluetooth_types.BluetoothAcceptPairing,
         output_mode: bluetooth_types.BluetoothAcceptPairing,
-        timeout_sec: Optional[int | None] = None,
+        timeout_sec: float | None = None,
     ) -> None:
         """Sets device to accept Bluetooth pairing.
 
@@ -102,11 +312,11 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete accept_pairing SL4F call on {self._name}."
             ) from e
 
-    def connect_device(
+    async def connect_device(
         self,
         identifier: str,
         connection_type: bluetooth_types.BluetoothConnectionType,
-        timeout_sec: Optional[int | None] = None,
+        timeout_sec: float | None = None,
     ) -> None:
         """Connect device to target remote device via Bluetooth.
 
@@ -131,8 +341,8 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete connect_device SL4F call on {self._name}."
             ) from e
 
-    def forget_device(
-        self, identifier: str, timeout_sec: Optional[int | None] = None
+    async def forget_device(
+        self, identifier: str, timeout_sec: float | None = None
     ) -> None:
         """Forget device to target remote device via Bluetooth.
 
@@ -153,8 +363,8 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete forget_device SL4F call on {self._name}."
             ) from e
 
-    def get_active_adapter_address(
-        self, timeout_sec: Optional[int | None] = None
+    async def get_active_adapter_address(
+        self, timeout_sec: float | None = None
     ) -> str:
         """Retrieves the active adapter mac address
 
@@ -182,7 +392,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
             ) from e
         return mac_address[2]
 
-    def get_connected_devices(self) -> list[str]:
+    async def get_connected_devices(self) -> list[str]:
         """Retrieves all connected remote devices.
 
         Returns:
@@ -204,8 +414,8 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
             ) from e
         return connected_devices
 
-    def get_known_remote_devices(
-        self, timeout_sec: Optional[int | None] = None
+    async def get_known_remote_devices(
+        self, timeout_sec: float | None = None
     ) -> dict[str, Any]:
         """Retrieves all known remote devices received by device.
         Args:
@@ -229,11 +439,11 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
             ) from e
         return known_devices["result"]
 
-    def pair_device(
+    async def pair_device(
         self,
         identifier: str,
         connection_type: bluetooth_types.BluetoothConnectionType,
-        timeout_sec: Optional[int | None] = None,
+        timeout_sec: float | None = None,
     ) -> None:
         """Pair device to target remote device via Bluetooth.
 
@@ -258,7 +468,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete pair_device SL4F call on {self._name}."
             ) from e
 
-    def request_discovery(self, discovery: bool) -> None:
+    async def request_discovery(self, discovery: bool) -> None:
         """Requests Bluetooth Discovery on Bluetooth capable device.
 
         Args:
@@ -277,15 +487,15 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete request_discovery SL4F call on {self._name}."
             ) from e
 
-    def set_discoverable(
-        self, discoverable: bool, timeout_sec: Optional[int | None] = None
+    async def set_discoverable(
+        self,
+        discoverable: bool,
     ) -> None:
         """Sets device to be discoverable by others.
 
         Args:
             discoverable: True to be discoverable by others, False to be not
                           discoverable by others.
-            timeout_sec: timeout duration in seconds
 
         Raises:
             BluetoothError: On failure.
@@ -300,8 +510,8 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
                 f"Failed to complete set_discoverable SL4F call on {self._name}."
             ) from e
 
-    def run_pairing_delegate(
-        self, timeout_sec: Optional[int | None] = None
+    async def run_pairing_delegate(
+        self, timeout_sec: float | None = None
     ) -> None:
         """Function to run pairing delegate server calls.
         Args:

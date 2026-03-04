@@ -12,6 +12,7 @@ from typing import Any
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_le as f_ble_controller
+import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fidl import StopServer
 from fuchsia_controller_py import Channel
@@ -84,6 +85,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         )
         self.service_info: dict[int, dict[str, Any]]
         self._peripheral_advertisement_server: asyncio.Task[None] | None = None
+        self._device_name: str = device_name
         self._name: str = device_name
         self._connection_client: fc.Channel | None = None
         self._gatt_client: fc.Channel | None = None
@@ -105,6 +107,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         self._reboot_affordance.register_for_on_device_boot(fn=self.init_le_sys)
         self.verify_supported()
         self.init_le_sys()
+        self.loop = fuchsia_async_extension.get_loop()
 
     def verify_supported(self) -> None:
         """Check if Bluetooth le is supported on the DUT.

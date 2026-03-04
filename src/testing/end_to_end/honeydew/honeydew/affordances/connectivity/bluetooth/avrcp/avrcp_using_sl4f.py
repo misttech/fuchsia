@@ -37,6 +37,7 @@ class AvrcpUsingSl4f(
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         super().__init__(device_name, sl4f, reboot_affordance)
+        self.__sl4f = sl4f
         self.verify_supported()
 
     # List all the public methods
@@ -49,7 +50,7 @@ class AvrcpUsingSl4f(
         Raises:
             Sl4fError: On failure.
         """
-        self._sl4f.run(
+        self.__sl4f.run(
             method=Sl4fMethods.INIT_AVRCP, params={"target_id": target_id}
         )
 
@@ -70,7 +71,7 @@ class AvrcpUsingSl4f(
         Raises:
             errors.Sl4fError: On failure.
         """
-        requests = self._sl4f.run(method=Sl4fMethods.LIST_RECEIVED_REQUESTS)
+        requests = self.__sl4f.run(method=Sl4fMethods.LIST_RECEIVED_REQUESTS)
         return requests.get("result", [])
 
     def publish_mock_player(self) -> None:
@@ -79,7 +80,7 @@ class AvrcpUsingSl4f(
         Raises:
             errors.Sl4fError: On failure.
         """
-        self._sl4f.run(method=Sl4fMethods.PUBLISH_MOCK_PLAYER)
+        self.__sl4f.run(method=Sl4fMethods.PUBLISH_MOCK_PLAYER)
 
     def send_avrcp_command(
         self, command: bluetooth_types.BluetoothAvrcpCommand
@@ -92,7 +93,7 @@ class AvrcpUsingSl4f(
         Raises:
             errors.Sl4fError: On Failure.
         """
-        self._sl4f.run(
+        self.__sl4f.run(
             method=Sl4fMethods.SEND_AVRCP_COMMAND, params={"command": command}
         )
 
@@ -102,4 +103,4 @@ class AvrcpUsingSl4f(
         Raises:
             errors.Sl4fError: On Failure.
         """
-        self._sl4f.run(method=Sl4fMethods.STOP_MOCK_PLAYER)
+        self.__sl4f.run(method=Sl4fMethods.STOP_MOCK_PLAYER)

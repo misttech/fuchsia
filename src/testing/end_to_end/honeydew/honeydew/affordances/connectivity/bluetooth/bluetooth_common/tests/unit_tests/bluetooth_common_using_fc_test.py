@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 """Unit tests for bluetooth_common_using_fc.py"""
 
+import asyncio
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -83,14 +84,14 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
+            spec=affordances_capable.AsyncRebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
 
         self.bluetooth_common_fc_obj = (
-            bluetooth_common_using_fc.BluetoothCommonUsingFc(
+            bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc(
                 device_name="fuchsia-emulator",
                 fuchsia_controller=self.fc_transport_obj,
                 reboot_affordance=self.reboot_affordance_obj,
@@ -136,11 +137,14 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
             )
             assert not self.bluetooth_common_fc_obj.known_devices
 
-    def test_reset_state(self) -> None:
+    async def test_reset_state(self) -> None:
         """Test for BluetoothGap.reset_state() method."""
-        self.bluetooth_common_fc_obj._pairing_delegate_server = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.reset_state()
+        # Neither MagicMock or AsyncMock are suitable for mocking an asyncio.Task.
+        # Use an asyncio.Future() instead since the base implementation is sufficient
+        # for this test.
+        self.bluetooth_common_fc_obj._pairing_delegate_server = asyncio.Future()  # type: ignore[assignment]
+
+        await self.bluetooth_common_fc_obj.reset_state()
         assert self.bluetooth_common_fc_obj._access_controller_proxy is None
         assert (
             self.bluetooth_common_fc_obj._host_watcher_controller_proxy is None
@@ -149,31 +153,20 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         assert self.bluetooth_common_fc_obj._session_initialized is False
         assert self.bluetooth_common_fc_obj._pairing_delegate_server is None
 
-    def test_accept_pairing(self) -> None:
+    async def test_accept_pairing(self) -> None:
         """Test for BluetoothGap.accept_pairing() method."""
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.accept_pairing(
-            BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
-            BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
-        )
-        self.bluetooth_common_fc_obj.loop.run_until_complete.assert_called()
-
-    async def test_async_accept_pairing(self) -> None:
-        """Test for BluetoothGap._accept_pairing() async method."""
         self.bluetooth_common_fc_obj._pairing_controller_proxy = (
             mock.MagicMock()
         )
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        (
-            await self.bluetooth_common_fc_obj._accept_pairing(
-                BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
-                BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
-            )
+        await self.bluetooth_common_fc_obj.accept_pairing(
+            BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
+            BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
         )
         assert self.bluetooth_common_fc_obj._pairing_delegate_server is not None
         self.bluetooth_common_fc_obj._pairing_controller_proxy.set_pairing_delegate.assert_called_with(
             input_=1, output=1, delegate=mock.ANY
         )
+        self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
     @parameterized.expand(
         [
@@ -192,49 +185,53 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_connect_device(self, parameterized_dict: dict[str, Any]) -> None:
+    async def test_connect_device(
+        self, parameterized_dict: dict[str, Any]
+    ) -> None:
         """Test for BluetoothGap.connect_device() method."""
-        self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
+        self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
         dummy_identifier = 0
-        self.bluetooth_common_fc_obj.connect_device(
-            identifier=dummy_identifier,
-            connection_type=parameterized_dict["transport"],
-        )
+        with mock.patch(
+            "asyncio.sleep", new_callable=mock.AsyncMock
+        ) as mock_sleep:
+            await self.bluetooth_common_fc_obj.connect_device(
+                identifier=dummy_identifier,
+                connection_type=parameterized_dict["transport"],
+            )
+            mock_sleep.assert_called_once_with(10)
+
         dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
         self.bluetooth_common_fc_obj._access_controller_proxy.connect.assert_called_with(
             id_=dummy_peer_id
         )
-        self.assertEqual(
-            self.bluetooth_common_fc_obj.loop.run_until_complete.call_count, 2
-        )
+        self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 2)
 
-    def test_forget_device(self) -> None:
+    async def test_forget_device(self) -> None:
         """Test for BluetoothGap.forget_device() method."""
-        self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
+        self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
         dummy_identifier = 0
-        self.bluetooth_common_fc_obj.forget_device(
+        await self.bluetooth_common_fc_obj.forget_device(
             identifier=dummy_identifier,
         )
         dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
         self.bluetooth_common_fc_obj._access_controller_proxy.forget.assert_called_with(
             id_=dummy_peer_id
         )
-        self.bluetooth_common_fc_obj.loop.run_until_complete.assert_called_once()
+        self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
-    def test_get_active_adapter_address(self) -> None:
+    async def test_get_active_adapter_address(self) -> None:
         """Test for BluetoothGap.get_active_adapter_address() method."""
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop.run_until_complete = mock.MagicMock(
-            return_value="1"
-        )
-        dummy_address = (
-            self.bluetooth_common_fc_obj.get_active_adapter_address()
-        )
-        self.assertEqual(dummy_address, "1")
+        with mock.patch.object(
+            self.bluetooth_common_fc_obj,
+            "_get_active_address",
+            new_callable=mock.AsyncMock,
+            return_value="1",
+        ):
+            dummy_address = (
+                await self.bluetooth_common_fc_obj.get_active_adapter_address()
+            )
+            self.assertEqual(dummy_address, "1")
 
-    @unittest.skip("Skipping due to unresolved TypeError")
     async def test_async_get_active_adapter_address(self) -> None:
         """Test for BluetoothGap.get_active_adapter_address() async method."""
         self.bluetooth_common_fc_obj._host_watcher_controller_proxy = (
@@ -252,29 +249,28 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         self.bluetooth_common_fc_obj._host_watcher_controller_proxy.watch = (
-            mock.MagicMock(return_value=test)
+            mock.AsyncMock(return_value=test)
         )
         res = await self.bluetooth_common_fc_obj._get_active_address()
         self.assertEqual(res, [88, 111, 107, 249, 15, 248])
 
-    def test_get_known_remote_devices(self) -> None:
+    async def test_get_known_remote_devices(self) -> None:
         """Test for BluetoothGap.get_known_remote_devices() method."""
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=_SAMPLE_KNOWN_DEVICES_OUTPUT
-        )
         self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        data = self.bluetooth_common_fc_obj.get_known_remote_devices()
+        self.bluetooth_common_fc_obj._access_controller_proxy.watch_peers = (
+            mock.AsyncMock(return_value=_SAMPLE_KNOWN_DEVICES_OUTPUT)
+        )
+        data = await self.bluetooth_common_fc_obj.get_known_remote_devices()
         self.assertEqual(data, _ACTUAL_KNOWN_DEVICE_OUTPUT)
+        self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
-    def test_get_connected_devices(self) -> None:
+    async def test_get_connected_devices(self) -> None:
         """Test for BluetoothGap.get_connected_devices() method."""
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=_SAMPLE_KNOWN_DEVICES_OUTPUT
-        )
         self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        data = self.bluetooth_common_fc_obj.get_connected_devices()
+        self.bluetooth_common_fc_obj._access_controller_proxy.watch_peers = (
+            mock.AsyncMock(return_value=_SAMPLE_KNOWN_DEVICES_OUTPUT)
+        )
+        data = await self.bluetooth_common_fc_obj.get_connected_devices()
         self.assertEqual(data, [16085008211800713200])
 
     @parameterized.expand(
@@ -294,15 +290,21 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_pair_device(self, parameterized_dict: dict[str, Any]) -> None:
+    async def test_pair_device(
+        self, parameterized_dict: dict[str, Any]
+    ) -> None:
         """Test for BluetoothGap.pair_device() method."""
-        self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
+        self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
         dummy_identifier = 0
-        self.bluetooth_common_fc_obj.pair_device(
-            identifier=dummy_identifier,
-            connection_type=parameterized_dict["transport"],
-        )
+        with mock.patch(
+            "asyncio.sleep", new_callable=mock.AsyncMock
+        ) as mock_sleep:
+            await self.bluetooth_common_fc_obj.pair_device(
+                identifier=dummy_identifier,
+                connection_type=parameterized_dict["transport"],
+            )
+            mock_sleep.assert_called_once_with(10)
+
         dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
         dummy_options = f_btsys_controller.PairingOptions(
             le_security_level=None, bondable_mode=None, transport=None
@@ -310,9 +312,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         self.bluetooth_common_fc_obj._access_controller_proxy.pair.assert_called_with(
             id_=dummy_peer_id, options=dummy_options
         )
-        self.assertEqual(
-            self.bluetooth_common_fc_obj.loop.run_until_complete.call_count, 2
-        )
+        self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 2)
 
     @parameterized.expand(
         [
@@ -347,28 +347,28 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_request_discovery(
+    async def test_request_discovery(
         self, parameterized_dict: dict[str, Any]
     ) -> None:
         """Test for BluetoothGap.request_discovery() method."""
         if parameterized_dict.get("token"):
             self.bluetooth_common_fc_obj.discovery_token = mock.MagicMock()
-        self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
+        self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
         if parameterized_dict.get("token") and parameterized_dict.get(
             "discovery"
         ):
             with self.assertRaises(bluetooth_errors.BluetoothError):
-                self.bluetooth_common_fc_obj.request_discovery(discovery=True)
+                await self.bluetooth_common_fc_obj.request_discovery(
+                    discovery=True
+                )
         elif parameterized_dict.get("discovery"):
-            self.bluetooth_common_fc_obj.request_discovery(discovery=True)
+            await self.bluetooth_common_fc_obj.request_discovery(discovery=True)
             self.bluetooth_common_fc_obj._access_controller_proxy.start_discovery.assert_called_once()
-            self.assertEqual(
-                self.bluetooth_common_fc_obj.loop.run_until_complete.call_count,
-                1,
-            )
+            self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
         else:
-            self.bluetooth_common_fc_obj.request_discovery(discovery=False)
+            await self.bluetooth_common_fc_obj.request_discovery(
+                discovery=False
+            )
             assert self.bluetooth_common_fc_obj.discovery_token is None
 
     @parameterized.expand(
@@ -404,26 +404,30 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_set_discoverable(self, parameterized_dict: dict[str, Any]) -> None:
+    async def test_set_discoverable(
+        self, parameterized_dict: dict[str, Any]
+    ) -> None:
         """Test for BluetoothGap.set_discoverable() method."""
         if parameterized_dict.get("token"):
             self.bluetooth_common_fc_obj.discoverable_token = mock.MagicMock()
-        self.bluetooth_common_fc_obj._access_controller_proxy = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
+        self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
         if not parameterized_dict.get("discoverable"):
-            self.bluetooth_common_fc_obj.set_discoverable(discoverable=False)
+            await self.bluetooth_common_fc_obj.set_discoverable(
+                discoverable=False
+            )
             assert self.bluetooth_common_fc_obj.discoverable_token is None
             return
         if parameterized_dict.get("token"):
             with self.assertRaises(bluetooth_errors.BluetoothError):
-                self.bluetooth_common_fc_obj.set_discoverable(discoverable=True)
+                await self.bluetooth_common_fc_obj.set_discoverable(
+                    discoverable=True
+                )
         else:
-            self.bluetooth_common_fc_obj.set_discoverable(discoverable=True)
-            self.bluetooth_common_fc_obj._access_controller_proxy.make_discoverable.assert_called_once()
-            self.assertEqual(
-                self.bluetooth_common_fc_obj.loop.run_until_complete.call_count,
-                1,
+            await self.bluetooth_common_fc_obj.set_discoverable(
+                discoverable=True
             )
+            self.bluetooth_common_fc_obj._access_controller_proxy.make_discoverable.assert_called_once()
+            self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
     @parameterized.expand(
         [
@@ -442,19 +446,19 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_run_pairing_delegate(
+    async def test_run_pairing_delegate(
         self, parameterized_dict: dict[str, Any]
     ) -> None:
         """Test for BluetoothGap.run_pairing_delegate()."""
         if not parameterized_dict.get("server"):
             with self.assertRaises(bluetooth_errors.BluetoothError):
-                self.bluetooth_common_fc_obj.run_pairing_delegate()
-        self.bluetooth_common_fc_obj._pairing_delegate_server = mock.MagicMock()
-        self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        self.bluetooth_common_fc_obj.run_pairing_delegate()
-        self.assertEqual(
-            self.bluetooth_common_fc_obj.loop.run_until_complete.call_count, 1
-        )
+                await self.bluetooth_common_fc_obj.run_pairing_delegate()
+        else:
+            f: asyncio.Future[None] = asyncio.Future()
+            f.set_result(None)
+            self.bluetooth_common_fc_obj._pairing_delegate_server = f  # type: ignore[assignment]
+            await self.bluetooth_common_fc_obj.run_pairing_delegate()
+            self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
 
 if __name__ == "__main__":
