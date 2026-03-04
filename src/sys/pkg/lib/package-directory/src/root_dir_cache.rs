@@ -119,7 +119,7 @@ impl<S: crate::NonMetaStorage + Clone> RootDirCache<S> {
     /// Packages with live `Arc<RootDir>`s.
     /// Holding on to the returned `Arc`s will keep the packages open.
     pub fn list(&self) -> Vec<Arc<crate::RootDir<S>>> {
-        self.dirs.lock().expect("poisoned mutex").iter().filter_map(|(_, v)| v.upgrade()).collect()
+        self.dirs.lock().expect("poisoned mutex").values().filter_map(|v| v.upgrade()).collect()
     }
 
     /// Returns a callback to be given to `fuchsia_inspect::Node::record_lazy_child`.
