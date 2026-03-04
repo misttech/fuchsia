@@ -1600,7 +1600,8 @@ pub fn resolve_output_route_to_destination<
 /// of `IpSocketContext` given the other requirements are met.
 pub trait UseIpSocketContextBlanket {}
 
-impl<
+impl<I, BC, CC> IpSocketContext<I, BC> for CC
+where
     I: Ip + IpDeviceStateIpExt + IpDeviceIpExt + IpLayerIpExt,
     BC: IpDeviceBindingsContext<I, CC::DeviceId>
         + IpLayerBindingsContext<I, CC::DeviceId>
@@ -1611,8 +1612,8 @@ impl<
         + IpDeviceConfirmReachableContext<I, BC>
         + IpDeviceMtuContext<I>
         + device::IpDeviceConfigurationContext<I, BC>
+        + IcmpErrorHandler<I, BC>
         + UseIpSocketContextBlanket,
-> IpSocketContext<I, BC> for CC
 {
     fn lookup_route(
         &mut self,
@@ -2513,7 +2514,7 @@ impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
     }
 }
 
-fn reject_type_to_icmpv4_error(reject_type: RejectType) -> Option<Icmpv4Error> {
+pub(crate) fn reject_type_to_icmpv4_error(reject_type: RejectType) -> Option<Icmpv4Error> {
     let error = match reject_type {
         RejectType::NetUnreachable => Icmpv4Error::NetUnreachable,
         RejectType::ProtoUnreachable => Icmpv4Error::ProtocolUnreachable,
@@ -2528,7 +2529,7 @@ fn reject_type_to_icmpv4_error(reject_type: RejectType) -> Option<Icmpv4Error> {
     Some(error)
 }
 
-fn reject_type_to_icmpv6_error(reject_type: RejectType) -> Option<Icmpv6Error> {
+pub(crate) fn reject_type_to_icmpv6_error(reject_type: RejectType) -> Option<Icmpv6Error> {
     let error = match reject_type {
         RejectType::NetUnreachable => Icmpv6Error::NetUnreachable,
         RejectType::PortUnreachable => Icmpv6Error::PortUnreachable,

@@ -8,9 +8,9 @@ use core::cmp::Ordering;
 use core::convert::Infallible;
 use core::num::NonZeroU8;
 
-use log::error;
+use log::{debug, error};
 use net_types::ip::{Ip, IpVersionMarker, Ipv6Addr, Mtu};
-use net_types::{MulticastAddress, ScopeableAddress, SpecifiedAddr};
+use net_types::{MulticastAddress, ScopeableAddress, SpecifiedAddr, Witness as _};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AnyDevice, CounterContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId, InstantContext,
@@ -23,14 +23,15 @@ use netstack3_filter::{
     SocketOpsFilterBindingContext, TransportPacketSerializer,
 };
 use netstack3_trace::trace_duration;
-use packet::{BufferMut, PacketConstraints, SerializeError};
-use packet_formats::ip::DscpAndEcn;
+use packet::{BufferMut, PacketBuilder as _, PacketConstraints, SerializeError, Serializer};
+use packet_formats::ip::{DscpAndEcn, IpPacketBuilder as _};
 use thiserror::Error;
 
+use crate::icmp::IcmpErrorHandler;
 use crate::internal::base::{
     FilterHandlerProvider, IpDeviceMtuContext, IpLayerIpExt, IpLayerPacketMetadata,
     IpPacketDestination, IpSendFrameError, IpSendFrameErrorReason, ResolveRouteError,
-    SendIpPacketMeta,
+    SendIpPacketMeta, reject_type_to_icmpv4_error, reject_type_to_icmpv6_error,
 };
 use crate::internal::counters::IpCounters;
 use crate::internal::device::state::IpDeviceStateIpExt;
@@ -449,8 +450,9 @@ impl<
 pub trait IpSocketContext<I, BC>:
     DeviceIdContext<AnyDevice, DeviceId: InterfaceProperties<BC::DeviceClass>>
     + FilterHandlerProvider<I, BC>
+    + IcmpErrorHandler<I, BC>
 where
-    I: IpDeviceStateIpExt + IpExt + FilterIpExt,
+    I: IpLayerIpExt,
     BC: IpSocketBindingsContext<Self::DeviceId>,
 {
     /// Returns a route for a socket.
@@ -856,7 +858,7 @@ fn send_ip_packet<I, S, BC, CC, O>(
     tx_metadata: BC::TxMetadata,
 ) -> Result<(), IpSockSendError>
 where
-    I: IpExt + IpDeviceStateIpExt + FilterIpExt,
+    I: IpLayerIpExt,
     S: TransportPacketSerializer<I>,
     S::Buffer: BufferMut,
     BC: IpSocketBindingsContext<CC::DeviceId>,
@@ -869,7 +871,7 @@ where
     // Extracted to a function without the serializer parameter to ease code
     // generation.
     fn resolve<
-        I: IpExt + IpDeviceStateIpExt + FilterIpExt,
+        I: IpLayerIpExt,
         CC: IpSocketContext<I, BC>,
         BC: IpSocketBindingsContext<CC::DeviceId>,
     >(
@@ -928,19 +930,66 @@ where
     let mut packet_metadata =
         IpLayerPacketMetadata::from_tx_metadata_and_marks(tx_metadata, *options.marks());
 
-    match core_ctx.filter_handler().local_egress_hook(
+    let filter_result = core_ctx.filter_handler().local_egress_hook(
         bindings_ctx,
         &mut packet,
         &egress_device,
         &mut packet_metadata,
-    ) {
+    );
+    match filter_result {
         filter::Verdict::Stop(filter::DropOrReject::Drop) => {
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
-            // TODO(https://fxbug.dev/466098884): Send reject packet.
+        filter::Verdict::Stop(filter::DropOrReject::Reject(reject_type)) => {
             packet_metadata.acknowledge_drop();
+
+            let Some(icmp_error): Option<I::IcmpError> = I::map_ip_out(
+                reject_type,
+                |reject_type| reject_type_to_icmpv4_error(reject_type),
+                |reject_type| reject_type_to_icmpv6_error(reject_type),
+            ) else {
+                debug!("Unsupported reject type: {:?}", reject_type);
+                return Ok(());
+            };
+
+            let src_ip = SocketIpAddr::new_from_witness(local_ip.into_inner().get());
+            let dst_ip = *remote_ip;
+            let ttl = options.hop_limit(&dst_ip.into()).map(|v| v.into()).unwrap_or(1);
+            let packet_builder = I::PacketBuilder::new(
+                src_ip.into_inner().get(),
+                dst_ip.into_inner().get(),
+                ttl,
+                *proto,
+            );
+            let header_len = packet_builder.constraints().header_len();
+            let ip_frame = packet_builder.wrap_body(body);
+            let packet = match ip_frame
+                .serialize_outer(packet::NoReuseBufferProvider(packet::new_buf_vec))
+            {
+                Ok(packet) => packet,
+                Err((error, _frame)) => {
+                    debug!("Failed to serialize packet {:?}", error);
+                    return Ok(());
+                }
+            };
+
+            // Invoke `send_icmp_error_message` with the `local_ip` as the
+            // `original_source_ip`, which will result in the ICMP error
+            // message getting sent back to the `socket`.
+            core_ctx.send_icmp_error_message(
+                bindings_ctx,
+                /*device=*/ None,
+                /*frame_dst=*/ None,
+                src_ip,
+                dst_ip,
+                packet,
+                icmp_error,
+                header_len,
+                *proto,
+                &options.marks(),
+            );
+
             return Ok(());
         }
         filter::Verdict::Proceed(filter::Accept) => {}

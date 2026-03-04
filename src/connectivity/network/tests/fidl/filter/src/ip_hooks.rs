@@ -112,9 +112,20 @@ const NEGATIVE_CHECK_TIMEOUT: fuchsia_async::MonotonicDuration =
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ExpectedConnectivity {
+    // Packets can be delivered between the client and the server in
+    // both directions.
     TwoWay,
+
+    // Packets from the server to the client are dropped.
     ClientToServerOnly,
+
+    // All packets between the client and the server are dropped.
     None,
+
+    // Connection from client to the server is expected to be actively rejected
+    // (by sending an ICMP error), resulting in the specified error on TCP
+    // `connect()` operation.
+    Reject(i32),
 }
 
 #[derive(Clone, Copy)]
@@ -378,7 +389,9 @@ impl SocketType for TcpSocket {
 
         let server_fut = async move {
             match expected_connectivity {
-                ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
+                ExpectedConnectivity::None
+                | ExpectedConnectivity::ClientToServerOnly
+                | ExpectedConnectivity::Reject(_) => {
                     match server
                         .next()
                         .on_timeout(NEGATIVE_CHECK_TIMEOUT.after_now(), || None)
@@ -451,6 +464,17 @@ impl SocketType for TcpSocket {
                         None => None,
                     }
                 }
+                ExpectedConnectivity::Reject(expected_errno) => {
+                    let error = fasync::net::TcpStream::connect_from_raw(client, server_addr)
+                        .expect("create connector from socket")
+                        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
+                            panic!("timed out waiting for connect() to fail")
+                        })
+                        .await
+                        .expect_err("connect() expected to fail");
+                    assert_eq!(error.raw_os_error(), Some(expected_errno));
+                    None
+                }
                 ExpectedConnectivity::TwoWay => {
                     let stream = fasync::net::TcpStream::connect_from_raw(client, server_addr)
                         .expect("connect to server")
@@ -491,7 +515,9 @@ impl SocketType for TcpSocket {
 
         let (client, server) = futures::future::join(client_fut, server_fut).await;
         match expected_connectivity {
-            ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
+            ExpectedConnectivity::None
+            | ExpectedConnectivity::ClientToServerOnly
+            | ExpectedConnectivity::Reject(_) => {
                 assert_matches!((client, server), (None, None));
                 ConnectResult::Failed { client: None, server: None }
             }
@@ -512,7 +538,9 @@ impl SocketType for TcpSocket {
         expected_connectivity: ExpectedConnectivity,
     ) {
         match expected_connectivity {
-            ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
+            ExpectedConnectivity::None
+            | ExpectedConnectivity::ClientToServerOnly
+            | ExpectedConnectivity::Reject(_) => {
                 panic!("sockets are already connected")
             }
             ExpectedConnectivity::TwoWay => {}
@@ -640,7 +668,7 @@ impl SocketType for UdpSocket {
         let server_fut = async move {
             let mut buf = [0u8; 1024];
             match expected_connectivity {
-                ExpectedConnectivity::None => {
+                ExpectedConnectivity::None | ExpectedConnectivity::Reject(_) => {
                     match server
                         .recv_from(&mut buf[..])
                         .map_ok(Some)
@@ -685,7 +713,9 @@ impl SocketType for UdpSocket {
 
             let mut buf = [0u8; 1024];
             match expected_connectivity {
-                ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
+                ExpectedConnectivity::None
+                | ExpectedConnectivity::ClientToServerOnly
+                | ExpectedConnectivity::Reject(_) => {
                     match client
                         .recv_from(&mut buf[..])
                         .map_ok(Some)
@@ -873,7 +903,9 @@ impl SocketType for IcmpSocket {
         );
 
         match expected_connectivity {
-            ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
+            ExpectedConnectivity::None
+            | ExpectedConnectivity::ClientToServerOnly
+            | ExpectedConnectivity::Reject(_) => {
                 expect_ping_timeout::<I>(client, server_addr).await;
             }
             ExpectedConnectivity::TwoWay => {
@@ -1214,7 +1246,7 @@ impl<'a> TestRealm<'a> {
         .await
     }
 
-    async fn install_rule_for_outgoing_traffic<I, M>(
+    pub async fn install_rule_for_outgoing_traffic<I, M>(
         &mut self,
         index: u32,
         matcher: &M,

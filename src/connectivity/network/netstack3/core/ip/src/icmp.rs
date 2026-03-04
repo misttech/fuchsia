@@ -257,7 +257,10 @@ impl<BT: IcmpBindingsTypes> AsMut<IcmpState<Ipv6, BT>> for Icmpv6State<BT> {
 /// An extension trait providing ICMP handler properties.
 pub trait IcmpHandlerIpExt: IpExt {
     /// The type of ICMP error messages.
-    type IcmpError: IcmpError;
+    type IcmpError: IcmpError
+        + GenericOverIp<Self, Type = Self::IcmpError>
+        + GenericOverIp<Ipv4, Type = Icmpv4Error>
+        + GenericOverIp<Ipv6, Type = Icmpv6Error>;
 
     /// A try-conversion from [`Self::RecvSrcAddr`] to [`SocketIpAddr`].
     fn received_source_as_icmp_source(src: Self::RecvSrcAddr) -> Option<SocketIpAddr<Self::Addr>>;
@@ -339,6 +342,10 @@ impl IcmpError for Icmpv4Error {
     fn mtu_exceeded(_mtu: Mtu) -> Option<Self> {
         None
     }
+}
+
+impl<I: IcmpHandlerIpExt> GenericOverIp<I> for Icmpv4Error {
+    type Type = I::IcmpError;
 }
 
 /// A type to allow implementing the required filtering traits on a concrete
@@ -451,6 +458,10 @@ impl Icmpv4Error {
             },
         }
     }
+}
+
+impl<I: IcmpHandlerIpExt> GenericOverIp<I> for Icmpv6Error {
+    type Type = I::IcmpError;
 }
 
 /// A kind of ICMPv6 error.

@@ -19,8 +19,10 @@ use packet_formats::icmp::{
 use packet_formats::ip::{IpPacket as _, Ipv4Proto, Ipv6Proto};
 use test_case::test_case;
 
-use crate::ip_hooks::{ExpectedConnectivity, LOW_RULE_PRIORITY, TestIpExt, TestNet, UdpSocket};
-use crate::matchers::Udp;
+use crate::ip_hooks::{
+    ExpectedConnectivity, LOW_RULE_PRIORITY, TcpSocket, TestIpExt, TestNet, UdpSocket,
+};
+use crate::matchers::{Tcp, Udp};
 
 #[netstack_test]
 #[variant(I, Ip)]
@@ -177,4 +179,80 @@ async fn reject_incoming<I: TestIpExt>(name: &str, reject_type: RejectType) {
             panic!("timed out waiting for ICMP error")
         })
         .await;
+}
+
+// Test Reject action in the LOCAL_EGRESS hook.
+//
+// TODO(https://fxbug.dev/322214321): Run this test with UDP sockets once
+// `SO_ERROR` is implemented.
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(RejectType::PortUnreachable; "port_unreachable")]
+#[test_case(RejectType::NetUnreachable; "net_unreachable")]
+#[test_case(RejectType::HostUnreachable; "host_unreachable")]
+#[test_case(RejectType::ProtoUnreachable; "proto_unreachable")]
+#[test_case(RejectType::RoutePolicyFail; "route_policy_fail")]
+#[test_case(RejectType::RejectRoute; "reject_route")]
+#[test_case(RejectType::AdminProhibited; "admin_prohibited")]
+async fn reject_outgoing<I: TestIpExt>(name: &str, reject_type: RejectType) {
+    // TODO(https://fxbug.dev/488116504): Implement ProtoUnreachable for IPv6.
+    if I::VERSION == IpVersion::V6 && reject_type == RejectType::ProtoUnreachable {
+        return;
+    }
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let network = sandbox.create_network("net").await.expect("create network");
+    let _packet_capture = network.start_capture(&name).await.expect("starting packet capture");
+
+    let mut net = TestNet::new::<I>(
+        &sandbox,
+        &network,
+        &name,
+        Some(IpHook::LocalEgress),
+        None, /* nat_hook */
+    )
+    .await;
+
+    // Current TCP implementation returns the following error codes in response
+    // to ICMP errors, but some of these are incorrect and should be fixed.
+    // TODO(https://fxbug.dev/489094027): connect() should handle
+    // `ProtoUnreachable` error as `ECONNREFUSED`.
+    // TODO(https://fxbug.dev/489090939): IPv6 TCP should return `ENETUNREACH`
+    // and `EHOSTUNREACH` instead of `EACCESS`.
+    let expected_error = match (I::VERSION, reject_type) {
+        (_, RejectType::PortUnreachable) => libc::ECONNREFUSED,
+        (_, RejectType::NetUnreachable) => libc::ENETUNREACH,
+        (_, RejectType::HostUnreachable) => libc::EHOSTUNREACH,
+        (_, RejectType::ProtoUnreachable) => libc::ENOPROTOOPT,
+        (IpVersion::V4, RejectType::RoutePolicyFail) => libc::ENETUNREACH,
+        (IpVersion::V6, RejectType::RoutePolicyFail) => libc::EACCES,
+        (IpVersion::V4, RejectType::RejectRoute) => libc::EHOSTUNREACH,
+        (IpVersion::V6, RejectType::RejectRoute) => libc::EACCES,
+        (IpVersion::V4, RejectType::AdminProhibited) => libc::EHOSTUNREACH,
+        (IpVersion::V6, RejectType::AdminProhibited) => libc::EACCES,
+        (_, RejectType::TcpReset) => libc::ECONNREFUSED,
+    };
+
+    // Install a rule that explicitly accepts traffic of a certain type on the
+    // incoming hook for both the client and server. This should not change the
+    // two-way connectivity because accepting traffic is the default.
+    let (_server_matcher, _sockets) = {
+        let matcher = Tcp;
+        net.run_test_with::<I, TcpSocket, _, _>(
+            ExpectedConnectivity::Reject(expected_error),
+            |TestNet { client, server: _ }, addrs, ()| {
+                Box::pin(async move {
+                    client
+                        .install_rule_for_outgoing_traffic::<I, _>(
+                            LOW_RULE_PRIORITY,
+                            &matcher,
+                            addrs.client_ports(),
+                            Action::Reject(reject_type),
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    };
 }
