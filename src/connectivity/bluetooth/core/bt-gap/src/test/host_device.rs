@@ -47,9 +47,6 @@ impl HostListener for () {
 // Create a HostDevice with a fake channel, set local name and check it is updated
 #[fuchsia::test]
 async fn host_device_set_local_name() -> Result<(), Error> {
-    // TODO(https://fxbug.dev/463678722) remove once deadlocks addressed
-    fuchsia_sync::suppress_lock_cycle_panics();
-
     let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
     let host = HostDevice::mock(HostId(1), address, "/dev/class/bt-hci/test".to_string(), client);
@@ -72,7 +69,8 @@ async fn host_device_set_local_name() -> Result<(), Error> {
     let _ = set_name_result.expect("failed to set name");
     let _ = expect_result.expect("FIDL result unsatisfied");
 
-    refresh_host(host.clone(), server.clone(), info.read().clone()).await;
+    let info = info.read().clone();
+    refresh_host(host.clone(), server.clone(), info).await;
     let host_name = host.info().local_name.clone();
     assert!(host_name == Some(expected_name));
     Ok(())
@@ -82,9 +80,6 @@ async fn host_device_set_local_name() -> Result<(), Error> {
 // the discovery proxy is dropped.
 #[fuchsia::test]
 async fn test_discovery_session() -> Result<(), Error> {
-    // TODO(https://fxbug.dev/463678722) remove once deadlocks addressed
-    fuchsia_sync::suppress_lock_cycle_panics();
-
     let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
 
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
@@ -109,7 +104,8 @@ async fn test_discovery_session() -> Result<(), Error> {
     let discovery_request_stream = discovery_request_stream.unwrap();
 
     // Assert that host is now marked as discovering
-    refresh_host(host.clone(), server.clone(), info_server.read().clone()).await;
+    let info = info_server.read().clone();
+    refresh_host(host.clone(), server.clone(), info).await;
     let is_discovering = host.info().discovering.clone();
     assert!(is_discovering);
 
@@ -118,7 +114,8 @@ async fn test_discovery_session() -> Result<(), Error> {
     info_server.write().discovering = false;
 
     // Assert that host is no longer marked as discovering
-    refresh_host(host.clone(), server.clone(), info_server.read().clone()).await;
+    let info = info_server.read().clone();
+    refresh_host(host.clone(), server.clone(), info).await;
     let is_discovering = host.info().discovering.clone();
     assert!(!is_discovering);
 
@@ -161,6 +158,7 @@ where
     let control_handle = Arc::new(stream.read().control_handle());
     let mut stream = stream.write();
     if let Some(event) = stream.next().await {
+        drop(stream);
         let event = event?;
         f(control_handle, event)
     } else {
