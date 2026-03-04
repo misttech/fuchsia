@@ -33,11 +33,7 @@ pub fn build_block_device_directory(
 ) {
     build_device_directory(device, dir);
     dir.subdir("queue", 0o755, |dir| {
-        dir.entry(
-            "nr_requests",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322906857")),
-            mode!(IFREG, 0o644),
-        );
+        dir.entry("nr_requests", BytesFile::new_node(NrRequestsFile::new()), mode!(IFREG, 0o644));
         dir.entry("read_ahead_kb", BytesFile::new_node(ReadAheadKbFile), mode!(IFREG, 0o644));
         dir.entry(
             "scheduler",
@@ -68,6 +64,31 @@ impl BytesFileOps for BlockDeviceSizeFile {
         let size = self.block_info.upgrade().ok_or_else(|| errno!(EINVAL))?.size()?;
         let size_blocks = size / DEFAULT_BYTES_PER_BLOCK;
         Ok(format!("{size_blocks}").into_bytes().into())
+    }
+}
+
+struct NrRequestsFile;
+
+impl NrRequestsFile {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl BytesFileOps for NrRequestsFile {
+    fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
+        // Silently ignore incoming writes for now. We don't currently support the concept of
+        // controlling the I/O queue depth of a given block device.
+        track_stub!(TODO("https://fxbug.dev/322906857"), "updating nr_requests");
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        // Always reply with '128', the default value on Linux. The only use of this value today is
+        // to read it and write it back to the `nr_requests` of a different node, which we ignore
+        // using the logic in the `write` function.
+        track_stub!(TODO("https://fxbug.dev/322906857"), "reading nr_requests");
+        Ok(b"128\n".into())
     }
 }
 
