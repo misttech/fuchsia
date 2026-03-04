@@ -8,6 +8,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 #include <lib/zx/event.h>
 #include <lib/zx/job.h>
 #include <sys/stat.h>
@@ -18,6 +19,12 @@
 #include <zircon/types.h>
 
 #include "src/developer/memory/pressure_signaler/pressure_notifier.h"
+
+namespace {
+
+constexpr char kMemoryPressureCategory[] = "memory:kernel";
+
+}  // namespace
 
 namespace pressure_signaler {
 
@@ -147,6 +154,8 @@ void PressureObserver::OnLevelChanged(zx_handle_t handle) {
                   << handle << "), notifying: " << std::boolalpha << (notifier_ != nullptr)
                   << std::noboolalpha;
   }
+
+  TRACE_COUNTER(kMemoryPressureCategory, "memory_pressure", 0, "level", level_.load());
 
   if (notifier_ != nullptr) {
     // Notify the |PressureNotifier| that the level has changed. |PressureNotifier::Notify()| is a

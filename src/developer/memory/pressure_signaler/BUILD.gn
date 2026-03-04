@@ -28,6 +28,7 @@ source_set("lib") {
            "//sdk/lib/component/incoming/cpp",
            "//sdk/lib/sys/cpp",
            "//sdk/lib/syslog/cpp",
+           "//zircon/system/ulib/trace",
          ] + _common_deps
   public_deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
