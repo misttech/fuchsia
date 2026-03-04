@@ -31,7 +31,7 @@ from honeydew.affordances.power.system_power_state_controller import (
 from honeydew.affordances.rtc import rtc, rtc_using_fc
 from honeydew.affordances.session import session
 from honeydew.affordances.starnix import starnix
-from honeydew.affordances.tracing import tracing
+from honeydew.affordances.tracing import tracing, tracing_using_fc
 from honeydew.affordances.ui.screenshot import screenshot
 from honeydew.affordances.ui.user_input import user_input
 from honeydew.affordances.virtual_audio import audio
@@ -278,7 +278,11 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def tracing(self) -> tracing.Tracing:
-        return self._inner.tracing
+        return tracing_using_fc.TracingUsingFc(
+            device_name=self.device_name,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
 
     @properties.Affordance
     def user_input(self) -> user_input.UserInput:

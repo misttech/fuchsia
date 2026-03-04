@@ -555,16 +555,16 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def tracing(self) -> tracing.Tracing:
+    def tracing(self) -> tracing.AsyncTracing:
         """Returns a tracing affordance object.
 
         Returns:
-            tracing.Tracing object
+            tracing.AsyncTracing object
         """
-        return tracing_using_fc.TracingUsingFc(
+        return tracing_using_fc.AsyncTracingUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
+            reboot_affordance=self,
         )
 
     @properties.Affordance

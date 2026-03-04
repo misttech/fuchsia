@@ -12,6 +12,7 @@ from unittest import mock
 
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_controller_py as fc
+from fidl import AsyncSocket
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable
@@ -46,32 +47,54 @@ def _initialize_tracing_fake(
     fc.Socket(output).close()
 
 
-class TracingFCTests(unittest.TestCase):
+class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.tracing.py."""
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         super().setUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
-        )
-        self.reboot_affordance_obj_async = mock.MagicMock(
             spec=affordances_capable.AsyncRebootCapableDevice
         )
-        self.reboot_affordance_obj.as_async.return_value = (
-            self.reboot_affordance_obj_async
-        )
-
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
 
-        self.tracing_obj = tracing_using_fc.TracingUsingFc(
+        self.mock_provisioner_client = mock.create_autospec(
+            f_tracingcontroller.ProvisionerClient, spec_set=True
+        )
+        self.enterContext(
+            mock.patch.object(
+                f_tracingcontroller,
+                "ProvisionerClient",
+                return_value=self.mock_provisioner_client,
+            )
+        )
+
+        self.mock_session_client = mock.create_autospec(
+            f_tracingcontroller.SessionClient, spec_set=True
+        )
+        self.mock_session_client.start_tracing = mock.AsyncMock()
+        self.mock_session_client.stop_tracing = mock.AsyncMock(
+            return_value=f_tracingcontroller.SessionStopTracingResult(
+                response=f_tracingcontroller.StopResult(provider_stats=[])
+            )
+        )
+
+        self.enterContext(
+            mock.patch.object(
+                f_tracingcontroller,
+                "SessionClient",
+                return_value=self.mock_session_client,
+            )
+        )
+
+        self.tracing_obj = tracing_using_fc.AsyncTracingUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,
         )
 
-    def test_verify_supported(self) -> None:
+    async def test_verify_supported(self) -> None:
         """Test if verify_supported works."""
         # TODO(http://b/409625325): Implement the test method logic
 
@@ -98,14 +121,9 @@ class TracingFCTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    def test_initialize(
+    async def test_initialize(
         self,
         parameterized_dict: dict[str, Any],
-        mock_tracingcontroller_initialize: mock.Mock,
     ) -> None:
         """Test for Tracing.initialize() method."""
         # Perform setup based on parameters.
@@ -122,19 +140,13 @@ class TracingFCTests(unittest.TestCase):
                 categories=parameterized_dict.get("categories"),
                 buffer_size=parameterized_dict.get("buffer_size"),
             )
-            mock_tracingcontroller_initialize.assert_called()
+            self.mock_provisioner_client.initialize_tracing.assert_called()
 
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    def test_initialize_error(
-        self, mock_tracingcontroller_initialize: mock.Mock
-    ) -> None:
+    async def test_initialize_error(self) -> None:
         """Test for Tracing.initialize() when the FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_tracingcontroller_initialize.side_effect = fc.ZxStatus(
-            fc.ZxStatus.ZX_ERR_INVALID_ARGS
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            fc.ZxStatus(fc.ZxStatus.ZX_ERR_INVALID_ARGS)
         )
         with self.assertRaises(TracingError):
             self.tracing_obj.initialize()
@@ -165,27 +177,16 @@ class TracingFCTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    def test_start(
+    async def test_start(
         self,
         parameterized_dict: dict[str, Any],
-        mock_tracingcontroller_start: mock.Mock,
-        *unused_args: Any,
     ) -> None:
         """Test for Tracing.start() method."""
         # Perform setup based on parameters.
         if parameterized_dict.get("session_initialized"):
             self.tracing_obj.initialize()
         if parameterized_dict.get("tracing_active"):
-            self.tracing_obj.start()
+            await self.tracing_obj.start()
 
         # Check whether an `TracingStateError` exception is raised when
         # state is not valid.
@@ -193,32 +194,21 @@ class TracingFCTests(unittest.TestCase):
             "session_initialized"
         ) or parameterized_dict.get("tracing_active"):
             with self.assertRaises(TracingStateError):
-                self.tracing_obj.start()
+                await self.tracing_obj.start()
         else:
-            self.tracing_obj.start()
-            mock_tracingcontroller_start.assert_called()
+            await self.tracing_obj.start()
+            self.mock_session_client.start_tracing.assert_called()
 
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    def test_start_error(
-        self, mock_tracingcontroller_start: mock.Mock, *unused_args: Any
-    ) -> None:
+    async def test_start_error(self) -> None:
         """Test for Tracing.start() when the FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.tracing_obj.initialize()
 
-        mock_tracingcontroller_start.side_effect = fc.ZxStatus(
+        self.mock_session_client.start_tracing.side_effect = fc.ZxStatus(
             fc.ZxStatus.ZX_ERR_INVALID_ARGS
         )
         with self.assertRaises(TracingError):
-            self.tracing_obj.start()
+            await self.tracing_obj.start()
 
     @parameterized.expand(
         [
@@ -246,88 +236,53 @@ class TracingFCTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "stop_tracing",
-        new_callable=mock.AsyncMock,
-        return_value=f_tracingcontroller.SessionStopTracingResult(
-            response=f_tracingcontroller.StopResult(provider_stats=[])
-        ),
-    )
-    def test_stop(
+    async def test_stop(
         self,
         parameterized_dict: dict[str, Any],
-        mock_tracingcontroller_stop: mock.Mock,
-        _: mock.AsyncMock,
-        mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() method."""
         # Perform setup based on parameters.
-        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
         session_initialized = parameterized_dict.get("session_initialized")
         tracing_active = parameterized_dict.get("tracing_active")
         if session_initialized:
             self.tracing_obj.initialize()
         if tracing_active:
-            self.tracing_obj.start()
+            await self.tracing_obj.start()
 
         # Check whether an `TracingStateError` exception is raised when
         # state is not valid.
         if not session_initialized or not tracing_active:
             with self.assertRaises(TracingStateError):
-                self.tracing_obj.stop()
+                await self.tracing_obj.stop()
             return
 
         try:
-            self.tracing_obj.stop()
-            mock_tracingcontroller_stop.assert_called()
+            await self.tracing_obj.stop()
+            self.mock_session_client.stop_tracing.assert_called()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
+            await self.tracing_obj._reset_state()
 
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "stop_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    def test_stop_error(
-        self,
-        mock_tracingcontroller_stop: mock.Mock,
-        _: mock.AsyncMock,
-        mock_tracingcontroller_init: mock.Mock,
-    ) -> None:
+    async def test_stop_error(self) -> None:
         """Test for Tracing.stop() when the FIDL call raises an error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
 
         self.tracing_obj.initialize()
-        self.tracing_obj.start()
+        await self.tracing_obj.start()
 
         try:
-            mock_tracingcontroller_stop.side_effect = fc.ZxStatus(
+            self.mock_session_client.stop_tracing.side_effect = fc.ZxStatus(
                 fc.ZxStatus.ZX_ERR_INVALID_ARGS
             )
             with self.assertRaises(TracingError):
-                self.tracing_obj.stop()
+                await self.tracing_obj.stop()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
+            await self.tracing_obj._reset_state()
 
     @parameterized.expand(
         [
@@ -346,50 +301,41 @@ class TracingFCTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    def test_terminate(
+    async def test_terminate(
         self,
         parameterized_dict: dict[str, Any],
-        mock_initialize_tracing: mock.Mock,
     ) -> None:
         """Test for Tracing.terminate() method."""
         # Perform setup based on parameters.
         if parameterized_dict.get("session_initialized"):
             self.tracing_obj.initialize()
 
-        self.tracing_obj.terminate()
+        await self.tracing_obj.terminate()
 
         if parameterized_dict.get("session_initialized"):
-            mock_initialize_tracing.assert_called_once()
+            self.mock_provisioner_client.initialize_tracing.assert_called_once()
 
         self.assertFalse(self.tracing_obj.is_active())
         self.assertFalse(self.tracing_obj.is_session_initialized())
 
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    def test_terminate_error(self, mock_initialize_tracing: mock.Mock) -> None:
+    async def test_terminate_error(self) -> None:
         """Test for Tracing.terminate() when an error occurs during wait."""
         self.tracing_obj.initialize()
 
         with mock.patch.object(
-            self.tracing_obj._inner._trace_controller_proxy,  # pylint: disable=protected-access
+            self.mock_session_client,
             "close_cleanly",
             new_callable=mock.Mock,
         ) as mock_wait:
             mock_wait.side_effect = TracingError("test error")
             with self.assertLogs(level="WARNING") as cm:
-                self.tracing_obj.terminate()
+                await self.tracing_obj.terminate()
             self.assertIn(
                 "Could not cleanly wait for trace termination", cm.output[0]
             )
             self.assertIn("test error", cm.output[0])
 
-        mock_initialize_tracing.assert_called_once()
+        self.mock_provisioner_client.initialize_tracing.assert_called_once()
         self.assertFalse(self.tracing_obj.is_session_initialized())
         self.assertFalse(self.tracing_obj.is_active())
 
@@ -412,32 +358,17 @@ class TracingFCTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "stop_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    def test_stop_with_warning(
+    async def test_stop_with_warning(
         self,
         parameterized_dict: dict[str, Any],
-        mock_tracingcontroller_stop: mock.Mock,
-        _: mock.AsyncMock,
-        mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() method with Warning."""
         # Perform setup based on parameters.
-        mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
         records_dropped = parameterized_dict.get("dropped")
-        mock_tracingcontroller_stop.return_value = (
+        self.mock_session_client.stop_tracing.return_value = (
             f_tracingcontroller.SessionStopTracingResult(
                 response=f_tracingcontroller.StopResult(
                     provider_stats=[
@@ -456,21 +387,21 @@ class TracingFCTests(unittest.TestCase):
         )
 
         self.tracing_obj.initialize()
-        self.tracing_obj.start()
+        await self.tracing_obj.start()
         try:
             if parameterized_dict.get("assert_warning"):
                 with self.assertLogs(level="WARNING") as lc:
-                    self.tracing_obj.stop()
-                    mock_tracingcontroller_stop.assert_called()
+                    await self.tracing_obj.stop()
+                    self.mock_session_client.stop_tracing.assert_called()
                     self.assertIn(
                         f"{records_dropped} records were dropped for virtual-console.cm!",
                         lc.output[0],
                     )
             else:
                 with self.assertNoLogs(level="WARNING") as lc:
-                    self.tracing_obj.stop()
+                    await self.tracing_obj.stop()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
+            await self.tracing_obj._reset_state()
 
     @parameterized.expand(
         [
@@ -478,6 +409,7 @@ class TracingFCTests(unittest.TestCase):
                 {
                     "label": "with_tracing_download_default_file_name",
                     "return_value": "samp_trace_data",
+                    "session_initialized": True,
                 },
             ),
             (
@@ -485,35 +417,32 @@ class TracingFCTests(unittest.TestCase):
                     "label": "with_tracing_download_given_file_name",
                     "trace_file": "trace.fxt",
                     "return_value": "samp_trace_data",
+                    "session_initialized": True,
                 },
             ),
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
     @mock.patch.object(fc, "Channel")
     @mock.patch.object(fc, "Socket")
-    def test_terminate_and_download(
+    @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
+    async def test_terminate_and_download(
         self,
         parameterized_dict: dict[str, Any],
+        mock_async_socket_read_all: mock.AsyncMock,
         mock_fc_socket: mock.Mock,
         mock_fc_channel: mock.Mock,
-        *unused_args: Any,
     ) -> None:
         """Test for Tracing.terminate_and_download() method."""
         # Mock out the tracing Socket.
         return_value: str = parameterized_dict.get("return_value", "")
-        mock_client_socket = mock.MagicMock()
-        mock_client_socket.read.side_effect = [
-            bytes(return_value, encoding="utf-8"),
-            fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED),
-        ]
+        mock_async_socket_read_all.return_value = bytes(
+            return_value, encoding="utf-8"
+        )
+
         mock_fc_socket.create.return_value = (
             mock.MagicMock(),
-            mock_client_socket,
+            mock.MagicMock(),
         )
 
         mock_fc_channel.create.return_value = (
@@ -524,15 +453,18 @@ class TracingFCTests(unittest.TestCase):
         # Perform setup based on parameters.
         if parameterized_dict.get("session_initialized"):
             self.tracing_obj.initialize()
+            await self.tracing_obj.start()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             if not parameterized_dict.get("session_initialized"):
                 with self.assertRaises(TracingStateError):
-                    self.tracing_obj.terminate_and_download(directory=tmpdir)
+                    await self.tracing_obj.terminate_and_download(
+                        directory=tmpdir
+                    )
                 return
 
             trace_file: str = parameterized_dict.get("trace_file", "")
-            trace_path: str = self.tracing_obj.terminate_and_download(
+            trace_path: str = await self.tracing_obj.terminate_and_download(
                 directory=tmpdir, trace_file=trace_file
             )
             self.assertFalse(self.tracing_obj.is_active())
@@ -568,48 +500,32 @@ class TracingFCTests(unittest.TestCase):
                     "download_trace": True,
                     "trace_file": "trace.fxt",
                     "return_value": "samp_trace_data",
+                    "session_initialized": False,
                 },
             ),
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(
-        f_tracingcontroller.ProvisionerClient,
-        "initialize_tracing",
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "start_tracing",
-        new_callable=mock.AsyncMock,
-    )
-    @mock.patch.object(
-        f_tracingcontroller.SessionClient,
-        "stop_tracing",
-        new_callable=mock.AsyncMock,
-        return_value=f_tracingcontroller.SessionStopTracingResult(
-            response=f_tracingcontroller.StopResult(provider_stats=[])
-        ),
-    )
     @mock.patch.object(fc, "Channel")
     @mock.patch.object(fc, "Socket")
-    def test_trace_session(
+    @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
+    async def test_trace_session(
         self,
         parameterized_dict: dict[str, Any],
+        mock_async_socket_read_all: mock.AsyncMock,
         mock_fc_socket: mock.MagicMock,
         mock_fc_channel: mock.MagicMock,
-        *unused_args: Any,
     ) -> None:
         """Test for Tracing.trace_session() method."""
         # Mock out the tracing Socket.
         return_value: str = parameterized_dict.get("return_value", "")
-        mock_client_socket = mock.MagicMock()
-        mock_client_socket.read.side_effect = [
-            bytes(return_value, encoding="utf-8"),
-            fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED),
-        ]
+        mock_async_socket_read_all.return_value = bytes(
+            return_value, encoding="utf-8"
+        )
+
         mock_fc_socket.create.return_value = (
             mock.MagicMock(),
-            mock_client_socket,
+            mock.MagicMock(),
         )
 
         mock_fc_channel.create.return_value = (
@@ -625,7 +541,7 @@ class TracingFCTests(unittest.TestCase):
 
             if parameterized_dict.get("session_initialized"):
                 self.tracing_obj.initialize()
-            with self.tracing_obj.trace_session(
+            async with self.tracing_obj.trace_session(
                 download=download_trace, directory=tmpdir, trace_file=trace_file
             ):
                 self.assertTrue(self.tracing_obj.is_active())

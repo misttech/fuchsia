@@ -6,13 +6,15 @@
 import asyncio
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 
 import fidl_fuchsia_tracing as f_tracing
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
+import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fidl import AsyncSocket
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing
@@ -72,16 +74,15 @@ DEFAULT_CATEGORIES: list[str] = [
 # LINT.ThenChange(//src/developer/ffx/plugins/trace/data/config.json)
 
 
-class TracingUsingFc(AsyncAdapter, tracing.Tracing):
-    """Tracing affordance implementation using Fuchsia-Controller."""
+class AsyncTracingUsingFc(tracing.AsyncTracing):
+    """Async tracing affordance implementation using Fuchsia-Controller."""
 
     def __init__(
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
-        AsyncAdapter.__init__(self)
         self._name: str = device_name
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
 
@@ -95,7 +96,6 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         self._tracing_active: bool = False
 
         reboot_affordance.register_for_on_device_boot(fn=self.reboot_handler)
-        self.verify_supported()
 
     def verify_supported(self) -> None:
         """Check if Trace is supported on the DUT.
@@ -104,26 +104,22 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         """
         # TODO(http://b/409625325): Implement the method logic
 
-    @asyncmethod
     async def reboot_handler(self) -> None:
         """A method for handling reboots meant to be passed to the reboot affordance."""
         _LOGGER.info("Received device boot signal. Resetting")
         await self._reset_state()
 
-    @asyncmethod
-    async def _reset_state_sync(self) -> None:
-        """Resets internal state. This is primarily for testing."""
-        await self._reset_state()
-
     async def _reset_state(self) -> None:
         """Resets internal state tracking variables to correspond to an inactive
-        state; i.e. tracing uniniailized and not started.
+        state; i.e. tracing uninitialized and not started.
         """
         if self._drain_task:
             _LOGGER.info(
                 "Trace session reset before trace downloaded, attempting to cleanup."
             )
             if not self._drain_task.done():
+                # We can't await this here because we might be in a sync context
+                # via some legacy path, but in AsyncTracingUsingFc we are fine.
                 await self._drain_task
             self._drain_task = None
         self._trace_buffer = None
@@ -177,9 +173,6 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
             TracingStateError: When trace session is already initialized.
             TracingError: On FIDL communication failure.
         """
-        # Developers may use a "#" in front of the default categories string because
-        # that is the expected behavior when using tracing with ffx so we process this
-        # parameter.
         if categories is None:
             categories = DEFAULT_CATEGORIES
         else:
@@ -229,7 +222,6 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         self._trace_socket = AsyncSocket(trace_socket_client)
         self._session_initialized = True
 
-    @asyncmethod
     async def start(self) -> None:
         """Starts tracing.
 
@@ -240,7 +232,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         """
         if not self._session_initialized:
             raise TracingStateError(
-                "Cannot start: Trace session is not initialized on {self._name}"
+                f"Cannot start: Trace session is not initialized on {self._name}"
             )
         if self._tracing_active:
             raise TracingStateError(
@@ -260,7 +252,6 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         self._tracing_active = True
         self._ensure_drain_task()
 
-    @asyncmethod
     async def stop(self) -> None:
         """Stops the current trace.
 
@@ -303,10 +294,8 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
 
     def _ensure_drain_task(self) -> None:
         """Helper to make sure there is a background task for draining the socket."""
-        # Ensure this isn't set multiple times, else the socket will race itself
-        # and in all likelihood the drain task will never complete.
         if self._drain_task is None:
-            self._drain_task = self.loop().create_task(
+            self._drain_task = asyncio.create_task(
                 self._drain_socket_and_store_buffer()
             )
             _LOGGER.debug("Spawned drain task: %s", self._drain_task)
@@ -314,18 +303,13 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
             _LOGGER.debug("Skipping creation of drain task. Already running")
 
     async def _drain_socket_and_store_buffer(self) -> None:
-        """Helper to run drain the trace socket and store the result.
-
-        First clears self._trace_buffer then stores the output of the trace
-        socket into self._trace_buffer
-        """
+        """Helper to run drain the trace socket and store the result."""
         assert self._trace_socket is not None
         self._trace_buffer = bytearray()
         _LOGGER.info("Reading trace data.")
         self._trace_buffer.extend(await self._trace_socket.read_all())
         _LOGGER.info("Finished reading the socket")
 
-    @asyncmethod
     async def terminate(self) -> None:
         """Terminates the trace session, waiting for it to fully stop."""
         if not self._session_initialized:
@@ -346,30 +330,10 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         finally:
             await self._reset_state()
 
-    @asyncmethod
     async def terminate_and_download(
         self, directory: str, trace_file: str | None = None
     ) -> str:
-        """Terminates the trace session and downloads the trace data to the
-            specified directory.
-
-        Args:
-            directory: Absolute path on the host where trace file will be
-                saved. If this directory does not exist, this method will create
-                it.
-
-            trace_file: Name of the output trace file.
-                If not provided, API will create a name using
-                "trace_{device_name}_{'%Y-%m-%d-%I-%M-%S-%p'}" format.
-
-        Returns:
-            The path to the trace file.
-
-         Raises:
-            TracingStateError: When trace session is not initialized or
-                already started.
-            TracingError: When the method fails to collect trace data.
-        """
+        """Terminates the trace session and downloads the trace data."""
         if not self._session_initialized:
             raise TracingStateError(
                 "Cannot download: Trace session is not "
@@ -408,3 +372,117 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
 
         await self._reset_state()
         return trace_file_path
+
+
+class TracingUsingFc(tracing.Tracing):
+    """Tracing affordance implementation using Fuchsia-Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+    ) -> None:
+        self._inner = AsyncTracingUsingFc(
+            device_name=device_name,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Check if Trace is supported on the DUT."""
+        self._inner.verify_supported()
+
+    def initialize(
+        self,
+        categories: list[str] | None = None,
+        buffer_size: int | None = None,
+        start_timeout_milliseconds: int | None = None,
+        buffering_mode: f_tracing.BufferingMode | None = None,
+        defer_transfer: bool | None = None,
+    ) -> None:
+        """Initializes a trace session."""
+        self._inner.initialize(
+            categories,
+            buffer_size,
+            start_timeout_milliseconds,
+            buffering_mode,
+            defer_transfer,
+        )
+
+    def is_active(self) -> bool:
+        """Checks if there is a currently active trace."""
+        return self._inner.is_active()
+
+    def is_session_initialized(self) -> bool:
+        """Checks if the session is initialized or not."""
+        return self._inner.is_session_initialized()
+
+    def start(self) -> None:
+        """Starts tracing."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.start()
+        )
+
+    def stop(self) -> None:
+        """Stops the current trace."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop()
+        )
+
+    def terminate(self) -> None:
+        """Terminates the trace session.."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.terminate()
+        )
+
+    def terminate_and_download(
+        self, directory: str, trace_file: str | None = None
+    ) -> str:
+        """Terminates the trace session and downloads the trace data."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.terminate_and_download(directory, trace_file)
+        )
+
+    @contextmanager
+    def trace_session(
+        self,
+        categories: list[str] | None = None,
+        buffer_size: int | None = None,
+        download: bool = False,
+        directory: str | None = None,
+        trace_file: str | None = None,
+    ) -> Iterator[None]:
+        """Starts and captures trace data within a context."""
+        if not self.is_session_initialized():
+            self.initialize(categories, buffer_size)
+        try:
+            self.start()
+            yield
+        finally:
+            self.stop()
+            if download:
+                if directory is None or not os.path.isabs(directory):
+                    raise ValueError(
+                        "Provide a valid absolute path to download the trace."
+                    )
+                if trace_file is None:
+                    raise ValueError(
+                        "Provide a valid trace file to download the trace."
+                    )
+                self.terminate_and_download(
+                    directory=directory,
+                    trace_file=trace_file,
+                )
+            else:
+                self.terminate()
+
+    def _reset_state_sync(self) -> None:
+        """Resets internal state. This is primarily for testing."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner._reset_state()
+        )
+
+    def as_async(self) -> AsyncTracingUsingFc:
+        """Returns the async version of Tracing."""
+        return self._inner

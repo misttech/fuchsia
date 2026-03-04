@@ -616,7 +616,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         implemented using fuchsia-controller"""
         self.assertIsInstance(
             self.fd_fc_obj.tracing,
-            tracing_using_fc.TracingUsingFc,
+            tracing_using_fc.AsyncTracingUsingFc,
         )
 
     @mock.patch.object(
