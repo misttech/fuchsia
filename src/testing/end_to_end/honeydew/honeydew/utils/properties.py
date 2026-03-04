@@ -49,3 +49,19 @@ class Transport(property):
     def __init__(self, fget: Callable[[Any], Any]) -> None:
         super().__init__(functools.lru_cache()(fget), doc=fget.__doc__)
         self.name: str = fget.__name__
+
+
+def async_persistent_method(func: Callable[..., Any]) -> Callable[..., Any]:
+    """An async method decorator that is persistent throughout device interaction.
+
+    Value is queried only once and cached on the instance.
+    """
+    cache_name = f"_{func.__name__}_async_cached_value"
+
+    @functools.wraps(func)
+    async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if not hasattr(self, cache_name):
+            setattr(self, cache_name, await func(self, *args, **kwargs))
+        return getattr(self, cache_name)
+
+    return wrapper

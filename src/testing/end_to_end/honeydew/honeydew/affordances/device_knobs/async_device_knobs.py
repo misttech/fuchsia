@@ -68,18 +68,18 @@ class AsyncDeviceKnobs(abc.ABC):
             Name of the device.
         """
 
-    @properties.PersistentProperty
+    @properties.async_persistent_method
     @abc.abstractmethod
-    def manufacturer(self) -> str:
+    async def manufacturer(self) -> str:
         """Returns the manufacturer of the device.
 
         Returns:
             Manufacturer of the device.
         """
 
-    @properties.PersistentProperty
+    @properties.async_persistent_method
     @abc.abstractmethod
-    def model(self) -> str:
+    async def model(self) -> str:
         """Returns the model of the device.
 
         Returns:
@@ -95,18 +95,18 @@ class AsyncDeviceKnobs(abc.ABC):
             product value of the device.
         """
 
-    @properties.PersistentProperty
+    @properties.async_persistent_method
     @abc.abstractmethod
-    def product_name(self) -> str:
+    async def product_name(self) -> str:
         """Returns the product name of the device.
 
         Returns:
             Product name of the device.
         """
 
-    @properties.PersistentProperty
+    @properties.async_persistent_method
     @abc.abstractmethod
-    def serial_number(self) -> str:
+    async def serial_number(self) -> str:
         """Returns the serial number of the device.
 
         Returns:
@@ -114,18 +114,16 @@ class AsyncDeviceKnobs(abc.ABC):
         """
 
     # List all the dynamic properties
-    @properties.DynamicProperty
     @abc.abstractmethod
-    def firmware_version(self) -> str:
+    async def firmware_version(self) -> str:
         """Returns the firmware version of the device.
 
         Returns:
             Firmware version of the device.
         """
 
-    @properties.DynamicProperty
     @abc.abstractmethod
-    def last_reboot_reason(self) -> str:
+    async def last_reboot_reason(self) -> str:
         """Returns the last reboot reason of the device.
 
         Returns:
@@ -439,7 +437,7 @@ class AsyncDeviceKnobs(abc.ABC):
         """Resolves the IP address of Fuchsia device."""
 
     @abc.abstractmethod
-    def snapshot(
+    async def snapshot(
         self,
         directory: str,
         snapshot_file: str | None = None,

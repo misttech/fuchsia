@@ -22,7 +22,6 @@ import fidl_fuchsia_feedback as f_feedback
 import fidl_fuchsia_hardware_power_statecontrol as fhp_statecontrol
 import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
-import fuchsia_async_extension
 import fuchsia_controller_py as fcp
 import fuchsia_inspect
 
@@ -265,8 +264,8 @@ class AsyncFuchsiaDevice(
         """
         return self._device_info.name
 
-    @properties.PersistentProperty
-    def manufacturer(self) -> str:
+    @properties.async_persistent_method
+    async def manufacturer(self) -> str:
         """Returns the manufacturer of the device.
 
         Returns:
@@ -275,10 +274,10 @@ class AsyncFuchsiaDevice(
         Raises:
             FuchsiaDeviceError: On failure.
         """
-        return self._product_info["manufacturer"]
+        return (await self._product_info())["manufacturer"]
 
-    @properties.PersistentProperty
-    def model(self) -> str:
+    @properties.async_persistent_method
+    async def model(self) -> str:
         """Returns the model of the device.
 
         Returns:
@@ -287,7 +286,7 @@ class AsyncFuchsiaDevice(
         Raises:
             FuchsiaDeviceError: On failure.
         """
-        return self._product_info["model"]
+        return (await self._product_info())["model"]
 
     @properties.PersistentProperty
     def product(self) -> str:
@@ -301,8 +300,8 @@ class AsyncFuchsiaDevice(
         """
         return self.ffx.get_target_product()
 
-    @properties.PersistentProperty
-    def product_name(self) -> str:
+    @properties.async_persistent_method
+    async def product_name(self) -> str:
         """Returns the product name of the device.
 
         Returns:
@@ -311,35 +310,33 @@ class AsyncFuchsiaDevice(
         Raises:
             FuchsiaDeviceError: On failure.
         """
-        return self._product_info["name"]
+        return (await self._product_info())["name"]
 
-    @properties.PersistentProperty
-    def serial_number(self) -> str:
+    @properties.async_persistent_method
+    async def serial_number(self) -> str:
         """Returns the serial number of the device.
 
         Returns:
             Serial number of the device.
         """
-        return self._device_info_from_fidl["serial_number"]
+        return (await self._device_info_from_fidl())["serial_number"]
 
     # List all the dynamic properties
-    @properties.DynamicProperty
-    def firmware_version(self) -> str:
+    async def firmware_version(self) -> str:
         """Returns the firmware version of the device.
 
         Returns:
             Firmware version of the device.
         """
-        return self._build_info["version"]
+        return (await self._build_info())["version"]
 
-    @properties.DynamicProperty
-    def last_reboot_reason(self) -> str:
+    async def last_reboot_reason(self) -> str:
         """Returns the last reboot reason of the device.
 
         Returns:
             Last reboot reason of the device. Empty string if it doesn't exist.
         """
-        reason = self._last_reboot_info["reason"]
+        reason = (await self._last_reboot_info())["reason"]
         if reason is None:
             return ""
         return f_feedback.RebootReason(reason).name
@@ -1130,7 +1127,7 @@ class AsyncFuchsiaDevice(
         """
         self._on_device_ip_change_fns.append(fn)
 
-    def snapshot(
+    async def snapshot(
         self,
         directory: str,
         snapshot_file: str | None = None,
@@ -1156,7 +1153,7 @@ class AsyncFuchsiaDevice(
         _LOGGER.info("Collecting snapshot on %s...", self.device_name)
         # Take the snapshot before creating the directory or file, as
         # _send_snapshot_command may raise an exception.
-        snapshot_bytes: bytes = self._send_snapshot_command()
+        snapshot_bytes: bytes = await self._send_snapshot_command()
 
         directory = os.path.abspath(directory)
         try:
@@ -1247,8 +1244,7 @@ class AsyncFuchsiaDevice(
             raise errors.FuchsiaDeviceError(err)
 
     # List all private properties
-    @property
-    def _build_info(self) -> f_buildinfo.BuildInfo:
+    async def _build_info(self) -> f_buildinfo.BuildInfo:
         """Returns the build information of the device.
 
         Returns:
@@ -1263,19 +1259,14 @@ class AsyncFuchsiaDevice(
                     _FC_PROXIES["BuildInfo"]
                 )
             )
-            build_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    buildinfo_provider_proxy.get_build_info()
-                )
-            )
+            build_info_resp = await buildinfo_provider_proxy.get_build_info()
             return build_info_resp.build_info
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    @property
-    def _device_info_from_fidl(self) -> f_hwinfo.DeviceInfo:
+    async def _device_info_from_fidl(self) -> f_hwinfo.DeviceInfo:
         """Returns the device information of the device.
 
         Returns:
@@ -1290,19 +1281,14 @@ class AsyncFuchsiaDevice(
                     _FC_PROXIES["DeviceInfo"]
                 )
             )
-            device_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    hwinfo_device_proxy.get_info()
-                )
-            )
+            device_info_resp = await hwinfo_device_proxy.get_info()
             return device_info_resp.info
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    @property
-    def _product_info(self) -> f_hwinfo.ProductInfo:
+    async def _product_info(self) -> f_hwinfo.ProductInfo:
         """Returns the product information of the device.
 
         Returns:
@@ -1317,19 +1303,14 @@ class AsyncFuchsiaDevice(
                     _FC_PROXIES["ProductInfo"]
                 )
             )
-            product_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    hwinfo_product_proxy.get_info()
-                )
-            )
+            product_info_resp = await hwinfo_product_proxy.get_info()
             return product_info_resp.info
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    @property
-    def _last_reboot_info(self) -> f_feedback.LastReboot:
+    async def _last_reboot_info(self) -> f_feedback.LastReboot:
         """Gets the last reboot reason from a device.
 
         Returns:
@@ -1345,9 +1326,7 @@ class AsyncFuchsiaDevice(
                     _FC_PROXIES["LastRebootInfo"]
                 )
             )
-            resp = fuchsia_async_extension.get_loop().run_until_complete(
-                proxy.get()
-            )
+            resp = await proxy.get()
             return resp.last_reboot
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
@@ -1420,7 +1399,9 @@ class AsyncFuchsiaDevice(
                     "Fuchsia Controller FIDL Error"
                 ) from status
 
-    def _read_snapshot_from_channel(self, channel_client: fcp.Channel) -> bytes:
+    async def _read_snapshot_from_channel(
+        self, channel_client: fcp.Channel
+    ) -> bytes:
         """Read snapshot data from client end of the transfer channel.
 
         Args:
@@ -1439,14 +1420,10 @@ class AsyncFuchsiaDevice(
         # Get file size for verification later.
         try:
             attr_resp: f_io.NodeAttributes2 = (
-                fuchsia_async_extension.get_loop()
-                .run_until_complete(
-                    file_proxy.get_attributes(
-                        query=f_io.NodeAttributesQuery.CONTENT_SIZE
-                    )
+                await file_proxy.get_attributes(
+                    query=f_io.NodeAttributesQuery.CONTENT_SIZE
                 )
-                .unwrap()
-            )
+            ).unwrap()
         except (AssertionError, fcp.ZxStatus) as e:
             raise fc_errors.FuchsiaControllerError(
                 "get_attributes() failed"
@@ -1461,11 +1438,7 @@ class AsyncFuchsiaDevice(
         ret: bytearray = bytearray()
         try:
             while True:
-                response = (
-                    fuchsia_async_extension.get_loop()
-                    .run_until_complete(file_proxy.read(count=f_io.MAX_BUF))
-                    .unwrap()
-                )
+                response = (await file_proxy.read(count=f_io.MAX_BUF)).unwrap()
                 if not response.data:
                     break
                 ret.extend(response.data)
@@ -1480,7 +1453,7 @@ class AsyncFuchsiaDevice(
 
         return bytes(ret)
 
-    def _send_snapshot_command(self) -> bytes:
+    async def _send_snapshot_command(self) -> bytes:
         """Send a device command to take a snapshot.
 
         Raises:
@@ -1506,14 +1479,12 @@ class AsyncFuchsiaDevice(
             )
             # The data channel isn't populated until get_snapshot() returns so
             # there's no need to drain the channel in parallel.
-            fuchsia_async_extension.get_loop().run_until_complete(
-                feedback_proxy.get_snapshot(params=params)
-            )
+            (await feedback_proxy.get_snapshot(params=params))
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "get_snapshot() failed"
             ) from status
-        return self._read_snapshot_from_channel(channel_client)
+        return await self._read_snapshot_from_channel(channel_client)
 
     def _get_bluetooth_affordances_implementation(
         self,

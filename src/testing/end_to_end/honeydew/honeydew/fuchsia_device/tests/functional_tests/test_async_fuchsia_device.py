@@ -76,17 +76,18 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             asserts.assert_is_not_none(board)
             asserts.assert_is_instance(board, str)
 
-    def test_manufacturer(self) -> None:
+    async def test_manufacturer(self) -> None:
         """Test case for manufacturer"""
         asserts.assert_equal(
-            self.device.manufacturer,
+            await self.device.manufacturer(),
             self.user_params["expected_values"]["manufacturer"],
         )
 
-    def test_model(self) -> None:
+    async def test_model(self) -> None:
         """Test case for model"""
         asserts.assert_equal(
-            self.device.model, self.user_params["expected_values"]["model"]
+            await self.device.model(),
+            self.user_params["expected_values"]["model"],
         )
 
     def test_product(self) -> None:
@@ -95,34 +96,36 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_is_not_none(product)
         asserts.assert_is_instance(product, str)
 
-    def test_product_name(self) -> None:
+    async def test_product_name(self) -> None:
         """Test case for product_name"""
         asserts.assert_equal(
-            self.device.product_name,
+            await self.device.product_name(),
             self.user_params["expected_values"]["product_name"],
         )
 
-    def test_serial_number(self) -> None:
+    async def test_serial_number(self) -> None:
         """Test case for serial_number"""
         # Note - Some devices such as FEmu, X64 does not have a serial_number.
         asserts.assert_true(
-            isinstance(self.device.serial_number, (str, type(None))),
+            isinstance(await self.device.serial_number(), (str, type(None))),
             msg="serial_number operation failed",
         )
 
-    def test_firmware_version(self) -> None:
+    async def test_firmware_version(self) -> None:
         """Test case for firmware_version"""
         # Note - If "firmware_version" is specified in "expected_values" in
         # params.yml then compare with it.
         if "firmware_version" in self.user_params["expected_values"]:
             asserts.assert_equal(
-                self.device.firmware_version,
+                await self.device.firmware_version(),
                 self.user_params["expected_values"]["firmware_version"],
             )
         else:
-            asserts.assert_is_instance(self.device.firmware_version, str)
+            asserts.assert_is_instance(
+                await self.device.firmware_version(), str
+            )
 
-    def test_last_reboot_reason(self) -> None:
+    async def test_last_reboot_reason(self) -> None:
         """Test case for last_reboot_reason"""
         # It's unclear how much this functional test should be asserting. Is it
         # about whether the reboot reason returned here is the one on the
@@ -130,7 +133,7 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         # Given that we have //src/tests/end_to_end/reboot_reason to test the
         # whole reboot flow and the reason, it's fine here to just assert that
         # a string reboot reason should always be available.
-        asserts.assert_is_instance(self.device.last_reboot_reason, str)
+        asserts.assert_is_instance(await self.device.last_reboot_reason(), str)
 
     def test_is_starnix_device(self) -> None:
         """Test case for is_starnix_device"""
@@ -217,10 +220,12 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             message="This is a test INFO message", level=custom_types.LEVEL.INFO
         )
 
-    def test_snapshot(self) -> None:
+    async def test_snapshot(self) -> None:
         """Test case for snapshot()"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            self.device.snapshot(directory=tmpdir, snapshot_file="snapshot.zip")
+            await self.device.snapshot(
+                directory=tmpdir, snapshot_file="snapshot.zip"
+            )
             exists: bool = os.path.exists(f"{tmpdir}/snapshot.zip")
         asserts.assert_true(exists, msg="snapshot failed")
 

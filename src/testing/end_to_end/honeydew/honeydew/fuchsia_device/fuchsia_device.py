@@ -182,11 +182,15 @@ class FuchsiaDevice(
 
     @properties.PersistentProperty
     def manufacturer(self) -> str:
-        return self._inner.manufacturer
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.manufacturer()
+        )
 
     @properties.PersistentProperty
     def model(self) -> str:
-        return self._inner.model
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.model()
+        )
 
     @properties.PersistentProperty
     def product(self) -> str:
@@ -194,19 +198,27 @@ class FuchsiaDevice(
 
     @properties.PersistentProperty
     def product_name(self) -> str:
-        return self._inner.product_name
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.product_name()
+        )
 
     @properties.PersistentProperty
     def serial_number(self) -> str:
-        return self._inner.serial_number
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.serial_number()
+        )
 
     @properties.DynamicProperty
     def firmware_version(self) -> str:
-        return self._inner.firmware_version
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.firmware_version()
+        )
 
     @properties.DynamicProperty
     def last_reboot_reason(self) -> str:
-        return self._inner.last_reboot_reason
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.last_reboot_reason()
+        )
 
     @properties.Transport
     def ffx(self) -> ffx_transport_interface.FFX:
@@ -473,7 +485,9 @@ class FuchsiaDevice(
             self._inner.register_for_on_device_ip_change(fn)
 
     def snapshot(self, directory: str, snapshot_file: str | None = None) -> str:
-        return self._inner.snapshot(directory, snapshot_file)
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.snapshot(directory, snapshot_file)
+        )
 
     def wait_for_offline(self) -> None:
         self._inner.wait_for_offline()
