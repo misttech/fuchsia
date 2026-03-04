@@ -37,6 +37,7 @@
 
 #include <kernel/auto_preempt_disabler.h>
 #include <kernel/lock_trace.h>
+#include <kernel/owned_wait_queue_pool.h>
 #include <kernel/scheduler.h>
 #include <kernel/spin_tracing.h>
 #include <kernel/task_runtime_timers.h>
@@ -129,7 +130,8 @@ Mutex::~Mutex() {
   // inner OWQ lock has been fully released before proceeding with destruction.
   // See the comment at the end of ReleaseContendedMutex for more details as to
   // why this is important.
-  while (wait_.get_lock().is_unlocked() == false) {
+  OwnedWaitQueue* queue;
+  while ((queue = wait_.Peek()) != nullptr && !queue->get_lock().is_unlocked()) {
     arch::Yield();
   }
 
@@ -345,9 +347,26 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
   const auto do_transaction =
       [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<bool> {
     preempt_disabled_token.AssertHeld();
-    // we contended with someone else, will probably need to block.  Hold the
-    // OWQ's lock while we check.
-    wait_.get_lock().AcquireFirstInChain();
+    // We contended with someone else, will probably need to block. Acquire an OWQ and then
+    // hold its lock while we check if we need to block.
+    OwnedWaitQueue* queue = wait_.Get();
+
+    // It is possible that at this point the pointer has been detached by another thread
+    // in order to recycle the OWQ. We know that the OWQ is not going to be freed (see
+    // OwnedWaitQueuePool::Shrink) so it is safe to acquire the lock. We will release it
+    // below if we lost the race and the OWQ was recycled.
+    queue->get_lock().AcquireFirstInChain();
+
+    if (likely(wait_.Peek() == queue)) {
+      // At this point, we know that `queue` is not going to be recycled out from under us
+      // as long as we hold the OWQ's lock since `queue` would have been detached before we
+      // were able to acquire the OWQ's lock.
+    } else {
+      // We were racing with a thread that was the last waiter in the middle of releasing the
+      // mutex and they recycled the OWQ. Try again.
+      queue->get_lock().Release();
+      return ChainLockTransaction::Action::Backoff;
+    }
 
     // Check if the contested flag is currently set. The contested flag can only be changed
     // whilst the OWQ's lock is held, so we know we aren't racing with anyone here. This
@@ -371,7 +390,18 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
         ChainLockTransaction::Finalize();
         val_.store(new_mutex_state, ktl::memory_order_relaxed);
         RecordInitialAssignedCpu();
-        wait_.get_lock().Release();
+
+        // We were the only waiter and we successfully acquired the mutex so we
+        // don't need the queue anymore. We need to detach the queue from LazyOWQ
+        // before releasing the OWQ's lock, otherwise other threads might try to
+        // block on the queue that we're about to recycle.
+        {
+          Guard<SpinLock, NoIrqSave> guard{OwnedWaitQueuePoolLock::Get()};
+          OwnedWaitQueue* detached = wait_.Detach();
+          DEBUG_ASSERT(detached == queue);
+          queue->get_lock().Release();
+          OwnedWaitQueuePool::Get().RecycleLocked(detached);
+        }
 
         spin_tracer.Finish(spin_tracing::FinishType::kLockAcquired, this->encoded_lock_id(),
                            spin_end_ts);
@@ -396,7 +426,7 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
 
     // Attempt to obtain the locks we need to block in the mutex.
     OwnedWaitQueue::BAAOLockingDetails details;
-    if (!wait_.TryLockForBAAOOperationLocked(current_thread, cur_owner, details)) {
+    if (!queue->TryLockForBAAOOperationLocked(current_thread, cur_owner, details)) {
       // We failed to lock what we needed to lock in order to block.  Drop our
       // queue lock so that we can try again, but do _not_ put the lock state
       // back to the way it was before.  We just observed that the lock was
@@ -404,7 +434,7 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
       // flag.  We want to preserve the invariant: "once the contested flag has
       // been set (while holding the queue lock), only the owner of the lock is
       // allowed to clear the flag".
-      wait_.get_lock().Release();
+      queue->get_lock().Release();
       return ChainLockTransaction::Action::Backoff;
     }
 
@@ -417,13 +447,14 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
     // Log the trace data now that we are committed to blocking.
     const uint64_t flow_id = current_thread->TakeNextLockFlowId();
     LOCK_TRACE_FLOW_BEGIN("contend_mutex", flow_id);
-    KTracer{}.KernelMutexBlock(this, cur_owner, wait_.Count() + 1);
+    KTracer{}.KernelMutexBlock(this, cur_owner, queue->Count() + 1);
 
     // Block the thread.  This will drop all of the PI related locks we have
     // been holding up until now.
     preempt_disabler.AssertDisabled();
-    zx_status_t ret = wait_.BlockAndAssignOwnerLocked(current_thread, Deadline::infinite(), details,
-                                                      ResourceOwnership::Normal, Interruptible::No);
+    zx_status_t ret =
+        queue->BlockAndAssignOwnerLocked(current_thread, Deadline::infinite(), details,
+                                         ResourceOwnership::Normal, Interruptible::No);
 
     if (unlikely(ret < ZX_OK)) {
       // mutexes are not interruptible and cannot time out, so it
@@ -480,8 +511,12 @@ __NO_INLINE void Mutex::ReleaseContendedMutex(Thread* current_thread, uintptr_t 
   const auto do_transaction = [&]()
                                   TA_REQ(chainlock_transaction_token,
                                          preempt_disabled_token) -> ChainLockTransaction::Result<> {
+    // This mutex is contended, so it must have a queue.
+    OwnedWaitQueue* const queue = wait_.Peek();
+    DEBUG_ASSERT(queue != nullptr);
+
     Thread::UnblockList wake_me;
-    if (!wait_.LockForWakeOperationOrBackoff(1u, default_hooks, wake_me)) {
+    if (!queue->LockForWakeOperationOrBackoff(1u, default_hooks, wake_me)) {
       return ChainLockTransaction::Action::Backoff;
     }
 
@@ -522,15 +557,15 @@ __NO_INLINE void Mutex::ReleaseContendedMutex(Thread* current_thread, uintptr_t 
     uint32_t still_waiting;
 
     if (do_wake) {
-      DEBUG_ASSERT(wait_.Count() >= 1);
+      DEBUG_ASSERT(queue->Count() >= 1);
       new_owner = &wake_me.front();
       new_mutex_state = reinterpret_cast<uintptr_t>(new_owner);
-      still_waiting = wait_.Count() - 1;
+      still_waiting = queue->Count() - 1;
       if (still_waiting) {
         new_mutex_state |= STATE_FLAG_CONTESTED;
       }
     } else {
-      DEBUG_ASSERT(wait_.owner() == nullptr);
+      DEBUG_ASSERT(queue->owner() == nullptr);
       new_owner = nullptr;
       still_waiting = 0;
       new_mutex_state = STATE_FREE;
@@ -555,15 +590,15 @@ __NO_INLINE void Mutex::ReleaseContendedMutex(Thread* current_thread, uintptr_t 
     // need to, then drop the queue lock and get out.
     if (do_wake) {
       [[maybe_unused]] const OwnedWaitQueue::WakeThreadsResult wake_result =
-          wait_.WakeThreadsLocked(ktl::move(wake_me), default_hooks,
-                                  OwnedWaitQueue::WakeOption::AssignOwner);
+          queue->WakeThreadsLocked(ktl::move(wake_me), default_hooks,
+                                   OwnedWaitQueue::WakeOption::AssignOwner);
       DEBUG_ASSERT(wake_result.woken == 1);
       if (wake_result.still_waiting > 0) {
         DEBUG_ASSERT(wake_result.owner == new_owner);
-        DEBUG_ASSERT(wait_.owner() == new_owner);
+        DEBUG_ASSERT(queue->owner() == new_owner);
       } else {
         DEBUG_ASSERT(wake_result.owner == nullptr);
-        DEBUG_ASSERT(wait_.owner() == nullptr);
+        DEBUG_ASSERT(queue->owner() == nullptr);
       }
       LOCK_TRACE_FLOW_END("contend_mutex", new_owner->lock_flow_id());
     }
@@ -586,7 +621,37 @@ __NO_INLINE void Mutex::ReleaseContendedMutex(Thread* current_thread, uintptr_t 
     // where it will ever touch the object's memory. Additionally, it guarantees
     // that anything destroying the object is certain to see all of the changes
     // made to the inner OWQ before destruction is allowed to start.
-    wait_.get_lock().Release();
+    if (still_waiting == 0) {
+      // We were the last waiter, so we are now responsible for detaching and recycling
+      // the OWQ from the LazyOWQ.
+      //
+      // We must ensure that no other thread can observe the OWQ as being attached to the
+      // LazyOWQ after we've released the OWQ's lock. If they did, they might try to
+      // block on it while it is being placed back in the pool.
+      //
+      // This means:
+      //
+      // 1. acquire the pool lock while still holding OWQ's lock
+      // 2. detach the OWQ from the LazyOWQ
+      // 3. release the OWQ's lock
+      // 4. recycle the OWQ
+      // 5. release the pool lock
+      Guard<SpinLock, NoIrqSave> guard{OwnedWaitQueuePoolLock::Get()};
+
+      OwnedWaitQueue* detached = wait_.Detach();
+      // The queue can't have changed from under us in the process of unblocking, since the queue
+      // can only change when the last waiter stops contending on the Mutex. Since we're just now
+      // unblocking the queue must be the same it was when ReleaseContendedMutex was first called.
+      DEBUG_ASSERT(detached == queue);
+
+      queue->get_lock().Release();
+
+      OwnedWaitQueuePool::Get().RecycleLocked(detached);
+    } else {
+      // Not recycling, just drop the lock.
+      queue->get_lock().Release();
+    }
+
     return ChainLockTransaction::Done;
   };
   ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,

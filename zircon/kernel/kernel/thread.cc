@@ -48,8 +48,10 @@
 #include <kernel/cpu.h>
 #include <kernel/dpc.h>
 #include <kernel/idle_power_thread.h>
+#include <kernel/lazy_owned_wait_queue.h>
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
+#include <kernel/owned_wait_queue_pool.h>
 #include <kernel/percpu.h>
 #include <kernel/restricted.h>
 #include <kernel/scheduler.h>
@@ -275,6 +277,7 @@ static void free_thread_resources(Thread* t) {
   // Free the thread structure itself unless marked otherwise.  If not freeing
   // it, manually trigger the Thread destructor so that DEBUG_ASSERTs present
   // in the owned_wait_queues member get triggered in all cases.
+  OwnedWaitQueuePool::Get().Shrink();
   if (t->free_struct()) {
     delete t;
   } else {
@@ -372,6 +375,13 @@ void Thread::Trampoline() {
 Thread* Thread::CreateEtc(Thread* t, const char* name, thread_start_routine entry, void* arg,
                           const SchedulerState::BaseProfile& profile,
                           thread_trampoline_routine alt_trampoline) {
+  // Ensure pool capacity for this thread. Do this before allocating
+  // the thread itself to avoid complex unwinding.
+  zx_status_t pool_status = OwnedWaitQueuePool::Get().Grow();
+  if (pool_status != ZX_OK) {
+    return nullptr;
+  }
+
   unsigned int flags = 0;
 
   if (t) {
@@ -383,6 +393,7 @@ Thread* Thread::CreateEtc(Thread* t, const char* name, thread_start_routine entr
     fbl::AllocChecker ac;
     t = new (ac) Thread(name);
     if (!ac.check()) {
+      OwnedWaitQueuePool::Get().Shrink();
       return nullptr;
     }
   }

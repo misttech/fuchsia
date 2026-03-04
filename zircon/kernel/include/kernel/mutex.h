@@ -19,6 +19,7 @@
 
 #include <fbl/canary.h>
 #include <fbl/macros.h>
+#include <kernel/lazy_owned_wait_queue.h>
 #include <kernel/lock_validation_guard.h>
 #include <kernel/lockdep.h>
 #include <kernel/owned_wait_queue.h>
@@ -166,7 +167,7 @@ class TA_CAP("mutex") Mutex
   // Mutex::AcquireContendedMutex
   ktl::atomic<cpu_num_t> maybe_acquired_on_cpu_{INVALID_CPU};
   ktl::atomic<uintptr_t> val_{STATE_FREE};
-  OwnedWaitQueue wait_;
+  LazyOwnedWaitQueue wait_;
 };
 
 // TimeslicExtension specializations for Mutex::Acquire and
