@@ -125,9 +125,9 @@ fn expand(
                     hierarchy.children.push(child_hierarchy);
                 }
                 LinkNodeDisposition::Inline => {
-                    hierarchy.children.extend(child_hierarchy.children.into_iter());
-                    hierarchy.properties.extend(child_hierarchy.properties.into_iter());
-                    hierarchy.missing.extend(child_hierarchy.missing.into_iter());
+                    hierarchy.children.extend(child_hierarchy.children);
+                    hierarchy.properties.extend(child_hierarchy.properties);
+                    hierarchy.missing.extend(child_hierarchy.missing);
                 }
             },
         }

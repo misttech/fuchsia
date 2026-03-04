@@ -61,8 +61,7 @@ impl Command for SelectorsCommand {
         };
 
         utils::ensure_tree_field_is_set(&mut selectors, None)?;
-        let mut results =
-            provider.snapshot(self.accessor.as_deref(), selectors.into_iter()).await?;
+        let mut results = provider.snapshot(self.accessor.as_deref(), selectors).await?;
         for result in results.iter_mut() {
             if let Some(hierarchy) = &mut result.payload {
                 hierarchy.sort();

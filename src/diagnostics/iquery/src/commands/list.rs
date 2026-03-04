@@ -156,7 +156,7 @@ impl Command for ListCommand {
             vec![]
         };
         utils::ensure_tree_field_is_set(&mut selectors, None)?;
-        let inspect = provider.snapshot(self.accessor.as_deref(), selectors.into_iter()).await?;
+        let inspect = provider.snapshot(self.accessor.as_deref(), selectors).await?;
         let components = components_from_inspect_data(inspect);
         let results = list_response_items(self.with_url, components);
         Ok(ListResult(results))
