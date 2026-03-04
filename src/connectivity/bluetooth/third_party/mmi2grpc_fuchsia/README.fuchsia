@@ -1,0 +1,14 @@
+Name: mmi2grpc
+Source: https://cs.android.com/android/platform/superproject/main/+/main:packages/modules/Bluetooth/android/pandora/mmi2grpc/
+License: Apache License, Version 2.0
+License File: LICENSE
+Description:
+
+`mmi2grpc` is a Python library that functions as a gRPC client, used by PTS-bot
+to translate MMIs from the PTS to gRPCs that are sent to the Pandora server on
+the DUT. The IUT-agnostic, OSS distribution of mmi2grpc exists as a standalone
+repository in AOSP. It contains all the necessary scaffolding, but little
+implementation of the actual MMIs. Android maintains a version of mmi2grpc with
+significant implementation that is however tailored to their IUT. Android's
+implementation has been "forked" here, modified, and extended to enable PTS-bot
+in Fuchsia.
