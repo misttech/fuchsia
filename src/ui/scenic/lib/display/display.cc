@@ -58,7 +58,7 @@ void Display::RemoveVsyncCallback(VsyncCallbackId id) {
   }
 }
 
-void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp) {
+void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp) {
   // Estimate current vsync interval. Need to include a maximum to mitigate any
   // potential issues during long breaks.
   const zx::duration time_since_last_vsync = timestamp - vsync_timing_->last_vsync_time();
@@ -74,9 +74,9 @@ void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_conf
   for (const auto& [id, callback] : vsync_callbacks_) {
     FLATLAND_VERBOSE_LOG << "Display::OnVsync(): display_id=" << display_id_.value()
                          << "  callback_id=" << id << "  timestamp=" << timestamp.get()
-                         << "  applied_config_stamp=" << applied_config_stamp.value
+                         << "  displayed_config_stamp=" << displayed_config_stamp.value
                          << "  ... invoking vsync callback";
-    callback(timestamp, applied_config_stamp);
+    callback(timestamp, displayed_config_stamp);
   }
 }
 

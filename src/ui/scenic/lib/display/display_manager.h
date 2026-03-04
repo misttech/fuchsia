@@ -70,7 +70,7 @@ class DisplayManager {
                          fidl::VectorView<WireDisplayId> removed);
   void OnClientOwnershipChange(bool has_ownership);
   void OnVsync(WireDisplayId display_id, zx::time_monotonic timestamp,
-               WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie);
+               WireConfigStamp displayed_config_stamp, WireVsyncAckCookie cookie);
 
   std::shared_ptr<CoordinatorProxy> coordinator_proxy_;
 

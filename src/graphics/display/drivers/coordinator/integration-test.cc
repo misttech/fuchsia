@@ -126,7 +126,8 @@ class TestClientState {
                          std::span<const display::DisplayId> removed_display_ids);
   void OnClientOwnershipChange(bool has_ownership);
   void OnVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
-               display::ConfigStamp applied_config_stamp, display::VsyncAckCookie vsync_ack_cookie);
+               display::ConfigStamp displayed_config_stamp,
+               display::VsyncAckCookie vsync_ack_cookie);
 
  private:
   // Locks all the state in this class.
@@ -194,11 +195,11 @@ void TestClientState::OnClientOwnershipChange(bool has_ownership) {
 }
 
 void TestClientState::OnVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
-                              display::ConfigStamp applied_config_stamp,
+                              display::ConfigStamp displayed_config_stamp,
                               display::VsyncAckCookie vsync_ack_cookie) {
   std::lock_guard lock(mutex_);
   ++vsync_count_;
-  last_vsync_config_stamp_ = applied_config_stamp;
+  last_vsync_config_stamp_ = displayed_config_stamp;
   if (vsync_ack_cookie != display::kInvalidVsyncAckCookie) {
     last_vsync_ack_cookie_ = vsync_ack_cookie;
   }
@@ -625,15 +626,15 @@ zx::result<> TestFidlClient::ApplyConfig(display::ConfigStamp config_stamp) {
 
   const fuchsia_hardware_display::wire::ConfigStamp fidl_config_stamp = config_stamp.ToFidl();
   fidl::Arena arena;
-  fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request request =
-      fidl::WireRequest<fuchsia_hardware_display::Coordinator::ApplyConfig3>::Builder(arena)
+  fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest request =
+      fidl::WireRequest<fuchsia_hardware_display::Coordinator::CommitConfig>::Builder(arena)
           .stamp(fidl_config_stamp)
           .Build();
 
   fidl::OneWayStatus fidl_transport_status =
-      coordinator_fidl_client_->ApplyConfig3(std::move(request));
+      coordinator_fidl_client_->CommitConfig(std::move(request));
   if (!fidl_transport_status.ok()) {
-    fdf::error("FIDL error calling ApplyConfig3: {}", fidl_transport_status.error());
+    fdf::error("FIDL error calling CommitConfig: {}", fidl_transport_status.error());
     return zx::error(fidl_transport_status.status());
   }
   return zx::ok();
@@ -805,13 +806,14 @@ zx::result<> TestFidlClient::ApplyLayers(display::ConfigStamp config_stamp,
 
 zx::result<display::ConfigStamp> TestFidlClient::GetLastAppliedConfigStamp() {
   EXPECT_TRUE(coordinator_fidl_client_);
-  fidl::WireResult<fuchsia_hardware_display::Coordinator::GetLatestAppliedConfigStamp>
-      fidl_transport_result = coordinator_fidl_client_->GetLatestAppliedConfigStamp();
+  fidl::WireResult<fuchsia_hardware_display::Coordinator::GetLatestCommittedConfigStamp>
+      fidl_transport_result = coordinator_fidl_client_->GetLatestCommittedConfigStamp();
   if (!fidl_transport_result.ok()) {
-    fdf::error("FIDL error calling GetLatestAppliedConfigStamp: {}", fidl_transport_result.error());
+    fdf::error("FIDL error calling GetLatestCommittedConfigStamp: {}",
+               fidl_transport_result.error());
     return zx::error(fidl_transport_result.status());
   }
-  fuchsia_hardware_display::wire::CoordinatorGetLatestAppliedConfigStampResponse&
+  fuchsia_hardware_display::wire::CoordinatorGetLatestCommittedConfigStampResponse&
       fidl_domain_result = fidl_transport_result.value();
   return zx::ok(display::ConfigStamp(fidl_domain_result.stamp));
 }

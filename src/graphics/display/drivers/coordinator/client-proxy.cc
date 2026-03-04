@@ -131,16 +131,16 @@ void ClientProxy::OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_
 
   display::ConfigStamp client_stamp = {};
   auto it =
-      std::find_if(pending_applied_config_stamps_.begin(), pending_applied_config_stamps_.end(),
+      std::find_if(pending_displayed_config_stamps_.begin(), pending_displayed_config_stamps_.end(),
                    [driver_config_stamp](const ConfigStampPair& stamp) {
                      return stamp.driver_stamp >= driver_config_stamp;
                    });
 
-  if (it == pending_applied_config_stamps_.end() || it->driver_stamp != driver_config_stamp) {
+  if (it == pending_displayed_config_stamps_.end() || it->driver_stamp != driver_config_stamp) {
     client_stamp = display::kInvalidConfigStamp;
   } else {
     client_stamp = it->client_stamp;
-    pending_applied_config_stamps_.erase(pending_applied_config_stamps_.begin(), it);
+    pending_displayed_config_stamps_.erase(pending_displayed_config_stamps_.begin(), it);
   }
 
   vsync_queue_.Push(ClientVsyncQueue::Message{.display_id = display_id,
@@ -172,10 +172,10 @@ void ClientProxy::OnClientDead() {
 
 void ClientProxy::UpdateConfigStampMapping(ConfigStampPair stamps) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT(pending_applied_config_stamps_.empty() ||
-                  pending_applied_config_stamps_.back().driver_stamp < stamps.driver_stamp);
+  ZX_DEBUG_ASSERT(pending_displayed_config_stamps_.empty() ||
+                  pending_displayed_config_stamps_.back().driver_stamp < stamps.driver_stamp);
 
-  pending_applied_config_stamps_.push_back({
+  pending_displayed_config_stamps_.push_back({
       .driver_stamp = stamps.driver_stamp,
       .client_stamp = stamps.client_stamp,
   });

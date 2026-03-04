@@ -26,7 +26,7 @@ void VsyncSource::SetVsyncEnabled(SetVsyncEnabledRequest& request,
 }
 
 void VsyncSource::OnVsync(zx::time_monotonic timestamp,
-                          display::WireConfigStamp applied_config_stamp) {
+                          display::WireConfigStamp displayed_config_stamp) {
   TRACE_DURATION("gfx", "VsyncSource::OnVsync");
   if (!vsync_enabled())
     return;

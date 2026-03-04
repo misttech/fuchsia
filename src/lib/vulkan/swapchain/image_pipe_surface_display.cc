@@ -185,7 +185,7 @@ void ImagePipeSurfaceDisplay::ControllerOnDisplaysChanged(
 
 void ImagePipeSurfaceDisplay::ControllerOnVsync(
     fuchsia_hardware_display_types::DisplayId, zx::time timestamp,
-    fuchsia_hardware_display::ConfigStamp applied_config_stamp,
+    fuchsia_hardware_display::ConfigStamp displayed_config_stamp,
     fuchsia_hardware_display::VsyncAckCookie cookie) {
   // Minimize the time spent holding the mutex by gathering fences to signal, but not immediately
   // signaling them.
@@ -194,7 +194,7 @@ void ImagePipeSurfaceDisplay::ControllerOnVsync(
     std::scoped_lock lock(mutex_);
 
     while (!pending_release_fences_.empty() &&
-           applied_config_stamp.value() > pending_release_fences_.front().config_stamp.value()) {
+           displayed_config_stamp.value() > pending_release_fences_.front().config_stamp.value()) {
       events_to_signal.push_back(std::move(pending_release_fences_.front().release_fence));
       pending_release_fences_.pop();
     }
@@ -735,9 +735,9 @@ void ImagePipeSurfaceDisplay::PresentImage(
 
     // Apply the config while the mutex is locked.  This avoids a race condition where the vsync for
     // this config could be received before we enqueue the pending release fences below.
-    fuchsia_hardware_display::CoordinatorApplyConfig3Request request;
+    fuchsia_hardware_display::CoordinatorCommitConfigRequest request;
     request.stamp(new_config_stamp);
-    OneWayResult result = display_coordinator_->ApplyConfig3(std::move(request));
+    OneWayResult result = display_coordinator_->CommitConfig(std::move(request));
     if (result.is_error()) {
       fprintf(stderr, "%s: ApplyConfig failed: %s\n", kTag,
               result.error_value().FormatDescription().c_str());

@@ -53,7 +53,7 @@ class MockCoordinatorListener
 
   void OnVsync(OnVsyncRequestView request, OnVsyncCompleter::Sync& completer) override {
     latest_vsync_timestamp_ = zx::time_monotonic(request->timestamp);
-    latest_applied_config_stamp_ = display::ConfigStamp(request->applied_config_stamp);
+    latest_displayed_config_stamp_ = display::ConfigStamp(request->displayed_config_stamp);
   }
 
   void OnClientOwnershipChange(OnClientOwnershipChangeRequestView request,
@@ -75,14 +75,16 @@ class MockCoordinatorListener
   }
   bool client_has_ownership() const { return client_has_ownership_; }
   zx::time_monotonic latest_vsync_timestamp() const { return latest_vsync_timestamp_; }
-  display::ConfigStamp latest_applied_config_stamp() const { return latest_applied_config_stamp_; }
+  display::ConfigStamp latest_displayed_config_stamp() const {
+    return latest_displayed_config_stamp_;
+  }
 
  private:
   std::vector<fuchsia_hardware_display::wire::Info> latest_added_display_infos_;
   std::vector<display::DisplayId> latest_removed_display_ids_;
   bool client_has_ownership_ = false;
   zx::time_monotonic latest_vsync_timestamp_ = zx::time_monotonic::infinite_past();
-  display::ConfigStamp latest_applied_config_stamp_ = display::kInvalidConfigStamp;
+  display::ConfigStamp latest_displayed_config_stamp_ = display::kInvalidConfigStamp;
 };
 
 class ClientProxyTest : public ::testing::Test {
@@ -141,7 +143,7 @@ TEST_F(ClientProxyTest, ClientVSyncDelivery) {
   client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0, kDriverStampValue);
 
   driver_runtime_.RunUntilIdle();
-  EXPECT_EQ(mock_coordinator_listener.latest_applied_config_stamp(), kClientStampValue);
+  EXPECT_EQ(mock_coordinator_listener.latest_displayed_config_stamp(), kClientStampValue);
 }
 
 TEST_F(ClientProxyTest, ClientVSyncPeerClosed) {
@@ -165,8 +167,8 @@ TEST_F(ClientProxyTest, ClientMustDrainUntilThrottledPendingStamps) {
   client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0,
                                 display::DriverConfigStamp(kDriverStampValues.back()));
 
-  EXPECT_EQ(client_proxy_->pending_applied_config_stamps().size(), 1u);
-  EXPECT_EQ(client_proxy_->pending_applied_config_stamps().front().driver_stamp,
+  EXPECT_EQ(client_proxy_->pending_displayed_config_stamps().size(), 1u);
+  EXPECT_EQ(client_proxy_->pending_displayed_config_stamps().front().driver_stamp,
             display::DriverConfigStamp(kDriverStampValues.back()));
 }
 

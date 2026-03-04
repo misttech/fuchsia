@@ -741,19 +741,19 @@ void Client::CheckConfig(CheckConfigCompleter::Sync& completer) {
 
 void Client::DiscardConfig(DiscardConfigCompleter::Sync& /*_completer*/) { DiscardConfig(); }
 
-void Client::ApplyConfig3(ApplyConfig3RequestView request,
-                          ApplyConfig3Completer::Sync& _completer) {
-  TRACE_DURATION("gfx", "Display::Client::ApplyConfig3");
+void Client::CommitConfig(CommitConfigRequestView request,
+                          CommitConfigCompleter::Sync& _completer) {
+  TRACE_DURATION("gfx", "Display::Client::CommitConfig");
 
   if (!request->has_stamp()) {
-    fdf::error("ApplyConfig3 called without a config stamp");
+    fdf::error("CommitConfig called without a config stamp");
     TearDown(ZX_ERR_INVALID_ARGS);
     return;
   }
   const display::ConfigStamp new_config_stamp(request->stamp().value);
 
   if (layers_.is_empty()) {
-    FDF_LOG(ERROR, "ApplyConfig3 called before SetDisplayLayers");
+    FDF_LOG(ERROR, "CommitConfig called before SetDisplayLayers");
     TearDown(ZX_ERR_BAD_STATE);
     return;
   }
@@ -764,7 +764,7 @@ void Client::ApplyConfig3(ApplyConfig3RequestView request,
     draft_display_config_was_validated_ = CheckConfigImpl() == display::ConfigCheckResult::kOk;
 
     if (!draft_display_config_was_validated_) {
-      fdf::info("ApplyConfig3 called with invalid configuration; dropping the request");
+      fdf::info("CommitConfig called with invalid configuration; dropping the request");
       return;
     }
   }
@@ -773,7 +773,7 @@ void Client::ApplyConfig3(ApplyConfig3RequestView request,
   // safe to update the config stamp.
   if (new_config_stamp <= latest_config_stamp_) {
     fdf::error(
-        "ApplyConfig3 config stamp not monotonically increasing; new stamp: {}, previous stamp: {}",
+        "CommitConfig config stamp not monotonically increasing; new stamp: {}, previous stamp: {}",
         new_config_stamp.value(), latest_config_stamp_.value());
     TearDown(ZX_ERR_INVALID_ARGS);
     return;
@@ -853,8 +853,9 @@ void Client::ApplyConfig3(ApplyConfig3RequestView request,
   // No reply defined.
 }
 
-void Client::GetLatestAppliedConfigStamp(GetLatestAppliedConfigStampCompleter::Sync& completer) {
-  TRACE_DURATION("gfx", "Display::Client::GetLatestAppliedConfigStamp");
+void Client::GetLatestCommittedConfigStamp(
+    GetLatestCommittedConfigStampCompleter::Sync& completer) {
+  TRACE_DURATION("gfx", "Display::Client::GetLatestCommittedConfigStamp");
   completer.Reply(latest_config_stamp_.ToFidl());
 }
 
@@ -1146,7 +1147,7 @@ void Client::ApplyConfigImpl() {
   //
   // The final config_stamp sent to `Controller` will be the minimum of all
   // per-layer stamps.
-  display::ConfigStamp applied_config_stamp = latest_config_stamp_;
+  display::ConfigStamp displayed_config_stamp = latest_config_stamp_;
 
   for (DisplayConfig& display_config : display_configs_) {
     display_config.applied_.layer_count = 0;
@@ -1165,7 +1166,7 @@ void Client::ApplyConfigImpl() {
 
       // This is subtle. Compute the config stamp for this config as the *earliest* stamp of any
       // `Image` that appears on a `Layer` in this config. The goal is to satisfy the contract of
-      // the `applied_config_stamp` field of `CoordinatorListener.OnVsync()`, which returns the
+      // the `displayed_config_stamp` field of `CoordinatorListener.OnVsync()`, which returns the
       // config stamp of the latest *fully applied* config. For example, a config is not fully
       // applied if one of the images in the config is still waiting on a fence, even if the other
       // images in the config have appeared on-screen.
@@ -1177,7 +1178,8 @@ void Client::ApplyConfigImpl() {
       std::optional<display::ConfigStamp> applied_layer_client_config_stamp =
           applied_layer->GetCurrentClientConfigStamp();
       if (applied_layer_client_config_stamp != std::nullopt) {
-        applied_config_stamp = std::min(applied_config_stamp, *applied_layer_client_config_stamp);
+        displayed_config_stamp =
+            std::min(displayed_config_stamp, *applied_layer_client_config_stamp);
       }
 
       bool is_solid_color_fill = applied_layer->applied_layer_config_.image_source().width() == 0 ||
@@ -1192,7 +1194,7 @@ void Client::ApplyConfigImpl() {
 
   if (!config_missing_image && is_owner_) {
     for (DisplayConfig& display_config : display_configs_) {
-      controller_.ApplyConfig(display_config, applied_config_stamp, id_);
+      controller_.ApplyConfig(display_config, displayed_config_stamp, id_);
     }
   }
 }

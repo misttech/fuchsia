@@ -26,7 +26,7 @@ class DisplayCoordinatorListener final
   using OnClientOwnershipChangeCallback = std::function<void(bool has_ownership)>;
   using OnVsyncCallback =
       fit::function<void(display::WireDisplayId display_id, zx::time_monotonic timestamp,
-                         WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie)>;
+                         WireConfigStamp displayed_config_stamp, WireVsyncAckCookie cookie)>;
 
   // `coordinator_listener_server` must be valid.
   explicit DisplayCoordinatorListener(

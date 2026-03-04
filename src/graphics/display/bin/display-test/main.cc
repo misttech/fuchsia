@@ -101,7 +101,7 @@ class CoordinatorListener final
   }
   void OnVsync(OnVsyncRequestView request, OnVsyncCompleter::Sync& completer) override {
     vsync_count_++;
-    latest_config_stamp_ = display::ConfigStamp(request->applied_config_stamp);
+    latest_config_stamp_ = display::ConfigStamp(request->displayed_config_stamp);
     if (display::VsyncAckCookie(request->cookie) != display::kInvalidVsyncAckCookie) {
       pending_vsync_cookie_ = display::VsyncAckCookie(request->cookie);
     }
@@ -293,9 +293,9 @@ zx_status_t apply_config(fuchsia_hardware_display::wire::ConfigStamp stamp) {
   }
 
   fidl::Arena arena;
-  auto builder = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena);
+  auto builder = fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest::Builder(arena);
   builder.stamp(stamp);
-  auto apply_result = dc->ApplyConfig3(builder.Build());
+  auto apply_result = dc->CommitConfig(builder.Build());
   if (!apply_result.ok()) {
     printf("Apply failed\n");
     return apply_result.error().status();

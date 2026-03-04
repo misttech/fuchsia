@@ -26,7 +26,7 @@ class MockCoordinatorListener
   using OnClientOwnershipChangeCallback = fit::function<void(bool has_ownership)>;
   using OnVsyncCallback = fit::function<void(
       display::DisplayId display_id, zx::time_monotonic timestamp,
-      display::ConfigStamp applied_config_stamp, display::VsyncAckCookie cookie)>;
+      display::ConfigStamp displayed_config_stamp, display::VsyncAckCookie cookie)>;
 
   MockCoordinatorListener(OnDisplaysChangedCallback on_displays_changed_callback,
                           OnVsyncCallback on_vsync_callback,

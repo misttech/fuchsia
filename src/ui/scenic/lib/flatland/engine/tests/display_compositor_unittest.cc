@@ -909,7 +909,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
 
   static constexpr display::WireConfigStamp kConfigStamp1(1);
   static constexpr display::WireConfigStamp kConfigStamp2(2);
-  EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(2).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(2).WillRepeatedly(Return());
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::vector<RenderData>(), {},
                                    [](const scheduling::Timestamps&) {});
   display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::vector<RenderData>(), {},
@@ -1179,7 +1179,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
-  EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
@@ -1380,7 +1380,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
-  EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
@@ -1631,7 +1631,7 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
       .Times(1)
       .WillOnce(Return());
 
-  EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
   // RenderFrame with empty render data list for the display.
   // This triggers SetRenderDataOnDisplay with 0 images.

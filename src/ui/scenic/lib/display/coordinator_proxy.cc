@@ -458,8 +458,8 @@ void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
   IncrementApplyConfigCallsSent();
 
   fidl::Arena arena;
-  const fidl::OneWayStatus result = coordinator_->ApplyConfig3(
-      fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
+  const fidl::OneWayStatus result = coordinator_->CommitConfig(
+      fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest::Builder(arena)
           .stamp(config_stamp)
           .Build());
 

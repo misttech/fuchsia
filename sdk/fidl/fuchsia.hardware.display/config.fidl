@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.hardware.display;
 
-/// Identifies a display configuration submitted to the Coordinator.
+/// Identifies a display configuration committed to the Coordinator.
 ///
 /// This is a type-safe wrapper for a
 /// [`fuchsia.hardware.display/ConfigStampValue`], which is a raw numeric value.
@@ -11,7 +11,7 @@ library fuchsia.hardware.display;
 /// Values are unique within a Display Coordinator client connection.
 ///
 /// Clients create new values when they call
-/// [`fuchsia.hardware.display/Coordinator.ApplyConfig3`].  The values are used
+/// [`fuchsia.hardware.display/Coordinator.CommitConfig`]. The values are used
 /// by the Display Coordinator to identify configurations in
 /// [`fuchsia.hardware.display/CoordinatorListener.OnVsync`] calls.
 ///

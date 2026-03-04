@@ -84,8 +84,8 @@ class ClientProxy {
     display::DriverConfigStamp driver_stamp;
     display::ConfigStamp client_stamp;
   };
-  std::list<ConfigStampPair>& pending_applied_config_stamps() {
-    return pending_applied_config_stamps_;
+  std::list<ConfigStampPair>& pending_displayed_config_stamps() {
+    return pending_displayed_config_stamps_;
   }
 
   // Add a new mapping entry from `stamps.controller_stamp` to `stamp.config_stamp`.
@@ -116,7 +116,7 @@ class ClientProxy {
   // Mapping from controller_stamp to client_stamp for all configurations that
   // are already applied and pending to be presented on the display.
   // Ordered by `controller_stamp_` in increasing order.
-  std::list<ConfigStampPair> pending_applied_config_stamps_;
+  std::list<ConfigStampPair> pending_displayed_config_stamps_;
 
   inspect::Node node_;
   inspect::BoolProperty is_owner_property_;

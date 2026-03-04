@@ -19,7 +19,7 @@ use display_utils::{
 };
 use euclid::size2;
 use fidl_fuchsia_hardware_display::{
-    ConfigStamp, CoordinatorApplyConfig3Request, CoordinatorListenerRequest, CoordinatorProxy,
+    ConfigStamp, CoordinatorCommitConfigRequest, CoordinatorListenerRequest, CoordinatorProxy,
     INVALID_CONFIG_STAMP_VALUE,
 };
 use fidl_fuchsia_hardware_display_types::{INVALID_DISP_ID, ImageBufferUsage, ImageMetadata};
@@ -611,9 +611,9 @@ impl ViewStrategy for DisplayDirectViewStrategy {
 
             self.last_config_stamp += 1;
             let stamp = ConfigStamp { value: self.last_config_stamp };
-            let req = CoordinatorApplyConfig3Request { stamp: Some(stamp), ..Default::default() };
+            let req = CoordinatorCommitConfigRequest { stamp: Some(stamp), ..Default::default() };
 
-            self.display.coordinator.apply_config3(req).expect("Frame::present() apply_config");
+            self.display.coordinator.commit_config(req).expect("Frame::present() commit_config");
 
             self.display_resources().busy_images.push_back(BusyImage {
                 stamp,
@@ -710,7 +710,10 @@ impl ViewStrategy for DisplayDirectViewStrategy {
     ) {
         match event {
             CoordinatorListenerRequest::OnVsync {
-                timestamp, cookie, applied_config_stamp, ..
+                timestamp,
+                cookie,
+                displayed_config_stamp,
+                ..
             } => {
                 duration!("gfx", "DisplayDirectViewStrategy::OnVsync");
                 let vsync_interval = MonotonicDuration::from_nanos(
@@ -735,7 +738,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
                     let busy_images = &mut display_resources.busy_images;
                     while !busy_images.is_empty() {
                         let front = &busy_images.front().unwrap();
-                        if applied_config_stamp.value <= front.stamp.value {
+                        if displayed_config_stamp.value <= front.stamp.value {
                             break;
                         }
 

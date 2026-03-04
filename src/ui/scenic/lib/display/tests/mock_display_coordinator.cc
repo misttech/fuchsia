@@ -266,8 +266,8 @@ void MockDisplayCoordinator::SetDisplayPowerMode(
   }
 }
 
-void MockDisplayCoordinator::GetLatestAppliedConfigStamp(
-    GetLatestAppliedConfigStampCompleter::Sync& completer) {
+void MockDisplayCoordinator::GetLatestCommittedConfigStamp(
+    GetLatestCommittedConfigStampCompleter::Sync& completer) {
   completer.Reply({.value = 0});
 }
 

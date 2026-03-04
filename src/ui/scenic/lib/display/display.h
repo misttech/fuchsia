@@ -35,7 +35,7 @@ class Display {
 
   using VsyncCallbackId = int;
   using VsyncCallback =
-      fit::function<void(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp)>;
+      fit::function<void(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp)>;
   VsyncCallbackId AddVsyncCallback(VsyncCallback callback);
   void RemoveVsyncCallback(VsyncCallbackId id);
 
@@ -78,7 +78,7 @@ class Display {
   const zx::event& ownership_event() const { return ownership_event_; }
 
   // Called by DisplayManager, other users of Display should probably not call this.  Except tests.
-  void OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp);
+  void OnVsync(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp);
 
  protected:
   std::shared_ptr<scheduling::VsyncTiming> vsync_timing_;

@@ -66,7 +66,7 @@ class ImagePipeSurfaceDisplay final
   void ControllerOnDisplaysChanged(std::vector<fuchsia_hardware_display::Info>,
                                    std::vector<fuchsia_hardware_display_types::DisplayId>);
   void ControllerOnVsync(fuchsia_hardware_display_types::DisplayId, zx::time timestamp,
-                         fuchsia_hardware_display::ConfigStamp applied_config_stamp,
+                         fuchsia_hardware_display::ConfigStamp displayed_config_stamp,
                          fuchsia_hardware_display::VsyncAckCookie cookie);
 
   // TODO(https://fxbug.dev/377322342): consider making `display_coordinator_` a sync client,
@@ -74,7 +74,7 @@ class ImagePipeSurfaceDisplay final
   bool WaitForAsyncMessage();
 
   fuchsia_hardware_display::ConfigStamp NextConfigStamp() {
-    return fuchsia_hardware_display::ConfigStamp(++last_applied_config_stamp_);
+    return fuchsia_hardware_display::ConfigStamp(++last_displayed_config_stamp_);
   }
 
   // This loop is manually pumped in method calls and doesn't have its own
@@ -97,7 +97,7 @@ class ImagePipeSurfaceDisplay final
   // Initialized in `CreateImage()`; doesn't change.
   fuchsia_hardware_display::LayerId layer_id_{fuchsia_hardware_display_types::kInvalidDispId};
 
-  std::atomic_uint64_t last_applied_config_stamp_ =
+  std::atomic_uint64_t last_displayed_config_stamp_ =
       fuchsia_hardware_display::kInvalidConfigStampValue;
   uint64_t next_layer_id_ = 1;
   std::queue<ReleaseFenceEntry> pending_release_fences_ __TA_GUARDED(mutex_);

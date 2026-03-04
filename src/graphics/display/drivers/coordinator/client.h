@@ -128,9 +128,10 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
                       SetLayerImage2Completer::Sync& _completer) override;
   void CheckConfig(CheckConfigCompleter::Sync& _completer) override;
   void DiscardConfig(DiscardConfigCompleter::Sync& _completer) override;
-  void ApplyConfig3(ApplyConfig3RequestView request,
-                    ApplyConfig3Completer::Sync& _completer) override;
-  void GetLatestAppliedConfigStamp(GetLatestAppliedConfigStampCompleter::Sync& _completer) override;
+  void CommitConfig(CommitConfigRequestView request,
+                    CommitConfigCompleter::Sync& _completer) override;
+  void GetLatestCommittedConfigStamp(
+      GetLatestCommittedConfigStampCompleter::Sync& _completer) override;
 
   void SetVirtconMode(SetVirtconModeRequestView request,
                       SetVirtconModeCompleter::Sync& _completer) override;

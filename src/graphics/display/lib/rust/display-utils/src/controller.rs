@@ -194,14 +194,14 @@ impl Coordinator {
                 CoordinatorListenerRequest::OnVsync {
                     display_id,
                     timestamp,
-                    applied_config_stamp,
+                    displayed_config_stamp,
                     cookie,
                     control_handle: _,
                 } => {
                     inner.write().handle_vsync(
                         display_id.into(),
                         timestamp,
-                        applied_config_stamp,
+                        displayed_config_stamp,
                         cookie,
                     )?;
                 }
@@ -277,11 +277,11 @@ impl Coordinator {
         }
 
         let config_stamp = self.inner.write().next_config_stamp().unwrap();
-        let payload = fidl_fuchsia_hardware_display::CoordinatorApplyConfig3Request {
+        let payload = fidl_fuchsia_hardware_display::CoordinatorCommitConfigRequest {
             stamp: Some(fidl_fuchsia_hardware_display::ConfigStamp { value: config_stamp }),
             ..Default::default()
         };
-        match proxy.apply_config3(payload) {
+        match proxy.commit_config(payload) {
             Ok(()) => Ok(config_stamp),
             Err(err) => Err(ConfigError::from(err)),
         }
@@ -289,9 +289,9 @@ impl Coordinator {
 
     /// Get the config stamp value of the most recent applied config in
     /// `apply_config`. Returns an error if the FIDL message cannot be sent.
-    pub async fn get_recent_applied_config_stamp(&self) -> std::result::Result<u64, Error> {
+    pub async fn get_recent_committed_config_stamp(&self) -> std::result::Result<u64, Error> {
         let proxy = self.proxy();
-        let response = proxy.get_latest_applied_config_stamp().await?;
+        let response = proxy.get_latest_committed_config_stamp().await?;
         Ok(response.value)
     }
 
@@ -383,7 +383,7 @@ impl CoordinatorInner {
         &mut self,
         display_id: DisplayId,
         timestamp: zx::MonotonicInstant,
-        applied_config_stamp: display::ConfigStamp,
+        displayed_config_stamp: display::ConfigStamp,
         cookie: display::VsyncAckCookie,
     ) -> Result<()> {
         if cookie.value != 0 {
@@ -396,7 +396,7 @@ impl CoordinatorInner {
             if filter.as_ref().map_or(false, |id| *id != display_id) {
                 continue;
             }
-            let payload = VsyncEvent { id: display_id, timestamp, config: applied_config_stamp };
+            let payload = VsyncEvent { id: display_id, timestamp, config: displayed_config_stamp };
             if let Err(e) = sender.unbounded_send(payload) {
                 if e.is_disconnected() {
                     listeners_to_remove.push(pos);

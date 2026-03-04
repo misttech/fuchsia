@@ -113,7 +113,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // Can be called from any thread.
   display::DriverConfigStamp LastAppliedConfigStamp() const __TA_EXCLUDES(mutex_) {
     std::lock_guard lock(mutex_);
-    return applied_config_stamp_;
+    return displayed_config_stamp_;
   }
 
   // Can be called from any thread.
@@ -242,7 +242,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // The config stamp of the applied display configuration.
   //
   // Updated by ApplyConfiguration(), used by the VSync thread.
-  display::DriverConfigStamp applied_config_stamp_ __TA_GUARDED(mutex_) =
+  display::DriverConfigStamp displayed_config_stamp_ __TA_GUARDED(mutex_) =
       display::kInvalidDriverConfigStamp;
 
   // Minimum value of RGB channels, via the SetMinimumRgb() method.

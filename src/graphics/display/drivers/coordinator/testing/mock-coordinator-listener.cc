@@ -38,7 +38,7 @@ void MockCoordinatorListener::OnDisplaysChanged(OnDisplaysChangedRequestView req
 void MockCoordinatorListener::OnVsync(OnVsyncRequestView request,
                                       OnVsyncCompleter::Sync& completer) {
   on_vsync_callback_(display::DisplayId(request->display_id), request->timestamp,
-                     display::ConfigStamp(request->applied_config_stamp),
+                     display::ConfigStamp(request->displayed_config_stamp),
                      display::VsyncAckCookie(request->cookie));
 }
 

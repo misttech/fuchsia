@@ -95,7 +95,8 @@ class MockDisplayCoordinator
   void SetDisplayPowerMode(
       fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest* request,
       SetDisplayPowerModeCompleter::Sync& completer) override;
-  void GetLatestAppliedConfigStamp(GetLatestAppliedConfigStampCompleter::Sync& completer) override;
+  void GetLatestCommittedConfigStamp(
+      GetLatestCommittedConfigStampCompleter::Sync& completer) override;
 
   // `listener_client` is allowed to be null.
   void Bind(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server,

@@ -399,9 +399,9 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // Get the latest applied config stamp. This will be used to compare against the config
     // stamp in the OnSync callback function used by the display. If the two stamps match,
     // then we know that the vsync has completed and it is safe to do readbacks.
-    const auto config_stamp_result = display_coordinator.sync()->GetLatestAppliedConfigStamp();
+    const auto config_stamp_result = display_coordinator.sync()->GetLatestCommittedConfigStamp();
     ASSERT_TRUE(config_stamp_result.ok())
-        << "Failed to call FIDL GetLatestAppliedConfigStamp method: "
+        << "Failed to call FIDL GetLatestCommittedConfigStamp method: "
         << config_stamp_result.status_string();
     display::WireConfigStamp pending_config_stamp = config_stamp_result->stamp;
 
@@ -409,10 +409,10 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // to |false| and blocks the main thread below.
     bool configs_are_equal = false;
     auto vsync_callback_id = display->AddVsyncCallback(
-        [&pending_config_stamp, &configs_are_equal](zx::time timestamp,
-                                                    display::WireConfigStamp applied_config_stamp) {
-          if (pending_config_stamp.value == applied_config_stamp.value &&
-              applied_config_stamp.value != fuchsia_hardware_display::kInvalidConfigStampValue) {
+        [&pending_config_stamp, &configs_are_equal](
+            zx::time timestamp, display::WireConfigStamp displayed_config_stamp) {
+          if (pending_config_stamp.value == displayed_config_stamp.value &&
+              displayed_config_stamp.value != fuchsia_hardware_display::kInvalidConfigStampValue) {
             configs_are_equal = true;
           }
         });

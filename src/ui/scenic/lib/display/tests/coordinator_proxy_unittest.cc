@@ -114,12 +114,12 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
     return token;
   }
 
-  // Synchronously calls `GetLatestAppliedConfigStamp()` on the display coordinator.  When we
+  // Synchronously calls `GetLatestCommittedConfigStamp()` on the display coordinator.  When we
   // receive the response from this, we know that the coordinator has also received/processed any
   // previously-sent messages.
   void PingMockDisplayCoordinator(CoordinatorProxy* proxy = nullptr) {
     auto _ =
-        (proxy ? proxy : coordinator_proxy_.get())->raw().sync()->GetLatestAppliedConfigStamp();
+        (proxy ? proxy : coordinator_proxy_.get())->raw().sync()->GetLatestCommittedConfigStamp();
   }
 
  protected:

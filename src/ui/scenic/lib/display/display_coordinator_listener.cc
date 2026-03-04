@@ -33,7 +33,7 @@ void DisplayCoordinatorListener::OnVsync(OnVsyncRequestView request,
                                          OnVsyncCompleter::Sync& completer) {
   if (on_vsync_) {
     on_vsync_(request->display_id, zx::time_monotonic(request->timestamp),
-              request->applied_config_stamp, request->cookie);
+              request->displayed_config_stamp, request->cookie);
   }
 }
 

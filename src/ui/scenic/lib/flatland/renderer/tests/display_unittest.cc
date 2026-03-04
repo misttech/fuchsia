@@ -126,8 +126,8 @@ class DisplayTest : public gtest::RealLoopFixture {
   zx::result<> WaitForVsync(display::WireConfigStamp target_stamp, zx::duration timeout) {
     std::optional<display::WireConfigStamp> received_stamp;
     auto vsync_callback_id = display_manager_->default_display()->AddVsyncCallback(
-        [&](zx::time, display::WireConfigStamp applied_config_stamp) {
-          received_stamp = applied_config_stamp;
+        [&](zx::time, display::WireConfigStamp displayed_config_stamp) {
+          received_stamp = displayed_config_stamp;
         });
 
     bool success = RunLoopWithTimeoutOrUntil(
@@ -365,11 +365,11 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   const display::WireConfigStamp kFirstConfigStamp(11);
   {
     fidl::Arena arena;
-    auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
+    auto request = fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest::Builder(arena)
                        .stamp(kFirstConfigStamp)
                        .Build();
-    const fidl::OneWayStatus result = display_coordinator.sync()->ApplyConfig3(request);
-    EXPECT_TRUE(result.ok()) << "Failed to call FIDL ApplyConfig3: " << result.status_string();
+    const fidl::OneWayStatus result = display_coordinator.sync()->CommitConfig(request);
+    EXPECT_TRUE(result.ok()) << "Failed to call FIDL CommitConfig: " << result.status_string();
   }
 
   // Wait for the first Vsync.  This should arrive because there is no wait fence to block
@@ -394,11 +394,11 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   const display::WireConfigStamp kSecondConfigStamp(22);
   {
     fidl::Arena arena;
-    auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
+    auto request = fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest::Builder(arena)
                        .stamp(kSecondConfigStamp)
                        .Build();
-    const fidl::OneWayStatus result = display_coordinator->ApplyConfig3(request);
-    EXPECT_TRUE(result.ok()) << "Failed to call FIDL ApplyConfig3: " << result.status_string();
+    const fidl::OneWayStatus result = display_coordinator->CommitConfig(request);
+    EXPECT_TRUE(result.ok()) << "Failed to call FIDL CommitConfig: " << result.status_string();
   }
 
   // Wait for the second Vsync.  This won't come, because the display coordinator will block on the

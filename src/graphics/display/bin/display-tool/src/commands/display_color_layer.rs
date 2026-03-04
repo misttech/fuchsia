@@ -5,7 +5,7 @@
 ///! This function demonstrates setting a single config with a static full-screen fill color and
 ///! sampling vsync events.
 use {
-    anyhow::{format_err, Result},
+    anyhow::{Result, format_err},
     display_utils::{
         Color, Coordinator, DisplayConfig, DisplayInfo, Layer, LayerConfig, PixelFormat, VsyncEvent,
     },
@@ -61,7 +61,7 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
         }],
     }];
     coordinator.apply_config(&configs).await?;
-    let recent_applied_config_stamp = coordinator.get_recent_applied_config_stamp().await?;
+    let recent_committed_config_stamp = coordinator.get_recent_committed_config_stamp().await?;
 
     // The color layer should be displayed on the screen and Vsync events
     // should start.
@@ -70,7 +70,7 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
     while let Some(VsyncEvent { id, timestamp, config }) = vsync.next().await {
         counter.add(timestamp);
         let stats = counter.stats();
-        config_applied |= config.value == recent_applied_config_stamp;
+        config_applied |= config.value == recent_committed_config_stamp;
 
         print!(
             "{}Display {} config {} applied, refresh rate {:.2} Hz ({:.5} ms)",

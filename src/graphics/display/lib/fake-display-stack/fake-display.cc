@@ -503,7 +503,7 @@ void FakeDisplay::ApplyConfiguration(display::DisplayId display_id, display::Mod
     }
   }
   applied_layers_.assign(layers.begin(), layers.end());
-  applied_config_stamp_ = config_stamp;
+  displayed_config_stamp_ = config_stamp;
 }
 
 enum class FakeDisplay::BufferCollectionUsage {
@@ -919,7 +919,7 @@ void FakeDisplay::TriggerVsync() {
 
   {
     std::lock_guard lock(mutex_);
-    ZX_ASSERT_MSG(applied_config_stamp_ != display::kInvalidDriverConfigStamp,
+    ZX_ASSERT_MSG(displayed_config_stamp_ != display::kInvalidDriverConfigStamp,
                   "TriggerVsync() called before the driver received a display configuration");
   }
   // The check above may appear vulnerable to TOCTOU, but it is not. Once the predicate
@@ -942,7 +942,7 @@ void FakeDisplay::SendVsync() {
   display::DriverConfigStamp vsync_config_stamp;
   {
     std::lock_guard lock(mutex_);
-    vsync_config_stamp = applied_config_stamp_;
+    vsync_config_stamp = displayed_config_stamp_;
   }
   if (vsync_config_stamp == display::kInvalidDriverConfigStamp) {
     // No configuration was applied yet.

@@ -18,9 +18,9 @@ type PowerMode = flexible enum : uint32 {
     ///
     /// While in this mode, the display will not generate VSync events.
     ///
-    /// While in this mode, newly applied display configs will not be reflected
-    /// on the display. The latest applied config will be reflected on the
-    /// display once it enters a different power state.
+    /// While in this mode, submitted display configs will not be latched by the
+    /// display hardware. The latest submitted config will be latched by the
+    /// hardware once the display enters a different power state.
     ///
     /// All display devices must support this power mode.
     OFF = 0;
@@ -63,17 +63,17 @@ type PowerMode = flexible enum : uint32 {
     ///
     /// In addition to the power savings allowed by the `DOZE` mode, the display
     /// hardware is also free to save power by preserving the old display state,
-    /// instead of applying new display configs.
+    /// instead of latching newly submitted display configs.
     ///
-    /// The display still emits VSync events to acknowledge newly applied
-    /// display configs. The latest applied config will be reflected on the
-    /// display once it enters a different power state.
+    /// The display still emits VSync events to acknowledge submitted display
+    /// configs. The latest displayed config will be reflected on the display
+    /// once it enters a different power state.
     ///
     /// A display device must support both `DOZE` and `DOZE_SUSPEND` power
     /// modes, or neither.
     //
     // TODO(https://fxbug.dev/316631158): Fix the semantic disconnect in using
-    // VSync events to acknowledge applied configs. Higher levels of the stack
+    // VSync events to acknowledge submitted configs. Higher levels of the stack
     // currently rely on this behavior. We can break down "Vsync" into more
     // events with fine-grained semantics (config scanned, panel updated to show
     // a frame), and find a way to safely migrate consumers to new behavior.

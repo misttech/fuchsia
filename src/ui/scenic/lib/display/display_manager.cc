@@ -158,18 +158,18 @@ void DisplayManager::OnClientOwnershipChange(bool has_ownership) {
 }
 
 void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timestamp,
-                             WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie) {
+                             WireConfigStamp displayed_config_stamp, WireVsyncAckCookie cookie) {
   if (cookie.value != fuchsia_hardware_display_types::kInvalidDispId) {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): acknowledging vsync display_id="
                          << display_id.value << "  timestamp=" << timestamp.get()
-                         << "  applied_config_stamp=" << applied_config_stamp.value
+                         << "  displayed_config_stamp=" << displayed_config_stamp.value
                          << "  cookie=" << cookie.value;
     [[maybe_unused]] fidl::OneWayStatus acknowledge_vsync_result =
         coordinator_proxy_->raw()->AcknowledgeVsync(cookie.value);
   } else {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): received vsync display_id="
                          << display_id.value << "  timestamp=" << timestamp.get()
-                         << "  applied_config_stamp=" << applied_config_stamp.value
+                         << "  displayed_config_stamp=" << displayed_config_stamp.value
                          << "  with no cookie.";
   }
 
@@ -183,7 +183,7 @@ void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timest
                          << default_display_->display_id().value();
     return;
   }
-  default_display_->OnVsync(timestamp, applied_config_stamp);
+  default_display_->OnVsync(timestamp, displayed_config_stamp);
 }
 
 }  // namespace display

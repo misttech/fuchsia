@@ -174,7 +174,7 @@ std::optional<ClientPriority> ClientSet::FindConfigStampSource(
     display::DriverConfigStamp driver_config_stamp) {
   for (const std::unique_ptr<ClientProxy>& client_proxy : clients_) {
     const std::list<ClientProxy::ConfigStampPair>& pending_stamps =
-        client_proxy->pending_applied_config_stamps();
+        client_proxy->pending_displayed_config_stamps();
     auto pending_stamps_it = std::ranges::find_if(
         pending_stamps, [&](const ClientProxy::ConfigStampPair& pending_stamp) {
           return pending_stamp.driver_stamp >= driver_config_stamp;
