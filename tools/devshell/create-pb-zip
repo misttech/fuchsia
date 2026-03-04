@@ -7,10 +7,11 @@
 ### Create pb.zip suitable for flashing based on product_bundles.json file.
 ## The created zip file will default to ${pwd}/pb.zip
 
-## usage: fx create-pb-zip [-b <product_bundle>] [-o <output>] [-c <compression_level>]
+## usage: fx create-pb-zip [-b <product_bundle>] [-o <output>] [-c <compression_level>] [-g <artifacts_group>]
 ##   -o     Output location of built zip file
 ##   -b     Name of product bundle to zip
 ##   -c     Compression level for zip. 0 for no compression -- this can be much faster.
+##   -g     Artifacts group to zip. One of flash, emu, update, bootloader, all, default is flash.
 
 set -o errexit
 
@@ -23,6 +24,7 @@ main() {
     local product_bundle_path=""
     local product_bundles_path="${FUCHSIA_BUILD_DIR}/product_bundles.json"
     local compression_level=""
+    local artifacts_group="flash"
 
     while [[ $# -ge 1 ]]; do
         case "$1" in
@@ -42,6 +44,10 @@ main() {
         -c)
             shift
             compression_level="$1"
+            ;;
+        -g)
+            shift
+            artifacts_group="$1"
             ;;
         esac
         shift
@@ -66,7 +72,7 @@ main() {
         local tmpfile_path="${FUCHSIA_BUILD_DIR}/tmp-pb-zip-$$"
 
         # get the list of files needed for flashing
-        result=$(fx-command-run ffx --machine json product get-artifacts product_bundle -r -g flash)
+        result=$(fx-command-run ffx --machine json product get-artifacts product_bundle -r -g ${artifacts_group})
         echo "$result" | fx-command-run jq -r ".ok.paths[]" > "$tmpfile_path"
         echo "product_bundle.json" >> "$tmpfile_path"
         sed -i -e 's/^/product_bundle\//' "$tmpfile_path"

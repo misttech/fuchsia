@@ -167,6 +167,8 @@ pub enum Type {
     Update,
     /// This image is a bootloader image.
     Bootloader,
+    /// This image is needed for all use-cases.
+    All,
 }
 
 impl FromStr for Type {
@@ -177,6 +179,7 @@ impl FromStr for Type {
             "emu" => Ok(Type::Emu),
             "update" => Ok(Type::Update),
             "bootloader" => Ok(Type::Bootloader),
+            "all" => Ok(Type::All),
             // Return None for others, to allow for infallible parsing.
             _ => Ok(Type::None),
         }

@@ -99,7 +99,7 @@ impl PbGetArtifactsTool {
             Type::Flash => self.extract_flashing_artifacts(product_bundle)?,
             Type::Bootloader => self.extract_bootloaders(product_bundle)?,
             Type::Emu => self.extract_emu_artifacts(product_bundle)?,
-            Type::None => return_user_error!("invalid --artifact-group value specified."),
+            Type::All => self.extract_all_artifacts(product_bundle)?,
             _ => return_user_error!(
                 "{:?} artifacts is not supported as of now",
                 self.cmd.artifacts_group
@@ -242,6 +242,17 @@ impl PbGetArtifactsTool {
                 );
             }
         }
+        Ok(artifacts.iter().map(|x| x.to_string()).collect::<Vec<_>>())
+    }
+
+    fn extract_all_artifacts(&self, product_bundle: ProductBundle) -> Result<Vec<String>> {
+        // This will collect all the artifacts from the product bundle. The
+        // artifacts collected will be able to be used for flashing, emu.
+        let mut artifacts = Vec::new();
+        artifacts.extend(self.extract_flashing_artifacts(product_bundle.clone())?);
+        artifacts.extend(self.extract_emu_artifacts(product_bundle)?);
+        artifacts.sort();
+        artifacts.dedup();
         Ok(artifacts.iter().map(|x| x.to_string()).collect::<Vec<_>>())
     }
 }
@@ -735,5 +746,112 @@ mod tests {
         };
 
         assert_eq!(got, want);
+    }
+
+    #[fuchsia::test]
+    async fn test_get_all_artifacts() {
+        let env = ffx_config::test_init().expect("test env");
+        let tmp = tempdir().unwrap();
+        let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
+
+        let json = r#"
+            {
+                bootloader_partitions: [
+                    {
+                        type: "tpl",
+                        name: "firmware_tpl",
+                        image: "bootloader_path",
+                    }
+                ],
+                partitions: [
+                    {
+                        type: "ZBI",
+                        name: "zircon_a",
+                        slot: "A",
+                    },
+                    {
+                        type: "VBMeta",
+                        name: "vbmeta_b",
+                        slot: "B",
+                    },
+                    {
+                        type: "FVM",
+                        name: "fvm",
+                    },
+                ],
+                hardware_revision: "hw",
+                unlock_credentials: [
+                    "credential.zip",
+                ],
+            }
+        "#;
+        let partitions_config_path = tempdir.join("partitions_config.json");
+        File::create(partitions_config_path.as_path()).unwrap().write_all(json.as_bytes()).unwrap();
+
+        let create_temp_file = |name: &str| {
+            let path = tempdir.join(name);
+            let mut file = File::create(path).unwrap();
+            write!(file, "{}", name).unwrap();
+        };
+
+        create_temp_file("bootloader_path");
+        create_temp_file("credential.zip");
+
+        let config = PartitionsConfig::from_dir(&tempdir).unwrap();
+
+        let virtual_device = tempdir.join("manifest.json");
+        let mut vd_file1 = File::create(&virtual_device).unwrap();
+        vd_file1.write_all(VIRTUAL_DEVICE_VALID.as_bytes()).unwrap();
+
+        let pb = ProductBundle::V2(ProductBundleV2 {
+            product_name: "".to_string(),
+            product_version: "".to_string(),
+            partitions: config,
+            sdk_version: "".to_string(),
+            system_a: Some(vec![
+                Image::ZBI { path: Utf8PathBuf::from("zbi/path"), signed: false },
+                Image::FVM(Utf8PathBuf::from("/tmp/product_bundle/system_a/fvm.blk")),
+                Image::FVMFastboot(Utf8PathBuf::from(
+                    "/tmp/product_bundle/system_a/fvm_fastboot.blk",
+                )),
+                Image::QemuKernel(Utf8PathBuf::from("qemu/path")),
+                Image::FxfsSparse {
+                    path: Utf8PathBuf::from("/tmp/product_bundle/system_a/fxfs.sparse.blk"),
+                    contents: Default::default(),
+                },
+            ]),
+            system_b: None,
+            system_r: None,
+            repositories: vec![],
+            update_package_hash: None,
+            virtual_devices_path: Some(virtual_device.clone()),
+            release_info: None,
+        });
+        let tool = PbGetArtifactsTool {
+            cmd: GetArtifactsCommand {
+                product_bundle: None,
+                relative_path: false,
+                artifacts_group: Type::All,
+            },
+            env: env.context.clone(),
+        };
+        let artifacts = tool.extract_all_artifacts(pb.clone()).unwrap();
+
+        let mut expected_artifacts = vec![
+            String::from("product_bundle.json"),
+            tempdir.join("bootloader_path").into_string(),
+            tempdir.join("credential.zip").into_string(),
+            String::from("zbi/path"),
+            String::from("/tmp/product_bundle/system_a/fvm.blk"),
+            String::from("/tmp/product_bundle/system_a/fvm_fastboot.blk"),
+            String::from("qemu/path"),
+            String::from("/tmp/product_bundle/system_a/fxfs.sparse.blk"),
+            virtual_device.to_string(),
+            tempdir.join("device.json").to_string(),
+        ];
+        expected_artifacts.sort();
+        expected_artifacts.dedup();
+
+        assert_eq!(expected_artifacts, artifacts);
     }
 }
