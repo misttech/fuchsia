@@ -229,7 +229,7 @@ pub(crate) mod for_tests {
                     self.packages
                         .iter()
                         .map(|p| {
-                            fuchsia_url::PinnedAbsolutePackageUrl::new(
+                            fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl::new(
                                 self.repo_url.clone(),
                                 p.name().clone(),
                                 None,

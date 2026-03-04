@@ -5,6 +5,7 @@
 use anyhow::{Context as _, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_url::fuchsia_pkg::ComponentUrl;
 use futures::prelude::*;
 use log::warn;
 use version_history::AbiRevision;
@@ -66,7 +67,7 @@ async fn resolve_component_without_context(
     component_url: &str,
     package_resolver: &fpkg::PackageResolverProxy,
 ) -> Result<fresolution::Component, ResolverError> {
-    let component_url = fuchsia_url::ComponentUrl::parse(component_url)?;
+    let component_url = ComponentUrl::parse(component_url)?;
     let (dir, dir_server_end) = create_proxy::<fio::DirectoryMarker>();
     let outgoing_context = package_resolver
         .resolve(&component_url.package_url().to_string(), dir_server_end)
@@ -81,7 +82,7 @@ async fn resolve_component_with_context(
     incoming_context: &fresolution::Context,
     package_resolver: &fpkg::PackageResolverProxy,
 ) -> Result<fresolution::Component, ResolverError> {
-    let component_url = fuchsia_url::ComponentUrl::parse(component_url)?;
+    let component_url = ComponentUrl::parse(component_url)?;
     let (dir, dir_server_end) = create_proxy::<fio::DirectoryMarker>();
     let outgoing_context = package_resolver
         .resolve_with_context(
@@ -96,7 +97,7 @@ async fn resolve_component_with_context(
 }
 
 async fn resolve_component(
-    component_url: &fuchsia_url::ComponentUrl,
+    component_url: &ComponentUrl,
     dir: fio::DirectoryProxy,
     outgoing_context: fpkg::ResolutionContext,
 ) -> Result<fresolution::Component, ResolverError> {

@@ -9,7 +9,7 @@ use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_data::Dictionary;
 use fuchsia_sync::Mutex;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
 

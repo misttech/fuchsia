@@ -7,7 +7,7 @@ use diagnostics_log::Publisher;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
-use fuchsia_url::{ComponentUrl, PackageUrl};
+use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use log::{Log, warn};

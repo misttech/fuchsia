@@ -24,7 +24,8 @@ use fidl_fuchsia_pkg_ext::{self as pkg, BlobId};
 use fidl_fuchsia_pkg_resolution::{self as fpkg_resolution};
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
-use fuchsia_url::{AbsolutePackageUrl, ParseError};
+use fuchsia_url::ParseError;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::future::Future;
 use futures::stream::TryStreamExt as _;
 use log::{error, info, warn};
@@ -979,7 +980,7 @@ fn resolve_result_to_resolve_status_code(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_url::PinnedAbsolutePackageUrl;
+    use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 
     #[test]
     fn test_hash_from_cache_packages_manifest() {

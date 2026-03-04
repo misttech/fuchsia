@@ -6,7 +6,7 @@ use anyhow::Error;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_pkg::{FontResolverRequest, FontResolverRequestStream};
 use fuchsia_component::server::ServiceFs;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::{StreamExt, TryStreamExt};
 use log::*;
 use vfs::execution_scope::ExecutionScope;

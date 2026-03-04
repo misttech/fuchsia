@@ -7,7 +7,8 @@
 use crate::update_mode::UpdateMode;
 use camino::Utf8Path;
 use fidl_fuchsia_io as fio;
-use fuchsia_url::{AbsoluteComponentUrl, ParseError, PinnedAbsolutePackageUrl};
+use fuchsia_url::ParseError;
+use fuchsia_url::fuchsia_pkg::{AbsoluteComponentUrl, PinnedAbsolutePackageUrl};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use thiserror::Error;

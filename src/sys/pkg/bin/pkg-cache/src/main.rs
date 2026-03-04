@@ -19,6 +19,7 @@ use fidl_fuchsia_metrics::{
 use fidl_fuchsia_update::CommitStatusProviderMarker;
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::join;
 use futures::prelude::*;
 use log::{error, info};
@@ -380,7 +381,7 @@ async fn main_inner() -> Result<(), Error> {
 
     let base_package_entry = |name: &'static str| {
         serve_base_package_if_present(
-            fuchsia_url::UnpinnedAbsolutePackageUrl::new(
+            UnpinnedAbsolutePackageUrl::new(
                 "fuchsia-pkg://fuchsia.com".parse().expect("valid repo url"),
                 name.parse().expect("valid package name"),
                 None,
@@ -425,8 +426,8 @@ async fn main_inner() -> Result<(), Error> {
 }
 
 async fn serve_base_package_if_present(
-    url: fuchsia_url::UnpinnedAbsolutePackageUrl,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    url: UnpinnedAbsolutePackageUrl,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     open_packages: &RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<fio::DirectoryProxy> {

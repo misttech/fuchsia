@@ -21,7 +21,7 @@ use cml::types::document::Document;
 use cml::types::expose::{Expose, ExposeFromRef};
 use cml::types::offer::{Offer, OfferFromRef, OfferToRef};
 use cml::types::right::{Right, Rights};
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use std::io::Write as _;
 
 pub(crate) struct TeeConfig;

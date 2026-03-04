@@ -55,7 +55,7 @@ pub(crate) enum ResolverError {
     AbiRevision(#[source] fidl_fuchsia_component_abi_ext::AbiRevisionFileError),
 
     #[error("the package URL was not found in the base package index")]
-    PackageNotInBase(fuchsia_url::AbsolutePackageUrl),
+    PackageNotInBase(fuchsia_url::fuchsia_pkg::AbsolutePackageUrl),
 
     #[error("failed to read the superpackage's subpackage manifest")]
     ReadingSubpackageManifest(#[from] package_directory::SubpackagesError),

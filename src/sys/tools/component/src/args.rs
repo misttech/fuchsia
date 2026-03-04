@@ -6,7 +6,7 @@ use argh::FromArgs;
 use component_debug::cli::{GraphFilter, GraphOrientation, ListFilter};
 use component_debug::config::RawConfigEntry;
 use component_debug::explore::DashNamespaceLayout;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 
 #[derive(FromArgs, PartialEq, Debug)]

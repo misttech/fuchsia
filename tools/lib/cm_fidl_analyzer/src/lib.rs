@@ -10,9 +10,8 @@ pub mod route;
 use crate::component_instance::ComponentInstanceForAnalyzer;
 use crate::component_model::ComponentModelForAnalyzer;
 use fuchsia_merkle::Hash;
-use fuchsia_url::{
-    AbsoluteComponentUrl, AbsolutePackageUrl, PackageName, PackageVariant, RepositoryUrl,
-};
+use fuchsia_url::fuchsia_pkg::{AbsoluteComponentUrl, AbsolutePackageUrl};
+use fuchsia_url::{PackageName, PackageVariant, RepositoryUrl};
 use routing::component_instance::ComponentInstanceInterface;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -236,7 +235,7 @@ mod tests {
     use cm_rust::ComponentDecl;
     use cm_rust_testing::ComponentDeclBuilder;
     use cm_types::Url;
-    use fuchsia_url::AbsoluteComponentUrl;
+    use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
     use std::collections::HashMap;
     use std::sync::Arc;
 

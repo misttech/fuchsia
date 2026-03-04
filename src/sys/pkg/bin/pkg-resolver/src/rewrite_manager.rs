@@ -6,7 +6,7 @@ use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig};
 use fuchsia_inspect::{self as inspect, Property};
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use log::error;
 use std::collections::VecDeque;
 use thiserror::Error;

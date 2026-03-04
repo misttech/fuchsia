@@ -12,7 +12,7 @@ use eager_package_config::omaha_client::{
 use eager_package_config::pkg_resolver::{
     EagerPackageConfig as ResolverConfig, EagerPackageConfigs as ResolverConfigs,
 };
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use omaha_client::cup_ecdsa::PublicKeys;
 use omaha_client::version::Version;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

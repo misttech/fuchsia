@@ -11,7 +11,7 @@ use errors::ffx_error;
 use ffx_speedtest_args::{Ping, Socket, SpeedtestCommand, Subcommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool};
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 use speedtest::client as client_overnet;
 use speedtest_fdomain::client;

@@ -13,7 +13,7 @@ use anyhow::{Result, bail, format_err};
 #[allow(unused)]
 use flex_client::ProxyHasDomain;
 use flex_client::{HandleBased, Socket};
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::future::BoxFuture;
 #[allow(unused)]
 use futures::{AsyncReadExt, AsyncWriteExt};

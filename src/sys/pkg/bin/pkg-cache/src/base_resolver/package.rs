@@ -7,7 +7,7 @@ use super::context_authenticator::ContextAuthenticator;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::ServerEnd;
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::error;
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
 pub(crate) async fn serve_request_stream(
     mut stream: fpkg::PackageResolverRequestStream,
-    base_packages: Arc<HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
     authenticator: ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -102,14 +102,14 @@ async fn resolve_with_context(
     package_url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fpkg::ResolutionContext, ResolverError> {
     resolve_with_context_impl(
-        &fuchsia_url::PackageUrl::parse(package_url)?,
+        &PackageUrl::parse(package_url)?,
         context,
         dir,
         base_packages,
@@ -122,17 +122,17 @@ async fn resolve_with_context(
 }
 
 pub(super) async fn resolve_with_context_impl(
-    package_url: &fuchsia_url::PackageUrl,
+    package_url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fpkg::ResolutionContext, ResolverError> {
     match package_url {
-        fuchsia_url::PackageUrl::Absolute(url) => {
+        PackageUrl::Absolute(url) => {
             if !context.bytes.is_empty() {
                 return Err(ResolverError::ContextWithAbsoluteUrl);
             }
@@ -147,7 +147,7 @@ pub(super) async fn resolve_with_context_impl(
             )
             .await
         }
-        fuchsia_url::PackageUrl::Relative(url) => {
+        PackageUrl::Relative(url) => {
             resolve_subpackage(url, context, dir, authenticator, open_packages, scope).await
         }
     }
@@ -156,7 +156,7 @@ pub(super) async fn resolve_with_context_impl(
 async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -175,16 +175,16 @@ async fn resolve(
 }
 
 pub(super) async fn resolve_impl(
-    url: &fuchsia_url::AbsolutePackageUrl,
+    url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fpkg::ResolutionContext, ResolverError> {
     let url = match url {
-        fuchsia_url::AbsolutePackageUrl::Pinned(pinned) => {
+        AbsolutePackageUrl::Pinned(pinned) => {
             // Resolution of pinned packages is used by CM to save memory by recreating component
             // declarations on demand (by re-resolving them) instead of caching them.
             // We specifically only allow resolution of pinned base packages (i.e. do not allow
@@ -204,7 +204,7 @@ pub(super) async fn resolve_impl(
                 None => return Err(ResolverError::PackageHashNotSupported),
             }
         }
-        fuchsia_url::AbsolutePackageUrl::Unpinned(url) => url,
+        AbsolutePackageUrl::Unpinned(url) => url,
     };
     let hash =
         resolve_package(url, dir, base_packages, open_packages, scope, upgradable_packages).await?;
@@ -212,9 +212,9 @@ pub(super) async fn resolve_impl(
 }
 
 pub(crate) async fn resolve_package(
-    url: &fuchsia_url::UnpinnedAbsolutePackageUrl,
+    url: &UnpinnedAbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -244,7 +244,7 @@ pub(crate) async fn resolve_package(
 
 async fn get_package_hash(
     url: &UnpinnedAbsolutePackageUrl,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Option<fuchsia_hash::Hash> {
     if let Some(hash) = base_packages.get(url) {

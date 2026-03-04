@@ -22,6 +22,7 @@ use fuchsia_async::Task;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_inspect::{self as finspect, NumericProperty as _, Property as _};
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::{FutureExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{error, warn};
 use std::collections::HashSet;
@@ -859,7 +860,7 @@ async fn open_blob(
 /// Serves the `PackageIndexIteratorRequestStream` with as many base package index entries per
 /// request as will fit in a fidl message.
 async fn serve_package_index(
-    packages: impl IntoIterator<Item = (&fuchsia_url::UnpinnedAbsolutePackageUrl, &Hash)>,
+    packages: impl IntoIterator<Item = (&UnpinnedAbsolutePackageUrl, &Hash)>,
     stream: PackageIndexIteratorRequestStream,
 ) {
     let mut package_entries = packages
@@ -2460,7 +2461,6 @@ mod get_handler_tests {
 mod serve_package_index_tests {
     use super::*;
     use fpkg::PackageIndexIteratorMarker;
-    use fuchsia_url::UnpinnedAbsolutePackageUrl;
 
     #[fuchsia::test]
     async fn entries_converted_correctly() {

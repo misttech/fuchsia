@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use camino::Utf8PathBuf;
-use fuchsia_url::{Hash, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::Hash;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 

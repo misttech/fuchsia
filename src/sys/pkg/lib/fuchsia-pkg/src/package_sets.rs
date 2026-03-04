@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_hash::Hash;
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

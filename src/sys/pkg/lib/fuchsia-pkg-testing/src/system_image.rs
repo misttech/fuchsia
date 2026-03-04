@@ -6,7 +6,7 @@ use crate::{Package, PackageBuilder};
 use fuchsia_merkle::Hash;
 use fuchsia_pkg::PackagePath;
 use fuchsia_pkg::package_sets::AnchoredPackageSetType;
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use std::future::Future;
 use system_image::{AnchoredPackages, CachePackages, StaticPackages};
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use omaha_client::cup_ecdsa::RequestMetadata;
 use omaha_client::installer::Plan;
 use omaha_client::protocol::request::InstallSource;

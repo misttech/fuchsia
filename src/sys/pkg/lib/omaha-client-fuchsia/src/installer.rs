@@ -17,7 +17,7 @@ use fidl_fuchsia_update_installer_ext::{
     StateId, UpdateAttemptError, start_update,
 };
 use fuchsia_async as fasync;
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;

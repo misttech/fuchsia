@@ -4,7 +4,7 @@
 
 use crate::errors::AnchoredPackagesError;
 use fuchsia_pkg::package_sets::{AnchoredPackageMap, AnchoredPackageSetType, PackageProperties};
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,7 +97,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_hash::Hash;
-    use fuchsia_url::{AbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+    use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
     use std::str::FromStr;
 
     fn populated_anchored_packages() -> (AnchoredPackages, &'static str) {

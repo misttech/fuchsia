@@ -5,6 +5,7 @@
 use super::{QueuedResolver, ResolverServiceInspectState};
 use crate::eager_package_manager::EagerPackageManager;
 use anyhow::anyhow;
+use fuchsia_url::fuchsia_pkg::PackageUrl;
 use log::error;
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg,
@@ -22,10 +23,10 @@ pub(super) async fn resolve_with_context(
     cobalt_sender: fidl_contrib::protocol_connector::ProtocolSender<fmetrics::MetricEvent>,
     inspect: &ResolverServiceInspectState,
 ) -> Result<fpkg::ResolutionContext, pkg::ResolveError> {
-    match fuchsia_url::PackageUrl::parse(&package_url)
+    match PackageUrl::parse(&package_url)
         .map_err(|e| super::handle_bad_package_url_error(e, &package_url))?
     {
-        fuchsia_url::PackageUrl::Absolute(url) => {
+        PackageUrl::Absolute(url) => {
             if !context.bytes.is_empty() {
                 error!(
                     "ResolveWithContext context must be empty if url is absolute {} {:?}",
@@ -43,7 +44,7 @@ pub(super) async fn resolve_with_context(
             )
             .await
         }
-        fuchsia_url::PackageUrl::Relative(url) => {
+        PackageUrl::Relative(url) => {
             resolve_relative(&url, &context, dir, pkg_cache, inspect).await
         }
     }

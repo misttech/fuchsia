@@ -16,7 +16,8 @@ use fidl::unpersist;
 use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_merkle::Hash;
 use fuchsia_url::boot_url::BootUrl;
-use fuchsia_url::{AbsoluteComponentUrl, AbsolutePackageUrl, PackageName, PackageVariant};
+use fuchsia_url::fuchsia_pkg::{AbsoluteComponentUrl, AbsolutePackageUrl};
+use fuchsia_url::{PackageName, PackageVariant};
 use log::{info, warn};
 use scrutiny_collection::core::{
     Component, ComponentSource, Components, CoreDataDeps, Manifest, ManifestData, Manifests,
@@ -551,7 +552,8 @@ pub mod tests {
     use cm_rust::{ComponentDecl, NativeIntoFidl};
     use fidl_fuchsia_component_decl as fdecl;
     use fuchsia_hash::{HASH_SIZE, Hash};
-    use fuchsia_url::{AbsolutePackageUrl, PackageName, PackageVariant};
+    use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
+    use fuchsia_url::{PackageName, PackageVariant};
     use maplit::{hashmap, hashset};
     use scrutiny_collection::core::{Components, CoreDataDeps, ManifestData, Manifests, Packages};
     use scrutiny_collection::zbi::Zbi;

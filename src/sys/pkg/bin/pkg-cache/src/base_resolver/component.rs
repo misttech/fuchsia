@@ -7,6 +7,7 @@ use super::context_authenticator::ContextAuthenticator;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::Proxy as _;
+use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
 use std::collections::HashMap;
@@ -20,7 +21,7 @@ use {
 
 pub(crate) async fn serve_request_stream(
     mut stream: fcomponent_resolution::ResolverRequestStream,
-    base_packages: Arc<HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
     authenticator: ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -95,18 +96,18 @@ pub(crate) async fn serve_request_stream(
 
 async fn resolve(
     url: &str,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fcomponent_resolution::Component, ResolverError> {
-    let url = fuchsia_url::ComponentUrl::parse(url)?;
+    let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
     let context = super::package::resolve_impl(
         match url.package_url() {
-            fuchsia_url::PackageUrl::Absolute(url) => url,
-            fuchsia_url::PackageUrl::Relative(_) => Err(ResolverError::AbsoluteUrlRequired)?,
+            PackageUrl::Absolute(url) => url,
+            PackageUrl::Relative(_) => Err(ResolverError::AbsoluteUrlRequired)?,
         },
         server_end,
         base_packages,
@@ -123,13 +124,13 @@ async fn resolve(
 async fn resolve_with_context(
     url: &str,
     context: fcomponent_resolution::Context,
-    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fcomponent_resolution::Component, ResolverError> {
-    let url = fuchsia_url::ComponentUrl::parse(url)?;
+    let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
     let context = super::package::resolve_with_context_impl(
         url.package_url(),
@@ -168,7 +169,7 @@ async fn load_config(
 }
 
 async fn resolve_from_package(
-    url: &fuchsia_url::ComponentUrl,
+    url: &ComponentUrl,
     package: fio::DirectoryProxy,
     outgoing_context: fcomponent_resolution::Context,
 ) -> Result<fcomponent_resolution::Component, ResolverError> {

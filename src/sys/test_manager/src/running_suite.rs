@@ -29,7 +29,7 @@ use fuchsia_component_test::error::Error as RealmBuilderError;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::channel::{mpsc, oneshot};
 use futures::future::join_all;
 use futures::prelude::*;

@@ -5,7 +5,7 @@
 use argh::{ArgsInfo, FromArgs};
 use component_debug_fdomain::config::RawConfigEntry;
 use ffx_core::ffx_command;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 
 #[ffx_command()]

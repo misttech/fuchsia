@@ -5,7 +5,9 @@
 use crate::CachePackagesInitError;
 use fuchsia_hash::Hash;
 use fuchsia_inspect::{self as finspect, ArrayProperty as _};
-use fuchsia_url::{AbsolutePackageUrl, PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{
+    AbsolutePackageUrl, PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl,
+};
 use futures::FutureExt as _;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};

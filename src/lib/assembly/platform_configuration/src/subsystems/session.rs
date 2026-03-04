@@ -8,7 +8,7 @@ use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_config_schema::platform_settings::swd_config::SwdConfig;
 use assembly_config_schema::product_settings::ProductSessionConfig;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 
 pub(crate) struct SessionConfig;
 impl

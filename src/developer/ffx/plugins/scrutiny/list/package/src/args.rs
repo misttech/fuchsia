@@ -4,7 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use std::path::PathBuf;
 
 #[ffx_command()]

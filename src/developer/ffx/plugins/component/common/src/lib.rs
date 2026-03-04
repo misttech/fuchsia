@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use errors::{ffx_bail, ffx_error};
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 
 pub mod format;
 pub mod rcs;

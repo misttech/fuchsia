@@ -9,7 +9,9 @@ use fidl::endpoints::ProtocolMarker as _;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_sync::Mutex;
-use fuchsia_url::{AbsoluteComponentUrl, AbsolutePackageUrl, PinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{
+    AbsoluteComponentUrl, AbsolutePackageUrl, PinnedAbsolutePackageUrl,
+};
 use futures::Future;
 use futures::channel::oneshot;
 use futures::future::FutureExt as _;

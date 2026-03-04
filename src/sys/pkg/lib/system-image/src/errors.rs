@@ -77,5 +77,5 @@ pub enum AnchoredPackagesError {
     JsonError(#[source] serde_json::error::Error),
 
     #[error("duplicate packages not supported in mapping: '{0:?}'")]
-    DuplicateNotSupported(fuchsia_url::UnpinnedAbsolutePackageUrl),
+    DuplicateNotSupported(fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl),
 }

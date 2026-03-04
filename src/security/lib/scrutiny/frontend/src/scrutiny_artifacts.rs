@@ -16,7 +16,7 @@ use crate::verify::structured_config::{
 use crate::verify::{CapabilityRouteResults, VerifyRouteSourcesResults};
 use anyhow::Result;
 use cm_rust::CapabilityTypeName;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use scrutiny_collection::core::{Component, Components, Package, Packages};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::static_packages::StaticPkgsCollection;

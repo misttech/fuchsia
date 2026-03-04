@@ -4,8 +4,8 @@
 
 use crate::cli::format::format_create_error;
 use crate::lifecycle::create_instance_in_collection;
-use anyhow::{format_err, Result};
-use fuchsia_url::AbsoluteComponentUrl;
+use anyhow::{Result, format_err};
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 use {flex_fuchsia_component_decl as fdecl, flex_fuchsia_sys2 as fsys};
 

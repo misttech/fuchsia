@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use fuchsia_archive::Utf8Reader as FarReader;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use scrutiny_collection::core::Packages;
 use scrutiny_collection::model::DataModel;
 use scrutiny_utils::artifact::{ArtifactReader, FileArtifactReader};

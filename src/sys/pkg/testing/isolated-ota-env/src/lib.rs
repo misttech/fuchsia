@@ -215,7 +215,7 @@ impl<R> TestEnvBuilder<R> {
                             self.packages
                                 .iter()
                                 .map(|p| {
-                                    fuchsia_url::PinnedAbsolutePackageUrl::new(
+                                    fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl::new(
                                         TEST_REPO_URL.parse().unwrap(),
                                         p.name().clone(),
                                         None,

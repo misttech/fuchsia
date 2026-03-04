@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use omaha_client::cup_ecdsa::PublicKeys;
 use omaha_client::version::Version;
 use serde::{Deserialize, Serialize};

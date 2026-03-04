@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_io as fio;
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]

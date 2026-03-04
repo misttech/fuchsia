@@ -6,7 +6,7 @@ use crate::resolve::get_binary_and_loader_from_pkg_dir;
 use fidl_fuchsia_process::{ResolverRequest, ResolverRequestStream};
 use fuchsia_component::client::connect_to_protocol_at_path;
 use fuchsia_url::boot_url::BootUrl;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::prelude::*;
 use log::warn;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg};

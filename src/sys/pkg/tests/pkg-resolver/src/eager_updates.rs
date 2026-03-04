@@ -12,7 +12,7 @@ use {
     fuchsia_pkg_testing::{
         PackageBuilder, RepositoryBuilder, SystemImageBuilder, serve::responder,
     },
-    fuchsia_url::PinnedAbsolutePackageUrl,
+    fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl,
     lib::{
         EMPTY_REPO_PATH, MountsBuilder, TestEnvBuilder, get_cup_response_with_name,
         make_pkg_with_extra_blobs,

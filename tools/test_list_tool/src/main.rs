@@ -11,7 +11,7 @@ use diagnostics_log_types::Severity;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use maplit::btreeset;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

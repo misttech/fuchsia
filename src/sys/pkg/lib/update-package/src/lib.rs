@@ -35,7 +35,7 @@ pub use crate::version::{ReadVersionError, SystemVersion};
 
 use fidl_fuchsia_io as fio;
 use fuchsia_hash::Hash;
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 
 /// An open handle to an image package.
 #[cfg(target_os = "fuchsia")]

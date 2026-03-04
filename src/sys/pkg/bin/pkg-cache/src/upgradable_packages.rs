@@ -5,7 +5,7 @@
 use crate::base_packages::{BasePackages, CachePackages};
 use fidl_fuchsia_pkg as fpkg;
 use fuchsia_sync::Mutex;
-use fuchsia_url::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
 use log::error;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

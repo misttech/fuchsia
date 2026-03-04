@@ -7,7 +7,7 @@ use super::{Asset, AssetId, AssetLoader};
 use anyhow::Error;
 use fidl_fuchsia_fonts::CacheMissPolicy;
 use fuchsia_inspect::{self as finspect, Property};
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::join;
 use futures::lock::Mutex;
 use manifest::v2;
@@ -429,6 +429,7 @@ mod tests {
     use async_trait::async_trait;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
+    use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
     use std::path::Path;
 
     fn mock_vmo(vmo_size: u64, buffer_size: u64) -> mem::Buffer {
@@ -488,7 +489,7 @@ mod tests {
             v2::Asset {
                 file_name: "Alpha-Condensed.ttf".to_string(),
                 location: v2::AssetLocation::Package(v2::PackageLocator {
-                    url: fuchsia_url::AbsolutePackageUrl::parse(
+                    url: AbsolutePackageUrl::parse(
                         "fuchsia-pkg://fuchsia.com/font-package-alpha-condensed-ttf",
                     )?,
                 }),

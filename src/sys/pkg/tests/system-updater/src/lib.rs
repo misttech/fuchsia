@@ -22,7 +22,7 @@ use fuchsia_pkg_testing::{
     SOURCE_EPOCH, make_current_epoch_json, make_epoch_json, make_packages_json,
 };
 use fuchsia_sync::Mutex;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::channel::oneshot;
 use futures::prelude::*;
 use mock_metrics::MockMetricEventLoggerFactory;

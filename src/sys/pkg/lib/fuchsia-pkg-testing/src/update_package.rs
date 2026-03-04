@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_io as fio;
+use fuchsia_url::fuchsia_pkg::{AbsoluteComponentUrl, PinnedAbsolutePackageUrl};
 use serde_json::json;
 use sha2::Digest as _;
 use std::collections::BTreeMap;
@@ -113,7 +114,7 @@ const IMAGES_PACKAGE_NAME: &str = "update-images";
 pub struct UpdatePackageBuilder {
     images_package_repo: fuchsia_url::RepositoryUrl,
     epoch: Option<u64>,
-    packages: Vec<fuchsia_url::PinnedAbsolutePackageUrl>,
+    packages: Vec<PinnedAbsolutePackageUrl>,
     fuchsia_image: Option<(Vec<u8>, Option<Vec<u8>>)>,
     recovery_image: Option<(Vec<u8>, Option<Vec<u8>>)>,
     images_package_name: Option<fuchsia_url::PackageName>,
@@ -148,7 +149,7 @@ impl UpdatePackageBuilder {
     }
 
     /// The additional packages (e.g. base and cache) to be resolved during the OTA.
-    pub fn packages(mut self, packages: Vec<fuchsia_url::PinnedAbsolutePackageUrl>) -> Self {
+    pub fn packages(mut self, packages: Vec<PinnedAbsolutePackageUrl>) -> Self {
         assert_eq!(self.packages, vec![]);
         self.packages = packages;
         self
@@ -231,7 +232,7 @@ impl UpdatePackageBuilder {
             images_manifest.fuchsia_package(
                 image_metadata(
                     zbi,
-                    fuchsia_url::AbsoluteComponentUrl::new(
+                    AbsoluteComponentUrl::new(
                         images_package_repo.clone(),
                         images_package_name.clone(),
                         None,
@@ -243,7 +244,7 @@ impl UpdatePackageBuilder {
                 vbmeta.as_ref().map(|v| {
                     image_metadata(
                         v,
-                        fuchsia_url::AbsoluteComponentUrl::new(
+                        AbsoluteComponentUrl::new(
                             images_package_repo.clone(),
                             images_package_name.clone(),
                             None,
@@ -259,7 +260,7 @@ impl UpdatePackageBuilder {
             images_manifest.recovery_package(
                 image_metadata(
                     zbi,
-                    fuchsia_url::AbsoluteComponentUrl::new(
+                    AbsoluteComponentUrl::new(
                         images_package_repo.clone(),
                         images_package_name.clone(),
                         None,
@@ -271,7 +272,7 @@ impl UpdatePackageBuilder {
                 vbmeta.as_ref().map(|v| {
                     image_metadata(
                         v,
-                        fuchsia_url::AbsoluteComponentUrl::new(
+                        AbsoluteComponentUrl::new(
                             images_package_repo.clone(),
                             images_package_name.clone(),
                             None,
@@ -291,7 +292,7 @@ impl UpdatePackageBuilder {
                         type_.clone(),
                         image_metadata(
                             content.as_slice(),
-                            fuchsia_url::AbsoluteComponentUrl::new(
+                            AbsoluteComponentUrl::new(
                                 images_package_repo.clone(),
                                 images_package_name.clone(),
                                 None,
@@ -314,10 +315,7 @@ impl UpdatePackageBuilder {
     }
 }
 
-fn image_metadata(
-    image: &[u8],
-    url: fuchsia_url::AbsoluteComponentUrl,
-) -> update_package::ImageMetadata {
+fn image_metadata(image: &[u8], url: AbsoluteComponentUrl) -> update_package::ImageMetadata {
     let mut hasher = sha2::Sha256::new();
     let () = hasher.update(image);
     update_package::ImageMetadata::new(

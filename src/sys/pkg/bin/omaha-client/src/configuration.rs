@@ -309,7 +309,7 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_pkg::CupRequest;
     use fuchsia_async as fasync;
-    use fuchsia_url::UnpinnedAbsolutePackageUrl;
+    use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
     use futures::prelude::*;
     use omaha_client::app_set::AppSet;
     use omaha_client::cup_ecdsa::test_support::{

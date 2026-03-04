@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use fuchsia_hash::Hash;
-use fuchsia_url::{AbsolutePackageUrl, PackageName, PackageVariant, RepositoryUrl};
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
+use fuchsia_url::{PackageName, PackageVariant, RepositoryUrl};
 use log::warn;
 use std::fmt::Display;
 

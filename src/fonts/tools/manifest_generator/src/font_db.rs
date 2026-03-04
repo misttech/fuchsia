@@ -7,13 +7,13 @@
 use crate::constants::PKG_URL_PREFIX;
 use crate::font_catalog::{AssetInFamilyIndex, FamilyIndex};
 use crate::{
-    font_catalog as fc, product_config, FallbackChainEntry, FontCatalog, FontPackageListing,
-    FontSet, FontSets, ProductConfig, TypefaceInAssetIndex,
+    FallbackChainEntry, FontCatalog, FontPackageListing, FontSet, FontSets, ProductConfig,
+    TypefaceInAssetIndex, font_catalog as fc, product_config,
 };
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use char_set::CharSet;
 use font_info::{FontAssetSource, FontInfo, FontInfoLoader};
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use itertools::{Either, Itertools};
 use manifest::v2;
 use std::collections::{BTreeMap, BTreeSet};
@@ -200,11 +200,7 @@ impl FontDb {
             }
         }
 
-        if errors.is_empty() {
-            Ok(db)
-        } else {
-            Err(FontDbErrors(errors.into()))
-        }
+        if errors.is_empty() { Ok(db) } else { Err(FontDbErrors(errors.into())) }
     }
 
     pub fn get_family_by_name(&self, family_name: impl AsRef<str>) -> Option<&fc::Family> {
@@ -423,11 +419,7 @@ impl FontDb {
                 Err(err) => Either::Right(err),
             });
 
-        if !errors.is_empty() {
-            Err(errors)
-        } else {
-            Ok(font_infos)
-        }
+        if !errors.is_empty() { Err(errors) } else { Ok(font_infos) }
     }
 
     fn asset_to_font_info_requests(

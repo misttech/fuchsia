@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 
 use crate::errors::ParseError;
-use crate::{AbsoluteComponentUrl, PackageUrl, RelativeComponentUrl, UrlParts};
+use crate::{FuchsiaPkgAbsoluteComponentUrl, FuchsiaPkgPackageUrl, RelativeComponentUrl, UrlParts};
 
 /// A URL locating a Fuchsia component. Can be either absolute or relative.
-/// See `AbsoluteComponentUrl` and `RelativeComponentUrl` for more details.
+/// See `FuchsiaPkgAbsoluteComponentUrl` and `RelativeComponentUrl` for more details.
 /// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ComponentUrl {
-    package: PackageUrl,
+pub struct FuchsiaPkgComponentUrl {
+    package: FuchsiaPkgPackageUrl,
     resource: String,
 }
 
-impl ComponentUrl {
-    /// Parse a Component URL.
+impl FuchsiaPkgComponentUrl {
+    /// Parse a FuchsiaPkgComponentUrl URL.
     pub fn parse(url: &str) -> Result<Self, ParseError> {
         let parts = UrlParts::parse(url)?;
         Ok(if parts.scheme.is_some() {
             let (absolute, resource) =
-                AbsoluteComponentUrl::from_parts(parts)?.into_package_and_resource();
+                FuchsiaPkgAbsoluteComponentUrl::from_parts(parts)?.into_package_and_resource();
             Self { package: absolute.into(), resource }
         } else {
             let (relative, resource) =
@@ -30,7 +30,7 @@ impl ComponentUrl {
     }
 
     /// The package URL of this URL (this URL without the resource path).
-    pub fn package_url(&self) -> &PackageUrl {
+    pub fn package_url(&self) -> &FuchsiaPkgPackageUrl {
         &self.package
     }
 
@@ -40,7 +40,7 @@ impl ComponentUrl {
     }
 }
 
-impl std::str::FromStr for ComponentUrl {
+impl std::str::FromStr for FuchsiaPkgComponentUrl {
     type Err = ParseError;
 
     fn from_str(url: &str) -> Result<Self, Self::Err> {
@@ -48,7 +48,7 @@ impl std::str::FromStr for ComponentUrl {
     }
 }
 
-impl std::convert::TryFrom<&str> for ComponentUrl {
+impl std::convert::TryFrom<&str> for FuchsiaPkgComponentUrl {
     type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -56,7 +56,7 @@ impl std::convert::TryFrom<&str> for ComponentUrl {
     }
 }
 
-impl std::fmt::Display for ComponentUrl {
+impl std::fmt::Display for FuchsiaPkgComponentUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -67,13 +67,13 @@ impl std::fmt::Display for ComponentUrl {
     }
 }
 
-impl serde::Serialize for ComponentUrl {
+impl serde::Serialize for FuchsiaPkgComponentUrl {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(ser)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for ComponentUrl {
+impl<'de> serde::Deserialize<'de> for FuchsiaPkgComponentUrl {
     fn deserialize<D>(de: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -107,10 +107,15 @@ mod tests {
             "name?hash=0000000000000000000000000000000000000000000000000000000000000000",
             "#resource",
         ] {
-            assert_matches!(ComponentUrl::parse(url), Err(_), "the url {:?}", url);
-            assert_matches!(url.parse::<ComponentUrl>(), Err(_), "the url {:?}", url);
-            assert_matches!(ComponentUrl::try_from(url), Err(_), "the url {:?}", url);
-            assert_matches!(serde_json::from_str::<ComponentUrl>(url), Err(_), "the url {:?}", url);
+            assert_matches!(FuchsiaPkgComponentUrl::parse(url), Err(_), "the url {:?}", url);
+            assert_matches!(url.parse::<FuchsiaPkgComponentUrl>(), Err(_), "the url {:?}", url);
+            assert_matches!(FuchsiaPkgComponentUrl::try_from(url), Err(_), "the url {:?}", url);
+            assert_matches!(
+                serde_json::from_str::<FuchsiaPkgComponentUrl>(url),
+                Err(_),
+                "the url {:?}",
+                url
+            );
         }
     }
 
@@ -124,14 +129,14 @@ mod tests {
             "fuchsia-pkg://example.org/name/variant?hash=0000000000000000000000000000000000000000000000000000000000000000#resource",
         ] {
             let json_url = format!("\"{url}\"");
-            let validate = |parsed: &ComponentUrl| {
+            let validate = |parsed: &FuchsiaPkgComponentUrl| {
                 assert_eq!(parsed.to_string(), url);
                 assert_eq!(serde_json::to_string(&parsed).unwrap(), json_url);
             };
-            validate(&ComponentUrl::parse(url).unwrap());
-            validate(&url.parse::<ComponentUrl>().unwrap());
-            validate(&ComponentUrl::try_from(url).unwrap());
-            validate(&serde_json::from_str::<ComponentUrl>(&json_url).unwrap());
+            validate(&FuchsiaPkgComponentUrl::parse(url).unwrap());
+            validate(&url.parse::<FuchsiaPkgComponentUrl>().unwrap());
+            validate(&FuchsiaPkgComponentUrl::try_from(url).unwrap());
+            validate(&serde_json::from_str::<FuchsiaPkgComponentUrl>(&json_url).unwrap());
         }
     }
 
@@ -139,14 +144,14 @@ mod tests {
     fn parse_ok_relative() {
         for url in ["name#resource", "other-name#resource%09"] {
             let json_url = format!("\"{url}\"");
-            let validate = |parsed: &ComponentUrl| {
+            let validate = |parsed: &FuchsiaPkgComponentUrl| {
                 assert_eq!(parsed.to_string(), url);
                 assert_eq!(serde_json::to_string(&parsed).unwrap(), json_url);
             };
-            validate(&ComponentUrl::parse(url).unwrap());
-            validate(&url.parse::<ComponentUrl>().unwrap());
-            validate(&ComponentUrl::try_from(url).unwrap());
-            validate(&serde_json::from_str::<ComponentUrl>(&json_url).unwrap());
+            validate(&FuchsiaPkgComponentUrl::parse(url).unwrap());
+            validate(&url.parse::<FuchsiaPkgComponentUrl>().unwrap());
+            validate(&FuchsiaPkgComponentUrl::try_from(url).unwrap());
+            validate(&serde_json::from_str::<FuchsiaPkgComponentUrl>(&json_url).unwrap());
         }
     }
 }

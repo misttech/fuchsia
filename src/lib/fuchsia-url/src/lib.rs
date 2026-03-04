@@ -2,37 +2,46 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub use fuchsia_hash::{Hash, HASH_SIZE};
+pub use fuchsia_hash::{HASH_SIZE, Hash};
 
-mod absolute_component_url;
-mod absolute_package_url;
 pub mod boot_url;
 pub mod builtin_url;
-mod component_url;
 pub mod errors;
+mod fuchsia_pkg_absolute_component_url;
+mod fuchsia_pkg_absolute_package_url;
+mod fuchsia_pkg_component_url;
+mod fuchsia_pkg_package_url;
+mod fuchsia_pkg_pinned_absolute_package_url;
+mod fuchsia_pkg_unpinned_absolute_package_url;
 mod host;
-mod package_url;
 mod parse;
-mod pinned_absolute_package_url;
 mod relative_component_url;
 mod relative_package_url;
 mod repository_url;
 pub mod test;
-mod unpinned_absolute_package_url;
 
-pub use crate::absolute_component_url::AbsoluteComponentUrl;
-pub use crate::absolute_package_url::AbsolutePackageUrl;
-pub use crate::component_url::ComponentUrl;
 pub use crate::errors::ParseError;
-pub use crate::package_url::PackageUrl;
+pub use crate::fuchsia_pkg_absolute_component_url::FuchsiaPkgAbsoluteComponentUrl;
+pub use crate::fuchsia_pkg_absolute_package_url::FuchsiaPkgAbsolutePackageUrl;
+pub use crate::fuchsia_pkg_component_url::FuchsiaPkgComponentUrl;
+pub use crate::fuchsia_pkg_package_url::FuchsiaPkgPackageUrl;
+pub use crate::fuchsia_pkg_pinned_absolute_package_url::FuchsiaPkgPinnedAbsolutePackageUrl;
+pub use crate::fuchsia_pkg_unpinned_absolute_package_url::FuchsiaPkgUnpinnedAbsolutePackageUrl;
+pub mod fuchsia_pkg {
+    pub use crate::{
+        FuchsiaPkgAbsoluteComponentUrl as AbsoluteComponentUrl,
+        FuchsiaPkgAbsolutePackageUrl as AbsolutePackageUrl, FuchsiaPkgComponentUrl as ComponentUrl,
+        FuchsiaPkgPackageUrl as PackageUrl,
+        FuchsiaPkgPinnedAbsolutePackageUrl as PinnedAbsolutePackageUrl,
+        FuchsiaPkgUnpinnedAbsolutePackageUrl as UnpinnedAbsolutePackageUrl,
+    };
+}
 pub use crate::parse::{
-    validate_resource_path, PackageName, PackageVariant, MAX_PACKAGE_PATH_SEGMENT_BYTES,
+    MAX_PACKAGE_PATH_SEGMENT_BYTES, PackageName, PackageVariant, validate_resource_path,
 };
-pub use crate::pinned_absolute_package_url::PinnedAbsolutePackageUrl;
 pub use crate::relative_component_url::RelativeComponentUrl;
 pub use crate::relative_package_url::RelativePackageUrl;
 pub use crate::repository_url::RepositoryUrl;
-pub use crate::unpinned_absolute_package_url::UnpinnedAbsolutePackageUrl;
 
 use crate::host::Host;
 use percent_encoding::{AsciiSet, CONTROLS};

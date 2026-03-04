@@ -254,7 +254,7 @@ mod tests {
             v2::Asset {
                 file_name: "Alpha-Condensed.ttf".to_string(),
                 location: v2::AssetLocation::Package(v2::PackageLocator {
-                    url: fuchsia_url::AbsolutePackageUrl::parse(
+                    url: fuchsia_url::fuchsia_pkg::AbsolutePackageUrl::parse(
                         "fuchsia-pkg://fuchsia.com/font-package-alpha-condensed-ttf",
                     )?,
                 }),

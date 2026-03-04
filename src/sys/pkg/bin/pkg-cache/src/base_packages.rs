@@ -5,6 +5,7 @@
 use anyhow::{Context as _, anyhow};
 use fuchsia_inspect as finspect;
 use fuchsia_merkle::Hash;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, StreamExt as _};
 use log::warn;
@@ -20,7 +21,7 @@ pub struct FrozenIndex<Marker> {
     /// Equivalently, the contents of `packages` plus their corresponding content blobs.
     blobs: Vec<Hash>,
     /// The package urls and hashes of the root packages (i.e. not including subpackages).
-    root_package_urls_and_hashes: HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash>,
+    root_package_urls_and_hashes: HashMap<UnpinnedAbsolutePackageUrl, Hash>,
 
     phantom: std::marker::PhantomData<Marker>,
 }
@@ -72,7 +73,7 @@ impl FrozenIndex<Base> {
                 if !variant.is_zero() {
                     panic!("base package variants must be zero: {name} {variant}");
                 }
-                (fuchsia_url::UnpinnedAbsolutePackageUrl::new(base_repo.clone(), name, None), hash)
+                (UnpinnedAbsolutePackageUrl::new(base_repo.clone(), name, None), hash)
             })
             .collect::<HashMap<_, _>>();
         Self::from_urls(blobfs, root_package_urls_and_hashes, OnPackageLoadError::Fail).await
@@ -106,7 +107,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     /// Determines the content and subpackage blobs by reading the meta.fars from `blobfs`.
     async fn from_urls(
         blobfs: &blobfs::Client,
-        root_package_urls_and_hashes: HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash>,
+        root_package_urls_and_hashes: HashMap<UnpinnedAbsolutePackageUrl, Hash>,
         on_package_load_error: OnPackageLoadError,
     ) -> Result<Self, anyhow::Error> {
         let (packages, blobs) = Self::load_packages_and_blobs(
@@ -193,9 +194,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     }
 
     /// Hashmap mapping the root (i.e not including subpackages) package urls to hashes.
-    pub fn root_package_urls_and_hashes(
-        &self,
-    ) -> &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash> {
+    pub fn root_package_urls_and_hashes(&self) -> &HashMap<UnpinnedAbsolutePackageUrl, Hash> {
         &self.root_package_urls_and_hashes
     }
 
@@ -233,9 +232,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     #[cfg(test)]
     pub(crate) fn new_test_only(
         blobs: HashSet<Hash>,
-        root_package_urls_and_hashes: impl IntoIterator<
-            Item = (fuchsia_url::UnpinnedAbsolutePackageUrl, Hash),
-        >,
+        root_package_urls_and_hashes: impl IntoIterator<Item = (UnpinnedAbsolutePackageUrl, Hash)>,
     ) -> Self {
         Self {
             packages: HashSet::new(),

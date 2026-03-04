@@ -15,7 +15,7 @@ use cm_rust::{
 use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
 use fidl::prelude::*;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};

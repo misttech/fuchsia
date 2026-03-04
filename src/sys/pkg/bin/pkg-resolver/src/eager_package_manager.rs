@@ -13,7 +13,10 @@ use fidl_fuchsia_pkg_ext::{CupData, CupMissingField, ResolutionContext, cache};
 use fidl_fuchsia_pkg_internal::{PersistentEagerPackage, PersistentEagerPackages};
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
-use fuchsia_url::{AbsolutePackageUrl, Hash, PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::Hash;
+use fuchsia_url::fuchsia_pkg::{
+    AbsolutePackageUrl, PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl,
+};
 use futures::prelude::*;
 use log::{error, warn};
 use omaha_client::cup_ecdsa::{

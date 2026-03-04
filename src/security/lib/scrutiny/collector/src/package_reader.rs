@@ -7,7 +7,7 @@ use crate::package_utils::{is_cf_v2_config_values, is_cf_v2_manifest};
 use anyhow::{Context, Result};
 use fuchsia_archive::Utf8Reader as FarReader;
 use fuchsia_hash::Hash;
-use fuchsia_url::PinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use scrutiny_utils::artifact::ArtifactReader;
 use scrutiny_utils::io::ReadSeek;
 use scrutiny_utils::key_value::parse_key_value;
@@ -194,7 +194,8 @@ mod tests {
     use super::{PackageReader, PackagesFromUpdateReader};
     use crate::package_types::ComponentManifest;
     use fuchsia_archive::write;
-    use fuchsia_url::{PackageName, PackageVariant, PinnedAbsolutePackageUrl};
+    use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
+    use fuchsia_url::{PackageName, PackageVariant};
     use scrutiny_testing::TEST_REPO_URL;
     use scrutiny_testing::artifact::MockArtifactReader;
     use scrutiny_utils::package::META_CONTENTS_PATH;

@@ -4,7 +4,10 @@
 
 use crate::errors::ParseError;
 use crate::parse::{PackageName, PackageVariant};
-use crate::{PinnedAbsolutePackageUrl, RepositoryUrl, UnpinnedAbsolutePackageUrl, UrlParts};
+use crate::{
+    FuchsiaPkgPinnedAbsolutePackageUrl, FuchsiaPkgUnpinnedAbsolutePackageUrl, RepositoryUrl,
+    UrlParts,
+};
 use fuchsia_hash::Hash;
 
 /// A URL locating a Fuchsia package.
@@ -15,12 +18,12 @@ use fuchsia_hash::Hash;
 ///   * "hash" is an optional valid package hash
 /// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AbsolutePackageUrl {
-    Unpinned(UnpinnedAbsolutePackageUrl),
-    Pinned(PinnedAbsolutePackageUrl),
+pub enum FuchsiaPkgAbsolutePackageUrl {
+    Unpinned(FuchsiaPkgUnpinnedAbsolutePackageUrl),
+    Pinned(FuchsiaPkgPinnedAbsolutePackageUrl),
 }
 
-impl AbsolutePackageUrl {
+impl FuchsiaPkgAbsolutePackageUrl {
     pub(crate) fn from_parts(parts: UrlParts) -> Result<Self, ParseError> {
         let UrlParts { scheme, host, path, hash, resource } = parts;
         let repo = RepositoryUrl::new(
@@ -42,20 +45,24 @@ impl AbsolutePackageUrl {
         Self::from_parts(UrlParts::from_url(url)?)
     }
 
-    /// Create an AbsolutePackageUrl from its component parts and a &str `path` that will be
-    /// validated.
+    /// Create a FuchsiaPkgAbsolutePackageUrl from its component parts and a &str `path` that will
+    /// be validated.
     pub fn new_with_path(
         repo: RepositoryUrl,
         path: &str,
         hash: Option<Hash>,
     ) -> Result<Self, ParseError> {
         Ok(match hash {
-            None => Self::Unpinned(UnpinnedAbsolutePackageUrl::new_with_path(repo, path)?),
-            Some(hash) => Self::Pinned(PinnedAbsolutePackageUrl::new_with_path(repo, path, hash)?),
+            None => {
+                Self::Unpinned(FuchsiaPkgUnpinnedAbsolutePackageUrl::new_with_path(repo, path)?)
+            }
+            Some(hash) => {
+                Self::Pinned(FuchsiaPkgPinnedAbsolutePackageUrl::new_with_path(repo, path, hash)?)
+            }
         })
     }
 
-    /// Create an AbsolutePackageUrl from its component parts.
+    /// Create a FuchsiaPkgAbsolutePackageUrl from its component parts.
     pub fn new(
         repo: RepositoryUrl,
         name: PackageName,
@@ -63,8 +70,10 @@ impl AbsolutePackageUrl {
         hash: Option<Hash>,
     ) -> Self {
         match hash {
-            None => Self::Unpinned(UnpinnedAbsolutePackageUrl::new(repo, name, variant)),
-            Some(hash) => Self::Pinned(PinnedAbsolutePackageUrl::new(repo, name, variant, hash)),
+            None => Self::Unpinned(FuchsiaPkgUnpinnedAbsolutePackageUrl::new(repo, name, variant)),
+            Some(hash) => {
+                Self::Pinned(FuchsiaPkgPinnedAbsolutePackageUrl::new(repo, name, variant, hash))
+            }
         }
     }
 
@@ -84,7 +93,7 @@ impl AbsolutePackageUrl {
     }
 
     /// The URL without the optional package hash.
-    pub fn as_unpinned(&self) -> &UnpinnedAbsolutePackageUrl {
+    pub fn as_unpinned(&self) -> &FuchsiaPkgUnpinnedAbsolutePackageUrl {
         match self {
             Self::Unpinned(unpinned) => &unpinned,
             Self::Pinned(pinned) => pinned.as_unpinned(),
@@ -92,7 +101,7 @@ impl AbsolutePackageUrl {
     }
 
     /// The pinned URL, if the URL is pinned.
-    pub fn pinned(self) -> Option<PinnedAbsolutePackageUrl> {
+    pub fn pinned(self) -> Option<FuchsiaPkgPinnedAbsolutePackageUrl> {
         match self {
             Self::Unpinned(_) => None,
             Self::Pinned(pinned) => Some(pinned),
@@ -100,10 +109,10 @@ impl AbsolutePackageUrl {
     }
 }
 
-// AbsolutePackageUrl does not maintain any invariants in addition to those already maintained by
-// its variants so this is safe.
-impl std::ops::Deref for AbsolutePackageUrl {
-    type Target = UnpinnedAbsolutePackageUrl;
+// FuchsiaPkgAbsolutePackageUrl does not maintain any invariants in addition to those already
+// maintained by its variants so this is safe.
+impl std::ops::Deref for FuchsiaPkgAbsolutePackageUrl {
+    type Target = FuchsiaPkgUnpinnedAbsolutePackageUrl;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -113,9 +122,9 @@ impl std::ops::Deref for AbsolutePackageUrl {
     }
 }
 
-// AbsolutePackageUrl does not maintain any invariants in addition to those already maintained by
-// its variants so this is safe.
-impl std::ops::DerefMut for AbsolutePackageUrl {
+// FuchsiaPkgAbsolutePackageUrl does not maintain any invariants in addition to those already
+// maintained by its variants so this is safe.
+impl std::ops::DerefMut for FuchsiaPkgAbsolutePackageUrl {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Unpinned(unpinned) => unpinned,
@@ -124,7 +133,7 @@ impl std::ops::DerefMut for AbsolutePackageUrl {
     }
 }
 
-impl std::str::FromStr for AbsolutePackageUrl {
+impl std::str::FromStr for FuchsiaPkgAbsolutePackageUrl {
     type Err = ParseError;
 
     fn from_str(url: &str) -> Result<Self, Self::Err> {
@@ -132,7 +141,7 @@ impl std::str::FromStr for AbsolutePackageUrl {
     }
 }
 
-impl std::convert::TryFrom<&str> for AbsolutePackageUrl {
+impl std::convert::TryFrom<&str> for FuchsiaPkgAbsolutePackageUrl {
     type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -140,19 +149,19 @@ impl std::convert::TryFrom<&str> for AbsolutePackageUrl {
     }
 }
 
-impl std::convert::From<PinnedAbsolutePackageUrl> for AbsolutePackageUrl {
-    fn from(pinned: PinnedAbsolutePackageUrl) -> Self {
+impl std::convert::From<FuchsiaPkgPinnedAbsolutePackageUrl> for FuchsiaPkgAbsolutePackageUrl {
+    fn from(pinned: FuchsiaPkgPinnedAbsolutePackageUrl) -> Self {
         Self::Pinned(pinned)
     }
 }
 
-impl std::convert::From<UnpinnedAbsolutePackageUrl> for AbsolutePackageUrl {
-    fn from(unpinned: UnpinnedAbsolutePackageUrl) -> Self {
+impl std::convert::From<FuchsiaPkgUnpinnedAbsolutePackageUrl> for FuchsiaPkgAbsolutePackageUrl {
+    fn from(unpinned: FuchsiaPkgUnpinnedAbsolutePackageUrl) -> Self {
         Self::Unpinned(unpinned)
     }
 }
 
-impl std::fmt::Display for AbsolutePackageUrl {
+impl std::fmt::Display for FuchsiaPkgAbsolutePackageUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unpinned(unpinned) => write!(f, "{}", unpinned),
@@ -161,13 +170,13 @@ impl std::fmt::Display for AbsolutePackageUrl {
     }
 }
 
-impl serde::Serialize for AbsolutePackageUrl {
+impl serde::Serialize for FuchsiaPkgAbsolutePackageUrl {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(ser)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for AbsolutePackageUrl {
+impl<'de> serde::Deserialize<'de> for FuchsiaPkgAbsolutePackageUrl {
     fn deserialize<D>(de: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -204,22 +213,22 @@ mod tests {
             ("fuchsia-pkg://example.org/name#resource", ParseError::CannotContainResource),
         ] {
             assert_matches!(
-                AbsolutePackageUrl::parse(url),
+                FuchsiaPkgAbsolutePackageUrl::parse(url),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                url.parse::<AbsolutePackageUrl>(),
+                url.parse::<FuchsiaPkgAbsolutePackageUrl>(),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                AbsolutePackageUrl::try_from(url),
+                FuchsiaPkgAbsolutePackageUrl::try_from(url),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                serde_json::from_str::<AbsolutePackageUrl>(url),
+                serde_json::from_str::<FuchsiaPkgAbsolutePackageUrl>(url),
                 Err(_),
                 "the url {:?}",
                 url
@@ -231,10 +240,27 @@ mod tests {
     fn parse_ok() {
         for (url, host, name, variant, hash) in [
             ("fuchsia-pkg://example.org/name", "example.org", "name", None, None),
-            ("fuchsia-pkg://example.org/name/variant", "example.org", "name", Some("variant"), None),
             (
-            "fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000", "example.org", "name", None, Some("0000000000000000000000000000000000000000000000000000000000000000")),
-            ("fuchsia-pkg://example.org/name/variant?hash=0000000000000000000000000000000000000000000000000000000000000000", "example.org", "name", Some("variant"), Some("0000000000000000000000000000000000000000000000000000000000000000")),
+                "fuchsia-pkg://example.org/name/variant",
+                "example.org",
+                "name",
+                Some("variant"),
+                None,
+            ),
+            (
+                "fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                "example.org",
+                "name",
+                None,
+                Some("0000000000000000000000000000000000000000000000000000000000000000"),
+            ),
+            (
+                "fuchsia-pkg://example.org/name/variant?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                "example.org",
+                "name",
+                Some("variant"),
+                Some("0000000000000000000000000000000000000000000000000000000000000000"),
+            ),
         ] {
             let json_url = format!("\"{url}\"");
 
@@ -242,26 +268,26 @@ mod tests {
             let name = name.parse::<crate::PackageName>().unwrap();
             let variant = variant.map(|v| v.parse::<crate::PackageVariant>().unwrap());
             let hash = hash.map(|h| h.parse::<Hash>().unwrap());
-            let validate = |parsed: &AbsolutePackageUrl| {
+            let validate = |parsed: &FuchsiaPkgAbsolutePackageUrl| {
                 assert_eq!(parsed.host(), host);
                 assert_eq!(parsed.name(), &name);
                 assert_eq!(parsed.variant(), variant.as_ref());
                 assert_eq!(parsed.hash(), hash);
             };
-            validate(&AbsolutePackageUrl::parse(url).unwrap());
-            validate(&url.parse::<AbsolutePackageUrl>().unwrap());
-            validate(&AbsolutePackageUrl::try_from(url).unwrap());
-            validate(&serde_json::from_str::<AbsolutePackageUrl>(&json_url).unwrap());
+            validate(&FuchsiaPkgAbsolutePackageUrl::parse(url).unwrap());
+            validate(&url.parse::<FuchsiaPkgAbsolutePackageUrl>().unwrap());
+            validate(&FuchsiaPkgAbsolutePackageUrl::try_from(url).unwrap());
+            validate(&serde_json::from_str::<FuchsiaPkgAbsolutePackageUrl>(&json_url).unwrap());
 
             // Stringification
             assert_eq!(
-                AbsolutePackageUrl::parse(url).unwrap().to_string(),
+                FuchsiaPkgAbsolutePackageUrl::parse(url).unwrap().to_string(),
                 url,
                 "the url {:?}",
                 url
             );
             assert_eq!(
-                serde_json::to_string(&AbsolutePackageUrl::parse(url).unwrap()).unwrap(),
+                serde_json::to_string(&FuchsiaPkgAbsolutePackageUrl::parse(url).unwrap()).unwrap(),
                 json_url,
                 "the url {:?}",
                 url

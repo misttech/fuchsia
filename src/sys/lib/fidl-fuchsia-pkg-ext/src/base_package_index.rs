@@ -7,7 +7,7 @@
 use crate::BlobId;
 use anyhow::Error;
 use fidl_fuchsia_pkg::{PackageCacheProxy, PackageIndexIteratorMarker};
-use fuchsia_url::{AbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
 use std::collections::HashMap;
 
 /// Represents the set of base packages.

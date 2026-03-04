@@ -4,7 +4,7 @@
 
 use anyhow::{Context as _, Error};
 use channel_config::ChannelConfigs;
-use fuchsia_url::UnpinnedAbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use omaha_client::cup_ecdsa::PublicKeys;
 use serde::{Deserialize, Serialize};
 use std::io;

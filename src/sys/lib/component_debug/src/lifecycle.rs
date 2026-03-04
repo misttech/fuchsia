@@ -4,7 +4,7 @@
 
 use cm_types::{BorrowedLongName, BorrowedName};
 use flex_client::ProxyHasDomain;
-use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
 use moniker::Moniker;

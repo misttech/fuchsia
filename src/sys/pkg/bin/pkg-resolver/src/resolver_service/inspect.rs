@@ -5,7 +5,7 @@
 use crate::inspect_util;
 use fuchsia_inspect::Node;
 use fuchsia_sync::Mutex;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::future::BoxFuture;
 use {fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg};
 

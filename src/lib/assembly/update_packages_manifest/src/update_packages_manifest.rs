@@ -5,7 +5,8 @@
 use anyhow::{Context, Result, bail};
 use fuchsia_hash::Hash;
 use fuchsia_pkg::{PackageManifest, PackagePath};
-use fuchsia_url::{PinnedAbsolutePackageUrl, RepositoryUrl};
+use fuchsia_url::RepositoryUrl;
+use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

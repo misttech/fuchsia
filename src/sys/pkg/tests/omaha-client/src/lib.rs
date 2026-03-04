@@ -26,7 +26,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_pkg_testing::{make_current_epoch_json, make_packages_json};
 use fuchsia_sync::Mutex;
-use fuchsia_url::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
 use mock_crash_reporter::{CrashReport, MockCrashReporterService, ThrottleHook};

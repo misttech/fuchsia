@@ -5,10 +5,10 @@
 //! Version 2 of the Font Manifest schema.
 
 use crate::serde_ext::*;
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use char_set::CharSet;
-use fidl_fuchsia_fonts::{GenericFontFamily, Slant, Width, WEIGHT_NORMAL};
-use fuchsia_url::AbsolutePackageUrl;
+use fidl_fuchsia_fonts::{GenericFontFamily, Slant, WEIGHT_NORMAL, Width};
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use itertools::Itertools;
 use offset_string::OffsetString;
 use serde::de::{Deserializer, Error as DeError};

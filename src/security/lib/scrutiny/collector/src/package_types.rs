@@ -5,7 +5,7 @@
 // Structs used in parsing packages
 
 use fuchsia_merkle::Hash;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

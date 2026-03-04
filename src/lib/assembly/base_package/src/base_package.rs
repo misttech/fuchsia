@@ -162,7 +162,7 @@ mod tests {
     use fuchsia_archive::Utf8Reader;
     use fuchsia_hash::Hash;
     use fuchsia_pkg::package_sets::AnchoredPackageSetType;
-    use fuchsia_url::PinnedAbsolutePackageUrl;
+    use fuchsia_url::fuchsia_pkg::PinnedAbsolutePackageUrl;
     use std::fs::File;
     use tempfile::{NamedTempFile, TempDir};
 

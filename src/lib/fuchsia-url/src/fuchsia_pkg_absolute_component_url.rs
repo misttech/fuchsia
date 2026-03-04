@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::errors::ParseError;
-use crate::parse::{validate_resource_path, PackageName, PackageVariant};
-use crate::{AbsolutePackageUrl, RepositoryUrl, UrlParts};
+use crate::parse::{PackageName, PackageVariant, validate_resource_path};
+use crate::{FuchsiaPkgAbsolutePackageUrl, RepositoryUrl, UrlParts};
 use fuchsia_hash::Hash;
 
 /// A URL locating a Fuchsia component.
@@ -16,13 +16,13 @@ use fuchsia_hash::Hash;
 ///   * "resource" is a valid resource path
 /// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AbsoluteComponentUrl {
-    package: AbsolutePackageUrl,
+pub struct FuchsiaPkgAbsoluteComponentUrl {
+    package: FuchsiaPkgAbsolutePackageUrl,
     resource: String,
 }
 
-impl AbsoluteComponentUrl {
-    /// Create an AbsoluteComponentUrl from its component parts.
+impl FuchsiaPkgAbsoluteComponentUrl {
+    /// Create an FuchsiaPkgAbsoluteComponentUrl from its component parts.
     pub fn new(
         repo: RepositoryUrl,
         name: PackageName,
@@ -31,7 +31,7 @@ impl AbsoluteComponentUrl {
         resource: String,
     ) -> Result<Self, ParseError> {
         let () = validate_resource_path(&resource).map_err(ParseError::InvalidResourcePath)?;
-        Ok(Self { package: AbsolutePackageUrl::new(repo, name, variant, hash), resource })
+        Ok(Self { package: FuchsiaPkgAbsolutePackageUrl::new(repo, name, variant, hash), resource })
     }
 
     pub(crate) fn from_parts(parts: UrlParts) -> Result<Self, ParseError> {
@@ -40,7 +40,7 @@ impl AbsoluteComponentUrl {
             scheme.ok_or(ParseError::MissingScheme)?,
             host.ok_or(ParseError::MissingHost)?,
         )?;
-        let package = AbsolutePackageUrl::new_with_path(repo, &path, hash)?;
+        let package = FuchsiaPkgAbsolutePackageUrl::new_with_path(repo, &path, hash)?;
         let resource = resource.ok_or(ParseError::MissingResource)?;
         Ok(Self { package, resource })
     }
@@ -50,9 +50,9 @@ impl AbsoluteComponentUrl {
         Self::from_parts(UrlParts::parse(url)?)
     }
 
-    /// Create an `AbsoluteComponentUrl` from a package URL and a resource path.
+    /// Create an `FuchsiaPkgAbsoluteComponentUrl` from a package URL and a resource path.
     pub fn from_package_url_and_resource(
-        package: AbsolutePackageUrl,
+        package: FuchsiaPkgAbsolutePackageUrl,
         resource: String,
     ) -> Result<Self, ParseError> {
         let () = validate_resource_path(&resource).map_err(ParseError::InvalidResourcePath)?;
@@ -65,35 +65,35 @@ impl AbsoluteComponentUrl {
     }
 
     /// The package URL of this URL (this URL without the resource path).
-    pub fn package_url(&self) -> &AbsolutePackageUrl {
+    pub fn package_url(&self) -> &FuchsiaPkgAbsolutePackageUrl {
         &self.package
     }
 
-    pub(crate) fn into_package_and_resource(self) -> (AbsolutePackageUrl, String) {
+    pub(crate) fn into_package_and_resource(self) -> (FuchsiaPkgAbsolutePackageUrl, String) {
         let Self { package, resource } = self;
         (package, resource)
     }
 }
 
-// AbsoluteComponentUrl does not maintain any invariants on its `package` field in addition to those
-// already maintained by AbsolutePackageUrl so this is safe.
-impl std::ops::Deref for AbsoluteComponentUrl {
-    type Target = AbsolutePackageUrl;
+// FuchsiaPkgAbsoluteComponentUrl does not maintain any invariants on its `package` field in
+// addition to those already maintained by FuchsiaPkgAbsolutePackageUrl so this is safe.
+impl std::ops::Deref for FuchsiaPkgAbsoluteComponentUrl {
+    type Target = FuchsiaPkgAbsolutePackageUrl;
 
     fn deref(&self) -> &Self::Target {
         &self.package
     }
 }
 
-// AbsoluteComponentUrl does not maintain any invariants on its `package` field in addition to those
-// already maintained by AbsolutePackageUrl so this is safe.
-impl std::ops::DerefMut for AbsoluteComponentUrl {
+// FuchsiaPkgAbsoluteComponentUrl does not maintain any invariants on its `package` field in
+// addition to those already maintained by FuchsiaPkgAbsolutePackageUrl so this is safe.
+impl std::ops::DerefMut for FuchsiaPkgAbsoluteComponentUrl {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.package
     }
 }
 
-impl std::str::FromStr for AbsoluteComponentUrl {
+impl std::str::FromStr for FuchsiaPkgAbsoluteComponentUrl {
     type Err = ParseError;
 
     fn from_str(url: &str) -> Result<Self, Self::Err> {
@@ -101,7 +101,7 @@ impl std::str::FromStr for AbsoluteComponentUrl {
     }
 }
 
-impl std::convert::TryFrom<&str> for AbsoluteComponentUrl {
+impl std::convert::TryFrom<&str> for FuchsiaPkgAbsoluteComponentUrl {
     type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -109,7 +109,7 @@ impl std::convert::TryFrom<&str> for AbsoluteComponentUrl {
     }
 }
 
-impl std::fmt::Display for AbsoluteComponentUrl {
+impl std::fmt::Display for FuchsiaPkgAbsoluteComponentUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -120,13 +120,13 @@ impl std::fmt::Display for AbsoluteComponentUrl {
     }
 }
 
-impl serde::Serialize for AbsoluteComponentUrl {
+impl serde::Serialize for FuchsiaPkgAbsoluteComponentUrl {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(ser)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for AbsoluteComponentUrl {
+impl<'de> serde::Deserialize<'de> for FuchsiaPkgAbsoluteComponentUrl {
     fn deserialize<D>(de: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -174,22 +174,22 @@ mod tests {
             ),
         ] {
             assert_matches!(
-                AbsoluteComponentUrl::parse(url),
+                FuchsiaPkgAbsoluteComponentUrl::parse(url),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                url.parse::<AbsoluteComponentUrl>(),
+                url.parse::<FuchsiaPkgAbsoluteComponentUrl>(),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                AbsoluteComponentUrl::try_from(url),
+                FuchsiaPkgAbsoluteComponentUrl::try_from(url),
                 Err(e) if e == err,
                 "the url {:?}", url
             );
             assert_matches!(
-                serde_json::from_str::<AbsoluteComponentUrl>(url),
+                serde_json::from_str::<FuchsiaPkgAbsoluteComponentUrl>(url),
                 Err(_),
                 "the url {:?}",
                 url
@@ -201,13 +201,13 @@ mod tests {
     fn parse_ok() {
         for (url, variant, hash, resource) in [
             ("fuchsia-pkg://example.org/name#resource", None, None, "resource"),
+            ("fuchsia-pkg://example.org/name/variant#resource", Some("variant"), None, "resource"),
             (
-                "fuchsia-pkg://example.org/name/variant#resource",
-                Some("variant"),
+                "fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000#resource",
                 None,
-                "resource"
+                Some("0000000000000000000000000000000000000000000000000000000000000000"),
+                "resource",
             ),
-            ("fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000#resource", None, Some("0000000000000000000000000000000000000000000000000000000000000000"), "resource"),
             ("fuchsia-pkg://example.org/name#%E2%98%BA", None, None, "☺"),
         ] {
             let json_url = format!("\"{url}\"");
@@ -218,27 +218,28 @@ mod tests {
             let name = name.parse::<crate::PackageName>().unwrap();
             let variant = variant.map(|v| v.parse::<crate::PackageVariant>().unwrap());
             let hash = hash.map(|h| h.parse::<Hash>().unwrap());
-            let validate = |parsed: &AbsoluteComponentUrl| {
+            let validate = |parsed: &FuchsiaPkgAbsoluteComponentUrl| {
                 assert_eq!(parsed.host(), host);
                 assert_eq!(parsed.name(), &name);
                 assert_eq!(parsed.variant(), variant.as_ref());
                 assert_eq!(parsed.hash(), hash);
                 assert_eq!(parsed.resource(), resource);
             };
-            validate(&AbsoluteComponentUrl::parse(url).unwrap());
-            validate(&url.parse::<AbsoluteComponentUrl>().unwrap());
-            validate(&AbsoluteComponentUrl::try_from(url).unwrap());
-            validate(&serde_json::from_str::<AbsoluteComponentUrl>(&json_url).unwrap());
+            validate(&FuchsiaPkgAbsoluteComponentUrl::parse(url).unwrap());
+            validate(&url.parse::<FuchsiaPkgAbsoluteComponentUrl>().unwrap());
+            validate(&FuchsiaPkgAbsoluteComponentUrl::try_from(url).unwrap());
+            validate(&serde_json::from_str::<FuchsiaPkgAbsoluteComponentUrl>(&json_url).unwrap());
 
             // Stringification
             assert_eq!(
-                AbsoluteComponentUrl::parse(url).unwrap().to_string(),
+                FuchsiaPkgAbsoluteComponentUrl::parse(url).unwrap().to_string(),
                 url,
                 "the url {:?}",
                 url
             );
             assert_eq!(
-                serde_json::to_string(&AbsoluteComponentUrl::parse(url).unwrap()).unwrap(),
+                serde_json::to_string(&FuchsiaPkgAbsoluteComponentUrl::parse(url).unwrap())
+                    .unwrap(),
                 json_url,
                 "the url {:?}",
                 url
@@ -254,9 +255,13 @@ mod tests {
             ("", ParseError::InvalidResourcePath(ResourcePathError::PathIsEmpty)),
             ("/", ParseError::InvalidResourcePath(ResourcePathError::PathStartsWithSlash)),
         ] {
-            let package = "fuchsia-pkg://example.org/name".parse::<AbsolutePackageUrl>().unwrap();
+            let package =
+                "fuchsia-pkg://example.org/name".parse::<FuchsiaPkgAbsolutePackageUrl>().unwrap();
             assert_eq!(
-                AbsoluteComponentUrl::from_package_url_and_resource(package, resource.into()),
+                FuchsiaPkgAbsoluteComponentUrl::from_package_url_and_resource(
+                    package,
+                    resource.into()
+                ),
                 Err(err),
                 "the resource {:?}",
                 resource
@@ -266,16 +271,21 @@ mod tests {
 
     #[test]
     fn from_package_url_and_resource_ok() {
-        let package = "fuchsia-pkg://example.org/name".parse::<AbsolutePackageUrl>().unwrap();
+        let package =
+            "fuchsia-pkg://example.org/name".parse::<FuchsiaPkgAbsolutePackageUrl>().unwrap();
 
-        let component =
-            AbsoluteComponentUrl::from_package_url_and_resource(package.clone(), "resource".into())
-                .unwrap();
+        let component = FuchsiaPkgAbsoluteComponentUrl::from_package_url_and_resource(
+            package.clone(),
+            "resource".into(),
+        )
+        .unwrap();
         assert_eq!(component.resource(), "resource");
 
-        let component =
-            AbsoluteComponentUrl::from_package_url_and_resource(package.clone(), "☺".into())
-                .unwrap();
+        let component = FuchsiaPkgAbsoluteComponentUrl::from_package_url_and_resource(
+            package.clone(),
+            "☺".into(),
+        )
+        .unwrap();
         assert_eq!(component.resource(), "☺");
     }
 }

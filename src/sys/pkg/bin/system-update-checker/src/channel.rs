@@ -6,7 +6,7 @@ use crate::connect::*;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
 use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use fuchsia_sync::Mutex;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
