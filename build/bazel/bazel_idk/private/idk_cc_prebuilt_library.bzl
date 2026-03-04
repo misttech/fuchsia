@@ -213,10 +213,15 @@ def _idk_cc_prebuilt_library_impl(
         # that will be included in the IDK.
         exported_target_name = name + "_export"
 
+        shared_lib_name = "lib%s.so" % output_name
+
         cc_shared_library(
             name = exported_target_name,
             shared_lib_name = "lib%s.so" % output_name,
             deps = [":%s" % cc_library_name],
+            # TODO(https://fxbug.dev/421888626): Remove once this flag is being
+            # automatically applied to all shared libraries as in GN.
+            user_link_flags = ['-Wl,-soname=\"%s\"' % shared_lib_name],
             testonly = testonly,
             # Only the IDK atom target should depend on this target.
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
