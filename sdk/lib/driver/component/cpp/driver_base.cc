@@ -96,6 +96,16 @@ std::optional<fuchsia_power_broker::DependencyToken> DriverBase::power_element_t
 }
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(26)
+zx::event DriverBase::node_token() const {
+  ZX_ASSERT(start_args_.node_token().has_value());
+  zx::event copy;
+  zx_status_t result = start_args_.node_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+  ZX_ASSERT(result == ZX_OK);
+  return copy;
+}
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
+
 void DriverBase::InitializeAndServe(
     Namespace incoming, fidl::ServerEnd<fuchsia_io::Directory> outgoing_directory_request) {
   incoming_ = std::make_shared<Namespace>(std::move(incoming));

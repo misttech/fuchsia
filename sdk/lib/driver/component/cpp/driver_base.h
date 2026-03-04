@@ -168,6 +168,12 @@ class DriverBase {
   std::optional<fuchsia_power_broker::DependencyToken> power_element_token();
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(26)
+  // Returns a copy of the node token for this driver. Every call creates
+  // a zx::event duplicate with the same rights as the underlying node_token.
+  zx::event node_token() const;
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(26)
+
  protected:
   // The logger can't be private because the logging macros rely on it.
   // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
