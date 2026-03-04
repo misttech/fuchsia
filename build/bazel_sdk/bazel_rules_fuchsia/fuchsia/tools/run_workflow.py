@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -93,6 +94,15 @@ def run(*command: Union[Path, str], **kwargs: Dict[str, Any]) -> None:
         print("Executing command: ", command)
     if ARGUMENTS.dry_run:
         return
+
+    # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+    # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE inheritance
+    # which can confuse child Python processes.
+    env = dict(kwargs.get("env", os.environ))
+    env.pop("RUNFILES_DIR", None)
+    env.pop("RUNFILES_MANIFEST_FILE", None)
+    kwargs["env"] = env
+
     subprocess.check_call(command, **kwargs)
 
 
