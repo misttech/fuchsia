@@ -26,6 +26,7 @@ pub struct ComponentDetailedProfileResult {
 pub fn process_snapshot_detailed(
     snapshot: fplugin::Snapshot,
     resource_annotator: &ResourceAnnotator,
+    list_vmos: bool,
 ) -> Result<ComponentDetailedProfileResult> {
     // Map from moniker token ID to Principal struct.
     let principals: Vec<Principal> =
@@ -86,7 +87,7 @@ pub fn process_snapshot_detailed(
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing compression statistics"))?,
         &bucket_definitions,
-        false,
+        list_vmos,
     )
     .expect("Digest computation should succeed");
 

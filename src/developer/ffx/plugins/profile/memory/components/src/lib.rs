@@ -170,7 +170,8 @@ impl MemoryComponentsTool {
                     "--detailed requires machine output"
                 )));
             }
-            let output = process_snapshot_detailed(snapshot, &resource_annotator)?;
+            let output =
+                process_snapshot_detailed(snapshot, &resource_annotator, self.cmd.list_vmos)?;
             writer.machine(ComponentProfileResult::Detailed(output))?;
             return Ok(());
         }
