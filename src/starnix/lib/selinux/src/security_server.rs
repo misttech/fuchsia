@@ -25,6 +25,7 @@ use anyhow::Context as _;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const ROOT_PATH: &'static str = "/";
 
@@ -86,9 +87,6 @@ struct SecurityServerState {
     /// Write-only interface to the data stored in the selinuxfs status file.
     status_publisher: Option<Box<dyn SeLinuxStatusPublisher>>,
 
-    /// True if hooks should enforce policy-based access decisions.
-    enforcing: bool,
-
     /// Count of changes to the active policy.  Changes include both loads
     /// of complete new policies, and modifications to a previously loaded
     /// policy, e.g. by committing new values to conditional booleans in it.
@@ -119,6 +117,9 @@ impl SecurityServerState {
 pub(crate) struct SecurityServerBackend {
     /// The mutable state of the security server.
     state: RwLock<SecurityServerState>,
+
+    /// True if the security server is enforcing, rather than permissive.
+    is_enforcing: AtomicBool,
 }
 
 pub struct SecurityServer {
@@ -149,9 +150,9 @@ impl SecurityServer {
                 active_policy: None,
                 booleans: SeLinuxBooleans::default(),
                 status_publisher: None,
-                enforcing: false,
                 policy_change_count: 0,
             }),
+            is_enforcing: AtomicBool::new(false),
         });
 
         let access_vector_cache = AccessVectorCache::new(backend.clone());
@@ -247,11 +248,13 @@ impl SecurityServer {
 
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
     pub fn set_enforcing(&self, enforcing: bool) {
-        self.with_mut_state_and_update_status(|state| state.enforcing = enforcing);
+        self.with_mut_state_and_update_status(|_| {
+            self.backend.is_enforcing.store(enforcing, Ordering::Release);
+        });
     }
 
     pub fn is_enforcing(&self) -> bool {
-        self.backend.state.read().enforcing
+        self.backend.is_enforcing.load(Ordering::Acquire)
     }
 
     /// Returns true if the policy requires unknown class / permissions to be
@@ -476,7 +479,7 @@ impl SecurityServer {
         let mut locked_state = self.backend.state.write();
         f(locked_state.deref_mut());
         let new_value = SeLinuxStatus {
-            is_enforcing: locked_state.enforcing,
+            is_enforcing: self.is_enforcing(),
             change_count: locked_state.policy_change_count,
             deny_unknown: locked_state.deny_unknown(),
         };
