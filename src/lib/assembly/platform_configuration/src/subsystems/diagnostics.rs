@@ -388,7 +388,7 @@ fn load_fire_configs(
             read_config(component_config_path).with_context(|| {
                 format!("failed to read fire components config file: {component_config_path}")
             })?;
-        fire_components.extend(config.into_iter());
+        fire_components.extend(config);
     }
 
     let mut fire_components = ComponentIdInfoList::new(fire_components);
