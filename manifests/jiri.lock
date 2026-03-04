@@ -366,8 +366,8 @@
     },
     {
         "package": "fuchsia/third_party/android/gbl/mainline",
-        "version": "bid:14827210",
-        "instance_id": "Ud6l7dHEZBGISKs7fMZwSGrc81j0DXaFYOqBdRP8_xcC"
+        "version": "bid:14942092",
+        "instance_id": "kIlKfWCzi1hjZM-ExNwu0F5BQf5PLGIUFrLmx0TkddQC"
     },
     {
         "package": "fuchsia/third_party/android/libsparse/release/linux-amd64",

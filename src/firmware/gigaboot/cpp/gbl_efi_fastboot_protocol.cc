@@ -19,6 +19,11 @@
 
 namespace {
 
+// It's easier to work with `char` here so we can use `string_view`, but we need to cast between
+// `EfiChar8` for the protocol APIs, so double-check that they're the same size. Signedness
+// shouldn't matter since in both cases they're expected to be UTF-8.
+static_assert(sizeof(char) == sizeof(EfiChar8), "Char size mismatch");
+
 // Contains information such as variable name and value.
 constexpr struct Variable {
   const char* var_name;
@@ -37,14 +42,15 @@ constexpr struct Variable {
 /// Gets the list of variables
 std::span<const Variable> variables() { return std::span<const Variable>(kVariables); }
 
-efi_status GetVar(struct GblEfiFastbootProtocol* self, const char* const* args, size_t num_args,
-                  uint8_t* buf, size_t* bufsize) {
-  const std::span<const char* const> args_span{args, num_args};
-  if (args_span.empty() || !bufsize) {
+efi_status GetVar(struct GblEfiFastbootProtocol* self, size_t num_args, const EfiChar8* const* args,
+                  size_t* buffer_size, EfiChar8* buffer) {
+  const std::span<const char* const> args_span{reinterpret_cast<const char* const*>(args),
+                                               num_args};
+  if (args_span.empty() || !buffer_size) {
     return EFI_INVALID_PARAMETER;
   }
 
-  std::span<uint8_t> out{buf, *bufsize};
+  std::span<uint8_t> out{buffer, *buffer_size};
   for (size_t i = 0; i < variables().size(); i++) {
     const Variable& var = variables()[i];
     if (std::string_view(args_span[0]) != var.name()) {
@@ -55,26 +61,27 @@ efi_status GetVar(struct GblEfiFastbootProtocol* self, const char* const* args, 
       return EFI_BUFFER_TOO_SMALL;
     }
     memcpy(out.data(), var.impl().data(), var.impl().size());
-    *bufsize = var.impl().size();
-    out.data()[*bufsize] = 0;
+    *buffer_size = var.impl().size();
+    out.data()[*buffer_size] = 0;
     return EFI_SUCCESS;
   }
   return EFI_NOT_FOUND;
 }
 
-efi_status GetVarAll(struct GblEfiFastbootProtocol* self, void* ctx, GetVarAllCallback cb) {
+efi_status GetVarAll(struct GblEfiFastbootProtocol* self, void* context, GetVarAllCallback cb) {
   for (size_t i = 0; i < variables().size(); i++) {
     std::array args{variables()[i].name().data()};
-    cb(ctx, args.data(), args.size(), variables()[i].impl().data());
+    cb(context, args.size(), reinterpret_cast<const EfiChar8**>(args.data()),
+       reinterpret_cast<const EfiChar8*>(variables()[i].impl().data()));
   }
   return EFI_SUCCESS;
 }
 
-EfiStatus CommandExec(struct GblEfiFastbootProtocol* self, size_t num_args, const char* const* args,
-                      size_t download_data_used_len, uint8_t* download_data,
-                      size_t download_data_full_size,
+EfiStatus CommandExec(struct GblEfiFastbootProtocol* self, size_t num_args,
+                      const EfiChar8* const* args, size_t download_buffer_size,
+                      size_t download_buffer_used_size, uint8_t* download_buffer,
                       GblEfiFastbootCommandExecResult* implementation, FastbootMessageSender sender,
-                      void* ctx) {
+                      void* context) {
   *implementation =
       GblEfiFastbootCommandExecResult::GBL_EFI_FASTBOOT_COMMAND_EXEC_RESULT_DEFAULT_IMPL;
   return EFI_SUCCESS;
@@ -85,13 +92,8 @@ GblEfiFastbootProtocol protocol = {
     .get_var = GetVar,
     .get_var_all = GetVarAll,
     .get_staged = NULL,
-    .set_lock = NULL,
-    .get_lock = NULL,
-    .vendor_erase = NULL,
     .command_exec = CommandExec,
-    .start_local_session = NULL,
-    .update_local_session = NULL,
-    .close_local_session = NULL,
+    .get_partition_type = NULL,
 };
 
 efi_guid guid = GBL_EFI_FASTBOOT_PROTOCOL_GUID;
