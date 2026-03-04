@@ -4,6 +4,7 @@
 
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use anyhow::Context;
+use fidl_fuchsia_cpu_profiler as profiler;
 use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt;
 use futures::channel::mpsc as future_mpsc;
@@ -12,9 +13,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc as sync_mpsc};
-use std::time::Duration;
 use zerocopy::{Immutable, IntoBytes};
-use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
 
 use futures::io::{AsyncReadExt, Cursor};
 use fxt::TraceRecord;
@@ -50,7 +49,10 @@ use crate::task::{Kernel, LockedAndTask};
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
 // Default buffer size to read from socket (for sampling data).
 const DEFAULT_CHUNK_SIZE: usize = 4096;
-const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 40960; // 4096 * 10, page size * 10.
+// 4096 * 10, page size * 10.
+// If tests flake due to running out of buffer space, or if the profiling duration is
+// significantly increased, this buffer size may need further adjustment (expansion).
+const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 40960;
 // perf_event_header struct size: 32 + 16 + 16 = 8 bytes.
 const PERF_EVENT_HEADER_SIZE: u16 = 8;
 // FXT magic bytes (little endian).
@@ -144,6 +146,7 @@ uapi::check_arch_independent_layout! {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum IoctlOp {
     Enable,
+    Disable,
 }
 
 struct PerfEventFileState {
@@ -352,10 +355,13 @@ impl FileOps for PerfEventFile {
                     perf_event_file.total_time_running +=
                         curr_time - perf_event_file.most_recent_enabled_time;
                 }
-                track_stub!(
-                    TODO("https://fxbug.dev/422502681"),
-                    "[perf_event_open] implement Disable to not hardcode profiling"
-                );
+                if perf_event_file.attr.freq() == 0
+                // SAFETY: sample_period is a u64 field in a union with u64 sample_freq.
+                // This is always sound regardless of the union's tag.
+                    && unsafe { perf_event_file.attr.__bindgen_anon_1.sample_period != 0 }
+                {
+                    ping_receiver(perf_event_file.ioctl_sender.clone(), IoctlOp::Disable);
+                }
                 return Ok(SUCCESS);
             }
             PERF_EVENT_IOC_RESET => {
@@ -723,14 +729,12 @@ async fn set_up_profiler(
 }
 
 // Collects samples and puts backtrace in VMO.
-// - Starts and stops sampling for a duration.
 // - Reads in the buffer from the socket for that duration in chunks.
 // - Parses the buffer backtraces into PERF_RECORD_SAMPLE format.
 // - Writes the PERF_RECORD_SAMPLE into VMO.
-async fn collect_sample(
+async fn stop_and_collect_samples(
     session_proxy: profiler::SessionProxy,
     mut client: fidl::AsyncSocket,
-    duration: Duration,
     perf_data_vmo: &zx::Vmo,
     data_head_pointer: &AtomicPtr<u64>,
     sample_type: u64,
@@ -738,21 +742,6 @@ async fn collect_sample(
     sample_period: u64,
     vmo_write_offset: u64,
 ) -> Result<(), Errno> {
-    let start_request = profiler::SessionStartRequest {
-        buffer_results: Some(true),
-        buffer_size_mb: Some(8 as u64),
-        ..Default::default()
-    };
-    let _ = session_proxy.start(&start_request).await.expect("Failed to start profiling");
-
-    // Hardcode a duration so that samples can be collected. This is currently solely used to
-    // demonstrate that an E2E implementation of sample collection works.
-    track_stub!(
-        TODO("https://fxbug.dev/428974888"),
-        "[perf_event_open] don't hardcode sleep; test/user should decide sample duration"
-    );
-    let _ = fuchsia_async::Timer::new(duration).await;
-
     let stats = session_proxy.stop().await;
     let samples_collected = match stats {
         Ok(stats) => stats.samples_collected.unwrap(),
@@ -1008,43 +997,58 @@ pub fn sys_perf_event_open(
     let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
 
     let closure = async move |_: LockedAndTask<'_>| {
+        let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
+
         // This loop will wait for messages from the sender.
         while let Some((command, profiling_complete_receiver)) = receiver.next().await {
             match command {
                 IoctlOp::Enable => {
                     match set_up_profiler(zx_sample_period).await {
                         Ok((session_proxy, client)) => {
-                            track_stub!(
-                                TODO("https://fxbug.dev/422502681"),
-                                "[perf_event_open] don't hardcode profiling duration"
-                            );
-
-                            let handle = vmo_handle_copy
-                                .as_mut()
-                                .expect("Failed to get VMO handle")
-                                .as_handle_ref()
-                                .duplicate(zx::Rights::SAME_RIGHTS)
-                                .unwrap();
-
-                            let _ = collect_sample(
-                                session_proxy,
-                                client,
-                                Duration::from_millis(100),
-                                &zx::Vmo::from(handle),
-                                &*cloned_data_head_pointer,
-                                perf_event_file.sample_type,
-                                perf_event_file.sample_id,
-                                sample_period_in_ticks,
-                                perf_event_file.vmo_write_offset,
-                            )
-                            .await;
-                            // Send notification that profiler session is over.
-                            let _ = profiling_complete_receiver.send(());
+                            let start_request = profiler::SessionStartRequest {
+                                buffer_results: Some(true),
+                                buffer_size_mb: Some(8 as u64),
+                                ..Default::default()
+                            };
+                            if let Err(e) = session_proxy.start(&start_request).await {
+                                log_warn!("Failed to start profiling: {}", e);
+                            } else {
+                                profiler_state = Some((session_proxy, client));
+                            }
                         }
                         Err(e) => {
                             log_warn!("Failed to profile: {}", e);
                         }
                     };
+                    // Send notification anyway to unblock the ioctl caller.
+                    let _ = profiling_complete_receiver.send(());
+                }
+                IoctlOp::Disable => {
+                    if let Some((session_proxy, client)) = profiler_state.take() {
+                        let handle = vmo_handle_copy
+                            .as_mut()
+                            .expect("Failed to get VMO handle")
+                            .as_handle_ref()
+                            .duplicate(zx::Rights::SAME_RIGHTS)
+                            .unwrap();
+
+                        if let Err(e) = stop_and_collect_samples(
+                            session_proxy,
+                            client,
+                            &zx::Vmo::from(handle),
+                            &*cloned_data_head_pointer,
+                            perf_event_file.sample_type,
+                            perf_event_file.sample_id,
+                            sample_period_in_ticks,
+                            perf_event_file.vmo_write_offset,
+                        )
+                        .await
+                        {
+                            log_warn!("Failed to collect sample: {:?}", e);
+                        }
+                    }
+                    // Send notification anyway to unblock the ioctl caller.
+                    let _ = profiling_complete_receiver.send(());
                 }
             }
         }

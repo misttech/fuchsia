@@ -590,8 +590,9 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
       EXPECT_NE(address, MAP_FAILED);
 
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
-      printf("This is an event - start sampling for %u ms \n", sample_duration);
-      usleep(sample_duration);
+      const int sample_duration_ms = 7000;  // 7s to collect samples
+      printf("This is an event - start sampling for %u ms \n", sample_duration_ms);
+      usleep(sample_duration_ms * 1000);
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
       EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
 
