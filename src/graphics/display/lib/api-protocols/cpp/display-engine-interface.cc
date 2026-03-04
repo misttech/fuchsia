@@ -49,9 +49,7 @@ void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
                                                  display::ModeId display_mode_id,
                                                  cpp20::span<const display::DriverLayer> layers,
                                                  display::DriverConfigStamp driver_config_stamp) {
-  // TODO(https://fxbug.dev/489243434): Replace call with ZX_PANIC() after all
-  // drivers are migrated to SubmitConfiguration().
-  ApplyConfiguration(display_id, display_mode_id, layers, driver_config_stamp);
+  ZX_PANIC("DisplayEngineInterface subclasses must override a SubmitConfiguration() overload");
 }
 
 void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
@@ -62,15 +60,6 @@ void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
   ZX_DEBUG_ASSERT_MSG(color_conversion == display::ColorConversion::kIdentity,
                       "Display coordinator submitted rejected ColorConversion");
   SubmitConfiguration(display_id, display_mode_id, layers, driver_config_stamp);
-}
-
-void DisplayEngineInterface::ApplyConfiguration(display::DisplayId display_id,
-                                                display::ModeId display_mode_id,
-                                                cpp20::span<const display::DriverLayer> layers,
-                                                display::DriverConfigStamp driver_config_stamp) {
-  ZX_PANIC(
-      "DisplayEngineInterface subclasses must override one SubmitConfiguration() or "
-      "ApplyConfiguration() overload.");
 }
 
 }  // namespace display

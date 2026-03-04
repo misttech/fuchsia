@@ -78,12 +78,6 @@ class DisplayEngineInterface {
                                    cpp20::span<const display::DriverLayer> layers,
                                    display::DriverConfigStamp driver_config_stamp);
 
-  // TODO(https://fxbug.dev/489243434): Remove after all drivers are migrated to
-  // SubmitConfiguration().
-  virtual void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                  cpp20::span<const display::DriverLayer> layers,
-                                  display::DriverConfigStamp driver_config_stamp);
-
   virtual zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) = 0;
