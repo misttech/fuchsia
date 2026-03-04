@@ -1051,7 +1051,7 @@ int main(int argc, const char* argv[]) {
       }
     }
 
-    // This delay is used to skew the timing between vsync and ApplyConfiguration
+    // This delay is used to skew the timing between vsync and SubmitConfiguration
     // in order to observe any tearing effects
     zx_nanosleep(zx_deadline_after(ZX_MSEC(delay)));
 

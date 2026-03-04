@@ -49,9 +49,9 @@ class EngineDriverClient {
   virtual display::ConfigCheckResult CheckConfiguration(
       const DriverDisplayConfig& driver_display_config,
       std::span<const display::DriverLayer> layers) = 0;
-  virtual void ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
-                                  std::span<const display::DriverLayer> layers,
-                                  display::DriverConfigStamp config_stamp) = 0;
+  virtual void SubmitConfiguration(const DriverDisplayConfig& driver_display_config,
+                                   std::span<const display::DriverLayer> layers,
+                                   display::DriverConfigStamp config_stamp) = 0;
   virtual display::EngineInfo CompleteCoordinatorConnection(
       fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener> fidl_listener_client) = 0;
   virtual void UnsetListener() = 0;

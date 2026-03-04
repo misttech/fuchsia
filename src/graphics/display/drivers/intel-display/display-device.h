@@ -59,9 +59,10 @@ class DisplayDevice {
 
   virtual ~DisplayDevice();
 
-  void ApplyConfiguration(display::ModeId mode_id, const display::ColorConversion& color_conversion,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp);
+  void SubmitConfiguration(display::ModeId mode_id,
+                           const display::ColorConversion& color_conversion,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp);
 
   // TODO(https://fxbug.dev/42167004): Initialization-related interactions between the Controller
   // class and DisplayDevice can currently take different paths, with Init() being called

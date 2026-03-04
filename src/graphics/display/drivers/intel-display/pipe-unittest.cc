@@ -128,8 +128,8 @@ TEST_F(PipeTest, GetVsyncConfigStamp) {
   // Applies configuration with only one layer (layer_1).
   const std::array<display::DriverLayer, 1> test_layers1 = {layer_1};
   display::DriverConfigStamp stamp_1{1};
-  pipe.ApplyConfiguration(display::ColorConversion::kIdentity, test_layers1, stamp_1,
-                          GetGttImageHandle, GetPixelFormat);
+  pipe.SubmitConfiguration(display::ColorConversion::kIdentity, test_layers1, stamp_1,
+                           GetGttImageHandle, GetPixelFormat);
 
   // For images that are not registered with Pipe yet, GetVsyncConfigStamp()
   // should return nullopt.
@@ -147,8 +147,8 @@ TEST_F(PipeTest, GetVsyncConfigStamp) {
   // and a new layer layer_3).
   const std::array<display::DriverLayer, 2> test_layers2 = {layer_2, layer_3};
   display::DriverConfigStamp stamp_2{2};
-  pipe.ApplyConfiguration(display::ColorConversion::kIdentity, test_layers2, stamp_2,
-                          GetGttImageHandle, GetPixelFormat);
+  pipe.SubmitConfiguration(display::ColorConversion::kIdentity, test_layers2, stamp_2,
+                           GetGttImageHandle, GetPixelFormat);
 
   // It is possible that a layer update is slower than other layers, so on
   // Vsync time the device may have layers from different configurations. In

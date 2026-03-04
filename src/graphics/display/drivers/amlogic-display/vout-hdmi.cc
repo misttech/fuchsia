@@ -143,7 +143,7 @@ std::optional<display::Mode> VoutHdmi::GetDisplayMode(display::ModeId mode_id) c
   return ToDisplayMode(get_timing_result.value());
 }
 
-zx::result<> VoutHdmi::ApplyConfiguration(display::ModeId mode_id) {
+zx::result<> VoutHdmi::SubmitConfiguration(display::ModeId mode_id) {
   ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
   if (mode_id == current_mode_id_) {
     return zx::ok();
@@ -180,7 +180,7 @@ zx::result<> VoutHdmi::PowerOn() {
 
   // Powering on the display panel also resets the display mode set on the
   // display. This clears the display mode set previously to force a Vout
-  // modeset to be performed on the next ApplyConfiguration().
+  // modeset to be performed on the next SubmitConfiguration().
   current_mode_id_ = display::kInvalidModeId;
   return zx::ok();
 }

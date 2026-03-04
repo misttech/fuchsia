@@ -180,11 +180,11 @@ void DisplayEngineFidlAdapter::SubmitConfiguration(
   }
 
   ZX_DEBUG_ASSERT_MSG(display_config.layers.size() <= display::EngineInfo::kMaxAllowedMaxLayerCount,
-                      "Display coordinator applied rejected config with too many layers");
+                      "Display coordinator submitted rejected config with too many layers");
 
   // This adapter does not currently support non-identity color correction.
   ZX_DEBUG_ASSERT_MSG(display::ColorConversion::IsValid(display_config.color_conversion),
-                      "Display coordinator applied rejected invalid color-correction config");
+                      "Display coordinator submitted rejected invalid color-correction config");
 
   display::ColorConversion color_conversion(display_config.color_conversion);
 
@@ -198,9 +198,9 @@ void DisplayEngineFidlAdapter::SubmitConfiguration(
     layers.emplace_back(fidl_layer);
   }
 
-  engine_.ApplyConfiguration(display::DisplayId(display_config.display_id), mode_id,
-                             color_conversion, layers,
-                             display::DriverConfigStamp(request->config_stamp));
+  engine_.SubmitConfiguration(display::DisplayId(display_config.display_id), mode_id,
+                              color_conversion, layers,
+                              display::DriverConfigStamp(request->config_stamp));
   completer.buffer(arena).Reply();
 }
 

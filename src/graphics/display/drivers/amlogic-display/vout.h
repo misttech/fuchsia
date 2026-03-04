@@ -65,7 +65,7 @@ class Vout {
   virtual std::optional<display::Mode> GetDisplayMode(display::ModeId mode_id) const = 0;
 
   // Applies the configuration for the given `mode_id`.
-  virtual zx::result<> ApplyConfiguration(display::ModeId mode_id) = 0;
+  virtual zx::result<> SubmitConfiguration(display::ModeId mode_id) = 0;
 
   // Attempt to turn off all connected displays, and disable clocks. This will
   // also stop vsync interrupts. This is aligned with the interface for

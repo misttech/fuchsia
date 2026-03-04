@@ -34,7 +34,7 @@ struct MockDisplayEngine::Expectation {
   ImportImageForCaptureChecker import_image_for_capture_checker;
   ReleaseImageChecker release_image_checker;
   CheckConfigurationChecker check_configuration_checker;
-  ApplyConfigurationChecker apply_configuration_checker;
+  SubmitConfigurationChecker submit_configuration_checker;
   SetBufferCollectionConstraintsChecker set_buffer_collection_constraints_checker;
   SetDisplayPowerModeChecker set_display_power_mode_checker;
   IsCaptureSupportedChecker is_capture_supported_checker;
@@ -85,9 +85,9 @@ void MockDisplayEngine::ExpectCheckConfiguration(CheckConfigurationChecker check
   expectations_.push_back({.check_configuration_checker = std::move(checker)});
 }
 
-void MockDisplayEngine::ExpectApplyConfiguration(ApplyConfigurationChecker checker) {
+void MockDisplayEngine::ExpectSubmitConfiguration(SubmitConfigurationChecker checker) {
   std::lock_guard<std::mutex> lock(mutex_);
-  expectations_.push_back({.apply_configuration_checker = std::move(checker)});
+  expectations_.push_back({.submit_configuration_checker = std::move(checker)});
 }
 
 void MockDisplayEngine::ExpectSetBufferCollectionConstraints(
@@ -215,20 +215,20 @@ display::ConfigCheckResult MockDisplayEngine::CheckConfiguration(
                                                       layers);
 }
 
-void MockDisplayEngine::ApplyConfiguration(display::DisplayId display_id,
-                                           display::ModeId display_mode_id,
-                                           display::ColorConversion color_conversion,
-                                           cpp20::span<const display::DriverLayer> layers,
-                                           display::DriverConfigStamp config_stamp) {
+void MockDisplayEngine::SubmitConfiguration(display::DisplayId display_id,
+                                            display::ModeId display_mode_id,
+                                            display::ColorConversion color_conversion,
+                                            cpp20::span<const display::DriverLayer> layers,
+                                            display::DriverConfigStamp config_stamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
   ++call_index_;
 
-  ZX_ASSERT_MSG(call_expectation.apply_configuration_checker != nullptr,
+  ZX_ASSERT_MSG(call_expectation.submit_configuration_checker != nullptr,
                 "Received call type does not match expected call type");
-  call_expectation.apply_configuration_checker(display_id, display_mode_id, color_conversion,
-                                               layers, config_stamp);
+  call_expectation.submit_configuration_checker(display_id, display_mode_id, color_conversion,
+                                                layers, config_stamp);
 }
 
 zx::result<> MockDisplayEngine::SetBufferCollectionConstraints(

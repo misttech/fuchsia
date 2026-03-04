@@ -237,10 +237,10 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
-                                       display::ModeId display_mode_id,
-                                       cpp20::span<const display::DriverLayer> layers,
-                                       display::DriverConfigStamp config_stamp) {
+void DisplayEngine::SubmitConfiguration(display::DisplayId display_id,
+                                        display::ModeId display_mode_id,
+                                        cpp20::span<const display::DriverLayer> layers,
+                                        display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
   ZX_DEBUG_ASSERT(display_mode_id == kDisplayModeId);
 
@@ -249,7 +249,7 @@ void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
   const display::DriverImageId image_id = layers[0].image_id();
   const ImportedImage* imported_image = imported_images_.FindImageById(image_id);
   if (imported_image == nullptr) {
-    fdf::error("ApplyConfiguration() used invalid image ID");
+    fdf::error("SubmitConfiguration() used invalid image ID");
     return;
   }
 

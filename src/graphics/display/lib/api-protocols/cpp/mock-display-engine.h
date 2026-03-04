@@ -54,7 +54,7 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
   using CheckConfigurationChecker = fit::function<display::ConfigCheckResult(
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers)>;
-  using ApplyConfigurationChecker = fit::function<void(
+  using SubmitConfigurationChecker = fit::function<void(
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
       display::DriverConfigStamp config_stamp)>;
@@ -83,7 +83,7 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
   void ExpectImportImageForCapture(ImportImageForCaptureChecker checker);
   void ExpectReleaseImage(ReleaseImageChecker checker);
   void ExpectCheckConfiguration(CheckConfigurationChecker checker);
-  void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
+  void ExpectSubmitConfiguration(SubmitConfigurationChecker checker);
   void ExpectSetBufferCollectionConstraints(SetBufferCollectionConstraintsChecker checker);
   void ExpectSetDisplayPowerMode(SetDisplayPowerModeChecker checker);
   void ExpectIsCaptureSupported(IsCaptureSupportedChecker checker);
@@ -114,10 +114,10 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion,
       cpp20::span<const display::DriverLayer> layers) override;
-  void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                          display::ColorConversion color_conversion,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp) override;
+  void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                           display::ColorConversion color_conversion,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;

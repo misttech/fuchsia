@@ -484,9 +484,10 @@ display::ConfigCheckResult FakeDisplay::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void FakeDisplay::ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                     cpp20::span<const display::DriverLayer> layers,
-                                     display::DriverConfigStamp config_stamp) {
+void FakeDisplay::SubmitConfiguration(display::DisplayId display_id,
+                                      display::ModeId display_mode_id,
+                                      cpp20::span<const display::DriverLayer> layers,
+                                      display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == device_config_.display_id);
   ZX_DEBUG_ASSERT(display_mode_id == device_config_.display_mode_id);
   ZX_DEBUG_ASSERT(config_stamp != display::kInvalidDriverConfigStamp);

@@ -566,7 +566,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationAdapterErrorInvalidColorC
             fuchsia_hardware_display_types::wire::ConfigResult::kInvalidConfig);
 }
 
-TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationSingleLayer) {
+TEST_F(DisplayEngineFidlAdapterTest, SubmitConfigurationSingleLayer) {
   static constexpr display::DisplayId kDisplayId(42);
   static constexpr display::ModeId kModeId(24);
   const display::ColorConversion kColorConversion = {
@@ -593,16 +593,16 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationSingleLayer) {
           fidl::VectorView<fuchsia_hardware_display_engine::wire::Layer>::FromExternal(fidl_layers),
   };
 
-  mock_.ExpectApplyConfiguration([&](display::DisplayId display_id, display::ModeId display_mode_id,
-                                     display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers,
-                                     display::DriverConfigStamp config_stamp) {
-    EXPECT_EQ(kDisplayId, display_id);
-    EXPECT_EQ(kModeId, display_mode_id);
-    EXPECT_EQ(kColorConversion, color_conversion);
-    EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
-    EXPECT_EQ(kConfigStamp, config_stamp);
-  });
+  mock_.ExpectSubmitConfiguration(
+      [&](display::DisplayId display_id, display::ModeId display_mode_id,
+          display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
+          display::DriverConfigStamp config_stamp) {
+        EXPECT_EQ(kDisplayId, display_id);
+        EXPECT_EQ(kModeId, display_mode_id);
+        EXPECT_EQ(kColorConversion, color_conversion);
+        EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
+        EXPECT_EQ(kConfigStamp, config_stamp);
+      });
 
   fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SubmitConfiguration>
@@ -611,7 +611,7 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationSingleLayer) {
   ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
 }
 
-TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationMultiLayer) {
+TEST_F(DisplayEngineFidlAdapterTest, SubmitConfigurationMultiLayer) {
   static constexpr display::DisplayId kDisplayId(42);
   static constexpr display::ModeId kModeId(24);
   static constexpr std::array<display::DriverLayer, 4> kLayers = {
@@ -629,16 +629,16 @@ TEST_F(DisplayEngineFidlAdapterTest, ApplyConfigurationMultiLayer) {
           fidl::VectorView<fuchsia_hardware_display_engine::wire::Layer>::FromExternal(fidl_layers),
   };
 
-  mock_.ExpectApplyConfiguration([&](display::DisplayId display_id, display::ModeId display_mode_id,
-                                     display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers,
-                                     display::DriverConfigStamp config_stamp) {
-    EXPECT_EQ(kDisplayId, display_id);
-    EXPECT_EQ(kModeId, display_mode_id);
-    EXPECT_EQ(display::ColorConversion::kIdentity, color_conversion);
-    EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
-    EXPECT_EQ(kConfigStamp, config_stamp);
-  });
+  mock_.ExpectSubmitConfiguration(
+      [&](display::DisplayId display_id, display::ModeId display_mode_id,
+          display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
+          display::DriverConfigStamp config_stamp) {
+        EXPECT_EQ(kDisplayId, display_id);
+        EXPECT_EQ(kModeId, display_mode_id);
+        EXPECT_EQ(display::ColorConversion::kIdentity, color_conversion);
+        EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
+        EXPECT_EQ(kConfigStamp, config_stamp);
+      });
 
   fdf::Arena arena('TEST');
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SubmitConfiguration>

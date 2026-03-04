@@ -49,7 +49,7 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
   using CheckConfigurationChecker = fit::function<display::ConfigCheckResult(
       display::DisplayId display_id, display::ModeId display_mode_id,
       cpp20::span<const display::DriverLayer> layers)>;
-  using ApplyConfigurationChecker = fit::function<void(
+  using SubmitConfigurationChecker = fit::function<void(
       display::DisplayId display_id, display::ModeId display_mode_id,
       cpp20::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp)>;
 
@@ -59,7 +59,7 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
   ~DisplayEngineMinimalMock();
 
   void ExpectCheckConfiguration(CheckConfigurationChecker checker);
-  void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
+  void ExpectSubmitConfiguration(SubmitConfigurationChecker checker);
 
   // Must be called at least once during an instance's lifetime.
   //
@@ -83,9 +83,9 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
       cpp20::span<const display::DriverLayer> layers) override;
-  void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp driver_config_stamp) override;
+  void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp driver_config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
@@ -93,7 +93,7 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
  private:
   struct Expectation {
     CheckConfigurationChecker check_configuration_checker;
-    ApplyConfigurationChecker apply_configuration_checker;
+    SubmitConfigurationChecker submit_configuration_checker;
   };
 
   std::mutex mutex_;
@@ -113,9 +113,9 @@ void DisplayEngineMinimalMock::ExpectCheckConfiguration(CheckConfigurationChecke
   expectations_.push_back({.check_configuration_checker = std::move(checker)});
 }
 
-void DisplayEngineMinimalMock::ExpectApplyConfiguration(ApplyConfigurationChecker checker) {
+void DisplayEngineMinimalMock::ExpectSubmitConfiguration(SubmitConfigurationChecker checker) {
   std::lock_guard<std::mutex> lock(mutex_);
-  expectations_.push_back({.apply_configuration_checker = std::move(checker)});
+  expectations_.push_back({.submit_configuration_checker = std::move(checker)});
 }
 
 void DisplayEngineMinimalMock::CheckAllCallsReplayed() {
@@ -173,19 +173,19 @@ display::ConfigCheckResult DisplayEngineMinimalMock::CheckConfiguration(
   return call_expectation.check_configuration_checker(display_id, display_mode_id, layers);
 }
 
-void DisplayEngineMinimalMock::ApplyConfiguration(display::DisplayId display_id,
-                                                  display::ModeId display_mode_id,
-                                                  cpp20::span<const display::DriverLayer> layers,
-                                                  display::DriverConfigStamp driver_config_stamp) {
+void DisplayEngineMinimalMock::SubmitConfiguration(display::DisplayId display_id,
+                                                   display::ModeId display_mode_id,
+                                                   cpp20::span<const display::DriverLayer> layers,
+                                                   display::DriverConfigStamp driver_config_stamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
   ++call_index_;
 
-  ZX_ASSERT_MSG(call_expectation.apply_configuration_checker != nullptr,
+  ZX_ASSERT_MSG(call_expectation.submit_configuration_checker != nullptr,
                 "Received call type does not match expected call type");
-  call_expectation.apply_configuration_checker(display_id, display_mode_id, layers,
-                                               driver_config_stamp);
+  call_expectation.submit_configuration_checker(display_id, display_mode_id, layers,
+                                                driver_config_stamp);
 }
 
 zx::result<> DisplayEngineMinimalMock::SetBufferCollectionConstraints(
@@ -281,13 +281,13 @@ TEST_F(DisplayEngineInterfaceTest, CheckConfigurationNonIdentityColorConversionE
             display_engine.CheckConfiguration(kDisplayId, kModeId, kColorConversion, kLayers));
 }
 
-TEST_F(DisplayEngineInterfaceTest, ApplyConfigurationIdentityColorConversion) {
+TEST_F(DisplayEngineInterfaceTest, SubmitConfigurationIdentityColorConversion) {
   static constexpr display::DisplayId kDisplayId(1);
   static constexpr display::ModeId kModeId(2);
   static constexpr std::array<display::DriverLayer, 1> kLayers = {CreateValidLayerWithSeed(0)};
   static constexpr display::DriverConfigStamp kConfigStamp(42);
 
-  mock_display_engine_.ExpectApplyConfiguration(
+  mock_display_engine_.ExpectSubmitConfiguration(
       [&](display::DisplayId display_id, display::ModeId mode_id,
           cpp20::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp) {
         EXPECT_EQ(kDisplayId, display_id);
@@ -297,8 +297,8 @@ TEST_F(DisplayEngineInterfaceTest, ApplyConfigurationIdentityColorConversion) {
       });
 
   DisplayEngineInterface& display_engine = mock_display_engine_;
-  display_engine.ApplyConfiguration(kDisplayId, kModeId, display::ColorConversion::kIdentity,
-                                    kLayers, kConfigStamp);
+  display_engine.SubmitConfiguration(kDisplayId, kModeId, display::ColorConversion::kIdentity,
+                                     kLayers, kConfigStamp);
 }
 
 }  // namespace

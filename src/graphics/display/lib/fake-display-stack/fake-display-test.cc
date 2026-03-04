@@ -742,7 +742,7 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureImage) {
   ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result);
 
   static constexpr display::DriverConfigStamp kConfigStamp(1);
-  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
+  fake_display_->SubmitConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
 
   // Start capture; wait until the capture ends.
   ASSERT_FALSE(engine_listener_.capture_completed().signaled());
@@ -788,7 +788,7 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureImage) {
       CreateColorFillLayerConfig(kBlackBgra, kDisplayDimensions),
   };
   static constexpr display::DriverConfigStamp kEmptyConfigStamp(2);
-  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kColorFillLayers, kEmptyConfigStamp);
+  fake_display_->SubmitConfiguration(kDisplayId, kModeId, kColorFillLayers, kEmptyConfigStamp);
 
   // Release the image.
   // TODO(https://fxbug.dev/42079040): Consider adding RAII handles to release the
@@ -870,7 +870,7 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureSolidColorFill) {
   ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result);
 
   static constexpr display::DriverConfigStamp kConfigStamp(1);
-  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
+  fake_display_->SubmitConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
   // Start capture; wait until the capture ends.
   ASSERT_FALSE(engine_listener_.capture_completed().signaled());
   ASSERT_OK(fake_display_->StartCapture(capture_import_result.value()));
@@ -1084,7 +1084,7 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
   ASSERT_EQ(display::ConfigCheckResult::kOk, config_check_result);
 
   static constexpr display::DriverConfigStamp kConfigStamp(1);
-  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
+  fake_display_->SubmitConfiguration(kDisplayId, kModeId, kLayers, kConfigStamp);
 
   // Start capture; wait until the capture ends.
   ASSERT_FALSE(engine_listener_.capture_completed().signaled());
@@ -1147,7 +1147,7 @@ TEST_F(FakeDisplayRealSysmemTest, CaptureMultipleImageLayers) {
       CreateColorFillLayerConfig(kBlackBgra, kDisplayDimensions),
   };
   static constexpr display::DriverConfigStamp kEmptyConfigStamp(2);
-  fake_display_->ApplyConfiguration(kDisplayId, kModeId, kColorFillLayers, kEmptyConfigStamp);
+  fake_display_->SubmitConfiguration(kDisplayId, kModeId, kColorFillLayers, kEmptyConfigStamp);
 
   // Release the image.
   // TODO(https://fxbug.dev/42079040): Consider adding RAII handles to release the

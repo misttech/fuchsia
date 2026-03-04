@@ -72,10 +72,10 @@ class DisplayEngine final : public display::DisplayEngineInterface {
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion,
       cpp20::span<const display::DriverLayer> layers) override;
-  void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                          display::ColorConversion color_conversion,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp) override;
+  void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                           display::ColorConversion color_conversion,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
@@ -115,7 +115,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
     // has no framebuffers to display.
     ColorBuffer* color_buffer = nullptr;
 
-    // The |config_stamp| value of the ApplyConfiguration() call to which this
+    // The |config_stamp| value of the SubmitConfiguration() call to which this
     // DisplayConfig corresponds.
     display::DriverConfigStamp config_stamp = display::kInvalidDriverConfigStamp;
   };

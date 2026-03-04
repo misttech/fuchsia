@@ -80,9 +80,9 @@ class FakeDisplay : public display::DisplayEngineInterface {
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
       cpp20::span<const display::DriverLayer> layers) override __TA_EXCLUDES(mutex_);
-  void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp) override __TA_EXCLUDES(mutex_);
+  void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp) override __TA_EXCLUDES(mutex_);
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override __TA_EXCLUDES(mutex_);
@@ -103,7 +103,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // serves to ensure good test design, and it is not based on implementation
   // limitations.
   //
-  // May not be called before `ApplyConfiguration()`. Each VSync event must
+  // May not be called before `SubmitConfiguration()`. Each VSync event must
   // include a valid `ConfigStamp`, which requires having an applied
   // configuration.
   //
@@ -213,7 +213,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
   // Owns the display images imported into the driver.
   DisplayImageInfo::HashTable imported_images_ __TA_GUARDED(mutex_);
 
-  // Layers applied in the last `ApplyConfiguration()` call.
+  // Layers applied in the last `SubmitConfiguration()` call.
   std::vector<display::DriverLayer> applied_layers_ __TA_GUARDED(mutex_);
 
   // Next image ID assigned to an imported image.
@@ -241,7 +241,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
 
   // The config stamp of the applied display configuration.
   //
-  // Updated by ApplyConfiguration(), used by the VSync thread.
+  // Updated by SubmitConfiguration(), used by the VSync thread.
   display::DriverConfigStamp displayed_config_stamp_ __TA_GUARDED(mutex_) =
       display::kInvalidDriverConfigStamp;
 

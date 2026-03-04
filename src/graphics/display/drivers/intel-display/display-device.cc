@@ -152,10 +152,10 @@ bool DisplayDevice::CheckNeedsModeset(const display::DisplayTiming& mode) {
   return !controller()->dpll_manager()->DdiPllMatchesConfig(ddi_id(), desired_pll_config);
 }
 
-void DisplayDevice::ApplyConfiguration(display::ModeId mode_id,
-                                       const display::ColorConversion& color_conversion,
-                                       cpp20::span<const display::DriverLayer> layers,
-                                       display::DriverConfigStamp config_stamp) {
+void DisplayDevice::SubmitConfiguration(display::ModeId mode_id,
+                                        const display::ColorConversion& color_conversion,
+                                        cpp20::span<const display::DriverLayer> layers,
+                                        display::DriverConfigStamp config_stamp) {
   std::optional<display::DisplayTiming> display_timing_result = GetDisplayTiming(mode_id);
   if (!display_timing_result) {
     fdf::error("Display {}: Invalid mode_id {}", id().value(), mode_id.value());
@@ -165,18 +165,18 @@ void DisplayDevice::ApplyConfiguration(display::ModeId mode_id,
 
   if (CheckNeedsModeset(display_timing)) {
     if (pipe_) {
-      // TODO(https://fxbug.dev/42067272): When ApplyConfiguration() early returns on the
+      // TODO(https://fxbug.dev/42067272): When SubmitConfiguration() early returns on the
       // following error conditions, we should reset the DDI, pipe and transcoder
       // so that they can be possibly reused.
       if (!DdiModeset(display_timing)) {
-        fdf::error("Display {}: Modeset failed; ApplyConfiguration() aborted.", id().value());
+        fdf::error("Display {}: Modeset failed; SubmitConfiguration() aborted.", id().value());
         return;
       }
 
       if (!PipeConfigPreamble(display_timing, pipe_->pipe_id(), pipe_->connected_transcoder_id())) {
         fdf::error(
             "Display %lu: Transcoder configuration failed before pipe setup; "
-            "ApplyConfiguration() aborted.",
+            "SubmitConfiguration() aborted.",
             id().value());
         return;
       }
@@ -184,7 +184,7 @@ void DisplayDevice::ApplyConfiguration(display::ModeId mode_id,
       if (!PipeConfigEpilogue(display_timing, pipe_->pipe_id(), pipe_->connected_transcoder_id())) {
         fdf::error(
             "Display %lu: Transcoder configuration failed after pipe setup; "
-            "ApplyConfiguration() aborted.",
+            "SubmitConfiguration() aborted.",
             id().value());
         return;
       }
@@ -193,7 +193,7 @@ void DisplayDevice::ApplyConfiguration(display::ModeId mode_id,
   }
 
   if (pipe_) {
-    pipe_->ApplyConfiguration(
+    pipe_->SubmitConfiguration(
         color_conversion, layers, config_stamp,
         [controller = controller_](
             const display::ImageMetadata& image_metadata, display::DriverImageId image_id,

@@ -327,10 +327,10 @@ display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void FramebufferDisplay::ApplyConfiguration(display::DisplayId display_id,
-                                            display::ModeId display_mode_id,
-                                            cpp20::span<const display::DriverLayer> layers,
-                                            display::DriverConfigStamp config_stamp) {
+void FramebufferDisplay::SubmitConfiguration(display::DisplayId display_id,
+                                             display::ModeId display_mode_id,
+                                             cpp20::span<const display::DriverLayer> layers,
+                                             display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
   ZX_DEBUG_ASSERT(display_mode_id == kDisplayModeId);
 

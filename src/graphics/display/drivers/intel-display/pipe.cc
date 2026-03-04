@@ -401,11 +401,11 @@ void Pipe::LoadActiveMode(display::DisplayTiming* mode) {
   pipe_size.WriteTo(mmio_space_);
 }
 
-void Pipe::ApplyConfiguration(const display::ColorConversion& color_conversion,
-                              cpp20::span<const display::DriverLayer> layers,
-                              display::DriverConfigStamp config_stamp,
-                              const SetupGttImageFunc& setup_gtt_image,
-                              const GetImagePixelFormatFunc& get_pixel_format) {
+void Pipe::SubmitConfiguration(const display::ColorConversion& color_conversion,
+                               cpp20::span<const display::DriverLayer> layers,
+                               display::DriverConfigStamp config_stamp,
+                               const SetupGttImageFunc& setup_gtt_image,
+                               const GetImagePixelFormatFunc& get_pixel_format) {
   ZX_ASSERT(config_stamp != display::kInvalidDriverConfigStamp);
 
   // The values of the config stamps in `pending_eviction_config_stamps_` must
@@ -764,7 +764,7 @@ display::DriverConfigStamp Pipe::GetVsyncConfigStamp(
   }
   if (pending_eviction_config_stamps_.empty()) {
     // Vsync signals could be sent to the driver before the first
-    // ApplyConfiguration() is called. In that case the Vsync signal should be
+    // SubmitConfiguration() is called. In that case the Vsync signal should be
     // just ignored by the driver, so we return a null config stamp.
     fdf::debug("{}: No config has been applied.", __func__);
     return display::kInvalidDriverConfigStamp;

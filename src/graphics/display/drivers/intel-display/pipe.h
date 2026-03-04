@@ -58,11 +58,11 @@ class Pipe {
   using SetupGttImageFunc = fit::function<const GttRegion&(
       const display::ImageMetadata& image_metadata, display::DriverImageId image_id,
       display::CoordinateTransformation coordinate_transformation)>;
-  void ApplyConfiguration(const display::ColorConversion& color_conversion,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp,
-                          const SetupGttImageFunc& setup_gtt_image,
-                          const GetImagePixelFormatFunc& get_pixel_format);
+  void SubmitConfiguration(const display::ColorConversion& color_conversion,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp,
+                           const SetupGttImageFunc& setup_gtt_image,
+                           const GetImagePixelFormatFunc& get_pixel_format);
 
   // Reset pipe registers and transcoders.
   void Reset();

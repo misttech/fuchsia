@@ -38,7 +38,7 @@ class VoutDsi : public Vout {
   zx::result<> UpdateStateOnDisplayConnected() override;
   void DisplayDisconnected() override;
   std::optional<display::Mode> GetDisplayMode(display::ModeId mode_id) const override;
-  zx::result<> ApplyConfiguration(display::ModeId mode_id) override;
+  zx::result<> SubmitConfiguration(display::ModeId mode_id) override;
   zx::result<> PowerOff() override;
   zx::result<> PowerOn() override;
   zx::result<> SetFrameVisibility(bool frame_visible) override;

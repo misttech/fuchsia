@@ -83,9 +83,9 @@ class FramebufferDisplay : public HeapServer, public display::DisplayEngineInter
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
       cpp20::span<const display::DriverLayer> layers) override;
-  void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                          cpp20::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp) override;
+  void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                           cpp20::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
@@ -125,7 +125,7 @@ class FramebufferDisplay : public HeapServer, public display::DisplayEngineInter
   std::atomic<bool> has_image_;
 
   // A lock is required to ensure the atomicity when setting |config_stamp| in
-  // |ApplyConfiguration()| and passing |&config_stamp_| to |OnDisplayVsync()|.
+  // |SubmitConfiguration()| and passing |&config_stamp_| to |OnDisplayVsync()|.
   std::mutex mtx_;
   display::DriverConfigStamp config_stamp_ TA_GUARDED(mtx_) = display::kInvalidDriverConfigStamp;
 

@@ -42,9 +42,9 @@ class EngineDriverClientFidl : public EngineDriverClient {
   display::ConfigCheckResult CheckConfiguration(
       const DriverDisplayConfig& driver_display_config,
       std::span<const display::DriverLayer> layers) override;
-  void ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
-                          std::span<const display::DriverLayer> layers,
-                          display::DriverConfigStamp config_stamp) override;
+  void SubmitConfiguration(const DriverDisplayConfig& driver_display_config,
+                           std::span<const display::DriverLayer> layers,
+                           display::DriverConfigStamp config_stamp) override;
   display::EngineInfo CompleteCoordinatorConnection(
       fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener> fidl_listener_client)
       override;

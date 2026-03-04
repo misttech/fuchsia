@@ -1758,10 +1758,10 @@ uint16_t Controller::DataBufferBlockCount() const {
   return is_tgl(device_id_) ? kTigerLakeDataBufferBlockCount : kKabyLakeDataBufferBlockCount;
 }
 
-void Controller::ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                    display::ColorConversion color_conversion,
-                                    cpp20::span<const display::DriverLayer> layers,
-                                    display::DriverConfigStamp driver_config_stamp) {
+void Controller::SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                                     display::ColorConversion color_conversion,
+                                     cpp20::span<const display::DriverLayer> layers,
+                                     display::DriverConfigStamp driver_config_stamp) {
   fbl::AutoLock lock(&display_lock_);
 
   ZX_DEBUG_ASSERT(display_devices_.size() <= kMaximumConnectedDisplayCount);
@@ -1780,7 +1780,7 @@ void Controller::ApplyConfiguration(display::DisplayId display_id, display::Mode
       }
       continue;
     }
-    display->ApplyConfiguration(display_mode_id, color_conversion, layers, driver_config_stamp);
+    display->SubmitConfiguration(display_mode_id, color_conversion, layers, driver_config_stamp);
 
     // The hardware only gives vsyncs if at least one plane is enabled, so
     // fake one if we need to, to inform the client that we're done with the

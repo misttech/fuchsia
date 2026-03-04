@@ -66,15 +66,21 @@ class DisplayEngineInterface {
       display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers);
 
   // Display engine drivers must override **exactly one** of the following
-  // `ApplyConfiguration()` methods.
+  // `SubmitConfiguration()` methods.
 
-  virtual void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                  cpp20::span<const display::DriverLayer> layers,
-                                  display::DriverConfigStamp driver_config_stamp);
+  virtual void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                                   cpp20::span<const display::DriverLayer> layers,
+                                   display::DriverConfigStamp driver_config_stamp);
   // Out-of-tree drivers must not override this overload, because it will be
   // reworked.
+  virtual void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                                   display::ColorConversion color_conversion,
+                                   cpp20::span<const display::DriverLayer> layers,
+                                   display::DriverConfigStamp driver_config_stamp);
+
+  // TODO(https://fxbug.dev/489243434): Remove after all drivers are migrated to
+  // SubmitConfiguration().
   virtual void ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                  display::ColorConversion color_conversion,
                                   cpp20::span<const display::DriverLayer> layers,
                                   display::DriverConfigStamp driver_config_stamp);
 

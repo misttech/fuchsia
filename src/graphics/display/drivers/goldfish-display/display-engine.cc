@@ -497,11 +497,11 @@ zx_status_t DisplayEngine::PresentPrimaryDisplayConfig(const DisplayConfig& disp
   return ZX_OK;
 }
 
-void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
-                                       display::ModeId display_mode_id,
-                                       display::ColorConversion color_conversion,
-                                       cpp20::span<const display::DriverLayer> layers,
-                                       display::DriverConfigStamp config_stamp) {
+void DisplayEngine::SubmitConfiguration(display::DisplayId display_id,
+                                        display::ModeId display_mode_id,
+                                        display::ColorConversion color_conversion,
+                                        cpp20::span<const display::DriverLayer> layers,
+                                        display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
                       layers.size());
 

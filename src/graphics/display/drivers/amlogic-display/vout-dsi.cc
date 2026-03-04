@@ -122,7 +122,7 @@ std::optional<display::Mode> VoutDsi::GetDisplayMode(display::ModeId mode_id) co
   return std::nullopt;
 }
 
-zx::result<> VoutDsi::ApplyConfiguration(display::ModeId mode_id) {
+zx::result<> VoutDsi::SubmitConfiguration(display::ModeId mode_id) {
   ZX_DEBUG_ASSERT_MSG(mode_id == mode_and_id_.id(), "Unsupported DSI mode ID: %" PRIu16,
                       mode_id.value());
   return zx::ok();

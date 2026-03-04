@@ -407,8 +407,8 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
   // Populated by Client::ApplyConfig().
   ZX_DEBUG_ASSERT(static_cast<size_t>(driver_display_config.layer_count) == driver_layers.size());
 
-  engine_driver_client_->ApplyConfiguration(driver_display_config, driver_layers,
-                                            driver_config_stamp);
+  engine_driver_client_->SubmitConfiguration(driver_display_config, driver_layers,
+                                             driver_config_stamp);
 }
 
 void Controller::ImageWillBeDestroyed(display::DriverImageId driver_image_id) {

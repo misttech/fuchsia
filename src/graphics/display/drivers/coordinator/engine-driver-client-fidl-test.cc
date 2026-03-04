@@ -352,7 +352,7 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationError) {
   EXPECT_EQ(result, display::ConfigCheckResult::kUnsupportedConfig);
 }
 
-TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
+TEST_F(EngineDriverClientFidlTest, SubmitConfiguration) {
   const display::DriverLayer kLayer0({
       .display_destination = display::Rectangle({.x = 10, .y = 20, .width = 300, .height = 400}),
       .image_source = display::Rectangle({.x = 30, .y = 40, .width = 500, .height = 600}),
@@ -413,7 +413,7 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
         completer.buffer(arena).Reply();
       });
 
-  fidl_client_.ApplyConfiguration(kDisplayConfig, kLayers, kConfigStamp);
+  fidl_client_.SubmitConfiguration(kDisplayConfig, kLayers, kConfigStamp);
 }
 
 TEST_F(EngineDriverClientFidlTest, ReleaseCapture) {

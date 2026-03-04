@@ -518,10 +518,9 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
     if (layer.image_source() != display_area) {
-      fdf::warn(
-          "CheckConfig failure: image source {}x{} at ({}, {}) requires cropping or scaling",
-          layer.image_source().width(), layer.image_source().height(), layer.image_source().x(),
-          layer.image_source().y());
+      fdf::warn("CheckConfig failure: image source {}x{} at ({}, {}) requires cropping or scaling",
+                layer.image_source().width(), layer.image_source().height(),
+                layer.image_source().x(), layer.image_source().y());
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
   }
@@ -529,10 +528,10 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void DisplayEngine::ApplyConfiguration(display::DisplayId display_id, display::ModeId mode_id,
-                                       display::ColorConversion color_conversion,
-                                       cpp20::span<const display::DriverLayer> layers,
-                                       display::DriverConfigStamp config_stamp) {
+void DisplayEngine::SubmitConfiguration(display::DisplayId display_id, display::ModeId mode_id,
+                                        display::ColorConversion color_conversion,
+                                        cpp20::span<const display::DriverLayer> layers,
+                                        display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&display_mutex_);
 
   ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
@@ -542,9 +541,9 @@ void DisplayEngine::ApplyConfiguration(display::DisplayId display_id, display::M
     // Perform Vout modeset first.
     //
     // Setting up OSD may require Vout framebuffer information, which may be
-    // changed on each ApplyConfiguration(), so we need to apply the
+    // changed on each SubmitConfiguration(), so we need to apply the
     // configuration to Vout first before initializing the display and OSD.
-    zx::result<> vout_apply_config_result = vout_->ApplyConfiguration(mode_id);
+    zx::result<> vout_apply_config_result = vout_->SubmitConfiguration(mode_id);
     if (!vout_apply_config_result.is_ok()) {
       fdf::error("Failed to apply config to Vout: {}", vout_apply_config_result);
       return;

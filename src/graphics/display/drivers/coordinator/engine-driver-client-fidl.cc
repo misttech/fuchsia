@@ -75,9 +75,9 @@ display::ConfigCheckResult EngineDriverClientFidl::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-void EngineDriverClientFidl::ApplyConfiguration(const DriverDisplayConfig& driver_display_config,
-                                                std::span<const display::DriverLayer> layers,
-                                                display::DriverConfigStamp config_stamp) {
+void EngineDriverClientFidl::SubmitConfiguration(const DriverDisplayConfig& driver_display_config,
+                                                 std::span<const display::DriverLayer> layers,
+                                                 display::DriverConfigStamp config_stamp) {
   fdf::Arena arena(kArenaTag);
   fuchsia_hardware_display_engine::wire::DisplayConfig fidl_config =
       ToFidlDisplayConfig(driver_display_config, layers, arena);
