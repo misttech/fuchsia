@@ -687,12 +687,10 @@ impl IfaceManagerService {
         for client in self.clients.iter_mut() {
             if client.iface_id == iface_id {
                 match client.client_state_machine.as_ref() {
-                    None => {}
-                    Some(state_machine) => {
-                        if state_machine.is_alive() {
-                            return Ok(());
-                        }
+                    Some(state_machine) if state_machine.is_alive() => {
+                        return Ok(());
                     }
+                    Some(_) | None => {}
                 }
 
                 // Create the state machine and controller.
