@@ -308,35 +308,38 @@ impl MountedVolumesGuard<'_> {
         let sequence = mounted_volume.sequence;
         let admin_scope = mounted_volume.volume.admin_scope().clone();
         let scope = mounted_volume.volume.volume().scope().clone();
-        fasync::Task::spawn(async move {
-            // Check the admin_scope first because once that has finished, there can never be any
-            // more connections to it.
-            admin_scope.wait().await;
-            scope.wait().await;
+        fasync::Task::spawn(
+            async move {
+                // Check the admin_scope first because once that has finished, there can never be
+                // any more connections to it.
+                admin_scope.wait().await;
+                scope.wait().await;
 
-            // Check that the same volume is still mounted i.e. there wasn't an explicit
-            // unmount.
-            let mut mounted_volumes = volumes_directory.lock().await;
-            match mounted_volumes.mounted_volumes.get(&store_id) {
-                Some(m) if m.sequence == sequence => {}
-                _ => return,
+                // Check that the same volume is still mounted i.e. there wasn't an explicit
+                // unmount.
+                let mut mounted_volumes = volumes_directory.lock().await;
+                match mounted_volumes.mounted_volumes.get(&store_id) {
+                    Some(m) if m.sequence == sequence => {}
+                    _ => return,
+                }
+
+                warn!(store_id; "Last connection to volume closed without unmount, shutting down");
+                let root_store = volumes_directory.root_volume.volume_directory().store();
+                let fs = root_store.filesystem();
+                let _guard = fs
+                    .lock_manager()
+                    .txn_lock(lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        volumes_directory.root_volume.volume_directory().object_id(),
+                    )])
+                    .await;
+
+                if let Err(e) = mounted_volumes.unmount(store_id).await {
+                    warn!(e:?, store_id; "Failed to unmount volume");
+                }
             }
-
-            warn!(store_id; "Last connection to volume closed without unmount, shutting down");
-            let root_store = volumes_directory.root_volume.volume_directory().store();
-            let fs = root_store.filesystem();
-            let _guard = fs
-                .lock_manager()
-                .txn_lock(lock_keys![LockKey::object(
-                    root_store.store_object_id(),
-                    volumes_directory.root_volume.volume_directory().object_id(),
-                )])
-                .await;
-
-            if let Err(e) = mounted_volumes.unmount(store_id).await {
-                warn!(e:?, store_id; "Failed to unmount volume");
-            }
-        })
+            .trace(trace_future_args!("Volume::auto_unmount")),
+        )
         .detach();
     }
 }
@@ -719,42 +722,65 @@ impl VolumesDirectory {
         while let Some(request) = requests.try_next().await? {
             match request {
                 VolumeRequest::Check { responder, options } => {
-                    responder.send(self.handle_check(store_id, options).await.map_err(|error| {
-                        error!(error:?, store_id; "Failed to check volume");
-                        map_to_raw_status(error)
-                    }))?
+                    async move {
+                        responder.send(self.handle_check(store_id, options).await.map_err(
+                            |error| {
+                                error!(error:?, store_id; "Failed to check volume");
+                                map_to_raw_status(error)
+                            },
+                        ))
+                    }
+                    .trace(trace_future_args!("Volume::Check"))
+                    .await?;
                 }
-                VolumeRequest::Mount { responder, outgoing_directory, options } => responder.send(
-                    self.handle_mount(name, store_id, outgoing_directory, options).await.map_err(
-                        |error| {
-                            error!(error:?, name, store_id; "Failed to mount volume");
-                            map_to_raw_status(error)
-                        },
-                    ),
-                )?,
-                VolumeRequest::SetLimit { responder, bytes } => responder.send(
-                    self.handle_set_limit(store_id, bytes).await.map_err(|error| {
-                        error!(error:?, store_id; "Failed to set volume limit");
-                        map_to_raw_status(error)
-                    }),
-                )?,
+                VolumeRequest::Mount { responder, outgoing_directory, options } => {
+                    async move {
+                        responder.send(
+                            self.handle_mount(name, store_id, outgoing_directory, options)
+                                .await
+                                .map_err(|error| {
+                                    error!(error:?, name, store_id; "Failed to mount volume");
+                                    map_to_raw_status(error)
+                                }),
+                        )
+                    }
+                    .trace(trace_future_args!("Volume::Mount"))
+                    .await?;
+                }
+                VolumeRequest::SetLimit { responder, bytes } => {
+                    async move {
+                        responder.send(self.handle_set_limit(store_id, bytes).await.map_err(
+                            |error| {
+                                error!(error:?, store_id; "Failed to set volume limit");
+                                map_to_raw_status(error)
+                            },
+                        ))
+                    }
+                    .trace(trace_future_args!("Volume::SetLimit"))
+                    .await?;
+                }
                 VolumeRequest::GetLimit { responder } => {
+                    fxfs_trace::duration!("Volume::GetLimit");
                     responder.send(Ok(self.handle_get_limit(store_id)))?
                 }
                 VolumeRequest::GetInfo { responder } => {
-                    let result = self.handle_get_info(store_id).await.map(|guid| {
-                        fidl_fuchsia_fs_startup::VolumeInfo {
-                            guid: Some(guid),
-                            ..Default::default()
-                        }
-                    });
-                    match result {
-                        Ok(response) => responder.send(Ok(&response))?,
-                        Err(error) => {
-                            error!(error:?, store_id; "Failed to get volume info");
-                            responder.send(Err(map_to_raw_status(error)))?
+                    async move {
+                        let result = self.handle_get_info(store_id).await.map(|guid| {
+                            fidl_fuchsia_fs_startup::VolumeInfo {
+                                guid: Some(guid),
+                                ..Default::default()
+                            }
+                        });
+                        match result {
+                            Ok(response) => responder.send(Ok(&response)),
+                            Err(error) => {
+                                error!(error:?, store_id; "Failed to get volume info");
+                                responder.send(Err(map_to_raw_status(error)))
+                            }
                         }
                     }
+                    .trace(trace_future_args!("Volume::GetInfo"))
+                    .await?;
                 }
             }
         }

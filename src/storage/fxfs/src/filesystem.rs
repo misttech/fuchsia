@@ -28,6 +28,7 @@ use fuchsia_inspect::{Inspector, LazyNode, NumericProperty as _, UintProperty};
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use fxfs_crypto::Crypt;
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use static_assertions::const_assert;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -767,7 +768,9 @@ impl FxFilesystem {
         let mut flush_task = self.flush_task.lock();
         if flush_task.is_none() {
             let journal = self.journal.clone();
-            *flush_task = Some(fasync::Task::spawn(journal.flush_task()));
+            *flush_task = Some(fasync::Task::spawn(
+                journal.flush_task().trace(trace_future_args!("Journal::flush_task")),
+            ));
         }
     }
 
@@ -809,34 +812,37 @@ impl FxFilesystem {
         }
         let this = self.clone();
         let mut next_timer = delay;
-        *self.trim_task.lock() = Some(fasync::Task::spawn(async move {
-            loop {
-                let shutdown_listener = this.shutdown_event.listen();
-                // Note that we need to check if the filesystem was closed after we start listening
-                // to the shutdown event, but before we start waiting on `timer`, because otherwise
-                // we might start listening on `shutdown_event` *after* the event was signaled, and
-                // so `shutdown_listener` will never fire, and this task will get stuck until
-                // `timer` expires.
-                if this.closed.load(Ordering::SeqCst) {
-                    return;
-                }
-                futures::select!(
-                    () = fasync::Timer::new(next_timer.clone()).fuse() => {},
-                    () = shutdown_listener.fuse() => return,
-                );
-                let start_time = std::time::Instant::now();
-                let res = this.do_trim().await;
-                let duration = std::time::Instant::now() - start_time;
-                next_timer = interval.clone();
-                match res {
-                    Ok(bytes_trimmed) => info!(
-                        "Trimmed {bytes_trimmed} bytes in {duration:?}.  Next trim in \
-                        {next_timer:?}",
-                    ),
-                    Err(e) => error!(e:?; "Failed to trim"),
+        *self.trim_task.lock() = Some(fasync::Task::spawn(
+            async move {
+                loop {
+                    let shutdown_listener = this.shutdown_event.listen();
+                    // Note that we need to check if the filesystem was closed after we start
+                    // listening to the shutdown event, but before we start waiting on `timer`,
+                    // because otherwise we might start listening on `shutdown_event` *after* the
+                    // event was signaled, and so `shutdown_listener` will never fire, and this
+                    // task will get stuck until `timer` expires.
+                    if this.closed.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    futures::select!(
+                        () = fasync::Timer::new(next_timer.clone()).fuse() => {},
+                        () = shutdown_listener.fuse() => return,
+                    );
+                    let start_time = std::time::Instant::now();
+                    let res = this.do_trim().await;
+                    let duration = std::time::Instant::now() - start_time;
+                    next_timer = interval.clone();
+                    match res {
+                        Ok(bytes_trimmed) => info!(
+                            "Trimmed {bytes_trimmed} bytes in {duration:?}.  Next trim in \
+                            {next_timer:?}",
+                        ),
+                        Err(e) => error!(e:?; "Failed to trim"),
+                    }
                 }
             }
-        }));
+            .trace(trace_future_args!("Filesystem::trim_task")),
+        ));
     }
 
     pub(crate) async fn reservation_for_transaction<'a>(

@@ -19,6 +19,7 @@ use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot;
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::sync::Arc;
 
 enum ReaperTask {
@@ -99,8 +100,11 @@ impl Graveyard {
             if let ReaperTask::Pending(receiver) =
                 std::mem::replace(&mut *reaper_task, ReaperTask::None)
             {
-                *reaper_task =
-                    ReaperTask::Running(fasync::Task::spawn(self.clone().reap_task(receiver)));
+                *reaper_task = ReaperTask::Running(fasync::Task::spawn(
+                    self.clone()
+                        .reap_task(receiver)
+                        .trace(trace_future_args!("Graveyard::reap_task")),
+                ));
             } else {
                 unreachable!();
             }

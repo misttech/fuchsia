@@ -27,6 +27,7 @@ use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::{self, HandleOptions, ObjectDescriptor, ObjectStore};
 use fxfs_macros::ToWeakNode;
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::str::FromStr;
 use std::sync::Arc;
 use vfs::directory::dirents_sink;
@@ -318,18 +319,26 @@ impl BlobDirectory {
         while let Ok(Some(request)) = requests.try_next().await {
             match request {
                 BlobCreatorRequest::Create { responder, hash, allow_existing } => {
-                    responder
-                        .send(self.create_blob_writer(Hash::from(hash), allow_existing).await)
-                        .unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send Create response");
-                        });
+                    async {
+                        responder
+                            .send(self.create_blob_writer(Hash::from(hash), allow_existing).await)
+                            .unwrap_or_else(|error| {
+                                log::error!(error:?; "failed to send Create response");
+                            });
+                    }
+                    .trace(trace_future_args!("BlobCreator::Create"))
+                    .await;
                 }
                 BlobCreatorRequest::NeedsOverwrite { blob_hash, responder } => {
-                    let _ = responder.send(
-                        self.needs_overwrite(Hash::from(blob_hash).into())
-                            .await
-                            .map_err(map_to_raw_status),
-                    );
+                    async {
+                        let _ = responder.send(
+                            self.needs_overwrite(Hash::from(blob_hash).into())
+                                .await
+                                .map_err(map_to_raw_status),
+                        );
+                    }
+                    .trace(trace_future_args!("BlobCreator::NeedsOverwrite"))
+                    .await;
                 }
             }
         }
@@ -339,11 +348,19 @@ impl BlobDirectory {
         while let Ok(Some(request)) = requests.try_next().await {
             match request {
                 BlobReaderRequest::GetVmo { blob_hash, responder } => {
-                    responder
-                        .send(self.get_blob_vmo(blob_hash.into()).await.map_err(map_to_raw_status))
-                        .unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send GetVmo response");
-                        });
+                    async {
+                        responder
+                            .send(
+                                self.get_blob_vmo(blob_hash.into())
+                                    .await
+                                    .map_err(map_to_raw_status),
+                            )
+                            .unwrap_or_else(|error| {
+                                log::error!(error:?; "failed to send GetVmo response");
+                            });
+                    }
+                    .trace(trace_future_args!("BlobReader::GetVmo"))
+                    .await;
                 }
             };
         }

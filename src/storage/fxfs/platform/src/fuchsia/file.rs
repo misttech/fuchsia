@@ -22,6 +22,7 @@ use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{DataObjectHandle, FSCRYPT_KEY_ID, ObjectDescriptor};
 use fxfs_crypto::WrappingKeyId;
 use fxfs_macros::ToWeakNode;
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::fmt::{Debug, Formatter};
 use std::ops::Range;
 use std::sync::Arc;
@@ -165,7 +166,10 @@ impl FxFile {
                         )))
                         .await
                         .into_owned(fs);
-                    this.handle.owner().scope().spawn(FutureWithGuard::new(read_lock, fut));
+                    this.handle.owner().scope().spawn(
+                        FutureWithGuard::new(read_lock, fut)
+                            .trace(trace_future_args!("FxFile::pre_fetch_keys")),
+                    );
                 }
             }
         }

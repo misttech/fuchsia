@@ -30,6 +30,7 @@ use fxfs::object_store::{
     DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp,
 };
 use fxfs::round::{round_down, round_up};
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use zx::{self as zx, HandleBased as _, Status};
@@ -584,6 +585,7 @@ impl DeliveryBlobWriter {
         while let Some(request) = request_stream.try_next().await? {
             match request {
                 BlobWriterRequest::GetVmo { size, responder } => {
+                    fxfs_trace::duration!("BlobWriter::GetVmo");
                     let result = self.get_vmo(size).map_err(|error| {
                         log::error!(error:?; "BlobWriter.GetVmo failed.");
                         map_to_status(error).into_raw()
@@ -593,13 +595,19 @@ impl DeliveryBlobWriter {
                     });
                 }
                 BlobWriterRequest::BytesReady { bytes_written, responder } => {
-                    let result = self.bytes_ready(bytes_written).await.map_err(|error| {
-                        log::error!(error:?; "BlobWriter.BytesReady failed.");
-                        map_to_status(error)
-                    });
-                    responder.send(result.map_err(Status::into_raw)).unwrap_or_else(|error| {
-                        log::error!(error:?; "Failed to send BlobWriter.BytesReady response.");
-                    });
+                    let result = async {
+                        let result = self.bytes_ready(bytes_written).await.map_err(|error| {
+                            log::error!(error:?; "BlobWriter.BytesReady failed.");
+                            map_to_status(error)
+                        });
+                        responder.send(result.map_err(Status::into_raw)).unwrap_or_else(|error| {
+                            log::error!(error:?; "Failed to send BlobWriter.BytesReady response.");
+                        });
+                        result
+                    }
+                    .trace(trace_future_args!("BlobWriter::BytesReady"))
+                    .await;
+
                     // If any error occurs when handling a BytesReady request, the writer will
                     // remain in an unrecoverable state. The client must use the BlobCreator
                     // protocol to open a new writer and try writing the blob again.

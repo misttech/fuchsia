@@ -122,6 +122,7 @@ impl Inner {
         &self,
         watcher_request: Option<Result<WatcherRequest, fidl::Error>>,
     ) -> bool {
+        fxfs_trace::duration!("MemoryPressureMonitor::process_level_update");
         let watcher_request = match watcher_request {
             Some(v) => v,
             None => {

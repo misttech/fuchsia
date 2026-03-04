@@ -10,6 +10,7 @@ use anyhow::Error;
 use event_listener::Event;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{Cipher, CipherHolder, CipherSet, Crypt, FindKeyResult};
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use scopeguard::ScopeGuard;
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
@@ -112,16 +113,19 @@ impl Inner {
     fn start_purge_task(&mut self, inner: &Arc<Mutex<Inner>>) {
         self.purge_task.get_or_insert_with(move || {
             let inner = inner.clone();
-            fasync::Task::spawn(async move {
-                loop {
-                    fasync::Timer::new(PURGE_TIMEOUT).await;
-                    let mut inner = inner.lock();
-                    if inner.keys.purge() {
-                        inner.purge_task = None;
-                        break;
+            fasync::Task::spawn(
+                async move {
+                    loop {
+                        fasync::Timer::new(PURGE_TIMEOUT).await;
+                        let mut inner = inner.lock();
+                        if inner.keys.purge() {
+                            inner.purge_task = None;
+                            break;
+                        }
                     }
                 }
-            })
+                .trace(trace_future_args!("KeyManager::purge_task")),
+            )
         });
     }
 }

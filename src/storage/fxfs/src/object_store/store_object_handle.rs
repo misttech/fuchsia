@@ -32,7 +32,7 @@ use futures::{TryStreamExt, try_join};
 use fxfs_crypto::{
     Cipher, CipherHolder, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose,
 };
-use fxfs_trace::trace;
+use fxfs_trace::{TraceFutureExt, trace, trace_future_args};
 use static_assertions::const_assert;
 use std::cmp::min;
 use std::future::Future;
@@ -322,22 +322,25 @@ struct Watchdog {
 impl Watchdog {
     fn new(increment_seconds: u64, cb: impl Fn(u64) + Send + 'static) -> Self {
         Self {
-            _task: fasync::Task::spawn(async move {
-                let increment = increment_seconds.try_into().unwrap();
-                let mut fired_counter = 0;
-                let mut next_wake = fasync::MonotonicInstant::now();
-                loop {
-                    next_wake += std::time::Duration::from_secs(increment).into();
-                    // If this isn't being scheduled this will purposely result in fast looping when
-                    // it does. This will be insightful about the state of the thread and task
-                    // scheduling.
-                    if fasync::MonotonicInstant::now() < next_wake {
-                        fasync::Timer::new(next_wake).await;
+            _task: fasync::Task::spawn(
+                async move {
+                    let increment = increment_seconds.try_into().unwrap();
+                    let mut fired_counter = 0;
+                    let mut next_wake = fasync::MonotonicInstant::now();
+                    loop {
+                        next_wake += std::time::Duration::from_secs(increment).into();
+                        // If this isn't being scheduled this will purposely result in fast looping
+                        // when it does. This will be insightful about the state of the thread and
+                        // task scheduling.
+                        if fasync::MonotonicInstant::now() < next_wake {
+                            fasync::Timer::new(next_wake).await;
+                        }
+                        fired_counter += 1;
+                        cb(fired_counter);
                     }
-                    fired_counter += 1;
-                    cb(fired_counter);
                 }
-            }),
+                .trace(trace_future_args!("StoreObjectHandle::Watchdog")),
+            ),
         }
     }
 }

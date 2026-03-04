@@ -31,6 +31,7 @@ use fxfs::log::*;
 use fxfs::object_store::volume::root_volume;
 use fxfs::serialized_types::LATEST_VERSION;
 use fxfs::{fsck, metrics};
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use refaults_vmo::PageRefaultCounter;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -246,22 +247,34 @@ impl Component {
         while let Some(request) = stream.try_next().await? {
             match request {
                 StartupRequest::Start { responder, device, options } => {
-                    responder.send(self.handle_start(device, options).await.map_err(|error| {
-                        error!(error:?; "handle_start failed");
-                        map_to_raw_status(error)
-                    }))?
+                    async move {
+                        responder.send(self.handle_start(device, options).await.map_err(|error| {
+                            error!(error:?; "handle_start failed");
+                            map_to_raw_status(error)
+                        }))
+                    }
+                    .trace(trace_future_args!("Startup::Start"))
+                    .await?
                 }
                 StartupRequest::Format { responder, device, .. } => {
-                    responder.send(self.handle_format(device).await.map_err(|error| {
-                        error!(error:?; "handle_format failed");
-                        map_to_raw_status(error)
-                    }))?
+                    async move {
+                        responder.send(self.handle_format(device).await.map_err(|error| {
+                            error!(error:?; "handle_format failed");
+                            map_to_raw_status(error)
+                        }))
+                    }
+                    .trace(trace_future_args!("Startup::Format"))
+                    .await?
                 }
                 StartupRequest::Check { responder, device, options } => {
-                    responder.send(self.handle_check(device, options).await.map_err(|error| {
-                        error!(error:?; "handle_check failed");
-                        map_to_raw_status(error)
-                    }))?
+                    async move {
+                        responder.send(self.handle_check(device, options).await.map_err(|error| {
+                            error!(error:?; "handle_check failed");
+                            map_to_raw_status(error)
+                        }))
+                    }
+                    .trace(trace_future_args!("Startup::Check"))
+                    .await?
                 }
             }
         }
@@ -410,11 +423,15 @@ impl Component {
     async fn handle_admin(&self, req: AdminRequest) -> Result<bool, Error> {
         match req {
             AdminRequest::Shutdown { responder } => {
-                info!("Received shutdown request");
-                self.shutdown().await;
-                responder
-                    .send()
-                    .unwrap_or_else(|error| warn!(error:?; "Failed to send shutdown response"));
+                async move {
+                    info!("Received shutdown request");
+                    self.shutdown().await;
+                    responder
+                        .send()
+                        .unwrap_or_else(|error| warn!(error:?; "Failed to send shutdown response"));
+                }
+                .trace(trace_future_args!("Admin::Shutdown"))
+                .await;
                 return Ok(true);
             }
         }
@@ -461,39 +478,51 @@ impl Component {
                     mount_options,
                     responder,
                 } => {
-                    info!(
-                        name = name.as_str();
-                        "Create {}volume",
-                        if mount_options.crypt.is_some() { "encrypted " } else { "" }
-                    );
-                    responder
-                        .send(
-                            volumes
-                                .create_and_serve_volume(
-                                    &name,
-                                    outgoing_directory.into_channel().into(),
-                                    mount_options,
-                                    create_options,
-                                )
-                                .await
-                                .map_err(map_to_raw_status),
-                        )
-                        .unwrap_or_else(
-                            |error| warn!(error:?; "Failed to send volume creation response"),
+                    async {
+                        info!(
+                            name = name.as_str();
+                            "Create {}volume",
+                            if mount_options.crypt.is_some() { "encrypted " } else { "" }
                         );
+                        responder
+                            .send(
+                                volumes
+                                    .create_and_serve_volume(
+                                        &name,
+                                        outgoing_directory.into_channel().into(),
+                                        mount_options,
+                                        create_options,
+                                    )
+                                    .await
+                                    .map_err(map_to_raw_status),
+                            )
+                            .unwrap_or_else(
+                                |error| warn!(error:?; "Failed to send volume creation response"),
+                            );
+                    }
+                    .trace(trace_future_args!("Volumes::Create"))
+                    .await;
                 }
                 VolumesRequest::Remove { name, responder } => {
-                    info!(name = name.as_str(); "Remove volume");
-                    responder
-                        .send(volumes.remove_volume(&name).await.map_err(map_to_raw_status))
-                        .unwrap_or_else(
-                            |error| warn!(error:?; "Failed to send volume removal response"),
-                        );
+                    async {
+                        info!(name = name.as_str(); "Remove volume");
+                        responder
+                            .send(volumes.remove_volume(&name).await.map_err(map_to_raw_status))
+                            .unwrap_or_else(
+                                |error| warn!(error:?; "Failed to send volume removal response"),
+                            );
+                    }
+                    .trace(trace_future_args!("Volumes::Remove"))
+                    .await;
                 }
                 VolumesRequest::GetInfo { responder } => {
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
-                        |error| warn!(error:?; "Failed to send volume removal response"),
-                    )
+                    async move {
+                        responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                            |error| warn!(error:?; "Failed to send volume removal response"),
+                        )
+                    }
+                    .trace(trace_future_args!("Volumes::GetInfo"))
+                    .await;
                 }
             }
         }
@@ -526,11 +555,15 @@ impl Component {
         while let Some(request) = stream.try_next().await.context("reading request")? {
             match request {
                 VolumeInstallerRequest::Install { src, image_file, dst, responder } => {
-                    let response = volumes.install_volume(&src, &image_file, &dst).await;
-                    responder.send(response.map_err(|error| {
-                        error!(error:?; "install failed");
-                        map_to_raw_status(error)
-                    }))?;
+                    async {
+                        let response = volumes.install_volume(&src, &image_file, &dst).await;
+                        responder.send(response.map_err(|error| {
+                            error!(error:?; "install failed");
+                            map_to_raw_status(error)
+                        }))
+                    }
+                    .trace(trace_future_args!("VolumeInstaller::Install"))
+                    .await?;
                 }
             }
         }
