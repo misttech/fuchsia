@@ -240,7 +240,20 @@ impl WorkThread {
                     result_sender.send(proxies.connect_le(&peer_id).await).unwrap();
                 }
                 Request::AdvertisePeripheral(connectable, address_type, timeout, result_sender) => {
-                    match proxies.advertise_peripheral(connectable, address_type, timeout).await {
+                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
+                        result_sender
+                            .send(Err(anyhow!("refresh_host_cache() error: {err}")))
+                            .unwrap();
+                        continue;
+                    }
+                    let device_name = host_cache
+                        .iter()
+                        .find(|info| info.active.unwrap_or(false))
+                        .and_then(|info| info.local_name.clone());
+                    match proxies
+                        .advertise_peripheral(connectable, address_type, device_name, timeout)
+                        .await
+                    {
                         Ok(Some((peer_id, connection))) => {
                             _peripheral_connection = connection;
                             result_sender.send(Ok(Some(peer_id))).unwrap();
@@ -1042,14 +1055,21 @@ impl Proxies {
         &self,
         connectable: bool,
         address_type: Option<AddressType>,
+        device_name: Option<String>,
         timeout: std::time::Duration,
     ) -> Result<Option<(PeerId, ClientEnd<ConnectionMarker>)>, anyhow::Error> {
         let (client, mut request_stream) =
             fidl::endpoints::create_request_stream::<AdvertisedPeripheralMarker>();
 
-        let mut params = AdvertisingParameters::default();
-        params.connectable = Some(connectable);
-        params.address_type = address_type;
+        let params = AdvertisingParameters {
+            connectable: Some(connectable),
+            address_type,
+            data: device_name.map(|name| fidl_fuchsia_bluetooth_le::AdvertisingData {
+                name: Some(name),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
         select! {
             result = self.peripheral_proxy.advertise(&params, client) => {
