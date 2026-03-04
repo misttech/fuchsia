@@ -138,7 +138,7 @@ pub mod route {
         Ipv6, Ipv6Addr, Subnet,
     };
     use netlink_packet_route::address::{AddressAttribute, AddressMessage};
-    use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
+    use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};
     use netlink_packet_route::route::{RouteAttribute, RouteMessage, RouteType};
     use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
@@ -873,6 +873,29 @@ pub mod route {
                         )),
                     }
                 }
+                NewLink(ref link_msg) => {
+                    let kind = link_msg
+                        .attributes
+                        .iter()
+                        .flat_map(|attr| match attr {
+                            LinkAttribute::LinkInfo(info) => info.iter(),
+                            _ => [].iter(),
+                        })
+                        .find_map(|info| match info {
+                            LinkInfo::Kind(kind) => Some(kind),
+                            _ => None,
+                        });
+                    match kind {
+                        Some(InfoKind::Xfrm) => {
+                            // Only log if the link type is one we haven't
+                            // already seen in the wild.
+                        }
+                        Some(_) | None => log_warn!(
+                            "Received RTM_NEWLINK request with unsupported link type {kind:?}"
+                        ),
+                    }
+                    client.send_unicast(netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
+                }
                 GetAddress(ref message) if is_dump => {
                     let ip_version_filter = match message.header.family() {
                         AddressFamily::Unspec => None,
@@ -1519,7 +1542,6 @@ pub mod route {
                 // TODO(https://issues.fuchsia.dev/278565021): Implement
                 // GetAddress.
                 GetAddress(_)
-                | NewLink(_)
                 | DelLink(_)
                 | NewLinkProp(_)
                 | DelLinkProp(_)
@@ -1762,7 +1784,7 @@ mod test {
     use {fidl_fuchsia_net as fnet, fuchsia_async as fasync};
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
-    use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
+    use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};
     use netlink_packet_route::neighbour::{
         NeighbourAttribute, NeighbourHeader, NeighbourMessage, NeighbourState,
     };
@@ -2257,6 +2279,29 @@ mod test {
             .await,
             expected_sent_messages(expected_response, header),
         )
+    }
+
+    #[fuchsia::test]
+    async fn test_new_link() {
+        let header = header_with_flags(0);
+        let mut link_message = LinkMessage::default();
+        link_message.header.index = 1;
+        link_message.attributes = vec![
+            LinkAttribute::IfName("interface".to_string()),
+            LinkAttribute::LinkInfo(vec![LinkInfo::Kind(InfoKind::Xfrm)]),
+        ];
+
+        pretty_assertions::assert_eq!(
+            test_request(
+                NetlinkMessage::new(
+                    header,
+                    NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewLink(link_message)),
+                ),
+                None,
+            )
+            .await,
+            expected_sent_messages(Some(ExpectedResponse::Error(Errno::ENOTSUP)), header)
+        );
     }
 
     /// Test RTM_GETADDR.

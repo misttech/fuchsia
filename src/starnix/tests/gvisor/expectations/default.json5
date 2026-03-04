@@ -771,6 +771,7 @@
                 "NetlinkRouteTest.LinkMulticastGroupUserToUserSend",
                 "NetlinkRouteTest.LinkMulticastGroupCapNetAdmin",
                 "NetlinkRouteTest.LinkMulticastGroupNoSelfBroadcast",
+                "NetlinkRouteTest.LinkUp",
                 "NetlinkRouteTest.NonGetRequestsRequireCapNetAdmin",
                 "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.AddAndRemoveRoute/*",
                 "_/NetlinkSetLinkTest.ChangeLinkName/*",
