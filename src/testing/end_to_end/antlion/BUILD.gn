@@ -209,7 +209,6 @@ python_library("antlion") {
   library_deps = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_controller",
     "//third_party/github.com/jd/tenacity",
     "//third_party/mobly",
     "//third_party/pyyaml:yaml",
