@@ -245,7 +245,7 @@ def _file_attr_resp(
         )
 
 
-class AsyncFuchsiaDeviceTests(unittest.TestCase):
+class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.fuchsia_device.async_fuchsia_device.py."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -608,7 +608,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         mock_rtc_fc_init.assert_called_once_with(
             self.fd_fc_obj.rtc,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj,
+            reboot_affordance=self.fd_fc_obj.as_sync(),
         )
 
     def test_tracing(self) -> None:
@@ -682,7 +682,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             self.fd_fc_obj.bluetooth_gap,
             device_name=self.fd_fc_obj._device_info.name,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj,
+            reboot_affordance=self.fd_fc_obj.as_sync(),
         )
 
     @mock.patch.object(
@@ -722,8 +722,8 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             device_name=self.fd_fc_obj._device_info.name,
             ffx=self.fd_fc_obj.ffx,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj,
-            fuchsia_device_close=self.fd_fc_obj,
+            reboot_affordance=self.fd_fc_obj.as_sync(),
+            fuchsia_device_close=self.fd_fc_obj.as_sync(),
             location=self.fd_fc_obj.location,
         )
 
@@ -756,8 +756,8 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             device_name=self.fd_fc_obj._device_info.name,
             ffx=self.fd_fc_obj.ffx,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj,
-            fuchsia_device_close=self.fd_fc_obj,
+            reboot_affordance=self.fd_fc_obj.as_sync(),
+            fuchsia_device_close=self.fd_fc_obj.as_sync(),
         )
 
     # List all the tests related to static properties
@@ -866,7 +866,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
     def test_fuchsia_device_is_reboot_capable(self) -> None:
         """Test case to make sure fuchsia device is reboot capable"""
         self.assertIsInstance(
-            self.fd_fc_obj, affordances_capable.RebootCapableDevice
+            self.fd_fc_obj, affordances_capable.AsyncRebootCapableDevice
         )
 
     # List all the tests related to public methods
@@ -896,7 +896,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_close(
+    async def test_close(
         self,
         parameterized_dict: dict[str, Any],
     ) -> None:
@@ -910,9 +910,9 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             )
         if parameterized_dict["expected_exception"]:
             with self.assertRaises(Exception):
-                self.fd_fc_obj.close()
+                await self.fd_fc_obj.close()
         else:
-            self.fd_fc_obj.close()
+            await self.fd_fc_obj.close()
 
         # Reset the `_on_device_close_fns` variable at the end of the test
         self.fd_fc_obj._on_device_close_fns = []
@@ -1188,13 +1188,13 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "_send_log_command",
         autospec=True,
     )
-    def test_log_message_to_device(
+    async def test_log_message_to_device(
         self,
         parameterized_dict: dict[str, Any],
         mock_send_log_command: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.log_message_to_device()"""
-        self.fd_fc_obj.log_message_to_device(
+        await self.fd_fc_obj.log_message_to_device(
             level=parameterized_dict["log_level"],
             message=parameterized_dict["log_message"],
         )
@@ -1247,7 +1247,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "start_server",
         autospec=True,
     )
-    def test_on_device_boot_fc(
+    async def test_on_device_boot_fc(
         self,
         parameterized_dict: dict[str, Any],
         mock_sl4f_start_server: mock.Mock,
@@ -1265,9 +1265,9 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             )
         if parameterized_dict["expected_exception"]:
             with self.assertRaises(Exception):
-                self.fd_fc_obj.on_device_boot()
+                await self.fd_fc_obj.on_device_boot()
         else:
-            self.fd_fc_obj.on_device_boot()
+            await self.fd_fc_obj.on_device_boot()
 
         # Reset the `_on_device_boot_fns` variable at the end of the test
         self.fd_fc_obj._on_device_boot_fns = []
@@ -1291,7 +1291,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "start_server",
         autospec=True,
     )
-    def test_on_device_boot(
+    async def test_on_device_boot(
         self,
         mock_sl4f_start_server: mock.Mock,
         mock_fc_create_context: mock.Mock,
@@ -1299,7 +1299,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.on_device_boot() when transport is set to
         Fuchsia-Controller-Preferred"""
-        self.fd_sl4f_obj.on_device_boot()
+        await self.fd_sl4f_obj.on_device_boot()
 
         mock_sl4f_start_server.assert_called_once_with(self.fd_sl4f_obj.sl4f)
         mock_fc_create_context.assert_called_once_with(
@@ -1327,7 +1327,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "log_message_to_device",
         autospec=True,
     )
-    def test_power_cycle(
+    async def test_power_cycle(
         self,
         mock_log_message_to_device: mock.Mock,
         mock_wait_for_offline: mock.Mock,
@@ -1336,7 +1336,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.power_cycle()"""
         power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
-        self.fd_fc_obj.power_cycle(power_switch=power_switch, outlet=5)
+        await self.fd_fc_obj.power_cycle(power_switch=power_switch, outlet=5)
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
         mock_wait_for_offline.assert_called()
@@ -1368,7 +1368,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "log_message_to_device",
         autospec=True,
     )
-    def test_reboot(
+    async def test_reboot(
         self,
         mock_log_message_to_device: mock.Mock,
         mock_send_reboot_command: mock.Mock,
@@ -1377,7 +1377,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         mock_on_device_boot: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.reboot()"""
-        self.fd_fc_obj.reboot()
+        await self.fd_fc_obj.reboot()
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
         mock_send_reboot_command.assert_called()
@@ -1389,10 +1389,10 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         """Testcase for AsyncFuchsiaDevice.register_for_on_device_boot()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
 
-    def test_register_for_on_device_close(self) -> None:
+    async def test_register_for_on_device_close(self) -> None:
         """Testcase for AsyncFuchsiaDevice.register_for_on_device_close()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
-        self.fd_fc_obj.close()
+        await self.fd_fc_obj.close()
 
     @parameterized.expand(
         [
@@ -1493,14 +1493,14 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "wait_for_rcs_connection",
         autospec=True,
     )
-    def test_wait_for_online_success_with_ip(
+    async def test_wait_for_online_success_with_ip(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
         mock_resolve_device_ip: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.wait_for_online() success case when the
         IP address is specified."""
-        self.fd_fc_obj.wait_for_online()
+        await self.fd_fc_obj.wait_for_online()
 
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=False
@@ -1517,7 +1517,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "wait_for_rcs_connection",
         autospec=True,
     )
-    def test_wait_for_online_success_no_ip(
+    async def test_wait_for_online_success_no_ip(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
         mock_resolve_device_ip: mock.Mock,
@@ -1529,7 +1529,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
             ip_port=None,
             serial_socket=None,
         )
-        self.fd_fc_obj.wait_for_online()
+        await self.fd_fc_obj.wait_for_online()
 
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=True
@@ -1542,7 +1542,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         side_effect=ffx_errors.FfxCommandError("error"),
         autospec=True,
     )
-    def test_wait_for_online_fail(
+    async def test_wait_for_online_fail(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
     ) -> None:
@@ -1550,7 +1550,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go online"
         ):
-            self.fd_fc_obj.wait_for_online()
+            await self.fd_fc_obj.wait_for_online()
 
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=False
@@ -1748,7 +1748,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "log_message",
         new_callable=mock.AsyncMock,
     )
-    def test_send_log_command(
+    async def test_send_log_command(
         self,
         parameterized_dict: dict[str, Any],
         mock_rcs_log_message: mock.Mock,
@@ -1756,7 +1756,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         """Testcase for AsyncFuchsiaDevice._send_log_command()"""
         self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
         # pylint: disable=protected-access
-        self.fd_fc_obj._send_log_command(
+        await self.fd_fc_obj._send_log_command(
             tag="test",
             level=parameterized_dict["log_level"],
             message=parameterized_dict["log_message"],
@@ -1769,7 +1769,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "log_message",
         new_callable=mock.AsyncMock,
     )
-    def test_send_log_command_error(
+    async def test_send_log_command_error(
         self, mock_rcs_log_message: mock.Mock
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_log_command() when the log FIDL call
@@ -1782,7 +1782,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
-            self.fd_fc_obj._send_log_command(
+            await self.fd_fc_obj._send_log_command(
                 tag="test", level=custom_types.LEVEL.ERROR, message="test"
             )
 
@@ -1796,14 +1796,14 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "connect_device_proxy",
         autospec=True,
     )
-    def test_send_reboot_command(
+    async def test_send_reboot_command(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_reboot_command()"""
         # pylint: disable=protected-access
-        self.fd_fc_obj._send_reboot_command()
+        await self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
         mock_admin_shutdown.assert_called()
@@ -1818,7 +1818,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "connect_device_proxy",
         autospec=True,
     )
-    def test_send_reboot_command_error(
+    async def test_send_reboot_command_error(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
@@ -1829,7 +1829,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
-            self.fd_fc_obj._send_reboot_command()
+            await self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
         mock_admin_shutdown.assert_called()
@@ -1844,7 +1844,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         "connect_device_proxy",
         autospec=True,
     )
-    def test_send_reboot_command_error_is_peer_closed(
+    async def test_send_reboot_command_error_is_peer_closed(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
         mock_admin_shutdown: mock.Mock,
@@ -1854,7 +1854,7 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         result in `FuchsiaControllerError` being raised."""
         mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
         # pylint: disable=protected-access
-        self.fd_fc_obj._send_reboot_command()
+        await self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
         mock_admin_shutdown.assert_called()
@@ -2189,14 +2189,14 @@ class AsyncFuchsiaDeviceTests(unittest.TestCase):
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
     )
-    def test_resolve_device_ip(
+    async def test_resolve_device_ip(
         self,
         mock_ffx_run: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.resolve_device_ip()"""
         with mock.patch.object(self.fd_fc_obj, "_on_device_ip_change_fns"):
-            self.fd_fc_obj.resolve_device_ip()
+            await self.fd_fc_obj.resolve_device_ip()
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
             cmd=ffx_impl._FFX_CMDS["TARGET_SSH_ADDRESS"]

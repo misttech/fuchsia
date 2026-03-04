@@ -5,6 +5,7 @@
 
 
 import dataclasses
+import inspect
 import ipaddress
 import json
 import logging
@@ -12,7 +13,7 @@ import os
 from collections.abc import Callable
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Coroutine
 
 import fidl_fuchsia_buildinfo as f_buildinfo
 import fidl_fuchsia_developer_remotecontrol as fd_remotecontrol
@@ -147,9 +148,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 class AsyncFuchsiaDevice(
     async_device_knobs.AsyncDeviceKnobs,
-    affordances_capable.RebootCapableDevice,
-    affordances_capable.FuchsiaDeviceLogger,
-    affordances_capable.FuchsiaDeviceClose,
+    affordances_capable.AsyncRebootCapableDevice,
+    affordances_capable.AsyncFuchsiaDeviceLogger,
+    affordances_capable.AsyncFuchsiaDeviceClose,
     affordances_capable.InspectCapableDevice,
     affordances_capable.FuchsiaDeviceIpChange,
 ):
@@ -215,13 +216,22 @@ class AsyncFuchsiaDevice(
 
         self._ffx_config_data: FfxConfigData = ffx_config_data
 
-        self._on_device_boot_fns: list[Callable[[], None]] = []
-        self._on_device_close_fns: list[Callable[[], None]] = []
+        self._on_device_boot_fns: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        ] = []
+        self._on_device_close_fns: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        ] = []
         self._on_device_ip_change_fns: list[
             Callable[[custom_types.IpPort], None]
+            | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]]
         ] = []
-        self._on_device_suspend_fns: list[Callable[[], None]] = []
-        self._on_device_resume_fns: list[Callable[[], None]] = []
+        self._on_device_suspend_fns: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        ] = []
+        self._on_device_resume_fns: list[
+            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        ] = []
 
         self._config: dict[str, Any] | None = config
         self._created_context = False
@@ -409,7 +419,7 @@ class AsyncFuchsiaDevice(
         fastboot_obj: fastboot_transport_interface.Fastboot = (
             fastboot_impl.FastbootImpl(
                 device_name=self.device_name,
-                reboot_affordance=self,
+                reboot_affordance=self.as_sync(),
                 ffx_transport=self.ffx,
             )
         )
@@ -468,7 +478,7 @@ class AsyncFuchsiaDevice(
         return session_using_ffx.SessionUsingFfx(
             device_name=self.device_name,
             ffx=self.ffx,
-            fuchsia_device_close=self,
+            fuchsia_device_close=self.as_sync(),
         )
 
     @properties.Affordance
@@ -531,7 +541,7 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             inspect=self,
-            device_logger=self,
+            device_logger=self.as_sync(),
             starnix_affordance=self.starnix,
         )
 
@@ -544,7 +554,7 @@ class AsyncFuchsiaDevice(
         """
         return rtc_using_fc.RtcUsingFc(
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -557,7 +567,7 @@ class AsyncFuchsiaDevice(
         return tracing_using_fc.TracingUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -587,7 +597,7 @@ class AsyncFuchsiaDevice(
             return avrcp_using_sl4f.AvrcpUsingSl4f(
                 device_name=self.device_name,
                 sl4f=self.sl4f,
-                reboot_affordance=self,
+                reboot_affordance=self.as_sync(),
             )
         raise NotImplementedError
 
@@ -601,7 +611,7 @@ class AsyncFuchsiaDevice(
         return le_using_fc.LEUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -614,7 +624,7 @@ class AsyncFuchsiaDevice(
         return gap_using_fc.GapUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -628,8 +638,8 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
-            fuchsia_device_close=self,
+            reboot_affordance=self.as_sync(),
+            fuchsia_device_close=self.as_sync(),
             location=self.location,
         )
 
@@ -644,8 +654,8 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
-            fuchsia_device_close=self,
+            reboot_affordance=self.as_sync(),
+            fuchsia_device_close=self.as_sync(),
         )
 
     @properties.Affordance
@@ -659,8 +669,8 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
-            fuchsia_device_close=self,
+            reboot_affordance=self.as_sync(),
+            fuchsia_device_close=self.as_sync(),
         )
 
     @properties.Affordance
@@ -674,7 +684,7 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -688,7 +698,7 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance
@@ -704,11 +714,14 @@ class AsyncFuchsiaDevice(
         )
 
     # List all the public methods
-    def close(self) -> None:
+    async def close(self) -> None:
         """Clean up method."""
-        for on_device_close_fns in self._on_device_close_fns:
-            _LOGGER.info("Calling %s", on_device_close_fns.__qualname__)
-            on_device_close_fns()
+        for fn in self._on_device_close_fns:
+            _LOGGER.info("Calling %s", fn.__qualname__)
+            if inspect.iscoroutinefunction(fn):
+                await fn()
+            else:
+                fn()
 
     def health_check(self) -> None:
         """Ensure device is healthy.
@@ -821,7 +834,7 @@ class AsyncFuchsiaDevice(
                 f"Failed to collect the inspect data from {self.device_name}"
             ) from err
 
-    def log_message_to_device(
+    async def log_message_to_device(
         self, message: str, level: custom_types.LEVEL
     ) -> None:
         """Log message to fuchsia device at specified level.
@@ -836,9 +849,11 @@ class AsyncFuchsiaDevice(
         """
         timestamp: str = datetime.now().strftime("%Y-%m-%d-%I-%M-%S-%p")
         message = f"[Host Time: {timestamp}] - {message}"
-        self._send_log_command(tag="lacewing", message=message, level=level)
+        await self._send_log_command(
+            tag="lacewing", message=message, level=level
+        )
 
-    def on_device_boot(self) -> None:
+    async def on_device_boot(self) -> None:
         """Take actions after the device is rebooted.
 
         Raises:
@@ -855,11 +870,14 @@ class AsyncFuchsiaDevice(
         # Ensure device is healthy
         self.health_check()
 
-        for on_device_boot_fn in self._on_device_boot_fns:
-            _LOGGER.info("Calling %s", on_device_boot_fn.__qualname__)
-            on_device_boot_fn()
+        for fn in self._on_device_boot_fns:
+            _LOGGER.info("Calling %s", fn.__qualname__)
+            if inspect.iscoroutinefunction(fn):
+                await fn()
+            else:
+                fn()
 
-    def power_cycle(
+    async def power_cycle(
         self,
         power_switch: power_switch_interface.PowerSwitch,
         outlet: int | None = None,
@@ -878,7 +896,7 @@ class AsyncFuchsiaDevice(
         _LOGGER.info("Power cycling %s...", self.device_name)
 
         try:
-            self.log_message_to_device(
+            await self.log_message_to_device(
                 message=f"Powering cycling {self.device_name}...",
                 level=custom_types.LEVEL.INFO,
             )
@@ -894,18 +912,18 @@ class AsyncFuchsiaDevice(
 
         _LOGGER.info("Powering on %s...", self.device_name)
         power_switch.power_on(outlet)
-        self.wait_for_online()
+        await self.wait_for_online()
 
-        self.on_device_boot()
+        await self.on_device_boot()
 
-        self.log_message_to_device(
+        await self.log_message_to_device(
             message=f"Successfully power cycled {self.device_name}...",
             level=custom_types.LEVEL.INFO,
         )
 
     def register_on_device_suspend_fn(
         self,
-        fn: Callable[[], None],
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function to be called when device is suspended.
 
@@ -916,7 +934,7 @@ class AsyncFuchsiaDevice(
 
     def register_on_device_resume_fn(
         self,
-        fn: Callable[[], None],
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function to be called when device is resumed.
 
@@ -940,7 +958,7 @@ class AsyncFuchsiaDevice(
         self._usb_power_hub = usb_power_hub
         self._usb_power_hub_port = port
 
-    def suspend(self) -> None:
+    async def suspend(self) -> None:
         """Suspend the device by disconnecting USB power.
 
         Requires USB power hub to be set using set_usb_power_hub. This will
@@ -957,13 +975,16 @@ class AsyncFuchsiaDevice(
             )
 
         for fn in self._on_device_suspend_fns:
-            fn()
+            if inspect.iscoroutinefunction(fn):
+                await fn()
+            else:
+                fn()
 
         _LOGGER.info("Disconnecting USB from %s...", self.device_name)
         self._usb_power_hub.power_off(self._usb_power_hub_port)
         self.wait_for_offline()
 
-    def resume(self) -> None:
+    async def resume(self) -> None:
         """Resume the device by reconnecting USB power.
 
         Requires USB power hub to be set using set_usb_power_hub. This will
@@ -979,12 +1000,15 @@ class AsyncFuchsiaDevice(
 
         _LOGGER.info("Connecting USB to %s...", self.device_name)
         self._usb_power_hub.power_on(self._usb_power_hub_port)
-        self.wait_for_online()
+        await self.wait_for_online()
 
         for fn in self._on_device_resume_fns:
-            fn()
+            if inspect.iscoroutinefunction(fn):
+                await fn()
+            else:
+                fn()
 
-    def reboot(self) -> None:
+    async def reboot(self) -> None:
         """Soft reboot the device.
 
         Raises:
@@ -992,23 +1016,25 @@ class AsyncFuchsiaDevice(
             Sl4fError: On communications failure.
         """
         _LOGGER.info("Lacewing is rebooting %s...", self.device_name)
-        self.log_message_to_device(
+        await self.log_message_to_device(
             message=f"Rebooting {self.device_name}...",
             level=custom_types.LEVEL.INFO,
         )
 
-        self._send_reboot_command()
+        await self._send_reboot_command()
 
         self.wait_for_offline()
-        self.wait_for_online()
-        self.on_device_boot()
+        await self.wait_for_online()
+        await self.on_device_boot()
 
-        self.log_message_to_device(
+        await self.log_message_to_device(
             message=f"Successfully rebooted {self.device_name}...",
             level=custom_types.LEVEL.INFO,
         )
 
-    def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:
+    def register_for_on_device_boot(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Register a function that will be called in `on_device_boot()`.
 
         Args:
@@ -1016,7 +1042,9 @@ class AsyncFuchsiaDevice(
         """
         self._on_device_boot_fns.append(fn)
 
-    def register_for_on_device_close(self, fn: Callable[[], None]) -> None:
+    def register_for_on_device_close(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
         Args:
@@ -1024,7 +1052,7 @@ class AsyncFuchsiaDevice(
         """
         self._on_device_close_fns.append(fn)
 
-    def resolve_device_ip(self) -> None:
+    async def resolve_device_ip(self) -> None:
         """Resolves the IP address of Fuchsia device."""
         # Step #1 - Get the IP address of the Fuchsia device.
         if self._device_info.ip_port is not None:
@@ -1076,19 +1104,24 @@ class AsyncFuchsiaDevice(
             )
 
         # Step #2 - Call all of the callback functions that were registered for IP address change.
-        for on_device_ip_change_fns in self._on_device_ip_change_fns:
+        for fn in self._on_device_ip_change_fns:
             _LOGGER.info(
                 "Calling %s with arg %s",
-                on_device_ip_change_fns.__qualname__,
+                fn.__qualname__,
                 ip_port,
             )
-            on_device_ip_change_fns(ip_port)
+            if inspect.iscoroutinefunction(fn):
+                await fn(ip_port)
+            else:
+                fn(ip_port)
 
         # Step #3 - Ensure device is healthy
         self.health_check()
 
     def register_for_on_device_ip_change(
-        self, fn: Callable[[custom_types.IpPort], None]
+        self,
+        fn: Callable[[custom_types.IpPort], None]
+        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 
@@ -1160,7 +1193,7 @@ class AsyncFuchsiaDevice(
                 f"'{self.device_name}' failed to go offline."
             ) from err
 
-    def wait_for_online(self) -> None:
+    async def wait_for_online(self) -> None:
         """Wait for Fuchsia device to go online.
 
         Raises:
@@ -1185,7 +1218,7 @@ class AsyncFuchsiaDevice(
                 self.ffx.wait_for_rcs_connection(include_target_name=True)
                 # Now that we know that the device is available, update find
                 # out and store its new IP address.
-                self.resolve_device_ip()
+                await self.resolve_device_ip()
             _LOGGER.info("%s is online.", self.device_name)
         except (
             errors.DeviceNotConnectedError,
@@ -1322,7 +1355,7 @@ class AsyncFuchsiaDevice(
             ) from status
 
     # List all private methods
-    def _send_log_command(
+    async def _send_log_command(
         self, tag: str, message: str, level: custom_types.LEVEL
     ) -> None:
         """Send a device command to write to the syslog.
@@ -1346,17 +1379,15 @@ class AsyncFuchsiaDevice(
             rcs_proxy = fd_remotecontrol.RemoteControlClient(
                 self.fuchsia_controller.ctx.connect_remote_control_proxy()
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
-                rcs_proxy.log_message(
-                    tag=tag, message=message, severity=_LOG_SEVERITIES[level]
-                )
+            await rcs_proxy.log_message(
+                tag=tag, message=message, severity=_LOG_SEVERITIES[level]
             )
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    def _send_reboot_command(self) -> None:
+    async def _send_reboot_command(self) -> None:
         """Send a device command to trigger a soft reboot.
 
         Raises:
@@ -1368,8 +1399,8 @@ class AsyncFuchsiaDevice(
                     _FC_PROXIES["PowerAdmin"]
                 )
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
-                power_proxy.shutdown(
+            (
+                await power_proxy.shutdown(
                     options=fhp_statecontrol.ShutdownOptions(
                         action=fhp_statecontrol.ShutdownAction.REBOOT,
                         reasons=[

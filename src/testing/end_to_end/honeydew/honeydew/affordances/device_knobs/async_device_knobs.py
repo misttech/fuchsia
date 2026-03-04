@@ -5,6 +5,7 @@
 
 import abc
 from collections.abc import Callable
+from typing import Any, Coroutine
 
 import fuchsia_inspect
 
@@ -352,7 +353,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     # List all the public methods
     @abc.abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         """Clean up method."""
 
     @abc.abstractmethod
@@ -387,7 +388,7 @@ class AsyncDeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def log_message_to_device(
+    async def log_message_to_device(
         self, message: str, level: custom_types.LEVEL
     ) -> None:
         """Log message to fuchsia device at specified level.
@@ -398,11 +399,7 @@ class AsyncDeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def on_device_boot(self) -> None:
-        """Take actions after the device is rebooted."""
-
-    @abc.abstractmethod
-    def power_cycle(
+    async def power_cycle(
         self,
         power_switch: power_switch_interface.PowerSwitch,
         outlet: int | None,
@@ -416,19 +413,9 @@ class AsyncDeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def reboot(self) -> None:
-        """Soft reboot the device."""
-
-    @abc.abstractmethod
-    def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:
-        """Register a function that will be called in `on_device_boot()`.
-
-        Args:
-            fn: Function that need to be called after FuchsiaDevice boot up.
-        """
-
-    @abc.abstractmethod
-    def register_for_on_device_close(self, fn: Callable[[], None]) -> None:
+    def register_for_on_device_close(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
         Args:
@@ -437,7 +424,9 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @abc.abstractmethod
     def register_for_on_device_ip_change(
-        self, fn: Callable[[custom_types.IpPort], None]
+        self,
+        fn: Callable[[custom_types.IpPort], None]
+        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 
@@ -446,7 +435,7 @@ class AsyncDeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def resolve_device_ip(self) -> None:
+    async def resolve_device_ip(self) -> None:
         """Resolves the IP address of Fuchsia device."""
 
     @abc.abstractmethod
@@ -468,14 +457,6 @@ class AsyncDeviceKnobs(abc.ABC):
         Returns:
             Absolute path of the snapshot file.
         """
-
-    @abc.abstractmethod
-    def wait_for_offline(self) -> None:
-        """Wait for Fuchsia device to go offline."""
-
-    @abc.abstractmethod
-    def wait_for_online(self) -> None:
-        """Wait for Fuchsia device to go online."""
 
     @abc.abstractmethod
     def is_starnix_device(self) -> bool:

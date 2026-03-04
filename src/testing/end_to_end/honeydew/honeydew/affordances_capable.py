@@ -5,10 +5,42 @@
 
 import abc
 from collections.abc import Callable
+from typing import Any, Coroutine
 
 import fuchsia_inspect
 
 from honeydew.typing import custom_types
+
+
+class AsyncRebootCapableDevice(abc.ABC):
+    """Abstract base class to be implemented by a device which supports the
+    reboot operation."""
+
+    @abc.abstractmethod
+    async def reboot(self) -> None:
+        """Soft reboot the device."""
+
+    @abc.abstractmethod
+    async def on_device_boot(self) -> None:
+        """Take actions after the device is rebooted."""
+
+    @abc.abstractmethod
+    def register_for_on_device_boot(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
+        """Register a function that will be called in `on_device_boot()`.
+
+        Args:
+            fn: Function that need to be called after FuchsiaDevice boot up.
+        """
+
+    @abc.abstractmethod
+    def wait_for_offline(self) -> None:
+        """Wait for Fuchsia device to go offline."""
+
+    @abc.abstractmethod
+    async def wait_for_online(self) -> None:
+        """Wait for Fuchsia device to go online."""
 
 
 class RebootCapableDevice(abc.ABC):
@@ -24,7 +56,9 @@ class RebootCapableDevice(abc.ABC):
         """Take actions after the device is rebooted."""
 
     @abc.abstractmethod
-    def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:
+    def register_for_on_device_boot(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Register a function that will be called in `on_device_boot()`.
 
         Args:
@@ -38,6 +72,22 @@ class RebootCapableDevice(abc.ABC):
     @abc.abstractmethod
     def wait_for_online(self) -> None:
         """Wait for Fuchsia device to go online."""
+
+
+class AsyncFuchsiaDeviceLogger(abc.ABC):
+    """Abstract base class which contains methods for logging message to fuchsia
+    device."""
+
+    @abc.abstractmethod
+    async def log_message_to_device(
+        self, message: str, level: custom_types.LEVEL
+    ) -> None:
+        """Log message to fuchsia device at specified level.
+
+        Args:
+            message: Message that need to logged.
+            level: Log message level.
+        """
 
 
 class FuchsiaDeviceLogger(abc.ABC):
@@ -55,18 +105,43 @@ class FuchsiaDeviceLogger(abc.ABC):
             level: Log message level.
         """
 
+    @abc.abstractmethod
+    def as_async(self) -> AsyncFuchsiaDeviceLogger:
+        """Returns the async version of FuchsiaDeviceLogger."""
+
+
+class AsyncFuchsiaDeviceClose(abc.ABC):
+    """Abstract base class which contains methods that let you register to run any custom logic
+    during device cleanup."""
+
+    @abc.abstractmethod
+    def register_for_on_device_close(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
+        """Register a function that will be called during device clean up in `close()`.
+
+        Args:
+            fn: Function that need to be called during FuchsiaDevice cleanup.
+        """
+
 
 class FuchsiaDeviceClose(abc.ABC):
     """Abstract base class which contains methods that let you register to run any custom logic
     during device cleanup."""
 
     @abc.abstractmethod
-    def register_for_on_device_close(self, fn: Callable[[], None]) -> None:
+    def register_for_on_device_close(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
         Args:
             fn: Function that need to be called during FuchsiaDevice cleanup.
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncFuchsiaDeviceClose:
+        """Returns the async version of FuchsiaDeviceClose."""
 
 
 class FuchsiaDeviceIpChange(abc.ABC):
@@ -75,7 +150,9 @@ class FuchsiaDeviceIpChange(abc.ABC):
 
     @abc.abstractmethod
     def register_for_on_device_ip_change(
-        self, fn: Callable[[custom_types.IpPort], None]
+        self,
+        fn: Callable[[custom_types.IpPort], None]
+        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 

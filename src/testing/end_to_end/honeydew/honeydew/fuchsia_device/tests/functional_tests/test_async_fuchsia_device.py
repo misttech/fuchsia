@@ -201,19 +201,19 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         ]
         asserts.assert_equal(sorted(monikers), sorted(selectors))
 
-    def test_log_message_to_device(self) -> None:
+    async def test_log_message_to_device(self) -> None:
         """Test case for log_message_to_device()"""
-        self.device.log_message_to_device(
+        await self.device.log_message_to_device(
             message="This is a test ERROR message",
             level=custom_types.LEVEL.ERROR,
         )
 
-        self.device.log_message_to_device(
+        await self.device.log_message_to_device(
             message="This is a test WARNING message",
             level=custom_types.LEVEL.WARNING,
         )
 
-        self.device.log_message_to_device(
+        await self.device.log_message_to_device(
             message="This is a test INFO message", level=custom_types.LEVEL.INFO
         )
 
@@ -224,13 +224,13 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             exists: bool = os.path.exists(f"{tmpdir}/snapshot.zip")
         asserts.assert_true(exists, msg="snapshot failed")
 
-    def test_wait_for_online(self) -> None:
+    async def test_wait_for_online(self) -> None:
         """Test case for wait_for_online()"""
-        self.device.wait_for_online()
+        await self.device.wait_for_online()
 
-    def test_resolve_device_ip(self) -> None:
+    async def test_resolve_device_ip(self) -> None:
         """Test case for resolve_device_ip()"""
-        self.device.resolve_device_ip()
+        await self.device.resolve_device_ip()
 
 
 if __name__ == "__main__":

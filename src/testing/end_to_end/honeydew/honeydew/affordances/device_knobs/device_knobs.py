@@ -5,6 +5,7 @@
 
 import abc
 from collections.abc import Callable
+from typing import Any, Coroutine
 
 import fuchsia_inspect
 
@@ -401,10 +402,6 @@ class DeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def on_device_boot(self) -> None:
-        """Take actions after the device is rebooted."""
-
-    @abc.abstractmethod
     def power_cycle(
         self,
         power_switch: power_switch_interface.PowerSwitch,
@@ -418,14 +415,20 @@ class DeviceKnobs(abc.ABC):
                 power switch hardware where this fuchsia device is connected.
         """
 
-    @abc.abstractmethod
-    def reboot(self) -> None:
-        """Soft reboot the device."""
+    def register_on_device_suspend_fn(
+        self,
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
+    ) -> None:
+        """Register a function to be called when device is suspended.
+
+        Args:
+            fn: Function to be called when device is suspended.
+        """
 
     @abc.abstractmethod
     def register_on_device_resume_fn(
         self,
-        fn: Callable[[], None],
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function to be called after device is resumed.
 
@@ -472,32 +475,6 @@ class DeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:
-        """Register a function that will be called in `on_device_boot()`.
-
-        Args:
-            fn: Function that need to be called after FuchsiaDevice boot up.
-        """
-
-    @abc.abstractmethod
-    def register_for_on_device_close(self, fn: Callable[[], None]) -> None:
-        """Register a function that will be called during device clean up in `close()`.
-
-        Args:
-            fn: Function that need to be called during FuchsiaDevice cleanup.
-        """
-
-    @abc.abstractmethod
-    def register_for_on_device_ip_change(
-        self, fn: Callable[[custom_types.IpPort], None]
-    ) -> None:
-        """Register a function that will be called when an IP address is changed.
-
-        Args:
-            fn: Function that need to be called when an IP address is changed.
-        """
-
-    @abc.abstractmethod
     def resolve_device_ip(self) -> None:
         """Resolves the IP address of Fuchsia device."""
 
@@ -520,14 +497,6 @@ class DeviceKnobs(abc.ABC):
         Returns:
             Absolute path of the snapshot file.
         """
-
-    @abc.abstractmethod
-    def wait_for_offline(self) -> None:
-        """Wait for Fuchsia device to go offline."""
-
-    @abc.abstractmethod
-    def wait_for_online(self) -> None:
-        """Wait for Fuchsia device to go online."""
 
     @abc.abstractmethod
     def is_starnix_device(self) -> bool:

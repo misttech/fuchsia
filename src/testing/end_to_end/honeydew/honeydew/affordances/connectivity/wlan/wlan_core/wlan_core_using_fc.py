@@ -4,7 +4,6 @@
 """WLAN affordance implementation using Fuchsia Controller."""
 
 import asyncio
-import functools
 import logging
 from collections.abc import Sequence
 
@@ -83,13 +82,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
 
         self.verify_supported()
 
-        @functools.wraps(self.make_ready)
-        def make_ready() -> None:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.make_ready()
-            )
-
-        self._reboot_affordance.register_for_on_device_boot(make_ready)
+        self._reboot_affordance.register_for_on_device_boot(self.make_ready)
 
     def verify_supported(self) -> None:
         """Verifies that the WLAN affordance using FuchsiaController is supported by the Fuchsia

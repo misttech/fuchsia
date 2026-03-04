@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import inspect
 import logging
 import pprint
@@ -190,19 +189,9 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
 
         self.verify_supported()
 
-        @functools.wraps(self.make_ready)
-        def make_ready() -> None:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.make_ready()
-            )
+        self._reboot_affordance.register_for_on_device_boot(self.make_ready)
 
-        self._reboot_affordance.register_for_on_device_boot(make_ready)
-
-        @functools.wraps(self._close)
-        def _close() -> None:
-            fuchsia_async_extension.get_loop().run_until_complete(self._close())
-
-        self._fuchsia_device_close.register_for_on_device_close(_close)
+        self._fuchsia_device_close.register_for_on_device_close(self._close)
 
     async def make_ready(self) -> None:
         await super().make_ready()

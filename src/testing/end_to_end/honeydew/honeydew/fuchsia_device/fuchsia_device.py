@@ -4,12 +4,15 @@
 """FuchsiaDevice abstract base class implementation."""
 
 
+import inspect
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Coroutine
 
 import fidl_fuchsia_diagnostics_types as f_diagnostics_types
+import fuchsia_async_extension
 import fuchsia_inspect
+from fuchsia_controller_py.wrappers import BoundAsyncMethod
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
@@ -298,10 +301,12 @@ class FuchsiaDevice(
         return self._inner.hello_world
 
     def close(self) -> None:
-        return self._inner.close()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.close()
+        )
 
     def health_check(self) -> None:
-        return self._inner.health_check()
+        self._inner.health_check()
 
     def get_inspect_data(
         self,
@@ -313,39 +318,63 @@ class FuchsiaDevice(
     def log_message_to_device(
         self, message: str, level: custom_types.LEVEL
     ) -> None:
-        return self._inner.log_message_to_device(message, level)
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.log_message_to_device(message, level)
+        )
 
     def on_device_boot(self) -> None:
-        return self._inner.on_device_boot()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.on_device_boot()
+        )
 
     def power_cycle(
         self,
         power_switch: power_switch_interface.PowerSwitch,
         outlet: int | None = None,
     ) -> None:
-        return self._inner.power_cycle(power_switch, outlet)
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.power_cycle(power_switch, outlet)
+        )
 
     def register_on_device_suspend_fn(
         self,
-        fn: Callable[[], None],
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function to be called when device is suspended.
 
         Args:
             fn: Function to be called when device is suspended.
         """
-        self._inner.register_on_device_suspend_fn(fn)
+        if inspect.iscoroutinefunction(fn):
+            self._inner.register_on_device_suspend_fn(fn)
+        # TODO(https://fxbug.dev/488299605): For the simple case when the
+        # outermost wrapper is @asyncmethod, this suffices.
+        elif isinstance(fn, BoundAsyncMethod):
+            self._inner.register_on_device_suspend_fn(
+                fn.unwrap_from_asyncmethod()
+            )
+        else:
+            self._inner.register_on_device_suspend_fn(fn)
 
     def register_on_device_resume_fn(
         self,
-        fn: Callable[[], None],
+        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
         """Register a function to be called when device is resumed.
 
         Args:
             fn: Function to be called when device is resumed.
         """
-        self._inner.register_on_device_resume_fn(fn)
+        if inspect.iscoroutinefunction(fn):
+            self._inner.register_on_device_resume_fn(fn)
+        # TODO(https://fxbug.dev/488299605): For the simple case when the
+        # outermost wrapper is @asyncmethod, this suffices.
+        elif isinstance(fn, BoundAsyncMethod):
+            self._inner.register_on_device_resume_fn(
+                fn.unwrap_from_asyncmethod()
+            )
+        else:
+            self._inner.register_on_device_resume_fn(fn)
 
     def set_usb_power_hub(
         self,
@@ -372,7 +401,9 @@ class FuchsiaDevice(
         Raises:
             NotSupportedError: If USB power hub not set.
         """
-        self._inner.suspend()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.suspend()
+        )
 
     def resume(self) -> None:
         """Resume the device by reconnecting USB power.
@@ -383,33 +414,74 @@ class FuchsiaDevice(
         Raises:
             NotSupportedError: If USB power hub not set.
         """
-        self._inner.resume()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.resume()
+        )
 
     def reboot(self) -> None:
-        return self._inner.reboot()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.reboot()
+        )
 
-    def register_for_on_device_boot(self, fn: Callable[[], None]) -> None:
-        return self._inner.register_for_on_device_boot(fn)
+    def register_for_on_device_boot(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
+        if inspect.iscoroutinefunction(fn):
+            self._inner.register_for_on_device_boot(fn)
+        # TODO(https://fxbug.dev/488299605): For the simple case when the
+        # outermost wrapper is @asyncmethod, this suffices.
+        elif isinstance(fn, BoundAsyncMethod):
+            self._inner.register_for_on_device_boot(
+                fn.unwrap_from_asyncmethod()
+            )
+        else:
+            self._inner.register_for_on_device_boot(fn)
 
-    def register_for_on_device_close(self, fn: Callable[[], None]) -> None:
-        return self._inner.register_for_on_device_close(fn)
+    def register_for_on_device_close(
+        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
+        if inspect.iscoroutinefunction(fn):
+            self._inner.register_for_on_device_close(fn)
+        # TODO(https://fxbug.dev/488299605): For the simple case when the
+        # outermost wrapper is @asyncmethod, this suffices.
+        elif isinstance(fn, BoundAsyncMethod):
+            self._inner.register_for_on_device_close(
+                fn.unwrap_from_asyncmethod()
+            )
+        else:
+            self._inner.register_for_on_device_close(fn)
 
     def resolve_device_ip(self) -> None:
-        return self._inner.resolve_device_ip()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.resolve_device_ip()
+        )
 
     def register_for_on_device_ip_change(
-        self, fn: Callable[[custom_types.IpPort], None]
+        self,
+        fn: Callable[[custom_types.IpPort], None]
+        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
     ) -> None:
-        return self._inner.register_for_on_device_ip_change(fn)
+        if inspect.iscoroutinefunction(fn):
+            self._inner.register_for_on_device_ip_change(fn)
+        # TODO(https://fxbug.dev/488299605): For the simple case when the
+        # outermost wrapper is @asyncmethod, this suffices.
+        elif isinstance(fn, BoundAsyncMethod):
+            self._inner.register_for_on_device_ip_change(
+                fn.unwrap_from_asyncmethod()
+            )
+        else:
+            self._inner.register_for_on_device_ip_change(fn)
 
     def snapshot(self, directory: str, snapshot_file: str | None = None) -> str:
         return self._inner.snapshot(directory, snapshot_file)
 
     def wait_for_offline(self) -> None:
-        return self._inner.wait_for_offline()
+        self._inner.wait_for_offline()
 
     def wait_for_online(self) -> None:
-        return self._inner.wait_for_online()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_online()
+        )
 
     def is_starnix_device(self) -> bool:
         return self._inner.is_starnix_device()

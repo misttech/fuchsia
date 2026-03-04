@@ -5,7 +5,6 @@
 Controller."""
 
 import asyncio
-import functools
 import logging
 from dataclasses import dataclass
 
@@ -93,13 +92,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
 
         self.verify_supported()
 
-        @functools.wraps(self.make_ready)
-        def make_ready() -> None:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.make_ready()
-            )
-
-        self._reboot_affordance.register_for_on_device_boot(make_ready)
+        self._reboot_affordance.register_for_on_device_boot(self.make_ready)
 
     async def make_ready(self) -> None:
         await super().make_ready()
