@@ -1,4 +1,5 @@
-keywords: robustness, wire format, fire and forget, Zircon, Fuchsia Interface Definition Language, determinism, protocols, FIDL, messaging models, blocking call, FIDL compiler, efficiency, topic:Platform, topic:Tools, FIDL language, topic:Build, event, contentType:ApiReference, contentType:Concept, server, ergonomics, topic:FuchsiaSystems, client, callback, IPC, interprocess communication, FIDL bindings
+keywords: docType:ApiReference,docType:Overview,category:FuchsiaPlatform,category:FuchsiaTools,category:FuchsiaBuild,category:FuchsiaFidl,category:FuchsiaSystems
+keywords_public: robustness, wire format, fire and forget, Zircon, Fuchsia Interface Definition Language, determinism, protocols, FIDL, messaging models, blocking call, FIDL compiler, efficiency, event, server, ergonomics, client, callback, IPC, interprocess communication, FIDL bindings
 description: This document provides a high-level overview of the Fuchsia Interface Definition Language (FIDL), covering its architecture, messaging models, bindings, and the design goals of efficiency, determinism, robustness, and ease of use for interprocess communication on Fuchsia.
 <!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
 
