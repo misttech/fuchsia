@@ -234,10 +234,6 @@ impl SecurityServer {
             state.policy_change_count += 1;
         });
 
-        // TODO: https://fxbug.dev/367585803 - move this cache-resetting into the
-        // closure passed to self.with_state_and_update_status.
-        self.access_vector_cache.reset();
-
         Ok(())
     }
 
@@ -486,6 +482,11 @@ impl SecurityServer {
         if let Some(status_publisher) = &mut locked_state.status_publisher {
             status_publisher.set_status(new_value);
         }
+
+        // TODO: https://fxbug.dev/367585803 - reset the cache after running `f` and before updating
+        // the userspace-facing "status", once that is possible.
+        std::mem::drop(locked_state);
+        self.access_vector_cache.reset();
     }
 
     /// Returns the security identifier (SID) with which to label a new object of `target_class`,
