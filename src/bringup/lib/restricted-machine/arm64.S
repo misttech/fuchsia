@@ -120,7 +120,7 @@
   // Pass the stack pointer as the context argument to the syscall.
   mov x2, sp
 
-  bl zx_restricted_enter@PLT
+  bl zx_restricted_enter
   // if we got here it must have failed
   // Restore the registers that we saved so we can return to the caller.
 

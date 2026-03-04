@@ -2134,7 +2134,7 @@ __asm__(
       stp x0, x1, [sp, #-32]!
       .cfi_adjust_cfa_offset 32
       stp x17, x18, [sp, #16]
-      bl _zx_thread_exit@PLT
+      bl _zx_thread_exit
       udf #0
     )"""
 #elif defined(__riscv)
