@@ -9,6 +9,7 @@ use crate::Decl;
 pub trait LibraryExt {
     fn get_local_decl(&self, ident: &CompoundIdent) -> Option<&dyn Decl>;
     fn get_decl_type(&self, ident: &CompoundIdent) -> Option<DeclType>;
+    fn get_is_resource(&self, ident: &CompoundIdent) -> Option<bool>;
     fn get_type_shape(&self, ident: &CompoundIdent) -> Option<&TypeShape>;
 }
 
@@ -36,6 +37,15 @@ impl LibraryExt for Library {
             Some(self.get_local_decl(ident)?.decl_type())
         } else {
             Some(self.library_dependencies.get(library)?.declarations.get(ident)?.kind)
+        }
+    }
+
+    fn get_is_resource(&self, ident: &CompoundIdent) -> Option<bool> {
+        let library = ident.library();
+        if library == self.name {
+            self.get_local_decl(ident)?.is_resource()
+        } else {
+            Some(self.library_dependencies.get(library)?.declarations.get(ident)?.is_resouce)
         }
     }
 

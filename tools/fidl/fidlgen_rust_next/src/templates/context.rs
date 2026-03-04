@@ -117,11 +117,14 @@ impl DeriveCache {
         };
 
         let Some(decl) = library.get_local_decl(ident) else {
-            if library.get_decl_type(ident).is_none() {
-                return Derives::DEBUG | Derives::CLONE | Derives::PARTIAL_EQ;
+            let mut derives = Derives::DEBUG | Derives::PARTIAL_EQ;
+
+            if library.get_is_resource(ident) == Some(false) {
+                // Non-resource types also implement `Clone`
+                derives |= Derives::CLONE;
             }
 
-            return Derives::DEBUG | Derives::PARTIAL_EQ;
+            return derives;
         };
 
         match self.cache.entry(ident.to_owned()) {

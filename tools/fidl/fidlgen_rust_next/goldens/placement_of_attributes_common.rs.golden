@@ -147,7 +147,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Clone, PartialEq)]
     #[repr(C)]
     pub struct ExampleProtocolMethodRequest {
         pub arg: ::fidl_next_common_test_exampleusing::natural::Empty,
