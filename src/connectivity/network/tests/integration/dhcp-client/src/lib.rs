@@ -1337,11 +1337,18 @@ async fn client_gracefully_handles_duplicate_options<N: Netstack>(name: &str) {
         .expect("failed to send DHCPOFFER");
     assert_eq!(sent_len, offer.len());
 
-    // Wait to see a DHCPREQUEST from the client
-    let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
-    let request =
-        dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
-    assert_eq!(request.get_dhcp_type(), Ok(dhcp_protocol::MessageType::DHCPREQUEST));
+    // Wait to see a DHCPREQUEST from the client.
+    let request = loop {
+        let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
+        let request =
+            dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
+        match request.get_dhcp_type().expect("get DHCP message type") {
+            // Ignore DHCPDISCOVERs which may have been retransmitted by the client.
+            dhcp_protocol::MessageType::DHCPDISCOVER => continue,
+            dhcp_protocol::MessageType::DHCPREQUEST => break request,
+            dhcp_type => panic!("unexpected DHCP message type: {dhcp_type}"),
+        }
+    };
 
     // Send a DHCPACK to the client.
     let ack = dhcp_protocol::Message {
