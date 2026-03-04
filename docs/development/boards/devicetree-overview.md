@@ -83,8 +83,8 @@ A typical test would be to enumerate the nodes created.
 
 [devicetree-spec]: https://devicetree-specification.readthedocs.io/en/v0.3/index.html
 [nodes]: /docs/concepts/drivers/drivers_and_nodes.md
-[devicetree-examples]: https://source.corp.google.com/h/turquoise-internal/turquoise/+/main:sdk/lib/driver/devicetree/examples/
-[smc-yaml]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/devicetree/visitors/default/smc/smc.yaml
+[devicetree-examples]: /sdk/lib/driver/devicetree/examples/
+[smc-yaml]: /sdk/lib/driver/devicetree/visitors/default/smc/smc.yaml
 [dt-schema]: https://github.com/devicetree-org/dt-schema
 [standard-properties]: https://devicetree-specification.readthedocs.io/en/v0.3/devicetree-basics.html#standard-properties
 [visitors]: /docs/development/boards/devicetree-visitors.md
@@ -93,4 +93,4 @@ A typical test would be to enumerate the nodes created.
 [driver-visitors]: /docs/development/boards/devicetree-visitors.md#driver-visitors
 [board-driver]: /docs/development/boards/bringup.md#board-driver
 [load-visitors]: /docs/development/boards/devicetree-visitors.md#helper-libraries
-[devicetree-manager]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/devicetree/manager/
+[devicetree-manager]: /sdk/lib/driver/devicetree/manager/
