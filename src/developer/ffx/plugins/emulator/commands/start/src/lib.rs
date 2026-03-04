@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::pbm::{get_virtual_devices, make_configs};
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstances, EngineType, NetworkingMode};
 use ffx_config::EnvironmentContext;
@@ -14,18 +14,94 @@ use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{
     Error, FfxContext, FfxMain, FfxTool, Result, TryFromEnv, bug, return_bug, return_user_error,
 };
+use gcs::client::{Client, ProgressResponse};
 use pbm::generate_mac_address;
-use pbms::LoadedProductBundle;
+use pbms::{AuthFlowChoice, LoadedProductBundle, handle_new_access_token};
 use schemars::JsonSchema;
 use sdk_metadata::CpuArchitecture;
 use serde::Serialize;
+use std::io::{stderr, stdin, stdout};
 use std::path::PathBuf;
 use std::str::FromStr;
+use structured_ui::{Interface, TextUi};
+use tempfile::TempDir;
+use url::Url;
 
 mod editor;
 mod pbm;
 
 pub(crate) const DEFAULT_NAME: &str = "fuchsia-emulator";
+
+async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
+    let dir = TempDir::new().context("create temp dir")?.into_path();
+    let file_name = gs_url.split('/').next_back().ok_or_else(|| anyhow!("Invalid GS URL"))?;
+    let local_path = dir.join(file_name);
+
+    let client = Client::initial()?;
+    let url = Url::parse(gs_url).context("parsing gs url")?;
+    let bucket = url.host_str().context("getting bucket from gs url")?;
+    let object = &url.path()[1..];
+
+    log::debug!("Downloading {}...", gs_url);
+    let access_token =
+        handle_new_access_token(&AuthFlowChoice::Pkce, &structured_ui::MockUi::new())
+            .await
+            .context("Getting new access token.")?;
+    client.set_access_token(access_token).await;
+
+    let mut input = stdin();
+    let mut output = stdout();
+    let mut err_out = stderr();
+    let ui = TextUi::new(&mut input, &mut output, &mut err_out);
+    client
+        .fetch_with_progress(bucket, object, &local_path, &|progress| {
+            let mut p = structured_ui::Progress::builder();
+            p.title("Downloading product bundle from GCS");
+            p.entry(progress.name, progress.at, progress.of, progress.units);
+            ui.present(&structured_ui::Presentation::Progress(p))?;
+            Ok(ProgressResponse::Continue)
+        })
+        .await?;
+
+    let mut p = structured_ui::Progress::builder();
+    p.title("Downloading product bundle from GCS");
+    let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
+    p.entry(object, size, size, "bytes");
+    ui.present(&structured_ui::Presentation::Progress(p))?;
+
+    log::debug!("Downloaded to {}", local_path.display());
+
+    if local_path.extension().unwrap_or_default() == "zip" {
+        let file = std::fs::File::open(&local_path).context("opening zip file")?;
+        let mut archive = zip::ZipArchive::new(file).context("reading zip archive")?;
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).context("getting file from archive")?;
+            let outpath = file.sanitized_name();
+            let outpath = dir.join(outpath);
+
+            if file.is_dir() {
+                std::fs::create_dir_all(&outpath).context("creating directory")?;
+                continue;
+            }
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    std::fs::create_dir_all(&p).context("creating parent directory")?;
+                }
+            }
+            let mut outfile = std::fs::File::create(&outpath).context("creating output file")?;
+            std::io::copy(&mut file, &mut outfile).context("copying file content")?;
+        }
+
+        let pb_path = dir.join("product_bundle");
+        if pb_path.exists() {
+            return Ok(pb_path);
+        }
+
+        return Ok(dir);
+    }
+
+    Ok(local_path)
+}
 
 /// EngineOperations trait is used to allow mocking of
 /// these methods.
@@ -102,10 +178,17 @@ impl EngineOperations for EngineOperationsData {
         product_bundle: &Option<String>,
     ) -> Result<LoadedProductBundle> {
         let pb = match product_bundle {
-            Some(b) => b,
-            None => &pbms::get_product_bundle_path(&self.context)?,
+            Some(b) => {
+                if b.starts_with("gs://") {
+                    let path = download_from_gs(b).await?;
+                    path.to_string_lossy().to_string()
+                } else {
+                    b.clone()
+                }
+            }
+            None => pbms::get_product_bundle_path(&self.context)?,
         };
-        pbms::load_product_bundle(&self.context, pb)
+        pbms::load_product_bundle(&self.context, &pb)
             .await
             .map_err(|e| fho::user_error!("Error loading product bundle: {e}"))
     }
