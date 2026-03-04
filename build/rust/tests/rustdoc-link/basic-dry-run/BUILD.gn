@@ -63,8 +63,6 @@ if (is_host) {
       "--output-base",  # Set output base to avoid writing to global argfiles.
       rebase_path("${target_gen_dir}/output_base", root_build_dir),
       "--dry-run",
-      "--save-actions-to",
-      rebase_path(_rustdoc_link_output, root_build_dir),
       "--rust-target-mapping",
       rebase_path("$_rust_target_mapping", root_build_dir),
       "--fuchsia-dir",  # typically provided by devshell
