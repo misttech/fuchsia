@@ -23,12 +23,14 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/environment"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
+	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 	"go.fuchsia.dev/fuchsia/tools/lib/syslog"
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	"go.fuchsia.dev/fuchsia/tools/testing/testrunner"
 	testrunnerconstants "go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants"
 
@@ -431,6 +433,12 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					port = constants.DefaultFFXMonitorPort
 				}
 
+				const (
+					monitorName         = "ffx_monitor"
+					logFileName         = "device.status.json"
+					aggregationFilename = "aggregation.json"
+				)
+
 				// Create a new context for the monitor so that it isn't cancelled when the
 				// errgroup context is cancelled. This ensures that we can gracefully stop
 				// the monitor and flush logs.
@@ -445,13 +453,33 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 						logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
 					} else {
 						logger.Debugf(ctx, "ffx monitor stopped")
+						// TODO(https://fxbug.dev/489556654): Move the writing of the summary.json to botanist
+						// Update summary.json to include the monitor aggregation file.
+						summaryPath := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), r.testrunnerOptions.OutDir, runtests.TestSummaryFilename)
+						if data, err := os.ReadFile(summaryPath); err == nil {
+							var summary runtests.TestSummary
+							if err := json.Unmarshal(data, &summary); err == nil {
+								summary.Tests = append(summary.Tests, runtests.TestDetails{
+									Name:      monitorName,
+									Status:    runtests.TestSuccess,
+									StartTime: time.Now(),
+									TestResult: runtests.TestResult{
+										OutputDir:   monitorName,
+										OutputFiles: []string{aggregationFilename},
+									},
+								})
+								if err := jsonutil.WriteToFile(summaryPath, summary); err != nil {
+									logger.Errorf(ctx, "failed to write updated summary.json: %s", err)
+								}
+							}
+						}
 					}
 					cancelMonitor()
 				}()
 				go func() {
-					logDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "out", "ffx_monitor")
-					logFile := filepath.Join(logDir, "device.status.json")
-					aggregationsFile := filepath.Join(logDir, "aggregation.freeform.json")
+					logDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), r.testrunnerOptions.OutDir, monitorName)
+					logFile := filepath.Join(logDir, logFileName)
+					aggregationsFile := filepath.Join(logDir, aggregationFilename)
 					if err := ffx.StartFFXMonitor(monitorCtx, port, logFile, aggregationsFile); err != nil && !errors.Is(err, context.Canceled) {
 						logger.Errorf(ctx, "failed to start ffx monitor: %s", err)
 					} else {

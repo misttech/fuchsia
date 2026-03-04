@@ -70,6 +70,8 @@ struct Summary {
     start_time: u64,
     duration_ms: u64,
     latency: LatencySummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_type: Option<String>,
 }
 
 #[derive(Serialize, Debug, Default)]
@@ -242,6 +244,7 @@ impl AggregationsState {
                 start_time,
                 duration_ms,
                 latency: latency_summary,
+                device_type: std::env::var("FUCHSIA_DEVICE_TYPE").ok(),
             },
             device_aggregations,
         }

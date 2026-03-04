@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	testrunnerconstants "go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants"
 	"golang.org/x/sync/errgroup"
 )
@@ -122,6 +124,19 @@ func TestStartFFXMonitor(t *testing.T) {
 	experiments := make(botanist.Experiments)
 	experiments[string(botanist.UseFFXMonitor)] = struct{}{}
 
+	const (
+		monitorName         = "ffx_monitor"
+		aggregationFilename = "aggregation.json"
+	)
+
+	// Create an initial summary.json
+	summaryPath := filepath.Join(tmpDir, cmd.testrunnerOptions.OutDir, runtests.TestSummaryFilename)
+	initialSummary := runtests.TestSummary{Tests: []runtests.TestDetails{}}
+	summaryBytes, _ := json.Marshal(initialSummary)
+	if err := os.WriteFile(summaryPath, summaryBytes, 0o600); err != nil {
+		t.Fatalf("failed to write initial summary.json: %v", err)
+	}
+
 	// Run dispatchTests
 	cmd.dispatchTests(ctx, cancel, eg, nil, []targets.FuchsiaTarget{target}, target, nil, "invalid-tests-path", experiments)
 
@@ -139,15 +154,41 @@ func TestStartFFXMonitor(t *testing.T) {
 	if !strings.Contains(outStr, "--log-file") {
 		t.Errorf("expected --log-file arg, got: %s", outStr)
 	}
-	expectedLogFile := filepath.Join(tmpDir, "out", "ffx_monitor", "device.status.json")
+	expectedLogFile := filepath.Join(tmpDir, cmd.testrunnerOptions.OutDir, monitorName, "device.status.json")
 	if !strings.Contains(outStr, expectedLogFile) {
 		t.Errorf("expected log file %s, got output: %s", expectedLogFile, outStr)
 	}
 	if !strings.Contains(outStr, "--aggregations-file") {
 		t.Errorf("expected --aggregations-file arg, got: %s", outStr)
 	}
-	expectedAggregationsFile := filepath.Join(tmpDir, "out", "ffx_monitor", "aggregation.freeform.json")
+	expectedAggregationsFile := filepath.Join(tmpDir, cmd.testrunnerOptions.OutDir, monitorName, aggregationFilename)
 	if !strings.Contains(outStr, expectedAggregationsFile) {
 		t.Errorf("expected aggregations file %s, got output: %s", expectedAggregationsFile, outStr)
+	}
+
+	// Verify summary.json was updated
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("failed to read summary.json: %v", err)
+	}
+	var summary runtests.TestSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("failed to unmarshal summary.json: %v", err)
+	}
+	found := false
+	for _, test := range summary.Tests {
+		if test.Name == monitorName {
+			found = true
+			if test.OutputDir != monitorName {
+				t.Errorf("expected OutputDir %s, got %s", monitorName, test.OutputDir)
+			}
+			if len(test.OutputFiles) != 1 || test.OutputFiles[0] != aggregationFilename {
+				t.Errorf("expected OutputFiles [%s], got %v", aggregationFilename, test.OutputFiles)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("ffx_monitor entry not found in summary.json")
 	}
 }
