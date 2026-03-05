@@ -600,16 +600,16 @@ class AsyncFuchsiaDevice(
         raise NotImplementedError
 
     @properties.Affordance
-    def bluetooth_le(self) -> le.LE:
+    def bluetooth_le(self) -> le.AsyncLE:
         """Returns a Bluetooth LE affordance object.
 
         Returns:
             Bluetooth LE object
         """
-        return le_using_fc.LEUsingFc(
+        return le_using_fc.AsyncLEUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
+            reboot_affordance=self,
         )
 
     @properties.Affordance

@@ -64,8 +64,10 @@ class AdvertisedPeripheralImpl(f_ble_controller.AdvertisedPeripheralServer):
         raise StopServer
 
 
-class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
-    """BluetoothLE Common affordance implementation using Fuchsia Controller.
+class AsyncLEUsingFc(
+    le.AsyncLE, bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc
+):
+    """Async BluetoothLE Common affordance implementation using Fuchsia Controller.
 
     Args:
         device_name: Device name returned by `ffx target list`.
@@ -76,7 +78,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
         super().__init__(
             device_name=device_name,
@@ -92,7 +94,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         self._remote_service_client: fc.Channel | None = None
         self._peripheral_connection: fc.Channel | None = None
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
-        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
             reboot_affordance
         )
         self._peripheral_controller_proxy: (
@@ -107,7 +109,6 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         self._reboot_affordance.register_for_on_device_boot(fn=self.init_le_sys)
         self.verify_supported()
         self.init_le_sys()
-        self.loop = fuchsia_async_extension.get_loop()
 
     def verify_supported(self) -> None:
         """Check if Bluetooth le is supported on the DUT.
@@ -116,7 +117,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         """
         # TODO(http://b/409623831): Implement the method logic
 
-    def reset_state(self) -> None:
+    async def reset_state(self) -> None:
         """Reset the internal state tracking variables to correspond to an inactive BLE State."""
         self._peripheral_controller_proxy = None
         self._central_controller_proxy = None
@@ -130,7 +131,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             self._peripheral_advertisement_server = None
         self._peripheral_connection = None
         self._le_session_initialized = False
-        super().reset_state()
+        await super().reset_state()
 
     def init_le_sys(self) -> None:
         """Initializes BLE stack.
@@ -173,22 +174,20 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         self.service_info: dict[int, dict[str, Any]] = dict()
         self._uuid = f_bt.Uuid(value=self._generate_random_bluetooth_uuid())
 
-    def stop_advertise(self) -> None:
+    async def stop_advertise(self) -> None:
         """Stop advertising the peripheral."""
         self._peripheral_advertisement_server = None
 
-    def scan(self) -> dict[str, bool | int | str]:
+    async def scan(self) -> dict[str, bool | int | str]:
         """Perform an LE scan on central device.
 
         Returns:
             A dict of all known LE remote devices.
         """
         try:
-            return self.loop.run_until_complete(
-                asyncio.wait_for(
-                    self._scan(),
-                    ASYNC_OP_TIMEOUT,
-                )
+            return await asyncio.wait_for(
+                self._scan(),
+                ASYNC_OP_TIMEOUT,
             )
         except TimeoutError:
             _LOGGER.info(
@@ -229,7 +228,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             }
         return self.known_le_devices
 
-    def connect(self, identifier: int) -> None:
+    async def connect(self, identifier: int) -> None:
         """Initiate connection from the central device to peripheral.
 
         Args:
@@ -254,13 +253,13 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
                 handle=conn_server.take(),
             )
             # TODO: b/342432248 - Reduce sleep values to minimum stables values
-            self.loop.run_until_complete(asyncio.sleep(5))
+            await asyncio.sleep(5)
         except Exception as e:  # pylint: disable=broad-except
             raise bt_errors.BluetoothError(
                 f"Failed to complete BLE connect FIDL on {self._device_name}."
             ) from e
 
-    def advertise(
+    async def advertise(
         self, appearance: bt_types.BluetoothLEAppearance, name: str
     ) -> None:
         """Advertise the peripheral.
@@ -270,7 +269,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             name: Peripheral device name.
         """
         try:
-            self.loop.run_until_complete(self._advertise(appearance, name))
+            await self._advertise(appearance, name)
         except Exception as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete BLE advertise FIDL call on {self._device_name}."
@@ -304,7 +303,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             parameters=params, advertised_peripheral=client.take()
         )
 
-    def run_advertise_connection(self) -> None:
+    async def run_advertise_connection(self) -> None:
         """Function to run Advertised Peripheral server calls"""
         if self._peripheral_advertisement_server is None:
             raise bt_errors.BluetoothError(
@@ -312,10 +311,8 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
                 f"device: {self._device_name}"
             )
         try:
-            self.loop.run_until_complete(
-                asyncio.wait_for(
-                    self._peripheral_advertisement_server, ASYNC_OP_TIMEOUT
-                )
+            await asyncio.wait_for(
+                self._peripheral_advertisement_server, ASYNC_OP_TIMEOUT
             )
         except Exception as e:
             raise bt_errors.BluetoothError(
@@ -337,7 +334,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         uuid_list = list(uuid_bytes)
         return uuid_list
 
-    def publish_service(self) -> f_bt.Uuid:
+    async def publish_service(self) -> f_bt.Uuid:
         """Publish the Gatt service from the peripheral.
 
         Returns:
@@ -348,7 +345,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         """
         raise NotImplementedError
 
-    def request_gatt_client(self) -> None:
+    async def request_gatt_client(self) -> None:
         """Request the Gatt Client.
 
         Raises:
@@ -369,7 +366,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
                 f"Failed to complete Request Gatt client FIDL call on {self._device_name}."
             ) from e
 
-    def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+    async def list_gatt_services(self) -> dict[int, dict[str, Any]]:
         """List the Gatt Services found on the connected peripheral.
 
         Returns:
@@ -382,8 +379,8 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             assert (
                 self._gatt_client is not None
             )  # the gatt client should not be none
-            res = self.loop.run_until_complete(
-                asyncio.wait_for(self._gatt_client.watch_services(uuids=[]), 10)
+            res = await asyncio.wait_for(
+                self._gatt_client.watch_services(uuids=[]), 10
             )
         except TimeoutError:
             _LOGGER.info(
@@ -401,7 +398,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             del self.service_info[service]
         return self.service_info
 
-    def connect_to_service(self, handle: int) -> None:
+    async def connect_to_service(self, handle: int) -> None:
         """Connect to an available GATT service on the peripheral device.
 
         Args:
@@ -424,7 +421,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
                 f"Failed to complete connect_to_service FIDL call on {self._device_name}."
             ) from e
 
-    def discover_characteristics(
+    async def discover_characteristics(
         self,
     ) -> dict[int, dict[str, int | list[int] | None]]:
         """Discover characteristics of a connected Gatt Service.
@@ -434,10 +431,8 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         """
         try:
             assert self._remote_service_client is not None
-            res = self.loop.run_until_complete(
-                asyncio.wait_for(
-                    self._remote_service_client.discover_characteristics(), 10
-                )
+            res = await asyncio.wait_for(
+                self._remote_service_client.discover_characteristics(), 10
             )
         except Exception as e:
             raise bt_errors.BluetoothError(
@@ -454,7 +449,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             }
         return remote_response
 
-    def read_characteristic(
+    async def read_characteristic(
         self, handle: int
     ) -> dict[str, int | list[int] | None | bool]:
         """Read characteristic of the Gatt service.
@@ -476,13 +471,11 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             read_options = f_gatt_controller.ReadOptions(
                 short_read=f_gatt_controller.ShortReadOptions()
             )
-            res = self.loop.run_until_complete(
-                asyncio.wait_for(
-                    self._remote_service_client.read_characteristic(
-                        handle=service_handle, options=read_options
-                    ),
-                    10,
-                )
+            res = await asyncio.wait_for(
+                self._remote_service_client.read_characteristic(
+                    handle=service_handle, options=read_options
+                ),
+                10,
             )
         except Exception as e:
             raise bt_errors.BluetoothError(
@@ -495,3 +488,181 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             "truncated": characteristic.maybe_truncated,
         }
         return char_response
+
+
+class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
+    """BluetoothLE Common affordance implementation using Fuchsia Controller.
+
+    Args:
+        device_name: Device name returned by `ffx target list`.
+        fuchsia_controller: FC transport.
+    """
+
+    def __init__(
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+    ) -> None:
+        self._inner = AsyncLEUsingFc(
+            device_name=device_name,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+        )
+
+    # List all the public methods
+    def verify_supported(self) -> None:
+        """Check if Bluetooth le is supported on the DUT.
+        Raises:
+            NotSupportedError: Bluetooth Le affordance is not supported by Fuchsia device.
+        """
+        self._inner.verify_supported()
+
+    def reset_state(self) -> None:
+        """Reset the internal state tracking variables to correspond to an inactive BLE State."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.reset_state()
+        )
+
+    def init_le_sys(self) -> None:
+        """Initializes BLE stack.
+
+        Note: This method is called automatically:
+            1. During this class initialization
+            2. After the device reboot
+
+        Raises:
+            BluetoothStateError: On failure.
+        """
+        self._inner.init_le_sys()
+
+    def stop_advertise(self) -> None:
+        """Stop advertising the peripheral."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop_advertise()
+        )
+
+    def scan(self) -> dict[str, bool | int | str]:
+        """Perform an LE scan on central device.
+
+        Returns:
+            A dict of all known LE remote devices.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.scan()
+        )
+
+    def connect(self, identifier: int) -> None:
+        """Initiate connection from the central device to peripheral.
+
+        Args:
+            identifier: the identifier of target remote device.
+
+        Raises:
+            BluetoothError: If the peripheral is not initialized.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.connect(identifier)
+        )
+
+    def advertise(
+        self, appearance: bt_types.BluetoothLEAppearance, name: str
+    ) -> None:
+        """Advertise the peripheral.
+
+        Args:
+            appearance: Peripheral device appearance.
+            name: Peripheral device name.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.advertise(appearance, name)
+        )
+
+    def run_advertise_connection(self) -> None:
+        """Function to run Advertised Peripheral server calls"""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.run_advertise_connection()
+        )
+
+    def publish_service(self) -> f_bt.Uuid:
+        """Publish the Gatt service from the peripheral.
+
+        Returns:
+            The UUID of the service.
+
+        Raises:
+            NotImplementedError
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.publish_service()
+        )
+
+    def request_gatt_client(self) -> None:
+        """Request the Gatt Client.
+
+        Raises:
+            BluetoothError: If the peripheral fails to request the Gatt client.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.request_gatt_client()
+        )
+
+    def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+        """List the Gatt Services found on the connected peripheral.
+
+        Returns:
+            The list of Gatt Services of the connected peripheral.
+
+        Raises:
+            BluetoothError: If the device fails to complete the FIDL request.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.list_gatt_services()
+        )
+
+    def connect_to_service(self, handle: int) -> None:
+        """Connect to an available GATT service on the peripheral device.
+
+        Args:
+            handle: The handle of the service.
+
+        Raises:
+            BluetoothError: If the central device fails to connect to Gatt service.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.connect_to_service(handle)
+        )
+
+    def discover_characteristics(
+        self,
+    ) -> dict[int, dict[str, int | list[int] | None]]:
+        """Discover characteristics of a connected Gatt Service.
+
+        Returns:
+            The available characteristics of a connected Gatt Service.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.discover_characteristics()
+        )
+
+    def read_characteristic(
+        self, handle: int
+    ) -> dict[str, int | list[int] | None | bool]:
+        """Read characteristic of the Gatt service.
+
+        Args:
+            handle: The handle of the service.
+
+        Returns:
+            A characteristic of the Gatt service and its properties
+
+        Raises:
+            BluetoothError: If the peripheral fails to read the characteristic.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.read_characteristic(handle)
+        )
+
+    def as_async(self) -> AsyncLEUsingFc:
+        """Returns the async version of LE."""
+        return self._inner

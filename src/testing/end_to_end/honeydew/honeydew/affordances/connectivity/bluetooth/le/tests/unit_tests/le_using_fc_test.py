@@ -5,6 +5,7 @@
 # pylint: disable=protected-access
 """Unit tests for honeydew.affordances.fuchsia_controller.bluetooth.profiles.bluetooth_le.py"""
 
+import asyncio
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -113,25 +114,21 @@ def _custom_test_name_func(
     return f"{test_func_name}_{test_label}"
 
 
-class BluetoothLETest(unittest.TestCase):
-    def setUp(self) -> None:
-        super().setUp()
+class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
+            spec=affordances_capable.AsyncRebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
 
-        self.bluetooth_le_obj = le_using_fc.LEUsingFc(
+        self.bluetooth_le_obj = le_using_fc.AsyncLEUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,
         )
-
-    def test_verify_supported(self) -> None:
-        """Test if verify_supported works."""
-        # TODO(http://b/409623831): Implement the test method logic
 
     @parameterized.expand(
         [
@@ -150,13 +147,15 @@ class BluetoothLETest(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_init_le_sys(self, parameterized_dict: dict[str, Any]) -> None:
+    async def test_init_le_sys(
+        self, parameterized_dict: dict[str, Any]
+    ) -> None:
         """Test for BluetoothLE.sys_init() method."""
         # Check whether an `BluetoothError` exception is raised when
         # calling `sys_init()` on a session that is already initialized.
         if parameterized_dict.get("session_initialized"):
             with self.assertRaises(bluetooth_errors.BluetoothStateError):
-                self.bluetooth_le_obj.sys_init()
+                self.bluetooth_le_obj.init_le_sys()
         else:
             assert (
                 self.bluetooth_le_obj._peripheral_controller_proxy is not None
@@ -166,13 +165,16 @@ class BluetoothLETest(unittest.TestCase):
             assert not self.bluetooth_le_obj.known_le_devices
             assert isinstance(self.bluetooth_le_obj._uuid, f_bt.Uuid)
 
-    def test_reset_state(self) -> None:
+    async def test_reset_state(self) -> None:
         """Test for BluetoothLE.reset_state() method."""
+
+        async def no_op() -> None:
+            pass
+
         self.bluetooth_le_obj._peripheral_advertisement_server = (
-            mock.MagicMock()
+            asyncio.create_task(no_op())
         )
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        self.bluetooth_le_obj.reset_state()
+        await self.bluetooth_le_obj.reset_state()
         assert self.bluetooth_le_obj._peripheral_controller_proxy is None
         assert self.bluetooth_le_obj._central_controller_proxy is None
         assert self.bluetooth_le_obj._gatt_server_proxy is None
@@ -180,53 +182,38 @@ class BluetoothLETest(unittest.TestCase):
         assert self.bluetooth_le_obj._peripheral_advertisement_server is None
         assert self.bluetooth_le_obj._peripheral_connection is None
 
-    def test_stop_advertise(self) -> None:
+    async def test_stop_advertise(self) -> None:
         """test for BluetoothLE.stop_advertise() method."""
         self.bluetooth_le_obj._peripheral_advertisement_server = (
             mock.MagicMock()
         )
-        self.bluetooth_le_obj.stop_advertise()
+        await self.bluetooth_le_obj.stop_advertise()
         assert self.bluetooth_le_obj._peripheral_advertisement_server is None
 
-    def test_scan(self) -> None:
+    async def test_scan(self) -> None:
         """test for BluetoothLE.scan() method."""
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        self.bluetooth_le_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=_SAMPLE_LE_KNOWN_DEVICES_OUTPUT
-        )
-        self.bluetooth_le_obj._central_controller_proxy = mock.MagicMock()
-        data = self.bluetooth_le_obj.scan()
-        self.assertEqual(data, _SAMPLE_LE_KNOWN_DEVICES_OUTPUT)
+        with mock.patch.object(
+            self.bluetooth_le_obj,
+            "_scan",
+            autospec=True,
+            return_value=_SAMPLE_LE_KNOWN_DEVICES_OUTPUT,
+        ):
+            data = await self.bluetooth_le_obj.scan()
+            self.assertEqual(data, _SAMPLE_LE_KNOWN_DEVICES_OUTPUT)
 
-    def test_connect(self) -> None:
+    async def test_connect(self) -> None:
         """test for BluetoothLE.connect() method."""
         self.bluetooth_le_obj._central_controller_proxy = mock.MagicMock()
-        self.bluetooth_le_obj.loop = mock.MagicMock()
         mock_identifier = 0
-        self.bluetooth_le_obj.connect(identifier=mock_identifier)
+        await self.bluetooth_le_obj.connect(identifier=mock_identifier)
         mock_peer_id = f_bt.PeerId(value=mock_identifier)
         mock_options = f_ble_controller.ConnectionOptions(bondable_mode=True)
         self.bluetooth_le_obj._central_controller_proxy.connect.assert_called_with(
             id_=mock_peer_id, options=mock_options, handle=mock.ANY
         )
-        self.assertEqual(
-            self.bluetooth_le_obj.loop.run_until_complete.call_count, 1
-        )
 
-    def test_advertise(self) -> None:
+    async def test_advertise(self) -> None:
         """test for BluetoothLE.advertise() method."""
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        mock_appearance = bt_types.BluetoothLEAppearance.GLUCOSE_MONITOR
-        mock_name = "mock_name"
-        self.bluetooth_le_obj.advertise(
-            appearance=mock_appearance, name=mock_name
-        )
-        self.assertEqual(
-            self.bluetooth_le_obj.loop.run_until_complete.call_count, 1
-        )
-
-    def test_async_advertise(self) -> None:
-        """test for BluetoothLE.advertise() async method."""
         mock_appearance = bt_types.BluetoothLEAppearance.GLUCOSE_MONITOR
         mock_name = "mock_name"
         mock_uuid = self.bluetooth_le_obj._uuid
@@ -245,9 +232,10 @@ class BluetoothLETest(unittest.TestCase):
             mock.MagicMock()
         )
         self.bluetooth_le_obj._peripheral_controller_proxy = mock.MagicMock()
-        self.bluetooth_le_obj.advertise(
-            appearance=mock_appearance, name=mock_name
-        )
+        with mock.patch("asyncio.get_running_loop"):
+            await self.bluetooth_le_obj.advertise(
+                appearance=mock_appearance, name=mock_name
+            )
         self.bluetooth_le_obj._peripheral_controller_proxy.advertise.assert_called_with(
             parameters=mock_params, advertised_peripheral=mock.ANY
         )
@@ -269,77 +257,77 @@ class BluetoothLETest(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_run_advertise_connection(
+    async def test_run_advertise_connection(
         self, parameterized_dict: dict[str, Any]
     ) -> None:
         """Test for BluetoothLE.run_advertise_connection()."""
         if not parameterized_dict.get("server"):
             with self.assertRaises(bluetooth_errors.BluetoothError):
-                self.bluetooth_le_obj.run_advertise_connection()
-        self.bluetooth_le_obj._peripheral_advertisement_server = (
-            mock.MagicMock()
-        )
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        self.bluetooth_le_obj.run_advertise_connection()
-        self.assertEqual(
-            self.bluetooth_le_obj.loop.run_until_complete.call_count, 1
-        )
+                await self.bluetooth_le_obj.run_advertise_connection()
+        else:
 
-    def test_request_gatt_client(self) -> None:
+            async def no_op() -> None:
+                pass
+
+            self.bluetooth_le_obj._peripheral_advertisement_server = (
+                asyncio.create_task(no_op())
+            )
+            await self.bluetooth_le_obj.run_advertise_connection()
+
+    async def test_request_gatt_client(self) -> None:
         """Test for BluetoothLE.request_gatt_client()."""
         self.bluetooth_le_obj._connection_client = mock.MagicMock()
-        self.bluetooth_le_obj.request_gatt_client()
+        await self.bluetooth_le_obj.request_gatt_client()
         self.bluetooth_le_obj._connection_client.request_gatt_client.assert_called_with(
             client=mock.ANY
         )
         assert self.bluetooth_le_obj._gatt_client is not None
 
-    def test_list_gatt_services(self) -> None:
+    async def test_list_gatt_services(self) -> None:
         """Test for BluetoothLE.list_gatt_services()."""
-        self.bluetooth_le_obj._gatt_client = mock.MagicMock()
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        self.bluetooth_le_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=_SAMPLE_CLIENT_WATCH_SERVICES_RESPONSE
+        self.bluetooth_le_obj._gatt_client = mock.AsyncMock()
+        self.bluetooth_le_obj._gatt_client.watch_services.return_value = (
+            _SAMPLE_CLIENT_WATCH_SERVICES_RESPONSE
         )
-        data = self.bluetooth_le_obj.list_gatt_services()
+        data = await self.bluetooth_le_obj.list_gatt_services()
         self.assertEqual(data, _SAMPLE_GATT_SERVICES_OUTPUT)
 
-    def test_connect_to_service(self) -> None:
+    async def test_connect_to_service(self) -> None:
         """Test for BluetoothLE.connect_to_service()."""
         mock_handle = 1
         self.bluetooth_le_obj._gatt_client = mock.MagicMock()
-        self.bluetooth_le_obj.connect_to_service(handle=mock_handle)
+        await self.bluetooth_le_obj.connect_to_service(handle=mock_handle)
         self.bluetooth_le_obj._gatt_client.connect_to_service.assert_called_with(
             handle=f_gatt_controller.ServiceHandle(value=mock_handle),
             service=mock.ANY,
         )
         assert self.bluetooth_le_obj._remote_service_client is not None
 
-    def test_discover_characteristics(self) -> None:
+    async def test_discover_characteristics(self) -> None:
         """Test for BluetoothLE.discover_characteristics()."""
-        self.bluetooth_le_obj._remote_service_client = mock.MagicMock()
-        self.bluetooth_le_obj.loop = mock.MagicMock()
-        self.bluetooth_le_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=_SAMPLE_DISCOVER_CHARACTERISTIC_RESPONSE
+        self.bluetooth_le_obj._remote_service_client = mock.AsyncMock()
+        self.bluetooth_le_obj._remote_service_client.discover_characteristics.return_value = (
+            _SAMPLE_DISCOVER_CHARACTERISTIC_RESPONSE
         )
-        data = self.bluetooth_le_obj.discover_characteristics()
+        data = await self.bluetooth_le_obj.discover_characteristics()
         self.assertEqual(data, _SAMPLE_DISCOVER_CHARACTERISTIC_OUTPUT)
 
-    def test_read_characteristics(self) -> None:
+    async def test_read_characteristics(self) -> None:
         """Test for BluetoothLE.read_characteristics()."""
-        self.bluetooth_le_obj._remote_service_client = mock.MagicMock()
+        self.bluetooth_le_obj._remote_service_client = mock.AsyncMock()
         mock_handle = 1
-        self.bluetooth_le_obj.loop = mock.MagicMock()
         mock_read_options = f_gatt_controller.ReadOptions(
             short_read=f_gatt_controller.ShortReadOptions()
         )
         mock_response = f_gatt_controller.RemoteServiceReadCharacteristicResult(
             response=_SAMPLE_READ_CHARACTERISTIC_RESPONSE
         )
-        self.bluetooth_le_obj.loop.run_until_complete = mock.MagicMock(
-            return_value=mock_response
+        self.bluetooth_le_obj._remote_service_client.read_characteristic.return_value = (
+            mock_response
         )
-        data = self.bluetooth_le_obj.read_characteristic(handle=mock_handle)
+        data = await self.bluetooth_le_obj.read_characteristic(
+            handle=mock_handle
+        )
         self.assertEqual(data, _SAMPLE_READ_CHARACTERISTIC_OUTPUT)
         self.bluetooth_le_obj._remote_service_client.read_characteristic.assert_called_with(
             handle=f_gatt_controller.ServiceHandle(value=mock_handle),
