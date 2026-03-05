@@ -5,6 +5,7 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
+use bstr::BString;
 use diagnostics_assertions::AnyUintProperty;
 use fidl::endpoints;
 use fidl::endpoints::Responder as _;
@@ -1316,8 +1317,8 @@ async fn client_gracefully_handles_duplicate_options<N: Netstack>(name: &str) {
         siaddr: std::net::Ipv4Addr::UNSPECIFIED,
         giaddr: std::net::Ipv4Addr::UNSPECIFIED,
         chaddr: MAC,
-        sname: String::new(),
-        file: String::new(),
+        sname: BString::default(),
+        file: BString::default(),
         options: vec![
             // NB: these options are required.
             dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPOFFER),
@@ -1361,8 +1362,8 @@ async fn client_gracefully_handles_duplicate_options<N: Netstack>(name: &str) {
         siaddr: std::net::Ipv4Addr::UNSPECIFIED,
         giaddr: std::net::Ipv4Addr::UNSPECIFIED,
         chaddr: MAC,
-        sname: String::new(),
-        file: String::new(),
+        sname: BString::default(),
+        file: BString::default(),
         options: vec![
             // NB: these options are required.
             dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPACK),
