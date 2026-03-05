@@ -17,11 +17,6 @@
                 "binder/004",
                 "binder/008",
 
-                // TODO: https://fxbug.dev/398652722
-                "bounds/013",
-                "bounds/018",
-                "bounds/020",
-
                 // TODO: https://fxbug.dev/398652723
                 "capable_file/008",
 

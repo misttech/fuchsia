@@ -204,6 +204,20 @@ impl ParsedPolicy {
             }
         }
 
+        // If the `source_type` is bounded by some `parent_type` then bound the allowed permissions
+        // to those available to the parent. Doing the calculation here ensures that type-bounds
+        // take into account bounding ancestors, if any.
+        if let Some(parent) = self.type_(source_type).bounded_by() {
+            // If `source_type`==`target_type` then this is a "self" permission check, which should
+            // be bounded to the parent domain's "self" permissions.
+            let access = if source_type == target_type {
+                self.compute_explicitly_allowed(parent, parent, target_class)
+            } else {
+                self.compute_explicitly_allowed(parent, target_type, target_class)
+            };
+            computed_access_vector &= access.allow;
+        }
+
         let mut flags = 0;
         if self.permissive_types().is_set(source_type.0.get()) {
             flags |= SELINUX_AVD_FLAGS_PERMISSIVE;

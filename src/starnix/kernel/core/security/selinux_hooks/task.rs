@@ -1994,6 +1994,9 @@ mod tests {
                     Ok(()),
                     "Unbounded_t->bounded_t single-threaded"
                 );
+
+                // Note that this case requires that the both the bounded and bounding contexts have
+                // the "setcurrent" permission, to pass the dynamic bounds check.
                 assert_eq!(
                     set_procattr(
                         &security_server,
