@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "quote",
     package_url = "https://github.com/dtolnay/quote",
-    package_version = "1.0.42",
+    package_version = "1.0.45",
 )
 
 license(
@@ -58,7 +58,7 @@ rust_library(
         "proc-macro",
     ],
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -77,10 +77,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.42",
+    version = "1.0.45",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
-        "//third_party/rust_crates/vendor/quote-1.0.42:build_script_build",
+        "//third_party/rust_crates/vendor/quote-1.0.45:build_script_build",
     ],
 )
 
@@ -121,7 +121,7 @@ cargo_build_script(
             "WORKSPACE.bazel",
         ],
     ),
-    edition = "2018",
+    edition = "2021",
     pkg_name = "quote",
     rustc_flags = [
         "--cap-lints=allow",
@@ -133,7 +133,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "1.0.42",
+    version = "1.0.45",
     visibility = ["//visibility:private"],
 )
 

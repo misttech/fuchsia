@@ -1933,14 +1933,14 @@ alias(
 )
 
 alias(
-    name = "quote-1.0.42",
-    actual = "//third_party/rust_crates/vendor/quote-1.0.42:quote",
+    name = "quote-1.0.45",
+    actual = "//third_party/rust_crates/vendor/quote-1.0.45:quote",
     tags = ["manual"],
 )
 
 alias(
     name = "quote",
-    actual = "//third_party/rust_crates/vendor/quote-1.0.42:quote",
+    actual = "//third_party/rust_crates/vendor/quote-1.0.45:quote",
     tags = ["manual"],
 )
 
