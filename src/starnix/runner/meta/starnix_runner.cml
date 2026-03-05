@@ -79,6 +79,7 @@
                 "fuchsia.boot.Items",
                 "fuchsia.buildinfo.Provider",
                 "fuchsia.diagnostics.ArchiveAccessor",
+                "fuchsia.diagnostics.LogStream",
                 "fuchsia.feedback.CrashReporter",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.kernel.Stats",

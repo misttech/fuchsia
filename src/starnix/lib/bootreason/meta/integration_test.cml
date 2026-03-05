@@ -17,7 +17,10 @@
     ],
     offer: [
         {
-            protocol: [ "fuchsia.kernel.VmexResource" ],
+            protocol: [
+                "fuchsia.diagnostics.LogStream",
+                "fuchsia.kernel.VmexResource",
+            ],
             from: "parent",
             to: "#realm_builder",
         },

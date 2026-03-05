@@ -17,6 +17,7 @@
         {
             protocol: [
                 "fuchsia.buildinfo.Provider",
+                "fuchsia.diagnostics.LogStream",
                 "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.power.battery.BatteryManager",
