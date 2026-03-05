@@ -1,0 +1,10 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+declare_args() {
+  # Set to True to make Bazel host tests visible to Fuchsia test runners, i.e.
+  # `fx test` and `botanist`. This feature is still experimental but will become
+  # the default. See https://fxbug.dev/349341932.
+  export_bazel_host_tests = false
+}

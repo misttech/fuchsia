@@ -456,7 +456,13 @@ def main() -> int:
             shutil.copy(product_bundles_metadata, product_bundles)
 
         time_profile.start("tests.json", "Generating tests.json.")
-        extra_ninja_build_inputs |= build_tests_json.build_tests_json(build_dir)
+        args_json = json.loads((build_dir / "args.json").read_text())
+        extra_ninja_build_inputs |= build_tests_json.build_tests_json(
+            build_dir,
+            with_bazel_host_tests=args_json.get(
+                "export_bazel_host_tests", False
+            ),
+        )
 
         # Where to store regenerator outputs. This must be in a directory specific to
         # the current Ninja build directory, to support building multiple Fuchsia build

@@ -4,6 +4,7 @@
 
 import("//build/config/clang/clang_toolchain_info.gni")
 import("//build/config/compilation_modes.gni")
+import("//build/config/export_bazel_host_tests.gni")
 import("//build/config/python_interpreter.gni")
 import("//build/icu/build_config.gni")
 import("//build/rust/build.gni")
