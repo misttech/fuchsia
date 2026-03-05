@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use test_util::assert_leq;
 use {
+    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol,
     fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_observability as fobs,
     fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
     fidl_test_suspendcontrol as tsc, fidl_test_systemactivitygovernor as ftest,
@@ -901,7 +902,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
     // Await SAG's power elements to drop their power levels.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -1005,7 +1006,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
     // OnResume does not block. SAG raises ExecutionState to Suspending state.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -1098,6 +1099,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
         activity_governor_moniker,
         root: contains {
             booting: true,
+            is_shutting_down: false,
             power_elements: {
                 execution_state: {
                     power_level: 2u64,
@@ -1871,7 +1873,7 @@ async fn test_activity_governor_acquire_wake_lease_with_token_returns_error_on_e
 
 async fn create_cpu_driver_topology(
     realm: &RealmProxyClient,
-) -> Result<(Arc<PowerElementContext>, Arc<Cell<fbroker::PowerLevel>>)> {
+) -> Result<(Arc<PowerElementContext>, Arc<Cell<fbroker::PowerLevel>>, fasync::Task<()>)> {
     let topology = realm.connect_to_protocol::<fbroker::TopologyMarker>().await?;
     let cpu_element_manager =
         realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
@@ -1899,7 +1901,7 @@ async fn create_cpu_driver_topology(
     let cpu_driver_power_level = Arc::new(Cell::new(0));
     let cpu_driver_power_level2 = cpu_driver_power_level.clone();
 
-    fasync::Task::local(async move {
+    let cpu_driver_task = fasync::Task::local(async move {
         let cpu_driver_power_level = cpu_driver_power_level2.clone();
 
         cpu_driver_context
@@ -1916,10 +1918,9 @@ async fn create_cpu_driver_topology(
                 })),
             )
             .await;
-    })
-    .detach();
+    });
 
-    Ok((cpu_driver_controller, cpu_driver_power_level))
+    Ok((cpu_driver_controller, cpu_driver_power_level, cpu_driver_task))
 }
 
 #[fuchsia::test]
@@ -1935,7 +1936,7 @@ async fn test_activity_governor_cpu_element_and_execution_state_interaction() ->
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let cpu_element_manager =
         realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
-    let (cpu_driver_controller, cpu_driver_power_level) =
+    let (cpu_driver_controller, cpu_driver_power_level, _cpu_driver_task) =
         create_cpu_driver_topology(&realm).await.unwrap();
 
     fasync::Task::local(async move {
@@ -2068,7 +2069,8 @@ async fn test_activity_governor_cpu_element_returns_bad_state() -> Result<()> {
 
     let cpu_element_manager =
         realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
-    let (cpu_driver_controller, _) = create_cpu_driver_topology(&realm).await.unwrap();
+    let (cpu_driver_controller, _, _cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
 
     cpu_element_manager
         .add_execution_state_dependency(
@@ -2112,7 +2114,7 @@ async fn test_activity_governor_cpu_element_allows_leases_during_boot() -> Resul
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
 
-    let (cpu_driver_controller, cpu_driver_power_level) =
+    let (cpu_driver_controller, cpu_driver_power_level, _cpu_driver_task) =
         create_cpu_driver_topology(&realm).await.unwrap();
 
     // The CPU power element should be powered up on boot.
@@ -2580,6 +2582,188 @@ async fn test_suspend_blocker_receives_calls_on_suspend_resume() -> Result<()> {
 }
 
 #[fuchsia::test]
+async fn test_suspend_blocker_receives_no_calls_during_shutdown_with_simple_topology() -> Result<()>
+{
+    let (realm, _) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let (suspend_blocker_client_end, mut suspend_blocker_stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+
+    let (mut state_tx, mut state_rx) = mpsc::channel(1);
+
+    fasync::Task::local(async move {
+        while let Some(req) = suspend_blocker_stream.next().await {
+            match req {
+                Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder }) => {
+                    state_tx.try_send(SuspendBlockerRequestType::BeforeSuspend).unwrap();
+                    responder.send().unwrap();
+                }
+                Ok(fsystem::SuspendBlockerRequest::AfterResume { responder }) => {
+                    state_tx.try_send(SuspendBlockerRequestType::AfterResume).unwrap();
+                    responder.send().unwrap();
+                }
+                _ => panic!("Unexpected request"),
+            }
+        }
+    })
+    .detach();
+
+    // Register a suspend blocker and call SetBootComplete to allow SAG to start suspending.
+    activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(suspend_blocker_client_end),
+            name: Some("test_suspend_blocker_receives_calls_on_suspend_resume".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let admin = realm.connect_to_protocol::<fstatecontrol::AdminMarker>().await?;
+    admin
+        .shutdown(&fstatecontrol::ShutdownOptions {
+            action: Some(fstatecontrol::ShutdownAction::Reboot),
+            reasons: Some(vec![fstatecontrol::ShutdownReason::UserRequest]),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Call SetBootComplete to allow SAG to start suspending.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+    // Wait 3 seconds and assert no BeforeSuspend calls were made.
+    fasync::Timer::new(std::time::Duration::from_millis(3000)).await;
+    assert!(state_rx.try_next().is_err());
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_suspend_blocker_receives_no_calls_during_shutdown_with_execution_state_dependency()
+-> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        wait_for_suspending_token: Some(true),
+        ..Default::default()
+    })
+    .await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let cpu_element_manager =
+        realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
+    let (cpu_driver_controller, _, cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
+    let cpu_driver_token = cpu_driver_controller.assertive_dependency_token().unwrap();
+
+    // With wait_for_suspending_token, SAG will not allow other FIDL calls until it receives the
+    // suspending token. We add an execution state dependency to simulate this.
+    fasync::Task::local(async move {
+        cpu_element_manager
+            .add_execution_state_dependency(
+                fsystem::CpuElementManagerAddExecutionStateDependencyRequest {
+                    dependency_token: Some(cpu_driver_token),
+                    power_level: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .unwrap();
+    })
+    .detach();
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let (suspend_blocker_client_end, mut suspend_blocker_stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+
+    let (mut state_tx, mut state_rx) = mpsc::channel(1);
+
+    fasync::Task::local(async move {
+        while let Some(req) = suspend_blocker_stream.next().await {
+            match req {
+                Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder }) => {
+                    state_tx.try_send(SuspendBlockerRequestType::BeforeSuspend).unwrap();
+                    responder.send().unwrap();
+                }
+                Ok(fsystem::SuspendBlockerRequest::AfterResume { responder }) => {
+                    state_tx.try_send(SuspendBlockerRequestType::AfterResume).unwrap();
+                    responder.send().unwrap();
+                }
+                _ => panic!("Unexpected request"),
+            }
+        }
+    })
+    .detach();
+
+    // Register a suspend blocker and call SetBootComplete to allow SAG to start suspending.
+    activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(suspend_blocker_client_end),
+            name: Some("test_suspend_blocker_receives_calls_on_suspend_resume".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let admin = realm.connect_to_protocol::<fstatecontrol::AdminMarker>().await?;
+    admin
+        .shutdown(&fstatecontrol::ShutdownOptions {
+            action: Some(fstatecontrol::ShutdownAction::Reboot),
+            reasons: Some(vec![fstatecontrol::ShutdownReason::UserRequest]),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // During shutdown, dependencies of execution_state will be terminated which will affect SAG's
+    // topology. We drop the cpu_driver_controller to simulate this.
+    drop(cpu_driver_controller);
+    drop(cpu_driver_task);
+
+    // Call SetBootComplete to allow SAG to start suspending.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Wait for SAG to finish processing the shutdown.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            booting: false,
+            is_shutting_down: true,
+            power_elements: contains {
+                execution_state: {
+                    power_level: 2u64,
+                },
+                application_activity: {
+                    power_level: 0u64,
+                },
+                cpu: {
+                    power_level: 1u64,
+                },
+            },
+            "fuchsia.inspect.Health": contains {
+                status: "OK",
+            },
+        }
+    );
+
+    // Wait 3 seconds and assert no BeforeSuspend/AfterResume calls were made.
+    fasync::Timer::new(std::time::Duration::from_secs(3)).await;
+    assert!(state_rx.try_next().is_err());
+    Ok(())
+}
+
+#[fuchsia::test]
 async fn test_register_suspend_blocker_responds_with_invalid_args_error_when_missing_args()
 -> Result<()> {
     let (realm, _) = create_realm().await?;
@@ -2802,7 +2986,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
     // Await SAG's power elements to drop their power levels.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -2906,7 +3090,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
     // AfterResume does not block. SAG raises ExecutionState to Suspending state.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {

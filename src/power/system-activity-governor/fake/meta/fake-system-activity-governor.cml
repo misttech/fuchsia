@@ -44,7 +44,10 @@
     ],
     offer: [
         {
-            protocol: [ "fuchsia.power.broker.Topology" ],
+            protocol: [
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                "fuchsia.power.broker.Topology",
+            ],
             from: "parent",
             to: [ "#system-activity-governor" ],
         },

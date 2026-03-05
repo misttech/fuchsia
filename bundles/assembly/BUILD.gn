@@ -3901,6 +3901,7 @@ assembly_input_bundle("power_framework_testing_sag") {
     "//src/power/system-activity-governor:config-use-suspender",
     "//src/power/system-activity-governor:config-wait-for-token",
     "//src/power/system-activity-governor/fake:package",
+    "//src/power/testing/fake-shutdown-shim:package",
     "//src/power/testing/fake-suspend:fake-suspend-pkg",
   ]
 }

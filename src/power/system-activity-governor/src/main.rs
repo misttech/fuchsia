@@ -17,18 +17,21 @@ use async_lock::OnceCell;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::BoolProperty as IBool;
 use fuchsia_inspect::health::Reporter;
-use futures::{FutureExt, StreamExt};
+use fuchsia_inspect::{BoolProperty as IBool, Property};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use sag_config::Config;
+use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 use zx::MonotonicDuration;
 use {
-    fidl_fuchsia_hardware_platform_bus as ffhpb, fidl_fuchsia_hardware_power_suspend as fhsuspend,
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_suspend as fsuspend,
-    fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync,
+    fidl_fuchsia_hardware_platform_bus as ffhpb,
+    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol,
+    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
+    fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
+    fuchsia_async as fasync,
 };
 
 const SUSPEND_DEVICE_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
@@ -122,6 +125,48 @@ where
     Ok(())
 }
 
+async fn register_terminal_state_watcher(
+    is_shutting_down_node: fuchsia_inspect::BoolProperty,
+) -> Rc<Cell<bool>> {
+    let is_shutting_down = Rc::new(Cell::new(false));
+
+    log::info!("Attempting to connect to ShutdownWatcherRegister...");
+    let shutdown_watcher_register =
+        connect_to_protocol::<fstatecontrol::ShutdownWatcherRegisterMarker>()
+            .expect("Failed to connect to ShutdownWatcherRegister");
+
+    let is_shutting_down_clone = is_shutting_down.clone();
+    let (client_end, mut stream) = fidl::endpoints::create_request_stream();
+    shutdown_watcher_register
+        .register_terminal_state_watcher(client_end)
+        .await
+        .expect("Failed to register TerminalStateWatcher");
+
+    fasync::Task::local(async move {
+        log::info!("Waiting for OnTerminalStateTransitionStarted...");
+        while let Ok(Some(req)) = stream.try_next().await {
+            match req {
+                fstatecontrol::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted {
+                    responder,
+                } => {
+                    log::info!("Received OnTerminalStateTransitionStarted request");
+                    is_shutting_down_clone.set(true);
+                    is_shutting_down_node.set(true);
+                    responder
+                        .send()
+                        .expect("Failed to send OnTerminalStateTransitionStarted response");
+                }
+                _ => {
+                    log::warn!("Unexpected TerminalStateWatcherRequest");
+                }
+            }
+        }
+    })
+    .detach();
+
+    is_shutting_down
+}
+
 #[fuchsia::main]
 async fn main() -> Result<()> {
     log::info!("started");
@@ -183,9 +228,14 @@ async fn main() -> Result<()> {
     let sag_event_logger2 = sag_event_logger.clone();
     let sag_event_logger_obs = sag_event_logger.clone();
 
+    let is_shutting_down_node = inspector.root().create_bool("is_shutting_down", false);
+    let is_shutting_down = register_terminal_state_watcher(is_shutting_down_node).await;
+    let is_shutting_down_sag = is_shutting_down.clone();
+
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
         let topology = topology2.clone();
         let sag_event_logger = sag_event_logger2.clone();
+        let is_shutting_down = is_shutting_down_sag.clone();
         async move {
             log::info!("Creating activity governor server...");
             SystemActivityGovernor::new(
@@ -194,6 +244,7 @@ async fn main() -> Result<()> {
                 sag_event_logger,
                 cpu_manager,
                 execution_state_dependencies,
+                is_shutting_down,
             )
             .await
         }
@@ -228,6 +279,7 @@ async fn main() -> Result<()> {
             suspender,
             sag_factory_fn,
             interrupt_attributor,
+            is_shutting_down,
         )
         .await
     } else {
@@ -238,6 +290,7 @@ async fn main() -> Result<()> {
             suspender,
             sag_factory_fn,
             interrupt_attributor,
+            is_shutting_down,
         )
         .await
     };

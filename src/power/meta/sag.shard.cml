@@ -45,6 +45,11 @@
             to: [ "#system-activity-governor" ],
         },
         {
+            protocol: [ "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister" ],
+            from: "#shutdown_shim",
+            to: "#system-activity-governor",
+        },
+        {
             protocol: [ "fuchsia.power.broker.Topology" ],
             from: "#power-broker",
             to: "#system-activity-governor",

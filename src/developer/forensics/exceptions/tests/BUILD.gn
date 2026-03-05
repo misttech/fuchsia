@@ -301,6 +301,7 @@ fuchsia_test_package("wake-lease-integration-test") {
     # Other components that we are injecting in the integration tests.
     "//src/power/broker:component",
     "//src/power/system-activity-governor:component",
+    "//src/power/testing/fake-shutdown-shim",
   ]
 
   subpackages = [ "//src/power/system-activity-governor:config-no-suspender" ]

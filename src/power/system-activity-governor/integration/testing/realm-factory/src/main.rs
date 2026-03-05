@@ -9,7 +9,7 @@ use fidl_test_systemactivitygovernor::*;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
-    Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, DEFAULT_COLLECTION_NAME,
+    Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
 use futures::{StreamExt, TryStreamExt};
 use log::*;
@@ -99,6 +99,10 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
     let fake_suspend_ref =
         builder.add_child("fake-suspend", "#meta/fake-suspend.cm", ChildOptions::new()).await?;
 
+    let fake_shutdown_shim = builder
+        .add_child("fake-shutdown-shim", "#meta/fake-shutdown-shim.cm", ChildOptions::new())
+        .await?;
+
     // Expose capabilities from power-broker.
     builder
         .add_route(
@@ -116,6 +120,30 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
                 .capability(Capability::protocol_by_name("test.suspendcontrol.Device"))
                 .from(&fake_suspend_ref)
                 .to(Ref::parent()),
+        )
+        .await?;
+
+    // Expose capabilities from fake-shutdown-shim.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
+                    "fuchsia.hardware.power.statecontrol.Admin",
+                ))
+                .from(&fake_shutdown_shim)
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    // Expose capabilities from fake-shutdown-shim to system-activity-governor.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
+                    "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                ))
+                .from(&fake_shutdown_shim)
+                .to(&component_ref),
         )
         .await?;
 

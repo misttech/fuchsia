@@ -101,6 +101,11 @@ async fn create_test_env() -> TestEnv {
         .await
         .expect("Failed to add child: system-activity-governor");
 
+    let fake_shutdown_shim_ref = builder
+        .add_child("fake-shutdown-shim", "#meta/fake-shutdown-shim.cm", ChildOptions::new())
+        .await
+        .expect("Failed to add child: fake-shutdown-shim");
+
     let config_no_suspender_ref = builder
         .add_child(
             "config-no-suspender",
@@ -127,6 +132,18 @@ async fn create_test_env() -> TestEnv {
             Route::new()
                 .capability(Capability::protocol_by_name("fuchsia.power.broker.Topology"))
                 .from(&power_broker_ref)
+                .to(&system_activity_governor_ref),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
+                    "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                ))
+                .from(&fake_shutdown_shim_ref)
                 .to(&system_activity_governor_ref),
         )
         .await

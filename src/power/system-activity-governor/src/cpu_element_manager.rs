@@ -12,6 +12,7 @@ use fuchsia_inspect::Node as INode;
 use futures::StreamExt;
 use futures::future::LocalBoxFuture;
 use power_broker_client::PowerElementContext;
+use std::cell::Cell;
 use std::rc::Rc;
 use zx::{HandleBased, Rights};
 use {
@@ -63,6 +64,7 @@ where
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
         observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
+        is_shutting_down: Rc<Cell<bool>>,
     ) -> Rc<Self> {
         log::info!("Creating CPU power element");
         let (element_runner_client, element_runner) =
@@ -86,8 +88,13 @@ where
         let power_elements_node2 = power_elements_node.clone_weak();
         inspect_root.record(power_elements_node);
 
-        let cpu_manager =
-            Rc::new(CpuManager::new(cpu.clone(), suspender, sag_event_logger, observability));
+        let cpu_manager = Rc::new(CpuManager::new(
+            cpu.clone(),
+            suspender,
+            sag_event_logger,
+            observability,
+            is_shutting_down,
+        ));
         cpu_manager.run(element_runner, &power_elements_node2);
 
         log::info!("Leasing CPU power element");
@@ -143,6 +150,7 @@ where
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
         observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
+        is_shutting_down: Rc<Cell<bool>>,
     ) -> Rc<Self> {
         let manager = Self::new_wait_for_suspending_token(
             topology,
@@ -151,6 +159,7 @@ where
             suspender,
             sag_factory,
             observability,
+            is_shutting_down,
         )
         .await;
 

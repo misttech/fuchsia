@@ -73,6 +73,9 @@ async fn create_power_realm<'a>(
     const CONFIG_USE_SUSPENDER_NAME: &str = "config-use-suspender";
     const CONFIG_USE_SUSPENDER_CONFIG: &str = "fuchsia.power.UseSuspender";
 
+    const SHUTDOWN_SHIM_URL: &str = "#meta/fake-shutdown-shim.cm";
+    const SHUTDOWN_SHIM_NAME: &str = "fake-shutdown-shim";
+
     const CONFIG_NO_SUSPENDING_TOKEN_CONFIG: &str = "fuchsia.power.WaitForSuspendingToken";
 
     fn suspender_dep() -> fnetemul::Capability {
@@ -90,6 +93,16 @@ async fn create_power_realm<'a>(
             name: Some(PB_NAME.to_string()),
             capability: Some(fnetemul::ExposedCapability::Protocol(
                 fpower_broker::TopologyMarker::PROTOCOL_NAME.to_string(),
+            )),
+            ..Default::default()
+        })
+    }
+
+    fn shutdown_shim_dep() -> fnetemul::Capability {
+        fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+            name: Some(SHUTDOWN_SHIM_NAME.to_string()),
+            capability: Some(fnetemul::ExposedCapability::Protocol(
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister".to_string(),
             )),
             ..Default::default()
         })
@@ -119,6 +132,7 @@ async fn create_power_realm<'a>(
         uses: Some(fnetemul::ChildUses::Capabilities(vec![
             fnetemul::Capability::LogSink(fnetemul::Empty {}),
             power_broker_dep(),
+            shutdown_shim_dep(),
             suspender_dep(),
             fnetemul::Capability::ChildDep(fnetemul::ChildDep {
                 name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
@@ -167,10 +181,29 @@ async fn create_power_realm<'a>(
         ..Default::default()
     };
 
+    let shutdown_shim_def = fnetemul::ChildDef {
+        source: Some(fnetemul::ChildSource::Component(SHUTDOWN_SHIM_URL.to_string())),
+        name: Some(SHUTDOWN_SHIM_NAME.to_string()),
+        uses: Some(fnetemul::ChildUses::Capabilities(vec![fnetemul::Capability::LogSink(
+            fnetemul::Empty {},
+        )])),
+        exposes: Some(vec![
+            "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister".to_string(),
+        ]),
+        ..Default::default()
+    };
+
     let realm = sandbox
         .create_realm(
             name,
-            [netstack_def, sag_def, suspender_def, pb_def, sag_config_suspender_def],
+            [
+                netstack_def,
+                sag_def,
+                suspender_def,
+                pb_def,
+                sag_config_suspender_def,
+                shutdown_shim_def,
+            ],
         )
         .expect("failed to create realm");
 

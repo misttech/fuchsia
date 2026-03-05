@@ -25,6 +25,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.power.broker.Topology",
                 "fuchsia.scheduler.RoleManager",
             ],

@@ -75,6 +75,7 @@ tests = [
     package_deps = [
       "//src/power/broker:component",
       "//src/power/system-activity-governor/fake:component",
+      "//src/power/testing/fake-shutdown-shim",
       "//src/power/testing/fake-suspend",
     ]
     subpackages =

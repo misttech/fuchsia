@@ -484,6 +484,8 @@ pub struct SystemActivityGovernor {
     /// asynchronously. This signal prevents exposing uninitialized power
     /// element state to external clients.
     is_running_signal: async_lock::OnceCell<()>,
+    /// The flag used to track whether the system is shutting down.
+    is_shutting_down: Rc<Cell<bool>>,
     /// The flag used to synchronize the resume_control_lease.
     /// It's unset when a resume_control_lease is created and is set
     /// when it needs to be dropped.
@@ -511,6 +513,7 @@ impl SystemActivityGovernor {
         sag_event_logger: SagEventLogger,
         cpu_manager: Rc<CpuManager>,
         execution_state_dependencies: Vec<fbroker::LevelDependency>,
+        is_shutting_down: Rc<Cell<bool>>,
     ) -> Result<Rc<Self>> {
         let mut element_power_level_names: Vec<fbroker::ElementPowerLevelNames> = Vec::new();
 
@@ -671,6 +674,7 @@ impl SystemActivityGovernor {
             es_activation_after_resume_signal: Rc::new(RefCell::new(async_lock::OnceCell::new())),
             resume_control_lease: Rc::new(RefCell::new(None)),
             is_running_signal: async_lock::OnceCell::new(),
+            is_shutting_down,
             booting_lease: Rc::new(RefCell::new(None)),
             sag_event_logger,
             execution_state_runner: Rc::new(RefCell::new(Some(execution_state_runner))),
@@ -757,6 +761,11 @@ impl SystemActivityGovernor {
                         async move {
                             // Call suspend callback before ExecutionState power level changes.
                             if new_power_level == ExecutionStateLevel::Inactive.into_primitive() {
+                                if this.is_shutting_down.get() {
+                                    log::info!("System is shutting down, halting execution_state power element transitions");
+                                    futures::future::pending::<()>().await;
+                                }
+
                                 this.notify_on_suspend().await;
                             } else if previous_power_level.get()
                                 == ExecutionStateLevel::Inactive.into_primitive()

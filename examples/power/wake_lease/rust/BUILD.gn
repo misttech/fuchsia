@@ -62,6 +62,7 @@ fuchsia_test_package("tests") {
   deps = [
     # Other components that we are injecting into integration tests.
     "//src/power/broker:component",
+    "//src/power/testing/fake-shutdown-shim",
   ]
   subpackages = [
     "//src/power/system-activity-governor:package",

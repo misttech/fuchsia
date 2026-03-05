@@ -33,6 +33,7 @@ fuchsia_unittest_package("fake-system-activity-governor-test") {
   deps = [
     ":bin",
     "//src/power/broker:component",
+    "//src/power/testing/fake-shutdown-shim",
     "//src/power/testing/fake-suspend",
   ]
   subpackages = [ "//src/power/system-activity-governor/fake:package" ]

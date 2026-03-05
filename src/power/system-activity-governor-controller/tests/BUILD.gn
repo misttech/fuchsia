@@ -35,7 +35,10 @@ rustc_test("bin") {
 fuchsia_unittest_package(
     "system-activity-governor-controller-integration-test") {
   manifest = "meta/test.cml"
-  deps = [ ":bin" ]
+  deps = [
+    ":bin",
+    "//src/power/testing/fake-shutdown-shim",
+  ]
   test_specs = {
     environments = basic_envs
   }

@@ -38,6 +38,7 @@ if (is_fuchsia) {
       ":power-framework-benchmarks",
       "//src/power/broker:component",
       "//src/power/system-activity-governor:component",
+      "//src/power/testing/fake-shutdown-shim",
       "//src/power/testing/topology-test-daemon:component",
     ]
     testonly = true
@@ -90,6 +91,7 @@ fuchsia_test_package("package") {
   deps = [
     "//src/power/broker:component",
     "//src/power/system-activity-governor:component",
+    "//src/power/testing/fake-shutdown-shim",
     "//src/power/testing/topology-test-daemon:component",
   ]
   subpackages = [ "//src/power/system-activity-governor:config-no-suspender" ]

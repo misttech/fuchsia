@@ -21,6 +21,10 @@
             name: "test-system-activity-governor",
             url: "#meta/system-activity-governor.cm",
         },
+        {
+            name: "fake-shutdown-shim",
+            url: "#meta/fake-shutdown-shim.cm",
+        },
     ],
     use: [
         {
@@ -43,6 +47,11 @@
         {
             protocol: "fuchsia.power.broker.Topology",
             from: "#test-power-broker",
+            to: [ "#test-system-activity-governor" ],
+        },
+        {
+            protocol: "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+            from: "#fake-shutdown-shim",
             to: [ "#test-system-activity-governor" ],
         },
     ],

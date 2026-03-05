@@ -21,6 +21,10 @@
             name: "test-suspend",
             url: "fake-suspend-pkg#meta/fake-suspend.cm",
         },
+        {
+            name: "fake-shutdown-shim",
+            url: "fake-shutdown-shim#meta/fake-shutdown-shim.cm",
+        },
     ],
     offer: [
         {
@@ -36,6 +40,11 @@
         {
             protocol: "test.suspendcontrol.Device",
             from: "#test-suspend",
+            to: "#test-system-activity-governor",
+        },
+        {
+            protocol: "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+            from: "#fake-shutdown-shim",
             to: "#test-system-activity-governor",
         },
     ],

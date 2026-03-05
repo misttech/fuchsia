@@ -18,11 +18,13 @@ expect_includes("client_includes") {
 }
 
 fuchsia_package_with_single_component("power-framework") {
+  testonly = true
   manifest = "meta/power_framework_test_realm.cml"
   subpackages = [
     "//src/power/system-activity-governor:config-use-suspender",
     "//src/power/system-activity-governor/fake:package",
     "//src/power/broker:package",
     "//src/power/testing/fake-suspend:fake-suspend-pkg",
+    "//src/power/testing/fake-shutdown-shim:package",
   ]
 }

@@ -15,7 +15,7 @@ use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt};
 use power_broker_client::PowerElementContext;
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::rc::Rc;
 use {
     fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
@@ -196,6 +196,8 @@ pub struct CpuManager {
     sag_event_logger: SagEventLogger,
     /// The power observability data collection.
     observability: Rc<AsyncOnceCell<WakeSourceObservability>>,
+    /// The flag used to track whether the system is shutting down.
+    is_shutting_down: Rc<Cell<bool>>,
 }
 
 impl CpuManager {
@@ -205,6 +207,7 @@ impl CpuManager {
         suspender: Rc<AsyncOnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_event_logger: SagEventLogger,
         observability: Rc<AsyncOnceCell<WakeSourceObservability>>,
+        is_shutting_down: Rc<Cell<bool>>,
     ) -> Self {
         Self {
             inner: Mutex::new(CpuManagerInner {
@@ -217,6 +220,7 @@ impl CpuManager {
             suspend_resume_listener: OnceCell::new(),
             sag_event_logger,
             observability,
+            is_shutting_down,
         }
     }
 
@@ -243,6 +247,11 @@ impl CpuManager {
         // After other elements have been informed of required_level for cpu,
         // check whether the system can be suspended.
         if required_level == CpuLevel::Inactive.into_primitive() {
+            if self.is_shutting_down.get() {
+                log::info!("System is shutting down, halting cpu power element transitions");
+                futures::future::pending::<()>().await;
+            }
+
             log::debug!("beginning suspend process for cpu");
             inner.cpu_element_is_inactive = true;
             return Ok(true);
@@ -424,7 +433,6 @@ impl CpuManager {
             loop {
                 log::debug!("awaiting suspend signals");
                 suspend_signal.next().await;
-                log::debug!("attempting to suspend");
                 log::info!("trigger_suspend result: {:?}", cpu_manager.trigger_suspend().await);
             }
         })
