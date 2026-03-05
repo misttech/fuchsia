@@ -12,6 +12,7 @@ rustc_library("selinux") {
     "src/access_cache.rs",
     "src/access_vector_cache.rs",
     "src/exceptions_config.rs",
+    "src/kernel_permissions.rs",
     "src/lib.rs",
     "src/permission_check.rs",
     "src/policy/arrays.rs",
