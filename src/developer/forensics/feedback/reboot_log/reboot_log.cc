@@ -256,6 +256,7 @@ std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
         return std::make_unique<FinalGracefulShutdownInfo>(graceful_info->action,
                                                            graceful_info->reasons, not_a_fdr);
       }
+      // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
       return std::make_unique<FinalZirconShutdownInfo>(
           zircon_reason,
           graceful_info.has_value() ? std::make_optional(graceful_info->action) : std::nullopt);
