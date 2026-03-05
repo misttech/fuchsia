@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+
+library_headers("headers") {
+  headers = [ "lib/mmu_rcu/simple_generational_rcu.h" ]
+  public_deps = [
+    # For <lib/arch/intrin.h>
+    "//zircon/kernel/lib/arch",
+
+    # For <ktl/atomic.h>
+    "//zircon/kernel/lib/ktl",
+  ]
+}
+
+source_set("mmu_rcu") {
+  public_deps = [ ":headers" ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests" ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

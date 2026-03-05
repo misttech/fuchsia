@@ -66,6 +66,7 @@ all_libs = [
   "persistent-debuglog",
   "pow2_range_allocator",
   "power-management",
+  "mmu_rcu",
   "root_resource_filter",
   "sched",
   "special-sections",
