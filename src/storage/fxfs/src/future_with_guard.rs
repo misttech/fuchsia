@@ -25,8 +25,10 @@ where
     F: Future<Output = R> + Send + 'static,
     T: Send + 'static,
 {
+    // LINT.IfChange
     #[pin]
     future: F,
+    // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
     _object: T,
 }
 

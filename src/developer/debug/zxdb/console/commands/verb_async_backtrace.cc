@@ -359,6 +359,16 @@ fxl::RefPtr<AsyncOutputBuffer> FormatWrappedFuture(const ExprValue& wrapped_futu
   return FormatFuture(future.value(), options, context, indent);
 }
 
+fxl::RefPtr<AsyncOutputBuffer> FormatFxfsFutureWithGuard(const ExprValue& future_with_guard,
+                                                         const FormatFutureOptions& options,
+                                                         const fxl::RefPtr<EvalContext>& context,
+                                                         int indent) {
+  ErrOrValue future = ResolveNonstaticMember(context, future_with_guard, {"future"});
+  if (future.has_error())
+    return FormatError("Invalid FutureWithGuard", future.err());
+  return FormatFuture(future.value(), options, context, indent);
+}
+
 fxl::RefPtr<AsyncOutputBuffer> FormatScopeJoin(const ExprValue& task_runner,
                                                const FormatFutureOptions& options,
                                                const fxl::RefPtr<EvalContext>& context,
@@ -428,6 +438,72 @@ fxl::RefPtr<AsyncOutputBuffer> FormatJoinHandle(const ExprValue& task_runner,
   return out;
 }
 
+fxl::RefPtr<AsyncOutputBuffer> FormatTraceFuture(const ExprValue& trace_future,
+                                                 const FormatFutureOptions& options,
+                                                 const fxl::RefPtr<EvalContext>& context,
+                                                 int indent) {
+  ErrOrValue future = ResolveNonstaticMember(context, trace_future, {"future"});
+  if (future.has_error())
+    return FormatError("Invalid TraceFuture", future.err());
+
+  ErrOrValue trace_category = ResolveNonstaticMember(context, trace_future, {"category"});
+  if (trace_category.has_error())
+    return FormatError("Invalid TraceFuture", trace_category.err());
+  auto category = FormatValueForConsole(trace_category.take_value(), options.variable, context);
+
+  ErrOrValue trace_name = ResolveNonstaticMember(context, trace_future, {"name"});
+  if (trace_name.has_error())
+    return FormatError("Invalid TraceFuture", trace_name.err());
+  auto name = FormatValueForConsole(trace_name.take_value(), options.variable, context);
+
+  auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
+  out->Append("fuchsia_trace::TraceFuture(");
+  out->Append(category);
+  out->Append(", ");
+  out->Append(name);
+  out->Append(")\n");
+  out->Append(std::string(indent, ' ') + kAwaiteeMarker);
+  out->Append(FormatFuture(future.take_value(), options, context, indent + 3));
+  out->Complete();
+  return out;
+}
+
+fxl::RefPtr<AsyncOutputBuffer> FormatVfsRequestListener(const ExprValue& request_listener,
+                                                        const FormatFutureOptions& options,
+                                                        const fxl::RefPtr<EvalContext>& context,
+                                                        int indent) {
+  ErrOrValue state = ResolveNonstaticMember(context, request_listener, {"state"});
+  if (state.has_error())
+    return FormatError("Invalid RequestListener", state.err());
+
+  ErrOrValue variant = ResolveSingleVariantValue(context, state.value());
+  if (variant.has_error())
+    return FormatError("Invalid RequestListener", variant.err());
+
+  auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
+  std::string variant_name = variant.value().type()->GetAssignedName();
+  out->Append("vfs::request_handler::RequestListener(");
+  out->Append(variant_name);
+  out->Append(")\n");
+  if (variant_name == "PollStream") {
+    ErrOrValue stream = ResolveNonstaticMember(context, request_listener, {"stream"});
+    if (stream.has_error())
+      return FormatError("Invalid RequestListener", stream.err());
+    out->Append(std::string(indent, ' ') + kAwaiteeMarker);
+    out->Append(stream.value().type()->GetFullName(), TextForegroundColor::kGray);
+    out->Append("\n");
+  } else if (variant_name == "RequestFuture" || variant_name == "CloseFuture") {
+    ErrOrValue future = ResolveNonstaticMember(context, variant.value(), {"__0"});
+    if (future.has_error()) {
+      return FormatError("Invalid RequestListener", future.err());
+    }
+    out->Append(std::string(indent, ' ') + kAwaiteeMarker);
+    out->Append(FormatFuture(future.value(), options, context, indent + 3));
+  }
+  out->Complete();
+  return out;
+}
+
 fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
                                             const FormatFutureOptions& options,
                                             const fxl::RefPtr<EvalContext>& context, int indent,
@@ -481,9 +557,16 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
     return FormatRemote(future, options, context, indent);
   if (type == "vfs::execution_scope::TaskRunner")
     return FormatTaskRunner(future, options, context, indent);
-  if (type == "starnix_core::task::kernel_threads::WrappedFuture") {
+  if (type == "starnix_core::task::kernel_threads::WrappedFuture")
     return FormatWrappedFuture(future, options, context, indent);
-  }
+  if (type == "fxfs::future_with_guard::FutureWithGuard")
+    return FormatFxfsFutureWithGuard(future, options, context, indent);
+
+  // These types wrap futures but also show up in the async-backtrace output with custom formatting.
+  if (type == "fuchsia_trace::TraceFuture")
+    return FormatTraceFuture(future, options, context, indent);
+  if (type == "vfs::request_handler::RequestListener")
+    return FormatVfsRequestListener(future, options, context, indent);
 
   // NOTE: `select!` and `join!` macro expand to PollFn. It'll be useful if we could describe it.
   // However, PollFn could encode an arbitrary function so there's a chance we're doing very wrong.

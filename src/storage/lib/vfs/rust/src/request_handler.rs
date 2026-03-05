@@ -29,6 +29,7 @@ pub trait RequestHandler: Sized {
     }
 }
 
+// LINT.IfChange
 enum RequestListenerState {
     /// Indicates that [`RequestListener::stream`] should be polled for more requests.
     PollStream,
@@ -62,6 +63,7 @@ pub struct RequestListener<RS, RH> {
     #[pin]
     handler: RH,
 }
+// LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
 
 impl<RS, RH> RequestListener<RS, RH> {
     pub fn new(stream: RS, handler: RH) -> Self {

@@ -2688,10 +2688,12 @@ impl<T: Future + Sized> TraceFutureExt for T {}
 /// connected by flow events.
 #[pin_project]
 pub struct TraceFuture<'a, Fut: Future, C: CategoryString, S: AsTraceStrRef> {
+    // LINT.IfChange
     #[pin]
     future: Fut,
     category: C,
     name: S,
+    // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
     args: Box<[Arg<'a>]>,
     flow_id: Option<Id>,
     poll_count: u64,
