@@ -19,8 +19,8 @@ bool MatchComponentUrl(std::string_view url, std::string_view pattern) {
   // Only deals with the most common case: the target URL contains a hash but the pattern doesn't.
   // The hash will look like "?hash=xxx#".
   const char* hash = "?hash=";
-  if (url.find(hash) != std::string_view::npos && url.find_last_of('#') != std::string_view::npos &&
-      pattern.find(hash) == std::string_view::npos) {
+  if (debug::StringContains(url, hash) && url.find_last_of('#') != std::string_view::npos &&
+      !debug::StringContains(pattern, hash)) {
     std::string new_url(url.substr(0, url.find(hash)));
     new_url += url.substr(url.find_last_of('#'));
     return new_url == pattern;
@@ -42,7 +42,7 @@ bool FilterApplies(const Filter* filter, const MatchedTask& task) {
 bool FilterMatches(const Filter& filter, const std::string& process_name,
                    const std::vector<ComponentInfo>& components) {
   if (filter.type == Filter::Type::kProcessNameSubstr) {
-    return process_name.find(filter.pattern) != std::string::npos;
+    return debug::StringContains(process_name, filter.pattern);
   } else if (filter.type == Filter::Type::kProcessName) {
     return process_name == filter.pattern;
   } else if (filter.type == Filter::Type::kUnset || filter.type == Filter::Type::kLast) {

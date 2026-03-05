@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
@@ -170,10 +171,8 @@ TEST_F(NounTestWithThread, FrameNoun) {
   console().ProcessInputLine("frame");
   loop().RunUntilNoTasks();
   std::string output = console().GetOutputEvent().output.AsString();
-  EXPECT_TRUE(output.find("▶ 0") != std::string::npos &&
-              output.find("file0.cc") != std::string::npos);
-  EXPECT_TRUE(output.find('1') != std::string::npos &&
-              output.find("file1.cc") != std::string::npos);
+  EXPECT_TRUE(debug::StringContains(output, "▶ 0") && debug::StringContains(output, "file0.cc"));
+  EXPECT_TRUE(debug::StringContains(output, "1") && debug::StringContains(output, "file1.cc"));
 
   console().ProcessInputLine("frame 0");
   loop().RunUntilNoTasks();
@@ -182,10 +181,10 @@ TEST_F(NounTestWithThread, FrameNoun) {
     output += console().GetOutputEvent().output.AsString();
   }
 
-  EXPECT_TRUE(output.find("file0.cc") != std::string::npos);
-  EXPECT_TRUE(output.find("▶ 1 writing") != std::string::npos);
-  EXPECT_TRUE(output.find("2 a") != std::string::npos);
-  EXPECT_TRUE(output.find("3 unittest") != std::string::npos);
+  EXPECT_TRUE(debug::StringContains(output, "file0.cc"));
+  EXPECT_TRUE(debug::StringContains(output, "▶ 1 writing"));
+  EXPECT_TRUE(debug::StringContains(output, "2 a"));
+  EXPECT_TRUE(debug::StringContains(output, "3 unittest"));
 
   console().ProcessInputLine("frame 1");
   loop().RunUntilNoTasks();
@@ -193,10 +192,10 @@ TEST_F(NounTestWithThread, FrameNoun) {
   while (console().HasOutputEvent()) {
     output += console().GetOutputEvent().output.AsString();
   }
-  EXPECT_TRUE(output.find("file1.cc") != std::string::npos);
-  EXPECT_TRUE(output.find("1 is") != std::string::npos);
-  EXPECT_TRUE(output.find("▶ 2 not") != std::string::npos);
-  EXPECT_TRUE(output.find("3 hard") != std::string::npos);
+  EXPECT_TRUE(debug::StringContains(output, "file1.cc"));
+  EXPECT_TRUE(debug::StringContains(output, "1 is"));
+  EXPECT_TRUE(debug::StringContains(output, "▶ 2 not"));
+  EXPECT_TRUE(debug::StringContains(output, "3 hard"));
 }
 
 }  // namespace

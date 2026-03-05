@@ -39,7 +39,7 @@ void ScriptTest::TestBody() {
       std::string directive = std::string(fxl::TrimString(line.substr(2), " "));
       if (debug::StringStartsWith(directive, "require ")) {
         std::string requirement = directive.substr(8);
-        if (kBuildType.find(requirement) == std::string::npos) {
+        if (!debug::StringContains(kBuildType, requirement)) {
           GTEST_SKIP() << "Skipped because of unmet requirement " << requirement;
         }
       } else if (debug::StringStartsWith(directive, "set timeout ")) {

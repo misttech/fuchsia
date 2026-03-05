@@ -4,6 +4,7 @@
 #include "src/developer/forensics/exceptions/process_limbo_manager.h"
 
 #include <fuchsia/exception/cpp/fidl.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/lib/fsl/handles/object_info.h"
@@ -73,7 +74,7 @@ void ProcessLimboManager::AddToLimbo(ProcessException process_exception) {
     // Search for a partial match over the filters.
     bool filter_found = false;
     for (auto& filter : filters_) {
-      if (process_name.find(filter) != std::string::npos) {
+      if (cpp23::contains(process_name, filter)) {
         filter_found = true;
         break;
       }

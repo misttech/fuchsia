@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string_view>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/system.h"
@@ -93,18 +94,18 @@ std::optional<debug_ipc::ProcessTreeRecord> FilterProcessTree(
   debug_ipc::ProcessTreeRecord result;
 
   // A record matches if its (job) name or component name matches.
-  bool matched = rec.name.find(filter) != std::string::npos;
+  bool matched = debug::StringContains(rec.name, filter);
   if (!matched && rec.components.size() == 1) {
     // Use the base name of the URL as the "component name".
     // e.g. "fuchsia-pkg://url#meta/foobar.cm" has a component name of "foobar.cm".
     std::string_view url = rec.components[0].url;
     std::string_view name = url.substr(url.find_last_of('/') + 1);
-    matched = name.find(filter) != std::string_view::npos;
+    matched = debug::StringContains(name, filter);
   } else if (!matched && !rec.components.empty()) {
     for (const auto& component : rec.components) {
       std::string_view url = component.url;
       std::string_view name = url.substr(url.find_last_of('/') + 1);
-      matched = name.find(filter) != std::string_view::npos;
+      matched = debug::StringContains(name, filter);
       if (matched)
         break;
     }

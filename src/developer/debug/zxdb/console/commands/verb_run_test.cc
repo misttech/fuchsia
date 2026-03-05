@@ -60,7 +60,7 @@ void RunTest(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
     return cmd_context->ReportError(Err("No test to run. Try \"run-test <url>\"."));
   }
 
-  if (cmd.args()[0].find("://") == std::string::npos ||
+  if (!debug::StringContains(cmd.args()[0], "://") ||
       !debug::StringEndsWith(cmd.args()[0], ".cm")) {
     return cmd_context->ReportError(
         Err("The first argument must be a component URL. Try \"help run-test\"."));

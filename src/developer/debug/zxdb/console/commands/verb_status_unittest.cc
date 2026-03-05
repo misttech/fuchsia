@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
@@ -74,7 +75,7 @@ TEST_F(VerbStatus, Status) {
   // Check that there are no processes found.
   {
     auto msg = output.output.AsString();
-    ASSERT_NE(msg.find("No processes waiting on exception."), std::string::npos);
+    ASSERT_TRUE(debug::StringContains(msg, "No processes waiting on exception."));
   }
 
   // Append a pair of exceptions.
@@ -93,9 +94,9 @@ TEST_F(VerbStatus, Status) {
 
   {
     auto msg = output.output.AsString();
-    ASSERT_NE(msg.find("2 process(es) waiting on exception."), std::string::npos);
-    ASSERT_NE(msg.find("process-1"), std::string::npos);
-    ASSERT_NE(msg.find("process-2"), std::string::npos);
+    ASSERT_TRUE(debug::StringContains(msg, "2 process(es) waiting on exception."));
+    ASSERT_TRUE(debug::StringContains(msg, "process-1"));
+    ASSERT_TRUE(debug::StringContains(msg, "process-2"));
   }
 }
 

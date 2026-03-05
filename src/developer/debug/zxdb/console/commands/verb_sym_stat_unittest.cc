@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_symbol_server.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
@@ -61,8 +62,8 @@ TEST_F(VerbSymStat, SymStatDownloading) {
   ASSERT_EQ(MockConsole::OutputEvent::Type::kOutput, event.type);
 
   auto text = event.output.AsString();
-  EXPECT_NE(text.find("Process 1 symbol status"), std::string::npos);
-  EXPECT_NE(text.find("Build ID: abc123 (Downloading...)"), std::string::npos);
+  EXPECT_TRUE(debug::StringContains(text, "Process 1 symbol status"));
+  EXPECT_TRUE(debug::StringContains(text, "Build ID: abc123 (Downloading...)"));
 
   // Releasing the download will cause it to register a failure.
   session().system().GetDownloadManager()->AbandonTestingDownload("abc123");
@@ -70,7 +71,7 @@ TEST_F(VerbSymStat, SymStatDownloading) {
   console().ProcessInputLine("sym-stat");
 
   event = console().GetOutputEvent();
-  EXPECT_EQ(event.output.AsString().find("Build ID: abc123 (Downloading...)"), std::string::npos);
+  EXPECT_FALSE(debug::StringContains(event.output.AsString(), "Build ID: abc123 (Downloading...)"));
 }
 
 }  // namespace zxdb

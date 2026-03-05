@@ -7,6 +7,7 @@
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <lib/fpromise/result.h>
 #include <lib/inspect/cpp/vmo/types.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
@@ -460,8 +461,8 @@ TEST_F(DataProviderTest, GetSnapshotInternalUsesUuid) {
   FX_CHECK(Unpack(archive.value, &unpacked_attachments));
 
   EXPECT_NE(unpacked_attachments.find(kAttachmentMetadata), unpacked_attachments.end());
-  EXPECT_NE(unpacked_attachments[kAttachmentMetadata].find(R"("snapshot_uuid": "test-uuid")"),
-            std::string::npos);
+  EXPECT_TRUE(cpp23::contains(unpacked_attachments[kAttachmentMetadata],
+                              R"("snapshot_uuid": "test-uuid")"));
 }
 
 }  // namespace

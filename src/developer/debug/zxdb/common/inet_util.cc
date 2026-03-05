@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/common/inet_util.h"
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 
 namespace zxdb {
@@ -49,7 +50,7 @@ Err ParseHostPort(const std::string& input, std::string* out_host, uint16_t* out
   if (host.empty()) {
     return Err(ErrType::kInput, "No host component specified.");
   }
-  if (host.find(':') != std::string::npos) {
+  if (debug::StringContains(host, ":")) {
     if (host.front() != '[' || host.back() != ']') {
       return Err(ErrType::kInput, "Missing brackets enclosing IPv6 address, e.g., \"[::1]:1234\".");
     }
@@ -69,7 +70,7 @@ bool Ipv6HostPortIsMissingBrackets(const std::string& input) {
   if (host.empty()) {
     return false;
   }
-  if (host.find(':') == std::string::npos) {
+  if (!debug::StringContains(host, ":")) {
     return false;
   }
   return host.front() != '[' || host.back() != ']';

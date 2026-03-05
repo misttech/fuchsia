@@ -56,7 +56,7 @@ void RunVerbRunComponent(const Command& cmd, fxl::RefPtr<CommandContext> cmd_con
     return cmd_context->ReportError(Err("\"run-component\" accepts exactly 1 argument."));
   }
 
-  if (cmd.args()[0].find("://") == std::string::npos ||
+  if (!debug::StringContains(cmd.args()[0], "://") ||
       (!debug::StringEndsWith(cmd.args()[0], ".cm"))) {
     return cmd_context->ReportError(
         Err("The first argument must be a component URL. Try \"help run-component\"."));

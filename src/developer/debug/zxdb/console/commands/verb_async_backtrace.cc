@@ -827,7 +827,7 @@ void OnStackReady(Stack& stack, fxl::RefPtr<CommandContext> cmd_context,
     } else if (func_name == "fuchsia_async::runtime::fuchsia::executor::send::SendExecutor::run") {
       expr = "self.root_scope.inner->data.state.__0->data.data.value.data";
     } else if (func_name.starts_with("fuchsia_async::runtime::fuchsia::executor::send") &&
-               func_name.find("create_worker_threads::{closure") != std::string::npos) {
+               debug::StringContains(func_name, "create_worker_threads::{closure")) {
       // TODO(sadmac): This is depending on a local closure capture. All of this
       // code is delicate in the face of refactors of the fuchsia_async crate
       // but depending on a *local* might be a bit too brittle. Ideally we'd

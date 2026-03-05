@@ -300,7 +300,7 @@ void RunVerbAttach(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
   } else if (debug::StringStartsWith(pattern, "/")) {
     filter->SetType(debug_ipc::Filter::Type::kComponentMoniker);
     filter->SetPattern(pattern);
-  } else if (pattern.find('/') != std::string::npos) {
+  } else if (debug::StringContains(pattern, "/")) {
     filter->SetType(debug_ipc::Filter::Type::kComponentMonikerSuffix);
     filter->SetPattern(pattern);
   } else if (debug::StringEndsWith(pattern, ".cm")) {
