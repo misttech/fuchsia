@@ -512,14 +512,15 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def starnix(self) -> starnix.Starnix:
+    def starnix(self) -> starnix.AsyncStarnix:
         """Returns a starnix affordance object.
 
         Returns:
-            starnix.Starnix object
+            starnix.AsyncStarnix object
         """
-        return starnix_using_ffx.StarnixUsingFfx(
-            device_name=self.device_name, ffx=self.ffx
+        return starnix_using_ffx.AsyncStarnixUsingFfx(
+            device_name=self.device_name,
+            ffx=self.ffx,
         )
 
     @properties.Affordance

@@ -42,7 +42,7 @@ from honeydew.affordances.power.system_power_state_controller import (
 )
 from honeydew.affordances.rtc import rtc, rtc_using_fc
 from honeydew.affordances.session import session
-from honeydew.affordances.starnix import starnix
+from honeydew.affordances.starnix import starnix, starnix_using_ffx
 from honeydew.affordances.tracing import tracing, tracing_using_fc
 from honeydew.affordances.ui.screenshot import screenshot
 from honeydew.affordances.ui.user_input import user_input, user_input_using_fc
@@ -268,7 +268,10 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def starnix(self) -> starnix.Starnix:
-        return self._inner.starnix
+        return starnix_using_ffx.StarnixUsingFfx(
+            device_name=self.device_name,
+            ffx=self.ffx,
+        )
 
     @properties.Affordance
     def system_power_state_controller(

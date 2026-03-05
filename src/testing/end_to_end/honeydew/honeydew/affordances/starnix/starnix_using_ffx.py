@@ -9,6 +9,8 @@ import pty
 import re
 import subprocess
 
+import fuchsia_async_extension
+
 from honeydew import errors
 from honeydew.affordances.starnix import errors as starnix_errors
 from honeydew.affordances.starnix import starnix
@@ -43,8 +45,8 @@ class _RegExPatterns:
     )
 
 
-class StarnixUsingFfx(starnix.Starnix):
-    """Starnix affordance implementation using FFX.
+class AsyncStarnixUsingFfx(starnix.AsyncStarnix):
+    """Async Starnix affordance implementation using FFX.
 
     Args:
         device_name: Device name returned by `ffx target list`.
@@ -99,7 +101,7 @@ class StarnixUsingFfx(starnix.Starnix):
         )
 
     @decorators.liveness_check
-    def run_console_shell_cmd(self, cmd: list[str]) -> str:
+    async def run_console_shell_cmd(self, cmd: list[str]) -> str:
         """Run a starnix console command and return its output.
 
         Args:
@@ -166,3 +168,52 @@ class StarnixUsingFfx(starnix.Starnix):
                 f"Starnix console cmd `{starnix_cmd_str}` failed. (See debug "
                 "logs for command output)"
             )
+
+
+class StarnixUsingFfx(starnix.Starnix):
+    """Starnix affordance implementation using FFX.
+
+    Args:
+        device_name: Device name returned by `ffx target list`.
+        ffx: interfaces.transports.FFX implementation.
+
+    Raises:
+        errors.NotSupportedError: If Fuchsia device does not support Starnix.
+    """
+
+    def __init__(self, device_name: str, ffx: ffx_transport.FFX) -> None:
+        self._inner = AsyncStarnixUsingFfx(device_name=device_name, ffx=ffx)
+
+    # List all the public methods
+    def verify_supported(self) -> None:
+        """Verifies that the starnix affordance is supported by the Fuchsia device.
+
+        This method should be called in `__init__()` so that if this affordance was called on a
+        Fuchsia device that does not support it, it will raise NotSupportedError.
+
+        Raises:
+            NotSupportedError: If affordance is not supported.
+            StarnixError: In case of other starnix command failure.
+        """
+        self._inner.verify_supported()
+
+    def run_console_shell_cmd(self, cmd: list[str]) -> str:
+        """Run a starnix console command and return its output.
+
+        Args:
+            cmd: cmd that need to be run excluding `starnix /bin/sh -c`.
+
+        Returns:
+            Output of `ffx -t {target} starnix /bin/sh -c {cmd}`.
+
+        Raises:
+            errors.StarnixError: In case of starnix command failure.
+            errors.NotSupportedError: If Fuchsia device does not support Starnix.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.run_console_shell_cmd(cmd)
+        )
+
+    def as_async(self) -> AsyncStarnixUsingFfx:
+        """Returns the async version of Starnix."""
+        return self._inner

@@ -588,7 +588,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         """Test case to make sure fuchsia_device supports
         starnix affordance implemented using starnix"""
         self.assertIsInstance(
-            self.fd_fc_obj.starnix, starnix_using_ffx.StarnixUsingFfx
+            self.fd_fc_obj.starnix, starnix_using_ffx.AsyncStarnixUsingFfx
         )
         mock_ffx_run.assert_called_once()
 
