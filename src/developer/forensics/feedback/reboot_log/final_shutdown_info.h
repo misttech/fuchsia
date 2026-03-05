@@ -35,8 +35,7 @@ class FinalShutdownInfo {
   // Whether the reboot is planned, unplanned or undetermined.
   virtual std::optional<bool> OptionallyPlanned() const = 0;
 
-  // Returns the graceful shutdown action, if the shutdown was graceful and the action was
-  // available.
+  // Returns the graceful shutdown action, if the action was available and deemed relevant.
   virtual std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const = 0;
 
   // Returns the string representation of the reboot reason.
