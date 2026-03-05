@@ -29,7 +29,11 @@ struct RetainedTask : public async_task_t {
 }  // namespace internal
 
 zx_status_t PostTask(async_dispatcher_t* dispatcher, fit::closure handler) {
-  return PostTaskForTime(dispatcher, static_cast<fit::closure&&>(handler), async::Now(dispatcher));
+  // Using infinite_past is more efficient than fetching the current time,
+  // and allows the dispatcher to utilize a separate, more efficient FIFO
+  // queue for non-delayed tasks.
+  return PostTaskForTime(dispatcher, static_cast<fit::closure&&>(handler),
+                         zx::time::infinite_past());
 }
 
 zx_status_t PostDelayedTask(async_dispatcher_t* dispatcher, fit::closure handler,
@@ -59,7 +63,10 @@ TaskBase::~TaskBase() {
 }
 
 zx_status_t TaskBase::Post(async_dispatcher_t* dispatcher) {
-  return PostForTime(dispatcher, async::Now(dispatcher));
+  // Using infinite_past is more efficient than fetching the current time,
+  // and allows the dispatcher to utilize a separate, more efficient FIFO
+  // queue for non-delayed tasks.
+  return PostForTime(dispatcher, zx::time::infinite_past());
 }
 
 zx_status_t TaskBase::PostDelayed(async_dispatcher_t* dispatcher, zx::duration delay) {

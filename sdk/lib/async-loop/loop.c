@@ -110,6 +110,7 @@ typedef struct async_loop {
   bool dispatching_tasks;      // true while the loop is busy dispatching tasks
   list_node_t wait_list;       // most recently added first
   list_node_t task_list;       // pending tasks, earliest deadline first
+  list_node_t fifo_task_list;  // pending non-delayed tasks, FIFO
   list_node_t due_list;        // due tasks, earliest deadline first
   list_node_t thread_list;     // earliest created thread first
   list_node_t irq_list;        // list of IRQs
@@ -189,6 +190,7 @@ zx_status_t async_loop_create(const async_loop_config_t* config, async_loop_t** 
   list_initialize(&loop->wait_list);
   list_initialize(&loop->irq_list);
   list_initialize(&loop->task_list);
+  list_initialize(&loop->fifo_task_list);
   list_initialize(&loop->due_list);
   list_initialize(&loop->thread_list);
   list_initialize(&loop->paged_vmo_list);
@@ -220,6 +222,7 @@ void async_loop_destroy(async_loop_t* loop) {
   ZX_DEBUG_ASSERT(list_is_empty(&loop->wait_list));
   ZX_DEBUG_ASSERT(list_is_empty(&loop->irq_list));
   ZX_DEBUG_ASSERT(list_is_empty(&loop->task_list));
+  ZX_DEBUG_ASSERT(list_is_empty(&loop->fifo_task_list));
   ZX_DEBUG_ASSERT(list_is_empty(&loop->due_list));
   ZX_DEBUG_ASSERT(list_is_empty(&loop->thread_list));
   ZX_DEBUG_ASSERT(list_is_empty(&loop->paged_vmo_list));
@@ -257,6 +260,12 @@ static void async_loop_cancel_all(async_loop_t* loop) {
     mtx_lock(&loop->lock);
   }
   while ((node = list_remove_head(&loop->task_list))) {
+    mtx_unlock(&loop->lock);
+    async_task_t* task = node_to_task(node);
+    async_loop_dispatch_task(loop, task, ZX_ERR_CANCELED);
+    mtx_lock(&loop->lock);
+  }
+  while ((node = list_remove_head(&loop->fifo_task_list))) {
     mtx_unlock(&loop->lock);
     async_task_t* task = node_to_task(node);
     async_loop_dispatch_task(loop, task, ZX_ERR_CANCELED);
@@ -445,21 +454,20 @@ static zx_status_t async_loop_dispatch_tasks(async_loop_t* loop) {
     list_node_t* node;
     if (list_is_empty(&loop->due_list)) {
       zx_time_t due_time = async_loop_now((async_dispatcher_t*)loop);
-      list_node_t* tail = NULL;
+      list_node_t* last_due = &loop->task_list;
       list_for_every(&loop->task_list, node) {
         if (node_to_task(node)->deadline > due_time)
           break;
-        tail = node;
+        last_due = node;
       }
-      if (tail) {
-        list_node_t* head = loop->task_list.next;
-        loop->task_list.next = tail->next;
-        tail->next->prev = &loop->task_list;
-        loop->due_list.next = head;
-        head->prev = &loop->due_list;
-        loop->due_list.prev = tail;
-        tail->next = &loop->due_list;
+      if (last_due != &loop->task_list) {
+        list_node_t non_due;
+        list_split_after(&loop->task_list, last_due, &non_due);
+        list_splice_after(&loop->task_list, loop->due_list.prev);
+        list_move(&non_due, &loop->task_list);
       }
+
+      list_splice_after(&loop->fifo_task_list, loop->due_list.prev);
     }
 
     // Dispatch all due tasks.  Note that they might be canceled concurrently
@@ -637,8 +645,10 @@ static zx_status_t async_loop_post_task(async_dispatcher_t* async, async_task_t*
   }
 
   async_loop_insert_task_locked(loop, task);
-  if (!loop->dispatching_tasks && task_to_node(task)->prev == &loop->task_list) {
-    // Task inserted at head.  Earliest deadline changed.
+  bool head_changed = task_to_node(task)->prev == &loop->fifo_task_list ||
+                      task_to_node(task)->prev == &loop->task_list;
+  if (!loop->dispatching_tasks && head_changed) {
+    // Either the earliest deadline changed or a FIFO task became available.
     async_loop_restart_timer_locked(loop);
   }
 
@@ -667,9 +677,15 @@ static zx_status_t async_loop_cancel_task(async_dispatcher_t* async, async_task_
 
   // Determine whether the head task was canceled and following task has
   // a later deadline.  If so, we will bump the timer along to that deadline.
-  bool must_restart =
-      !loop->dispatching_tasks && node->prev == &loop->task_list &&
-      (node->next == &loop->task_list || node_to_task(node->next)->deadline > task->deadline);
+  bool must_restart = false;
+  if (!loop->dispatching_tasks) {
+    if (node->prev == &loop->task_list) {
+      must_restart =
+          (node->next == &loop->task_list || node_to_task(node->next)->deadline > task->deadline);
+    } else if (node->prev == &loop->fifo_task_list) {
+      must_restart = (node->next == &loop->fifo_task_list);
+    }
+  }
   list_delete(node);
   if (must_restart)
     async_loop_restart_timer_locked(loop);
@@ -764,6 +780,10 @@ static zx_status_t async_loop_cancel_paged_vmo(async_paged_vmo_t* paged_vmo) {
 }
 
 static void async_loop_insert_task_locked(async_loop_t* loop, async_task_t* task) {
+  if (task->deadline == ZX_TIME_INFINITE_PAST) {
+    list_add_tail(&loop->fifo_task_list, task_to_node(task));
+    return;
+  }
   // TODO(https://fxbug.dev/42105840): We assume that tasks are inserted in quasi-monotonic order
   // and that insertion into the task queue will typically take no more than a few steps. If this
   // assumption proves false and the cost of insertion becomes a problem, we should consider using a
@@ -778,6 +798,9 @@ static void async_loop_insert_task_locked(async_loop_t* loop, async_task_t* task
 
 static zx_time_t async_loop_next_deadline_locked(async_loop_t* loop) {
   if (list_is_empty(&loop->due_list)) {
+    if (!list_is_empty(&loop->fifo_task_list)) {
+      return 0ULL;
+    }
     list_node_t* head = list_peek_head(&loop->task_list);
     if (!head)
       return ZX_TIME_INFINITE;

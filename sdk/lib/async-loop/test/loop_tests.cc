@@ -32,6 +32,7 @@
 #include <random>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -194,6 +195,21 @@ class QuitTask : public TestTask {
     TestTask::Handle(dispatcher, status);
     async_loop_quit(async_loop_from_dispatcher(dispatcher));
   }
+};
+
+class CaptureOrderTask : public TestTask {
+ public:
+  CaptureOrderTask(std::vector<uint32_t>* order, uint32_t id) : order_(order), id_(id) {}
+
+ protected:
+  void Handle(async_dispatcher_t* dispatcher, zx_status_t status) override {
+    TestTask::Handle(dispatcher, status);
+    order_->push_back(id_);
+  }
+
+ private:
+  std::vector<uint32_t>* order_;
+  uint32_t id_;
 };
 
 class ResetQuitTask : public TestTask {
@@ -818,6 +834,27 @@ TEST(Loop, Task) {
   EXPECT_EQ(0u, task7.run_count) << "run count 7";
 
   loop.Shutdown();
+}
+
+TEST(Loop, TaskExecutionOrder) {
+  async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+
+  std::vector<uint32_t> order;
+  CaptureOrderTask task1(&order, 1);  // Due task
+  CaptureOrderTask task2(&order, 2);  // FIFO task
+
+  // Post FIFO task first.
+  task2.deadline = ZX_TIME_INFINITE_PAST;
+  EXPECT_EQ(ZX_OK, async_post_task(loop.dispatcher(), &task2));
+
+  // Post a due task (deadline = now).
+  EXPECT_EQ(ZX_OK, task1.Post(loop.dispatcher()));
+
+  EXPECT_EQ(ZX_OK, loop.RunUntilIdle());
+
+  ASSERT_EQ(2u, order.size());
+  EXPECT_EQ(1u, order[0]) << "Due task should run first";
+  EXPECT_EQ(2u, order[1]) << "FIFO task should run second";
 }
 
 TEST(Loop, TaskShutdown) {

@@ -43,6 +43,14 @@ struct async_task {
 // When the dispatcher is shutting down (being destroyed), the handlers of
 // all remaining tasks will be invoked with a status of |ZX_ERR_CANCELED|.
 //
+// Dispatcher implementations must treat |ZX_TIME_INFINITE_PAST| as a sentinel
+// value meaning "no deadline". Tasks with expired deadlines must always be
+// processed before tasks without deadlines (those posted with
+// |ZX_TIME_INFINITE_PAST|).
+//
+// Note: If there are always tasks with expired deadlines, tasks without
+// deadlines may be starved.
+//
 // Returns |ZX_OK| if the task was successfully posted.
 // Returns |ZX_ERR_BAD_STATE| if the dispatcher is shutting down.
 // Returns |ZX_ERR_NOT_SUPPORTED| if not supported by the dispatcher.

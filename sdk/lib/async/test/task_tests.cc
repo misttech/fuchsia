@@ -152,8 +152,8 @@ void task_post_test() {
     dispatcher.next_status = ZX_OK;
     EXPECT_EQ(ZX_OK, harness.task().Post(&dispatcher));
     EXPECT_EQ(MockDispatcher::Op::POST_TASK, dispatcher.last_op);
-    EXPECT_EQ(dispatcher.now.get(), dispatcher.last_task->deadline);
-    EXPECT_EQ(dispatcher.now.get(), harness.task().last_deadline().get());
+    EXPECT_EQ(zx::time::infinite_past().get(), dispatcher.last_task->deadline);
+    EXPECT_EQ(zx::time::infinite_past().get(), harness.task().last_deadline().get());
     EXPECT_TRUE(harness.task().is_pending());
     EXPECT_FALSE(harness.handler_ran);
 
@@ -170,8 +170,8 @@ void task_post_test() {
     dispatcher.next_status = ZX_ERR_BAD_STATE;
     EXPECT_EQ(ZX_ERR_BAD_STATE, harness.task().Post(&dispatcher));
     EXPECT_EQ(MockDispatcher::Op::POST_TASK, dispatcher.last_op);
-    EXPECT_EQ(dispatcher.now.get(), dispatcher.last_task->deadline);
-    EXPECT_EQ(dispatcher.now.get(), harness.task().last_deadline().get());
+    EXPECT_EQ(zx::time::infinite_past().get(), dispatcher.last_task->deadline);
+    EXPECT_EQ(zx::time::infinite_past().get(), harness.task().last_deadline().get());
     EXPECT_FALSE(harness.task().is_pending());
     EXPECT_FALSE(harness.handler_ran);
   }
