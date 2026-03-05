@@ -96,8 +96,8 @@ void ForwardBuffer(DrainContext drain_context) {
     }
     size_t percent = actual * 100 / drain_context.buffer_size;
     if (actual == drain_context.buffer_size) {
-      FX_LOGS(ERROR) << "[ 100% ] Read " << actual << " / " << drain_context.buffer_size
-                     << " bytes. May have dropped trace data!";
+      FX_LOGS(WARNING) << "[ 100% ] Read " << actual << " / " << drain_context.buffer_size
+                       << " bytes. May have dropped trace data!";
     } else if (percent > 75) {
       FX_LOGS(WARNING) << "[ " << percent << "% ] Read " << actual << " / "
                        << drain_context.buffer_size << " bytes";
