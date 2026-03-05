@@ -438,12 +438,6 @@ impl Policy {
     /// "constrain" or "mlsconstrain" statements. A permission is allowed if
     /// it is allowed by an explicit "allow", and if in addition, all matching
     /// constraints are satisfied.
-    //
-    // TODO: https://fxbug.dev/372400976 - Check that this is actually the
-    // correct interaction between constraints and explicit "allow" rules.
-    //
-    // TODO: https://fxbug.dev/372400419 - Validate that "neverallow" rules
-    // don't need any deliberate handling here.
     pub fn compute_access_decision(
         &self,
         source_context: &SecurityContext,

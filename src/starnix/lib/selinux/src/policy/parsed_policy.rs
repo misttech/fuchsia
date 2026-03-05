@@ -204,7 +204,6 @@ impl ParsedPolicy {
             }
         }
 
-        // TODO: https://fxbug.dev/362706116 - Collate the auditallow & auditdeny sets.
         let mut flags = 0;
         if self.permissive_types().is_set(source_type.0.get()) {
             flags |= SELINUX_AVD_FLAGS_PERMISSIVE;

@@ -57,8 +57,6 @@ pub(super) enum ConstraintError {
 /// This implementation deliberately avoids shortcuts, since it is used to
 /// validate that constraint expressions are well-formed as well as for
 /// access decisions.
-// TODO: https://fxbug.dev/372400976 - Consider optimizations if this is a
-// performance bottleneck.
 pub(super) fn evaluate_constraint(
     constraint_expr: &ConstraintExpr,
     source: &SecurityContext,
