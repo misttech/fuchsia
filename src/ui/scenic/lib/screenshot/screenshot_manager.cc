@@ -34,17 +34,18 @@ void ScreenshotManager::CreateBinding(
   std::unique_ptr<ScreenCapture> screen_capture = std::make_unique<ScreenCapture>(
       buffer_collection_importers_, renderer_, [this]() { return get_renderables_(); });
 
+  async_dispatcher_t* dispatcher = async_get_default_dispatcher();
   auto impl = std::make_unique<screenshot::FlatlandScreenshot>(
-      app_context_, std::move(screen_capture), allocator_, display_size_, display_rotation_,
-      [this](screenshot::FlatlandScreenshot* sc) {
+      app_context_, dispatcher, std::move(screen_capture), allocator_, display_size_,
+      display_rotation_, [this](screenshot::FlatlandScreenshot* sc) {
         bindings_.CloseBindings(sc, ZX_ERR_SHOULD_WAIT);
       });
   screenshot::FlatlandScreenshot* impl_ptr = impl.get();
   auto close_handler = [impl = std::move(impl)](fidl::UnbindInfo info) {
     // Let |impl| fall out of scope.
   };
-  bindings_.AddBinding(async_get_default_dispatcher(), fidl::HLCPPToNatural(std::move(request)),
-                       impl_ptr, std::move(close_handler));
+  bindings_.AddBinding(dispatcher, fidl::HLCPPToNatural(std::move(request)), impl_ptr,
+                       std::move(close_handler));
 }
 
 }  // namespace screenshot

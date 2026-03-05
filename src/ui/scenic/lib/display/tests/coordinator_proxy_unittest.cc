@@ -72,7 +72,7 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
 
   void SetUp() override {
     gtest::RealLoopFixture::SetUp();
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("CoordinatorProxyTest");
+    sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "CoordinatorProxyTest");
 
     display_coordinator_loop_.StartThread("display-coordinator-loop");
 
@@ -102,13 +102,15 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
 
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> CreateToken() {
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token;
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(token.NewRequest());
-    zx_status_t status =
-        sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-    FX_DCHECK(status == ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.NewRequest().TakeChannel()))
+            .Build());
+    FX_DCHECK(result.ok());
     fuchsia::sysmem2::Node_Sync_Result sync_result;
-    status = token->Sync(&sync_result);
+    zx_status_t status = token->Sync(&sync_result);
     FX_DCHECK(status == ZX_OK);
     FX_DCHECK(sync_result.is_response());
     return token;
@@ -133,7 +135,7 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
 
   // Only for use on the main thread. Establish a new connection when on the MockDisplayCoordinator
   // thread.
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 };
 
 // Test that CreateLayer() and DestroyLayer() immediately send the corresponding FIDL calls.

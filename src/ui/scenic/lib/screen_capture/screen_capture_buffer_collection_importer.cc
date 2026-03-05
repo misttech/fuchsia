@@ -73,27 +73,33 @@ std::optional<std::vector<fuchsia::sysmem2::BufferCollectionTokenHandle>> Create
 // Consumes |token| to create a BufferCollectionSyncPtr and sets empty constraints on it.
 std::optional<fuchsia::sysmem2::BufferCollectionSyncPtr>
 CreateBufferCollectionSyncPtrAndSetEmptyConstraints(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token) {
   fuchsia::sysmem2::BufferCollectionSyncPtr local_buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(token));
-  bind_shared_request.set_buffer_collection_request(local_buffer_collection.NewRequest());
-  auto status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << __func__ << " failed, could not BindSharedCollection: " << status;
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(
+              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              local_buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  if (!result.ok()) {
+    FX_LOGS(WARNING) << __func__
+                     << " failed, could not BindSharedCollection: " << result.status_string();
     return std::nullopt;
   }
 
   fuchsia::sysmem2::Node_Sync_Result sync_result;
-  status = local_buffer_collection->Sync(&sync_result);
+  zx_status_t status = local_buffer_collection->Sync(&sync_result);
   if (status != ZX_OK) {
     FX_LOGS(WARNING) << __func__ << " failed, could not bind buffer collection: " << status;
     return std::nullopt;
   }
 
-  status = local_buffer_collection->SetConstraints(
-      fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
+  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest request;
+  request.set_constraints({});
+  status = local_buffer_collection->SetConstraints(std::move(request));
   if (status != ZX_OK) {
     FX_LOGS(WARNING) << __func__ << " failed, could not set constraints: " << status;
     return std::nullopt;
@@ -104,7 +110,7 @@ CreateBufferCollectionSyncPtrAndSetEmptyConstraints(
 namespace screen_capture {
 
 ScreenCaptureBufferCollectionImporter::ScreenCaptureBufferCollectionImporter(
-    fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
     std::shared_ptr<flatland::Renderer> renderer)
     : sysmem_allocator_(std::move(sysmem_allocator)), renderer_(std::move(renderer)) {}
 
@@ -117,7 +123,7 @@ ScreenCaptureBufferCollectionImporter::~ScreenCaptureBufferCollectionImporter() 
 
 bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
     BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
   TRACE_DURATION("gfx", "ScreenCaptureBufferCollectionImporter::ImportBufferCollection");
@@ -364,13 +370,15 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
       });
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr fallback_render_target_sync_token;
-  fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-  allocate_shared_request.set_token_request(fallback_render_target_sync_token.NewRequest());
-  zx_status_t status =
-      sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-  if (status != ZX_OK) {
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+          .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              fallback_render_target_sync_token.NewRequest().TakeChannel()))
+          .Build());
+  if (!result.ok()) {
     FX_LOGS(WARNING) << "Cannot allocate fallback render target sync token: "
-                     << zx_status_get_string(status);
+                     << result.status_string();
     return false;
   }
 
@@ -378,7 +386,7 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
   fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
   dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
   dup_request.set_token_request(fallback_render_target_token.NewRequest());
-  status = fallback_render_target_sync_token->Duplicate(std::move(dup_request));
+  zx_status_t status = fallback_render_target_sync_token->Duplicate(std::move(dup_request));
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Cannot duplicate fallback render target sync token: "
                    << zx_status_get_string(status);
@@ -386,18 +394,19 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
   }
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(fallback_render_target_sync_token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Cannot bind fallback render target sync token: "
-                   << zx_status_get_string(status);
+  result = sysmem_allocator_->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              fallback_render_target_sync_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  if (!result.ok()) {
     return false;
   }
 
   if (!renderer_->ImportBufferCollection(
-          metadata.collection_id, sysmem_allocator_.get(), std::move(fallback_render_target_token),
+          metadata.collection_id, sysmem_allocator_, std::move(fallback_render_target_token),
           BufferCollectionUsage::kRenderTarget,
           std::optional<fuchsia::math::SizeU>({metadata.width, metadata.height}))) {
     FX_LOGS(WARNING) << "Could not register fallback render target with VkRenderer";

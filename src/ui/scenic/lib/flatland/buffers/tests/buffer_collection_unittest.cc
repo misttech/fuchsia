@@ -9,43 +9,47 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 
 namespace flatland {
 namespace test {
 
-const uint32_t kCpuUsageWriteOften = fuchsia::sysmem::cpuUsageWriteOften;
-
 // Common testing base class to be used across different unittests that
 // require Vulkan and a SysmemAllocator.
-class BufferCollectionTest : public ::testing::Test {
+class BufferCollectionTest : public gtest::RealLoopFixture {
  protected:
   void SetUp() override {
     ::testing::Test::SetUp();
     // Create the SysmemAllocator.
-    zx_status_t status = fdio_service_connect(
-        "/svc/fuchsia.sysmem2.Allocator", sysmem_allocator_.NewRequest().TakeChannel().release());
-    EXPECT_EQ(status, ZX_OK);
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    zx_status_t status =
+        fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", server_end.TakeChannel().release());
+    ASSERT_EQ(status, ZX_OK);
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
-    fuchsia::sysmem2::AllocatorSetDebugClientInfoRequest set_debug_request;
-    set_debug_request.set_name(fsl::GetCurrentProcessName() + " BufferCollectionTest");
-    set_debug_request.set_id(fsl::GetCurrentProcessKoid());
-    sysmem_allocator_->SetDebugClientInfo(std::move(set_debug_request));
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->SetDebugClientInfo(
+        fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena)
+            .name(arena, fsl::GetCurrentProcessName() + " BufferCollectionTest")
+            .id(fsl::GetCurrentProcessKoid())
+            .Build());
+    ASSERT_TRUE(result.ok());
   }
 
   void TearDown() override {
-    sysmem_allocator_ = nullptr;
+    sysmem_allocator_ = {};
     ::testing::Test::TearDown();
   }
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 };
 
 // Test the creation of a buffer collection that doesn't have any additional vulkan
 // constraints to show that it doesn't need vulkan to be valid.
 TEST_F(BufferCollectionTest, CreateCollectionTest) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
-  auto result = BufferCollectionInfo::New(sysmem_allocator_.get(), std::move(tokens.dup_token));
+  auto tokens = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token));
   EXPECT_TRUE(result.is_ok());
 }
 
@@ -59,8 +63,8 @@ TEST_F(BufferCollectionTest, CreateCollectionTest) {
 TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
   fuchsia::sysmem2::BufferUsage buffer_usage;
   buffer_usage.set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
-  auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
-  auto result = BufferCollectionInfo::New(sysmem_allocator_.get(), std::move(tokens.dup_token),
+  auto tokens = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token),
                                           std::nullopt, std::move(buffer_usage));
   EXPECT_TRUE(result.is_ok());
 
@@ -74,22 +78,26 @@ TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
     const uint32_t kHeight = 64;
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
 
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(tokens.local_token));
-    bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-    zx_status_t status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                tokens.local_token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                buffer_collection.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
 
     fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-    set_name_request.set_priority(100u);
-    set_name_request.set_name("FlatlandAllocationWithoutExtraConstraints");
+    set_name_request.set_priority(10u);
+    set_name_request.set_name("FlatlandImageMemory");
     buffer_collection->SetName(std::move(set_name_request));
 
-    EXPECT_EQ(status, ZX_OK);
     fuchsia::sysmem2::BufferCollectionConstraints constraints;
     auto& bmc = *constraints.mutable_buffer_memory_constraints();
     bmc.set_cpu_domain_supported(true);
     bmc.set_ram_domain_supported(true);
-    constraints.mutable_usage()->set_cpu(kCpuUsageWriteOften);
+    constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
     constraints.set_min_buffer_count(1);
 
     auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
@@ -102,7 +110,7 @@ TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
 
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     set_constraints_request.set_constraints(std::move(constraints));
-    status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
     EXPECT_EQ(status, ZX_OK);
 
     // Have the client wait for allocation.
@@ -122,7 +130,7 @@ TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
 // Check to make sure |CreateBufferCollectionAndSetConstraints| returns false if
 // an invalid BufferCollectionHandle is provided by the user.
 TEST_F(BufferCollectionTest, NullTokenTest) {
-  auto result = BufferCollectionInfo::New(sysmem_allocator_.get(),
+  auto result = BufferCollectionInfo::New(sysmem_allocator_,
                                           /*token*/ nullptr);
   EXPECT_TRUE(result.is_error());
 }
@@ -144,7 +152,7 @@ TEST_F(BufferCollectionTest, WrongTokenTypeTest) {
 
   // We should not be able to make a BufferCollectionInfon object with the wrong token type
   // passed in as a parameter.
-  auto result = BufferCollectionInfo::New(sysmem_allocator_.get(), std::move(handle));
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(handle));
   EXPECT_TRUE(result.is_error());
 }
 
@@ -152,8 +160,8 @@ TEST_F(BufferCollectionTest, WrongTokenTypeTest) {
 // with the constraints set on the server-side by the renderer, then waiting on
 // the buffers to be allocated should fail.
 TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
-  auto result = BufferCollectionInfo::New(sysmem_allocator_.get(), std::move(tokens.dup_token));
+  auto tokens = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token));
   EXPECT_TRUE(result.is_ok());
 
   auto collection = std::move(result.value());
@@ -164,11 +172,15 @@ TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
   {
     fuchsia::sysmem2::BufferCollectionSyncPtr client_collection;
 
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(tokens.local_token));
-    bind_shared_request.set_buffer_collection_request(client_collection.NewRequest());
-    zx_status_t status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-    EXPECT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                tokens.local_token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                client_collection.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
 
     fuchsia::sysmem2::NodeSetNameRequest set_name_request;
     set_name_request.set_priority(100u);
@@ -202,7 +214,7 @@ TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
 
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     set_constraints_request.set_constraints(std::move(constraints));
-    status = client_collection->SetConstraints(std::move(set_constraints_request));
+    zx_status_t status = client_collection->SetConstraints(std::move(set_constraints_request));
     EXPECT_EQ(status, ZX_OK);
 
     // Have the client wait for allocation.

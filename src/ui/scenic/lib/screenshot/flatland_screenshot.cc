@@ -52,8 +52,9 @@ fuchsia::images2::PixelFormat CompositionToImages2Format(ScreenshotFormat format
 namespace screenshot {
 
 FlatlandScreenshot::FlatlandScreenshot(
-    sys::ComponentContext* app_context, std::unique_ptr<ScreenCapture> screen_capturer,
-    std::shared_ptr<Allocator> allocator, fuchsia::math::SizeU display_size, int display_rotation,
+    sys::ComponentContext* app_context, async_dispatcher_t* dispatcher,
+    std::unique_ptr<ScreenCapture> screen_capturer, std::shared_ptr<Allocator> allocator,
+    fuchsia::math::SizeU display_size, int display_rotation,
     fit::function<void(FlatlandScreenshot*)> destroy_instance_function)
     : app_context_(app_context),
       screen_capturer_(std::move(screen_capturer)),
@@ -62,19 +63,18 @@ FlatlandScreenshot::FlatlandScreenshot(
       display_rotation_(display_rotation),
       destroy_instance_function_(std::move(destroy_instance_function)),
       weak_factory_(this) {
-  zx_status_t status = fdio_service_connect("/svc/fuchsia.sysmem2.Allocator",
-                                            sysmem_allocator_.NewRequest().TakeChannel().release());
-  FX_DCHECK(status == ZX_OK);
+  sysmem_allocator_ = utils::CreateSysmemAllocatorClientWithSvc(app_context->svc().get(),
+                                                                dispatcher, "FlatlandScreenshot");
 
   FX_DCHECK(screen_capturer_);
   FX_DCHECK(flatland_allocator_);
-  FX_DCHECK(sysmem_allocator_);
+  FX_DCHECK(sysmem_allocator_.is_valid());
   FX_DCHECK(display_size_.width);
   FX_DCHECK(display_size_.height);
   FX_DCHECK(destroy_instance_function_);
 
   // Create event and wait for initialization purposes.
-  status = zx::event::create(0, &init_event_);
+  zx_status_t status = zx::event::create(0, &init_event_);
   FX_DCHECK(status == ZX_OK);
   init_wait_ = std::make_shared<async::WaitOnce>(init_event_.get(), ZX_EVENT_SIGNALED);
 
@@ -90,9 +90,13 @@ void FlatlandScreenshot::AllocateBuffers() {
 
   // Create sysmem tokens.
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
-  fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-  allocate_shared_request.set_token_request(local_token.NewRequest());
-  sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+          .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
   fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
   dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
@@ -105,10 +109,14 @@ void FlatlandScreenshot::AllocateBuffers() {
   FX_DCHECK(sync_result.is_response());
 
   fuchsia::sysmem2::BufferCollectionPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(local_token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
+  result = sysmem_allocator_->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
 
   // We only need 1 buffer since it gets reused on every Take() call.
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;

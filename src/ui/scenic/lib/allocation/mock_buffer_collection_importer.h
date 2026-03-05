@@ -15,16 +15,17 @@ namespace allocation {
 class MockBufferCollectionImporter : public BufferCollectionImporter {
  public:
   MOCK_METHOD(bool, ImportBufferCollection,
-              (GlobalBufferCollectionId, fuchsia::sysmem2::Allocator_Sync*,
+              (GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,
-               allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU>));
-
+               allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU>),
+              (override));
   MOCK_METHOD(void, ReleaseBufferCollection,
-              (GlobalBufferCollectionId, allocation::BufferCollectionUsage));
+              (GlobalBufferCollectionId, allocation::BufferCollectionUsage), (override));
 
-  MOCK_METHOD(bool, ImportBufferImage, (const ImageMetadata&, allocation::BufferCollectionUsage));
+  MOCK_METHOD(bool, ImportBufferImage, (const ImageMetadata&, allocation::BufferCollectionUsage),
+              (override));
 
-  MOCK_METHOD(void, ReleaseBufferImage, (GlobalImageId));
+  MOCK_METHOD(void, ReleaseBufferImage, (GlobalImageId), (override));
 };
 
 }  // namespace allocation

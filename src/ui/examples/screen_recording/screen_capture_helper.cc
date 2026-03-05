@@ -19,13 +19,13 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     fuchsia::ui::composition::Allocator_Sync* flatland_allocator,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator, RegisterBufferCollectionUsages usage) {
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    RegisterBufferCollectionUsages usage) {
   FX_DCHECK(flatland_allocator);
   FX_DCHECK(sysmem_allocator);
 
   RegisterBufferCollectionArgs rbc_args = {};
 
-  zx_status_t status;
   // Create Sysmem tokens.
   auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
@@ -36,20 +36,24 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
   rbc_args.set_usages(usage);
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_request;
-  bind_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  bind_request.set_token(std::move(local_token));
-  status = sysmem_allocator->BindSharedCollection(std::move(bind_request));
-  FX_DCHECK(status == ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
 
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest constraints_request;
   constraints_request.set_constraints(std::move(constraints));
-  status = buffer_collection->SetConstraints(std::move(constraints_request));
+  zx_status_t status = buffer_collection->SetConstraints(std::move(constraints_request));
   FX_DCHECK(status == ZX_OK);
 
-  fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &result);
-  FX_DCHECK(!result.is_err());
+  fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result register_result;
+  flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &register_result);
+  FX_DCHECK(!register_result.is_err());
 
   // Wait for allocation.
   zx_status_t allocation_status = ZX_OK;

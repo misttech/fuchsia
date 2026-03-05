@@ -28,7 +28,7 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
                 default_buffer_collection_importers,
             const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                 screenshot_buffer_collection_importers,
-            fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+            fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
             inspect::Node inspect_node = inspect::Node());
   ~Allocator() override;
 
@@ -67,7 +67,7 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
   std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_buffer_collection_importers_;
 
   // A Sysmem allocator to facilitate buffer allocation with the Renderer.
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   // Keep track of buffer collection Ids for garbage collection.
   std::unordered_map<GlobalBufferCollectionId,

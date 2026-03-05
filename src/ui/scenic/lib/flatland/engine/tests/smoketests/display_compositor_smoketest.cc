@@ -63,14 +63,20 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
     realm_root_ = testing::BuildFakeDisplayRealm(dispatcher(), testing::DisplayRealmConfig{});
 
     // Create the SysmemAllocator.
-    zx_status_t status = fdio_service_connect(
-        "/svc/fuchsia.sysmem2.Allocator", sysmem_allocator_.NewRequest().TakeChannel().release());
+    // Create the SysmemAllocator.
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    zx_status_t status =
+        fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", server_end.TakeChannel().release());
     EXPECT_EQ(status, ZX_OK);
-    fuchsia::sysmem2::AllocatorSetDebugClientInfoRequest set_debug_request;
-    set_debug_request.set_name(fsl::GetCurrentProcessName() + " DisplayCompositorSmokeTest");
-    set_debug_request.set_id(fsl::GetCurrentProcessKoid());
-    sysmem_allocator_->SetDebugClientInfo(std::move(set_debug_request));
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->SetDebugClientInfo(
+        fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena)
+            .name(arena, fsl::GetCurrentProcessName() + " DisplayCompositorSmokeTest")
+            .id(fsl::GetCurrentProcessKoid())
+            .Build());
+    EXPECT_TRUE(result.ok());
     executor_ = std::make_unique<async::Executor>(dispatcher());
 
     display_manager_ = std::make_unique<display::DisplayManager>([]() {});
@@ -117,7 +123,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
       fuchsia_images2::PixelFormat::kB8G8R8A8;
 
   std::optional<component_testing::RealmRoot> realm_root_;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
 
@@ -141,17 +147,17 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
       fuchsia::images2::PixelFormat pixel_type, uint32_t width, uint32_t height, uint32_t num_vmos,
       fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
-    auto texture_tokens = SysmemTokens::Create(sysmem_allocator_.get());
+    auto texture_tokens = SysmemTokens::Create(sysmem_allocator_);
 
     auto result = display_compositor->ImportBufferCollection(
-        collection_id, sysmem_allocator_.get(), std::move(texture_tokens.dup_token),
+        collection_id, sysmem_allocator_, std::move(texture_tokens.dup_token),
         BufferCollectionUsage::kClientImage, std::nullopt);
     EXPECT_TRUE(result);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
         CreateBufferCollectionSyncPtrAndSetConstraints(
-            sysmem_allocator_.get(), std::move(texture_tokens.local_token), num_vmos, width, height,
+            sysmem_allocator_, std::move(texture_tokens.local_token), num_vmos, width, height,
             fidl::Clone(buffer_usage), pixel_type, fidl::Clone(memory_constraints),
             std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
@@ -186,7 +192,7 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
   auto display = display_manager_->default_display();
 

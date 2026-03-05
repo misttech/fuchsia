@@ -59,7 +59,9 @@ class AllocationTest : public ScenicCtfHlcppTest {
     ScenicCtfHlcppTest::SetUp();
 
     auto context = sys::ComponentContext::Create();
-    context->svc()->Connect(sysmem_allocator_.NewRequest());
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    context->svc()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
     // Create a root Flatland.
     root_flatland_ = ConnectAsyncIntoRealm<Flatland>();
@@ -86,20 +88,25 @@ class AllocationTest : public ScenicCtfHlcppTest {
 
  protected:
   fuchsia::sysmem2::BufferCollectionInfo SetConstraintsAndAllocateBuffer(
+      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
       fuchsia::sysmem2::BufferCollectionConstraints constraints) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(token));
-    bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-    auto status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-    FX_CHECK(status == ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                buffer_collection.NewRequest().TakeChannel()))
+            .Build());
+    FX_CHECK(result.ok());
 
     uint32_t constraints_min_buffer_count = constraints.min_buffer_count();
 
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     set_constraints_request.set_constraints(std::move(constraints));
-    status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
     FX_CHECK(status == ZX_OK);
     zx_status_t allocation_status = ZX_OK;
 
@@ -116,14 +123,14 @@ class AllocationTest : public ScenicCtfHlcppTest {
     return buffer_collection_info;
   }
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   fuchsia::ui::composition::FlatlandPtr root_flatland_;
 };
 
 TEST_F(AllocationTest, CreateAndReleaseImage) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -136,8 +143,8 @@ TEST_F(AllocationTest, CreateAndReleaseImage) {
   ASSERT_FALSE(result.is_err());
 
   // Use the local token to set constraints.
-  auto info =
-      SetConstraintsAndAllocateBuffer(std::move(local_token), GetDefaultBufferConstraints());
+  auto info = SetConstraintsAndAllocateBuffer(sysmem_allocator_, std::move(local_token),
+                                              GetDefaultBufferConstraints());
 
   ImageProperties image_properties = {};
   image_properties.set_size({.width = kDefaultSize, .height = kDefaultSize});
@@ -159,7 +166,7 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
   for (uint64_t i = 1; i <= kImageCount; ++i) {
-    auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+    auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
     // Send one token to root_flatland_ Allocator.
     allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -172,8 +179,8 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
     ASSERT_FALSE(result.is_err());
 
     // Use the local token to set constraints.
-    auto info =
-        SetConstraintsAndAllocateBuffer(std::move(local_token), GetDefaultBufferConstraints());
+    auto info = SetConstraintsAndAllocateBuffer(sysmem_allocator_, std::move(local_token),
+                                                GetDefaultBufferConstraints());
 
     ImageProperties image_properties = {};
     image_properties.set_size({.width = kDefaultSize, .height = kDefaultSize});
@@ -228,7 +235,13 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
       LoggingEventLoop present_loop;
       auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
-      auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+      auto context = sys::ComponentContext::Create();
+      auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+      context->svc()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+      fidl::WireClient<fuchsia_sysmem2::Allocator> thread_sysmem_allocator;
+      thread_sysmem_allocator.Bind(std::move(client_end), loop->dispatcher());
+
+      auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(thread_sysmem_allocator);
 
       // Send one token to Flatland Allocator.
       allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -241,8 +254,8 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
       ASSERT_FALSE(result.is_err());
 
       // Use the local token to set constraints.
-      auto info =
-          SetConstraintsAndAllocateBuffer(std::move(local_token), GetDefaultBufferConstraints());
+      auto info = SetConstraintsAndAllocateBuffer(thread_sysmem_allocator, std::move(local_token),
+                                                  GetDefaultBufferConstraints());
 
       auto flatland = ConnectAsyncIntoRealm<Flatland>();
       flatland.set_error_handler([](zx_status_t status) {

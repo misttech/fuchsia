@@ -425,8 +425,9 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     flatland_compositor_ = std::make_shared<flatland::DisplayCompositor>(
         async_get_default_dispatcher(), display_manager_->coordinator_proxy(), flatland_renderer,
-        utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(),
-                                                   "flatland::DisplayCompositor"),
+        utils::CreateSysmemAllocatorClientWithSvc(app_context_->svc().get(),
+                                                  async_get_default_dispatcher(),
+                                                  "flatland::DisplayCompositor"),
         flatland::DisplayCompositorConfig{
             .enable_direct_to_display = config_values_.display_composition(),
             .max_display_layers = kMaxDisplayLayers,
@@ -496,8 +497,9 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
   const auto screen_capture_buffer_collection_importer =
       std::make_shared<screen_capture::ScreenCaptureBufferCollectionImporter>(
-          utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(),
-                                                     "ScreenCaptureBufferCollectionImporter"),
+          utils::CreateSysmemAllocatorClientWithSvc(app_context_->svc().get(),
+                                                    async_get_default_dispatcher(),
+                                                    "ScreenCaptureBufferCollectionImporter"),
           flatland_renderer);
 
   // Allocator service needs Flatland DisplayCompositor to act as a BufferCollectionImporter.
@@ -510,7 +512,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     allocator_ = std::make_shared<allocation::Allocator>(
         app_context_.get(), default_importers, screen_capture_importers,
-        utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(), "ScenicAllocator"),
+        utils::CreateSysmemAllocatorClientWithSvc(
+            app_context_->svc().get(), async_get_default_dispatcher(), "ScenicAllocator"),
         inspect_node_.CreateChild("Allocator API"));
   }
 

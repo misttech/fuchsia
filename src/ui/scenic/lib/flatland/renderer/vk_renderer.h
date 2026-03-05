@@ -35,7 +35,7 @@ class VkRenderer final : public Renderer {
   // |BufferCollectionImporter|
   // Only called from the main thread.
   bool ImportBufferCollection(GlobalBufferCollectionId collection_id,
-                              fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
                               BufferCollectionUsage usage,
                               std::optional<fuchsia::math::SizeU> size) override;
@@ -93,7 +93,7 @@ class VkRenderer final : public Renderer {
   // Wrapper struct to contain the sysmem collection handle, the vulkan
   // buffer collection.
   struct CollectionData {
-    fuchsia::sysmem2::BufferCollectionSyncPtr collection;
+    fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> collection;
     vk::BufferCollectionFUCHSIA vk_collection;
 
     // Bit to track whether we've confirmed the allocation's completion.

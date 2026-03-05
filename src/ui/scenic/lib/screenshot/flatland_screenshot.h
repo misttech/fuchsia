@@ -30,7 +30,7 @@ using screen_capture::ScreenCapture;
 
 class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screenshot> {
  public:
-  FlatlandScreenshot(sys::ComponentContext* app_context,
+  FlatlandScreenshot(sys::ComponentContext* app_context, async_dispatcher_t* dispatcher,
                      std::unique_ptr<ScreenCapture> screen_capturer,
                      std::shared_ptr<Allocator> allocator, fuchsia::math::SizeU display_size,
                      int display_rotation,
@@ -70,9 +70,8 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
   sys::ComponentContext* app_context_;
 
   std::unique_ptr<screen_capture::ScreenCapture> screen_capturer_;
-  fuchsia::sysmem2::AllocatorPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::shared_ptr<Allocator> flatland_allocator_;
-
   fuchsia::math::SizeU display_size_;
 
   // Angle in degrees by which the display is rotated in the clockwise direction.

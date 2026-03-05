@@ -5,6 +5,7 @@
 #ifndef SRC_UI_EXAMPLES_SCREEN_RECORDING_VIEW_PROVIDER_H_
 #define SRC_UI_EXAMPLES_SCREEN_RECORDING_VIEW_PROVIDER_H_
 
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
 #include <fuchsia/ui/app/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
@@ -50,7 +51,7 @@ class ViewProviderImpl final : fuchsia::ui::app::ViewProvider {
 
   fidl::BindingSet<fuchsia::ui::app::ViewProvider> bindings_;
   std::optional<fuchsia::ui::composition::LayoutInfo> layout_;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::unique_ptr<simple_present::FlatlandConnection> flatland_connection_;
   fuchsia::ui::composition::Flatland* flatland_;
   fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;

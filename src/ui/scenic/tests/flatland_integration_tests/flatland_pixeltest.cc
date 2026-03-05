@@ -53,7 +53,9 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
-    LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    LocalServiceDirectory()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
     flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
 
@@ -177,28 +179,33 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   }
 
  protected:
-  fuchsia::sysmem2::BufferCollectionInfo SetConstraintsAndAllocateBuffer(
+  std::optional<fuchsia::sysmem2::BufferCollectionInfo> SetConstraintsAndAllocateBuffer(
       fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
       fuchsia::sysmem2::BufferCollectionConstraints constraints) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(token));
-    bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-    auto status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-    FX_CHECK(status == ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                buffer_collection.NewRequest().TakeChannel()))
+            .Build());
+    FX_CHECK(result.ok());
 
     uint32_t constraints_min_buffer_count = constraints.min_buffer_count();
 
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     set_constraints_request.set_constraints(std::move(constraints));
-    status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
     FX_CHECK(status == ZX_OK);
 
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
     status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    FX_CHECK(status == ZX_OK);
-    FX_CHECK(!wait_result.is_framework_err());
-    FX_CHECK(!wait_result.is_err());
+    if (status != ZX_OK || wait_result.is_framework_err() || wait_result.is_err()) {
+      return std::nullopt;
+    }
+
     auto buffer_collection_info =
         std::move(*wait_result.response().mutable_buffer_collection_info());
     EXPECT_EQ(constraints_min_buffer_count, buffer_collection_info.buffers().size());
@@ -209,7 +216,7 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   fuc::AllocatorSyncPtr flatland_allocator_;
   fuc::FlatlandPtr root_flatland_;
   fuc::ScreenshotSyncPtr screenshotter_;
@@ -230,7 +237,7 @@ INSTANTIATE_TEST_SUITE_P(YuvPixelFormats, ParameterizedYUVPixelTest,
                                         fuchsia::images2::PixelFormat::I420));
 
 TEST_P(ParameterizedYUVPixelTest, YUVTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -246,12 +253,17 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
   auto info = SetConstraintsAndAllocateBuffer(
       std::move(local_token),
       GetBufferConstraints(GetParam(), fuchsia::images2::ColorSpace::REC709));
+  if (!info) {
+    ZXTEST_SKIP(
+        "Sysmem allocation failed. The device may not support the requested pixel format (e.g. YUV on emulator).");
+    return;
+  }
 
   // Write the pixel values to the VMO.
   const uint32_t num_pixels = display_width_ * display_height_;
   const uint64_t image_vmo_bytes = (3 * num_pixels) / 2;
 
-  zx::vmo& image_vmo = *info.mutable_buffers()->at(0).mutable_vmo();
+  zx::vmo& image_vmo = *info->mutable_buffers()->at(0).mutable_vmo();
   zx_status_t status = zx::vmo::create(image_vmo_bytes, 0, &image_vmo);
   EXPECT_EQ(ZX_OK, status);
 
@@ -322,7 +334,7 @@ INSTANTIATE_TEST_SUITE_P(ExoticRgbPixelFormats, ParameterizedSRGBPixelTest,
                                         fuchsia::images2::PixelFormat::R5G6B5));
 
 TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -344,13 +356,16 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
   // Use the local token to allocate a protected buffer.
   auto info = SetConstraintsAndAllocateBuffer(
       std::move(local_token), GetBufferConstraints(GetParam(), fuchsia::images2::ColorSpace::SRGB));
+  if (!info) {
+    ZXTEST_SKIP("Unsupported constraints.");
+  }
 
   // Write the pixel values to the VMO.
   const uint32_t num_pixels = display_width_ * display_height_;
   const uint64_t image_vmo_bytes = num_pixels * bytes_per_pixel;
-  ASSERT_EQ(image_vmo_bytes, info.settings().buffer_settings().size_bytes());
+  ASSERT_EQ(image_vmo_bytes, info->settings().buffer_settings().size_bytes());
 
-  const zx::vmo& image_vmo = info.buffers()[0].vmo();
+  const zx::vmo& image_vmo = info->buffers()[0].vmo();
 
   uint8_t* vmo_base;
   auto status =
@@ -360,7 +375,7 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
 
   utils::Pixel color = utils::kBlue;
   uint8_t color_channel = color.blue;
-  vmo_base += info.buffers()[0].vmo_usable_start();
+  vmo_base += info->buffers()[0].vmo_usable_start();
 
   for (uint32_t i = 0; i < num_pixels * bytes_per_pixel; i += bytes_per_pixel) {
     if (GetParam() == fuchsia::images2::PixelFormat::R5G6B5) {
@@ -394,7 +409,7 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
     }
   }
 
-  if (info.settings().buffer_settings().coherency_domain() ==
+  if (info->settings().buffer_settings().coherency_domain() ==
       fuchsia::sysmem2::CoherencyDomain::RAM) {
     EXPECT_EQ(ZX_OK, zx_cache_flush(vmo_base, image_vmo_bytes, ZX_CACHE_FLUSH_DATA));
   }
@@ -619,7 +634,7 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -632,9 +647,11 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   ASSERT_FALSE(result.is_err());
 
   // Use the local token to allocate a protected buffer.
-  auto info = SetConstraintsAndAllocateBuffer(
+  auto info_opt = SetConstraintsAndAllocateBuffer(
       std::move(local_token), GetBufferConstraints(fuchsia::images2::PixelFormat::B8G8R8A8,
                                                    fuchsia::images2::ColorSpace::SRGB));
+  ASSERT_TRUE(info_opt.has_value());
+  auto info = std::move(info_opt.value());
 
   // Write the pixel values to the VMO.
   ASSERT_EQ(image_vmo_bytes, info.settings().buffer_settings().size_bytes());
@@ -735,7 +752,7 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -748,9 +765,11 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   ASSERT_FALSE(result.is_err());
 
   // Use the local token to allocate a protected buffer.
-  auto info = SetConstraintsAndAllocateBuffer(
+  auto info_opt = SetConstraintsAndAllocateBuffer(
       std::move(local_token), GetBufferConstraints(fuchsia::images2::PixelFormat::R8G8B8A8,
                                                    fuchsia::images2::ColorSpace::SRGB));
+  ASSERT_TRUE(info_opt.has_value());
+  auto info = std::move(info_opt.value());
 
   // Write the pixel values to the VMO.
   ASSERT_EQ(image_vmo_bytes, info.settings().buffer_settings().size_bytes());

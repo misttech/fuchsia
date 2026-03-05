@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_UTILS_HELPERS_H_
 
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
@@ -56,15 +57,17 @@ std::vector<zx::event> CopyEventArray(const std::vector<zx::event>& events);
 bool IsEventSignalled(const zx::event& event, zx_signals_t signal);
 
 // Create sysmem allocator.
-fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
-    const std::string& debug_name_suffix = std::string());
+fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClient(
+    async_dispatcher_t* dispatcher, const std::string& debug_name_suffix = std::string());
 
 // Create sysmem allocator.
-fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtrWithSvc(
-    sys::ServiceDirectory* svc, const std::string& debug_name_suffix = std::string());
+fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
+    sys::ServiceDirectory* svc, async_dispatcher_t* dispatcher,
+    const std::string& debug_name_suffix = std::string());
 
 // Create local and dup tokens for sysmem.
-SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);
+SysmemTokensHlcpp CreateSysmemTokensHlcpp(
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
 SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
 
 // Creates default constraints for |buffer_collection|

@@ -37,7 +37,8 @@ class BufferCollectionImporter {
   // |size| may be optionally set to indicate the intended size usage so that it may be specified
   // when setting constraints in |token|, i.e. for kRenderTarget allocations.
   virtual bool ImportBufferCollection(
-      GlobalBufferCollectionId collection_id, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+      GlobalBufferCollectionId collection_id,
+      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
       BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) = 0;
 

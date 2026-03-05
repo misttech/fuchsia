@@ -35,7 +35,7 @@ namespace test {
     EXPECT_CALL(*mock_buffer_collection_importer_,                                             \
                 ImportBufferCollection(fsl::GetKoid(export_token.value().get()), _, _, _, _))  \
         .WillOnce(testing::Invoke(                                                             \
-            [](GlobalBufferCollectionId, fuchsia::sysmem2::Allocator_Sync*,                    \
+            [](GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,        \
                fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,                 \
                BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) { return true; })); \
   }                                                                                            \
@@ -64,7 +64,7 @@ class AllocatorTest : public gtest::TestLoopFixture {
   AllocatorTest() {}
 
   void SetUp() override {
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("SetUp");
+    sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "SetUp");
 
     mock_buffer_collection_importer_ = new MockBufferCollectionImporter();
     buffer_collection_importer_ =
@@ -88,9 +88,9 @@ class AllocatorTest : public gtest::TestLoopFixture {
     else
       screenshot_importers.push_back(buffer_collection_importer_);
 
-    return std::make_shared<Allocator>(context_provider_.context(), default_importers,
-                                       screenshot_importers,
-                                       utils::CreateSysmemAllocatorSyncPtr("CreateAllocator"));
+    return std::make_shared<Allocator>(
+        context_provider_.context(), default_importers, screenshot_importers,
+        utils::CreateSysmemAllocatorClient(dispatcher(), "CreateAllocator"));
   }
 
   fidl::ClientEnd<fuchsia_ui_composition::Allocator> ConnectToAllocator() {
@@ -101,13 +101,15 @@ class AllocatorTest : public gtest::TestLoopFixture {
 
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> CreateToken() {
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token;
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(token.NewRequest());
-    zx_status_t status =
-        sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-    EXPECT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
     fuchsia::sysmem2::Node_Sync_Result sync_result;
-    status = token->Sync(&sync_result);
+    zx_status_t status = token->Sync(&sync_result);
     EXPECT_EQ(status, ZX_OK);
     EXPECT_TRUE(sync_result.is_response());
     return token;
@@ -119,7 +121,7 @@ class AllocatorTest : public gtest::TestLoopFixture {
   sys::testing::ComponentContextProvider context_provider_;
 
  private:
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 };
 
 class AllocatorTestParameterized
@@ -307,7 +309,7 @@ TEST_P(AllocatorTestParameterized, BufferCollectionImportPassesAndFailsOnDiffere
 
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
       context_provider_.context(), default_importers, screenshot_importers,
-      utils::CreateSysmemAllocatorSyncPtr("BCImportPassesFailsOnDiffImporters"));
+      utils::CreateSysmemAllocatorClient(dispatcher(), "BCImportPassesFailsOnDiffImporters"));
 
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
   const auto koid = fsl::GetKoid(ref_pair.export_token.value().get());
@@ -432,7 +434,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
   // Create allocator.
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
       context_provider_.context(), default_importers, screenshot_importers,
-      utils::CreateSysmemAllocatorSyncPtr("RegisterDefaultAndScreenshotBCs"));
+      utils::CreateSysmemAllocatorClient(dispatcher(), "RegisterDefaultAndScreenshotBCs"));
 
   // Register with the default importer.
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
@@ -484,7 +486,7 @@ TEST_F(AllocatorTest, RegisterBufferCollectionCombined) {
   // Create allocator.
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
       context_provider_.context(), default_importers, screenshot_importers,
-      utils::CreateSysmemAllocatorSyncPtr("RegisterBufferCollectionCombined"));
+      utils::CreateSysmemAllocatorClient(dispatcher(), "RegisterBufferCollectionCombined"));
 
   // Register with the default importer and the screenshot importer.
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();

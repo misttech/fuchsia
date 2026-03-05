@@ -6,8 +6,10 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
+#include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
+#include <lib/vfs/cpp/service.h>
 
 #include <functional>
 #include <iostream>
@@ -18,7 +20,6 @@
 #include "src/lib/fsl/vmo/sized_vmo.h"
 #include "src/lib/fsl/vmo/vector.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
-#include "src/ui/scenic/lib/allocation/allocator.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/image-compression/image_compression.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
@@ -77,12 +78,18 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
   void SetUp() override {
     renderer_ = std::make_shared<flatland::NullRenderer>();
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
-        utils::CreateSysmemAllocatorSyncPtr("ScreenshotTest"), renderer_);
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenshotTest"), renderer_);
 
     context_provider_.service_directory_provider()
         ->AddService<fuchsia::ui::compression::internal::ImageCompressor>(
             [this](fidl::InterfaceRequest<fuchsia::ui::compression::internal::ImageCompressor>
                        request) { mock_compressor_.Bind(request.TakeChannel()); });
+
+    context_provider_.service_directory_provider()->AddService(
+        std::make_unique<vfs::Service>([](zx::channel request, async_dispatcher_t* dispatcher) {
+          fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", request.release());
+        }),
+        "fuchsia.sysmem2.Allocator");
 
     std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
     screenshot_importers.push_back(importer_);
@@ -101,7 +108,7 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
       screenshot_importers.push_back(importer_);
       flatland_allocator_ = std::make_shared<allocation::Allocator>(
           context_provider_.context(), extra_importers, screenshot_importers,
-          utils::CreateSysmemAllocatorSyncPtr("-allocator"));
+          utils::CreateSysmemAllocatorClient(dispatcher(), "-allocator"));
     }
 
     // We have what we need to make the flatland screenshot client.
@@ -109,8 +116,8 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
     fuchsia::math::SizeU display_size = {.width = kDisplayWidth, .height = kDisplayHeight};
 
     flatland_screenshotter_ = std::make_unique<screenshot::FlatlandScreenshot>(
-        context_provider_.context(), std::move(screen_capturer_), flatland_allocator_, display_size,
-        std::get<1>(GetParam()), [](auto...) {});
+        context_provider_.context(), dispatcher(), std::move(screen_capturer_), flatland_allocator_,
+        display_size, std::get<1>(GetParam()), [](auto...) {});
     RunLoopUntilIdle();
   }
 

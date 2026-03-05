@@ -33,38 +33,43 @@ BufferCollectionInfo::BufferCollectionInfo(BufferCollectionInfo&& other) noexcep
 }
 
 fit::result<fit::failed, BufferCollectionInfo> BufferCollectionInfo::New(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     BufferCollectionHandle buffer_collection_token,
     std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_format_constraints,
     fuchsia::sysmem2::BufferUsage buffer_usage,
     allocation::BufferCollectionUsage buffer_collection_usage) {
-  FX_DCHECK(sysmem_allocator);
-
   if (!buffer_collection_token.is_valid()) {
     FX_LOGS(ERROR) << "Buffer collection token is not valid.";
     return fit::failed();
   }
 
-  // Bind the buffer collection token to get the local token. Valid tokens can always be bound,
-  // so we do not do any error checking at this stage.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token = buffer_collection_token.BindSync();
-
-  // Use local token to create a BufferCollection and then sync. We can trust
-  // |buffer_collection->Sync()| to tell us if we have a bad or malicious channel. So if this call
-  // passes, then we know we have a valid BufferCollection.
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(local_token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  fuchsia::sysmem2::Node_Sync_Result sync_result;
-  zx_status_t status = buffer_collection->Sync(&sync_result);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not bind buffer collection. Status: " << status;
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          // Bind the buffer collection token to get the local token. Valid tokens can
+          // always be bound, so we do not do any error checking at this stage.
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              buffer_collection_token.TakeChannel()))
+          // Use local token to create a BufferCollection and then sync. We can trust
+          // |buffer_collection->Sync()| to tell us if we have a bad or malicious channel.
+          // So if this call passes, then we know we have a valid BufferCollection.
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Could not bind buffer collection. Status: " << result.status_string();
     return fit::failed();
   }
 
-  // Use a name with a priority thats > the vulkan implementation, but < what any client would use.
+  fuchsia::sysmem2::Node_Sync_Result sync_result;
+  zx_status_t status = buffer_collection->Sync(&sync_result);
+  if (status != ZX_OK) {
+    FX_LOGS(ERROR) << "Could not sync buffer collection. Status: " << status;
+    return fit::failed();
+  }
+
   fuchsia::sysmem2::NodeSetNameRequest set_name_request;
   set_name_request.set_priority(10u);
   set_name_request.set_name("FlatlandImageMemory");
@@ -77,16 +82,20 @@ fit::result<fit::failed, BufferCollectionInfo> BufferCollectionInfo::New(
   constraints.set_min_buffer_count(1);
 
   if (buffer_usage.has_cpu()) {
+    fuchsia::sysmem2::BufferUsage usage_to_set = fidl::Clone(buffer_usage);
     if (buffer_collection_usage == allocation::BufferCollectionUsage::kRenderTarget) {
-      constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE);
+      usage_to_set.set_cpu(usage_to_set.cpu() | fuchsia::sysmem2::CPU_USAGE_WRITE);
     } else {
-      constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_READ);
+      usage_to_set.set_cpu(usage_to_set.cpu() | fuchsia::sysmem2::CPU_USAGE_READ);
     }
-  } else if (buffer_usage.has_none()) {
-    constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
+    constraints.set_usage(std::move(usage_to_set));
   } else if (buffer_usage.has_vulkan()) {
-    constraints.mutable_usage()->set_vulkan(fuchsia::sysmem2::VULKAN_IMAGE_USAGE_SAMPLED |
-                                            fuchsia::sysmem::VULKAN_IMAGE_USAGE_TRANSFER_SRC);
+    fuchsia::sysmem2::BufferUsage usage_to_set = fidl::Clone(buffer_usage);
+    usage_to_set.set_vulkan(usage_to_set.vulkan() | fuchsia::sysmem2::VULKAN_IMAGE_USAGE_SAMPLED |
+                            fuchsia::sysmem::VULKAN_IMAGE_USAGE_TRANSFER_SRC);
+    constraints.set_usage(std::move(usage_to_set));
+  } else {
+    constraints.set_usage(std::move(buffer_usage));
   }
 
   if (image_format_constraints.has_value()) {

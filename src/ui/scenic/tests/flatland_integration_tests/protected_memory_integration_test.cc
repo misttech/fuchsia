@@ -31,7 +31,9 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
-    LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    LocalServiceDirectory()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
     flatland_allocator_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Allocator>();
 
@@ -59,14 +61,26 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
   }
 
  protected:
-  void SetConstraintsAndAllocateBuffer(fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
-                                       bool use_protected_memory) {
+  zx_status_t SetConstraintsAndAllocateBuffer(fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
+                                              bool use_protected_memory) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(token));
-    bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-    auto status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-    ASSERT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                buffer_collection.NewRequest().TakeChannel()))
+            .Build());
+    if (!result.ok()) {
+      return result.status();
+    }
+
+    fuchsia::sysmem2::NodeSetNameRequest set_name_request;
+    set_name_request.set_priority(100u);
+    set_name_request.set_name("ProtectedMemoryIntegrationTest");
+    buffer_collection->SetName(std::move(set_name_request));
+
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     auto& constraints = *set_constraints_request.mutable_constraints();
     if (use_protected_memory) {
@@ -86,33 +100,39 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
         fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
     image_constraints.set_required_max_size(
         fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
-    status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-    ASSERT_EQ(status, ZX_OK);
+    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    if (status != ZX_OK) {
+      return status;
+    }
 
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
     status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    ASSERT_EQ(ZX_OK, status);
-    ASSERT_TRUE(!wait_result.is_framework_err());
-    ASSERT_TRUE(!wait_result.is_err());
-    ASSERT_TRUE(wait_result.is_response());
+    if (status != ZX_OK) {
+      return status;
+    }
+
+    EXPECT_TRUE(!wait_result.is_framework_err());
+    EXPECT_TRUE(!wait_result.is_err());
+    EXPECT_TRUE(wait_result.is_response());
     auto buffer_collection_info =
         std::move(*wait_result.response().mutable_buffer_collection_info());
     EXPECT_EQ(constraints_min_buffer_count, buffer_collection_info.buffers().size());
-    ASSERT_EQ(ZX_OK, buffer_collection->Release());
+    EXPECT_EQ(ZX_OK, buffer_collection->Release());
+    return ZX_OK;
   }
 
   const TransformId kRootTransform{.value = 1};
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;
   FlatlandPtr root_flatland_;
   fuchsia::ui::composition::ScreenshotSyncPtr screenshotter_;
 };
 
 TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -125,7 +145,14 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
   ASSERT_FALSE(result.is_err());
 
   // Use the local token to allocate a protected buffer.
-  SetConstraintsAndAllocateBuffer(std::move(local_token), /*use_protected_memory=*/true);
+  zx_status_t status =
+      SetConstraintsAndAllocateBuffer(std::move(local_token), /*use_protected_memory=*/true);
+  if (status == ZX_ERR_PEER_CLOSED) {
+    ZXTEST_SKIP("Protected memory not supported");
+  }
+  if (status != ZX_OK) {
+    return;
+  }
 
   // Create the image in the Flatland instance.
   fuchsia::ui::composition::ImageProperties image_properties = {};
@@ -145,7 +172,7 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
 }
 
 TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_.get());
+  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
@@ -158,7 +185,14 @@ TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
   ASSERT_FALSE(result.is_err());
 
   // Use the local token to allocate a protected buffer.
-  SetConstraintsAndAllocateBuffer(std::move(local_token), /*use_protected_memory=*/true);
+  zx_status_t status =
+      SetConstraintsAndAllocateBuffer(std::move(local_token), /*use_protected_memory=*/true);
+  if (status == ZX_ERR_PEER_CLOSED) {
+    ZXTEST_SKIP("Protected memory not supported");
+  }
+  if (status != ZX_OK) {
+    return;
+  }
 
   // Create the image in the Flatland instance.
   fuchsia::ui::composition::ImageProperties image_properties = {};

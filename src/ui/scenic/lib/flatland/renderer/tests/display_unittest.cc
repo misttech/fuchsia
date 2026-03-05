@@ -49,7 +49,7 @@ class DisplayTest : public gtest::RealLoopFixture {
     realm_root_ = flatland::testing::BuildFakeDisplayRealm(dispatcher(),
                                                            flatland::testing::DisplayRealmConfig{});
 
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("display_unittest::Setup");
+    sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "display_unittest::Setup");
 
     async_set_default_dispatcher(dispatcher());
     executor_ = std::make_unique<async::Executor>(dispatcher());
@@ -86,7 +86,7 @@ class DisplayTest : public gtest::RealLoopFixture {
     }
     executor_.reset();
     display_manager_.reset();
-    sysmem_allocator_ = nullptr;
+    sysmem_allocator_ = {};
     gtest::RealLoopFixture::TearDown();
   }
 
@@ -144,7 +144,7 @@ class DisplayTest : public gtest::RealLoopFixture {
   std::optional<component_testing::RealmRoot> realm_root_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   uint64_t next_layer_id_ = 100;
 };
 
@@ -164,7 +164,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   flatland::VkRenderer renderer(unique_escher->GetWeakPtr());
 
   // First create the pair of sysmem tokens, one for the client, one for the renderer.
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
   fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
@@ -179,7 +179,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
       display::ToDisplayFidlBufferCollectionId(collection_id);
   auto image_id = allocation::GenerateUniqueImageId();
   auto result = renderer.ImportBufferCollection(
-      collection_id, sysmem_allocator_.get(), std::move(tokens.dup_token),
+      collection_id, sysmem_allocator_, std::move(tokens.dup_token),
       allocation::BufferCollectionUsage::kClientImage, std::nullopt);
   EXPECT_TRUE(result);
 
@@ -219,7 +219,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto client_collection = flatland::CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_.get(), std::move(tokens.local_token),
+      sysmem_allocator_, std::move(tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kWidth,
       /*height*/ kHeight,
@@ -288,7 +288,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   const uint32_t kNumVmos = 2;
 
   // First create the pair of sysmem tokens, one for the client, one for the display.
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_);
 
   // Set the display constraints on the display coordinator.
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
@@ -306,7 +306,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   ASSERT_TRUE(res);
 
   flatland::SetClientConstraintsAndWaitForAllocated(
-      sysmem_allocator_.get(), std::move(tokens.local_token), kNumVmos, kWidth, kHeight);
+      sysmem_allocator_, std::move(tokens.local_token), kNumVmos, kWidth, kHeight);
 
   // Import the images to the display.
   display::WireImageMetadata image_metadata{

@@ -32,17 +32,21 @@ GetUsageAndMemoryConstraintsForCpuWriteOften() {
 }
 
 void SetClientConstraintsAndWaitForAllocated(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count, uint32_t width,
     uint32_t height, fuchsia::sysmem2::BufferUsage usage,
     const std::vector<fuchsia::images2::PixelFormatModifier>& additional_format_modifiers,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints) {
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  zx_status_t status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  FX_DCHECK(status == ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(
+              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
 
   // Use a name with a priority thats > the vulkan implementation, but < what any client would use.
   fuchsia::sysmem2::NodeSetNameRequest set_name_request;
@@ -72,7 +76,7 @@ void SetClientConstraintsAndWaitForAllocated(
     image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
   }
 
-  status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
   FX_DCHECK(status == ZX_OK);
 
   // Have the client wait for allocation.
@@ -88,18 +92,21 @@ void SetClientConstraintsAndWaitForAllocated(
 }
 
 fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count, uint32_t width,
     uint32_t height, fuchsia::sysmem2::BufferUsage usage, fuchsia::images2::PixelFormat format,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints,
     std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier) {
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  zx_status_t status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  FX_DCHECK(status == ZX_OK);
-
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(
+              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
   // Use a name with a priority thats > the vulkan implementation, but < what any client would use.
   fuchsia::sysmem2::NodeSetNameRequest set_name_request;
   set_name_request.set_priority(10u);
@@ -139,7 +146,7 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
   image_constraints.set_required_min_size(fuchsia::math::SizeU{.width = width, .height = height});
   image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
 
-  status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
   FX_DCHECK(status == ZX_OK);
 
   return buffer_collection;

@@ -55,20 +55,30 @@ void RendererTest::SetUp() {
   TRACE_DURATION("gfx", "flatland::RendererTest::SetUp");
 
   escher::test::TestWithVkValidationLayer::SetUp();
-  // Create the SysmemAllocator.
-  zx_status_t status = fdio_service_connect("/svc/fuchsia.sysmem2.Allocator",
-                                            sysmem_allocator_.NewRequest().TakeChannel().release());
-  fuchsia::sysmem2::AllocatorSetDebugClientInfoRequest set_debug_request;
-  set_debug_request.set_name(fsl::GetCurrentProcessName() + " RendererTest");
-  set_debug_request.set_id(fsl::GetCurrentProcessKoid());
-  sysmem_allocator_->SetDebugClientInfo(std::move(set_debug_request));
 }
 
 void RendererTest::TearDown() {
   TRACE_DURATION("gfx", "flatland::RendererTest::TearDown");
-
-  sysmem_allocator_ = nullptr;
   escher::test::TestWithVkValidationLayer::TearDown();
+}
+
+fidl::WireClient<fuchsia_sysmem2::Allocator> RendererTest::CreateSysmemAllocatorClient(
+    async_dispatcher_t* dispatcher) {
+  // Create the SysmemAllocator.
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+  zx_status_t status =
+      fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", server_end.TakeChannel().release());
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator{std::move(client_end), dispatcher};
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->SetDebugClientInfo(
+      fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena)
+          .name(arena, fsl::GetCurrentProcessName() + " RendererTest")
+          .id(fsl::GetCurrentProcessKoid())
+          .Build());
+  if (!result.ok()) {
+    return {};
+  }
+  return sysmem_allocator;
 }
 
 }  // namespace flatland

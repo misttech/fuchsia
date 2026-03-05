@@ -46,7 +46,9 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
-    LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    LocalServiceDirectory()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
     flatland_allocator_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Allocator>();
     root_session_ = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
@@ -133,7 +135,7 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
   const TransformId kChildRootTransform{.value = 1};
   static constexpr zx::duration kEventDelay = zx::msec(5000);
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;
   fuchsia::ui::composition::FlatlandPtr root_session_;
   fuchsia::ui::composition::FlatlandPtr child_session_;
@@ -162,7 +164,7 @@ TEST_F(ScreenCaptureIntegrationTest, EmptyScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -204,7 +206,7 @@ TEST_F(ScreenCaptureIntegrationTest, SingleColorUnrotatedScreenshot) {
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
-          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::DEFAULT);
 
   std::vector<uint8_t> write_values;
@@ -230,7 +232,7 @@ TEST_F(ScreenCaptureIntegrationTest, SingleColorUnrotatedScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -288,7 +290,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor180DegreeRotationScreenshot) {
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
-          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::DEFAULT);
 
   // Write the image with half green, half red
@@ -320,7 +322,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor180DegreeRotationScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -394,7 +396,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor90DegreeRotationScreenshot) {
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
-          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::DEFAULT);
 
   // Write the image with the color scheme displayed in ASCII above.
@@ -455,7 +457,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor90DegreeRotationScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -550,7 +552,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor270DegreeRotationScreenshot) {
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
-          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::DEFAULT);
 
   // Write the image with the color scheme displayed in ASCII above.
@@ -611,7 +613,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor270DegreeRotationScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -707,7 +709,7 @@ TEST_F(ScreenCaptureIntegrationTest, FilledRectScreenshot) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.
@@ -774,7 +776,7 @@ TEST_F(ScreenCaptureIntegrationTest, ChangeFilledRectScreenshots) {
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/2, render_target_width,
                                           render_target_height),
-          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_.get(),
+          std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
           RegisterBufferCollectionUsages::SCREENSHOT);
 
   // Configure buffers in ScreenCapture client.

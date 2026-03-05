@@ -27,20 +27,19 @@ namespace test {
 
 std::shared_ptr<Allocator> CreateAllocator(
     std::shared_ptr<screen_capture::ScreenCaptureBufferCollectionImporter> importer,
-    sys::ComponentContext* app_context) {
+    sys::ComponentContext* app_context, async_dispatcher_t* dispatcher) {
   std::vector<std::shared_ptr<BufferCollectionImporter>> extra_importers;
   std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
   screenshot_importers.push_back(importer);
   return std::make_shared<Allocator>(app_context, extra_importers, screenshot_importers,
-                                     utils::CreateSysmemAllocatorSyncPtr("-allocator"));
+                                     utils::CreateSysmemAllocatorClient(dispatcher, "-allocator"));
 }
 
 void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     std::shared_ptr<Allocator> flatland_allocator,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
-  zx_status_t status;
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
   // Create Sysmem tokens.
   auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
@@ -51,15 +50,19 @@ void CreateBufferCollectionInfoWithConstraints(
   rbc_args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(local_token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  FX_DCHECK(status == ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
 
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
   set_constraints_request.set_constraints(std::move(constraints));
-  status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
   EXPECT_EQ(status, ZX_OK);
 
   bool processed_callback = false;

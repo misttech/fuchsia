@@ -22,13 +22,14 @@ using BufferCount = uint64_t;
 
 class ScreenCaptureBufferCollectionImporter : public allocation::BufferCollectionImporter {
  public:
-  ScreenCaptureBufferCollectionImporter(fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
-                                        std::shared_ptr<flatland::Renderer> renderer);
+  ScreenCaptureBufferCollectionImporter(
+      fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
+      std::shared_ptr<flatland::Renderer> renderer);
   ~ScreenCaptureBufferCollectionImporter() override;
 
   // |BufferCollectionImporter|
   bool ImportBufferCollection(allocation::GlobalBufferCollectionId collection_id,
-                              fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
                               allocation::BufferCollectionUsage usage,
                               std::optional<fuchsia::math::SizeU> size) override;
@@ -58,7 +59,7 @@ class ScreenCaptureBufferCollectionImporter : public allocation::BufferCollectio
                                      uint32_t buffer_count);
 
   // Allocator used to allocate readback images.
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   std::shared_ptr<flatland::Renderer> renderer_;
 

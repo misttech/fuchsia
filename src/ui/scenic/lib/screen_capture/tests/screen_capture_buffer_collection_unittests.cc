@@ -4,6 +4,7 @@
 
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <lib/async-testing/test_loop.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstddef>
@@ -28,35 +29,38 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
     RendererTest::SetUp();
     renderer_ = std::make_shared<flatland::VkRenderer>(escher::test::GetEscher()->GetWeakPtr());
     importer_ = std::make_unique<ScreenCaptureBufferCollectionImporter>(
-        utils::CreateSysmemAllocatorSyncPtr("SCBCTest::Setup"), renderer_);
+        utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "SCBCTest::Setup"), renderer_);
   }
 
   fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
       fuchsia::sysmem2::BufferCollectionConstraints constraints,
       allocation::GlobalBufferCollectionId collection_id) {
-    zx_status_t status;
-    fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
-        utils::CreateSysmemAllocatorSyncPtr("CreateBCInfo2WithConstraints");
+    fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
+        utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "CreateBCInfo2WithConstraints");
     // Create Sysmem tokens.
 
-    auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
+    auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
     // Import into ScreenCaptureBufferCollectionImporter.
-    bool result = importer_->ImportBufferCollection(
-        collection_id, sysmem_allocator.get(), std::move(dup_token),
-        BufferCollectionUsage::kRenderTarget, std::nullopt);
-    EXPECT_TRUE(result);
+    bool success =
+        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
+                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_TRUE(success);
 
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(local_token));
-    bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-    status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-    EXPECT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                local_token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                buffer_collection.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
 
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     set_constraints_request.set_constraints(std::move(constraints));
-    status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
     EXPECT_EQ(status, ZX_OK);
 
     // Wait for allocation.
@@ -70,6 +74,7 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
   }
 
  protected:
+  async::TestLoop loop_;
   std::shared_ptr<flatland::VkRenderer> renderer_;
   std::shared_ptr<ScreenCaptureBufferCollectionImporter> importer_;
 };
@@ -86,16 +91,16 @@ INSTANTIATE_TEST_SUITE_P(, ScreenCaptureBCTestParameterized,
 VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportAndReleaseBufferCollection) {
   // Create Sysmem tokens.
   zx_status_t status;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
-      utils::CreateSysmemAllocatorSyncPtr("SCBCTest-ImportAndReleaseBC");
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
+      utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "SCBCTest-ImportAndReleaseBC");
   // Create Sysmem tokens.
 
-  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
   // Import into ScreenCaptureBufferCollectionImporter.
   auto collection_id = allocation::GenerateUniqueBufferCollectionId();
   bool result =
-      importer_->ImportBufferCollection(collection_id, sysmem_allocator.get(), std::move(dup_token),
+      importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
 
   EXPECT_TRUE(result);
@@ -156,36 +161,40 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCountFromCollectionId) {
 }
 
 VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) {
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
-      utils::CreateSysmemAllocatorSyncPtr("SCBCTest-ImportBC_ErrorCases");
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
+      utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "SCBCTest-ImportBC_ErrorCases");
 
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr token1;
   {
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(token1.NewRequest());
-    zx_status_t status =
-        sysmem_allocator->AllocateSharedCollection(std::move(allocate_shared_request));
-    EXPECT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token1.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
   }
   bool result =
-      importer_->ImportBufferCollection(collection_id, sysmem_allocator.get(), std::move(token1),
+      importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(token1),
                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
 
   // Buffer collection id dup.
   {
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token2;
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(token2.NewRequest());
-    zx_status_t status =
-        sysmem_allocator->AllocateSharedCollection(std::move(allocate_shared_request));
-    EXPECT_EQ(status, ZX_OK);
-    result =
-        importer_->ImportBufferCollection(collection_id, sysmem_allocator.get(), std::move(token2),
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token2.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
+    bool success =
+        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(token2),
                                           BufferCollectionUsage::kRenderTarget, std::nullopt);
-    EXPECT_FALSE(result);
+    EXPECT_FALSE(success);
   }
 }
 
@@ -275,22 +284,26 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Error
 VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_BuffersNotAllocated) {
   auto collection_id = allocation::GenerateUniqueBufferCollectionId();
   zx_status_t status;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
-      utils::CreateSysmemAllocatorSyncPtr("GetBCBC_BuffersNotAllocated");
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
+      utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "GetBCBC_BuffersNotAllocated");
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator.get());
+  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
   // Import into ScreenCaptureBufferCollectionImporter.
-  bool result =
-      importer_->ImportBufferCollection(collection_id, sysmem_allocator.get(), std::move(dup_token),
+  bool success =
+      importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(success);
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(local_token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  status = sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-  EXPECT_EQ(status, ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  EXPECT_TRUE(result.ok());
 
   // CheckForBuffersAllocated will return false
   std::optional<uint32_t> info = importer_->GetBufferCollectionBufferCount(collection_id);

@@ -17,13 +17,13 @@ namespace test {
 
 std::shared_ptr<allocation::Allocator> CreateAllocator(
     std::shared_ptr<screen_capture::ScreenCaptureBufferCollectionImporter> importer,
-    sys::ComponentContext* app_context);
+    sys::ComponentContext* app_context, async_dispatcher_t* dispatcher);
 
 void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     std::shared_ptr<allocation::Allocator> flatland_allocator,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
 
 }  // namespace test
 }  // namespace screen_capture2

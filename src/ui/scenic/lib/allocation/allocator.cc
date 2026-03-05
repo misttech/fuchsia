@@ -34,15 +34,14 @@ RegisterBufferCollectionUsages UsageToUsages(
 }
 
 bool BufferCollectionTokenIsValid(
-    fuchsia::sysmem2::AllocatorSyncPtr& sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     const fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>& token) {
-  fuchsia::sysmem2::AllocatorValidateBufferCollectionTokenRequest validate_request;
-  validate_request.set_token_server_koid(fsl::GetRelatedKoid(token.channel().get()));
-  fuchsia::sysmem2::Allocator_ValidateBufferCollectionToken_Result validate_result;
-  const auto status = sysmem_allocator->ValidateBufferCollectionToken(std::move(validate_request),
-                                                                      &validate_result);
-  return status == ZX_OK && validate_result.is_response() &&
-         validate_result.response().has_is_known() && validate_result.response().is_known();
+  fidl::Arena arena;
+  auto result = sysmem_allocator.sync()->ValidateBufferCollectionToken(
+      fuchsia_sysmem2::wire::AllocatorValidateBufferCollectionTokenRequest::Builder(arena)
+          .token_server_koid(fsl::GetRelatedKoid(token.channel().get()))
+          .Build());
+  return result.ok() && result->has_is_known() && result->is_known();
 }
 
 // Creates a vector of |num_tokens| duplicates of BufferCollectionTokenSyncPtr.
@@ -164,7 +163,7 @@ Allocator::Allocator(sys::ComponentContext* app_context,
                          default_buffer_collection_importers,
                      const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                          screenshot_buffer_collection_importers,
-                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+                     fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
                      inspect::Node inspect_node)
     : dispatcher_(async_get_default_dispatcher()),
       default_buffer_collection_importers_(default_buffer_collection_importers),
@@ -256,7 +255,7 @@ void Allocator::RegisterBufferCollection(
     {
       auto& [importer, usage] = importers.at(i);
       import_successful = importer.ImportBufferCollection(
-          koid, sysmem_allocator_.get(), std::move(tokens[i]), usage, std::nullopt);
+          koid, sysmem_allocator_, std::move(tokens[i]), usage, std::nullopt);
     }
 
     if (!import_successful) {

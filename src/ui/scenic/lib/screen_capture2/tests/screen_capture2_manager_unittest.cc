@@ -46,11 +46,13 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
 
   void SetUp() override {
     // Create the SysmemAllocator.
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("ScreenCapture2ManagerTest");
+    sysmem_allocator_ =
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2ManagerTest");
 
     renderer_ = std::make_shared<flatland::NullRenderer>();
     importer_ = std::make_unique<ScreenCaptureBufferCollectionImporter>(
-        utils::CreateSysmemAllocatorSyncPtr("ScreenCapture2ManagerTest-importer"), renderer_);
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2ManagerTest-importer"),
+        renderer_);
 
     manager_ = std::make_unique<ScreenCapture2Manager>(
         renderer_, importer_, std::bind(&ScreenCapture2ManagerTest::GetRenderables, this));
@@ -78,10 +80,10 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
         allocation::BufferCollectionImportExportTokens::New();
 
     std::shared_ptr<Allocator> flatland_allocator =
-        CreateAllocator(importer_, context_provider_.context());
+        CreateAllocator(importer_, context_provider_.context(), dispatcher());
     CreateBufferCollectionInfoWithConstraints(
         utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_.get());
+        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
 
     ScreenCaptureConfig args;
     args.set_import_token(std::move(ref_pair.import_token));
@@ -102,7 +104,7 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
   std::shared_ptr<screen_capture::ScreenCaptureBufferCollectionImporter> importer_;
   std::unique_ptr<ScreenCapture2Manager> manager_;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   sys::testing::ComponentContextProvider context_provider_;
 };
 

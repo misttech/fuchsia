@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/fdio/directory.h>
 #include <lib/image-format/image_format.h>
 #include <lib/syslog/cpp/macros.h>
@@ -101,48 +102,58 @@ std::vector<zx_koid_t> ExtractKoids(const std::vector<zx::event>& events) {
   return result;
 }
 
-fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
-    const std::string& debug_name_suffix) {
-  return CreateSysmemAllocatorSyncPtrWithSvc(nullptr, debug_name_suffix);
+fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClient(
+    async_dispatcher_t* dispatcher, const std::string& debug_name_suffix) {
+  return CreateSysmemAllocatorClientWithSvc(nullptr, dispatcher, debug_name_suffix);
 }
 
 #define ALLOCATOR_PROTOCOL "fuchsia.sysmem2.Allocator"
 
-fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtrWithSvc(
-    sys::ServiceDirectory* svc, const std::string& debug_name_suffix) {
+fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
+    sys::ServiceDirectory* svc, async_dispatcher_t* dispatcher,
+    const std::string& debug_name_suffix) {
   FX_CHECK(!debug_name_suffix.empty());
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator;
-  zx_status_t status =
-      svc != nullptr ? svc->Connect(ALLOCATOR_PROTOCOL, sysmem_allocator.NewRequest().TakeChannel())
-                     : fdio_service_connect("/svc/" ALLOCATOR_PROTOCOL,
-                                            sysmem_allocator.NewRequest().TakeChannel().release());
+  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::Allocator>();
+  zx_status_t status = svc != nullptr
+                           ? svc->Connect(ALLOCATOR_PROTOCOL, endpoints->server.TakeChannel())
+                           : fdio_service_connect("/svc/" ALLOCATOR_PROTOCOL,
+                                                  endpoints->server.TakeChannel().release());
   FX_DCHECK(status == ZX_OK);
   auto debug_name = fsl::GetCurrentProcessName() + " " + debug_name_suffix;
+  FX_LOGS(INFO) << "CreateSysmemAllocatorClientWithSvc: debug_name=" << debug_name
+                << " koid=" << fsl::GetCurrentProcessKoid();
   constexpr size_t kMaxNameLength = 64;  // from fuchsia.sysmem/allocator.fidl
   FX_DCHECK(debug_name.length() <= kMaxNameLength)
       << "Sysmem client debug name exceeded max length of " << kMaxNameLength << " (\""
       << debug_name << "\")";
 
-  fuchsia::sysmem2::AllocatorSetDebugClientInfoRequest set_debug_request;
-  set_debug_request.set_name(std::move(debug_name));
-  set_debug_request.set_id(fsl::GetCurrentProcessKoid());
-  sysmem_allocator->SetDebugClientInfo(std::move(set_debug_request));
-
-  return sysmem_allocator;
+  fidl::Arena arena;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> allocator(std::move(endpoints->client), dispatcher);
+  fidl::OneWayStatus result = allocator->SetDebugClientInfo(
+      fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena)
+          .name(std::move(debug_name))
+          .id(fsl::GetCurrentProcessKoid())
+          .Build());
+  FX_DCHECK(result.ok());
+  return allocator;
 }
 
-SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
+SysmemTokensHlcpp CreateSysmemTokensHlcpp(
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
   FX_DCHECK(sysmem_allocator);
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
-  fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_request;
-  allocate_request.set_token_request(local_token.NewRequest());
-  zx_status_t status = sysmem_allocator->AllocateSharedCollection(std::move(allocate_request));
-  FX_DCHECK(status == ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+          .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              local_token.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
   fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
   dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
   dup_request.set_token_request(dup_token.NewRequest());
-  status = local_token->Duplicate(std::move(dup_request));
+  zx_status_t status = local_token->Duplicate(std::move(dup_request));
   FX_DCHECK(status == ZX_OK);
   fuchsia::sysmem2::Node_Sync_Result sync_result;
   status = local_token->Sync(&sync_result);

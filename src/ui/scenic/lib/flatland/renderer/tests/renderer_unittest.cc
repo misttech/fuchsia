@@ -110,7 +110,7 @@ glm::ivec4 GetPixel(const uint8_t* vmo_host, uint32_t width, uint32_t x, uint32_
 allocation::GlobalBufferCollectionId SetupBufferCollection(
     const uint32_t& num_buffers, const uint32_t& image_width, const uint32_t& image_height,
     allocation::BufferCollectionUsage usage, Renderer* renderer,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionInfo* collection_info,
     fuchsia::sysmem2::BufferCollectionSyncPtr& collection_ptr,
     allocation::GlobalBufferCollectionId collection_id =
@@ -183,7 +183,8 @@ std::vector<EngineLayerImage> MakeImages(const std::vector<ImageMetadata>& image
 }  // anonymous namespace
 
 // Make sure a valid token can be used to import a buffer collection.
-void ImportCollectionTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
+void ImportCollectionTest(Renderer* renderer,
+                          fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
   auto tokens = SysmemTokens::Create(sysmem_allocator);
 
   // First id should be valid.
@@ -201,7 +202,8 @@ void ImportCollectionTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* 
 // will be in the renderer's map twice. So if all tokens are set, both server-side
 // importer collections should be allocated (since they are just pointers that refer
 // to the same collection).
-void SameTokenTwiceTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+void SameTokenTwiceTest(Renderer* renderer,
+                        fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
   auto tokens = flatland::SysmemTokens::Create(sysmem_allocator);
 
@@ -254,7 +256,8 @@ void SameTokenTwiceTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sy
   EXPECT_TRUE(res_2);
 }
 
-void BadImageInputTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+void BadImageInputTest(Renderer* renderer,
+                       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                        bool use_vulkan) {
   const uint32_t kNumImages = 1;
   auto tokens = SysmemTokens::Create(sysmem_allocator);
@@ -305,7 +308,8 @@ void BadImageInputTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sys
 // Test the ImportBufferImage() function. First call ImportBufferImage() without setting the client
 // constraints, which should return false, and then set the client constraints which
 // should cause it to return true.
-void ImportImageTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+void ImportImageTest(Renderer* renderer,
+                     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                      bool use_vulkan) {
   auto tokens = SysmemTokens::Create(sysmem_allocator);
 
@@ -341,7 +345,8 @@ void ImportImageTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysme
 // Simple release test that calls ReleaseBufferCollection() directly without
 // any zx::events just to make sure that the method's functionality itself is
 // working as intended.
-void DeregistrationTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+void DeregistrationTest(Renderer* renderer,
+                        fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
   auto tokens = SysmemTokens::Create(sysmem_allocator);
 
@@ -386,7 +391,8 @@ void DeregistrationTest(Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sy
 // Test that calls ReleaseBufferCollection() before ReleaseBufferImage() and makes sure that
 // imported Image can still be rendered.
 void RenderImageAfterBufferCollectionReleasedTest(
-    Renderer* renderer, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator, bool use_vulkan) {
+    Renderer* renderer, fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    bool use_vulkan) {
   auto texture_tokens = SysmemTokens::Create(sysmem_allocator);
   auto target_tokens = SysmemTokens::Create(sysmem_allocator);
 
@@ -454,7 +460,7 @@ void RenderImageAfterBufferCollectionReleasedTest(
 }
 
 void RenderAfterImageReleasedTest(Renderer* renderer,
-                                  fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                                  fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                                   bool use_vulkan) {
   auto texture_tokens = SysmemTokens::Create(sysmem_allocator);
   auto target_tokens = SysmemTokens::Create(sysmem_allocator);
@@ -528,15 +534,15 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     async::TestLoop loop;
 
     // Make an extra sysmem allocator for tokens.
-    fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator =
-        utils::CreateSysmemAllocatorSyncPtr("MultithreadingTest");
+    fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
+        utils::CreateSysmemAllocatorClient(loop.dispatcher(), "MultithreadingTest");
 
-    auto tokens = SysmemTokens::Create(sysmem_allocator.get());
+    auto tokens = SysmemTokens::Create(sysmem_allocator);
     auto bcid = allocation::GenerateUniqueBufferCollectionId();
     auto image_id = allocation::GenerateUniqueImageId();
-    bool result = renderer->ImportBufferCollection(
-        bcid, sysmem_allocator.get(), std::move(tokens.local_token),
-        BufferCollectionUsage::kRenderTarget, std::nullopt);
+    bool result =
+        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.local_token),
+                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
     EXPECT_TRUE(result);
 
     std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
@@ -544,10 +550,9 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
       additional_format_modifiers.push_back(
           fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
     }
-    SetClientConstraintsAndWaitForAllocated(sysmem_allocator.get(), std::move(tokens.local_token),
-                                            /* image_count */ 1, /* width */ 64, /* height */ 32,
-                                            use_vulkan ? get_none_usage() : get_cpu_usage_read(),
-                                            additional_format_modifiers);
+    SetClientConstraintsAndWaitForAllocated(
+        sysmem_allocator, std::move(tokens.local_token), 1, 64, 32,
+        use_vulkan ? get_none_usage() : get_cpu_usage_read(), additional_format_modifiers);
 
     // Add the bcid to the global vector in a thread-safe manner.
     {
@@ -594,7 +599,8 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
 // a zx::event which can be used by an async::Wait object to asynchronously
 // call a custom function.
 void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
-                          fuchsia::sysmem2::Allocator_Sync* sysmem_allocator, bool use_vulkan) {
+                          fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+                          bool use_vulkan) {
   // Setup the render target collection.
   const uint32_t kWidth = 64, kHeight = 32;
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
@@ -646,39 +652,53 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
 }
 
 TEST_F(NullRendererTest, ImportCollectionTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  ImportCollectionTest(&renderer, sysmem_allocator_.get());
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  ImportCollectionTest(&renderer, sysmem_allocator);
 }
 
 TEST_F(NullRendererTest, SameTokenTwiceTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  SameTokenTwiceTest(&renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  SameTokenTwiceTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, BadImageInputTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  BadImageInputTest(&renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  BadImageInputTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, ImportImageTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  ImportImageTest(&renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  ImportImageTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, DeregistrationTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  DeregistrationTest(&renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  DeregistrationTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, RenderImageAfterBufferCollectionReleasedTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  RenderImageAfterBufferCollectionReleasedTest(&renderer, sysmem_allocator_.get(),
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  RenderImageAfterBufferCollectionReleasedTest(&renderer, sysmem_allocator,
                                                /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, RenderAfterImageReleasedTest) {
+  async::TestLoop loop;
   NullRenderer renderer;
-  RenderAfterImageReleasedTest(&renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  RenderAfterImageReleasedTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, DISABLED_MultithreadingTest) {
@@ -689,46 +709,61 @@ TEST_F(NullRendererTest, DISABLED_MultithreadingTest) {
 TEST_F(NullRendererTest, AsyncEventSignalTest) {
   async::TestLoop loop;
   NullRenderer renderer;
-  AsyncEventSignalTest(&loop, &renderer, sysmem_allocator_.get(), /*use_vulkan*/ false);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  AsyncEventSignalTest(&loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 VK_TEST_F(VulkanRendererTest, ImportCollectionTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  ImportCollectionTest(renderer.get(), sysmem_allocator_.get());
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  ImportCollectionTest(renderer.get(), sysmem_allocator);
 }
 
 VK_TEST_F(VulkanRendererTest, SameTokenTwiceTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  SameTokenTwiceTest(renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  SameTokenTwiceTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, BadImageInputTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  BadImageInputTest(renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  BadImageInputTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, ImportImageTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  ImportImageTest(renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  ImportImageTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, DeregistrationTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  DeregistrationTest(renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  DeregistrationTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 // TODO(https://fxbug.dev/42144999) This test is flaking on FEMU.
 VK_TEST_F(VulkanRendererTest, DISABLED_RenderImageAfterBufferCollectionReleasedTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  RenderImageAfterBufferCollectionReleasedTest(renderer.get(), sysmem_allocator_.get(),
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  RenderImageAfterBufferCollectionReleasedTest(renderer.get(), sysmem_allocator,
                                                /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, RenderAfterImageReleasedTest) {
   // TODO(https://fxbug.dev/42178670): Re-enable on FEMU once it doesn't flake.
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  RenderAfterImageReleasedTest(renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  RenderAfterImageReleasedTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, DISABLED_MultithreadingTest) {
@@ -740,7 +775,8 @@ VK_TEST_F(VulkanRendererTest, AsyncEventSignalTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
-  AsyncEventSignalTest(&loop, renderer.get(), sysmem_allocator_.get(), /*use_vulkan*/ true);
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+  AsyncEventSignalTest(&loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 // This test actually renders a rectangle using the VKRenderer. We create a single rectangle,
@@ -771,21 +807,23 @@ VK_TEST_F(VulkanRendererTest, AsyncEventSignalTest) {
 //
 VK_TEST_F(VulkanRendererTest, RenderTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Setup renderable texture collection.
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 16;
   const uint32_t kTargetHeight = 8;
@@ -914,7 +952,9 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
 //
 VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   const uint32_t kWidth = 128;
   const uint32_t kHeight = 128;
@@ -922,9 +962,9 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
-  auto target_id = SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget,
-                                         renderer.get(), sysmem_allocator_.get(),
-                                         &client_target_info, target_ptr);
+  auto target_id =
+      SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget,
+                            renderer.get(), sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
   ImageMetadata render_target = {.collection_id = target_id,
@@ -942,7 +982,7 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Create the image meta data for the renderable.
   ImageMetadata renderable_texture = {.collection_id = collection_id,
@@ -1064,20 +1104,22 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
 //
 VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 16;
@@ -1330,22 +1372,24 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
 //
 VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
   auto unique_escher = std::make_unique<escher::Escher>(
       env->GetVulkanDevice(), env->GetFilesystem(), /*gpu_allocator*/ nullptr);
   VkRenderer renderer(unique_escher->GetWeakPtr());
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id = SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
-                                         sysmem_allocator_.get(), &client_target_info, target_ptr);
+                                         sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 16;
@@ -1509,22 +1553,24 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
 //
 VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
   auto unique_escher = std::make_unique<escher::Escher>(
       env->GetVulkanDevice(), env->GetFilesystem(), /*gpu_allocator*/ nullptr);
   VkRenderer renderer(unique_escher->GetWeakPtr());
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id = SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
-                                         sysmem_allocator_.get(), &client_target_info, target_ptr);
+                                         sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 16;
@@ -1650,14 +1696,16 @@ class VulkanRendererColorTest : public VulkanRendererTest {};
 // renderable in this test, only the render target).
 VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
   const uint32_t kTargetWidth = 16;
@@ -1713,7 +1761,9 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
 // Test that colors change properly when we apply a color correction matrix.
 VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Set the color correction data on the renderer.
   static const fidl::Array<float, 3> preoffsets = {0, 0, 0};
@@ -1728,7 +1778,7 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
   const uint32_t kTargetWidth = 16;
@@ -1803,14 +1853,16 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
 // this tests to make sure that there aren't any problems that arise from this sharing.
 VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
   const uint32_t kTargetWidth = 16;
@@ -1879,7 +1931,9 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
 // dimensions, occupy the exact same number of pixels.
 VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Both renderables should be the same size.
   const uint32_t kRenderableWidth = 93;
@@ -1888,7 +1942,7 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 100, 100, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   const uint32_t kTargetWidth = 200;
@@ -1897,7 +1951,7 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 200, 100, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
   ImageMetadata render_target = {.collection_id = target_id,
@@ -1989,20 +2043,22 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
 // ----------------
 VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 16;
   const uint32_t kTargetHeight = 8;
@@ -2120,20 +2176,22 @@ class VulkanRendererParameterizedMultiplyColorTest
 // ----------------
 VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
       SetupBufferCollection(1, 1, 1, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator_.get(), &client_collection_info, collection_ptr);
+                            sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
-                            sysmem_allocator_.get(), &client_target_info, target_ptr);
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const BlendMode blend_mode = GetParam();
   const uint32_t kTargetWidth = 16;
@@ -2264,14 +2322,16 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   // TODO(https://fxbug.dev/321072153)
   SKIP_TEST_IF_ESCHER_USES_DEVICE(SoftwareGpu);
 
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Create a pair of tokens for the Image allocation.
-  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator_.get(),
+  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator,
                                                  std::move(image_tokens.dup_token),
                                                  BufferCollectionUsage::kClientImage, std::nullopt);
   EXPECT_TRUE(result);
@@ -2283,7 +2343,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   const fuchsia::images2::PixelFormat pixel_format = GetParam();
   auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
   auto image_collection = CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_.get(), std::move(image_tokens.local_token),
+      sysmem_allocator, std::move(image_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
       /*height*/ kTargetHeight, fidl::Clone(buffer_usage), pixel_format,
@@ -2315,11 +2375,11 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator_.get(),
+  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator,
                                             std::move(render_target_tokens.dup_token),
                                             BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
@@ -2327,7 +2387,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.
   auto render_target_collection = CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_.get(), std::move(render_target_tokens.local_token),
+      sysmem_allocator, std::move(render_target_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
       /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
@@ -2421,18 +2481,20 @@ INSTANTIATE_TEST_SUITE_P(YuvPixelFormats, VulkanRendererParameterizedYuvTest,
 VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
 
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer(/*use_protected_memory=*/true);
   if (!escher) {
     FX_LOGS(WARNING) << "Protected memory not supported. Test skipped.";
     GTEST_SKIP();
   }
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Create a pair of tokens for the Image allocation.
-  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator_.get(),
+  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator,
                                                  std::move(image_tokens.dup_token),
                                                  BufferCollectionUsage::kClientImage, std::nullopt);
   EXPECT_TRUE(result);
@@ -2456,7 +2518,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
     return usage;
   }();
   auto image_collection = CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_.get(), std::move(image_tokens.local_token),
+      sysmem_allocator, std::move(image_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
       /*height*/ kTargetHeight, fidl::Clone(buffer_usage), pixel_format,
@@ -2489,11 +2551,11 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
+  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator_.get(),
+  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator,
                                             std::move(render_target_tokens.dup_token),
                                             BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
@@ -2501,7 +2563,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.
   auto render_target_collection = CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_.get(), std::move(render_target_tokens.local_token),
+      sysmem_allocator, std::move(render_target_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
       /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
@@ -2545,23 +2607,30 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
 
 // Tests VkRenderer's readback path. This test is enabled on virtual gpu.
 VK_TEST_F(VulkanRendererTest, ReadbackTest) {
+  async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Setup the render target collection.
   allocation::GlobalBufferCollectionId target_id = allocation::GenerateUniqueBufferCollectionId();
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_.get());
-  bool result = renderer->ImportBufferCollection(
-      target_id, sysmem_allocator_.get(), std::move(tokens.dup_token),
-      BufferCollectionUsage::kRenderTarget, std::nullopt);
-  ASSERT_TRUE(result);
+  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  bool success =
+      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(tokens.dup_token),
+                                       BufferCollectionUsage::kRenderTarget, std::nullopt);
+  ASSERT_TRUE(success);
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(tokens.local_token));
-  bind_shared_request.set_buffer_collection_request(target_ptr.NewRequest());
-  zx_status_t status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-  ASSERT_TRUE(status == ZX_OK);
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              tokens.local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              target_ptr.NewRequest().TakeChannel()))
+          .Build());
+  ASSERT_TRUE(result.ok());
 
-  status = target_ptr->SetConstraints(fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
+  zx_status_t status =
+      target_ptr->SetConstraints(fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
   ASSERT_EQ(status, ZX_OK);
   {
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
@@ -2578,7 +2647,7 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   fuchsia::sysmem2::BufferCollectionSyncPtr readback_ptr;
   auto readback_id =
       SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kReadback, renderer.get(),
-                            sysmem_allocator_.get(), &readback_info, readback_ptr, target_id);
+                            sysmem_allocator, &readback_info, readback_ptr, target_id);
   EXPECT_EQ(target_id, readback_id);
 
   // Create the render_target image metadata and import.
@@ -2589,10 +2658,10 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
                                  .vmo_index = 0,
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
-  result = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
-  ASSERT_TRUE(result);
-  result = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
-  ASSERT_TRUE(result);
+  success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(success);
+  success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
+  ASSERT_TRUE(success);
 
   // Create the image metadata for the solid color renderable.
   ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
@@ -2636,6 +2705,7 @@ class VulkanRendererParameterizedAFBCTest
 
 // Test ARM Framebuffer compression. As the name implies, this only runs on specific ARM platforms.
 VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
+  async::TestLoop loop;
   auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
 
   // Run test on ARM/Mali only.
@@ -2643,34 +2713,39 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
     GTEST_SKIP();
   }
 
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+
   // Create renderer.
   auto unique_escher = std::make_unique<escher::Escher>(
       env->GetVulkanDevice(), env->GetFilesystem(), /*gpu_allocator*/ nullptr);
   VkRenderer renderer(unique_escher->GetWeakPtr());
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = SysmemTokens::Create(sysmem_allocator_.get());
+  auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
   const uint32_t kTargetWidth = 1024;
   const uint32_t kTargetHeight = 600;
   const allocation::BufferCollectionUsage usage = GetParam();
-  auto result = renderer.ImportBufferCollection(
-      render_target_collection_id, sysmem_allocator_.get(),
-      std::move(render_target_tokens.dup_token), usage,
-      std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
-  EXPECT_TRUE(result);
+  bool success = renderer.ImportBufferCollection(
+      render_target_collection_id, sysmem_allocator, std::move(render_target_tokens.dup_token),
+      usage, std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
+  EXPECT_TRUE(success);
 
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.
   fuchsia::sysmem2::BufferCollectionSyncPtr render_target_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(render_target_tokens.local_token));
-  bind_shared_request.set_buffer_collection_request(render_target_collection.NewRequest());
-  zx_status_t status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-  ASSERT_EQ(status, ZX_OK);
-  status = render_target_collection->SetConstraints(
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              render_target_tokens.local_token.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              render_target_collection.NewRequest().TakeChannel()))
+          .Build());
+  ASSERT_TRUE(result.ok());
+  zx_status_t status = render_target_collection->SetConstraints(
       fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
   ASSERT_EQ(status, ZX_OK);
 

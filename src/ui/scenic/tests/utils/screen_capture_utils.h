@@ -47,7 +47,8 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     fuchsia::ui::composition::Allocator_Sync* flatland_allocator,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator, RegisterBufferCollectionUsages usage);
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    RegisterBufferCollectionUsages usage);
 
 // This function returns a linear buffer of pixels of size width * height.
 std::vector<uint8_t> ExtractScreenCapture(

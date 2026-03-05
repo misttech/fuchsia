@@ -179,11 +179,12 @@ struct GlobalIdPair {
   if (expect_success) {                                                                          \
     EXPECT_CALL(*mock_buffer_collection_importer_,                                               \
                 ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), _, _, _, _)) \
-        .WillOnce(testing::Invoke(                                                               \
-            [](allocation::GlobalBufferCollectionId, fuchsia::sysmem2::Allocator_Sync*,          \
-               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,                   \
-               allocation::BufferCollectionUsage,                                                \
-               std::optional<fuchsia::math::SizeU>) { return true; }));                          \
+        .WillOnce(                                                                               \
+            testing::Invoke([](allocation::GlobalBufferCollectionId,                             \
+                               fidl::WireClient<fuchsia_sysmem2::Allocator>&,                    \
+                               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,   \
+                               allocation::BufferCollectionUsage,                                \
+                               std::optional<fuchsia::math::SizeU>) { return true; }));          \
   }                                                                                              \
   bool processed_callback = false;                                                               \
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;                                     \
@@ -282,7 +283,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
               }
             }));
 
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("FlatlandTest::SetUp");
+    sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "FlatlandTest::SetUp");
 
     flatland_presenter_ = std::shared_ptr<FlatlandPresenter>(mock_flatland_presenter_);
 
@@ -316,7 +317,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     importers.push_back(buffer_collection_importer_);
     return std::make_shared<Allocator>(
         context_provider_.context(), importers, screenshot_importers,
-        utils::CreateSysmemAllocatorSyncPtr("FlatlandTest::CreateAllocator"));
+        utils::CreateSysmemAllocatorClient(dispatcher(), "FlatlandTest::CreateAllocator"));
   }
 
   std::shared_ptr<Flatland> CreateFlatland(
@@ -328,7 +329,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_composition::Flatland>::Create();
 
     std::shared_ptr<Flatland> flatland = Flatland::New(
-        std::make_shared<utils::UnownedDispatcherHolder>(this->dispatcher()), std::move(server_end),
+        std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
         session_id,
         /*destroy_instance_functon=*/[this, session_id]() { flatland_errors_.erase(session_id); },
         flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
@@ -444,13 +445,15 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> CreateToken() {
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token;
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(token.NewRequest());
-    zx_status_t status =
-        sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-    EXPECT_EQ(status, ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                token.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
     fuchsia::sysmem2::Node_Sync_Result sync_result;
-    status = token->Sync(&sync_result);
+    zx_status_t status = token->Sync(&sync_result);
     EXPECT_EQ(status, ZX_OK);
     EXPECT_TRUE(sync_result.is_response());
     return token;
@@ -665,7 +668,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   std::map<scheduling::SchedulingIdPair, std::vector<zx::event>> pending_release_fences_;
   std::map<scheduling::SchedulingIdPair, zx::time> requested_presentation_times_;
   std::unordered_map<scheduling::SessionId, scheduling::PresentId> pending_instance_updates_;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 };
 
 // Adds FlatlandDisplay-specific helpers to FlatlandTest.  We can't easily put them into standalone
@@ -5534,9 +5537,10 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers(
       {buffer_collection_importer_, local_buffer_collection_importer});
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> screenshot_importers;
-  std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
-      context_provider_.context(), importers, screenshot_importers,
-      utils::CreateSysmemAllocatorSyncPtr("ImageImportPassesFailsOnDiffImportersTest"));
+  std::shared_ptr<Allocator> allocator =
+      std::make_shared<Allocator>(context_provider_.context(), importers, screenshot_importers,
+                                  utils::CreateSysmemAllocatorClient(
+                                      dispatcher(), "ImageImportPassesFailsOnDiffImportersTest"));
   auto session_id = scheduling::GetNextSessionId();
 
   auto [flatland_client_end, flatland_server_end] =
@@ -6013,9 +6017,9 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
 TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
   // Create flatland and allocator instances that has two BufferCollectionImporters.
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> no_importers;
-  std::shared_ptr<Allocator> allocator =
-      std::make_shared<Allocator>(context_provider_.context(), no_importers, no_importers,
-                                  utils::CreateSysmemAllocatorSyncPtr("NoDoubleDestroyRequest"));
+  std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
+      context_provider_.context(), no_importers, no_importers,
+      utils::CreateSysmemAllocatorClient(dispatcher(), "NoDoubleDestroyRequest"));
 
   auto session_id = scheduling::GetNextSessionId();
 

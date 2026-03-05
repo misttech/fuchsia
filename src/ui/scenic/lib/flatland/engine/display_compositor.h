@@ -88,7 +88,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   DisplayCompositor(async_dispatcher_t* main_dispatcher,
                     std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
                     const std::shared_ptr<Renderer>& renderer,
-                    fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+                    fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
                     const DisplayCompositorConfig& config);
 
   ~DisplayCompositor() override;
@@ -96,7 +96,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // |BufferCollectionImporter|
   // Only called from the main thread.
   bool ImportBufferCollection(allocation::GlobalBufferCollectionId collection_id,
-                              fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
                               BufferCollectionUsage usage,
                               std::optional<fuchsia::math::SizeU> size) override
@@ -349,7 +349,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // has been presented, its value will be nullopt.
   std::optional<display::WireConfigStamp> last_presented_config_stamp_ = std::nullopt;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   ColorConversionStateMachine cc_state_machine_;
 

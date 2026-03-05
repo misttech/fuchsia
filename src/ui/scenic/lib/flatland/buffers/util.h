@@ -21,18 +21,20 @@ struct SysmemTokens {
   // Token for setting server side constraints.
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
 
-  static SysmemTokens Create(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator) {
+  static SysmemTokens Create(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(local_token.NewRequest());
-    zx_status_t status =
-        sysmem_allocator->AllocateSharedCollection(std::move(allocate_shared_request));
-    FX_DCHECK(status == ZX_OK);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                local_token.NewRequest().TakeChannel()))
+            .Build());
+    FX_DCHECK(result.ok());
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
     fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
     dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
     dup_request.set_token_request(dup_token.NewRequest());
-    status = local_token->Duplicate(std::move(dup_request));
+    zx_status_t status = local_token->Duplicate(std::move(dup_request));
     FX_DCHECK(status == ZX_OK);
     fuchsia::sysmem2::Node_Sync_Result sync_result;
     status = local_token->Sync(&sync_result);
@@ -54,7 +56,7 @@ GetUsageAndMemoryConstraintsForCpuWriteOften();
 // the dimensionality (width, height) of those images, the usage and memory constraints. This
 // is a blocking function that will wait until the constraints have been fully set.
 void SetClientConstraintsAndWaitForAllocated(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
     fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
@@ -65,7 +67,7 @@ void SetClientConstraintsAndWaitForAllocated(
 // the caller, *without* waiting for the constraint setting to finish. It is up to the caller
 // to wait until constraints are set.
 fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
     fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),

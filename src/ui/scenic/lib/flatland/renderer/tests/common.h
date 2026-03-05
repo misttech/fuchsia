@@ -23,7 +23,8 @@ class RendererTest : public escher::test::TestWithVkValidationLayer {
   void SetUp() override;
   void TearDown() override;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClient(
+      async_dispatcher_t* dispatcher);
 };
 
 }  // namespace flatland

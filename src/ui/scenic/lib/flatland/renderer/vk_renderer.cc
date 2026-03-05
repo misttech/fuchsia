@@ -236,28 +236,35 @@ std::optional<fuchsia::sysmem2::BufferCollectionTokenSyncPtr> Duplicate(
   return dup_sync_result.response().mutable_tokens()->front().BindSync();
 }
 
-std::optional<fuchsia::sysmem2::BufferCollectionSyncPtr>
+fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>
 CreateBufferCollectionPtrWithEmptyConstraints(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr token) {
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(token));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  if (const zx_status_t status =
-          sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
-      status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not bind buffer collection: " << zx_status_get_string(status);
-    return std::nullopt;
+  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
+  if (endpoints.is_error()) {
+    FX_LOGS(ERROR) << "Could not create end-points: " << endpoints.status_string();
+    return {};
   }
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-  // intentionally don't set the constraints field of the request
-  if (const zx_status_t status =
-          buffer_collection->SetConstraints(std::move(set_constraints_request));
-      status != ZX_OK) {
-    FX_LOGS(ERROR) << "Cannot set constraints: " << zx_status_get_string(status);
-    return std::nullopt;
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(
+              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .buffer_collection_request(std::move(endpoints->server))
+          .Build());
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Could not bind buffer collection: " << result.status_string();
+    return {};
+  }
+
+  fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection{
+      std::move(endpoints->client)};
+  // Intentionally do not set the constraints field of the request.
+  result = buffer_collection->SetConstraints({});
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Cannot set constraints: " << result.status_string();
+    return {};
   }
 
   return buffer_collection;
@@ -392,21 +399,14 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
   }
 
   // Check to see if the buffers are allocated and return std::nullptr if not.
-  fuchsia::sysmem2::BufferCollection_CheckAllBuffersAllocated_Result check_result;
-  if (const zx_status_t status = collection->CheckAllBuffersAllocated(&check_result);
-      status != ZX_OK) {
-    FX_LOGS(WARNING) << "Collection was not allocated (FIDL status: "
-                     << zx_status_get_string(status) << ").";
+  auto result = collection->CheckAllBuffersAllocated();
+  if (!result.ok()) {
+    FX_LOGS(WARNING) << "Collection was not allocated (FIDL error): " << result.status_string();
     return std::nullopt;
   }
-  if (!check_result.is_response()) {
-    if (check_result.is_framework_err()) {
-      FX_LOGS(WARNING) << "Collection was not allocated (framework err): "
-                       << fidl::ToUnderlying(check_result.framework_err());
-    } else {
-      FX_LOGS(WARNING) << "Collection was not allocated (allocation Error: "
-                       << static_cast<uint32_t>(check_result.err()) << ").";
-    }
+  if (result->is_error()) {
+    FX_LOGS(WARNING) << "Collection was not allocated (framework error): "
+                     << fidl::ToUnderlying(result->error_value());
     return std::nullopt;
   }
 
@@ -415,7 +415,8 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
 }
 
 bool VkRenderer::ImportBufferCollection(
-    GlobalBufferCollectionId collection_id, fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    GlobalBufferCollectionId collection_id,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
     BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -432,17 +433,20 @@ bool VkRenderer::ImportBufferCollection(
     return false;
   }
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  if (auto collection =
-          CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(local_token))) {
-    buffer_collection = std::move(*collection);
-    // Use a name with a priority that's greater than the vulkan implementation, but less than
-    // what any client would use.
-    fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-    set_name_request.set_priority(10u);
-    set_name_request.set_name(GetNextBufferCollectionIdString(GetImageName(usage).c_str()));
-    buffer_collection->SetName(std::move(set_name_request));
-  } else {
+  fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection =
+      CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(local_token));
+  if (!buffer_collection) {
+    return false;
+  }
+  // Use a name with a priority that's greater than the vulkan implementation, but less than
+  // what any client would use.
+  fidl::Arena arena;
+  fidl::OneWayStatus result = buffer_collection->SetName(
+      fuchsia_sysmem2::wire::NodeSetNameRequest::Builder(arena)
+          .priority(10u)
+          .name(GetNextBufferCollectionIdString(GetImageName(usage).c_str()))
+          .Build());
+  if (!result.ok()) {
     return false;
   }
 
@@ -497,10 +501,10 @@ void VkRenderer::ReleaseBufferCollection(GlobalBufferCollectionId collection_id,
   vk_device.destroyBufferCollectionFUCHSIA(collection_itr->second.vk_collection, nullptr,
                                            vk_loader);
 
-  const zx_status_t status = collection_itr->second.collection->Release();
+  fidl::OneWayStatus result = collection_itr->second.collection->Release();
   // AttachToken failure causes ZX_ERR_PEER_CLOSED.
-  if (status != ZX_OK && status != ZX_ERR_PEER_CLOSED) {
-    FX_LOGS(ERROR) << "Error when closing buffer collection: " << zx_status_get_string(status);
+  if (!result.ok() && result.status() != ZX_ERR_PEER_CLOSED) {
+    FX_LOGS(ERROR) << "Error when closing buffer collection: " << result.status_string();
   }
 
   collections.erase(collection_itr);

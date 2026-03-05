@@ -16,7 +16,7 @@ namespace flatland {
 class MockRenderer : public Renderer {
  public:
   MOCK_METHOD(bool, ImportBufferCollection,
-              (allocation::GlobalBufferCollectionId, fuchsia::sysmem2::Allocator_Sync*,
+              (allocation::GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,
                allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU> size));
 

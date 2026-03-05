@@ -82,7 +82,7 @@ std::optional<std::string> DuplicateToken(
 // Returns a prunable subtree of |token| with |num_new_tokens| children.
 // Returns std::nullopt on failure.
 std::optional<std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr>> CreatePrunableChildren(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token, const size_t num_new_tokens) {
   fuchsia::sysmem2::BufferCollectionTokenGroupSyncPtr token_group;
   {
@@ -140,7 +140,7 @@ std::optional<std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr>> Creat
 // allocations made from that collection.
 std::optional<fuchsia::sysmem2::BufferCollectionSyncPtr>
 CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token) {
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr token_dup;
   if (auto error = DuplicateToken(token, token_dup)) {
@@ -149,10 +149,15 @@ CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
   }
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-  bind_shared_request.set_token(std::move(token_dup));
-  bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
-  sysmem_allocator->BindSharedCollection(std::move(bind_shared_request));
+  fidl::Arena arena;
+  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+              token_dup.Unbind().TakeChannel()))
+          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+              buffer_collection.NewRequest().TakeChannel()))
+          .Build());
+  FX_DCHECK(result.ok());
 
   if (const auto status = buffer_collection->SetConstraints(
           fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
@@ -233,7 +238,7 @@ std::optional<fuchsia::images2::PixelFormatModifier> DetermineDisplaySupportFor(
 DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
                                      std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
                                      const std::shared_ptr<Renderer>& renderer,
-                                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+                                     fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
                                      const DisplayCompositorConfig& config)
     : display_coordinator_shared_ptr_(std::move(coordinator_proxy)),
       display_coordinator_(*display_coordinator_shared_ptr_),
@@ -255,7 +260,7 @@ DisplayCompositor::~DisplayCompositor() {
   //
   // TODO(https://fxbug.dev/447261550): this is really bad.  Luckily it doesn't impact production.
   {
-    const fidl::OneWayStatus result = display_coordinator_.raw()->DiscardConfig();
+    const fidl::OneWayStatus result = display_coordinator_.raw().sync()->DiscardConfig();
     if (!result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
     }
@@ -287,7 +292,7 @@ DisplayCompositor::~DisplayCompositor() {
 
 bool DisplayCompositor::ImportBufferCollection(
     const allocation::GlobalBufferCollectionId collection_id,
-    fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
     const BufferCollectionUsage usage, const std::optional<fuchsia::math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -1083,11 +1088,13 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   // Create the buffer collection token to be used for frame buffers.
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr compositor_token;
   {
-    fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
-    allocate_shared_request.set_token_request(compositor_token.NewRequest());
-    const auto status =
-        sysmem_allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-    FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                compositor_token.NewRequest().TakeChannel()))
+            .Build());
+    FX_DCHECK(result.ok()) << "status: " << result.status_string();
   }
 
   // Duplicate the token for the display and for the renderer.
@@ -1141,7 +1148,7 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
   {
     const auto result = renderer_->ImportBufferCollection(
-        collection_id, sysmem_allocator_.get(), std::move(renderer_token),
+        collection_id, sysmem_allocator_, std::move(renderer_token),
         BufferCollectionUsage::kRenderTarget, std::optional<fuchsia::math::SizeU>(size));
     FX_DCHECK(result);
   }
@@ -1169,8 +1176,8 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   if (make_cpu_accessible && !use_protected_memory) {
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
-        sysmem_allocator_.get(), std::move(compositor_token), num_render_targets, size.width,
-        size.height, std::move(buffer_usage), pixel_format, std::move(memory_constraints));
+        sysmem_allocator_, std::move(compositor_token), num_render_targets, size.width, size.height,
+        std::move(buffer_usage), pixel_format, std::move(memory_constraints));
   } else {
     fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
     auto& constraints = *set_constraints_request.mutable_constraints();
@@ -1184,10 +1191,15 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
       bmc.set_ram_domain_supported(false);
     }
 
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(compositor_token));
-    bind_shared_request.set_buffer_collection_request(collection_ptr.NewRequest());
-    sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                compositor_token.Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                collection_ptr.NewRequest().TakeChannel()))
+            .Build());
+    FX_DCHECK(result.ok());
 
     fuchsia::sysmem2::NodeSetNameRequest set_name_request;
     set_name_request.set_priority(10u);

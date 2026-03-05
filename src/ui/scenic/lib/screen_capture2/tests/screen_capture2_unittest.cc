@@ -42,11 +42,11 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
   ScreenCapture2Test() = default;
   void SetUp() override {
     // Create the SysmemAllocator.
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("ScreenCapture2Test");
+    sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2Test");
 
     renderer_ = std::make_shared<flatland::NullRenderer>();
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
-        utils::CreateSysmemAllocatorSyncPtr("ScreenCapture2Test-importer"), renderer_);
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2Test-importer"), renderer_);
 
     renderables_ =
         std::make_pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>>({}, {});
@@ -55,7 +55,8 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
   void SetUpMockImporter() {
     mock_renderer_ = std::make_shared<flatland::MockRenderer>();
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
-        utils::CreateSysmemAllocatorSyncPtr("ScreenCapture2Test-mock-importer"), mock_renderer_);
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2Test-mock-importer"),
+        mock_renderer_);
   }
 
   // Configures ScreenCapture with given args successfully.
@@ -64,7 +65,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
     if (is_mock) {
       EXPECT_CALL(*mock_renderer_.get(), ImportBufferCollection(_, _, _, _, _))
           .WillRepeatedly([](allocation::GlobalBufferCollectionId collection_id,
-                             fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                             fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                              fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
                              allocation::BufferCollectionUsage,
                              std::optional<fuchsia::math::SizeU> size) {
@@ -98,10 +99,10 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
         allocation::BufferCollectionImportExportTokens::New();
 
     std::shared_ptr<Allocator> flatland_allocator =
-        CreateAllocator(importer_, context_provider_.context());
+        CreateAllocator(importer_, context_provider_.context(), dispatcher());
     CreateBufferCollectionInfoWithConstraints(
         utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_.get());
+        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
 
     ScreenCaptureConfig args;
     args.set_import_token(std::move(ref_pair.import_token));
@@ -130,7 +131,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
   std::shared_ptr<flatland::MockRenderer> mock_renderer_;
   std::shared_ptr<ScreenCaptureBufferCollectionImporter> importer_;
 
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   sys::testing::ComponentContextProvider context_provider_;
 
  private:
@@ -148,10 +149,10 @@ TEST_F(ScreenCapture2Test, ConfigureWithMissingArguments) {
       allocation::BufferCollectionImportExportTokens::New();
 
   std::shared_ptr<Allocator> flatland_allocator =
-      CreateAllocator(importer_, context_provider_.context());
+      CreateAllocator(importer_, context_provider_.context(), dispatcher());
   CreateBufferCollectionInfoWithConstraints(
       utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_.get());
+      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
 
   // Missing image size.
   {
@@ -225,7 +226,7 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
   SetUpMockImporter();
   EXPECT_CALL(*mock_renderer_.get(), ImportBufferCollection(_, _, _, _, _))
       .WillRepeatedly([](allocation::GlobalBufferCollectionId collection_id,
-                         fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                          fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
                          allocation::BufferCollectionUsage,
                          std::optional<fuchsia::math::SizeU> size) {
@@ -247,10 +248,10 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
       allocation::BufferCollectionImportExportTokens::New();
 
   std::shared_ptr<Allocator> flatland_allocator =
-      CreateAllocator(importer_, context_provider_.context());
+      CreateAllocator(importer_, context_provider_.context(), dispatcher());
   CreateBufferCollectionInfoWithConstraints(
       utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_.get());
+      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
 
   ScreenCaptureConfig args;
   args.set_import_token(std::move(ref_pair.import_token));

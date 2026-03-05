@@ -34,7 +34,8 @@ class ScreenCaptureTest : public gtest::TestLoopFixture {
  public:
   ScreenCaptureTest() = default;
   void SetUp() override {
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("ScreenCaptureTest::Setup");
+    sysmem_allocator_ =
+        utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCaptureTest::Setup");
 
     mock_buffer_collection_importer_ = new allocation::MockBufferCollectionImporter();
     buffer_collection_importer_ =
@@ -80,7 +81,7 @@ class ScreenCaptureTest : public gtest::TestLoopFixture {
   std::shared_ptr<flatland::MockRenderer> renderer_;
 
  private:
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::pair<std::vector<ImageRect>, std::vector<allocation::ImageMetadata>> renderables_;
 };
 

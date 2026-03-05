@@ -27,7 +27,7 @@ class BufferCollectionInfo {
   // thread safe as Allocator_Sync pointers are thread safe, but if this becomes async it may become
   // unsafe.
   static fit::result<fit::failed, BufferCollectionInfo> New(
-      fuchsia::sysmem2::Allocator_Sync* sysmem_allocator,
+      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       BufferCollectionHandle buffer_collection_token,
       std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_format_constraints =
           std::nullopt,

@@ -299,14 +299,20 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 #endif  // FAKE_DISPLAY
 
     // Create the SysmemAllocator.
-    zx_status_t status = fdio_service_connect(
-        "/svc/fuchsia.sysmem2.Allocator", sysmem_allocator_.NewRequest().TakeChannel().release());
+    // Create the SysmemAllocator.
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    zx_status_t status =
+        fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", server_end.TakeChannel().release());
     EXPECT_EQ(status, ZX_OK);
-    fuchsia::sysmem2::AllocatorSetDebugClientInfoRequest set_debug_request;
-    set_debug_request.set_name(fsl::GetCurrentProcessName() + " DisplayCompositorPixelTest");
-    set_debug_request.set_id(fsl::GetCurrentProcessKoid());
-    sysmem_allocator_->SetDebugClientInfo(std::move(set_debug_request));
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->SetDebugClientInfo(
+        fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena)
+            .name(arena, fsl::GetCurrentProcessName() + " DisplayCompositorPixelTest")
+            .id(fsl::GetCurrentProcessKoid())
+            .Build());
+    EXPECT_TRUE(result.ok());
     executor_ = std::make_unique<async::Executor>(dispatcher());
 
     display_manager_ = std::make_unique<display::DisplayManager>([]() {});
@@ -359,7 +365,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       fuchsia_images2::PixelFormat::kB8G8R8A8;
 
   std::optional<component_testing::RealmRoot> realm_root_;
-  fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
   display::Display::VsyncCallbackId vsync_callback_id_{};
@@ -448,7 +454,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // This should only be running on devices with capture support.
     bool capture_supported = display::IsCaptureSupported(raw_display_coordinator());
     if (!capture_supported) {
-      FX_LOGS(FATAL) << "Capture is not supported on this device. Test skipped.";
+      FX_LOGS(INFO) << "Capture is not supported on this device. Test skipped.";
       return fpromise::error(ZX_ERR_NOT_SUPPORTED);
     }
 
@@ -457,19 +463,22 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
         .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeCapture,
     };
 
-    auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
+    auto tokens = SysmemTokens::Create(sysmem_allocator_);
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
         std::move(tokens.dup_token).Unbind().TakeChannel());
-    auto result = display::ImportBufferCollection(collection_id, raw_display_coordinator(),
-                                                  std::move(dup_token), image_buffer_usage);
-    EXPECT_TRUE(result);
+    bool success = display::ImportBufferCollection(collection_id, raw_display_coordinator(),
+                                                   std::move(dup_token), image_buffer_usage);
+    EXPECT_TRUE(success);
     fuchsia::sysmem2::BufferCollectionSyncPtr collection;
-    fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
-    bind_shared_request.set_token(std::move(tokens.local_token));
-    bind_shared_request.set_buffer_collection_request(collection.NewRequest());
-    zx_status_t status = sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
-    EXPECT_EQ(status, ZX_OK);
-
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
+                std::move(tokens.local_token).Unbind().TakeChannel()))
+            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                collection.NewRequest().TakeChannel()))
+            .Build());
+    EXPECT_TRUE(result.ok());
     fuchsia::sysmem2::NodeSetNameRequest set_name_request;
     set_name_request.set_priority(100u);
     set_name_request.set_name("FlatlandTestCaptureImage");
@@ -508,7 +517,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       image_constraints.set_start_offset_divisor(1);
       image_constraints.set_display_rect_alignment(fuchsia::math::SizeU{.width = 1, .height = 1});
 
-      status = collection->SetConstraints(std::move(set_constraints_request));
+      zx_status_t status = collection->SetConstraints(std::move(set_constraints_request));
       EXPECT_EQ(status, ZX_OK);
     }
 
@@ -516,7 +525,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // struct with the vmo data.
     {
       fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-      status = collection->WaitForAllBuffersAllocated(&wait_result);
+      zx_status_t status = collection->WaitForAllBuffersAllocated(&wait_result);
       EXPECT_EQ(status, ZX_OK);
       EXPECT_TRUE(wait_result.is_response());
       *collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
@@ -546,17 +555,17 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       fuchsia::images2::PixelFormat pixel_type, uint32_t width, uint32_t height, uint32_t num_vmos,
       fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
-    auto texture_tokens = SysmemTokens::Create(sysmem_allocator_.get());
+    auto texture_tokens = SysmemTokens::Create(sysmem_allocator_);
 
     auto result = display_compositor->ImportBufferCollection(
-        collection_id, sysmem_allocator_.get(), std::move(texture_tokens.dup_token),
+        collection_id, sysmem_allocator_, std::move(texture_tokens.dup_token),
         BufferCollectionUsage::kClientImage, std::nullopt);
     EXPECT_TRUE(result);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
         CreateBufferCollectionSyncPtrAndSetConstraints(
-            sysmem_allocator_.get(), std::move(texture_tokens.local_token), num_vmos, width, height,
+            sysmem_allocator_, std::move(texture_tokens.local_token), num_vmos, width, height,
             fidl::Clone(buffer_usage), pixel_type, fidl::Clone(memory_constraints),
             std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
@@ -805,7 +814,7 @@ Vulkan Renderer, try creating a DisplayCompositor with the NullRenderer
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
 Lastly, if you are specifically testing the Vulkan Renderer and do not need Display Compositing, try
@@ -813,7 +822,7 @@ creating a DisplayCompositor with enable_direct_to_display=false:
 
    auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
 When uploading a CL that makes changes to these tests, also make sure that they run on NUC
@@ -834,7 +843,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
@@ -985,7 +994,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
@@ -1097,7 +1106,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
@@ -1200,7 +1209,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
@@ -1377,7 +1386,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto texture_collection = SetupClientTextures(display_compositor.get(), kTextureCollectionId,
@@ -1576,7 +1585,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{
           // Force GPU composition.
           // This setting is redundant because `max_display_layers == 1` so we
@@ -1766,7 +1775,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -2027,7 +2036,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{.enable_direct_to_display = false});
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -2216,7 +2225,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   auto [escher, renderer] = NewVkRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -2433,7 +2442,7 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
-      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();

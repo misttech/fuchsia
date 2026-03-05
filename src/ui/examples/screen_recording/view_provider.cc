@@ -44,7 +44,9 @@ ViewProviderImpl::~ViewProviderImpl() {
 }
 
 void ViewProviderImpl::CreateView2(fuchsia::ui::app::CreateView2Args args) {
-  context_->svc()->Connect(sysmem_allocator_.NewRequest());
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+  context_->svc()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+  sysmem_allocator_.Bind(std::move(client_end), async_get_default_dispatcher());
   context_->svc()->Connect(flatland_allocator_.NewRequest());
 
   // Set ContentId to be 2 above ContentIds used from num_buffers_ and 1 above kFilledRectId.
@@ -89,8 +91,8 @@ void ViewProviderImpl::CreateView2(fuchsia::ui::app::CreateView2Args args) {
     fuchsia::sysmem2::BufferCollectionInfo sc_buffer_collection_info_ =
         CreateBufferCollectionInfoWithConstraints(
             utils::CreateDefaultConstraints(num_buffers_, half_display_width_, display_height_),
-            std::move(scr_ref_pair.export_token), flatland_allocator_.get(),
-            sysmem_allocator_.get(), usage_types);
+            std::move(scr_ref_pair.export_token), flatland_allocator_.get(), sysmem_allocator_,
+            usage_types);
 
     fuchsia::ui::composition::ImageProperties image_properties = {};
     image_properties.set_size({half_display_width_, display_height_});
