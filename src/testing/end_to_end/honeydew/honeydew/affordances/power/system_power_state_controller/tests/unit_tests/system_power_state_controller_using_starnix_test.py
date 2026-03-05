@@ -157,22 +157,22 @@ def _custom_test_name_func(
 
 
 # pylint: disable=protected-access
-class SystemPowerStateControllerStarnixTests(unittest.TestCase):
+class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.power.system_power_state_controller.system_power_state_controller_using_starnix.py."""
 
-    def setUp(self) -> None:
-        super().setUp()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
 
         self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
-        self.mock_device_logger = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceLogger
+        self.mock_device_logger = mock.AsyncMock(
+            spec=affordances_capable.AsyncFuchsiaDeviceLogger
         )
         self.mock_inspect = mock.MagicMock(
             spec=affordances_capable.InspectCapableDevice
         )
-        self.mock_starnix = mock.MagicMock(spec=starnix.Starnix)
+        self.mock_starnix = mock.AsyncMock(spec=starnix.AsyncStarnix)
 
-        self.system_power_state_controller_using_starnix_obj = system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix(
+        self.system_power_state_controller_using_starnix_obj = system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix(
             ffx=self.mock_ffx,
             device_logger=self.mock_device_logger,
             inspect=self.mock_inspect,
@@ -181,16 +181,16 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
         )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "suspend_resume",
         autospec=True,
     )
-    def test_idle_suspend_timer_based_resume(
-        self, mock_suspend_resume: mock.Mock
+    async def test_idle_suspend_timer_based_resume(
+        self, mock_suspend_resume: mock.AsyncMock
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.idle_suspend_timer_based_resume()"""
 
-        self.system_power_state_controller_using_starnix_obj.idle_suspend_timer_based_resume(
+        await self.system_power_state_controller_using_starnix_obj.idle_suspend_timer_based_resume(
             duration=3,
         )
         mock_suspend_resume.assert_called_once_with(
@@ -201,40 +201,40 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             ),
         )
 
-    def test_suspend_resume_with_not_supported_suspend_mode(self) -> None:
+    async def test_suspend_resume_with_not_supported_suspend_mode(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.suspend_resume() raising
         NotSupportedError for invalid suspend operation."""
         with self.assertRaises(errors.NotSupportedError):
-            self.system_power_state_controller_using_starnix_obj.suspend_resume(
+            await self.system_power_state_controller_using_starnix_obj.suspend_resume(
                 suspend_state="invalid",  # type: ignore[arg-type]
                 resume_mode=system_power_state_controller_interface.TimerResume(
                     duration=3
                 ),
             )
 
-    def test_suspend_resume_with_not_supported_resume_mode(self) -> None:
+    async def test_suspend_resume_with_not_supported_resume_mode(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.suspend_resume() raising
         NotSupportedError for unsupported resume operation."""
         with self.assertRaises(errors.NotSupportedError):
-            self.system_power_state_controller_using_starnix_obj.suspend_resume(
+            await self.system_power_state_controller_using_starnix_obj.suspend_resume(
                 suspend_state=system_power_state_controller_interface.IdleSuspend(),
                 resume_mode=system_power_state_controller_interface.ButtonPressResume(),
             )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
-    def test_suspend_resume(
+    async def test_suspend_resume(
         self,
-        mock_set_resume_mode: mock.Mock,
-        mock_suspend: mock.Mock,
+        mock_set_resume_mode: mock.AsyncMock,
+        mock_suspend: mock.AsyncMock,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.suspend_resume()"""
         self.mock_inspect.get_inspect_data.side_effect = [
@@ -251,7 +251,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 _FSH_INSPECT_DATA_AFTER
             ),
         ]
-        self.system_power_state_controller_using_starnix_obj.suspend_resume(
+        await self.system_power_state_controller_using_starnix_obj.suspend_resume(
             suspend_state=system_power_state_controller_interface.IdleSuspend(),
             resume_mode=system_power_state_controller_interface.TimerResume(
                 duration=3,
@@ -261,19 +261,19 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
-    def test_suspend_resume_verify_using_sag_inspect_fail(
+    async def test_suspend_resume_verify_using_sag_inspect_fail(
         self,
-        mock_set_resume_mode: mock.Mock,
-        mock_suspend: mock.Mock,
+        mock_set_resume_mode: mock.AsyncMock,
+        mock_suspend: mock.AsyncMock,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.suspend_resume()"""
         self.mock_inspect.get_inspect_data.side_effect = [
@@ -294,7 +294,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             system_power_state_controller_interface.SystemPowerStateControllerError,
             "Based on SAG inspect data",
         ):
-            self.system_power_state_controller_using_starnix_obj.suspend_resume(
+            await self.system_power_state_controller_using_starnix_obj.suspend_resume(
                 suspend_state=system_power_state_controller_interface.IdleSuspend(),
                 resume_mode=system_power_state_controller_interface.TimerResume(
                     duration=3,
@@ -304,19 +304,19 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
-    def test_suspend_resume_verify_using_fsh_inspect_fail(
+    async def test_suspend_resume_verify_using_fsh_inspect_fail(
         self,
-        mock_set_resume_mode: mock.Mock,
-        mock_suspend: mock.Mock,
+        mock_set_resume_mode: mock.AsyncMock,
+        mock_suspend: mock.AsyncMock,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.suspend_resume()"""
         self.mock_inspect.get_inspect_data.side_effect = [
@@ -337,7 +337,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             system_power_state_controller_interface.SystemPowerStateControllerError,
             "Based on FSH inspect data",
         ):
-            self.system_power_state_controller_using_starnix_obj.suspend_resume(
+            await self.system_power_state_controller_using_starnix_obj.suspend_resume(
                 suspend_state=system_power_state_controller_interface.IdleSuspend(),
                 resume_mode=system_power_state_controller_interface.TimerResume(
                     duration=3,
@@ -347,32 +347,33 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_perform_idle_suspend",
         autospec=True,
     )
-    def test_suspend_with_idle_suspend(
+    async def test_suspend_with_idle_suspend(
         self,
-        mock_perform_idle_suspend: mock.Mock,
+        mock_perform_idle_suspend: mock.AsyncMock,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._suspend()"""
-        self.system_power_state_controller_using_starnix_obj._suspend(
+        await self.system_power_state_controller_using_starnix_obj._suspend(
             suspend_state=system_power_state_controller_interface.IdleSuspend(),
         )
 
         mock_perform_idle_suspend.assert_called_once_with(mock.ANY)
 
-    def test_perform_idle_suspend(
+    async def test_perform_idle_suspend(
         self,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._perform_idle_suspend()"""
-        self.system_power_state_controller_using_starnix_obj._perform_idle_suspend()
+        self.mock_starnix.run_console_shell_cmd.return_value = "success"
+        await self.system_power_state_controller_using_starnix_obj._perform_idle_suspend()
 
         self.mock_starnix.run_console_shell_cmd.assert_called_once_with(
             cmd=system_power_state_controller_using_starnix._StarnixCmds.IDLE_SUSPEND,
         )
 
-    def test_perform_idle_suspend_failure(
+    async def test_perform_idle_suspend_failure(
         self,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._perform_idle_suspend() raising exception"""
@@ -382,23 +383,23 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
         with self.assertRaises(
             system_power_state_controller_interface.SystemPowerStateControllerError
         ):
-            self.system_power_state_controller_using_starnix_obj._perform_idle_suspend()
+            await self.system_power_state_controller_using_starnix_obj._perform_idle_suspend()
 
         self.mock_starnix.run_console_shell_cmd.assert_called_once_with(
             cmd=system_power_state_controller_using_starnix._StarnixCmds.IDLE_SUSPEND,
         )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_wait_for_timer_end",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         "_wait_for_timer_start",
         autospec=True,
     )
-    def test_set_resume_mode_with_timer_resume(
+    async def test_set_resume_mode_with_timer_resume(
         self,
         mock_wait_for_timer_start: mock.Mock,
         mock_wait_for_timer_end: mock.Mock,
@@ -411,7 +412,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             )
         )
 
-        with self.system_power_state_controller_using_starnix_obj._set_resume_mode(
+        async with self.system_power_state_controller_using_starnix_obj._set_resume_mode(
             resume_mode=resume_mode,
         ):
             pass
@@ -426,13 +427,13 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             proc=mock.ANY,
         )
 
-    def test_set_timer(self) -> None:
+    async def test_set_timer(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._set_timer() success case."""
         self.system_power_state_controller_using_starnix_obj._set_timer(
             duration=3
         )
 
-    def test_set_timer_failure(self) -> None:
+    async def test_set_timer_failure(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._set_timer() raising
         an exception."""
         self.mock_ffx.popen.side_effect = RuntimeError("Error")
@@ -444,7 +445,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 duration=3
             )
 
-    def test_wait_for_timer_start(self) -> None:
+    async def test_wait_for_timer_start(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_start()
         success case."""
         mock_subprocess_popen = mock.MagicMock(spec=subprocess.Popen)
@@ -455,7 +456,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             proc=mock_subprocess_popen,
         )
 
-    def test_wait_for_timer_start_exception_1(self) -> None:
+    async def test_wait_for_timer_start_exception_1(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_start()
         raising SystemPowerStateControllerError exception because of not able to
         read command output."""
@@ -470,7 +471,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 proc=mock_subprocess_popen,
             )
 
-    def test_wait_for_timer_start_exception_2(self) -> None:
+    async def test_wait_for_timer_start_exception_2(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_start()
         raising SystemPowerStateControllerError exception because of timer
         start message was not found."""
@@ -488,7 +489,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 proc=mock_subprocess_popen,
             )
 
-    def test_wait_for_timer_end(self) -> None:
+    async def test_wait_for_timer_end(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_end()
         success case."""
         mock_subprocess_popen = mock.MagicMock(spec=subprocess.Popen)
@@ -502,7 +503,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             proc=mock_subprocess_popen,
         )
 
-    def test_wait_for_timer_end_exception_1(self) -> None:
+    async def test_wait_for_timer_end_exception_1(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_end()
         raising SystemPowerStateControllerError exception because of timer
         end message was not found."""
@@ -521,7 +522,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 proc=mock_subprocess_popen,
             )
 
-    def test_wait_for_timer_end_exception_2(self) -> None:
+    async def test_wait_for_timer_end_exception_2(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._wait_for_timer_end()
         raising SystemPowerStateControllerError exception because of failed to
         read command output."""
@@ -541,7 +542,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 proc=mock_subprocess_popen,
             )
 
-    def test_get_suspend_stats_from_sag_inspect_data_fail(
+    async def test_get_suspend_stats_from_sag_inspect_data_fail(
         self,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._get_suspend_stats_from_sag_inspect_data()
@@ -553,9 +554,9 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             system_power_state_controller_interface.SystemPowerStateControllerError,
             "Failed to read SAG inspect data",
         ):
-            self.system_power_state_controller_using_starnix_obj._get_suspend_stats_from_sag_inspect_data()
+            await self.system_power_state_controller_using_starnix_obj._get_suspend_stats_from_sag_inspect_data()
 
-    def test_get_suspend_events_from_fsh_inspect_data_fail(
+    async def test_get_suspend_events_from_fsh_inspect_data_fail(
         self,
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._get_suspend_events_from_fsh_inspect_data()
@@ -567,9 +568,9 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
             system_power_state_controller_interface.SystemPowerStateControllerError,
             "Failed to read FSH inspect data",
         ):
-            self.system_power_state_controller_using_starnix_obj._get_suspend_events_from_fsh_inspect_data()
+            await self.system_power_state_controller_using_starnix_obj._get_suspend_events_from_fsh_inspect_data()
 
-    def test_validate_using_fsh_inspect_data_fail_1(self) -> None:
+    async def test_validate_using_fsh_inspect_data_fail_1(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._validate_using_fsh_inspect_data()
         failure condition"""
         with self.assertRaisesRegex(
@@ -585,7 +586,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 suspend_resume_events_after={},
             )
 
-    def test_validate_using_fsh_inspect_data_fail_2(self) -> None:
+    async def test_validate_using_fsh_inspect_data_fail_2(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._validate_using_fsh_inspect_data()
         failure condition"""
         with self.assertRaisesRegex(
@@ -601,7 +602,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 suspend_resume_events_after=SUSPEND_RESUME_EVENTS_AFTER_FAIL_2,
             )
 
-    def test_validate_using_fsh_inspect_data_fail_3(self) -> None:
+    async def test_validate_using_fsh_inspect_data_fail_3(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._validate_using_fsh_inspect_data()
         failure condition"""
         with self.assertRaisesRegex(
@@ -616,3 +617,7 @@ class SystemPowerStateControllerStarnixTests(unittest.TestCase):
                 suspend_resume_events_before={},
                 suspend_resume_events_after=SUSPEND_RESUME_EVENTS_AFTER_FAIL_3,
             )
+
+
+if __name__ == "__main__":
+    unittest.main()

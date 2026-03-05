@@ -526,20 +526,22 @@ class AsyncFuchsiaDevice(
     @properties.Affordance
     def system_power_state_controller(
         self,
-    ) -> system_power_state_controller_interface.SystemPowerStateController:
+    ) -> (
+        system_power_state_controller_interface.AsyncSystemPowerStateController
+    ):
         """Returns a SystemPowerStateController affordance object.
 
         Returns:
-            system_power_state_controller_interface.SystemPowerStateController object
+            system_power_state_controller_interface.AsyncSystemPowerStateController object
 
         Raises:
             errors.NotSupportedError: If Fuchsia device does not support Starnix
         """
-        return system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix(
+        return system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix(
             device_name=self.device_name,
             ffx=self.ffx,
             inspect=self,
-            device_logger=self.as_sync(),
+            device_logger=self,
             starnix_affordance=self.starnix,
         )
 

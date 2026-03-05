@@ -57,6 +57,45 @@ class SystemPowerStateControllerError(errors.HoneydewError):
     """Exception to be raised by SystemPowerStateController affordance."""
 
 
+class AsyncSystemPowerStateController(abc.ABC):
+    """Abstract base class for an async SystemPowerStateController affordance."""
+
+    @abc.abstractmethod
+    async def suspend_resume(
+        self,
+        suspend_state: SuspendState,
+        resume_mode: ResumeMode,
+    ) -> None:
+        """Perform suspend-resume operation on the device.
+
+        Args:
+            suspend_state: Which state to suspend the Fuchsia device into.
+            resume_mode: Information about how to resume the device.
+
+        Raises:
+            SystemPowerStateControllerError: In case of failure
+            errors.NotSupportedError: If any of the suspend_state or resume_type
+                is not yet supported
+        """
+
+    @abc.abstractmethod
+    async def idle_suspend_timer_based_resume(
+        self,
+        duration: int,
+        verify_duration: bool = True,
+    ) -> None:
+        """Perform idle-suspend and timer-based-resume operation on the device.
+
+        Args:
+            duration: Resume timer duration in seconds.
+            verify_duration: If set to True, verifies suspend-resume operation completed within the
+                duration specified. If set to False, skips this verification. Default is True.
+
+        Raises:
+            SystemPowerStateControllerError: In case of failure
+        """
+
+
 class SystemPowerStateController(affordance.Affordance):
     """Abstract base class for SystemPowerStateController affordance."""
 
@@ -96,3 +135,7 @@ class SystemPowerStateController(affordance.Affordance):
         Raises:
             SystemPowerStateControllerError: In case of failure
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncSystemPowerStateController:
+        """Returns the async version of SystemPowerStateController."""

@@ -9,9 +9,9 @@ import logging
 import re
 import subprocess
 import typing
-from collections.abc import Generator
 from typing import Any
 
+import fuchsia_async_extension
 import fuchsia_inspect
 
 from honeydew import affordances_capable, errors
@@ -87,10 +87,10 @@ class _RegExPatterns:
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SystemPowerStateControllerUsingStarnix(
-    system_power_state_controller_interface.SystemPowerStateController
+class AsyncSystemPowerStateControllerUsingStarnix(
+    system_power_state_controller_interface.AsyncSystemPowerStateController
 ):
-    """SystemPowerStateController affordance implementation using sysfs.
+    """Async SystemPowerStateController affordance implementation using sysfs.
 
     Args:
         device_name: Device name returned by `ffx target list`.
@@ -107,13 +107,13 @@ class SystemPowerStateControllerUsingStarnix(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
-        device_logger: affordances_capable.FuchsiaDeviceLogger,
+        device_logger: affordances_capable.AsyncFuchsiaDeviceLogger,
         inspect: affordances_capable.InspectCapableDevice,
-        starnix_affordance: starnix.Starnix,
+        starnix_affordance: starnix.AsyncStarnix,
     ) -> None:
         self._device_name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
-        self._device_logger: affordances_capable.FuchsiaDeviceLogger = (
+        self._device_logger: affordances_capable.AsyncFuchsiaDeviceLogger = (
             device_logger
         )
         self._inspect: affordances_capable.InspectCapableDevice = inspect
@@ -124,7 +124,7 @@ class SystemPowerStateControllerUsingStarnix(
         # Already verified this during the init of `starnix.Starnix` affordance
         pass
 
-    def suspend_resume(
+    async def suspend_resume(
         self,
         suspend_state: system_power_state_controller_interface.SuspendState,
         resume_mode: system_power_state_controller_interface.ResumeMode,
@@ -149,7 +149,7 @@ class SystemPowerStateControllerUsingStarnix(
             resume_mode=resume_mode,
         )
 
-        with self._valid_suspend_resume_using_inspect(
+        async with self._valid_suspend_resume_using_inspect(
             suspend_state=suspend_state,
             resume_mode=resume_mode,
         ):
@@ -158,25 +158,25 @@ class SystemPowerStateControllerUsingStarnix(
                 f"operations on '{self._device_name}'..."
             )
             _LOGGER.info(log_message)
-            self._device_logger.log_message_to_device(
+            await self._device_logger.log_message_to_device(
                 message=log_message,
                 level=custom_types.LEVEL.INFO,
             )
 
-            with self._set_resume_mode(resume_mode=resume_mode):
-                self._suspend(suspend_state=suspend_state)
+            async with self._set_resume_mode(resume_mode=resume_mode):
+                await self._suspend(suspend_state=suspend_state)
 
             log_message = (
                 f"Completed '{suspend_state}' followed by '{resume_mode}' "
                 f"operations on '{self._device_name}'."
             )
-            self._device_logger.log_message_to_device(
+            await self._device_logger.log_message_to_device(
                 message=log_message,
                 level=custom_types.LEVEL.INFO,
             )
             _LOGGER.info(log_message)
 
-    def idle_suspend_timer_based_resume(
+    async def idle_suspend_timer_based_resume(
         self,
         duration: int,
         verify_duration: bool = True,
@@ -192,7 +192,7 @@ class SystemPowerStateControllerUsingStarnix(
             SystemPowerStateControllerError: In case of failure
             ValueError: If any of the input args are not valid
         """
-        self.suspend_resume(
+        await self.suspend_resume(
             suspend_state=system_power_state_controller_interface.IdleSuspend(),
             resume_mode=system_power_state_controller_interface.TimerResume(
                 duration=duration,
@@ -234,7 +234,7 @@ class SystemPowerStateControllerUsingStarnix(
                 f"Resuming the device using '{resume_mode}' is not yet supported."
             )
 
-    def _suspend(
+    async def _suspend(
         self,
         suspend_state: system_power_state_controller_interface.SuspendState,
     ) -> None:
@@ -258,7 +258,7 @@ class SystemPowerStateControllerUsingStarnix(
         if isinstance(
             suspend_state, system_power_state_controller_interface.IdleSuspend
         ):
-            self._perform_idle_suspend()
+            await self._perform_idle_suspend()
 
         _LOGGER.info(
             "'%s' has been resumed from '%s'",
@@ -266,14 +266,14 @@ class SystemPowerStateControllerUsingStarnix(
             suspend_state,
         )
 
-    def _perform_idle_suspend(self) -> None:
+    async def _perform_idle_suspend(self) -> None:
         """Perform Idle mode suspend operation.
 
         Raises:
             SystemPowerStateControllerError: In case of failure.
         """
         try:
-            self._starnix.run_console_shell_cmd(
+            await self._starnix.run_console_shell_cmd(
                 cmd=_StarnixCmds.IDLE_SUSPEND,
             )
         except errors.HoneydewError as err:
@@ -281,11 +281,11 @@ class SystemPowerStateControllerUsingStarnix(
                 f"Failed to put {self._device_name} into idle-suspend mode"
             ) from err
 
-    @contextlib.contextmanager
-    def _set_resume_mode(
+    @contextlib.asynccontextmanager
+    async def _set_resume_mode(
         self,
         resume_mode: system_power_state_controller_interface.ResumeMode,
-    ) -> Generator[None, None, None]:
+    ) -> typing.AsyncGenerator[None, None]:
         """Perform resume operation on the device.
 
         This is a synchronous operation on the device and thus call will hang
@@ -421,12 +421,12 @@ class SystemPowerStateControllerUsingStarnix(
                 "hrtimer-ctl completed without ending the timer"
             )
 
-    @contextlib.contextmanager
-    def _valid_suspend_resume_using_inspect(
+    @contextlib.asynccontextmanager
+    async def _valid_suspend_resume_using_inspect(
         self,
         suspend_state: system_power_state_controller_interface.SuspendState,
         resume_mode: system_power_state_controller_interface.ResumeMode,
-    ) -> Generator[None, None, None]:
+    ) -> typing.AsyncGenerator[None, None]:
         """Validate suspend-resume operation using inspect data.
 
         Args:
@@ -438,17 +438,17 @@ class SystemPowerStateControllerUsingStarnix(
         """
         suspend_resume_stats_before: dict[
             str, int
-        ] = self._get_suspend_stats_from_sag_inspect_data()
+        ] = await self._get_suspend_stats_from_sag_inspect_data()
 
         suspend_resume_events_before: dict[
             str, dict[str, int]
-        ] = self._get_suspend_events_from_fsh_inspect_data()
+        ] = await self._get_suspend_events_from_fsh_inspect_data()
 
         yield
 
         suspend_resume_stats_after: dict[
             str, int
-        ] = self._get_suspend_stats_from_sag_inspect_data()
+        ] = await self._get_suspend_stats_from_sag_inspect_data()
         self._validate_using_sag_inspect_data(
             suspend_state,
             resume_mode,
@@ -458,7 +458,7 @@ class SystemPowerStateControllerUsingStarnix(
 
         suspend_resume_events_after: dict[
             str, dict[str, int]
-        ] = self._get_suspend_events_from_fsh_inspect_data()
+        ] = await self._get_suspend_events_from_fsh_inspect_data()
         self._validate_using_fsh_inspect_data(
             suspend_state,
             resume_mode,
@@ -677,7 +677,7 @@ class SystemPowerStateControllerUsingStarnix(
             )
 
     # pylint: disable=missing-raises-doc
-    def _get_suspend_stats_from_sag_inspect_data(self) -> dict[str, int]:
+    async def _get_suspend_stats_from_sag_inspect_data(self) -> dict[str, int]:
         """Returns suspend-resume stats by reading the SAG inspect data.
 
         Returns:
@@ -686,57 +686,6 @@ class SystemPowerStateControllerUsingStarnix(
         Raises:
             SystemPowerStateControllerError: Failed to read SAG inspect data.
         """
-        # TODO (https://fxbug.dev/335494603): Update this logic, once fxr/1072776 lands
-        # Sample SAG inspect data:
-        # [
-        #     {
-        #         "data_source": "Inspect",
-        #         "metadata": {
-        #             "component_url": "fuchsia-boot:///system-activity-governor#meta/system-activity-governor.cm",
-        #             "timestamp": 372140515750,
-        #         },
-        #         "moniker": "bootstrap/system-activity-governor",
-        #         "payload": {
-        #             "root": {
-        #                     "booting": False,
-        #                     "fuchsia.inspect.Health": {
-        #                         "start_timestamp_nanos": 911136500,
-        #                         "status": "OK"
-        #                     },
-        #                     "power_elements": {
-        #                         "application_activity": {
-        #                             "power_level": 1
-        #                         },
-        #                         "execution_resume_latency": {
-        #                             "power_level": 0,
-        #                             "resume_latencies": [0],
-        #                             "resume_latency": 0
-        #                         },
-        #                         "execution_state": {
-        #                             "power_level": 2
-        #                         },
-        #                     },
-        #                     "suspend_events": {
-        #                         "0": {
-        #                             "attempted_at_ns": 20226056875
-        #                         },
-        #                         "1": {
-        #                             "duration": 3053743875,
-        #                             "resumed_at_ns": 23281073708
-        #                         }
-        #                     },
-        #                     "suspend_stats": {
-        #                         "fail_count": 0,
-        #                         "last_failed_error": 0,
-        #                         "last_time_in_suspend_ns": 3053743875,
-        #                         "last_time_in_suspend_operations": 188959,
-        #                         "success_count": 1
-        #                     },
-        #                     "wake_leases": {}
-        #         },
-        #         "version": 1,
-        #     }
-        # ]
         try:
             inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
                 self._inspect.get_inspect_data(
@@ -773,7 +722,7 @@ class SystemPowerStateControllerUsingStarnix(
                 f"Failed to read SAG inspect data from {self._device_name}"
             ) from err
 
-    def _get_suspend_events_from_fsh_inspect_data(
+    async def _get_suspend_events_from_fsh_inspect_data(
         self,
     ) -> dict[str, dict[str, int]]:
         """Returns suspend-resume events by reading the FSH inspect data.
@@ -784,26 +733,6 @@ class SystemPowerStateControllerUsingStarnix(
         Raises:
             SystemPowerStateControllerError: Failed to read FSH inspect data.
         """
-        # Sample FSH inspect data:
-        # [
-        #     {
-        #         "data_source": "Inspect",
-        #         "metadata": {
-        #             "component_url": "fuchsia-boot:///generic-suspend#meta/generic-suspend.cm",
-        #             "timestamp": 372140515750,
-        #         },
-        #         "moniker": "'bootstrap/boot-drivers:suspend'",
-        #         "payload": {
-        #             'root': {
-        #                 'suspend_events': {
-        #                     '0': {'attempted_at_ns': 73886828041},
-        #                     '1': {'resumed_at_ns': 75687395083}
-        #                 }
-        #             }
-        #         },
-        #         "version": 1,
-        #     }
-        # ]
         try:
             inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
                 self._inspect.get_inspect_data(
@@ -846,4 +775,90 @@ class SystemPowerStateControllerUsingStarnix(
                 f"Failed to read FSH inspect data from {self._device_name}"
             ) from err
 
-    # pylint: enable=missing-raises-doc
+
+class SystemPowerStateControllerUsingStarnix(
+    system_power_state_controller_interface.SystemPowerStateController
+):
+    """SystemPowerStateController affordance implementation using sysfs.
+
+    Args:
+        device_name: Device name returned by `ffx target list`.
+        ffx: interfaces.transports.FFX implementation.
+        device_logger: FuchsiaDeviceLogger implementation.
+        inspect: InspectCapableDevice implementation.
+        starnix_affordance: Starnix implementation.
+
+    Raises:
+        errors.NotSupportedError: If Fuchsia device does not support Starnix.
+    """
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        device_logger: affordances_capable.FuchsiaDeviceLogger,
+        inspect: affordances_capable.InspectCapableDevice,
+        starnix_affordance: starnix.Starnix,
+    ) -> None:
+        self._inner = AsyncSystemPowerStateControllerUsingStarnix(
+            device_name=device_name,
+            ffx=ffx,
+            device_logger=device_logger.as_async(),
+            inspect=inspect,
+            starnix_affordance=starnix_affordance.as_async(),
+        )
+
+    # List all the public methods
+    def verify_supported(self) -> None:
+        # Already verified this during the init of `starnix.Starnix` affordance
+        self._inner.verify_supported()
+
+    def suspend_resume(
+        self,
+        suspend_state: system_power_state_controller_interface.SuspendState,
+        resume_mode: system_power_state_controller_interface.ResumeMode,
+    ) -> None:
+        """Perform suspend-resume operation on the device.
+
+        This is a synchronous operation on the device and thus this call will
+        hang until resume operation finishes.
+
+        Args:
+            suspend_state: Which state to suspend the Fuchsia device into.
+            resume_mode: Information about how to resume the device.
+
+        Raises:
+            SystemPowerStateControllerError: In case of failure
+            errors.NotSupportedError: If any of the suspend_state or resume_type
+                is not yet supported
+            ValueError: If any of the input args are not valid
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.suspend_resume(suspend_state, resume_mode)
+        )
+
+    def idle_suspend_timer_based_resume(
+        self,
+        duration: int,
+        verify_duration: bool = True,
+    ) -> None:
+        """Perform idle-suspend and timer-based-resume operation on the device.
+
+        Args:
+            duration: Resume timer duration in seconds.
+            verify_duration: If set to True, verifies suspend-resume operation completed with in the
+                duration specified. If set to False, skips this verification. Default is True.
+
+        Raises:
+            SystemPowerStateControllerError: In case of failure
+            ValueError: If any of the input args are not valid
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.idle_suspend_timer_based_resume(
+                duration, verify_duration
+            )
+        )
+
+    def as_async(self) -> AsyncSystemPowerStateControllerUsingStarnix:
+        """Returns the async version of SystemPowerStateController."""
+        return self._inner

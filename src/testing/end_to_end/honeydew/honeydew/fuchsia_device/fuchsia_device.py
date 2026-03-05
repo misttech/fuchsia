@@ -40,6 +40,9 @@ from honeydew.affordances.location import location, location_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
 )
+from honeydew.affordances.power.system_power_state_controller import (
+    system_power_state_controller_using_starnix,
+)
 from honeydew.affordances.rtc import rtc, rtc_using_fc
 from honeydew.affordances.session import session
 from honeydew.affordances.starnix import starnix, starnix_using_ffx
@@ -277,7 +280,13 @@ class FuchsiaDevice(
     def system_power_state_controller(
         self,
     ) -> system_power_state_controller_interface.SystemPowerStateController:
-        return self._inner.system_power_state_controller
+        return system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            device_logger=self,
+            inspect=self,
+            starnix_affordance=self.starnix,
+        )
 
     @properties.Affordance
     def rtc(self) -> rtc.Rtc:

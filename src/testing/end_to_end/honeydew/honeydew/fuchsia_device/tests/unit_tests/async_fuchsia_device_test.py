@@ -571,7 +571,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         system_power_state_controller affordance implemented using starnix"""
         self.assertIsInstance(
             self.fd_fc_obj.system_power_state_controller,
-            system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
+            system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
         )
         mock_ffx_run.assert_called_once()
 
