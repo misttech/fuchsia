@@ -191,8 +191,12 @@ struct VPDPageList {
   uint8_t page_code;
   uint8_t reserved;
   uint8_t page_length;
-  uint8_t pages[255];
+  // Use 256 instead of 255 to pad the struct to 260 bytes,
+  // satisfying UFS PRDT 4-byte granularity requirements.
+  uint8_t pages[256];
 };
+
+static_assert(sizeof(VPDPageList) % 4 == 0);
 
 // SPC-4 Revision 37, section 6.39 "REQUEST SENSE command".
 struct RequestSenseCDB {

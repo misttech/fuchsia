@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/devicetree/devicetree.gni")
+import("//build/devicetree/devicetree_visitor.gni")
+import("//build/test.gni")
+
+devicetree_visitor("ufs-phy-visitor") {
+  deps = [ ":ufs-phy-visitor-impl" ]
+}
+
+source_set("ufs-phy-visitor-impl") {
+  sources = [
+    "ufs-phy-visitor.cc",
+    "ufs-phy-visitor.h",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devicetree/visitors:registration",
+    "//sdk/lib/driver/logging/cpp",
+  ]
+  public_deps = [
+    "//sdk/lib/driver/devicetree/manager:node",
+    "//sdk/lib/driver/devicetree/visitors:property-parser",
+  ]
+}

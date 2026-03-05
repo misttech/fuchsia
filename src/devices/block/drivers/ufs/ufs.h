@@ -248,6 +248,8 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
     return well_known_lun_set_.find(lun) != well_known_lun_set_.end();
   }
 
+  bool skip_high_speed_gear_quirk() const { return skip_high_speed_gear_quirk_; }
+
   bool IsResumed() const { return device_manager_->IsResumed(); }
 
   const inspect::Inspector &inspect() { return inspector().inspector(); }
@@ -390,6 +392,7 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   uint32_t max_transfer_bytes_ = kMaxTransferSize1MiB;
 
   bool qemu_quirk_ = false;
+  bool skip_high_speed_gear_quirk_ = false;
 
   std::mutex lock_;
 

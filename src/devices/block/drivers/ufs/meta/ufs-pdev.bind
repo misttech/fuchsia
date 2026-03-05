@@ -2,6 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.devicetree;
+composite ufs_pdev;
 
-fuchsia.devicetree.FIRST_COMPATIBLE == "google,ufshc";
+using fuchsia.devicetree;
+using fuchsia.hardware.ufs.phy;
+
+primary node "pdev" {
+  fuchsia.devicetree.FIRST_COMPATIBLE == "google,ufshc";
+}
+
+node "phy" {
+  fuchsia.hardware.ufs.phy.Service == fuchsia.hardware.ufs.phy.Service.ZirconTransport;
+}

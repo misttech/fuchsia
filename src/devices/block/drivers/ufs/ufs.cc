@@ -1295,7 +1295,9 @@ zx::result<> Ufs::Start() {
     return zx::error(result.status());
   }
 
-  SetHostControllerCallback(NotifyEventCallback);
+  if (!host_controller_callback_) {
+    SetHostControllerCallback(NotifyEventCallback);
+  }
 
   if (zx_status_t status = Init(); status != ZX_OK) {
     return zx::error(status);

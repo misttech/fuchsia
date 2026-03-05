@@ -23,6 +23,7 @@ driver_bind_rules("ufs-pdev-bind") {
   tests = "meta/bind_tests_pdev.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.gpio",
   ]
@@ -110,6 +111,7 @@ fuchsia_cc_driver("ufs-pdev-driver") {
   deps = [
     ":ufs-common",
     ":ufs-pdev-bind",
+    "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_cpp",
   ]
 }
 

@@ -74,9 +74,12 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
     // condition which needs to be serviced before the logical unit can process commands.
     // This command will get sense data, but ignore it for now because our goal is to clear the
     // UAC.
-    scsi::FixedFormatSenseDataHeader request_sense_data;
-    zx_status_t clear_uac_status =
-        controller_->RequestSense(target_, lun_, {&request_sense_data, sizeof(request_sense_data)});
+    // The UFS specification requires data transfer sizes to be a multiple of 4 bytes.
+    // Although FixedFormatSenseDataHeader is 18 bytes, we use a 20-byte buffer.
+    uint8_t request_sense_buffer[sizeof(scsi::FixedFormatSenseDataHeader) + 2];
+    static_assert(sizeof(request_sense_buffer) % 4 == 0);
+    zx_status_t clear_uac_status = controller_->RequestSense(
+        target_, lun_, {request_sense_buffer, sizeof(request_sense_buffer)});
     if (clear_uac_status != ZX_OK) {
       FDF_LOGL(ERROR, logger(), "Failed SCSI REQUEST SENSE command: %s",
                zx_status_get_string(clear_uac_status));

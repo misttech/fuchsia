@@ -663,6 +663,10 @@ zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
 }
 
 zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
+  if (controller_.skip_high_speed_gear_quirk()) {
+    return zx::ok();
+  }
+
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
       result.is_error()) {
     return result.take_error();

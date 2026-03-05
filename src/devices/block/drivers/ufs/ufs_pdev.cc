@@ -5,13 +5,17 @@
 #include "src/devices/block/drivers/ufs/ufs_pdev.h"
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/zx/time.h>
+
+#include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 
 namespace ufs {
 
 zx::result<> UfsPdev::InitResources() {
-  auto pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  auto pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (!pdev.is_ok()) {
     FDF_LOG(ERROR, "Failed to connect to platform device service: %s", pdev.status_string());
     return pdev.take_error();
@@ -48,9 +52,116 @@ zx::result<> UfsPdev::InitResources() {
     irq_ = std::move(irq_result.value());
   }
 
+  auto phy_client_end = incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>("phy");
+  if (phy_client_end.is_ok()) {
+    ufs_phy_.Bind(std::move(phy_client_end.value()));
+  } else {
+    auto default_phy_client_end = incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>();
+    if (default_phy_client_end.is_ok()) {
+      ufs_phy_.Bind(std::move(default_phy_client_end.value()));
+    } else {
+      FDF_LOG(WARNING, "Could not connect to UFS PHY service: %s",
+              default_phy_client_end.status_string());
+    }
+  }
+
+  SetHostControllerCallback(
+      [this](NotifyEvent event, uint64_t data) { return PdevNotifyEventCallback(event, data); });
+
   return zx::ok();
 }
 
-zx_status_t UfsPdev::StopResources() { return ZX_OK; }
+zx_status_t UfsPdev::StopResources() {
+  StopUfshciServer();
+  return ZX_OK;
+}
+
+zx::result<> UfsPdev::InitQuirk() {
+  skip_high_speed_gear_quirk_ = true;
+  return zx::ok();
+}
+
+zx::result<> UfsPdev::PdevNotifyEventCallback(NotifyEvent event, uint64_t data) {
+  switch (event) {
+    case NotifyEvent::kPreLinkStartup:
+      return PreLinkStartup();
+    default:
+      return Ufs::NotifyEventCallback(event, data);
+  }
+}
+
+zx::result<> UfsPdev::PreLinkStartup() {
+  if (!ufs_phy_.is_valid()) {
+    return zx::ok();
+  }
+
+  auto client_end = StartUfshciServer();
+  if (client_end.is_error()) {
+    return client_end.take_error();
+  }
+
+  auto res = ufs_phy_->Init(std::move(client_end.value()));
+  StopUfshciServer();
+
+  if (!res.ok()) {
+    FDF_LOG(ERROR, "Failed to call Init: %s", res.status_string());
+    return zx::error(res.status());
+  }
+  if (res->is_error()) {
+    FDF_LOG(ERROR, "Init returned error status: %s", zx_status_get_string(res->error_value()));
+    return zx::error(res->error_value());
+  }
+
+  return zx::ok();
+}
+
+zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfshciServer() {
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_ufs_phy::Ufshci>();
+  if (endpoints.is_error()) {
+    FDF_LOG(ERROR, "Failed to create endpoints: %s", endpoints.status_string());
+    return endpoints.take_error();
+  }
+
+  if (!ufshci_dispatcher_.get()) {
+    ufshci_dispatcher_shutdown_completion_.Reset();
+    auto dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufshci-worker",
+        [this](fdf_dispatcher_t*) { ufshci_dispatcher_shutdown_completion_.Signal(); });
+    if (dispatcher.is_error()) {
+      FDF_LOG(ERROR, "Failed to create Ufshci dispatcher: %s",
+              zx_status_get_string(dispatcher.status_value()));
+      return zx::error(dispatcher.status_value());
+    }
+    ufshci_dispatcher_ = *std::move(dispatcher);
+  }
+
+  async::PostTask(ufshci_dispatcher_.async_dispatcher(),
+                  [this, server_end = std::move(endpoints->server)]() mutable {
+                    fidl::BindServer(ufshci_dispatcher_.async_dispatcher(), std::move(server_end),
+                                     this);
+                  });
+
+  return zx::ok(std::move(endpoints->client));
+}
+
+void UfsPdev::StopUfshciServer() {
+  if (ufshci_dispatcher_.get()) {
+    ufshci_dispatcher_.ShutdownAsync();
+    ufshci_dispatcher_shutdown_completion_.Wait();
+    ufshci_dispatcher_ = fdf::Dispatcher();
+  }
+}
+
+void UfsPdev::DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) {
+  DmeSetUicCommand dme_set(*this, request.mib_attribute(), request.gen_selector_index(), 0,
+                           request.value());
+  auto result = dme_set.SendCommand();
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "DME_SET 0x%x failed: %s", request.mib_attribute(), result.status_string());
+    completer.Reply(zx::error(result.status_value()));
+  } else {
+    completer.Reply(zx::ok());
+  }
+}
 
 }  // namespace ufs

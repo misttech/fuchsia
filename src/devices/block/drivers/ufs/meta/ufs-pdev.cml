@@ -25,6 +25,7 @@
             type: "bool",
         },
         { service: "fuchsia.hardware.platform.device.Service" },
+        { service: "fuchsia.hardware.ufs.phy.Service" },
         { protocol: "fuchsia.power.broker.Topology" },
         {
             protocol: [
