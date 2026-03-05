@@ -24,12 +24,35 @@ def _pyfmt(ctx):
     # 3. Run black on the isort formatted code to enforce its code style guidelines.
     fuchsia_dir = get_fuchsia_dir(ctx)
     platform = cipd_platform_name(ctx)
+    python_bin = "%s/prebuilt/third_party/python3/%s/bin/python3" % (
+        fuchsia_dir,
+        platform,
+    )
+
+    # Filter out .py files that are symlinks to .bzl files.
+    # We have some .bzl files that are symlinked as .py files. While they are valid
+    # Python files, we do not want to format them using the Python formatter as
+    # they should follow Starlark/.bzl formatting rules instead.
+    filter_script = (
+        "import sys, os\n" +
+        "for f in sys.stdin.read().splitlines():\n" +
+        "    if f and not (os.path.islink(f) and os.path.realpath(f).endswith('.bzl')):\n" +
+        "        print(f)\n"
+    )
+    res = os_exec(
+        ctx,
+        [python_bin, "-c", filter_script],
+        stdin = "\n".join(py_files),
+    ).wait()
+    if res.retcode != 0:
+        fail("failed to filter python files:\n" + res.stderr)
+    py_files = [f for f in res.stdout.split("\n") if f]
+
+    if not py_files:
+        return
 
     autoflake_cmd = [
-        "%s/prebuilt/third_party/python3/%s/bin/python3" % (
-            fuchsia_dir,
-            platform,
-        ),
+        python_bin,
         "%s/third_party/pylibs/autoflake/main.py" % fuchsia_dir,
         "--remove-unused-variables",
         "--remove-all-unused-imports",
@@ -38,10 +61,7 @@ def _pyfmt(ctx):
         "--stdout",
     ]
     isort_cmd = [
-        "%s/prebuilt/third_party/python3/%s/bin/python3" % (
-            fuchsia_dir,
-            platform,
-        ),
+        python_bin,
         "%s/third_party/pylibs/isort/main.py" % fuchsia_dir,
         # The skip flag is necessary to override the default autoflake behavior,
         # which includes the "build/" directory in its skip section.
