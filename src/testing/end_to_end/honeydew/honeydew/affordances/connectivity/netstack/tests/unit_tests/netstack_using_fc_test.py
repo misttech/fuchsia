@@ -44,7 +44,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         super().setUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice,
+            spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(
@@ -60,7 +60,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
             netstack_using_fc._REQUIRED_CAPABILITIES
         )
 
-        self.netstack_obj = netstack_using_fc.NetstackUsingFc(
+        self.netstack_obj = netstack_using_fc.AsyncNetstackUsingFc(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -74,7 +74,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            self.netstack_obj = netstack_using_fc.NetstackUsingFc(
+            netstack_using_fc.AsyncNetstackUsingFc(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

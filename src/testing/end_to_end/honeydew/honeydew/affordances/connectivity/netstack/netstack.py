@@ -9,13 +9,8 @@ from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.netstack.types import InterfaceProperties
 
 
-class Netstack(affordance.Affordance):
-    """Abstract base class for Netstack affordance."""
-
-    # List all the public methods
-    @abc.abstractmethod
-    def list_interfaces_sync(self) -> list[InterfaceProperties]:
-        pass
+class AsyncNetstack(abc.ABC):
+    """Abstract base class for an async Netstack affordance."""
 
     @abc.abstractmethod
     async def list_interfaces(self) -> list[InterfaceProperties]:
@@ -27,3 +22,23 @@ class Netstack(affordance.Affordance):
         Raises:
             HoneydewNetstackError: Error from the netstack.
         """
+
+
+class Netstack(affordance.Affordance):
+    """Abstract base class for Netstack affordance."""
+
+    # List all the public methods
+    @abc.abstractmethod
+    def list_interfaces(self) -> list[InterfaceProperties]:
+        """List interfaces.
+
+        Returns:
+            Information on all interfaces on the device.
+
+        Raises:
+            HoneydewNetstackError: Error from the netstack.
+        """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncNetstack:
+        """Returns the async version of Netstack."""

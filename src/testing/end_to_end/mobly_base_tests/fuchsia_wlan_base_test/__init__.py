@@ -35,7 +35,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = await netstack.list_interfaces()
+            interfaces = await netstack.as_async().list_interfaces()
             for interface in interfaces:
                 if interface.port_class is port_class:
                     return

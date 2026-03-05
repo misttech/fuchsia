@@ -671,17 +671,17 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def netstack(self) -> netstack.Netstack:
+    def netstack(self) -> netstack.AsyncNetstack:
         """Returns a netstack affordance object.
 
         Returns:
-            netstack.Netstack object
+            netstack.AsyncNetstack object
         """
-        return netstack_using_fc.NetstackUsingFc(
+        return netstack_using_fc.AsyncNetstackUsingFc(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
+            reboot_affordance=self,
         )
 
     @properties.Affordance

@@ -19,9 +19,9 @@ class NetstackTests(fuchsia_base_test.FuchsiaBaseTest):
         super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    async def test_list_interfaces(self) -> None:
+    def test_list_interfaces(self) -> None:
         """Verify list_interfaces() works on device."""
-        interfaces = await self.device.netstack.list_interfaces()
+        interfaces = self.device.netstack.list_interfaces()
         asserts.assert_greater(len(interfaces), 0)
 
 

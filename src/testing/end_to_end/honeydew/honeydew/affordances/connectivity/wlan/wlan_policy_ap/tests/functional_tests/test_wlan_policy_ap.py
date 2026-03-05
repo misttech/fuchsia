@@ -55,7 +55,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + WLAN_INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = self.device.netstack.list_interfaces_sync()
+            interfaces = self.device.netstack.list_interfaces()
             for interface in interfaces:
                 if interface.port_class is PortClass.WLAN_CLIENT:
                     return

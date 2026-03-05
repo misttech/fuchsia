@@ -377,7 +377,7 @@ class FuchsiaDevice:
         # because only netstack has that information. The bug linked here is
         # to reconcile some of the information between the two perspectives, at
         # which point we can eliminate this step.
-        netstack_interfaces = self.honeydew_fd.netstack.list_interfaces_sync()
+        netstack_interfaces = self.honeydew_fd.netstack.list_interfaces()
         wlan_interfaces_by_mac = (
             self.honeydew_fd.wlan_core.query_interfaces_sync()
         )

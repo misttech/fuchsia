@@ -42,23 +42,23 @@ _INTERFACES_PROXY = FidlEndpoint(
 )
 
 
-class NetstackUsingFc(netstack.Netstack):
-    """WLAN affordance implemented with Fuchsia Controller."""
+class AsyncNetstackUsingFc(netstack.AsyncNetstack):
+    """Async netstack affordance implemented with Fuchsia Controller."""
 
     def __init__(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
-        """Create a WLAN Policy Fuchsia Controller affordance.
+        """Create an Async Netstack Fuchsia Controller affordance.
 
         Args:
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements RebootCapableDevice.
+            reboot_affordance: Object that implements AsyncRebootCapableDevice.
         """
         super().__init__()
 
@@ -73,7 +73,7 @@ class NetstackUsingFc(netstack.Netstack):
         self._reboot_affordance.register_for_on_device_boot(self._connect_proxy)
 
     def verify_supported(self) -> None:
-        """Check if WLAN Policy is supported on the DUT.
+        """Check if Netstack is supported on the DUT.
 
         Raises:
             NotSupportedError: Netstack affordance is not supported by Fuchsia device.
@@ -97,21 +97,16 @@ class NetstackUsingFc(netstack.Netstack):
                 raise errors.NotSupportedError(
                     f'Component capability "{capability}" not exposed by device '
                     f"{self.device}; this build of Fuchsia does not support the "
-                    "WLAN FC affordance."
+                    "Netstack FC affordance."
                 )
 
     def _connect_proxy(self) -> None:
-        """Re-initializes connection to the WLAN stack."""
+        """Re-initializes connection to the Netstack."""
         self._state_proxy = f_net_interfaces.StateClient(
             self._fc_transport.connect_device_proxy(_STATE_PROXY)
         )
         self._interfaces_proxy = f_net_root.InterfacesClient(
             self._fc_transport.connect_device_proxy(_INTERFACES_PROXY)
-        )
-
-    def list_interfaces_sync(self) -> list[InterfaceProperties]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.list_interfaces()
         )
 
     async def list_interfaces(self) -> list[InterfaceProperties]:
@@ -196,3 +191,54 @@ class NetstackUsingFc(netstack.Netstack):
                 )
 
         return properties
+
+
+class NetstackUsingFc(netstack.Netstack):
+    """Netstack affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+    ) -> None:
+        """Create a Netstack Fuchsia Controller affordance.
+
+        Args:
+            device_name: Device name returned by `ffx target list`.
+            ffx: FFX transport.
+            fuchsia_controller: Fuchsia Controller transport.
+            reboot_affordance: Object that implements RebootCapableDevice.
+        """
+        self._inner = AsyncNetstackUsingFc(
+            device_name=device_name,
+            ffx=ffx,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Check if Netstack is supported on the DUT.
+
+        Raises:
+            NotSupportedError: Netstack affordance is not supported by Fuchsia device.
+        """
+        self._inner.verify_supported()
+
+    def list_interfaces(self) -> list[InterfaceProperties]:
+        """List interfaces.
+
+        Returns:
+            Information on all interfaces on the device.
+
+        Raises:
+            HoneydewNetstackError: Error from the netstack.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.list_interfaces()
+        )
+
+    def as_async(self) -> AsyncNetstackUsingFc:
+        """Returns the async version of Netstack."""
+        return self._inner
