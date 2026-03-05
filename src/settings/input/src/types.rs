@@ -26,9 +26,8 @@ impl From<&InputInfo> for FidlInputSettings {
             devices: Some(
                 info.input_device_state
                     .input_categories
-                    .values() // Use values() directly
+                    .values()
                     .flat_map(|category| {
-                        // No need for (_, category) anymore
                         category.devices.values().cloned().map(|device| device.into())
                     })
                     .collect(),
