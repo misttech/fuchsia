@@ -81,7 +81,8 @@ source_set("usb-endpoint-server-dfv2-compat-logging") {
   ]
 }
 
-source_set("fake-usb-endpoint-server") {
+source_set("fake-server-sources") {
+  visibility = [ ":*" ]
   testonly = true
   public = [ "testing/fake-usb-endpoint-server.h" ]
   sources = [ "testing/fake-usb-endpoint-server.h" ]
@@ -91,4 +92,22 @@ source_set("fake-usb-endpoint-server") {
     "//sdk/lib/component/outgoing/cpp",
   ]
   deps = [ "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp" ]
+}
+
+config("use-zxtest-config") {
+  visibility = [ ":*" ]
+  defines = [ "USE_ZXTEST" ]
+}
+
+group("fake-usb-endpoint-server-zxtest") {
+  testonly = true
+
+  public_deps = [ ":fake-server-sources" ]
+  public_configs = [ ":use-zxtest-config" ]
+}
+
+group("fake-usb-endpoint-server") {
+  testonly = true
+
+  public_deps = [ ":fake-server-sources" ]
 }

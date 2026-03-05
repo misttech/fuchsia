@@ -74,7 +74,7 @@ test("overnet-usb-test-bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/driver/testing/cpp",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
     "//zircon/system/ulib/zxtest",
   ]
 }

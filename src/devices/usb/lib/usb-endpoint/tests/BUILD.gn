@@ -22,7 +22,7 @@ test("usb-endpoint-test-bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/no_ddk",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-server",
     "//zircon/system/ulib/zxtest",

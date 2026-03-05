@@ -18,7 +18,7 @@ cc_test_executable("usb-audio-test-bin") {
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//src/devices/testing/mock-ddk",
     "//src/devices/usb/lib/usb",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
     "//zircon/system/ulib/zxtest",
   ]
 

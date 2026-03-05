@@ -13,7 +13,11 @@
 #include <mutex>
 #include <queue>
 
+#ifdef USE_ZXTEST
 #include <zxtest/zxtest.h>
+#else
+#include <gtest/gtest.h>
+#endif
 
 namespace fake_usb_endpoint {
 
