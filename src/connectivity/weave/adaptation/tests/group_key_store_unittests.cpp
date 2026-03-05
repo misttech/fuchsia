@@ -9,6 +9,8 @@
 #include "group_key_store_impl.h"
 // clang-format on
 
+#include <lib/stdcompat/string_view.h>
+
 #include <gtest/gtest.h>
 
 #include "environment_config.h"
@@ -244,7 +246,7 @@ TEST_F(GroupKeyStoreTest, ClearKeys) {
       group_key_store().EnumerateGroupKeys(WeaveKeyId::kNone, key_ids, kMaxGroupKeys, key_count),
       WEAVE_NO_ERROR);
   EXPECT_EQ(key_count, 0);
-  EXPECT_EQ(ReadConfigStore().find("gk-"), std::string::npos);
+  EXPECT_FALSE(cpp23::contains(ReadConfigStore(), "gk-"));
 }
 
 TEST_F(GroupKeyStoreTest, RetrieveLastUsedEpochKeyId) {

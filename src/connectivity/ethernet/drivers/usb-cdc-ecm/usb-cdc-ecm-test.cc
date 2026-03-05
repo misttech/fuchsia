@@ -14,6 +14,7 @@
 #include <lib/fdio/watcher.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/hid/boot.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/vmo.h>
@@ -63,7 +64,7 @@ zx_status_t WaitForDevice(int dirfd, int event, const char* name, void* cookie) 
   }
   std::string_view topological_path = response.value();
   DevicePaths* paths = reinterpret_cast<DevicePaths*>(cookie);
-  if (topological_path.find(paths->query) != std::string::npos) {
+  if (cpp23::contains(topological_path, paths->query)) {
     paths->path = paths->subdir + std::string{name};
     return ZX_ERR_STOP;
   }

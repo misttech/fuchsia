@@ -4,6 +4,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <algorithm>
@@ -210,7 +211,7 @@ bool MdnsNames::IsValidInstanceName(const DnsLabel& instance_name) {
 bool MdnsNames::IsValidSubtypeName(const DnsLabel& subtype_name) {
   // Subtype names consist of a single label.
   return subtype_name.length() > 0 && subtype_name.length() <= kMaxLabelLength &&
-         subtype_name.find(kLabelSeparator) == std::string::npos;
+         !cpp23::contains(subtype_name, kLabelSeparator);
 }
 
 // static

@@ -130,6 +130,7 @@ source_set("source_set") {
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_hlcpp",
     "//sdk/lib/fit",
     "//sdk/lib/inspect/component/cpp",
+    "//sdk/lib/stdcompat",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/connectivity/network/lib/net_interfaces/cpp",

@@ -48,6 +48,7 @@ template("ot_radio_driver") {
       "//sdk/lib/async:async-cpp",
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/async-loop:async-loop-default",
+      "//sdk/lib/stdcompat",
       "//src/connectivity/openthread/drivers/ot-radio:ot_radio_bind",
       "//src/connectivity/openthread/third_party/openthread:spinel-framer",
       "//src/devices/lib/driver",

@@ -19,6 +19,8 @@ source_set("src") {
     "util.h",
   ]
 
+  deps = [ "//sdk/lib/stdcompat" ]
+
   public_deps = [ "//src/lib/fxl" ]
 }
 

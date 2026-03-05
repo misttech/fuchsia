@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/driver-unit-test/utils.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/sync/completion.h>
 
 #include <zxtest/zxtest.h>
@@ -33,7 +34,7 @@ TEST(OtRadioTestCase, BootloaderGetVersionTest) {
   // Ensure that command succeeded
   ASSERT_EQ(result, ot::BL_RET_SUCCESS);
   // Ensure that version contains string 'Bootloader'
-  ASSERT_NE(bl_version.find("Bootloader"), std::string::npos);
+  ASSERT_TRUE(cpp23::contains(bl_version, "Bootloader"));
   // Teardown
   ASSERT_OK(dev->ShutDown());
 }

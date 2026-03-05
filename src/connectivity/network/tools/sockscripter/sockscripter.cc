@@ -6,6 +6,7 @@
 
 #include <arpa/inet.h>
 #include <getopt.h>
+#include <lib/stdcompat/string_view.h>
 #include <net/if.h>
 #include <netinet/icmp6.h>
 #include <netinet/tcp.h>
@@ -1098,11 +1099,11 @@ bool SockScripter::Shutdown(char* arg) {
   std::string howStr(arg);
 
   bool read = false;
-  if (howStr.find("rd") != std::string::npos) {
+  if (cpp23::contains(howStr, "rd")) {
     read = true;
   }
   bool write = false;
-  if (howStr.find("wr") != std::string::npos) {
+  if (cpp23::contains(howStr, "wr")) {
     write = true;
   }
 

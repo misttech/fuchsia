@@ -121,6 +121,7 @@ test("usb-cdc-ecm-integration") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async-loop-testing/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/stdcompat",
     "//src/connectivity/lib/network-device/cpp",
     "//src/devices/lib/client:device_topology",
     "//src/devices/usb/testing/usb-virtual-bus-launcher",

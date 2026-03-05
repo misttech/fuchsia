@@ -143,6 +143,7 @@ resource("weavestack-adaptation-config") {
 group("common_test_deps") {
   testonly = true
   public_deps = [
+    "//sdk/lib/stdcompat",
     "//sdk/lib/sys/cpp/testing:unit",
     "//sdk/lib/vfs/cpp",
     "//src/connectivity/weave/adaptation",
