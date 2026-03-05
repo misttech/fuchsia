@@ -173,7 +173,11 @@ impl<'a> RawTraceRecord<'a> {
     fn parse(buf: &'a [u8]) -> ParseResult<'a, ParsedWithOriginalBytes<'a, Self>> {
         use nom::combinator::map;
         let base_header = BaseTraceHeader::parse(buf)?.1;
-        let size_bytes = base_header.size_words() as usize * 8;
+        let size_bytes = if base_header.raw_type() == LARGE_RECORD_TYPE {
+            crate::blob::LargeBlobHeader::parse(buf)?.1.size_words() as usize * 8
+        } else {
+            base_header.size_words() as usize * 8
+        };
         if size_bytes == 0 {
             return Err(nom::Err::Failure(ParseError::InvalidSize));
         }

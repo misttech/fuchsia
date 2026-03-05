@@ -91,13 +91,13 @@ macro_rules! trace_header {
             }
 
             #[allow(unused)] // Some headers are converted from others and don't need to be parsed.
-            fn parse(buf: &[u8]) -> crate::ParseResult<'_, Self> {
+            pub(crate) fn parse(buf: &[u8]) -> crate::ParseResult<'_, Self> {
                 use nom::Parser;
                 nom::combinator::map_res(nom::number::streaming::le_u64, |h| Self::new(h)).parse(buf)
             }
 
             #[allow(unused)] // Not all headers come with payloads, some we use to probe for types.
-            fn take_payload<'a>(&self, buf: &'a [u8]) -> crate::ParseResult<'a, &'a [u8]> {
+            pub(crate) fn take_payload<'a>(&self, buf: &'a [u8]) -> crate::ParseResult<'a, &'a [u8]> {
                 if self.size_words() == 0 {
                     return Err(nom::Err::Failure(crate::ParseError::InvalidSize));
                 }

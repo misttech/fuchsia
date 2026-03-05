@@ -9,12 +9,12 @@ use crate::session::ResolveCtx;
 use crate::string::StringRef;
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRef};
 use crate::{
-    take_n_padded, trace_header, ParseResult, Provider, BLOB_RECORD_TYPE, LARGE_RECORD_TYPE,
+    BLOB_RECORD_TYPE, LARGE_RECORD_TYPE, ParseResult, Provider, take_n_padded, trace_header,
 };
 use flyweights::FlyStr;
+use nom::Parser;
 use nom::combinator::all_consuming;
 use nom::number::complete::le_u64;
-use nom::Parser;
 
 const BLOB_TYPE_DATA: u8 = 0x01;
 const BLOB_TYPE_LAST_BRANCH: u8 = 0x02;
@@ -244,9 +244,9 @@ bitfield::bitfield! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fxt_builder::FxtBuilder;
     use crate::RawTraceRecord;
-    use std::num::{NonZeroU16, NonZeroU8};
+    use crate::fxt_builder::FxtBuilder;
+    use std::num::{NonZeroU8, NonZeroU16};
 
     #[test]
     fn blob_name_index() {
@@ -386,6 +386,38 @@ mod tests {
                         }],
                     },
                 )
+            })
+        );
+    }
+
+    #[test]
+    fn large_blob_large_size() {
+        let payload = vec![0xEFu8; 32768];
+        let mut header = LargeBlobHeader::empty();
+        header.set_blob_format_type(BLOB_TYPE_DATA);
+        header.set_large_record_type(LARGE_BLOB_NO_METADATA_TYPE);
+
+        let mut format_header = LargeBlobFormatHeader(0);
+        format_header.set_category_ref(7);
+        format_header.set_name_ref(8);
+
+        let mut buf = Vec::new();
+        // size in words: Large Blob Header (1 word) + format_header (1 word) + payload_len (1 word) + 32768 bytes payload (4096 words) = 4099 words.
+        let size_words = (8 + 8 + 8 + payload.len() as u64) / 8;
+        header.set_size_words(size_words as u32);
+
+        buf.extend_from_slice(&header.0.to_le_bytes());
+        buf.extend_from_slice(&format_header.0.to_le_bytes());
+        buf.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        buf.extend_from_slice(&payload);
+
+        assert_parses_to_record!(
+            buf,
+            RawTraceRecord::LargeBlob(RawLargeBlobRecord {
+                ty: BlobType::Data,
+                category: StringRef::Index(NonZeroU16::new(7).unwrap()),
+                name: StringRef::Index(NonZeroU16::new(8).unwrap()),
+                payload: RawLargeBlobPayload::BytesOnly(&payload[..]),
             })
         );
     }
