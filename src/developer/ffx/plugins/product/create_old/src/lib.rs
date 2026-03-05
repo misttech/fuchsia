@@ -174,6 +174,7 @@ mod test {
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
         .unwrap();
@@ -216,6 +217,9 @@ mod test {
                 system_a: Some(vec![]),
                 system_b: None,
                 system_r: None,
+                platform_tools_a: vec![],
+                platform_tools_b: vec![],
+                platform_tools_r: vec![],
                 repositories: vec![],
                 update_package_hash: None,
                 virtual_devices_path: None,
@@ -250,6 +254,7 @@ mod test {
             board_name: "my_board".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
         .unwrap();
@@ -292,6 +297,9 @@ mod test {
                 system_a: Some(vec![]),
                 system_b: None,
                 system_r: Some(vec![]),
+                platform_tools_a: vec![],
+                platform_tools_b: vec![],
+                platform_tools_r: vec![],
                 repositories: vec![],
                 update_package_hash: None,
                 virtual_devices_path: None,
@@ -326,6 +334,7 @@ mod test {
             board_name: "my_board".into(),
             partitions_config: None,
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         };
         manifest.images = vec![
             Image::ZBI { path: tempdir.join("path1"), signed: false },
@@ -384,6 +393,7 @@ mod test {
             board_name: "my_board".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
         .unwrap();
@@ -429,6 +439,9 @@ mod test {
                 system_a: Some(vec![]),
                 system_b: None,
                 system_r: Some(vec![]),
+                platform_tools_a: vec![],
+                platform_tools_b: vec![],
+                platform_tools_r: vec![],
                 repositories: vec![Repository {
                     name: "fuchsia.com".into(),
                     metadata_path: pb_dir.join("repository"),
@@ -480,6 +493,7 @@ mod test {
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
         .unwrap();
@@ -523,8 +537,11 @@ mod test {
                 partitions,
                 sdk_version: _,
                 system_a: Some(_),
+                platform_tools_a: _,
                 system_b: None,
+                platform_tools_b: _,
                 system_r: None,
+                platform_tools_r: _,
                 repositories,
                 update_package_hash: Some(_),
                 virtual_devices_path: None,
@@ -573,6 +590,7 @@ mod test {
             board_name: "board_name".into(),
             partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
+            platform_tools: vec![],
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
         .unwrap();
@@ -615,6 +633,9 @@ mod test {
                 system_a: Some(vec![]),
                 system_b: None,
                 system_r: None,
+                platform_tools_a: vec![],
+                platform_tools_b: vec![],
+                platform_tools_r: vec![],
                 repositories: vec![],
                 update_package_hash: None,
                 virtual_devices_path: Some(pb_dir.join("virtual_devices/manifest.json")),
