@@ -162,8 +162,12 @@ A driver can only create an additional dispatcher during a callback from a
 dispatcher, that is, when a dispatcher calls into a driver (see
 [Dispatcher operations](#dispatcher-operations) for examples of when this occurs).
 Unlike the default dispatcher, the driver owns and manages the lifetime of these
-additional dispatchers. In DFv2, the driver host automatically shuts down a
-driver’s additional dispatchers before the driver’s `Stop()` hook is called.
+additional dispatchers.
+
+In DFv2, the driver host automatically shuts down a driver’s additional
+dispatchers during driver shutdown.  For C++ drivers, this happens after
+`DriverBase::PrepareStop()` but before `DriverBase::Stop()`.  For Rust drivers,
+this happens after `Driver::stop()`.
 
 <!-- Reference links -->
 
