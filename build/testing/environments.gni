@@ -502,6 +502,7 @@ wlan_ap_envs = [
   wlan_sherlock_ap_env,
   wlan_nelson_ap_env,
   wlan_nuc11_ap_env,
+  wlan_sorrel_ap_env,
 ]
 
 # TODO(https://fxbug.dev/465744822): Each environment should be specified in
