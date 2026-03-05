@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
+use anyhow::{Context, format_err};
 use async_trait::async_trait;
-use fuchsia_async::net::TcpStream;
 use fuchsia_async::TimeoutExt;
+use fuchsia_async::net::TcpStream;
 
 use futures::{AsyncReadExt, AsyncWriteExt, TryFutureExt};
-use log::{info, warn};
+use log::log;
 use std::net;
 
 const FETCH_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
@@ -119,15 +119,22 @@ impl Fetch for Fetcher {
                 // and signifies a network may not have connectivity across
                 // one of the IP protocols, which can be common for home
                 // network configurations.
-                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                    if io_error.raw_os_error() == Some(libc::ENETUNREACH)
-                        || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
-                    {
-                        info!("error while fetching {host}{path}: {e:?}");
-                        return None;
-                    }
-                }
-                warn!("error while fetching {host}{path}: {e:?}");
+                let level = if let Some(io_error) = e.downcast_ref::<std::io::Error>()
+                    && (io_error.raw_os_error() == Some(libc::ENETUNREACH)
+                        || io_error.raw_os_error() == Some(libc::EHOSTUNREACH))
+                {
+                    log::Level::Info
+                } else {
+                    log::Level::Warn
+                };
+
+                let addr = addr.as_socket_addr();
+                log!(
+                    level,
+                    "error while fetching {host}{path} from {addr} \
+                     through {interface_name}: {e:?}"
+                );
+
                 None
             }
         }
