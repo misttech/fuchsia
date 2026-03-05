@@ -1,3 +1,8 @@
+keywords: category:FuchsiaSystems,docType:Guide,docType:ApiReference,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, C++, threading, thread-safety, use-after-free, teardown, unbind, Client, SharedClient, WireClient, WireSharedClient, synchronized dispatcher, async dispatcher, two-phase shutdown, reference counting, event handler, server-side threading, BindServer
+description: This guide explains the threading models and tools available in the new C++ FIDL bindings to ensure thread-safety and prevent use-after-free errors during the lifecycle of a FIDL connection.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # New C++ bindings threading guide
 
 The new C++ bindings accommodate a diverse set of threading models. Depending on

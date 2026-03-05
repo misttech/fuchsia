@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaTestAndDebug,category:FuchsiaKernel,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: fidlcat, FIDL, system calls, syscalls, monitoring, debugging, Fuchsia, stack frames, filtering, summary view
+description: This guide explains how to use the fidlcat tool to monitor, filter, and analyze FIDL messages and system calls in a Fuchsia environment.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # fidlcat: Guide
 
 Once you have [launched `fidlcat`](/docs/development/monitoring/fidlcat) and

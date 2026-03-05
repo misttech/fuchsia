@@ -1,3 +1,8 @@
+keywords: docType:Overview,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaPowerAndPerformance,category:FuchsiaFidl
+keywords_public: FIDL, example, Canvas, 2D line-drawing, data flow patterns, flow control, performance, client requests, draw operations, Fuchsia
+description: This document provides an overview of the FIDL Canvas example, which demonstrates various data flow patterns and performance optimizations for a 2D line-drawing application in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL example: Canvas
 
 In this example, we start by creating a 2D line-drawing canvas, then proceed to

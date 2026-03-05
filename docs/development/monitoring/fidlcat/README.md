@@ -1,3 +1,8 @@
+keywords: category:FuchsiaSystems,category:FuchsiaTestAndDebug,category:FuchsiaFidl,category:FuchsiaTools
+keywords_public: fidlcat, FIDL, monitoring, debugging, Fuchsia, ffx debug fidl, remote-pid, remote-name, symbols, FIDL IR, troubleshooting
+description: fidlcat is a tool for monitoring and debugging FIDL connections on Fuchsia by attaching to or launching processes and reporting their FIDL traffic.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # fidlcat: Monitor and debug your fidl calls
 
 ## Overview

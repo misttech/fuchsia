@@ -1,3 +1,7 @@
+keywords: tutorial, asynchronous, Fuchsia, contentType:ApiReference, contentType:Concept, topic:Platform, FIDL, topic:FuchsiaSystems, client, topic:Tools, contentType:Workflow, protocol
+description: This document provides an overview and prerequisites for a tutorial on implementing an asynchronous FIDL client in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 ## Prerequisites
 
 This tutorial builds on the [FIDL server][server-tut] tutorial. For the

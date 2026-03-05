@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Overview,docType:Guide,category:FuchsiaSystems,docType:ApiReference,category:FuchsiaDevelopment,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Fuchsia Interface Definition Language, IPC, Inter-process communication, tutorials, developer guides, API design, ABI compatibility, API compatibility, bindings, wire format, RFCs
+description: This page provides an overview of the Fuchsia Interface Definition Language (FIDL), including links to tutorials, developer guides, API design principles, and language references for Fuchsia's inter-process communication system.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL
 
 FIDL (**F**uchsia **I**nterface **D**efinition **L**anguage) is the IPC system for Fuchsia.

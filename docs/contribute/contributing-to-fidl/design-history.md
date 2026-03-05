@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Overview,category:FuchsiaSecurityAndCompliance,category:FuchsiaPowerAndPerformance,category:FuchsiaFidl
+keywords_public: FIDL, RFC, FTP, design history, governance, evolvability, expressivity, syntax, ergonomics, performance, safety, security, tooling, documentation, language features, status
+description: This page provides a comprehensive history and current status of FIDL design proposals (RFCs and FTPs), organized by theme, language feature, and implementation status.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL design history
 
 This page provides a starting point for navigating [RFCs] in the "FIDL" area. It

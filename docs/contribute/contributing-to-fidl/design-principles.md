@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Overview,docType:ApiReference,category:FuchsiaPowerAndPerformance,category:FuchsiaFidl
+keywords_public: FIDL, design principles, ABI, API, wire format, binary format, low level, performance, optimization, canonical representation, allocation, reflection, transport generality, Fuchsia
+description: This document outlines the core design principles of the Fuchsia Interface Definition Language (FIDL), covering aspects such as binary wire format priority, low-level optimization, and maintaining a canonical representation.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL design principles
 
 This page summarizes the key design principles that FIDL has adopted over time.

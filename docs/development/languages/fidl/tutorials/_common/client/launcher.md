@@ -1,3 +1,7 @@
+keywords: tutorial, EchoLauncher, Fuchsia, contentType:ApiReference, topic:Platform, FIDL, topic:FuchsiaSystems, GetEcho, GetEchoPipelined, contentType:Workflow, protocol, pipelining
+description: This tutorial explains how to implement the EchoLauncher protocol to retrieve Echo protocol instances using both standard and pipelined methods in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 To do so, this tutorial implements the `EchoLauncher` protocol from the
 [fuchsia.examples library](/examples/fidl/fuchsia.examples/):
 

@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,category:FuchsiaDevelopment,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: Rust, FIDL, tutorials, server, client, async, synchronous, request pipelining, unified services, Fuchsia
+description: This page provides an overview and links to various tutorials for using Rust FIDL bindings in Fuchsia, covering basic setup, server and client implementation, and advanced topics like request pipelining and unified services.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Rust tutorials
 
 This section includes the following tutorials for using the Rust

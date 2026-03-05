@@ -1,3 +1,8 @@
+keywords: docType:Guide,docType:ApiReference,category:FuchsiaFidl
+keywords_public: FIDL, Rust, services, tutorial, RFC-0041
+description: This tutorial provides resources and references for implementing and using FIDL services in Rust on Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Using services
 
 Refer to the [example code][code] for how to use services in Rust. For

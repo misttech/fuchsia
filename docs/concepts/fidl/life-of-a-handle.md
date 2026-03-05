@@ -1,3 +1,8 @@
+keywords: category:FuchsiaSystems,docType:Guide,category:FuchsiaDevelopment,category:FuchsiaSecurityAndCompliance,category:FuchsiaKernel,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Zircon handle, handle rights, validation, zx_channel_write_etc, zx_channel_read_etc, handle disposition, handle info, kernel, bindings
+description: This page provides a step-by-step explanation of how FIDL transfers a Zircon handle between processes, including how handle rights are specified, validated by the kernel, and handled by FIDL bindings.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Life of a handle in FIDL
 
 This page gives a step-by-step explanation of how FIDL transfers a [Zircon

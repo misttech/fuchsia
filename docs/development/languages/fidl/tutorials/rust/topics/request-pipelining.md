@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaSDK,category:FuchsiaPowerAndPerformance,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: FIDL, Rust, Request pipelining, Protocol, Client, Server, Fuchsia, Tutorial, EchoLauncher, Echo, Channel, Proxy
+description: This tutorial explains the request pipelining pattern in FIDL using Rust, demonstrating how to pass protocol requests efficiently to reduce round-trip latency between clients and servers.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Request pipelining in Rust
 
 ## Prerequisites

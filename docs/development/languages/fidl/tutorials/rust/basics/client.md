@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaSDK,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: FIDL, Rust, client, tutorial, Fuchsia, component, protocol, asynchronous, connect_to_protocol, EchoString, SendString, OnString, event stream, GN, CML
+description: This tutorial provides a step-by-step guide to implementing an asynchronous FIDL client in Rust, covering component creation, connecting to a server, sending requests, and handling events.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a FIDL client in Rust
 
 ## Prerequisites

@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaDevelopment,category:FuchsiaTestAndDebug,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Fuchsia, contributing, fidlc, fidlgen, GIDL, testing, bindings, toolchain, development, debugging, golden files
+description: This document provides a comprehensive guide for developers contributing to the FIDL toolchain, covering code organization, development setup, testing procedures, and debugging workflows.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Contributing to FIDL
 
 [TOC]

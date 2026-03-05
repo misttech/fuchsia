@@ -1,3 +1,8 @@
+keywords: category:FuchsiaPowerAndPerformance,category:FuchsiaSDK,category:FuchsiaFidl,category:FuchsiaTools
+keywords_public: FIDL, C++, wire domain objects, memory ownership, fidl::Arena, fidl::StringView, fidl::VectorView, fidl::ObjectView, memory management, performance, safety
+description: This document explains how to manage memory ownership and lifetimes when using wire domain objects in the Fuchsia C++ FIDL bindings, covering tools like arenas and unowned views.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Memory ownership of wire domain objects
 
 This document provides an overview of the tools available to manage memory when

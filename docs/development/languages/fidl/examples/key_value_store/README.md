@@ -1,3 +1,8 @@
+keywords: docType:Guide,docType:ApiReference,category:FuchsiaDevelopment,category:FuchsiaTestAndDebug,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, key-value store, example, tutorial, client, server, interface definition, test harness, Fuchsia
+description: This page provides a baseline example of a write-only key-value store in Fuchsia, covering FIDL interface definitions, client and server implementations, and a test harness.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Key-value store: Baseline example
 
 This page details how to create an example write-only key-value

@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,docType:ApiReference,category:FuchsiaDevelopment,category:FuchsiaFidl
+keywords_public: FIDL, calculator, example, protocol, tutorial, Fuchsia, development
+description: This document provides an overview of a basic FIDL calculator example, serving as a starting point for learning how to construct and iterate on FIDL protocols in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL example: Calculator
 
 This Calculator example shows how to construct a FIDL protocol with

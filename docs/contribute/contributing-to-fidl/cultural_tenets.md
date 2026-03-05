@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,category:FuchsiaBuild,category:FuchsiaFidl
+keywords_public: Fuchsia, FIDL, cultural tenets, design inventory, one voice, bias for action, start small, team values, contribution, RFC
+description: This document outlines the four cultural tenets of the Fuchsia FIDL team—keeping design inventory low, speaking with one voice, maintaining a bias for action, and starting small—to guide their work, projects, and collaboration.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Cultural tenets of the Fuchsia FIDL team
 
 Here are four cultural tenets which have helped keep the members of the [Fuchsia

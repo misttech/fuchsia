@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaSDK,category:FuchsiaFidl,category:FuchsiaTools
+keywords_public: FIDL, C++, Request pipelining, Protocol endpoints, Client end, Server end, EchoLauncher, Tutorial, Fuchsia, Asynchronous communication
+description: This tutorial explains how to implement and use protocol request pipelining in C++ for FIDL, demonstrating its benefits in reducing roundtrips and simplifying code when passing protocol endpoints.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Protocol request pipelining in C++
 
 ## Prerequisites

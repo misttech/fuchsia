@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaBuild,category:FuchsiaFidl
+keywords_public: FIDL, Rust, server, Fuchsia, tutorial, Echo protocol, ServiceFs, component manifest, GN, fuchsia-async, fuchsia-component, EchoRequestStream
+description: This tutorial provides a step-by-step guide on implementing a FIDL server in Rust, covering protocol implementation, component creation, and service exposure on Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a FIDL server in Rust
 
 ## Prerequisites

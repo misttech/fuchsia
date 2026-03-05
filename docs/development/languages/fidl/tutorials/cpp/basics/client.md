@@ -1,3 +1,8 @@
+keywords: docType:Guide,docType:ApiReference,category:FuchsiaSDK,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: FIDL, C++, client, tutorial, Fuchsia, asynchronous, dispatcher, event loop, natural types, wire types, component, package, Echo protocol
+description: This tutorial provides a step-by-step guide to implementing an asynchronous C++ FIDL client on Fuchsia, covering connection to protocols, initialization of event loops, and making calls using both natural and wire domain objects.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a C++ FIDL client
 
 <!-- TODO(https://fxbug.dev/42136750) <<../../common/client/overview.md>> -->

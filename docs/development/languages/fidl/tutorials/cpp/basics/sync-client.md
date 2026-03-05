@@ -1,3 +1,8 @@
+keywords: docType:Guide,docType:ApiReference,category:FuchsiaSDK,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: FIDL, C++, synchronous client, SyncClient, WireSyncClient, Fuchsia, tutorial, Echo protocol, natural domain objects, wire domain objects, event handling, component framework
+description: This tutorial provides a step-by-step guide to implementing a synchronous C++ FIDL client on Fuchsia, covering connection to protocols, making calls using both natural and wire domain objects, and handling events.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a synchronous C++ FIDL client
 
 <!-- <<../../common/client/overview.md>> -->

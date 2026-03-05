@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, C++, domain objects, natural types, wire types, bindings, Fuchsia, tutorial, structs, unions, tables, bits, enums, conversion, persistence
+description: This tutorial explains how to use natural and wire domain objects in C++ FIDL bindings, covering their differences, usage for various FIDL types, and how to convert between them.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Using natural and wire domain objects
 
 ## Prerequisites

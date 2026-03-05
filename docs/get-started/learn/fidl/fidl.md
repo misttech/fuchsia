@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Overview,category:FuchsiaSystems,docType:ApiReference,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Fuchsia Interface Definition Language, FIDL library, FIDL bindings, fidlc, fidlgen, BUILD.gn, Rust, C++, Echo protocol, IPC, code generation
+description: This document provides an overview of the Fuchsia Interface Definition Language (FIDL), explaining how to create FIDL libraries, generate language-specific bindings, and use them for inter-process communication in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Fuchsia Interface Definition Language
 
 <<../../_common/fidl/_fidl_intro.md>>

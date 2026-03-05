@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaTestAndDebug,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Rust, tutorial, crates, bindings, Fuchsia, build dependency, unit test
+description: This tutorial explains how to use FIDL from Rust by creating a unit test to explore the generated Rust bindings and adding them as a build dependency.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL Rust crates
 
 ## Prerequisites

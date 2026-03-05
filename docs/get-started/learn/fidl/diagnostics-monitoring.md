@@ -1,3 +1,7 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaTestAndDebug,docType:ApiReference,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: Fuchsia, FIDL, Diagnostics, Monitoring, fidlcat, Inspect API, ffx debug fidl, ffx inspect, Component inspection, Health checks, Rust, C++
+description: This guide demonstrates how to use diagnostics tools like fidlcat and the Inspect API to monitor FIDL traffic and track component health and behavior in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
 
 # Diagnostics and monitoring
 

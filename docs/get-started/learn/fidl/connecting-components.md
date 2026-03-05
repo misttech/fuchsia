@@ -1,3 +1,8 @@
+keywords: docType:Guide,docType:ApiReference,category:FuchsiaSDK,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: FIDL, Fuchsia, Component Framework, Capability Routing, Protocol Implementation, Echo Server, Echo Client, Component Manifest, CML, Rust, C++, ffx, ServiceFs, ComponentContext
+description: This tutorial explains how to connect Fuchsia components using FIDL protocols, covering protocol publishing, client connection, and capability routing with practical examples in Rust and C++.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Connecting components
 
 <<../../_common/fidl/_connecting_intro.md>>

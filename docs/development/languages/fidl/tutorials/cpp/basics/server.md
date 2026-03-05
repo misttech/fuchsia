@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaFidl
+keywords_public: FIDL, C++, server, tutorial, Fuchsia, protocol, implementation, outgoing directory, component, natural types, wire types
+description: This tutorial explains how to implement, publish, and run a C++ FIDL server on Fuchsia using both natural and wire domain objects.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a C++ FIDL server
 
 ## Prerequisites

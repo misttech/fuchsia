@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,docType:ApiReference,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, C++, HLCPP, bindings, natural types, wire types, comparison, Fuchsia, client, server, API
+description: This guide compares the new C++ and high-level C++ (HLCPP) FIDL language bindings, detailing the differences between natural and wire types, client and server APIs, and providing a quick reference for mapping FIDL elements to C++ code.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Comparing new C++ and high-level C++ language bindings
 
 [TOC]

@@ -1,3 +1,8 @@
+keywords: docType:Overview,category:FuchsiaTestAndDebug,docType:ApiReference,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: Fuchsia, FIDL, Interface Definition Language, bindings, components, testing, debugging, interfaces
+description: This document provides an overview of the Fuchsia Interface Definition Language (FIDL), covering how to generate bindings, expose and consume interfaces in components, and test and debug FIDL interfaces.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Fuchsia interfaces
 
 <<../../_common/fidl/_overview.md>>

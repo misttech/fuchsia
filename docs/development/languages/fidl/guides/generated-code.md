@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaDevelopment,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, generated code, bindings, Rust, Go, C++, HLCPP, C, JSON IR, GN build, Fuchsia, documentation
+description: This guide explains how to locate and view the generated FIDL bindings code and JSON IR for various programming languages within the Fuchsia build system.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Generated code output guide
 
 This document outlines the approaches available for viewing generated FIDL

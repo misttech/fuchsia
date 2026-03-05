@@ -1,3 +1,8 @@
+keywords: category:FuchsiaHardwareAndDrivers,docType:Overview,docType:Guide,category:FuchsiaDevelopment,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, C++, bindings, tutorials, natural types, wire types, domain objects, client, server, synchronous, asynchronous, threading, memory safety, driver transport, arenas
+description: This page provides an overview and index of tutorials for using the new C++ FIDL bindings in Fuchsia, covering concepts such as natural and wire domain objects, client and server implementations, and various advanced topics like threading and memory management.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # New C++ bindings tutorials
 
 This section helps you learn how to use the new C++ FIDL bindings. See

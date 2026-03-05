@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,category:FuchsiaFidl,category:FuchsiaTools
+keywords_public: FIDL, compiler, fidlc, fidlgen, linter, formatter, CLI, intermediate representation, JSON, frontend, backend, fx lint, fx format-code
+description: This guide provides an overview of the FIDL compiler and its associated command-line tools, including the frontend compiler, language-specific backends, linter, and formatter.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL Compiler and Tools
 
 ## Compiler Interface {#compiler-interface}

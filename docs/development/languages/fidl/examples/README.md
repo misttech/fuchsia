@@ -1,3 +1,8 @@
+keywords: docType:Overview,category:FuchsiaSystems,docType:ApiReference,category:FuchsiaSecurityAndCompliance,category:FuchsiaFidl
+keywords_public: FIDL, examples, Fuchsia, calculator, key-value store, canvas, protocol, data types, data flow patterns, acknowledgement pattern, alias, anonymous type, bits, discoverable, enum, feed forward pattern, generated name, handle rights, infallible two way method, named payload, optionality, pagination pattern, persistence, protocol end, recursive type, resource type, scalar type, size constraint, struct payload, table payload, throttled event pattern, union payload
+description: This page provides a catalog of FIDL examples and a reference of FIDL language concepts, demonstrating how to implement various patterns and data types in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL examples
 
 This is a catalog of FIDL examples intended to demonstrate FIDL concepts through

@@ -1,3 +1,8 @@
+keywords: docType:Guide,category:FuchsiaSDK,category:FuchsiaBuild,category:FuchsiaFidl
+keywords_public: FIDL, tutorial, library, GN, build, bindings, Fuchsia, key-value store, protocol, data types
+description: This tutorial provides a step-by-step guide on how to define, build, and explore a FIDL library in Fuchsia, using a key-value store example.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Creating a FIDL library
 
 ## Prerequisites

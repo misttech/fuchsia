@@ -1,3 +1,8 @@
+keywords: category:FuchsiaSystems,docType:Guide,category:FuchsiaKernel,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, Rust, synchronous client, Fuchsia, tutorial, component, Zircon, channel, Echo protocol, rustc_binary, connect_channel_to_service, EchoString, SendString
+description: This tutorial provides a step-by-step guide to implementing a synchronous FIDL client in Rust, covering component creation, dependency management, and connecting to a server to send requests.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Implement a synchronous FIDL client in Rust
 
 ## Prerequisites

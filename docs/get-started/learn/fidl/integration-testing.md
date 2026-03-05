@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Guide,category:FuchsiaTestAndDebug,docType:ApiReference,category:FuchsiaTools,category:FuchsiaFidl
+keywords_public: Integration testing, Fuchsia, FIDL, Component manifest, CML, fuchsia_test_package, GN, Rust, C++, ffx test, Test Runner Framework, Hermetic tests
+description: This guide provides instructions and an exercise for implementing integration tests for FIDL protocols in Fuchsia, covering component manifests, capability routing, and the use of the Fuchsia Test Runner Framework.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Integration testing
 
 <<../../_common/fidl/_testing_intro.md>>

@@ -1,3 +1,8 @@
+keywords: category:FuchsiaTestAndDebug,category:FuchsiaBuild,category:FuchsiaFidl,category:FuchsiaDevelopment
+keywords_public: FIDL, GN, tests, naming conventions, build system, Fuchsia, host tests, device tests, packages, components, Rust, C++, Go, Dart
+description: This document outlines the standards and best practices for naming, organizing, and defining FIDL tests within the Fuchsia GN build system, covering host and device tests across various programming languages.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # FIDL Tests & GN
 
 This document standardizes the way we define and organize FIDL tests in the GN

@@ -1,3 +1,8 @@
+keywords: category:FuchsiaHardwareAndDrivers,category:FuchsiaTestAndDebug,docType:ApiReference,category:FuchsiaFidl
+keywords_public: Banjo, FIDL, Migration, Driver runtime, DFv1, Driver host, Dispatchers, Threading model, Unit tests, Fuchsia
+description: This document provides answers to frequently asked questions regarding the migration of Fuchsia drivers from the Banjo interface definition language to FIDL, covering topics such as the driver runtime, threading models, and unit testing.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Frequently asked questions for Banjo-to-FIDL migration
 
 Before you start working on Banjo-to-FIDL migration, the frequently asked

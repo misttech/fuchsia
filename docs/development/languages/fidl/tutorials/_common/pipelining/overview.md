@@ -1,3 +1,7 @@
+keywords: bindings, Fuchsia, contentType:ApiReference, contentType:Concept, protocols, topic:Platform, FIDL, server end, topic:FuchsiaSystems, topic:Tools, client end, channels, HLCPP, contentType:Workflow, request pipelining
+description: This tutorial provides an overview of passing FIDL protocols across other protocols, focusing on client and server ends and the benefits of the request pipelining pattern in Fuchsia.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 A common aspect of using FIDL on Fuchsia is passing protocols themselves across
 protocols. More precisely, many messages include either the client end or
 the server end of a channel, where the channel is used to communicate over a

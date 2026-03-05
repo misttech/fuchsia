@@ -1,3 +1,8 @@
+keywords: category:FuchsiaBuild,docType:Overview,docType:Guide,docType:ApiReference,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, developer guides, CLI, style guide, API design, ABI compatibility, API compatibility, pagination, C++ bindings, generated code
+description: This page provides a collection of developer guides for FIDL, covering topics such as the command-line interface, style guidelines, API design, compatibility, and language bindings.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 #  Developer Guides
 
 * [Running FIDL][cli] &mdash; quick CLI overview of the various programs in the

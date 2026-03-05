@@ -1,3 +1,8 @@
+keywords: category:FuchsiaSystems,docType:Guide,category:FuchsiaFidl
+keywords_public: FIDL, C++, asynchronous, completer, ToAsync, server, tutorial, Fuchsia, wire domain objects, natural types
+description: This tutorial explains how to respond to FIDL requests asynchronously in C++ by using the ToAsync() method on a sync completer to obtain an async completer that can be used outside the request handler.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Responding to requests asynchronously
 
 ## Prerequisites

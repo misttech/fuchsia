@@ -1,3 +1,7 @@
+keywords: category:FuchsiaPowerAndPerformance,category:FuchsiaBuild,category:FuchsiaFidl
+keywords_public: FIDL, benchmarks, rubric, microbenchmarks, Builder, Encode, Decode, WallTime, Allocations, AllocatedBytes, StackDepth, Chromeperf, GIDL, Fuchsia
+description: This document provides a rubric and set of requirements for implementing and measuring FIDL benchmarks, covering microbenchmarks for builders, encoding, and decoding, as well as integration with Chromeperf.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
 
 # FIDL Benchmark Rubric
 

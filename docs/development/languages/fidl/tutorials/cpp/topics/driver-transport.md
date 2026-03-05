@@ -1,3 +1,8 @@
+keywords: category:FuchsiaHardwareAndDrivers,category:FuchsiaSystems,docType:Guide,docType:ApiReference,category:FuchsiaKernel,category:FuchsiaTools,category:FuchsiaSDK,category:FuchsiaFidl
+keywords_public: FIDL, C++ bindings, Driver transport, Fuchsia driver runtime, fdf namespace, @transport("Driver"), fdf::Client, fdf::WireClient
+description: This tutorial explains how to use the new C++ FIDL bindings for protocols that use the driver transport, highlighting the differences from Zircon channel transport and the use of the fdf namespace.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Using new C++ bindings over the driver transport
 
 When a protocol has a `@transport("Driver")` attribute, the protocol operates

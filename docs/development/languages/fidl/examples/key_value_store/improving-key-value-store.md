@@ -1,3 +1,8 @@
+keywords: docType:Overview,docType:Guide,category:FuchsiaBuild,category:FuchsiaFidl
+keywords_public: FIDL, key-value store, design, Fuchsia, tutorial, generic values, nested stores, iteration, backups, reading
+description: This guide explores various independent ways to iterate on and improve the design of a FIDL-based key-value store, including adding read support, using generic values, and enabling backups.
+<!-- These keywords are for search widget on fuchsia.dev. Do not remove. -->
+
 # Key-value store: Improving the design {#variants}
 
 Each of the following sections explores one potential way to iterate
