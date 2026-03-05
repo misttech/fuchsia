@@ -75,7 +75,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::LocalStructPayload {
-
                     a,
                     b,
 
@@ -259,7 +258,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolOneWayAnonRequest {
-
                     a,
                     b,
 
@@ -449,7 +447,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonRequest {
-
                     a,
                     b,
 
@@ -639,7 +636,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonResponse {
-
                     a,
                     b,
 
@@ -834,7 +830,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonWithErrorRequest {
-
                     a,
                     b,
 
@@ -1036,7 +1031,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonWithErrorResponse {
-
                     a,
                     b,
 
@@ -1232,7 +1226,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolOnAnonRequest {
-
                     a,
                     b,
 
@@ -1385,7 +1378,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1409,7 +1401,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1466,7 +1457,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1490,7 +1480,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1547,7 +1536,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1571,7 +1559,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1628,7 +1615,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1652,7 +1638,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1721,7 +1706,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1745,7 +1729,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1814,7 +1797,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1838,7 +1820,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1895,7 +1876,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -1919,7 +1899,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -1947,6 +1926,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`LocalStructPayload`].
     pub struct LocalStructPayload<T0, T1> {
         pub a: T0,
 
@@ -1969,7 +1949,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::LocalStructPayload {
-
                     a,
                     b,
 
@@ -1984,6 +1963,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolOneWayAnonRequest`].
     pub struct MainProtocolOneWayAnonRequest<T0, T1> {
         pub a: T0,
 
@@ -2006,7 +1986,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolOneWayAnonRequest {
-
                     a,
                     b,
 
@@ -2021,6 +2000,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolTwoWayAnonRequest`].
     pub struct MainProtocolTwoWayAnonRequest<T0, T1> {
         pub a: T0,
 
@@ -2043,7 +2023,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonRequest {
-
                     a,
                     b,
 
@@ -2058,6 +2037,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolTwoWayAnonResponse`].
     pub struct MainProtocolTwoWayAnonResponse<T0, T1> {
         pub a: T0,
 
@@ -2080,7 +2060,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonResponse {
-
                     a,
                     b,
 
@@ -2095,6 +2074,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolTwoWayAnonWithErrorRequest`].
     pub struct MainProtocolTwoWayAnonWithErrorRequest<T0, T1> {
         pub a: T0,
 
@@ -2120,7 +2100,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonWithErrorRequest {
-
                     a,
                     b,
 
@@ -2135,6 +2114,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolTwoWayAnonWithErrorResponse`].
     pub struct MainProtocolTwoWayAnonWithErrorResponse<T0, T1> {
         pub a: T0,
 
@@ -2160,7 +2140,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolTwoWayAnonWithErrorResponse {
-
                     a,
                     b,
 
@@ -2175,6 +2154,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MainProtocolOnAnonRequest`].
     pub struct MainProtocolOnAnonRequest<T0, T1> {
         pub a: T0,
 
@@ -2197,7 +2177,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MainProtocolOnAnonRequest {
-
                     a,
                     b,
 

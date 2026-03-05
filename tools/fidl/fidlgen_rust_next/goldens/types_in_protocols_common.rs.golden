@@ -137,7 +137,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayBasic {
-
                     array_uint8,
                     array_uint16,
                     array_uint32,
@@ -473,131 +472,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct Struct {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Struct, ___E> for Struct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Struct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Struct {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::Struct, ___E> for &'a Struct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Struct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Struct {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Struct>, ___E>
-        for Struct
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        Struct: ::fidl_next::Encode<crate::wire::Struct, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::Struct>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Struct>, ___E>
-        for &'a Struct
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a Struct: ::fidl_next::Encode<crate::wire::Struct, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::Struct>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::Struct> for Struct {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Struct, Self> =
-            unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::Struct) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::FromWireRef<crate::wire::Struct> for Struct {
-        #[inline]
-        fn from_wire_ref(wire: &crate::wire::Struct) -> Self {
-            Self {}
-        }
-    }
+    pub type Struct = ();
 
     #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Table {}
@@ -978,7 +853,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayCompound {
-
                     array_bits,
                     array_enum,
                     array_struct,
@@ -1215,7 +1089,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayVectorNested {
-
                     array_array_uint8,
                     array_vector_uint8,
                     vector_array_uint8,
@@ -1485,7 +1358,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Basic {
-
                     uint8,
                     uint16,
                     uint32,
@@ -1764,7 +1636,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Compound {
-
                     bits,
                     enum_,
                     struct_,
@@ -2106,7 +1977,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorBasic {
-
                     vector_uint8,
                     vector_uint16,
                     vector_uint32,
@@ -2500,7 +2370,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorCompound {
-
                     vector_bits,
                     vector_enum,
                     vector_struct,
@@ -2787,7 +2656,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorOptional {
-
                     opt_vector_uint8,
                     opt_vector_string,
                     opt_vector_struct,
@@ -3014,7 +2882,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     array_uint8,
                     array_uint16,
                     array_uint32,
@@ -3109,7 +2976,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut array_uint8,
                     mut array_uint16,
                     mut array_uint32,
@@ -3293,71 +3159,7 @@ pub mod wire {
     }
 
     /// The wire type corresponding to [`Struct`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct Struct {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<Struct>(), 1);
-    static_assertions::const_assert_eq!(std::mem::align_of::<Struct>(), 1);
-
-    impl ::fidl_next::Constrained for Struct {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for Struct {
-        type Narrowed<'de> = Struct;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for Struct
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for Struct {
-        type Natural = crate::natural::Struct;
-    }
+    pub type Struct = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`Table`].
     #[repr(C)]
@@ -3580,7 +3382,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     array_bits,
                     array_enum,
                     array_struct,
@@ -3628,7 +3429,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut array_bits,
                     mut array_enum,
                     mut array_struct,
@@ -3730,7 +3530,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     array_array_uint8,
                     array_vector_uint8,
                     vector_array_uint8,
@@ -3769,7 +3568,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut array_array_uint8,
                     mut array_vector_uint8,
                     mut vector_array_uint8,
@@ -3880,7 +3678,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     uint8,
                     uint16,
                     uint32,
@@ -3959,7 +3756,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut uint8,
                     mut uint16,
                     mut uint32,
@@ -4086,7 +3882,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     bits,
                     enum_,
                     struct_,
@@ -4134,7 +3929,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut bits,
                     mut enum_,
                     mut struct_,
@@ -4260,7 +4054,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     vector_uint8,
                     vector_uint16,
                     vector_uint32,
@@ -4315,7 +4108,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut vector_uint8,
                     mut vector_uint16,
                     mut vector_uint32,
@@ -4460,7 +4252,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     vector_bits,
                     vector_enum,
                     vector_struct,
@@ -4500,7 +4291,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut vector_bits,
                     mut vector_enum,
                     mut vector_struct,
@@ -4606,7 +4396,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     opt_vector_uint8,
                     opt_vector_string,
                     opt_vector_struct,
@@ -4637,7 +4426,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut opt_vector_uint8,
                     mut opt_vector_string,
                     mut opt_vector_struct,
@@ -4765,6 +4553,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ArrayBasic`].
     pub struct ArrayBasic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> {
         pub array_uint8: T0,
 
@@ -4819,7 +4608,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayBasic {
-
                     array_uint8,
                     array_uint16,
                     array_uint32,
@@ -4869,32 +4657,10 @@ pub mod generic {
         }
     }
 
-    pub struct Struct {}
+    /// The generic type corresponding to [`Struct`].
+    pub type Struct = ();
 
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Struct, ___E> for Struct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Struct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Struct {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            Ok(())
-        }
-    }
-
+    /// The generic type corresponding to [`ArrayCompound`].
     pub struct ArrayCompound<T0, T1, T2, T3, T4, T5, T6> {
         pub array_bits: T0,
 
@@ -4934,7 +4700,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayCompound {
-
                     array_bits,
                     array_enum,
                     array_struct,
@@ -4964,6 +4729,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ArrayVectorNested`].
     pub struct ArrayVectorNested<T0, T1, T2, T3> {
         pub array_array_uint8: T0,
 
@@ -4997,7 +4763,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayVectorNested {
-
                     array_array_uint8,
                     array_vector_uint8,
                     vector_array_uint8,
@@ -5033,6 +4798,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Basic`].
     pub struct Basic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> {
         pub uint8: T0,
 
@@ -5087,7 +4853,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Basic {
-
                     uint8,
                     uint16,
                     uint32,
@@ -5132,6 +4897,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Compound`].
     pub struct Compound<T0, T1, T2, T3, T4, T5, T6> {
         pub bits: T0,
 
@@ -5171,7 +4937,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Compound {
-
                     bits,
                     enum_,
                     struct_,
@@ -5201,6 +4966,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`VectorBasic`].
     pub struct VectorBasic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> {
         pub vector_uint8: T0,
 
@@ -5267,7 +5033,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorBasic {
-
                     vector_uint8,
                     vector_uint16,
                     vector_uint32,
@@ -5367,6 +5132,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`VectorCompound`].
     pub struct VectorCompound<T0, T1, T2, T3, T4, T5, T6> {
         pub vector_bits: T0,
 
@@ -5421,7 +5187,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorCompound {
-
                     vector_bits,
                     vector_enum,
                     vector_struct,
@@ -5476,6 +5241,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`VectorOptional`].
     pub struct VectorOptional<T0, T1, T2, T3> {
         pub opt_vector_uint8: T0,
 
@@ -5518,7 +5284,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::VectorOptional {
-
                     opt_vector_uint8,
                     opt_vector_string,
                     opt_vector_struct,

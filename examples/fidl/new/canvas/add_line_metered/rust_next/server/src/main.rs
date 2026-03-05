@@ -5,7 +5,7 @@
 use anyhow::Error;
 use fidl_next::{Request, Responder, Server};
 use fidl_next_examples_canvas_addlinemetered::{
-    BoundingBox, Instance, InstanceAddLineResponse, InstanceServerHandler, Point, instance,
+    BoundingBox, Instance, InstanceServerHandler, Point, instance,
 };
 use fuchsia_async::{MonotonicInstant, Scope, Timer};
 use fuchsia_component::server::ServiceFs;
@@ -71,7 +71,7 @@ impl InstanceServerHandler for CanvasServer {
         // which syncs the flow rate between the client and server on this method,
         // thereby preventing the client from "flooding" the server with unacknowledged
         // work.
-        responder.respond(fidl_next::Flexible::Ok(InstanceAddLineResponse {})).await.unwrap();
+        responder.respond(fidl_next::Flexible::Ok(())).await.unwrap();
         println!("AddLine response sent");
     }
 }

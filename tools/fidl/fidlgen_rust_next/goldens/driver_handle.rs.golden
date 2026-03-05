@@ -435,7 +435,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     value,
 
                 } = &mut *out_;
@@ -457,7 +456,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut value,
 
                 } = slot_;
@@ -630,7 +628,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     t,
 
                 } = &mut *out_;
@@ -653,7 +650,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut t,
 
                 } = slot_;
@@ -701,7 +697,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     value,
 
                 } = &mut *out_;
@@ -723,7 +718,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut value,
 
                 } = slot_;
@@ -751,6 +745,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_driverhandle::generic::*;
 
+    /// The generic type corresponding to [`ClientEndWrapper`].
     pub struct ClientEndWrapper<T0> {
         pub value: T0,
     }
@@ -774,7 +769,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ClientEndWrapper {
-
                     value,
 
                 } = out_;
@@ -786,6 +780,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`HandlesInProtocolSendHandlesRequest`].
     pub struct HandlesInProtocolSendHandlesRequest<T0> {
         pub t: T0,
     }
@@ -810,7 +805,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandlesInProtocolSendHandlesRequest {
-
                     t,
 
                 } = out_;
@@ -822,6 +816,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ServerEndWrapper`].
     pub struct ServerEndWrapper<T0> {
         pub value: T0,
     }
@@ -845,7 +840,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ServerEndWrapper {
-
                     value,
 
                 } = out_;

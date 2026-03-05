@@ -5,7 +5,7 @@
 use anyhow::Error;
 use fidl_next::{Request, Responder};
 use fidl_next_examples_keyvaluestore_baseline::{
-    Item, Store, StoreServerHandler, StoreWriteItemResponse, WriteError, store,
+    Item, Store, StoreServerHandler, WriteError, store,
 };
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
@@ -38,7 +38,7 @@ impl StoreServerHandler for StoreServer {
         // the reply.
         match result {
             Ok(()) => {
-                responder.respond(StoreWriteItemResponse {}).await.unwrap();
+                responder.respond(()).await.unwrap();
             }
             Err(e) => {
                 responder.respond_err(e).await.unwrap();

@@ -965,7 +965,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     fdf_channel_handle,
                     client_end_driver,
                     server_end_driver,
@@ -993,7 +992,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut fdf_channel_handle,
                     mut client_end_driver,
                     mut server_end_driver,
@@ -1207,7 +1205,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     plain_handle,
                     bti_handle,
                     channel_handle,
@@ -1331,7 +1328,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut plain_handle,
                     mut bti_handle,
                     mut channel_handle,
@@ -1529,6 +1525,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_handles::generic::*;
 
+    /// The generic type corresponding to [`FdfHandles`].
     pub struct FdfHandles<T0, T1, T2> {
         pub fdf_channel_handle: T0,
 
@@ -1561,7 +1558,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::FdfHandles {
-
                     fdf_channel_handle,
                     client_end_driver,
                     server_end_driver,
@@ -1579,6 +1575,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Handles`].
     pub struct Handles<
         T0,
         T1,
@@ -1816,7 +1813,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Handles {
-
                     plain_handle,
                     bti_handle,
                     channel_handle,

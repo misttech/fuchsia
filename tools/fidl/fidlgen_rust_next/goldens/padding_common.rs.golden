@@ -56,7 +56,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding1ByteEnd {
-
                     a,
                     b,
 
@@ -207,7 +206,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding1ByteMiddle {
-
                     a,
                     b,
 
@@ -366,7 +364,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteAlignmentLength6 {
-
                     a,
                     b,
                     c,
@@ -532,7 +529,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteEnd {
-
                     a,
                     b,
 
@@ -683,7 +679,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteMiddle {
-
                     a,
                     b,
 
@@ -834,7 +829,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding3ByteEnd {
-
                     a,
                     b,
 
@@ -985,7 +979,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding3ByteMiddle {
-
                     a,
                     b,
 
@@ -1151,7 +1144,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteAlignmentLength12 {
-
                     a,
                     b,
                     c,
@@ -1326,7 +1318,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteEnd {
-
                     a,
                     b,
 
@@ -1477,7 +1468,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteMiddle {
-
                     a,
                     b,
 
@@ -1635,7 +1625,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding5ByteEnd {
-
                     a,
                     b,
                     c,
@@ -1802,7 +1791,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding5ByteMiddle {
-
                     a,
                     b,
                     c,
@@ -1962,7 +1950,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding6ByteEnd {
-
                     a,
                     b,
 
@@ -2113,7 +2100,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding6ByteMiddle {
-
                     a,
                     b,
 
@@ -2264,7 +2250,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding7ByteEnd {
-
                     a,
                     b,
 
@@ -2415,7 +2400,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding7ByteMiddle {
-
                     a,
                     b,
 
@@ -2551,7 +2535,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -2583,7 +2566,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -2640,7 +2622,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -2672,7 +2653,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -2733,7 +2713,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
                     c,
@@ -2776,7 +2755,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
                     mut c,
@@ -2838,7 +2816,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -2870,7 +2847,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -2927,7 +2903,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -2959,7 +2934,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3016,7 +2990,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3048,7 +3021,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3105,7 +3077,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3137,7 +3108,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3202,7 +3172,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
                     c,
@@ -3248,7 +3217,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
                     mut c,
@@ -3315,7 +3283,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3347,7 +3314,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3404,7 +3370,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3436,7 +3401,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3497,7 +3461,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
                     c,
@@ -3532,7 +3495,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
                     mut c,
@@ -3598,7 +3560,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
                     c,
@@ -3633,7 +3594,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
                     mut c,
@@ -3695,7 +3655,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3727,7 +3686,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3784,7 +3742,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3816,7 +3773,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3873,7 +3829,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3905,7 +3860,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3962,7 +3916,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3994,7 +3947,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -4022,6 +3974,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`Padding1ByteEnd`].
     pub struct Padding1ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4044,7 +3997,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding1ByteEnd {
-
                     a,
                     b,
 
@@ -4059,6 +4011,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding1ByteMiddle`].
     pub struct Padding1ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4081,7 +4034,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding1ByteMiddle {
-
                     a,
                     b,
 
@@ -4096,6 +4048,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding2ByteAlignmentLength6`].
     pub struct Padding2ByteAlignmentLength6<T0, T1, T2> {
         pub a: T0,
 
@@ -4122,7 +4075,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteAlignmentLength6 {
-
                     a,
                     b,
                     c,
@@ -4140,6 +4092,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding2ByteEnd`].
     pub struct Padding2ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4162,7 +4115,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteEnd {
-
                     a,
                     b,
 
@@ -4177,6 +4129,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding2ByteMiddle`].
     pub struct Padding2ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4199,7 +4152,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding2ByteMiddle {
-
                     a,
                     b,
 
@@ -4214,6 +4166,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding3ByteEnd`].
     pub struct Padding3ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4236,7 +4189,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding3ByteEnd {
-
                     a,
                     b,
 
@@ -4251,6 +4203,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding3ByteMiddle`].
     pub struct Padding3ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4273,7 +4226,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding3ByteMiddle {
-
                     a,
                     b,
 
@@ -4288,6 +4240,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding4ByteAlignmentLength12`].
     pub struct Padding4ByteAlignmentLength12<T0, T1, T2, T3> {
         pub a: T0,
 
@@ -4317,7 +4270,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteAlignmentLength12 {
-
                     a,
                     b,
                     c,
@@ -4338,6 +4290,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding4ByteEnd`].
     pub struct Padding4ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4360,7 +4313,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteEnd {
-
                     a,
                     b,
 
@@ -4375,6 +4327,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding4ByteMiddle`].
     pub struct Padding4ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4397,7 +4350,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding4ByteMiddle {
-
                     a,
                     b,
 
@@ -4412,6 +4364,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding5ByteEnd`].
     pub struct Padding5ByteEnd<T0, T1, T2> {
         pub a: T0,
 
@@ -4437,7 +4390,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding5ByteEnd {
-
                     a,
                     b,
                     c,
@@ -4455,6 +4407,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding5ByteMiddle`].
     pub struct Padding5ByteMiddle<T0, T1, T2> {
         pub a: T0,
 
@@ -4480,7 +4433,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding5ByteMiddle {
-
                     a,
                     b,
                     c,
@@ -4498,6 +4450,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding6ByteEnd`].
     pub struct Padding6ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4520,7 +4473,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding6ByteEnd {
-
                     a,
                     b,
 
@@ -4535,6 +4487,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding6ByteMiddle`].
     pub struct Padding6ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4557,7 +4510,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding6ByteMiddle {
-
                     a,
                     b,
 
@@ -4572,6 +4524,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding7ByteEnd`].
     pub struct Padding7ByteEnd<T0, T1> {
         pub a: T0,
 
@@ -4594,7 +4547,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding7ByteEnd {
-
                     a,
                     b,
 
@@ -4609,6 +4561,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Padding7ByteMiddle`].
     pub struct Padding7ByteMiddle<T0, T1> {
         pub a: T0,
 
@@ -4631,7 +4584,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Padding7ByteMiddle {
-
                     a,
                     b,
 

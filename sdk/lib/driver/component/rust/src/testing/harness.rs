@@ -304,8 +304,8 @@ mod convert {
 
     fn convert_ref(ref_: decl::Ref) -> decl_next::Ref {
         match ref_ {
-            decl::Ref::Parent(_) => decl_next::Ref::Parent(decl_next::ParentRef {}),
-            decl::Ref::Self_(_) => decl_next::Ref::Self_(decl_next::SelfRef {}),
+            decl::Ref::Parent(_) => decl_next::Ref::Parent(()),
+            decl::Ref::Self_(_) => decl_next::Ref::Self_(()),
             decl::Ref::Child(child_ref) => decl_next::Ref::Child(decl_next::ChildRef {
                 name: child_ref.name,
                 collection: child_ref.collection,
@@ -313,13 +313,13 @@ mod convert {
             decl::Ref::Collection(collection_ref) => {
                 decl_next::Ref::Collection(decl_next::CollectionRef { name: collection_ref.name })
             }
-            decl::Ref::Framework(_) => decl_next::Ref::Framework(decl_next::FrameworkRef {}),
+            decl::Ref::Framework(_) => decl_next::Ref::Framework(()),
             decl::Ref::Capability(capability_ref) => {
                 decl_next::Ref::Capability(decl_next::CapabilityRef { name: capability_ref.name })
             }
-            decl::Ref::Debug(_) => decl_next::Ref::Debug(decl_next::DebugRef {}),
-            decl::Ref::VoidType(_) => decl_next::Ref::VoidType(decl_next::VoidRef {}),
-            decl::Ref::Environment(_) => decl_next::Ref::Environment(decl_next::EnvironmentRef {}),
+            decl::Ref::Debug(_) => decl_next::Ref::Debug(()),
+            decl::Ref::VoidType(_) => decl_next::Ref::VoidType(()),
+            decl::Ref::Environment(_) => decl_next::Ref::Environment(()),
             decl::Ref::__SourceBreaking { unknown_ordinal } => {
                 decl_next::Ref::UnknownOrdinal_(unknown_ordinal)
             }

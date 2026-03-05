@@ -303,7 +303,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     field_of_u32,
                     field_of_vec_of_strings,
                     field_of_vec_of_strings_at_most_nine,
@@ -363,7 +362,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut field_of_u32,
                     mut field_of_vec_of_strings,
                     mut field_of_vec_of_strings_at_most_nine,
@@ -472,6 +470,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_aliases::generic::*;
 
+    /// The generic type corresponding to [`ExampleOfUseOfAliases`].
     pub struct ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7> {
         pub field_of_u32: T0,
 
@@ -530,7 +529,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleOfUseOfAliases {
-
                     field_of_u32,
                     field_of_vec_of_strings,
                     field_of_vec_of_strings_at_most_nine,

@@ -64,7 +64,7 @@ pub mod imports_same_name_context {
 
         type Protocol = crate::ImportsSameNameContext;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     pub struct AlwaysAppearsInImportingLibrary;
@@ -76,7 +76,7 @@ pub mod imports_same_name_context {
 
         type Protocol = crate::ImportsSameNameContext;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     mod ___detail {
@@ -134,19 +134,23 @@ pub mod imports_same_name_context {
             }
 
             pub fn unattributed(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    475191379775102607,
-                    <super::Unattributed as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        475191379775102607,
+                        <super::Unattributed as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn always_appears_in_importing_library(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    2914965219653596920,
-                    <super::AlwaysAppearsInImportingLibrary as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                                        2914965219653596920,
+                                        <super::AlwaysAppearsInImportingLibrary as ::fidl_next::Method>::FLEXIBILITY,
+                                        (),
+                                    )
+                                )
             }
         }
 

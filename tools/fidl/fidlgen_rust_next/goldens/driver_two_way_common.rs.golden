@@ -75,7 +75,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TwoWayAddRequest {
-
                     addend1,
                     addend2,
 
@@ -247,7 +246,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TwoWayAddResponse {
-
                     sum,
 
                 } = out_;
@@ -381,7 +379,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     addend1,
                     addend2,
 
@@ -405,7 +402,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut addend1,
                     mut addend2,
 
@@ -458,7 +454,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     sum,
 
                 } = &mut *out_;
@@ -479,7 +474,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut sum,
 
                 } = slot_;
@@ -502,6 +496,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`TwoWayAddRequest`].
     pub struct TwoWayAddRequest<T0, T1> {
         pub addend1: T0,
 
@@ -524,7 +519,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TwoWayAddRequest {
-
                     addend1,
                     addend2,
 
@@ -539,6 +533,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`TwoWayAddResponse`].
     pub struct TwoWayAddResponse<T0> {
         pub sum: T0,
     }
@@ -558,7 +553,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TwoWayAddResponse {
-
                     sum,
 
                 } = out_;

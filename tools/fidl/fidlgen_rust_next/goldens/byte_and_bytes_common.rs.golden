@@ -55,7 +55,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ByteAndBytes {
-
                     single_byte,
 
                 } = out_;
@@ -176,7 +175,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     single_byte,
 
                 } = &mut *out_;
@@ -197,7 +195,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut single_byte,
 
                 } = slot_;
@@ -220,6 +217,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ByteAndBytes`].
     pub struct ByteAndBytes<T0> {
         pub single_byte: T0,
     }
@@ -238,7 +236,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ByteAndBytes {
-
                     single_byte,
 
                 } = out_;

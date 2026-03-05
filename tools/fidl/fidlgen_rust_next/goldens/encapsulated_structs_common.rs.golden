@@ -55,7 +55,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Int16Int8 {
-
                     a,
                     b,
 
@@ -194,7 +193,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayInt16Int8 {
-
                     arr,
 
                 } = out_;
@@ -331,7 +329,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Int8Int32 {
-
                     a,
                     b,
 
@@ -486,7 +483,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructPaddingTestStruct {
-
                     trailing,
                     inner,
                     array,
@@ -632,7 +628,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -664,7 +659,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -717,7 +711,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     arr,
 
                 } = &mut *out_;
@@ -738,7 +731,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut arr,
 
                 } = slot_;
@@ -790,7 +782,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -822,7 +813,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -883,7 +873,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     trailing,
                     inner,
                     array,
@@ -910,7 +899,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut trailing,
                     mut inner,
                     mut array,
@@ -943,6 +931,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`Int16Int8`].
     pub struct Int16Int8<T0, T1> {
         pub a: T0,
 
@@ -964,7 +953,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Int16Int8 {
-
                     a,
                     b,
 
@@ -979,6 +967,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ArrayInt16Int8`].
     pub struct ArrayInt16Int8<T0> {
         pub arr: T0,
     }
@@ -997,7 +986,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ArrayInt16Int8 {
-
                     arr,
 
                 } = out_;
@@ -1009,6 +997,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Int8Int32`].
     pub struct Int8Int32<T0, T1> {
         pub a: T0,
 
@@ -1030,7 +1019,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Int8Int32 {
-
                     a,
                     b,
 
@@ -1045,6 +1033,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`StructPaddingTestStruct`].
     pub struct StructPaddingTestStruct<T0, T1, T2> {
         pub trailing: T0,
 
@@ -1070,7 +1059,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructPaddingTestStruct {
-
                     trailing,
                     inner,
                     array,

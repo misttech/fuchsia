@@ -416,7 +416,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     mod ___detail {
@@ -440,11 +440,13 @@ pub mod protocol {
             ___T: ::fidl_next::Transport,
         {
             pub fn foo(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    6231434419097198905,
-                    <super::Foo as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        6231434419097198905,
+                        <super::Foo as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 
@@ -570,16 +572,13 @@ where
                 if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
-                    responder
-                        .respond(
-                            ordinal,
-                            flexibility,
-                            ::fidl_next::Flexible::<()>::FrameworkErr(
-                                ::fidl_next::FrameworkError::UnknownMethod,
-                            ),
-                        )
-                        .expect("encoding a framework error should never fail")
-                        .await?;
+                    responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
+                                ordinal,
+                                flexibility,
+                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
+                            )
+                            .expect("encoding a framework error should never fail")
+                            .await?;
                     Ok(())
                 }
             }

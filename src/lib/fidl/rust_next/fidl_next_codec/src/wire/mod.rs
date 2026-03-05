@@ -5,7 +5,6 @@
 //! FIDL wire type definitions and implementations.
 
 mod boxed;
-mod empty_struct;
 mod envelope;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
@@ -15,10 +14,10 @@ mod result;
 mod string;
 mod table;
 mod union;
+mod unit;
 mod vec;
 
 pub use self::boxed::*;
-pub use self::empty_struct::*;
 pub use self::envelope::*;
 pub use self::primitives::*;
 pub use self::ptr::*;
@@ -26,4 +25,5 @@ pub use self::result::*;
 pub use self::string::*;
 pub use self::table::*;
 pub use self::union::*;
+pub use self::unit::*;
 pub use self::vec::*;

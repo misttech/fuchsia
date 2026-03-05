@@ -33,8 +33,8 @@ type conformanceTmplInput struct {
 }
 
 type encodeSuccessCase struct {
-	Name, HandleDefs, ValueType, Value, Bytes, RawHandles, HandleDispositions string
-	IsResource                                                                bool
+	Name, HandleDefs, ValueType, WireValueType, Value, Bytes, RawHandles, HandleDispositions string
+	IsResource                                                                               bool
 }
 
 type decodeSuccessCase struct {
@@ -90,18 +90,20 @@ func encodeSuccessCases(gidlEncodeSuccesses []ir.EncodeSuccess, schema mixer.Sch
 			return nil, fmt.Errorf("encode success %s: %s", encodeSuccess.Name, err)
 		}
 		valueType := declName(decl)
+		wireValueType := wireStructDeclName(decl)
 		value := visit(encodeSuccess.Value, decl)
 		for _, encoding := range encodeSuccess.Encodings {
 			if !wireFormatSupported(encoding.WireFormat) {
 				continue
 			}
 			newCase := encodeSuccessCase{
-				Name:       testCaseName(encodeSuccess.Name, encoding.WireFormat),
-				HandleDefs: buildHandleDefs(encodeSuccess.HandleDefs),
-				ValueType:  valueType,
-				Value:      value,
-				Bytes:      rust.BuildBytes(encoding.Bytes),
-				IsResource: decl.IsResourceType(),
+				Name:          testCaseName(encodeSuccess.Name, encoding.WireFormat),
+				HandleDefs:    buildHandleDefs(encodeSuccess.HandleDefs),
+				ValueType:     valueType,
+				WireValueType: wireValueType,
+				Value:         value,
+				Bytes:         rust.BuildBytes(encoding.Bytes),
+				IsResource:    decl.IsResourceType(),
 			}
 			if len(newCase.HandleDefs) != 0 {
 				if encodeSuccess.CheckHandleRights {
@@ -250,7 +252,7 @@ var decodeErrorPatternMap = map[ir.ErrorCode]string{
 	ir.ExceededMaxOutOfLineDepth:          `"TODO: ExceededMaxOutOfLineDepth"`,
 	ir.IncorrectHandleType:                "DecodeError::ExpectedDriverHandle", // probably wrong
 	ir.InvalidBoolean:                     "DecodeError::InvalidBool(_)",
-	ir.InvalidEmptyStruct:                 "DecodeError::InvalidEmptyStruct",
+	ir.InvalidEmptyStruct:                 "DecodeError::InvalidUnit(_)",
 	ir.InvalidHandlePresenceIndicator:     "DecodeError::InvalidHandlePresence(_)",
 	ir.InvalidInlineBitInEnvelope:         `"TODO: InvalidInlineBitInEnvelope"`,
 	ir.InvalidInlineMarkerInEnvelope:      `DecodeError::InvalidEnvelopeFlags(_)`,

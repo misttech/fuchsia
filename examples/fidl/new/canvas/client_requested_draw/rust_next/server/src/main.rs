@@ -5,7 +5,7 @@
 use anyhow::Error;
 use fidl_next::{Request, Responder, Server};
 use fidl_next_examples_canvas_clientrequesteddraw::{
-    BoundingBox, Instance, InstanceReadyResponse, InstanceServerHandler, Point, instance,
+    BoundingBox, Instance, InstanceServerHandler, Point, instance,
 };
 use fuchsia_async::{MonotonicInstant, Scope, Timer};
 use fuchsia_component::server::ServiceFs;
@@ -79,7 +79,7 @@ impl InstanceServerHandler for CanvasServer {
 
             state.ready = true;
         }
-        responder.respond(fidl_next::Flexible::Ok(InstanceReadyResponse {})).await.unwrap();
+        responder.respond(fidl_next::Flexible::Ok(())).await.unwrap();
     }
 }
 

@@ -60,7 +60,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Payload {
-
                     value,
 
                 } = out_;
@@ -209,7 +208,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OneWaySendRequest {
-
                     payload,
 
                 } = out_;
@@ -341,7 +339,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     value,
 
                 } = &mut *out_;
@@ -362,7 +359,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut value,
 
                 } = slot_;
@@ -410,7 +406,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     payload,
 
                 } = &mut *out_;
@@ -431,7 +426,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut payload,
 
                 } = slot_;
@@ -454,6 +448,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`Payload`].
     pub struct Payload<T0> {
         pub value: T0,
     }
@@ -472,7 +467,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Payload {
-
                     value,
 
                 } = out_;
@@ -484,6 +478,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`OneWaySendRequest`].
     pub struct OneWaySendRequest<T0> {
         pub payload: T0,
     }
@@ -503,7 +498,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OneWaySendRequest {
-
                     payload,
 
                 } = out_;

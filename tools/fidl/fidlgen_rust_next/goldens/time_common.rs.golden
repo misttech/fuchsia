@@ -94,7 +94,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::AllInstants {
-
                     monotonic,
                     boot,
                     monotonic_ticks,
@@ -551,7 +550,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     monotonic,
                     boot,
                     monotonic_ticks,
@@ -581,7 +579,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut monotonic,
                     mut boot,
                     mut monotonic_ticks,
@@ -763,6 +760,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`AllInstants`].
     pub struct AllInstants<T0, T1, T2, T3> {
         pub monotonic: T0,
 
@@ -791,7 +789,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::AllInstants {
-
                     monotonic,
                     boot,
                     monotonic_ticks,

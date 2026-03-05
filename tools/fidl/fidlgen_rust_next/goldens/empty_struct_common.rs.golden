@@ -4,127 +4,7 @@
 
 pub mod natural {
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct Empty {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Empty, ___E> for Empty
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Empty>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Empty {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::Empty, ___E> for &'a Empty
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Empty>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Empty {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Empty>, ___E>
-        for Empty
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        Empty: ::fidl_next::Encode<crate::wire::Empty, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::Box<'static, crate::wire::Empty>>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Empty>, ___E>
-        for &'a Empty
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a Empty: ::fidl_next::Encode<crate::wire::Empty, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::Box<'static, crate::wire::Empty>>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::Empty> for Empty {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Empty, Self> =
-            unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::Empty) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::FromWireRef<crate::wire::Empty> for Empty {
-        #[inline]
-        fn from_wire_ref(wire: &crate::wire::Empty) -> Self {
-            Self {}
-        }
-    }
+    pub type Empty = ();
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
@@ -187,7 +67,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendRequest {
-
                     e,
 
                 } = out_;
@@ -349,7 +228,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolReceiveRequest {
-
                     e,
 
                 } = out_;
@@ -516,7 +394,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendAndReceiveRequest {
-
                     e,
 
                 } = out_;
@@ -684,7 +561,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendAndReceiveResponse {
-
                     e,
 
                 } = out_;
@@ -794,71 +670,7 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`Empty`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct Empty {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<Empty>(), 1);
-    static_assertions::const_assert_eq!(std::mem::align_of::<Empty>(), 1);
-
-    impl ::fidl_next::Constrained for Empty {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for Empty {
-        type Narrowed<'de> = Empty;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for Empty
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for Empty {
-        type Natural = crate::natural::Empty;
-    }
+    pub type Empty = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`EmptyProtocolSendRequest`].
     #[derive(Clone, Debug)]
@@ -890,7 +702,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     e,
 
                 } = &mut *out_;
@@ -911,7 +722,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut e,
 
                 } = slot_;
@@ -959,7 +769,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     e,
 
                 } = &mut *out_;
@@ -980,7 +789,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut e,
 
                 } = slot_;
@@ -1037,7 +845,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     e,
 
                 } = &mut *out_;
@@ -1058,7 +865,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut e,
 
                 } = slot_;
@@ -1115,7 +921,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     e,
 
                 } = &mut *out_;
@@ -1136,7 +941,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut e,
 
                 } = slot_;
@@ -1159,32 +963,10 @@ pub mod wire_optional {}
 
 pub mod generic {
 
-    pub struct Empty {}
+    /// The generic type corresponding to [`Empty`].
+    pub type Empty = ();
 
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Empty, ___E> for Empty
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::Empty>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::Empty {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            Ok(())
-        }
-    }
-
+    /// The generic type corresponding to [`EmptyProtocolSendRequest`].
     pub struct EmptyProtocolSendRequest<T0> {
         pub e: T0,
     }
@@ -1204,7 +986,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendRequest {
-
                     e,
 
                 } = out_;
@@ -1216,6 +997,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`EmptyProtocolReceiveRequest`].
     pub struct EmptyProtocolReceiveRequest<T0> {
         pub e: T0,
     }
@@ -1235,7 +1017,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolReceiveRequest {
-
                     e,
 
                 } = out_;
@@ -1247,6 +1028,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`EmptyProtocolSendAndReceiveRequest`].
     pub struct EmptyProtocolSendAndReceiveRequest<T0> {
         pub e: T0,
     }
@@ -1266,7 +1048,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendAndReceiveRequest {
-
                     e,
 
                 } = out_;
@@ -1278,6 +1059,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`EmptyProtocolSendAndReceiveResponse`].
     pub struct EmptyProtocolSendAndReceiveResponse<T0> {
         pub e: T0,
     }
@@ -1298,7 +1080,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::EmptyProtocolSendAndReceiveResponse {
-
                     e,
 
                 } = out_;

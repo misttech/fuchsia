@@ -1,5 +1,11 @@
-{% if !strct.is_empty_success_struct %}
+{% if is_empty %}
 
+/// The generic type corresponding to [`{{ name }}`].
+pub type {{ name }} = ();
+
+{% else %}
+
+/// The generic type corresponding to [`{{ name }}`].
 pub struct {{ name }}<
     {% for i in 0..strct.members.len() %}
         T{{ i }},
@@ -41,9 +47,6 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let crate::wire::{{ name }} {
-                {% if is_empty %}
-                    _empty,
-                {% endif %}
                 {% for member in strct.members -%}
                     {{ member.name.snake() }},
                 {% endfor %}

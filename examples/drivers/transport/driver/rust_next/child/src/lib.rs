@@ -100,7 +100,7 @@ mod tests {
             responder: fidl_next::Responder<i2cimpl::device::SetBitrate, fdf_fidl::DriverChannel>,
         ) {
             *self.bitrate.lock().await = request.payload().bitrate;
-            responder.respond(i2cimpl::DeviceSetBitrateResponse {}).await.unwrap();
+            responder.respond(()).await.unwrap();
         }
 
         async fn transact(

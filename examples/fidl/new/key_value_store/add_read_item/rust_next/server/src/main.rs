@@ -81,7 +81,7 @@ impl StoreServer {
             Entry::Vacant(entry) => {
                 println!("Wrote value at key: {}", entry.key());
                 entry.insert(attempt.value.clone());
-                Ok(StoreWriteItemResponse {})
+                Ok(())
             }
         }
     }

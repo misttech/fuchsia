@@ -7,7 +7,7 @@ use fidl::persist;
 use fidl_examples_keyvaluestore_supportexports as fidl_legacy;
 use fidl_next::{Request, Responder};
 use fidl_next_examples_keyvaluestore_supportexports::{
-    ExportError, Item, Store, StoreServerHandler, StoreWriteItemResponse, WriteError, store,
+    ExportError, Item, Store, StoreServerHandler, WriteError, store,
 };
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
@@ -101,7 +101,7 @@ impl StoreServerHandler for StoreServer {
 
         match result {
             Ok(()) => {
-                responder.respond(StoreWriteItemResponse {}).await.unwrap();
+                responder.respond(()).await.unwrap();
             }
             Err(e) => {
                 responder.respond_err(e).await.unwrap();

@@ -439,7 +439,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     c,
 
                 } = &mut *out_;
@@ -461,7 +460,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut c,
 
                 } = slot_;
@@ -509,7 +507,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     r,
 
                 } = &mut *out_;
@@ -531,7 +528,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut r,
 
                 } = slot_;
@@ -579,7 +575,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     c,
 
                 } = &mut *out_;
@@ -601,7 +596,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut c,
 
                 } = slot_;
@@ -649,7 +643,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     r,
 
                 } = &mut *out_;
@@ -671,7 +664,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut r,
 
                 } = slot_;
@@ -699,6 +691,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_protocolrequest::generic::*;
 
+    /// The generic type corresponding to [`ParentGetChildResponse`].
     pub struct ParentGetChildResponse<T0> {
         pub c: T0,
     }
@@ -722,7 +715,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ParentGetChildResponse {
-
                     c,
 
                 } = out_;
@@ -734,6 +726,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ParentGetChildRequestResponse`].
     pub struct ParentGetChildRequestResponse<T0> {
         pub r: T0,
     }
@@ -757,7 +750,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ParentGetChildRequestResponse {
-
                     r,
 
                 } = out_;
@@ -769,6 +761,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ParentTakeChildRequest`].
     pub struct ParentTakeChildRequest<T0> {
         pub c: T0,
     }
@@ -792,7 +785,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ParentTakeChildRequest {
-
                     c,
 
                 } = out_;
@@ -804,6 +796,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ParentTakeChildRequestRequest`].
     pub struct ParentTakeChildRequestRequest<T0> {
         pub r: T0,
     }
@@ -827,7 +820,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ParentTakeChildRequestRequest {
-
                     r,
 
                 } = out_;
@@ -873,7 +865,7 @@ pub mod parent {
 
         type Protocol = crate::Parent;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for GetChild {
@@ -897,7 +889,7 @@ pub mod parent {
 
         type Protocol = crate::Parent;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for GetChildRequest {
@@ -957,21 +949,25 @@ pub mod parent {
             ___T: ::fidl_next::Transport,
         {
             pub fn get_child(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetChild, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    881818649151440699,
-                    <super::GetChild as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        881818649151440699,
+                        <super::GetChild as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn get_child_request(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::GetChildRequest, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    1096855814967598201,
-                    <super::GetChildRequest as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        1096855814967598201,
+                        <super::GetChildRequest as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn take_child(

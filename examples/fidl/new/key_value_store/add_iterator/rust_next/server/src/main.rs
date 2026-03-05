@@ -5,8 +5,8 @@
 use anyhow::Error;
 use fidl_next::{Request, Responder, ServerDispatcher};
 use fidl_next_examples_keyvaluestore_additerator::{
-    IterateConnectionError, IteratorServerHandler, Store, StoreIterateResponse, StoreServerHandler,
-    StoreWriteItemResponse, WriteError, iterator, store,
+    IterateConnectionError, IteratorServerHandler, Store, StoreServerHandler, WriteError, iterator,
+    store,
 };
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -65,7 +65,7 @@ impl StoreServerHandler for StoreServer {
                 Entry::Vacant(entry) => {
                     println!("Wrote value at key: {}", entry.key());
                     entry.insert(attempt.value.clone());
-                    Ok(StoreWriteItemResponse {})
+                    Ok(())
                 }
             }
         };
@@ -122,7 +122,7 @@ impl StoreServerHandler for StoreServer {
             let _ = dispatcher.run(server).await;
         });
 
-        if let Err(e) = responder.respond(StoreIterateResponse {}).await {
+        if let Err(e) = responder.respond(()).await {
             println!("Error sending response: {:?}", e);
         }
         println!("Iterate response sent");

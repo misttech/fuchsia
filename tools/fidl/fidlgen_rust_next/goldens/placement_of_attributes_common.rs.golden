@@ -208,7 +208,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleProtocolMethodRequest {
-
                     arg,
 
                 } = out_;
@@ -370,7 +369,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleStruct {
-
                     member,
 
                 } = out_;
@@ -935,7 +933,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     arg,
 
                 } = &mut *out_;
@@ -956,7 +953,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut arg,
 
                 } = slot_;
@@ -1004,7 +1000,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     member,
 
                 } = &mut *out_;
@@ -1025,7 +1020,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut member,
 
                 } = slot_;
@@ -1352,6 +1346,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ExampleProtocolMethodRequest`].
     pub struct ExampleProtocolMethodRequest<T0> {
         pub arg: T0,
     }
@@ -1371,7 +1366,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleProtocolMethodRequest {
-
                     arg,
 
                 } = out_;
@@ -1383,6 +1377,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ExampleStruct`].
     pub struct ExampleStruct<T0> {
         pub member: T0,
     }
@@ -1401,7 +1396,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleStruct {
-
                     member,
 
                 } = out_;

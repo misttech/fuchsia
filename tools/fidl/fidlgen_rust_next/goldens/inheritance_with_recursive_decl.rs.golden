@@ -235,7 +235,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     request,
 
                 } = &mut *out_;
@@ -257,7 +256,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut request,
 
                 } = slot_;
@@ -305,7 +303,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     request,
 
                 } = &mut *out_;
@@ -327,7 +324,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut request,
 
                 } = slot_;
@@ -355,6 +351,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_inheritancewithrecursivedecl::generic::*;
 
+    /// The generic type corresponding to [`ParentFirstRequest`].
     pub struct ParentFirstRequest<T0> {
         pub request: T0,
     }
@@ -378,7 +375,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ParentFirstRequest {
-
                     request,
 
                 } = out_;
@@ -390,6 +386,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChildSecondRequest`].
     pub struct ChildSecondRequest<T0> {
         pub request: T0,
     }
@@ -413,7 +410,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChildSecondRequest {
-
                     request,
 
                 } = out_;

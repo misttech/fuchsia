@@ -37,7 +37,7 @@ pub mod first_protocol {
 
         type Protocol = crate::FirstProtocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     mod ___detail {
@@ -61,11 +61,13 @@ pub mod first_protocol {
             ___T: ::fidl_next::Transport,
         {
             pub fn method_on_first(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    6352548393671797041,
-                    <super::MethodOnFirst as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        6352548393671797041,
+                        <super::MethodOnFirst as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 
@@ -190,7 +192,7 @@ pub mod second_protocol {
 
         type Protocol = crate::SecondProtocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     mod ___detail {
@@ -214,11 +216,13 @@ pub mod second_protocol {
             ___T: ::fidl_next::Transport,
         {
             pub fn method_on_second(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    8121179205110225988,
-                    <super::MethodOnSecond as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        8121179205110225988,
+                        <super::MethodOnSecond as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 

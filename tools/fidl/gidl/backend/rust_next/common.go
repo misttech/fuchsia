@@ -259,6 +259,10 @@ func wrapNullable(decl mixer.Declaration, valueStr string) string {
 }
 
 func onStruct(value ir.Record, decl *mixer.StructDecl) string {
+	if len(decl.FieldNames()) == 0 {
+		return wrapNullable(decl, "()")
+	}
+
 	var structFields []string
 	providedKeys := make(map[string]struct{}, len(value.Fields))
 	for _, field := range value.Fields {

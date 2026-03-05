@@ -5,7 +5,7 @@
 use anyhow::Error;
 use fidl_next::{Request, Responder};
 use fidl_next_examples_keyvaluestore_supporttrees::{
-    Item, Store, StoreServerHandler, StoreWriteItemResponse, Value, WriteError, store,
+    Item, Store, StoreServerHandler, Value, WriteError, store,
 };
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
@@ -42,7 +42,7 @@ impl StoreServerHandler for StoreServer {
         let result = write_item(&mut self.store, &payload.attempt, "");
         match result {
             Ok(()) => {
-                responder.respond(StoreWriteItemResponse {}).await.unwrap();
+                responder.respond(()).await.unwrap();
             }
             Err(e) => {
                 responder.respond_err(e).await.unwrap();

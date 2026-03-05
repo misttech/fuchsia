@@ -379,7 +379,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Struct {
-
                     int64_with_default,
                     string_with_default,
                     bool_with_default,
@@ -826,7 +825,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     int64_with_default,
                     string_with_default,
                     bool_with_default,
@@ -876,7 +874,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut int64_with_default,
                     mut string_with_default,
                     mut bool_with_default,
@@ -919,6 +916,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`Struct`].
     pub struct Struct<T0, T1, T2, T3, T4> {
         pub int64_with_default: T0,
 
@@ -951,7 +949,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Struct {
-
                     int64_with_default,
                     string_with_default,
                     bool_with_default,

@@ -212,7 +212,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     element,
                     h,
 
@@ -246,7 +245,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut element,
                     mut h,
 
@@ -303,7 +301,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -329,7 +326,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -362,6 +358,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_encapsulatedstructs::generic::*;
 
+    /// The generic type corresponding to [`NonInlineStructTestStruct`].
     pub struct NonInlineStructTestStruct<T0, T1> {
         pub element: T0,
 
@@ -387,7 +384,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::NonInlineStructTestStruct {
-
                     element,
                     h,
 
@@ -402,6 +398,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`TopLevelStruct`].
     pub struct TopLevelStruct<T0, T1> {
         pub a: T0,
 
@@ -426,7 +423,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TopLevelStruct {
-
                     a,
                     b,
 

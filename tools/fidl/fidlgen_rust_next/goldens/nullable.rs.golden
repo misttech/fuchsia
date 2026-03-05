@@ -367,7 +367,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     val,
 
                 } = &mut *out_;
@@ -389,7 +388,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut val,
 
                 } = slot_;
@@ -440,7 +438,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     val,
 
                 } = &mut *out_;
@@ -462,7 +459,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut val,
 
                 } = slot_;
@@ -513,7 +509,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     val,
 
                 } = &mut *out_;
@@ -535,7 +530,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut val,
 
                 } = slot_;
@@ -563,6 +557,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_nullable::generic::*;
 
+    /// The generic type corresponding to [`StructWithNullableHandle`].
     pub struct StructWithNullableHandle<T0> {
         pub val: T0,
     }
@@ -583,7 +578,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructWithNullableHandle {
-
                     val,
 
                 } = out_;
@@ -595,6 +589,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`StructWithNullableProtocol`].
     pub struct StructWithNullableProtocol<T0> {
         pub val: T0,
     }
@@ -621,7 +616,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructWithNullableProtocol {
-
                     val,
 
                 } = out_;
@@ -633,6 +627,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`StructWithNullableRequest`].
     pub struct StructWithNullableRequest<T0> {
         pub val: T0,
     }
@@ -659,7 +654,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructWithNullableRequest {
-
                     val,
 
                 } = out_;

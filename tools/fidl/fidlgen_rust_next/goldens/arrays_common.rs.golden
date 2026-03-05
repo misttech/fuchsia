@@ -63,7 +63,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructLargeArray {
-
                     a,
 
                 } = out_;
@@ -222,7 +221,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructSmallArray {
-
                     a,
 
                 } = out_;
@@ -1013,7 +1011,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -1034,7 +1031,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -1082,7 +1078,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -1103,7 +1098,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -1671,6 +1665,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`StructLargeArray`].
     pub struct StructLargeArray<T0> {
         pub a: T0,
     }
@@ -1690,7 +1685,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructLargeArray {
-
                     a,
 
                 } = out_;
@@ -1702,6 +1696,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`StructSmallArray`].
     pub struct StructSmallArray<T0> {
         pub a: T0,
     }
@@ -1721,7 +1716,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructSmallArray {
-
                     a,
 
                 } = out_;

@@ -320,7 +320,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     x,
 
                 } = &mut *out_;
@@ -342,7 +341,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut x,
 
                 } = slot_;
@@ -644,6 +642,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_versions::generic::*;
 
+    /// The generic type corresponding to [`Struct`].
     pub struct Struct<T0> {
         pub x: T0,
     }
@@ -663,7 +662,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Struct {
-
                     x,
 
                 } = out_;

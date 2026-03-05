@@ -3040,10 +3040,10 @@ where
                         if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
                             Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                         } else {
-                            responder.respond(
+                            responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
                                 ordinal,
                                 flexibility,
-                                ::fidl_next::Flexible::<()>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
+                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
                             )
                             .expect("encoding a framework error should never fail")
                             .await?;

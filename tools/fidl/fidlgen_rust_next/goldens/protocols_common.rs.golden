@@ -76,7 +76,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodARequest {
-
                     a,
                     b,
 
@@ -265,7 +264,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolEventARequest {
-
                     a,
                     b,
 
@@ -454,7 +452,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodBRequest {
-
                     a,
                     b,
 
@@ -632,7 +629,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodBResponse {
-
                     result,
 
                 } = out_;
@@ -985,7 +981,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ManyParametersFifteenRequest {
-
                     p1,
                     p2,
                     p3,
@@ -1475,7 +1470,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MethodWithUnionUnionMethodRequest {
-
                     u,
 
                 } = out_;
@@ -1633,7 +1627,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MethodWithUnionUnionMethodResponse {
-
                     u,
 
                 } = out_;
@@ -1796,7 +1789,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
-
                     ret,
 
                 } = out_;
@@ -1976,7 +1968,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -2152,7 +2143,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -2332,7 +2322,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -2512,7 +2501,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
-
                     ret,
 
                 } = out_;
@@ -2692,7 +2680,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest {
-
                     ret,
 
                 } = out_;
@@ -2897,7 +2884,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithErrorSyntaxResponseAsStructResponse {
-
                     a,
                     b,
                     c,
@@ -3031,297 +3017,9 @@ pub mod natural {
         }
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct WithErrorSyntaxErrorAsPrimitiveResponse {}
+    pub type WithErrorSyntaxErrorAsPrimitiveResponse = ();
 
-    unsafe impl<___E>
-        ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse, ___E>
-        for WithErrorSyntaxErrorAsPrimitiveResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<
-                crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse, ___E>
-        for &'a WithErrorSyntaxErrorAsPrimitiveResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<
-                crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse>,
-            ___E,
-        > for WithErrorSyntaxErrorAsPrimitiveResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        WithErrorSyntaxErrorAsPrimitiveResponse:
-            ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<
-                    'static,
-                    crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-                >,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse>,
-            ___E,
-        > for &'a WithErrorSyntaxErrorAsPrimitiveResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a WithErrorSyntaxErrorAsPrimitiveResponse:
-            ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<
-                    'static,
-                    crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-                >,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse>
-        for WithErrorSyntaxErrorAsPrimitiveResponse
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-            Self,
-        > = unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::FromWireRef<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse>
-        for WithErrorSyntaxErrorAsPrimitiveResponse
-    {
-        #[inline]
-        fn from_wire_ref(wire: &crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse) -> Self {
-            Self {}
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct WithErrorSyntaxErrorAsEnumResponse {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsEnumResponse, ___E>
-        for WithErrorSyntaxErrorAsEnumResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::WithErrorSyntaxErrorAsEnumResponse {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsEnumResponse, ___E>
-        for &'a WithErrorSyntaxErrorAsEnumResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::WithErrorSyntaxErrorAsEnumResponse {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            ___E,
-        > for WithErrorSyntaxErrorAsEnumResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        WithErrorSyntaxErrorAsEnumResponse:
-            ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsEnumResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            ___E,
-        > for &'a WithErrorSyntaxErrorAsEnumResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a WithErrorSyntaxErrorAsEnumResponse:
-            ::fidl_next::Encode<crate::wire::WithErrorSyntaxErrorAsEnumResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::WithErrorSyntaxErrorAsEnumResponse>
-        for WithErrorSyntaxErrorAsEnumResponse
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            crate::wire::WithErrorSyntaxErrorAsEnumResponse,
-            Self,
-        > = unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::WithErrorSyntaxErrorAsEnumResponse) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::FromWireRef<crate::wire::WithErrorSyntaxErrorAsEnumResponse>
-        for WithErrorSyntaxErrorAsEnumResponse
-    {
-        #[inline]
-        fn from_wire_ref(wire: &crate::wire::WithErrorSyntaxErrorAsEnumResponse) -> Self {
-            Self {}
-        }
-    }
+    pub type WithErrorSyntaxErrorAsEnumResponse = ();
 }
 
 pub mod wire {
@@ -3360,7 +3058,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3384,7 +3081,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3441,7 +3137,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3465,7 +3160,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3522,7 +3216,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
 
@@ -3546,7 +3239,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
 
@@ -3602,7 +3294,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     result,
 
                 } = &mut *out_;
@@ -3623,7 +3314,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut result,
 
                 } = slot_;
@@ -3811,7 +3501,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     p1,
                     p2,
                     p3,
@@ -3874,7 +3563,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut p1,
                     mut p2,
                     mut p3,
@@ -4101,7 +3789,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     u,
 
                 } = &mut *out_;
@@ -4123,7 +3810,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut u,
 
                 } = slot_;
@@ -4180,7 +3866,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     u,
 
                 } = &mut *out_;
@@ -4202,7 +3887,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut u,
 
                 } = slot_;
@@ -4261,7 +3945,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     ret,
 
                 } = &mut *out_;
@@ -4284,7 +3967,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut ret,
 
                 } = slot_;
@@ -4345,7 +4027,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     arg,
 
                 } = &mut *out_;
@@ -4368,7 +4049,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut arg,
 
                 } = slot_;
@@ -4429,7 +4109,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     arg,
 
                 } = &mut *out_;
@@ -4452,7 +4131,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut arg,
 
                 } = slot_;
@@ -4513,7 +4191,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     arg,
 
                 } = &mut *out_;
@@ -4536,7 +4213,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut arg,
 
                 } = slot_;
@@ -4597,7 +4273,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     ret,
 
                 } = &mut *out_;
@@ -4620,7 +4295,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut ret,
 
                 } = slot_;
@@ -4679,7 +4353,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     ret,
 
                 } = &mut *out_;
@@ -4702,7 +4375,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut ret,
 
                 } = slot_;
@@ -4773,7 +4445,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
                     b,
                     c,
@@ -4800,7 +4471,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
                     mut b,
                     mut c,
@@ -4829,150 +4499,10 @@ pub mod wire {
     }
 
     /// The wire type corresponding to [`WithErrorSyntaxErrorAsPrimitiveResponse`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct WithErrorSyntaxErrorAsPrimitiveResponse {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(
-        std::mem::size_of::<WithErrorSyntaxErrorAsPrimitiveResponse>(),
-        1
-    );
-    static_assertions::const_assert_eq!(
-        std::mem::align_of::<WithErrorSyntaxErrorAsPrimitiveResponse>(),
-        1
-    );
-
-    impl ::fidl_next::Constrained for WithErrorSyntaxErrorAsPrimitiveResponse {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for WithErrorSyntaxErrorAsPrimitiveResponse {
-        type Narrowed<'de> = WithErrorSyntaxErrorAsPrimitiveResponse;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for WithErrorSyntaxErrorAsPrimitiveResponse
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for WithErrorSyntaxErrorAsPrimitiveResponse {
-        type Natural = crate::natural::WithErrorSyntaxErrorAsPrimitiveResponse;
-    }
+    pub type WithErrorSyntaxErrorAsPrimitiveResponse = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`WithErrorSyntaxErrorAsEnumResponse`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct WithErrorSyntaxErrorAsEnumResponse {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(
-        std::mem::size_of::<WithErrorSyntaxErrorAsEnumResponse>(),
-        1
-    );
-    static_assertions::const_assert_eq!(
-        std::mem::align_of::<WithErrorSyntaxErrorAsEnumResponse>(),
-        1
-    );
-
-    impl ::fidl_next::Constrained for WithErrorSyntaxErrorAsEnumResponse {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for WithErrorSyntaxErrorAsEnumResponse {
-        type Narrowed<'de> = WithErrorSyntaxErrorAsEnumResponse;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for WithErrorSyntaxErrorAsEnumResponse
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for WithErrorSyntaxErrorAsEnumResponse {
-        type Natural = crate::natural::WithErrorSyntaxErrorAsEnumResponse;
-    }
+    pub type WithErrorSyntaxErrorAsEnumResponse = ::fidl_next::wire::Unit;
 }
 
 pub mod wire_optional {
@@ -5065,6 +4595,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ChannelProtocolMethodARequest`].
     pub struct ChannelProtocolMethodARequest<T0, T1> {
         pub a: T0,
 
@@ -5087,7 +4618,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodARequest {
-
                     a,
                     b,
 
@@ -5102,6 +4632,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChannelProtocolEventARequest`].
     pub struct ChannelProtocolEventARequest<T0, T1> {
         pub a: T0,
 
@@ -5124,7 +4655,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolEventARequest {
-
                     a,
                     b,
 
@@ -5139,6 +4669,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChannelProtocolMethodBRequest`].
     pub struct ChannelProtocolMethodBRequest<T0, T1> {
         pub a: T0,
 
@@ -5161,7 +4692,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodBRequest {
-
                     a,
                     b,
 
@@ -5176,6 +4706,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChannelProtocolMethodBResponse`].
     pub struct ChannelProtocolMethodBResponse<T0> {
         pub result: T0,
     }
@@ -5195,7 +4726,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMethodBResponse {
-
                     result,
 
                 } = out_;
@@ -5207,6 +4737,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ManyParametersFifteenRequest`].
     pub struct ManyParametersFifteenRequest<
         T0,
         T1,
@@ -5301,7 +4832,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ManyParametersFifteenRequest {
-
                     p1,
                     p2,
                     p3,
@@ -5355,6 +4885,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MethodWithUnionUnionMethodRequest`].
     pub struct MethodWithUnionUnionMethodRequest<T0> {
         pub u: T0,
     }
@@ -5378,7 +4909,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MethodWithUnionUnionMethodRequest {
-
                     u,
 
                 } = out_;
@@ -5390,6 +4920,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MethodWithUnionUnionMethodResponse`].
     pub struct MethodWithUnionUnionMethodResponse<T0> {
         pub u: T0,
     }
@@ -5413,7 +4944,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MethodWithUnionUnionMethodResponse {
-
                     u,
 
                 } = out_;
@@ -5425,6 +4955,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseNoRequestWithResponseResponse`].
     pub struct WithAndWithoutRequestResponseNoRequestWithResponseResponse<T0> {
         pub ret: T0,
     }
@@ -5450,7 +4981,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
-
                     ret,
 
                 } = out_;
@@ -5462,6 +4992,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestNoResponseRequest`].
     pub struct WithAndWithoutRequestResponseWithRequestNoResponseRequest<T0> {
         pub arg: T0,
     }
@@ -5487,7 +5018,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -5499,6 +5029,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestEmptyResponseRequest`].
     pub struct WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<T0> {
         pub arg: T0,
     }
@@ -5524,7 +5055,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -5536,6 +5066,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestWithResponseRequest`].
     pub struct WithAndWithoutRequestResponseWithRequestWithResponseRequest<T0> {
         pub arg: T0,
     }
@@ -5561,7 +5092,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest {
-
                     arg,
 
                 } = out_;
@@ -5573,6 +5103,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestWithResponseResponse`].
     pub struct WithAndWithoutRequestResponseWithRequestWithResponseResponse<T0> {
         pub ret: T0,
     }
@@ -5598,7 +5129,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
-
                     ret,
 
                 } = out_;
@@ -5610,6 +5140,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithAndWithoutRequestResponseOnWithResponseRequest`].
     pub struct WithAndWithoutRequestResponseOnWithResponseRequest<T0> {
         pub ret: T0,
     }
@@ -5635,7 +5166,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest {
-
                     ret,
 
                 } = out_;
@@ -5647,6 +5177,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithErrorSyntaxResponseAsStructResponse`].
     pub struct WithErrorSyntaxResponseAsStructResponse<T0, T1, T2> {
         pub a: T0,
 
@@ -5675,7 +5206,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithErrorSyntaxResponseAsStructResponse {
-
                     a,
                     b,
                     c,
@@ -5692,6 +5222,12 @@ pub mod generic {
             Ok(())
         }
     }
+
+    /// The generic type corresponding to [`WithErrorSyntaxErrorAsPrimitiveResponse`].
+    pub type WithErrorSyntaxErrorAsPrimitiveResponse = ();
+
+    /// The generic type corresponding to [`WithErrorSyntaxErrorAsEnumResponse`].
+    pub type WithErrorSyntaxErrorAsEnumResponse = ();
 }
 
 pub use self::natural::*;
@@ -5852,7 +5388,7 @@ pub mod discoverable_protocol {
 
         type Protocol = crate::DiscoverableProtocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     mod ___detail {
@@ -5876,11 +5412,13 @@ pub mod discoverable_protocol {
             ___T: ::fidl_next::Transport,
         {
             pub fn method(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    3455873048082739435,
-                    <super::Method as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        3455873048082739435,
+                        <super::Method as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 
@@ -6598,7 +6136,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     pub struct NoRequestEmptyResponse;
@@ -6610,7 +6148,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for NoRequestEmptyResponse {
@@ -6634,7 +6172,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for NoRequestWithResponse {
@@ -6729,7 +6267,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     pub struct OnWithResponse;
@@ -6765,31 +6303,37 @@ pub mod with_and_without_request_response {
             ___T: ::fidl_next::Transport,
         {
             pub fn no_request_no_response(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
-                    5413654872775949227,
-                    <super::NoRequestNoResponse as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.client.send_one_way::<::fidl_next::wire::EmptyMessageBody>(
+                        5413654872775949227,
+                        <super::NoRequestNoResponse as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn no_request_empty_response(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::NoRequestEmptyResponse, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    1631193469798418024,
-                    <super::NoRequestEmptyResponse as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        1631193469798418024,
+                        <super::NoRequestEmptyResponse as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn no_request_with_response(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::NoRequestWithResponse, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    9037369643591427517,
-                    <super::NoRequestWithResponse as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        9037369643591427517,
+                        <super::NoRequestWithResponse as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn with_request_no_response(
@@ -6921,11 +6465,13 @@ pub mod with_and_without_request_response {
             ___T: ::fidl_next::Transport,
         {
             pub fn on_empty_response(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
-                    5397663296507358806,
-                    <super::OnEmptyResponse as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::SendFuture::from_untyped(
+                    self.server.send_event::<::fidl_next::wire::EmptyMessageBody>(
+                        5397663296507358806,
+                        <super::OnEmptyResponse as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn on_with_response(

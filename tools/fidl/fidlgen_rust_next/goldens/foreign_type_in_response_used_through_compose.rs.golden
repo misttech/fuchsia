@@ -49,7 +49,7 @@ pub mod top {
 
         type Protocol = crate::Top;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for GetFoo {
@@ -85,11 +85,13 @@ pub mod top {
             ___T: ::fidl_next::Transport,
         {
             pub fn get_foo(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetFoo, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    4619180266423108403,
-                    <super::GetFoo as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        4619180266423108403,
+                        <super::GetFoo as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 

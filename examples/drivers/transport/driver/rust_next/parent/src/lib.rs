@@ -4,9 +4,9 @@
 
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_next::{Request, Responder, ServerEnd};
+use fidl_next_fuchsia_hardware_i2cimpl as i2cimpl;
 use fidl_next_fuchsia_hardware_i2cimpl::device::{GetMaxTransferSize, SetBitrate, Transact};
 use fidl_next_fuchsia_hardware_i2cimpl::generic::ReadData;
-use fidl_next_fuchsia_hardware_i2cimpl::{self as i2cimpl, DeviceSetBitrateResponse};
 use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt as _;
@@ -45,7 +45,7 @@ impl i2cimpl::DeviceServerHandler for DeviceServer {
     ) {
         if request.payload().bitrate == 5 {
             responder
-                .respond(DeviceSetBitrateResponse {})
+                .respond(())
                 .await
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         } else {

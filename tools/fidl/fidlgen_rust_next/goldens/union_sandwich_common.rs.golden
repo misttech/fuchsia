@@ -266,7 +266,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize12Alignment4 {
-
                     before,
                     union,
                     after,
@@ -458,7 +457,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructSize16Alignment8 {
-
                     f1,
                     f2,
 
@@ -829,7 +827,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize24Alignment8 {
-
                     before,
                     union,
                     after,
@@ -1211,7 +1208,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize36Alignment4 {
-
                     before,
                     union,
                     after,
@@ -1575,7 +1571,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize8Alignment4 {
-
                     before,
                     union,
                     after,
@@ -1837,7 +1832,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     before,
                     union,
                     after,
@@ -1881,7 +1875,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut before,
                     mut union,
                     mut after,
@@ -1943,7 +1936,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     f1,
                     f2,
 
@@ -1967,7 +1959,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut f1,
                     mut f2,
 
@@ -2142,7 +2133,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     before,
                     union,
                     after,
@@ -2186,7 +2176,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut before,
                     mut union,
                     mut after,
@@ -2359,7 +2348,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     before,
                     union,
                     after,
@@ -2403,7 +2391,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut before,
                     mut union,
                     mut after,
@@ -2588,7 +2575,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     before,
                     union,
                     after,
@@ -2631,7 +2617,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut before,
                     mut union,
                     mut after,
@@ -3033,6 +3018,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`SandwichUnionSize12Alignment4`].
     pub struct SandwichUnionSize12Alignment4<T0, T1, T2> {
         pub before: T0,
 
@@ -3062,7 +3048,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize12Alignment4 {
-
                     before,
                     union,
                     after,
@@ -3080,6 +3065,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`StructSize16Alignment8`].
     pub struct StructSize16Alignment8<T0, T1> {
         pub f1: T0,
 
@@ -3102,7 +3088,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::StructSize16Alignment8 {
-
                     f1,
                     f2,
 
@@ -3117,6 +3102,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`SandwichUnionSize24Alignment8`].
     pub struct SandwichUnionSize24Alignment8<T0, T1, T2> {
         pub before: T0,
 
@@ -3146,7 +3132,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize24Alignment8 {
-
                     before,
                     union,
                     after,
@@ -3164,6 +3149,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`SandwichUnionSize36Alignment4`].
     pub struct SandwichUnionSize36Alignment4<T0, T1, T2> {
         pub before: T0,
 
@@ -3193,7 +3179,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize36Alignment4 {
-
                     before,
                     union,
                     after,
@@ -3211,6 +3196,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`SandwichUnionSize8Alignment4`].
     pub struct SandwichUnionSize8Alignment4<T0, T1, T2> {
         pub before: T0,
 
@@ -3237,7 +3223,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SandwichUnionSize8Alignment4 {
-
                     before,
                     union,
                     after,

@@ -60,7 +60,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding4 {
-
                     a,
 
                 } = out_;
@@ -620,7 +619,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::AllowedDeniedResponse {
-
                     should_never_appear_in_any_binding_4,
                     should_never_appear_in_any_binding_5,
                     should_never_appear_in_any_binding_6,
@@ -821,7 +819,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding1 {
-
                     a,
 
                 } = out_;
@@ -1387,7 +1384,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DeniedShouldNeverAppearInAnyBindingRequest {
-
                     should_never_appear_in_any_binding_1,
                     should_never_appear_in_any_binding_2,
                     should_never_appear_in_any_binding_3,
@@ -1608,7 +1604,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding7 {
-
                     a,
 
                 } = out_;
@@ -2168,7 +2163,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DeniedAnonymous {
-
                     should_never_appear_in_any_binding_7,
                     should_never_appear_in_any_binding_8,
                     should_never_appear_in_any_binding_9,
@@ -2365,7 +2359,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyCppRequest {
-
                     a,
 
                 } = out_;
@@ -2527,7 +2520,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyCppResponse {
-
                     b,
 
                 } = out_;
@@ -2685,7 +2677,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyDartRequest {
-
                     a,
 
                 } = out_;
@@ -2848,7 +2839,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyDartResponse {
-
                     b,
 
                 } = out_;
@@ -3006,7 +2996,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-
                     a,
 
                 } = out_;
@@ -3168,7 +3157,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-
                     b,
 
                 } = out_;
@@ -3327,7 +3315,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyPythonRequest {
-
                     a,
 
                 } = out_;
@@ -3490,7 +3477,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyPythonResponse {
-
                     b,
 
                 } = out_;
@@ -3648,7 +3634,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyRustRequest {
-
                     a,
 
                 } = out_;
@@ -3811,7 +3796,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyRustResponse {
-
                     b,
 
                 } = out_;
@@ -3975,7 +3959,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenySyzkallerRequest {
-
                     a,
 
                 } = out_;
@@ -4149,7 +4132,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenySyzkallerResponse {
-
                     b,
 
                 } = out_;
@@ -4314,7 +4296,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MemberOnlyAppearsInImportingLibrary {
-
                     a,
 
                 } = out_;
@@ -4486,7 +4467,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OnlyAppearsInImportingLibrary {
-
                     member_only_appears_in_importing_library,
 
                 } = out_;
@@ -4686,131 +4666,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct OnlyGo {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::OnlyGo, ___E> for OnlyGo
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::OnlyGo>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::OnlyGo {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::OnlyGo, ___E> for &'a OnlyGo
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::OnlyGo>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::OnlyGo {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::OnlyGo>, ___E>
-        for OnlyGo
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        OnlyGo: ::fidl_next::Encode<crate::wire::OnlyGo, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::OnlyGo>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::OnlyGo>, ___E>
-        for &'a OnlyGo
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a OnlyGo: ::fidl_next::Encode<crate::wire::OnlyGo, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::OnlyGo>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::OnlyGo> for OnlyGo {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::OnlyGo, Self> =
-            unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::OnlyGo) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::FromWireRef<crate::wire::OnlyGo> for OnlyGo {
-        #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyGo) -> Self {
-            Self {}
-        }
-    }
+    pub type OnlyGo = ();
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum OnlyLlcpp {
@@ -5271,7 +5127,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -5292,7 +5147,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -5536,7 +5390,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     should_never_appear_in_any_binding_4,
                     should_never_appear_in_any_binding_5,
                     should_never_appear_in_any_binding_6,
@@ -5572,7 +5425,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut should_never_appear_in_any_binding_4,
                     mut should_never_appear_in_any_binding_5,
                     mut should_never_appear_in_any_binding_6,
@@ -5642,7 +5494,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -5663,7 +5514,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -5922,7 +5772,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     should_never_appear_in_any_binding_1,
                     should_never_appear_in_any_binding_2,
                     should_never_appear_in_any_binding_3,
@@ -5958,7 +5807,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut should_never_appear_in_any_binding_1,
                     mut should_never_appear_in_any_binding_2,
                     mut should_never_appear_in_any_binding_3,
@@ -6028,7 +5876,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -6049,7 +5896,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -6293,7 +6139,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     should_never_appear_in_any_binding_7,
                     should_never_appear_in_any_binding_8,
                     should_never_appear_in_any_binding_9,
@@ -6329,7 +6174,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut should_never_appear_in_any_binding_7,
                     mut should_never_appear_in_any_binding_8,
                     mut should_never_appear_in_any_binding_9,
@@ -6408,7 +6252,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -6429,7 +6272,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -6486,7 +6328,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -6507,7 +6348,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -6564,7 +6404,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -6585,7 +6424,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -6642,7 +6480,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -6663,7 +6500,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -6717,7 +6553,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -6738,7 +6573,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -6795,7 +6629,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -6816,7 +6649,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -6873,7 +6705,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -6894,7 +6725,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -6951,7 +6781,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -6972,7 +6801,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -7029,7 +6857,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -7050,7 +6877,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -7107,7 +6933,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -7128,7 +6953,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -7185,7 +7009,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -7206,7 +7029,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -7263,7 +7085,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -7284,7 +7105,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -7341,7 +7161,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -7362,7 +7181,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -7417,7 +7235,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     member_only_appears_in_importing_library,
 
                 } = &mut *out_;
@@ -7438,7 +7255,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut member_only_appears_in_importing_library,
 
                 } = slot_;
@@ -7526,71 +7342,7 @@ pub mod wire {
     }
 
     /// The wire type corresponding to [`OnlyGo`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct OnlyGo {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<OnlyGo>(), 1);
-    static_assertions::const_assert_eq!(std::mem::align_of::<OnlyGo>(), 1);
-
-    impl ::fidl_next::Constrained for OnlyGo {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for OnlyGo {
-        type Narrowed<'de> = OnlyGo;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for OnlyGo
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for OnlyGo {
-        type Natural = crate::natural::OnlyGo;
-    }
+    pub type OnlyGo = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`OnlyLlcpp`].
     #[repr(transparent)]
@@ -8272,6 +8024,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ShouldNeverAppearInAnyBinding4`].
     pub struct ShouldNeverAppearInAnyBinding4<T0> {
         pub a: T0,
     }
@@ -8291,7 +8044,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding4 {
-
                     a,
 
                 } = out_;
@@ -8303,6 +8055,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`AllowedDeniedResponse`].
     pub struct AllowedDeniedResponse<T0, T1, T2> {
         pub should_never_appear_in_any_binding_4: T0,
 
@@ -8330,7 +8083,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::AllowedDeniedResponse {
-
                     should_never_appear_in_any_binding_4,
                     should_never_appear_in_any_binding_5,
                     should_never_appear_in_any_binding_6,
@@ -8363,6 +8115,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ShouldNeverAppearInAnyBinding1`].
     pub struct ShouldNeverAppearInAnyBinding1<T0> {
         pub a: T0,
     }
@@ -8382,7 +8135,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding1 {
-
                     a,
 
                 } = out_;
@@ -8394,6 +8146,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DeniedShouldNeverAppearInAnyBindingRequest`].
     pub struct DeniedShouldNeverAppearInAnyBindingRequest<T0, T1, T2> {
         pub should_never_appear_in_any_binding_1: T0,
 
@@ -8423,7 +8176,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DeniedShouldNeverAppearInAnyBindingRequest {
-
                     should_never_appear_in_any_binding_1,
                     should_never_appear_in_any_binding_2,
                     should_never_appear_in_any_binding_3,
@@ -8456,6 +8208,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ShouldNeverAppearInAnyBinding7`].
     pub struct ShouldNeverAppearInAnyBinding7<T0> {
         pub a: T0,
     }
@@ -8475,7 +8228,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ShouldNeverAppearInAnyBinding7 {
-
                     a,
 
                 } = out_;
@@ -8487,6 +8239,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DeniedAnonymous`].
     pub struct DeniedAnonymous<T0, T1, T2> {
         pub should_never_appear_in_any_binding_7: T0,
 
@@ -8513,7 +8266,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DeniedAnonymous {
-
                     should_never_appear_in_any_binding_7,
                     should_never_appear_in_any_binding_8,
                     should_never_appear_in_any_binding_9,
@@ -8546,6 +8298,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyCppRequest`].
     pub struct DenyEachBindingOnlyDenyCppRequest<T0> {
         pub a: T0,
     }
@@ -8565,7 +8318,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyCppRequest {
-
                     a,
 
                 } = out_;
@@ -8577,6 +8329,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyCppResponse`].
     pub struct DenyEachBindingOnlyDenyCppResponse<T0> {
         pub b: T0,
     }
@@ -8596,7 +8349,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyCppResponse {
-
                     b,
 
                 } = out_;
@@ -8608,6 +8360,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyDartRequest`].
     pub struct DenyEachBindingOnlyDenyDartRequest<T0> {
         pub a: T0,
     }
@@ -8627,7 +8380,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyDartRequest {
-
                     a,
 
                 } = out_;
@@ -8639,6 +8391,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyDartResponse`].
     pub struct DenyEachBindingOnlyDenyDartResponse<T0> {
         pub b: T0,
     }
@@ -8659,7 +8412,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyDartResponse {
-
                     b,
 
                 } = out_;
@@ -8671,6 +8423,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoRequest`].
     pub struct DenyEachBindingOnlyDenyGoRequest<T0> {
         pub a: T0,
     }
@@ -8690,7 +8443,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-
                     a,
 
                 } = out_;
@@ -8702,6 +8454,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoResponse`].
     pub struct DenyEachBindingOnlyDenyGoResponse<T0> {
         pub b: T0,
     }
@@ -8721,7 +8474,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-
                     b,
 
                 } = out_;
@@ -8733,6 +8485,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyPythonRequest`].
     pub struct DenyEachBindingOnlyDenyPythonRequest<T0> {
         pub a: T0,
     }
@@ -8753,7 +8506,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyPythonRequest {
-
                     a,
 
                 } = out_;
@@ -8765,6 +8517,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyPythonResponse`].
     pub struct DenyEachBindingOnlyDenyPythonResponse<T0> {
         pub b: T0,
     }
@@ -8785,7 +8538,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyPythonResponse {
-
                     b,
 
                 } = out_;
@@ -8797,6 +8549,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyRustRequest`].
     pub struct DenyEachBindingOnlyDenyRustRequest<T0> {
         pub a: T0,
     }
@@ -8816,7 +8569,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyRustRequest {
-
                     a,
 
                 } = out_;
@@ -8828,6 +8580,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenyRustResponse`].
     pub struct DenyEachBindingOnlyDenyRustResponse<T0> {
         pub b: T0,
     }
@@ -8848,7 +8601,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenyRustResponse {
-
                     b,
 
                 } = out_;
@@ -8860,6 +8612,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenySyzkallerRequest`].
     pub struct DenyEachBindingOnlyDenySyzkallerRequest<T0> {
         pub a: T0,
     }
@@ -8882,7 +8635,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenySyzkallerRequest {
-
                     a,
 
                 } = out_;
@@ -8894,6 +8646,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`DenyEachBindingOnlyDenySyzkallerResponse`].
     pub struct DenyEachBindingOnlyDenySyzkallerResponse<T0> {
         pub b: T0,
     }
@@ -8916,7 +8669,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::DenyEachBindingOnlyDenySyzkallerResponse {
-
                     b,
 
                 } = out_;
@@ -8928,6 +8680,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`MemberOnlyAppearsInImportingLibrary`].
     pub struct MemberOnlyAppearsInImportingLibrary<T0> {
         pub a: T0,
     }
@@ -8948,7 +8701,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::MemberOnlyAppearsInImportingLibrary {
-
                     a,
 
                 } = out_;
@@ -8960,6 +8712,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`OnlyAppearsInImportingLibrary`].
     pub struct OnlyAppearsInImportingLibrary<T0> {
         pub member_only_appears_in_importing_library: T0,
     }
@@ -8979,7 +8732,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OnlyAppearsInImportingLibrary {
-
                     member_only_appears_in_importing_library,
 
                 } = out_;
@@ -8996,31 +8748,8 @@ pub mod generic {
         }
     }
 
-    pub struct OnlyGo {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::OnlyGo, ___E> for OnlyGo
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::OnlyGo>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::OnlyGo {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            Ok(())
-        }
-    }
+    /// The generic type corresponding to [`OnlyGo`].
+    pub type OnlyGo = ();
 }
 
 pub use self::natural::*;
@@ -9052,7 +8781,7 @@ pub mod allowed {
 
         type Protocol = crate::Allowed;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for Denied {
@@ -9100,11 +8829,13 @@ pub mod allowed {
             ___T: ::fidl_next::Transport,
         {
             pub fn denied(&self) -> ::fidl_next::TwoWayFuture<'_, super::Denied, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    3826178105137551123,
-                    <super::Denied as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        3826178105137551123,
+                        <super::Denied as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 

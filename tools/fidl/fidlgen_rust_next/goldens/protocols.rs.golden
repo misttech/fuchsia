@@ -1727,7 +1727,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -1749,7 +1748,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -1806,7 +1804,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     a,
 
                 } = &mut *out_;
@@ -1828,7 +1825,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut a,
 
                 } = slot_;
@@ -1885,7 +1881,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     b,
 
                 } = &mut *out_;
@@ -1907,7 +1902,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut b,
 
                 } = slot_;
@@ -1964,7 +1958,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -1986,7 +1979,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -2043,7 +2035,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -2065,7 +2056,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -2122,7 +2112,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -2144,7 +2133,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -2201,7 +2189,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -2223,7 +2210,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -2295,7 +2281,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     client,
                     server,
                     client_opt,
@@ -2326,7 +2311,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut client,
                     mut server,
                     mut client_opt,
@@ -2398,7 +2382,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     h,
 
                 } = &mut *out_;
@@ -2420,7 +2403,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut h,
 
                 } = slot_;
@@ -2480,7 +2462,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     in_,
 
                 } = &mut *out_;
@@ -2502,7 +2483,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut in_,
 
                 } = slot_;
@@ -2562,7 +2542,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     out,
 
                 } = &mut *out_;
@@ -2584,7 +2563,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut out,
 
                 } = slot_;
@@ -2644,7 +2622,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     in_,
 
                 } = &mut *out_;
@@ -2666,7 +2643,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut in_,
 
                 } = slot_;
@@ -2726,7 +2702,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     out,
 
                 } = &mut *out_;
@@ -2748,7 +2723,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut out,
 
                 } = slot_;
@@ -2805,7 +2779,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     in_,
 
                 } = &mut *out_;
@@ -2827,7 +2800,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut in_,
 
                 } = slot_;
@@ -2884,7 +2856,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     out,
 
                 } = &mut *out_;
@@ -2906,7 +2877,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut out,
 
                 } = slot_;
@@ -2934,6 +2904,7 @@ pub mod generic {
 
     pub use fidl_next_common_test_protocols::generic::*;
 
+    /// The generic type corresponding to [`ChannelProtocolTakeHandleRequest`].
     pub struct ChannelProtocolTakeHandleRequest<T0> {
         pub h: T0,
     }
@@ -2954,7 +2925,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolTakeHandleRequest {
-
                     h,
 
                 } = out_;
@@ -2966,6 +2936,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChannelProtocolMutateSocketRequest`].
     pub struct ChannelProtocolMutateSocketRequest<T0> {
         pub a: T0,
     }
@@ -2986,7 +2957,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMutateSocketRequest {
-
                     a,
 
                 } = out_;
@@ -2998,6 +2968,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ChannelProtocolMutateSocketResponse`].
     pub struct ChannelProtocolMutateSocketResponse<T0> {
         pub b: T0,
     }
@@ -3019,7 +2990,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ChannelProtocolMutateSocketResponse {
-
                     b,
 
                 } = out_;
@@ -3031,6 +3001,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`HandleRightsProtocolNoResponseMethodRequest`].
     pub struct HandleRightsProtocolNoResponseMethodRequest<T0> {
         pub h: T0,
     }
@@ -3054,7 +3025,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandleRightsProtocolNoResponseMethodRequest {
-
                     h,
 
                 } = out_;
@@ -3066,6 +3036,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`HandleRightsProtocolResponseMethodRequest`].
     pub struct HandleRightsProtocolResponseMethodRequest<T0> {
         pub h: T0,
     }
@@ -3089,7 +3060,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandleRightsProtocolResponseMethodRequest {
-
                     h,
 
                 } = out_;
@@ -3101,6 +3071,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`HandleRightsProtocolResponseMethodResponse`].
     pub struct HandleRightsProtocolResponseMethodResponse<T0> {
         pub h: T0,
     }
@@ -3124,7 +3095,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandleRightsProtocolResponseMethodResponse {
-
                     h,
 
                 } = out_;
@@ -3136,6 +3106,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`HandleRightsProtocolAnEventRequest`].
     pub struct HandleRightsProtocolAnEventRequest<T0> {
         pub h: T0,
     }
@@ -3156,7 +3127,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandleRightsProtocolAnEventRequest {
-
                     h,
 
                 } = out_;
@@ -3168,6 +3138,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`ProtocolEnds`].
     pub struct ProtocolEnds<T0, T1, T2, T3> {
         pub client: T0,
 
@@ -3221,7 +3192,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ProtocolEnds {
-
                     client,
                     server,
                     client_opt,
@@ -3242,6 +3212,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithErrorSyntaxHandleInResultResponse`].
     pub struct WithErrorSyntaxHandleInResultResponse<T0> {
         pub h: T0,
     }
@@ -3263,7 +3234,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithErrorSyntaxHandleInResultResponse {
-
                     h,
 
                 } = out_;
@@ -3275,6 +3245,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsClientEndsRequest`].
     pub struct WithProtocolEndsClientEndsRequest<T0> {
         pub in_: T0,
     }
@@ -3301,7 +3272,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsClientEndsRequest {
-
                     in_,
 
                 } = out_;
@@ -3313,6 +3283,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsClientEndsResponse`].
     pub struct WithProtocolEndsClientEndsResponse<T0> {
         pub out: T0,
     }
@@ -3339,7 +3310,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsClientEndsResponse {
-
                     out,
 
                 } = out_;
@@ -3351,6 +3321,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsServerEndsRequest`].
     pub struct WithProtocolEndsServerEndsRequest<T0> {
         pub in_: T0,
     }
@@ -3377,7 +3348,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsServerEndsRequest {
-
                     in_,
 
                 } = out_;
@@ -3389,6 +3359,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsServerEndsResponse`].
     pub struct WithProtocolEndsServerEndsResponse<T0> {
         pub out: T0,
     }
@@ -3415,7 +3386,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsServerEndsResponse {
-
                     out,
 
                 } = out_;
@@ -3427,6 +3397,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsStructContainingEndsRequest`].
     pub struct WithProtocolEndsStructContainingEndsRequest<T0> {
         pub in_: T0,
     }
@@ -3450,7 +3421,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsStructContainingEndsRequest {
-
                     in_,
 
                 } = out_;
@@ -3462,6 +3432,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`WithProtocolEndsStructContainingEndsResponse`].
     pub struct WithProtocolEndsStructContainingEndsResponse<T0> {
         pub out: T0,
     }
@@ -3485,7 +3456,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::WithProtocolEndsStructContainingEndsResponse {
-
                     out,
 
                 } = out_;
@@ -4429,7 +4399,7 @@ pub mod with_error_syntax {
 
         type Protocol = crate::WithErrorSyntax;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ResponseAsStruct {
@@ -4465,7 +4435,7 @@ pub mod with_error_syntax {
 
         type Protocol = crate::WithErrorSyntax;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorAsPrimitive {
@@ -4501,7 +4471,7 @@ pub mod with_error_syntax {
 
         type Protocol = crate::WithErrorSyntax;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorAsEnum {
@@ -4537,7 +4507,7 @@ pub mod with_error_syntax {
 
         type Protocol = crate::WithErrorSyntax;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for HandleInResult {
@@ -4592,39 +4562,47 @@ pub mod with_error_syntax {
             pub fn response_as_struct(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ResponseAsStruct, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    268248568430741139,
-                    <super::ResponseAsStruct as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        268248568430741139,
+                        <super::ResponseAsStruct as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn error_as_primitive(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorAsPrimitive, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    6930994461233198567,
-                    <super::ErrorAsPrimitive as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        6930994461233198567,
+                        <super::ErrorAsPrimitive as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn error_as_enum(&self) -> ::fidl_next::TwoWayFuture<'_, super::ErrorAsEnum, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    5491891352371277635,
-                    <super::ErrorAsEnum as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        5491891352371277635,
+                        <super::ErrorAsEnum as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn handle_in_result(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::HandleInResult, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    1371676333068455103,
-                    <super::HandleInResult as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        1371676333068455103,
+                        <super::HandleInResult as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 

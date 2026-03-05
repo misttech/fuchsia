@@ -215,7 +215,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OverrideTest {
-
                     op,
                     left,
                     right,
@@ -1117,7 +1116,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TableData {
-
                     data,
 
                 } = out_;
@@ -1414,7 +1412,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SomeProtocolSomeMethodRequest {
-
                     union_member,
                     table_member,
 
@@ -1585,7 +1582,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SomeProtocolSomeMethodResponse {
-
                     bits_member,
 
                 } = out_;
@@ -1939,7 +1935,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     op,
                     left,
                     right,
@@ -1975,7 +1970,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut op,
                     mut left,
                     mut right,
@@ -2474,7 +2468,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     data,
 
                 } = &mut *out_;
@@ -2495,7 +2488,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut data,
 
                 } = slot_;
@@ -2661,7 +2653,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     union_member,
                     table_member,
 
@@ -2686,7 +2677,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut union_member,
                     mut table_member,
 
@@ -2742,7 +2732,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     bits_member,
 
                 } = &mut *out_;
@@ -2763,7 +2752,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut bits_member,
 
                 } = slot_;
@@ -3042,6 +3030,7 @@ pub mod wire_optional {
 
 pub mod generic {
 
+    /// The generic type corresponding to [`OverrideTest`].
     pub struct OverrideTest<T0, T1, T2> {
         pub op: T0,
 
@@ -3068,7 +3057,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::OverrideTest {
-
                     op,
                     left,
                     right,
@@ -3086,6 +3074,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`TableData`].
     pub struct TableData<T0> {
         pub data: T0,
     }
@@ -3104,7 +3093,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::TableData {
-
                     data,
 
                 } = out_;
@@ -3116,6 +3104,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`SomeProtocolSomeMethodRequest`].
     pub struct SomeProtocolSomeMethodRequest<T0, T1> {
         pub union_member: T0,
 
@@ -3142,7 +3131,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SomeProtocolSomeMethodRequest {
-
                     union_member,
                     table_member,
 
@@ -3157,6 +3145,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`SomeProtocolSomeMethodResponse`].
     pub struct SomeProtocolSomeMethodResponse<T0> {
         pub bits_member: T0,
     }
@@ -3176,7 +3165,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::SomeProtocolSomeMethodResponse {
-
                     bits_member,
 
                 } = out_;

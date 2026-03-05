@@ -6,77 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_handlesintypes::natural::*;
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct EmptyResourceStruct {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::EmptyResourceStruct, ___E>
-        for EmptyResourceStruct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyResourceStruct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::EmptyResourceStruct {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::EmptyResourceStruct>,
-            ___E,
-        > for EmptyResourceStruct
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        EmptyResourceStruct: ::fidl_next::Encode<crate::wire::EmptyResourceStruct, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::EmptyResourceStruct>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::EmptyResourceStruct> for EmptyResourceStruct {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            crate::wire::EmptyResourceStruct,
-            Self,
-        > = unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::EmptyResourceStruct) -> Self {
-            Self {}
-        }
-    }
+    pub type EmptyResourceStruct = ();
 
     #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct EmptyResourceTable {}
@@ -586,72 +516,7 @@ pub mod wire {
     pub use fidl_next_common_test_handlesintypes::wire::*;
 
     /// The wire type corresponding to [`EmptyResourceStruct`].
-    #[derive(Debug)]
-    #[repr(C)]
-    pub struct EmptyResourceStruct {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<EmptyResourceStruct>(), 1);
-    static_assertions::const_assert_eq!(std::mem::align_of::<EmptyResourceStruct>(), 1);
-
-    impl ::fidl_next::Constrained for EmptyResourceStruct {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for EmptyResourceStruct {
-        type Narrowed<'de> = EmptyResourceStruct;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for EmptyResourceStruct
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::fuchsia::HandleDecoder,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for EmptyResourceStruct {
-        type Natural = crate::natural::EmptyResourceStruct;
-    }
+    pub type EmptyResourceStruct = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`EmptyResourceTable`].
     #[repr(C)]
@@ -1054,7 +919,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     normal_handle,
                     handle_in_vec,
                     handle_in_array,
@@ -1108,7 +972,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut normal_handle,
                     mut handle_in_vec,
                     mut handle_in_array,
@@ -1337,34 +1200,10 @@ pub mod generic {
 
     pub use fidl_next_common_test_handlesintypes::generic::*;
 
-    pub struct EmptyResourceStruct {}
+    /// The generic type corresponding to [`EmptyResourceStruct`].
+    pub type EmptyResourceStruct = ();
 
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::EmptyResourceStruct, ___E>
-        for EmptyResourceStruct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyResourceStruct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::EmptyResourceStruct {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            Ok(())
-        }
-    }
-
+    /// The generic type corresponding to [`HandlesInTypes`].
     pub struct HandlesInTypes<T0, T1, T2, T3, T4, T5> {
         pub normal_handle: T0,
 
@@ -1408,7 +1247,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::HandlesInTypes {
-
                     normal_handle,
                     handle_in_vec,
                     handle_in_array,

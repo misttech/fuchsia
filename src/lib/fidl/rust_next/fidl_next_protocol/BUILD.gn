@@ -27,6 +27,7 @@ _common = {
     "src/service.rs",
     "src/testing.rs",
     "src/transport.rs",
+    "src/wire/empty.rs",
     "src/wire/epitaph.rs",
     "src/wire/flexible.rs",
     "src/wire/flexible_result.rs",

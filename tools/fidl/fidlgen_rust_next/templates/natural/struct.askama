@@ -1,3 +1,10 @@
+{% if is_empty %}
+
+{{ self.doc_string(strct.attributes) -}}
+pub type {{ name }} = ();
+
+{% else %}
+
 {{ self.doc_string(strct.attributes) -}}
 {{ self.derive_annotation(&strct.name) -}}
 {%- if is_static && !has_padding %}
@@ -19,7 +26,7 @@ where
         ___E: {{ self.encode_trait_path() }},
     {% endif %}
 {
-    {% if is_static && !has_padding && !is_empty %}
+    {% if is_static && !has_padding %}
     const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::{{ name }}{{ static_ }}> = unsafe {
         ::fidl_next::CopyOptimization::enable_if(
             true
@@ -41,18 +48,12 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let crate::wire::{{ name }} {
-                {% if is_empty %}
-                    _empty,
-                {% endif -%}
                 {% for member in strct.members -%}
                     {{ member.name.snake() }},
                 {% endfor %}
             } = out_;
         }
 
-        {% if is_empty %}
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-        {% endif %}
         {% for member in strct.members %}
             {% let member_name = member.name.snake() %}
             ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
@@ -81,18 +82,12 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge! {
             let crate::wire::{{ name }} {
-                {% if is_empty %}
-                    _empty,
-                {% endif %}
                 {% for member in strct.members -%}
                     {{ member.name.snake() }},
                 {% endfor %}
             } = out_;
         }
 
-        {% if is_empty %}
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-        {% endif %}
         {% for member in strct.members %}
             {% let member_name = member.name.snake() %}
             ::fidl_next::Encode::encode(&self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
@@ -190,4 +185,6 @@ impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ na
         }
     }
 }
+{% endif %}
+
 {% endif %}

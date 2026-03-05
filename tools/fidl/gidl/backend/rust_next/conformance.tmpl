@@ -41,7 +41,7 @@ use {
         {{- end }}
         let value = {{ .Value }};
         let mut buffer = Buffer::new();
-        buffer.encode_next(value).unwrap();
+        buffer.encode_next::<{{ .WireValueType }}, _>(value).unwrap();
         assert_eq!(chunks!{{ .Bytes }}.as_slice(), buffer.chunks);
         // TODO: support handle dispositions
         {{-  if .RawHandles }}

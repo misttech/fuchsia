@@ -17,6 +17,10 @@ pub enum DecodeError {
     #[error("required value is absent")]
     RequiredValueAbsent,
 
+    /// A unit was set to a value other than 0
+    #[error("`unit` field has an invalid value; expected 0, found {0}")]
+    InvalidUnit(u8),
+
     /// A boolean was set to a value other than 0 or 1
     #[error("`bool` field has an invalid value; expected 0 or 1, found {0}")]
     InvalidBool(u8),

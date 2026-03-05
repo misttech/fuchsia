@@ -6,74 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_typesinprotocols::natural::*;
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct ResourceStruct {}
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ResourceStruct, ___E> for ResourceStruct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResourceStruct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::ResourceStruct {
-
-                        _empty,
-
-                } = out_;
-            }
-
-            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
-            ___E,
-        > for ResourceStruct
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        ResourceStruct: ::fidl_next::Encode<crate::wire::ResourceStruct, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::ResourceStruct> for ResourceStruct {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::ResourceStruct, Self> =
-            unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::ResourceStruct) -> Self {
-            Self {}
-        }
-    }
+    pub type ResourceStruct = ();
 
     #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ResourceTable {}
@@ -610,72 +543,7 @@ pub mod wire {
     pub use fidl_next_common_test_typesinprotocols::wire::*;
 
     /// The wire type corresponding to [`ResourceStruct`].
-    #[derive(Debug)]
-    #[repr(C)]
-    pub struct ResourceStruct {
-        pub(crate) _empty: fidl_next::wire::EmptyStruct,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<ResourceStruct>(), 1);
-    static_assertions::const_assert_eq!(std::mem::align_of::<ResourceStruct>(), 1);
-
-    impl ::fidl_next::Constrained for ResourceStruct {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for ResourceStruct {
-        type Narrowed<'de> = ResourceStruct;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-
-                        _empty,
-
-
-                } = &mut *out_;
-            }
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for ResourceStruct
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::fuchsia::HandleDecoder,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-
-                        mut _empty,
-
-
-                } = slot_;
-            }
-
-            if _empty.as_bytes() != &[0u8] {
-                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for ResourceStruct {
-        type Natural = crate::natural::ResourceStruct;
-    }
+    pub type ResourceStruct = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`ResourceTable`].
     #[repr(C)]
@@ -987,7 +855,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     handle,
                     vmo,
                     client_end,
@@ -1104,7 +971,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut handle,
                     mut vmo,
                     mut client_end,
@@ -1347,33 +1213,10 @@ pub mod generic {
 
     pub use fidl_next_common_test_typesinprotocols::generic::*;
 
-    pub struct ResourceStruct {}
+    /// The generic type corresponding to [`ResourceStruct`].
+    pub type ResourceStruct = ();
 
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ResourceStruct, ___E> for ResourceStruct
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResourceStruct>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::ResourceStruct {
-
-                        _empty,
-
-
-                } = out_;
-            }
-
-            Ok(())
-        }
-    }
-
+    /// The generic type corresponding to [`Resource`].
     pub struct Resource<
         T0,
         T1,
@@ -1610,7 +1453,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Resource {
-
                     handle,
                     vmo,
                     client_end,
@@ -1810,7 +1652,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorBasic {
@@ -1894,7 +1736,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorCompound {
@@ -1978,7 +1820,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayBasic {
@@ -2062,7 +1904,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayCompound {
@@ -2146,7 +1988,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorBasic {
@@ -2230,7 +2072,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorCompound {
@@ -2314,7 +2156,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorOptional {
@@ -2398,7 +2240,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayVectorNested {
@@ -2482,7 +2324,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ();
+        type Request = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorResource {
@@ -2754,11 +2596,13 @@ pub mod protocol {
             }
 
             pub fn error_basic(&self) -> ::fidl_next::TwoWayFuture<'_, super::ErrorBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    5016634351643393939,
-                    <super::ErrorBasic as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        5016634351643393939,
+                        <super::ErrorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_compound(
@@ -2918,11 +2762,13 @@ pub mod protocol {
             pub fn error_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    2990809657626249085,
-                    <super::ErrorCompound as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        2990809657626249085,
+                        <super::ErrorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_array_basic(
@@ -3152,11 +2998,13 @@ pub mod protocol {
             pub fn error_array_basic(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    1084731895342694265,
-                    <super::ErrorArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        1084731895342694265,
+                        <super::ErrorArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_array_compound(
@@ -3316,11 +3164,13 @@ pub mod protocol {
             pub fn error_array_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    5919277476782807556,
-                    <super::ErrorArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        5919277476782807556,
+                        <super::ErrorArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_vector_basic(
@@ -3550,11 +3400,13 @@ pub mod protocol {
             pub fn error_vector_basic(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    875941614196965234,
-                    <super::ErrorVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        875941614196965234,
+                        <super::ErrorVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_vector_compound(
@@ -3720,11 +3572,13 @@ pub mod protocol {
             pub fn error_vector_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    8506780203315865989,
-                    <super::ErrorVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        8506780203315865989,
+                        <super::ErrorVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_vector_optional(
@@ -3848,11 +3702,13 @@ pub mod protocol {
             pub fn error_vector_optional(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorOptional, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    6406191217027936606,
-                    <super::ErrorVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        6406191217027936606,
+                        <super::ErrorVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_array_vector_nested(
@@ -3970,11 +3826,13 @@ pub mod protocol {
             pub fn error_array_vector_nested(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayVectorNested, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    9085604921605802151,
-                    <super::ErrorArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        9085604921605802151,
+                        <super::ErrorArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
 
             pub fn one_way_resource(
@@ -4456,11 +4314,13 @@ pub mod protocol {
             pub fn error_resource(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorResource, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    6568609240497354166,
-                    <super::ErrorResource as ::fidl_next::Method>::FLEXIBILITY,
-                    (),
-                ))
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.client.send_two_way::<::fidl_next::wire::EmptyMessageBody>(
+                        6568609240497354166,
+                        <super::ErrorResource as ::fidl_next::Method>::FLEXIBILITY,
+                        (),
+                    ),
+                )
             }
         }
 

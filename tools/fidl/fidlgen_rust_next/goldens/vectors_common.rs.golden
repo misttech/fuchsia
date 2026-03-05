@@ -73,7 +73,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleUseOfVectors {
-
                     vector_of_uint8,
                     vector_of_vector_of_bool,
 
@@ -235,7 +234,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     vector_of_uint8,
                     vector_of_vector_of_bool,
 
@@ -260,7 +258,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut vector_of_uint8,
                     mut vector_of_vector_of_bool,
 
@@ -292,6 +289,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`ExampleUseOfVectors`].
     pub struct ExampleUseOfVectors<T0, T1> {
         pub vector_of_uint8: T0,
 
@@ -318,7 +316,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::ExampleUseOfVectors {
-
                     vector_of_uint8,
                     vector_of_vector_of_bool,
 

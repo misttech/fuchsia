@@ -500,7 +500,6 @@ macro_rules! impl_builtin_primitive {
     };
 }
 
-impl_builtin_primitive!(for ());
 impl_builtin_primitive!(for u8);
 impl_builtin_primitive!(for i8);
 
@@ -515,10 +514,9 @@ unsafe impl<D: ?Sized> crate::Decode<D> for bool {
     fn decode(slot: crate::Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), crate::DecodeError> {
         let value = unsafe { slot.as_ptr().cast::<u8>().read() };
         match value {
-            0 | 1 => (),
-            invalid => return Err(crate::DecodeError::InvalidBool(invalid)),
+            0 | 1 => Ok(()),
+            invalid => Err(crate::DecodeError::InvalidBool(invalid)),
         }
-        Ok(())
     }
 }
 
@@ -720,16 +718,6 @@ define_float!(Float64: f64, 8);
 #[cfg(test)]
 mod tests {
     use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
-
-    #[test]
-    fn decode_unit() {
-        assert_eq!(chunks![].as_mut_slice().decode::<()>().unwrap(), ());
-    }
-
-    #[test]
-    fn encode_unit() {
-        assert_eq!(Vec::encode(()).unwrap(), chunks![]);
-    }
 
     #[test]
     fn decode_bool() {

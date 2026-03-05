@@ -60,7 +60,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Foo {
-
                     field,
 
                 } = out_;
@@ -181,7 +180,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     field,
 
                 } = &mut *out_;
@@ -202,7 +200,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut field,
 
                 } = slot_;
@@ -225,6 +222,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`Foo`].
     pub struct Foo<T0> {
         pub field: T0,
     }
@@ -243,7 +241,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Foo {
-
                     field,
 
                 } = out_;

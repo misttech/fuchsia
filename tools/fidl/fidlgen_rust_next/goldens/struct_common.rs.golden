@@ -59,7 +59,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::BasicStruct {
-
                     x,
                     y,
 
@@ -218,7 +217,6 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Simple {
-
                     f1,
                     f2,
 
@@ -357,7 +355,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     x,
                     y,
 
@@ -390,7 +387,6 @@ pub mod wire {
 
             ::fidl_next::munge! {
                 let Self {
-
                     mut x,
                     mut y,
 
@@ -447,7 +443,6 @@ pub mod wire {
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge! {
                 let Self {
-
                     f1,
                     f2,
 
@@ -471,7 +466,6 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
-
                     mut f1,
                     mut f2,
 
@@ -499,6 +493,7 @@ pub mod wire_optional {}
 
 pub mod generic {
 
+    /// The generic type corresponding to [`BasicStruct`].
     pub struct BasicStruct<T0, T1> {
         pub x: T0,
 
@@ -522,7 +517,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::BasicStruct {
-
                     x,
                     y,
 
@@ -537,6 +531,7 @@ pub mod generic {
         }
     }
 
+    /// The generic type corresponding to [`Simple`].
     pub struct Simple<T0, T1> {
         pub f1: T0,
 
@@ -558,7 +553,6 @@ pub mod generic {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let crate::wire::Simple {
-
                     f1,
                     f2,
 
