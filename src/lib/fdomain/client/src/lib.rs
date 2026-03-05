@@ -261,6 +261,16 @@ pub trait FDomainTransport: StreamTrait<Item = Result<Box<[u8]>, std::io::Error>
         msg: &[u8],
         ctx: &mut Context<'_>,
     ) -> Poll<Result<(), Option<std::io::Error>>>;
+
+    /// Optional debug information outlet.
+    fn debug_fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+
+    /// Whether `debug_fmt` does anything.
+    fn has_debug_fmt(&self) -> bool {
+        false
+    }
 }
 
 /// Wrapper for an `FDomainTransport` implementer that:
@@ -606,7 +616,19 @@ pub struct Client(pub(crate) Mutex<ClientInner>);
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Client").field(&"...").finish()
+        let inner = self.0.lock();
+        match &inner.transport {
+            Transport::Transport(transport, ..) if transport.has_debug_fmt() => {
+                write!(f, "Client(")?;
+                transport.debug_fmt(f)?;
+                write!(f, ")")
+            }
+            Transport::Error(error) => {
+                let error = Error::from(error.clone());
+                write!(f, "Client(Failed: {error})")
+            }
+            _ => f.debug_tuple("Client").field(&"<transport>").finish(),
+        }
     }
 }
 

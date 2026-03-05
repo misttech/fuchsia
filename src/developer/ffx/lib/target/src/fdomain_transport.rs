@@ -82,6 +82,14 @@ impl fdomain_client::FDomainTransport for FDomainTransport {
         self.write_progress = 0;
         Poll::Ready(Ok(()))
     }
+
+    fn debug_fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FDomainTransport")
+    }
+
+    fn has_debug_fmt(&self) -> bool {
+        true
+    }
 }
 
 impl futures::Stream for FDomainTransport {
