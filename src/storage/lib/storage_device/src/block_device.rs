@@ -39,6 +39,10 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         self.allocator.allocate_buffer(size)
     }
 
+    fn clean_transfer_buffer(&self) {
+        self.allocator.clean_transfer_buffer();
+    }
+
     fn block_size(&self) -> u32 {
         self.remote.block_size()
     }

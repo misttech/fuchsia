@@ -55,6 +55,10 @@ const TRIM_AFTER_BOOT_TIMER: std::time::Duration = std::time::Duration::from_sec
 // After the initial trim, perform another trim every 24 hours.
 const TRIM_INTERVAL_TIMER: std::time::Duration = std::time::Duration::from_secs(60 * 60 * 24);
 
+/// How often to clean the transfer buffer.
+// TODO(https://fxbug.dev/489725256) Configure the task to run when fxfs is idle.
+const CLEAN_TRANSFER_BUFFER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Holds information on an Fxfs Filesystem
 pub struct Info {
     pub total_bytes: u64,
@@ -422,6 +426,7 @@ impl FxFilesystemBuilder {
                 lock_manager: LockManager::new(),
                 flush_task: Mutex::new(None),
                 trim_task: Mutex::new(None),
+                clean_transfer_buffer_task: Mutex::new(None),
                 closed: AtomicBool::new(true),
                 shutdown_event: Event::new(),
                 trace: self.trace,
@@ -513,6 +518,7 @@ impl FxFilesystemBuilder {
             if let Some((delay, interval)) = filesystem.options.trim_config.clone() {
                 filesystem.start_trim_task(delay, interval);
             }
+            filesystem.start_clean_transfer_buffer_task();
         }
 
         Ok(filesystem.into())
@@ -527,6 +533,7 @@ pub struct FxFilesystem {
     lock_manager: LockManager,
     flush_task: Mutex<Option<fasync::Task<()>>>,
     trim_task: Mutex<Option<fasync::Task<()>>>,
+    clean_transfer_buffer_task: Mutex<Option<fasync::Task<()>>>,
     closed: AtomicBool,
     // An event that is signalled when the filesystem starts to shut down.
     shutdown_event: Event,
@@ -575,6 +582,10 @@ impl FxFilesystem {
         debug_assert_not_too_long!(self.graveyard.wait_for_reap());
         let trim_task = self.trim_task.lock().take();
         if let Some(task) = trim_task {
+            debug_assert_not_too_long!(task);
+        }
+        let clean_transfer_buffer_task = self.clean_transfer_buffer_task.lock().take();
+        if let Some(task) = clean_transfer_buffer_task {
             debug_assert_not_too_long!(task);
         }
         self.journal.stop_compactions().await;
@@ -842,6 +853,26 @@ impl FxFilesystem {
                 }
             }
             .trace(trace_future_args!("Filesystem::trim_task")),
+        ));
+    }
+
+    fn start_clean_transfer_buffer_task(self: &Arc<Self>) {
+        let this = self.clone();
+        *self.clean_transfer_buffer_task.lock() = Some(fasync::Task::spawn(
+            async move {
+                loop {
+                    let shutdown_listener = this.shutdown_event.listen();
+                    if this.closed.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    futures::select!(
+                        () = fasync::Timer::new(CLEAN_TRANSFER_BUFFER_INTERVAL).fuse() => {},
+                        () = shutdown_listener.fuse() => return,
+                    );
+                    this.device().clean_transfer_buffer();
+                }
+            }
+            .trace(trace_future_args!("Filesystem::clean_transfer_buffer_task")),
         ));
     }
 

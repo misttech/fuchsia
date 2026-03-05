@@ -67,6 +67,15 @@ mod buffer_source {
         pub fn commit_range(&self, range: Range<usize>) -> Result<(), zx::Status> {
             self.vmo.op_range(zx::VmoOp::COMMIT, range.start as u64, range.len() as u64)
         }
+
+        /// Zeroes out the range so the kerne can reclaim the pages.
+        ///
+        /// # Safety
+        ///
+        /// The range must not be allocated.
+        pub(super) unsafe fn clean_range(&self, range: Range<usize>) {
+            let _ = self.vmo.op_range(zx::VmoOp::ZERO, range.start as u64, range.len() as u64);
+        }
     }
 
     impl Drop for BufferSource {
@@ -113,6 +122,15 @@ mod buffer_source {
         pub(super) unsafe fn sub_slice(&self, range: &Range<usize>) -> &mut [u8] {
             assert!(range.start < self.size() && range.end <= self.size());
             unsafe { &mut (&mut *self.data.get())[range.start..range.end] }
+        }
+
+        /// Zeroes out the range.
+        ///
+        /// # Safety
+        ///
+        /// The range must not be allocated.
+        pub(super) unsafe fn clean_range(&self, range: Range<usize>) {
+            unsafe { self.sub_slice(&range) }.fill(0);
         }
     }
 }
@@ -172,8 +190,8 @@ fn initial_free_lists(size: usize, block_size: usize) -> Vec<FreeList> {
     assert!(block_size <= size);
     assert!(block_size.is_power_of_two());
     let max_order = order_fit(size, block_size);
-    let mut free_lists = Vec::new();
-    for _ in 0..max_order + 1 {
+    let mut free_lists = Vec::with_capacity(max_order + 1);
+    for _ in 0..=max_order {
         free_lists.push(FreeList::new())
     }
     let mut offset = 0;
@@ -316,9 +334,10 @@ impl BufferAllocator {
             order += 1;
         }
 
-        let idx = inner.free_lists[order]
-            .binary_search(&offset)
-            .expect_err(&format!("Unexpectedly found {} in free list {}", offset, order));
+        let idx = match inner.free_lists[order].binary_search(&offset) {
+            Ok(_) => panic!("Unexpectedly found {} in free list {}", offset, order),
+            Err(idx) => idx,
+        };
         inner.free_lists[order].insert(idx, offset);
 
         // Notify all stuck tasks.  This might be inefficient, but it's simple and correct.
@@ -331,6 +350,19 @@ impl BufferAllocator {
 
     fn find_buddy(&self, offset: usize, order: usize) -> usize {
         offset ^ self.size_for_order(order)
+    }
+
+    /// Zeroes out all unnallocated ranges in the transfer buffer.
+    pub fn clean_transfer_buffer(&self) {
+        let inner = self.inner.lock();
+        for (n, free_list) in inner.free_lists.iter().enumerate() {
+            for offset in free_list {
+                // SAFETY: The range is not allocated.
+                unsafe {
+                    self.source.clean_range(*offset..(*offset + size_for_order(n, self.block_size)))
+                };
+            }
+        }
     }
 }
 
@@ -627,5 +659,46 @@ mod tests {
             std::mem::drop(buf2);
             bufs_dropped.store(true, Ordering::Relaxed);
         });
+    }
+
+    #[fuchsia::test]
+    async fn test_clean_entire_transfer_buffer() {
+        const BUFFER_SIZE: usize = 4096;
+        let source = BufferSource::new(BUFFER_SIZE);
+        let allocator = Arc::new(BufferAllocator::new(512, source));
+
+        let mut buf = allocator.allocate_buffer(BUFFER_SIZE).await;
+        buf.as_mut_slice().fill(0xaa);
+        std::mem::drop(buf);
+
+        allocator.clean_transfer_buffer();
+        let buf = allocator.allocate_buffer(BUFFER_SIZE).await;
+        assert_eq!(buf.as_slice(), vec![0; BUFFER_SIZE]);
+    }
+
+    #[fuchsia::test]
+    async fn test_clean_transfer_buffer_around_allocation() {
+        let source = BufferSource::new(4096);
+        let allocator = Arc::new(BufferAllocator::new(512, source));
+
+        let mut buf1 = allocator.allocate_buffer(1024).await;
+        buf1.as_mut_slice().fill(0xaa);
+        let mut buf2 = allocator.allocate_buffer(1024).await;
+        buf2.as_mut_slice().fill(0xbb);
+        assert_eq!(buf2.range().start, 1024);
+        let mut buf3 = allocator.allocate_buffer(2048).await;
+        buf3.as_mut_slice().fill(0xcc);
+        std::mem::drop(buf1);
+        std::mem::drop(buf3);
+
+        allocator.clean_transfer_buffer();
+
+        let buf1 = allocator.allocate_buffer(1024).await;
+        assert_eq!(buf1.as_slice(), vec![0; 1024]);
+
+        assert_eq!(buf2.as_slice(), vec![0xbb; 1024]);
+
+        let buf3 = allocator.allocate_buffer(2048).await;
+        assert_eq!(buf3.as_slice(), vec![0; 2048]);
     }
 }

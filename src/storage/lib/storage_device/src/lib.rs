@@ -43,6 +43,9 @@ pub trait Device: Send + Sync {
     /// Blocks until enough capacity is available in the buffer.
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_>;
 
+    /// Cleans up any transfer buffers that are no longer in use.
+    fn clean_transfer_buffer(&self) {}
+
     /// Returns the block size of the device. Buffers are aligned to block-aligned chunks.
     fn block_size(&self) -> u32;
 
