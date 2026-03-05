@@ -432,17 +432,17 @@ zx::result<> Dwc3::Start() {
       return result.take_error();
     }
     platform_extension_ = std::move(extension);
+  }
 
-    auto connection_watcher_client_end =
-        incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
-    if (connection_watcher_client_end.is_ok()) {
-      connection_watcher_.Bind(*std::move(connection_watcher_client_end),
-                               fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  if (auto connection_watcher_client_end =
+          incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
+      connection_watcher_client_end.is_ok()) {
+    connection_watcher_.Bind(*std::move(connection_watcher_client_end),
+                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
 
-      // Start the hanging-get call loop.
-      connection_watcher_->WatchConnectStatusChanged({AcquireWakeLease()})
-          .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
-    }
+    // Start the hanging-get call loop.
+    connection_watcher_->WatchConnectStatusChanged({AcquireWakeLease()})
+        .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
   }
 
   if (zx_status_t status = Init(); status != ZX_OK) {
@@ -1256,7 +1256,6 @@ void Dwc3::ResetEndpoints() {
 void Dwc3::OnConnectStatusChanged(
     fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result) {
   TRACE_DURATION("dwc3", "Dwc3::OnConnectStatusChanged");
-  ZX_DEBUG_ASSERT(platform_extension_);
 
   if (result.is_error() && result.error_value().is_framework_error()) {
     // Something happened to the FIDL connection, so don't make repeated calls.
@@ -1286,8 +1285,10 @@ void Dwc3::OnConnectStatusChanged(
   if (result->connected()) {
     fdf::debug("OnConnectStatusChanged: now connected");
 
-    if (zx::result result = platform_extension_->Resume(); result.is_error()) {
-      return;
+    if (platform_extension_) {
+      if (zx::result result = platform_extension_->Resume(); result.is_error()) {
+        return;
+      }
     }
     power_on_ = true;
 
@@ -1307,8 +1308,10 @@ void Dwc3::OnConnectStatusChanged(
     // Cancel all pending requests.
     ResetEndpoints();
 
-    if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
-      return;
+    if (platform_extension_) {
+      if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
+        return;
+      }
     }
     power_on_ = false;
   }
