@@ -46,6 +46,7 @@ executable("bin") {
            "//sdk/lib/component/incoming/cpp",
            "//sdk/lib/component/outgoing/cpp",
            "//sdk/lib/syslog/cpp",
+           "//zircon/system/ulib/trace-provider",
          ] + _common_deps
 }
 

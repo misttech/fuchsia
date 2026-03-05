@@ -6,6 +6,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace-provider/provider.h>
 
 #include <filesystem>
 
@@ -26,6 +27,7 @@ int main(int argc, const char** argv) {
 
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
+  trace::TraceProviderWithFdio trace_provider(dispatcher);
 
   component::OutgoingDirectory outgoing = component::OutgoingDirectory(dispatcher);
   zx::result result = outgoing.ServeFromStartupInfo();
