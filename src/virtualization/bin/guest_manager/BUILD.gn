@@ -11,7 +11,6 @@ group("packages") {
   testonly = true
 
   deps = [
-    ":android_guest_manager",
     ":debian_guest_manager",
     ":zircon_guest_manager",
   ]
@@ -78,22 +77,6 @@ fuchsia_component("zircon_guest_manager_cmp") {
     "//src/virtualization/bin/vmm:vmm_component",
   ]
   component_name = "zircon_guest_manager"
-}
-
-fuchsia_package("android_guest_manager") {
-  testonly = true
-  deps = [ ":android_guest_manager_cmp" ]
-  subpackages = [ "//src/virtualization/packages/android_guest" ]
-}
-
-fuchsia_component("android_guest_manager_cmp") {
-  visibility = [ ":*" ]
-  manifest = "meta/android_guest_manager.cml"
-  deps = [
-    ":bin",
-    "//src/virtualization/bin/vmm:vmm_component",
-  ]
-  component_name = "android_guest_manager"
 }
 
 fuchsia_package("debian_guest_manager") {
