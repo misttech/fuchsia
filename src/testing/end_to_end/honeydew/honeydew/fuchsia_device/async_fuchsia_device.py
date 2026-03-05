@@ -488,7 +488,7 @@ class AsyncFuchsiaDevice(
         return screenshot_using_ffx.ScreenshotUsingFfx(self.ffx)
 
     @properties.Affordance
-    def virtual_audio(self) -> audio.VirtualAudio:
+    def virtual_audio(self) -> audio.AsyncVirtualAudio:
         """Returns a virtual audio affordance object.
 
         Connecting to the protocols this connects to on startup will inject
@@ -501,14 +501,12 @@ class AsyncFuchsiaDevice(
         behavior other than rebooting the device.
 
         Returns:
-            audio.VirtualAudio object
+            audio.AsyncVirtualAudio object
         """
-        return (
-            audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController(
-                device_name=self.device_name,
-                fuchsia_controller=self.fuchsia_controller,
-                ffx_transport=self.ffx,
-            )
+        return audio_using_fuchsia_controller.AsyncVirtualAudioUsingFuchsiaController(
+            device_name=self.device_name,
+            fuchsia_controller=self.fuchsia_controller,
+            ffx_transport=self.ffx,
         )
 
     @properties.Affordance

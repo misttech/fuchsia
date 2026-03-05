@@ -49,7 +49,10 @@ from honeydew.affordances.starnix import starnix, starnix_using_ffx
 from honeydew.affordances.tracing import tracing, tracing_using_fc
 from honeydew.affordances.ui.screenshot import screenshot
 from honeydew.affordances.ui.user_input import user_input, user_input_using_fc
-from honeydew.affordances.virtual_audio import audio
+from honeydew.affordances.virtual_audio import (
+    audio,
+    audio_using_fuchsia_controller,
+)
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
@@ -267,7 +270,13 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def virtual_audio(self) -> audio.VirtualAudio:
-        return self._inner.virtual_audio
+        return (
+            audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController(
+                device_name=self.device_name,
+                fuchsia_controller=self.fuchsia_controller,
+                ffx_transport=self.ffx,
+            )
+        )
 
     @properties.Affordance
     def starnix(self) -> starnix.Starnix:

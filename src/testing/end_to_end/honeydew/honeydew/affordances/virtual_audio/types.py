@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 
 import fidl_fuchsia_test_audio as fta
+import fuchsia_async_extension
 from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
 
@@ -15,8 +16,8 @@ from honeydew.affordances.virtual_audio.errors import VirtualAudioError
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AudioInputWaiter:
-    """AudioInputWaiter affordance response type.
+class AsyncAudioInputWaiter:
+    """AsyncAudioInputWaiter affordance response type.
 
     Args:
         endpoint: Fuchsia test audio InjectionClient endpoint.
@@ -39,8 +40,33 @@ class AudioInputWaiter:
         _LOGGER.info("Audio injection has completed!")
 
 
-class AudioResponse:
-    """AudioResponse captured audio affordance response type.
+class AudioInputWaiter:
+    """AudioInputWaiter affordance response type.
+
+    Args:
+        endpoint: Fuchsia test audio InjectionClient endpoint.
+    """
+
+    def __init__(self, endpoint: fta.InjectionClient) -> None:
+        self._inner = AsyncAudioInputWaiter(endpoint)
+
+    def wait_until_injection_is_done(self) -> None:
+        """Wait until the input has been played
+
+        Raises:
+            VirtualAudioError: On failure
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_until_injection_is_done()
+        )
+
+    def as_async(self) -> AsyncAudioInputWaiter:
+        """Returns the async version of AudioInputWaiter."""
+        return self._inner
+
+
+class AsyncAudioResponse:
+    """AsyncAudioResponse captured audio affordance response type.
 
     Args:
         endpoint: Fuchsia test audio CaptureClient endpoint.
@@ -54,7 +80,7 @@ class AudioResponse:
         """Stops the audio capture of the output audio and extract the file.
 
         Return:
-            bytes: Extracted audio response .wav ormat (Linear16 48Khz Channel 2)
+            bytes: Extracted audio response .wav format (Linear16 48Khz Channel 2)
 
         Raises:
             VirtualAudioError: On failure
@@ -77,6 +103,35 @@ class AudioResponse:
         _LOGGER.info("Audio recording contains %d bytes", len(data))
 
         return bytes(data)
+
+
+class AudioResponse:
+    """AudioResponse captured audio affordance response type.
+
+    Args:
+        endpoint: Fuchsia test audio CaptureClient endpoint.
+    """
+
+    def __init__(self, endpoint: fta.CaptureClient) -> None:
+        """Init method for AudioResponse class"""
+        self._inner = AsyncAudioResponse(endpoint)
+
+    def stop_and_extract_response(self) -> bytes:
+        """Stops the audio capture of the output audio and extract the file.
+
+        Return:
+            bytes: Extracted audio response .wav format (Linear16 48Khz Channel 2)
+
+        Raises:
+            VirtualAudioError: On failure
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop_and_extract_response()
+        )
+
+    def as_async(self) -> AsyncAudioResponse:
+        """Returns the async version of AudioResponse."""
+        return self._inner
 
 
 class WaitForQuietResult(enum.IntEnum):

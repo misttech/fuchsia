@@ -533,7 +533,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(
             self.fd_fc_obj.virtual_audio,
-            audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController,
+            audio_using_fuchsia_controller.AsyncVirtualAudioUsingFuchsiaController,
         )
 
     @mock.patch.object(
