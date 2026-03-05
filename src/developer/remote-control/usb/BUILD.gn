@@ -10,6 +10,7 @@ fuchsia_driver_package("usb-vsock-package") {
     "overnet-usb",
     "usb-vsock-service",
   ]
+  export_to_bazel = true
 }
 
 group("drivers") {
