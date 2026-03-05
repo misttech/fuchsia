@@ -19,7 +19,7 @@ from build_utils import BazelLauncher, BazelPaths
 def generate_tests_json(
     bazel_paths: BazelPaths,
     command_runner: T.Optional[build_utils.CommandRunner] = None,
-) -> dict[str, T.Any]:
+) -> tuple[dict[str, T.Any], set[Path]]:
     """Generate a tests.json file corresponding to all Bazel host test targets
 
     Args:
@@ -27,8 +27,13 @@ def generate_tests_json(
         command_runner: An optional CommandRunner instance.
 
     Returns:
-        A list of tests.json objects describing each Bazel host_test() target
-        reachable from the root_host_targets.
+        A pair of two values which are:
+
+        - A list of dictionaries, describing each Bazel host_test() reachable
+          from the root_host_targets, according to the tests.json schema.
+
+        - A set of input paths, whose changes would require a regeneration of
+          the tests.json file.
     """
     if not command_runner:
         command_runner = build_utils.CommandRunner()
@@ -79,7 +84,7 @@ def generate_tests_json(
                     "path": make_execroot_path_relative_to_ninja_build_dir(
                         cquery_test["launcher_execroot_path"]
                     ),
-                    "runtime_deps_path": make_execroot_path_relative_to_ninja_build_dir(
+                    "runtime_deps": make_execroot_path_relative_to_ninja_build_dir(
                         cquery_test["runtime_deps_json_execroot_path"]
                     ),
                     "os": cquery_test["os"],
@@ -89,4 +94,4 @@ def generate_tests_json(
         )
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaHostTestInfo.cquery:cquery_output_schema)
 
-    return tests_json
+    return tests_json, {starlark_input}

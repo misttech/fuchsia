@@ -13,8 +13,15 @@ import sys
 import typing as T
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent / "bazel/scripts"))
+from build_utils import CommandRunner
 
-def build_tests_json(build_dir: Path) -> T.Set[Path]:
+
+def build_tests_json(
+    build_dir: Path,
+    with_bazel_host_tests: bool = False,
+    command_runner: T.Optional[CommandRunner] = None,
+) -> T.Set[Path]:
     """Generate the tests.json file.
 
     tests.json is created by merging two things:
@@ -31,6 +38,8 @@ def build_tests_json(build_dir: Path) -> T.Set[Path]:
 
     Args:
         build_dir: Fuchsia build directory.
+        with_bazel_host_tests: Whether to export Bazel host tests.
+        command_runner: Optional command runner to use for running bazel commands.
 
     Returns:
         A set of Path values for the input files read by this function.
@@ -91,6 +100,28 @@ def build_tests_json(build_dir: Path) -> T.Set[Path]:
                 test["environments"] = environments
         tests += product_bundle_tests
 
+    if with_bazel_host_tests:
+        # Now get the list of all Bazel host tests.
+        # TODO(digit): Get the list of Fuchsia Bazel tests
+        fuchsia_dir = Path(__file__).parent.parent
+        assert (
+            fuchsia_dir / ".jiri_manifest"
+        ).exists(), f"Invalid Fuchsia source directory: {fuchsia_dir}"
+
+        sys.path.insert(0, str(fuchsia_dir / "build/bazel/scripts"))
+        import bazel_tests_utils
+        import build_utils
+
+        # NOTE: Do not use fuchsia_dir here, since unit tests run with a different source dir,
+        # that BazelPaths.new() will find by walking up from build_dir.
+        bazel_paths = build_utils.BazelPaths.new(build_dir=build_dir)
+        bazel_tests_json, bazel_inputs = bazel_tests_utils.generate_tests_json(
+            bazel_paths, command_runner
+        )
+        tests += bazel_tests_json
+    else:
+        bazel_inputs = set()
+
     # Write the final list of tests to tests.json if the contents changed.
     contents_changed = True
     if Path(tests_json_path).exists():
@@ -102,4 +133,7 @@ def build_tests_json(build_dir: Path) -> T.Set[Path]:
         with open(tests_json_path, "w") as f:
             json.dump(tests, f, indent=2)
 
-    return {Path(tests_from_metadata_path), Path(test_groups_path)}
+    return {
+        Path(tests_from_metadata_path),
+        Path(test_groups_path),
+    } | bazel_inputs

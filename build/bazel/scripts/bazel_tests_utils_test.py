@@ -27,7 +27,9 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.build_dir = self.fuchsia_dir / "out" / "build_dir"
         self.build_dir.mkdir(parents=True)
 
-        BazelPaths.write_topdir_config_for_test(self.fuchsia_dir, "gen/bazel")
+        BazelPaths.write_topdir_config_for_test(
+            self.fuchsia_dir, "gen/build/bazel"
+        )
         self.bazel_paths = BazelPaths(self.fuchsia_dir, self.build_dir)
 
         # Create the directories that BazelPaths properties expect
@@ -53,7 +55,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
 
         mock_runner.push_result(stdout=json.dumps(test_info))
 
-        tests_json = bazel_tests_utils.generate_tests_json(
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
             self.bazel_paths, command_runner=mock_runner
         )
 
@@ -75,7 +77,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             self.bazel_paths.execroot / "bin/my_test.runtime_deps.json",
             self.bazel_paths.ninja_build_dir,
         )
-        self.assertEqual(entry["test"]["runtime_deps_path"], expected_deps_path)
+        self.assertEqual(entry["test"]["runtime_deps"], expected_deps_path)
 
     def test_generate_tests_json_multiple_entries(self) -> None:
         mock_runner = MockCommandRunner()
@@ -100,13 +102,45 @@ class BazelTestsUtilsTest(unittest.TestCase):
             stdout=json.dumps(test1) + "\n" + json.dumps(test2)
         )
 
-        tests_json = bazel_tests_utils.generate_tests_json(
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
             self.bazel_paths, command_runner=mock_runner
         )
 
         self.assertEqual(len(tests_json), 2)
         self.assertEqual(tests_json[0]["test"]["name"], "test1")
         self.assertEqual(tests_json[1]["test"]["name"], "test2")
+
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
+        self.assertEqual(
+            tests_json[0],
+            {
+                "environments": [],
+                "expects_ssh": False,
+                "test": {
+                    "name": "test1",
+                    "label": "//t1",
+                    "path": f"{execroot_path}/p1",
+                    "runtime_deps": f"{execroot_path}/d1",
+                    "os": "linux",
+                    "cpu": "x64",
+                },
+            },
+        )
+        self.assertEqual(
+            tests_json[1],
+            {
+                "environments": [],
+                "expects_ssh": False,
+                "test": {
+                    "name": "test2",
+                    "label": "//t2",
+                    "path": f"{execroot_path}/p2",
+                    "runtime_deps": f"{execroot_path}/d2",
+                    "os": "linux",
+                    "cpu": "x64",
+                },
+            },
+        )
 
     def test_generate_tests_json_failure(self) -> None:
         mock_runner = MockCommandRunner()

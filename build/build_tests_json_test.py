@@ -13,10 +13,10 @@ import typing as T
 import unittest
 from pathlib import Path
 
-# Import build_tests_json.py as a module.
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_tests_json
+from build_utils import BazelPaths, CommandRunner, MockCommandRunner
 
 
 class BuildTestsJsonTest(unittest.TestCase):
@@ -25,6 +25,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         self._dir = Path(self._td.name)
         self.source_dir = self._dir / "source"
         self.source_dir.mkdir()
+        (self.source_dir / ".jiri_manifest").touch()
 
         self.build_dir = self.source_dir / "out" / "not-default"
         self.build_dir.mkdir(parents=True)
@@ -34,6 +35,13 @@ class BuildTestsJsonTest(unittest.TestCase):
 
         (self.build_dir / "obj" / "tests").mkdir(parents=True)
 
+        # Compute the Bazel execroot path, relative to the build directory.
+        BazelPaths.write_topdir_config_for_test(self.source_dir, "bazel_topdir")
+        self.execroot_path = os.path.relpath(
+            BazelPaths(self.source_dir, self.build_dir).execroot,
+            self.build_dir,
+        )
+
     def tearDown(self):
         self._td.cleanup()
 
@@ -42,6 +50,8 @@ class BuildTestsJsonTest(unittest.TestCase):
         tests_from_metadata: T.Dict,
         test_groups: T.Dict,
         product_bundles: T.Dict,
+        with_bazel_host_tests: bool = False,
+        command_runner: T.Optional[CommandRunner] = None,
     ) -> (T.Set[Path], T.Dict):
         tests_from_metadata = json.dumps(tests_from_metadata)
         tests_from_metadata_path = self.build_dir / "tests_from_metadata.json"
@@ -57,7 +67,9 @@ class BuildTestsJsonTest(unittest.TestCase):
         product_bundles_path = self.build_dir / "product_bundles.json"
         product_bundles_path.write_text(product_bundles)
 
-        inputs = build_tests_json.build_tests_json(self.build_dir)
+        inputs = build_tests_json.build_tests_json(
+            self.build_dir, with_bazel_host_tests, command_runner
+        )
 
         tests_string = (self.build_dir / "tests.json").read_text()
         tests = json.loads(tests_string)
@@ -108,6 +120,105 @@ class BuildTestsJsonTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self._test([], test_groups, product_bundles)
 
+    def test_metadata_and_product_bundles(self):
+        tests_from_metadata = [
+            {"test": {"name": "test1"}},
+            {"test": {"name": "test2"}},
+        ]
+        tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
+        tests_json = json.dumps(tests_json)
+        tests_json_path = self.build_dir / "pb_tests.json"
+        tests_json_path.write_text(tests_json)
+        product_bundles = [{"name": "my_pb"}]
+
+        env = {"dimensions": {"device_type": "Vim3"}}
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "environments": [env],
+                "tests_json": str(tests_json_path),
+            }
+        ]
+
+        _, tests = self._test(
+            tests_from_metadata,
+            test_groups,
+            product_bundles,
+        )
+
+        expected_tests_json = [
+            {"test": {"name": "test1"}},
+            {"test": {"name": "test2"}},
+            {
+                "product_bundle": "my_pb",
+                "environments": [env],
+                "test": {"name": "test1-my_pb"},
+            },
+            {
+                "product_bundle": "my_pb",
+                "environments": [env],
+                "test": {"name": "test2-my_pb"},
+            },
+        ]
+        self.assertEqual(expected_tests_json, tests)
+
+    def test_bazel_host_tests(self):
+        # Prepare mock runner for bazel cquery
+        mock_runner = MockCommandRunner()
+        test1 = {
+            "name": "test1",
+            "label": "@@//t1",
+            "launcher_execroot_path": "p1",
+            "runtime_deps_json_execroot_path": "d1",
+            "os": "linux",
+            "cpu": "x64",
+        }
+        test2 = {
+            "name": "test2",
+            "label": "@@//t2",
+            "launcher_execroot_path": "p2",
+            "runtime_deps_json_execroot_path": "d2",
+            "os": "linux",
+            "cpu": "x64",
+        }
+        mock_runner.push_result(
+            stdout=json.dumps(test1) + "\n" + json.dumps(test2)
+        )
+
+        _, tests = self._test(
+            [], [], [], with_bazel_host_tests=True, command_runner=mock_runner
+        )
+
+        expected_tests_json = [
+            {
+                "environments": [],
+                "expects_ssh": False,
+                "test": {
+                    "name": "test1",
+                    "label": "@@//t1",
+                    "path": f"{self.execroot_path}/p1",
+                    "runtime_deps": f"{self.execroot_path}/d1",
+                    "os": "linux",
+                    "cpu": "x64",
+                },
+            },
+            {
+                "environments": [],
+                "expects_ssh": False,
+                "test": {
+                    "name": "test2",
+                    "label": "@@//t2",
+                    "path": f"{self.execroot_path}/p2",
+                    "runtime_deps": f"{self.execroot_path}/d2",
+                    "os": "linux",
+                    "cpu": "x64",
+                },
+            },
+        ]
+        self.assertEqual(len(expected_tests_json), len(tests))
+        self.assertDictEqual(expected_tests_json[0], tests[0])
+        self.assertDictEqual(expected_tests_json[1], tests[1])
+
     def test_full(self):
         tests_from_metadata = [
             {"test": {"name": "test1"}},
@@ -127,8 +238,24 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "tests_json": str(tests_json_path),
             }
         ]
+
+        mock_runner = MockCommandRunner()
+        test1 = {
+            "name": "test1",
+            "label": "@@//t1",
+            "launcher_execroot_path": "p1",
+            "runtime_deps_json_execroot_path": "d1",
+            "os": "linux",
+            "cpu": "x64",
+        }
+        mock_runner.push_result(stdout=json.dumps(test1))
+
         (_, tests) = self._test(
-            tests_from_metadata, test_groups, product_bundles
+            tests_from_metadata,
+            test_groups,
+            product_bundles,
+            with_bazel_host_tests=True,
+            command_runner=mock_runner,
         )
 
         expected_tests_json = [
@@ -143,6 +270,18 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "product_bundle": "my_pb",
                 "environments": [env],
                 "test": {"name": "test2-my_pb"},
+            },
+            {
+                "environments": [],
+                "expects_ssh": False,
+                "test": {
+                    "name": "test1",
+                    "label": "@@//t1",
+                    "path": f"{self.execroot_path}/p1",
+                    "runtime_deps": f"{self.execroot_path}/d1",
+                    "os": "linux",
+                    "cpu": "x64",
+                },
             },
         ]
         self.assertEqual(expected_tests_json, tests)

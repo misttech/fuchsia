@@ -329,7 +329,7 @@ class ListBazelHostTestsCommand(ScriptCommandBase):
         import build_utils
 
         bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
-        tests_json = bazel_tests_utils.generate_tests_json(bazel_paths)
+        tests_json, _ = bazel_tests_utils.generate_tests_json(bazel_paths)
 
         print(json.dumps(tests_json, indent=2))
         return 0
