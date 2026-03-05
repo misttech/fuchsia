@@ -52,25 +52,25 @@ _REGULATORY_REGION_CONFIGURATOR_PROXY = FidlEndpoint(
 )
 
 
-class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
-    """WLAN Core affordance implemented with Fuchsia Controller."""
+class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
+    """Async WLAN Core affordance implemented with Fuchsia Controller."""
 
     def __init__(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
     ) -> None:
-        """Create a WLAN Core Fuchsia Controller affordance.
+        """Create an Async WLAN Core Fuchsia Controller affordance.
 
         Args:
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements RebootCapableDevice.
-            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+            reboot_affordance: Object that implements AsyncRebootCapableDevice.
+            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
         """
         AsyncLazyReady.__init__(self)
 
@@ -122,16 +122,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             self._fc_transport.connect_device_proxy(_DEVICE_MONITOR_PROXY)
         )
         await super().make_ready()
-
-    def connect_sync(
-        self,
-        ssid: str,
-        bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication,
-    ) -> bool:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.connect(ssid, bss_desc, authentication)
-        )
 
     @ensure_ready
     async def connect(
@@ -224,16 +214,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
 
         return True
 
-    def create_iface_sync(
-        self,
-        phy_id: int,
-        role: f_wlan_common.WlanMacRole,
-        sta_addr: str | None = None,
-    ) -> int:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.create_iface(phy_id, role, sta_addr)
-        )
-
     @ensure_ready
     async def create_iface(
         self,
@@ -279,11 +259,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         ), f"{create_iface_response!r} missing iface_id"
         return create_iface_response.iface_id
 
-    def destroy_iface_sync(self, iface_id: int) -> None:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.destroy_iface(iface_id)
-        )
-
     @ensure_ready
     async def destroy_iface(self, iface_id: int) -> None:
         """Destroy WLAN interface by ID.
@@ -306,11 +281,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
                 f"DeviceMonitor.DestroyIface() error {status}"
             ) from status
 
-    def disconnect_sync(self) -> None:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.disconnect()
-        )
-
     @ensure_ready
     async def disconnect(self) -> None:
         """Disconnect all client WLAN connections.
@@ -332,11 +302,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
                     raise wlan_errors.HoneydewWlanError(
                         f"SmeClient.Disconnect() error {status}"
                     ) from status
-
-    def get_country_sync(self, phy_id: int) -> CountryCode:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_country(phy_id)
-        )
 
     @ensure_ready
     async def get_country(self, phy_id: int) -> CountryCode:
@@ -364,11 +329,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             bytes(get_country_response.resp.alpha2).decode("utf-8")
         )
 
-    def set_country_sync(self, phy_id: int, code: CountryCode) -> None:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.set_country(phy_id, code)
-        )
-
     @ensure_ready
     async def set_country(self, phy_id: int, code: CountryCode) -> None:
         try:
@@ -382,11 +342,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.SetCountry() error {status}"
             ) from status
-
-    def get_iface_id_list_sync(self) -> Sequence[int]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_iface_id_list()
-        )
 
     @ensure_ready
     async def get_iface_id_list(self) -> Sequence[int]:
@@ -408,11 +363,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
                 f"DeviceMonitor.ListIfaces() error {status}"
             ) from status
 
-    def get_phy_id_list_sync(self) -> Sequence[int]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_phy_id_list()
-        )
-
     @ensure_ready
     async def get_phy_id_list(self) -> Sequence[int]:
         """Get list of phy ids on device.
@@ -429,11 +379,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.ListPhys() error {status}"
             ) from status
-
-    def query_interfaces_sync(self) -> WlanInterfaces:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.query_interfaces()
-        )
 
     @ensure_ready
     async def query_interfaces(self) -> WlanInterfaces:
@@ -466,13 +411,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
                     )
 
         return WlanInterfaces(client=client, ap=ap)
-
-    def query_iface_sync(
-        self, iface_id: int
-    ) -> f_wlan_device_service.QueryIfaceResponse:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.query_iface(iface_id)
-        )
 
     @ensure_ready
     async def query_iface(
@@ -519,13 +457,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             raise wlan_errors.HoneydewWlanError(
                 "DeviceMonitor.QueryIface() error"
             ) from e
-
-    def scan_for_bss_info_sync(
-        self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.scan_for_bss_info()
-        )
 
     @ensure_ready
     async def scan_for_bss_info(
@@ -631,11 +562,6 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
 
         return sme_client
 
-    def status_sync(self) -> ClientStatusResponse:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.status()
-        )
-
     @ensure_ready
     async def status(self) -> ClientStatusResponse:
         """Request connection status
@@ -664,6 +590,244 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             ) from status
 
         return ClientStatusResponse.from_fidl(resp.resp)
+
+
+class WlanCore(wlan_core.WlanCore):
+    """WLAN Core affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+    ) -> None:
+        """Create a WLAN Core Fuchsia Controller affordance.
+
+        Args:
+            device_name: Device name returned by `ffx target list`.
+            ffx: FFX transport.
+            fuchsia_controller: Fuchsia Controller transport.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+        """
+        self._inner = AsyncWlanCoreUsingFc(
+            device_name=device_name,
+            ffx=ffx,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+            fuchsia_device_close=fuchsia_device_close.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Verifies that the WLAN affordance using FuchsiaController is supported by the Fuchsia
+        device.
+
+        This method should be called in `__init__()` so that if this affordance was called on a
+        Fuchsia device that does not support it, it will raise NotSupportedError.
+
+        Raises:
+            NotSupportedError: If affordance is not supported.
+        """
+        self._inner.verify_supported()
+
+    def connect(
+        self,
+        ssid: str,
+        bss_desc: f_wlan_common.BssDescription,
+        authentication: f_wlan_common_security.Authentication,
+    ) -> bool:
+        """Trigger connection to a network.
+
+        Args:
+            ssid: The network to connect to.
+            bss_desc: The basic service set for target network.
+            authentication: Authentication to connect with.
+
+        Returns:
+            True on success otherwise false.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            NetworkInterfaceNotFoundError: No client WLAN interface found.
+            TypeError: When authentication is not provided.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.connect(ssid, bss_desc, authentication)
+        )
+
+    def create_iface(
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
+    ) -> int:
+        """Create a new WLAN interface.
+
+        Args:
+            phy_id: The iface ID.
+            role: The role of the new iface.
+            sta_addr: MAC address for softAP iface.
+
+        Returns:
+            Iface id of newly created interface.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            ValueError: Invalid MAC address
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.create_iface(phy_id, role, sta_addr)
+        )
+
+    def destroy_iface(self, iface_id: int) -> None:
+        """Destroy WLAN interface by ID.
+
+        Args:
+            iface_id: The interface to destroy.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.destroy_iface(iface_id)
+        )
+
+    def disconnect(self) -> None:
+        """Disconnect all client WLAN connections.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.disconnect()
+        )
+
+    def get_country(self, phy_id: int) -> CountryCode:
+        """Queries the currently configured country code from phy `phy_id`.
+
+        Args:
+            phy_id: A phy id that is present on the device.
+
+        Returns:
+            The currently configured country code from `phy_id`.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.GetCountry error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_country(phy_id)
+        )
+
+    def set_country(self, phy_id: int, code: CountryCode) -> None:
+        """Sets the country code for phy `phy_id`.
+
+        Args:
+            phy_id: A phy id that is present on the device.
+            code: The country code to set.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.SetCountry error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set_country(phy_id, code)
+        )
+
+    def get_iface_id_list(self) -> Sequence[int]:
+        """Get list of wlan iface IDs on device.
+
+        Returns:
+            A list of wlan iface IDs that are present on the device.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.ListIfaces error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_iface_id_list()
+        )
+
+    def get_phy_id_list(self) -> Sequence[int]:
+        """Get list of phy ids on device.
+
+        Returns:
+            A list of phy ids that is present on the device.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.ListPhys error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_phy_id_list()
+        )
+
+    def query_interfaces(self) -> WlanInterfaces:
+        """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
+
+        Returns:
+            WlanInterfaces containing a QueryIfaceResponse for every WLAN interface
+            on the device.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.query_interfaces()
+        )
+
+    def query_iface(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
+        """Retrieves interface info for given wlan iface id.
+
+        Args:
+            iface_id: The wlan interface id to get info from.
+
+        Returns:
+            QueryIfaceResponseWrapper from the SL4F server.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.QueryIface error
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.query_iface(iface_id)
+        )
+
+    def scan_for_bss_info(
+        self,
+    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+        """Scans and returns BSS info.
+
+        Returns:
+            A dict mapping each seen SSID to a list of BSS Description IE
+            blocks, one for each BSS observed in the network
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            NetworkInterfaceNotFoundError: No client WLAN interface found.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.scan_for_bss_info()
+        )
+
+    def status(self) -> ClientStatusResponse:
+        """Request connection status
+
+        Returns:
+            ClientStatusResponse which can be any one of three  things:
+            ClientStatusConnected, ClientStatusConnecting, ClientStatusIdle.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            NetworkInterfaceNotFoundError: No client WLAN interface found.
+            TypeError: If any of the return values are not of the expected type.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.status()
+        )
+
+    def as_async(self) -> AsyncWlanCoreUsingFc:
+        """Returns the async version of WlanCore."""
+        return self._inner
 
 
 class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):

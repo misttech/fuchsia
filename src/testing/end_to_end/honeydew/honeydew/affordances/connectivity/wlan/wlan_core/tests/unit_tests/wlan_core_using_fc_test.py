@@ -141,11 +141,11 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice,
+            spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
         )
         self.fuchsia_device_close_obj = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceClose,
+            spec=affordances_capable.AsyncFuchsiaDeviceClose,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(
@@ -176,7 +176,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        self.wlan_core_obj = wlan_core_using_fc.WlanCore(
+        self.wlan_core_obj = wlan_core_using_fc.AsyncWlanCoreUsingFc(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -191,7 +191,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         """Test if verify_supported() works."""
         self.ffx_transport_obj.run.return_value = ""
         with self.assertRaises(NotSupportedError):
-            self.wlan_core_obj = wlan_core_using_fc.WlanCore(
+            wlan_core_using_fc.AsyncWlanCoreUsingFc(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

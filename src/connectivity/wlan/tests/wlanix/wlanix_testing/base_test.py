@@ -6,7 +6,7 @@ Testing utilities for antlion tests of wlanix.
 """
 
 import struct
-from typing import Any
+from typing import Any, Sequence
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import fuchsia_async_extension
@@ -30,7 +30,7 @@ NL80211_ATTR_MAC = 6
 
 
 def verify_new_interface_response(
-    response_list: list[fidl_wlanix.Nl80211Message],
+    response_list: Sequence[fidl_wlanix.Nl80211Message],
 ) -> dict[int, bytes]:
     last_response_index = len(response_list) - 1
     for response_index, response in enumerate(response_list):

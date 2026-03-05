@@ -86,6 +86,7 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
             .unwrap()
             .responses
         )
+        assert response_list is not None
         attrs = base_test.verify_new_interface_response(response_list)
         iface_index = struct.unpack(
             "<I", attrs[base_test.NL80211_ATTR_IFINDEX]
@@ -121,6 +122,7 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
                 .unwrap()
                 .responses
             )
+            assert response_list is not None
             assert_equal(
                 len(response_list),
                 1,

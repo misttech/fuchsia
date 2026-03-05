@@ -71,7 +71,9 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
         ).unwrap()
 
         # Find the matching bss_description
-        scan_results = await self.fuchsia_device.wlan_core.scan_for_bss_info()
+        scan_results = (
+            await self.fuchsia_device.wlan_core.as_async().scan_for_bss_info()
+        )
         try:
             bss_description = scan_results[ssid][0]
         except KeyError:
@@ -81,7 +83,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
             )
 
         # Connect to the AP
-        await self.fuchsia_device.wlan_core.connect(
+        await self.fuchsia_device.wlan_core.as_async().connect(
             ssid=ssid,
             bss_desc=bss_description,
             authentication=fidl_security.Authentication(

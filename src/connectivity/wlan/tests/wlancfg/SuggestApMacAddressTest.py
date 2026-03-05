@@ -145,8 +145,8 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         for wlan_iface in (
             await self.device_monitor_proxy.list_ifaces()
         ).iface_list:
-            query_iface_result = await self.device.wlan_core.query_iface(
-                wlan_iface
+            query_iface_result = (
+                await self.device.wlan_core.as_async().query_iface(wlan_iface)
             )
             if query_iface_result.role == fidl_common.WlanMacRole.AP:
                 return MacAddress.from_bytes(bytes(query_iface_result.sta_addr))

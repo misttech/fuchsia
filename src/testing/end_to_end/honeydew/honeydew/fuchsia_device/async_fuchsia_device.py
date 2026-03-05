@@ -656,18 +656,18 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_core(self) -> wlan_core.WlanCore:
+    def wlan_core(self) -> wlan_core.AsyncWlanCore:
         """Returns a wlan affordance object.
 
         Returns:
-            wlan.Wlan object
+            wlan.AsyncWlanCore object
         """
-        return wlan_core_using_fc.WlanCore(
+        return wlan_core_using_fc.AsyncWlanCoreUsingFc(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
-            fuchsia_device_close=self.as_sync(),
+            reboot_affordance=self,
+            fuchsia_device_close=self,
         )
 
     @properties.Affordance

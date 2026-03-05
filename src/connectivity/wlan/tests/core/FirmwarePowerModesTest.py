@@ -40,8 +40,8 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
             arg_sets=[(mode,) for mode in fidl_common.PowerSaveType],
         )
 
-    def name_func(self, mode: fidl_common.PowerSaveType) -> str:
-        return f"test_pm_mode_{mode.name.replace('PS_MODE_', '').lower()}"
+    def name_func(self, ps_mode: fidl_common.PowerSaveType) -> str:
+        return f"test_pm_mode_{ps_mode.name.replace('PS_MODE_', '').lower()}"
 
     @asyncmethod
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:

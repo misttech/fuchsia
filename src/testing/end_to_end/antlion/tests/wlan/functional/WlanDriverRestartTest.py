@@ -40,10 +40,10 @@ class WlanDriverRestartTest(base_test.AntlionBaseTest):
     def test_driver_restart_recreates_interface(self) -> None:
         """Verify the WLAN interface gets recreated after its driver restarts."""
         # Store existing phy and interface identifiers.
-        phys = self.fuchsia_device.honeydew_fd.wlan_core.get_phy_id_list_sync()
+        phys = self.fuchsia_device.honeydew_fd.wlan_core.get_phy_id_list()
         asserts.assert_equal(len(phys), 1, "Expected one phy_id")
         old_interfaces = (
-            self.fuchsia_device.honeydew_fd.wlan_core.get_iface_id_list_sync()
+            self.fuchsia_device.honeydew_fd.wlan_core.get_iface_id_list()
         )
         asserts.assert_not_equal(old_interfaces, [], "Iface not found.")
 
@@ -60,7 +60,7 @@ class WlanDriverRestartTest(base_test.AntlionBaseTest):
         timeout = time.time() + DELAY_FOR_DRIVER_RESTART_SEC
         while time.time() < timeout:
             new_interfaces = (
-                self.fuchsia_device.honeydew_fd.wlan_core.get_iface_id_list_sync()
+                self.fuchsia_device.honeydew_fd.wlan_core.get_iface_id_list()
             )
 
             if new_interfaces == old_interfaces:
@@ -85,7 +85,7 @@ class WlanDriverRestartTest(base_test.AntlionBaseTest):
                 f"New interface not created within {DELAY_FOR_DRIVER_RESTART_SEC}s"
             )
 
-        phys = self.fuchsia_device.honeydew_fd.wlan_core.get_phy_id_list_sync()
+        phys = self.fuchsia_device.honeydew_fd.wlan_core.get_phy_id_list()
         asserts.assert_equal(len(phys), 1, "Expected one phy_id")
 
 

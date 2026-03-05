@@ -22,7 +22,10 @@ from honeydew.affordances.connectivity.netstack import (
     netstack,
     netstack_using_fc,
 )
-from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
+from honeydew.affordances.connectivity.wlan.wlan_core import (
+    wlan_core,
+    wlan_core_using_fc,
+)
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import wlan_policy_ap
 from honeydew.affordances.device_knobs import device_knobs
@@ -317,7 +320,13 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def wlan_core(self) -> wlan_core.WlanCore:
-        return self._inner.wlan_core
+        return wlan_core_using_fc.WlanCore(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+        )
 
     @properties.Affordance
     def netstack(self) -> netstack.Netstack:

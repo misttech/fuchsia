@@ -378,9 +378,7 @@ class FuchsiaDevice:
         # to reconcile some of the information between the two perspectives, at
         # which point we can eliminate this step.
         netstack_interfaces = self.honeydew_fd.netstack.list_interfaces()
-        wlan_interfaces_by_mac = (
-            self.honeydew_fd.wlan_core.query_interfaces_sync()
-        )
+        wlan_interfaces_by_mac = self.honeydew_fd.wlan_core.query_interfaces()
 
         for netstack_iface in netstack_interfaces:
             if netstack_iface.mac is None:
@@ -427,7 +425,7 @@ class FuchsiaDevice:
         Raises:
             FuchsiaDeviceError, if configuration fails
         """
-        self.wlan_controller.set_country_code_sync(
+        self.wlan_controller.set_country_code(
             CountryCode(self.config_country_code)
         )
 

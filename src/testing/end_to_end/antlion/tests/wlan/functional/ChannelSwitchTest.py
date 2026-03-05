@@ -178,7 +178,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             must_change_channel_by = time.time() + must_change_channel_within
 
             while time.time() < change_channel_after:
-                status = self.fuchsia_device.honeydew_fd.wlan_core.status_sync()
+                status = self.fuchsia_device.honeydew_fd.wlan_core.status()
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)} after "
@@ -385,16 +385,14 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         iface_ids = self.dut.get_wlan_interface_id_list()
         for iface_id in iface_ids:
             try:
-                result = (
-                    self.fuchsia_device.honeydew_fd.wlan_core.query_iface_sync(
-                        iface_id
-                    )
+                result = self.fuchsia_device.honeydew_fd.wlan_core.query_iface(
+                    iface_id
                 )
             except HoneydewWlanError as e:
                 self.log.warning(f"Query iface {iface_id} failed: {e}")
                 continue
             if result.role == f_wlan_common.WlanMacRole.AP:
-                status = self.fuchsia_device.honeydew_fd.wlan_core.status_sync()
+                status = self.fuchsia_device.honeydew_fd.wlan_core.status()
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)}"

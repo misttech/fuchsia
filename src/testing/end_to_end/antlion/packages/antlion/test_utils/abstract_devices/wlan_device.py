@@ -396,7 +396,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         match self.association_mode:
             case AssociationMode.DRIVER:
                 ssid_bss_desc_map = (
-                    self.device.honeydew_fd.wlan_core.scan_for_bss_info_sync()
+                    self.device.honeydew_fd.wlan_core.scan_for_bss_info()
                 )
 
                 bss_descs_for_ssid = ssid_bss_desc_map.get(target_ssid, None)
@@ -432,7 +432,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     protocol=protocol, credentials=credentials
                 )
 
-                return self.device.honeydew_fd.wlan_core.connect_sync(
+                return self.device.honeydew_fd.wlan_core.connect(
                     ssid=target_ssid,
                     bss_desc=bss_descs_for_ssid[0],
                     authentication=authentication,
@@ -475,7 +475,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         """
         match self.association_mode:
             case AssociationMode.DRIVER:
-                self.device.honeydew_fd.wlan_core.disconnect_sync()
+                self.device.honeydew_fd.wlan_core.disconnect()
             case AssociationMode.POLICY:
                 self.device.honeydew_fd.wlan_policy.remove_all_networks_sync()
                 self.device.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
@@ -499,7 +499,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         )
 
     def get_wlan_interface_id_list(self) -> list[int]:
-        return self.device.honeydew_fd.wlan_core.get_iface_id_list_sync()
+        return self.device.honeydew_fd.wlan_core.get_iface_id_list()
 
     def get_default_wlan_test_interface(self) -> str:
         if self.device.wlan_client_test_interface_name is None:
@@ -509,10 +509,10 @@ class FuchsiaWlanDevice(SupportsWLAN):
         return self.device.wlan_client_test_interface_name
 
     def destroy_wlan_interface(self, iface_id: int) -> None:
-        self.device.honeydew_fd.wlan_core.destroy_iface_sync(iface_id)
+        self.device.honeydew_fd.wlan_core.destroy_iface(iface_id)
 
     def is_connected(self, ssid: str | None = None) -> bool:
-        result = self.device.honeydew_fd.wlan_core.status_sync()
+        result = self.device.honeydew_fd.wlan_core.status()
         match result:
             case ClientStatusIdle():
                 self.device.log.info("Client status idle")
