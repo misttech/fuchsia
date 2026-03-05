@@ -85,14 +85,16 @@
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
+                "FsTest.DevZeroAndNullQuirks",
 
                 // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
                 "InputTest.DevicePropertiesMatchTouchProperties",
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
-                "MemfdTest.CreateExecutableThenSealThenMap",
-                "MemfdTest.MapNonExecutableWithNOEXEC",
+
+                // TODO(https://fxbug.dev/490121956)
+                "MemfdTest.MapExecutableWithNOEXEC",
 
                 // TODO(https://fxbug.dev/448187395)
                 "IpTables.IpTablesAdminCap",
