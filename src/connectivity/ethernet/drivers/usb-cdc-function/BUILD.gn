@@ -5,6 +5,17 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+declare_args() {
+  # GN arg exposing whether this driver has been migrated to netdevice.
+  #
+  # Used to control out-of-tree enumeration tests and goldens based on the
+  # migration status.
+  #
+  # TODO(https://fxbug.dev/123456789): Remove this arg once the driver is fully
+  # migrated to netdevice.
+  usb_cdc_function_migrated_to_netdevice = false
+}
+
 driver_bind_rules("usb_cdc_bind") {
   rules = "meta/usb_cdc.bind"
   bind_output = "usb-cdc-function.bindbc"
@@ -57,4 +68,13 @@ fuchsia_driver_package("package") {
 group("tests") {
   testonly = true
   deps = [ ":usb_cdc_bind_test" ]
+}
+
+# TODO(https://fxbug.dev/123456789): Remove this config once the driver is fully
+# migrated to netdevice.
+config("netdevice-migration") {
+  if (usb_cdc_function_migrated_to_netdevice) {
+    cflags = [ "-DUSB_CDC_FUNCTION_MIGRATED_TO_NETDEVICE" ]
+    rustflags = [ "--cfg=usb_cdc_function_migrated_to_netdevice" ]
+  }
 }
