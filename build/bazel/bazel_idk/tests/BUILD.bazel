@@ -24,9 +24,9 @@ load(
     ":rules.bzl",
     "create_test_atom_info",
     "get_debug_file",
-    "get_ifs_file",
     "get_link_lib_file",
     "get_stripped_file",
+    "get_stripped_ifs_file",
     "verify_atom_info",
 )
 
@@ -316,7 +316,7 @@ verify_file_path(
     target = ":test_shared_library_link_lib_file",
 )
 
-get_ifs_file(
+get_stripped_ifs_file(
     name = "test_shared_library_ifs_file",
     testonly = True,
     prebuilt_library = ":test-shared-library_link_stubs",

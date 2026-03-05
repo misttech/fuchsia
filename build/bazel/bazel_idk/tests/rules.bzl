@@ -129,7 +129,7 @@ def _get_stripped_file_impl(ctx):
     return [DefaultInfo(files = depset([stripped]))]
 
 get_stripped_file = rule(
-    doc = "Simply declares the stripped file from the `PrebuiltLibraryInfo` " +
+    doc = "Simply declares the `stripped` file from the `PrebuiltLibraryInfo` " +
           "provider as an output. This allows tests to access the file.",
     implementation = _get_stripped_file_impl,
     attrs = {
@@ -149,7 +149,7 @@ def _get_link_lib_file_impl(ctx):
     return [DefaultInfo(files = depset([link_lib]))]
 
 get_link_lib_file = rule(
-    doc = "Simply declares the link_lib file from the `PrebuiltLibraryInfo` " +
+    doc = "Simply declares the `link_lib` file from the `PrebuiltLibraryInfo` " +
           "provider as an output. This allows tests to access the file.",
     implementation = _get_link_lib_file_impl,
     attrs = {
@@ -162,16 +162,16 @@ get_link_lib_file = rule(
     },
 )
 
-def _get_ifs_file_impl(ctx):
-    ifs_file = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].ifs_file
+def _get_stripped_ifs_file_impl(ctx):
+    ifs_file = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].stripped_ifs_file
     if not ifs_file:
-        fail("`ifs_file` must not be empty")
+        fail("`stripped_ifs_file` must not be empty")
     return [DefaultInfo(files = depset([ifs_file]))]
 
-get_ifs_file = rule(
-    doc = "Simply declares the ifs_file from the `PrebuiltLibraryInfo` " +
+get_stripped_ifs_file = rule(
+    doc = "Simply declares the `stripped_ifs_file` from the `PrebuiltLibraryInfo` " +
           "provider as an output. This allows tests to access the file.",
-    implementation = _get_ifs_file_impl,
+    implementation = _get_stripped_ifs_file_impl,
     attrs = {
         "prebuilt_library": attr.label(
             doc = "The prebuilt library target",

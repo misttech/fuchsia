@@ -164,8 +164,12 @@ def _get_additional_info(ctx):
         binaries["link_lib"] = link_lib_dest
 
         if library_type == "shared":
-            ifs_dest = "%s/%s" % (link_lib_dest_dir, lib_info.ifs_file.basename)
-            files_map[ifs_dest] = lib_info.ifs_file
+            # The stripped IFS file removes text that should not be exposed
+            # (e.g., undefined symbols) or that can vary by architecture.
+            # TODO(https://fxbug.dev/417307356): Use the correct destination
+            # path for the unversioned IFS file built at "PLATFORM".
+            ifs_dest = "%s/%s" % (link_lib_dest_dir, lib_info.stripped_ifs_file.basename)
+            files_map[ifs_dest] = lib_info.stripped_ifs_file
             binaries["ifs"] = ifs_dest
 
             debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_info.debug.basename)

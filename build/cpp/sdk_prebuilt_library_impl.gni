@@ -574,6 +574,8 @@ template("sdk_prebuilt_library_impl") {
 
     # There are not golden files for "HEAD", but the IDK needs to provide IFS
     # files for all API levels. Therefore, use the generated file.
+    # TODO(https://fxbug.dev/334936990): Generate a filtered IFS file as done
+    # in `verify_public_symbols()`.
     if (current_build_target_api_level == "HEAD") {
       ifs_file_for_idk = generated_ifs_file
     }

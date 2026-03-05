@@ -8,35 +8,57 @@ load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 def _generate_link_stubs_for_shared_library_impl(ctx):
     shared_library = ctx.file.shared_library
-    ifs_file_name = (
-        shared_library.basename.removesuffix(shared_library.extension) + "ifs"
-    )
+    ifs_file_name_base = shared_library.basename.removesuffix(shared_library.extension)
 
-    ifs_output = ctx.actions.declare_file(ifs_file_name)
+    unstripped_ifs_output = ctx.actions.declare_file(ifs_file_name_base + "full_ifs.ifs")
+    stripped_ifs_output = ctx.actions.declare_file(ifs_file_name_base + "ifs")
     link_stub_output = ctx.actions.declare_file("link_stub/" + shared_library.basename)
 
     args = ctx.actions.args()
     args.add("--write-if-changed")
-    args.add("--output-ifs", ifs_output)
+    args.add("--output-ifs", unstripped_ifs_output)
     args.add("--output-elf", link_stub_output)
     args.add(shared_library)
 
     ctx.actions.run(
         inputs = [shared_library],
-        outputs = [ifs_output, link_stub_output],
+        outputs = [unstripped_ifs_output, link_stub_output],
         executable = ctx.executable._llvm_ifs,
         arguments = [args],
         mnemonic = "LlvmIfs",
-        # progress_message = "Generating link stubs for %s" % ctx.label.name,
+        progress_message = "Generating link stubs for %{label}",
+    )
+
+    strip_args = ctx.actions.args()
+    strip_args.add("--strip-undefined")
+    strip_args.add("--strip-ifs-target")
+    strip_args.add("--strip-needed")
+    strip_args.add("--strip-size")
+    strip_args.add(unstripped_ifs_output)
+    strip_args.add("--output-ifs", stripped_ifs_output)
+
+    ctx.actions.run(
+        inputs = [unstripped_ifs_output],
+        outputs = [stripped_ifs_output],
+        executable = ctx.executable._llvm_ifs,
+        arguments = [strip_args],
+        mnemonic = "LlvmIfsStrip",
+        progress_message = "Stripping IFS file for %{label}",
     )
 
     return [
-        DefaultInfo(files = depset([shared_library, ifs_output, link_stub_output])),
+        DefaultInfo(files = depset([
+            shared_library,
+            link_stub_output,
+            unstripped_ifs_output,
+            stripped_ifs_output,
+        ])),
         PrebuiltLibraryInfo(
             type = "shared",
             debug = shared_library,
             link_lib = link_stub_output,
-            ifs_file = ifs_output,
+            unstripped_ifs_file = unstripped_ifs_output,
+            stripped_ifs_file = stripped_ifs_output,
         ),
     ]
 
@@ -78,7 +100,8 @@ def _merge_library_info_for_shared_library_impl(ctx):
             debug = prebuilt_library_info.debug,
             stripped = ctx.attr.stripped_binary[DefaultInfo].files.to_list()[0],
             link_lib = prebuilt_library_info.link_lib,
-            ifs_file = prebuilt_library_info.ifs_file,
+            unstripped_ifs_file = prebuilt_library_info.unstripped_ifs_file,
+            stripped_ifs_file = prebuilt_library_info.stripped_ifs_file,
         ),
         # LINT.ThenChange(//build/bazel/rules/cc/providers.bzl:prebuilt_library_info)
     ]
@@ -100,7 +123,11 @@ _merge_library_info_for_shared_library = rule(
     },
 )
 
-def _generate_companion_files_for_shared_library_impl(name, shared_library, testonly, visibility):
+def _generate_companion_files_for_shared_library_impl(
+        name,
+        shared_library,
+        testonly,
+        visibility):
     link_stubs_target_name = name + ".generate_link_stubs"
     generate_link_stubs_for_shared_library(
         name = link_stubs_target_name,

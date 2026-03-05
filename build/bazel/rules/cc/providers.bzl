@@ -13,7 +13,8 @@ PrebuiltLibraryInfo = provider(
         "debug": "The unstripped shared library file with debug information.",
         "stripped": "The stripped shared library file.",
         "link_lib": "The link stub for the library.",
-        "ifs_file": "The IFS file for the library.",
+        "unstripped_ifs_file": "The unstripped IFS file for the library.",
+        "stripped_ifs_file": "The IFS file stripped of extra information such as undefined symbols and CPU architecture.",
     },
 )
 # LINT.ThenChange(//build/bazel/rules/cc/shared_library.bzl:prebuilt_library_info)
