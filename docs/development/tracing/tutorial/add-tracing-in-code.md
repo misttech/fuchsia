@@ -178,64 +178,67 @@ In some cases, you may need to determine if tracing is on at runtime.
 * {Rust}
 
   ```rust
-  if fuchsia_trace::is_enabled() {
+  if fuchsia_trace::category_enabled!(c"my_category") {
     let v = do_something_expensive();
-    fuchsia_trace::instant!(...
+    fuchsia_trace::instant!(c"my_category", ...
   }
   ```
 
-  The rust trace bindings don't support compile time checking if tracing is disabled.
-  However, if tracing is disabled at compile time, checking `is_enabled` is
-  not performance intensive.
+  If you need to check if *any* tracing is enabled without checking a specific
+  category, you can use `fuchsia_trace::is_enabled()`, but be aware this
+  may have higher overhead as it is not cached as category checking is.
 
-  For more information on `is_enabled`, see
+  The rust trace bindings don't support compile time checking if tracing is disabled.
+
+  For more information, see [`category_enabled`][trace-category-enabled-rust] and
   [`is_enabled`][trace-enabled-rust].
 
 * {C++}
 
   If tracing is compiled in your code because `NTRACE` is not defined,
-  the `TRACE_ENABLED()` macro determines if tracing for your trace
-  provider is on. If tracing is compiled out, `TRACE_ENABLED()` always
-  returns false.
+  you can check if a specific category is enabled using `TRACE_CATEGORY_ENABLED()`.
 
   ```cpp
   #ifndef NTRACE
-      if (TRACE_ENABLED()) {
+      if (TRACE_CATEGORY_ENABLED("my_category")) {
           int v = do_something_expensive();
-          TRACE_INSTANT(...
+          TRACE_INSTANT("my_category", ...
       }
   #endif  // NTRACE
   ```
-  The example above uses both the `#ifndef` and the
-  `TRACE_ENABLED()` macro together because the function
-  `do_something_expensive()` may not exist in the trace-disabled version
-  of your code.
 
-  For more information on the `TRACE_ENABLED` macro, see
+  If you need to check if *any* tracing is enabled without checking a specific
+  category, you can use `TRACE_ENABLED()`, but be aware this
+  may have higher overhead as it is not cached as category checking is.
+
+  The example above uses `#ifndef NTRACE` because the function
+  `do_something_expensive()` might only be compiled in when tracing is enabled.
+
+  For more information, see [`TRACE_CATEGORY_ENABLED`][trace-category-enabled] and
   [`TRACE_ENABLED`][trace-enabled].
 
 * {C }
 
   If tracing is compiled in your code because `NTRACE` is not defined,
-  the `TRACE_ENABLED()` macro determines if tracing for your trace
-  provider is on. If tracing is compiled out, `TRACE_ENABLED()` always
-  returns false.
+  you can check if a specific category is enabled using `TRACE_CATEGORY_ENABLED()`.
 
   ```c
   #ifndef NTRACE
-      if (TRACE_ENABLED()) {
+      if (TRACE_CATEGORY_ENABLED("my_category")) {
           int v = do_something_expensive();
-          TRACE_INSTANT(...
+          TRACE_INSTANT("my_category", ...
       }
   #endif  // NTRACE
   ```
 
-  The example above uses both the `#ifndef` and the
-  `TRACE_ENABLED()` macro together because the function
-  `do_something_expensive()` may not exist in the trace-disabled version
-  of your code.
+  If you need to check if *any* tracing is enabled without checking a specific
+  category, you can use `TRACE_ENABLED()`, but be aware this
+  may have higher overhead as it is not cached as category checking is.
 
-  For more information on the `TRACE_ENABLED` macro, see
+  The example above uses `#ifndef NTRACE` because the function
+  `do_something_expensive()` might only be compiled in when tracing is enabled.
+
+  For more information, see [`TRACE_CATEGORY_ENABLED`][trace-category-enabled] and
   [`TRACE_ENABLED`][trace-enabled].
 
 Once you have added tracing code to your component, you can now collect a
@@ -252,7 +255,9 @@ trace from the component. For more information, see the next
 [trace-instant-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/macro.instant.html
 [ntrace]: /docs/reference/tracing/c_cpp_macros.md#NTRACE
 [trace-enabled]: /docs/reference/tracing/c_cpp_macros.md#TRACE_ENABLED
+[trace-category-enabled]: /docs/reference/tracing/c_cpp_macros.md#TRACE_CATEGORY_ENABLED
 [trace-enabled-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/fn.is_enabled.html
+[trace-category-enabled-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/fn.category_enabled.html
 [blobfs-cc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/src/storage/blobfs/blobfs.cc
 [trace-duration]: /docs/reference/tracing/c_cpp_macros.md#TRACE_DURATION
 [trace-duration-begin]: /docs/reference/tracing/c_cpp_macros.md#TRACE_DURATION_BEGIN
