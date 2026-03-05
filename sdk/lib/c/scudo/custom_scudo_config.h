@@ -20,7 +20,7 @@ struct DefaultConfig {
     static const uptr RegionSizeLog = 27U;
     static const uptr GroupSizeLog = 19U;
 #else
-    static const uptr RegionSizeLog = 30U;
+    static const uptr RegionSizeLog = 28U;
     static const uptr GroupSizeLog = 21U;
 #endif
     typedef u32 CompactPtrT;
