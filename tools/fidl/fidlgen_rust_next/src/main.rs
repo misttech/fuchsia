@@ -33,9 +33,6 @@ pub struct Fidlgen {
     /// rustfmt configuration file path
     #[argh(option)]
     rustfmt_config: PathBuf,
-    /// whether to generate compatibility impls for the existing Rust bindings
-    #[argh(switch)]
-    emit_compat: bool,
     /// name of the common crate, which contains the POD parts of this library.
     #[argh(option)]
     common_lib: Option<String>,
@@ -51,7 +48,6 @@ fn main() {
     let file = File::open(&args.config).expect("failed to open source JSON config file");
     let mut config = serde_json::from_reader::<_, self::config::Config>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
-    config.emit_compat = args.emit_compat;
     config.common_lib = args.common_lib;
 
     if config.is_common && config.common_lib.is_some() {

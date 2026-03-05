@@ -181,27 +181,3 @@ pub mod wire_optional {}
 pub mod generic {}
 
 pub use self::natural::*;
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    impl ::fidl_next::CompatFrom<crate::ObjType> for ::fidl_test_aliases::ObjType {
-        fn compat_from(value: crate::ObjType) -> Self {
-            match value {
-                crate::ObjType::None => Self::None,
-
-                crate::ObjType::Channel => Self::Channel,
-            }
-        }
-    }
-
-    impl ::fidl_next::CompatFrom<::fidl_test_aliases::ObjType> for crate::ObjType {
-        fn compat_from(value: ::fidl_test_aliases::ObjType) -> Self {
-            match value {
-                ::fidl_test_aliases::ObjType::None => Self::None,
-
-                ::fidl_test_aliases::ObjType::Channel => Self::Channel,
-            }
-        }
-    }
-}

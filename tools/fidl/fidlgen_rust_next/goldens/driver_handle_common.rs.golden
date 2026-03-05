@@ -133,30 +133,3 @@ where
         }
     }
 }
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    #[cfg(target_os = "fuchsia")]
-    /// An alias for a client over `zx::Channel` for the `DriverProtocol`
-    /// protocol.
-    pub type DriverProtocolProxy = ::fidl_next::Client<crate::DriverProtocol>;
-
-    #[cfg(feature = "driver")]
-    impl ::fidl_next::CompatFrom<crate::DriverProtocol>
-        for ::fidl_test_driverhandle::DriverProtocolMarker
-    {
-        fn compat_from(_: crate::DriverProtocol) -> Self {
-            Self
-        }
-    }
-
-    #[cfg(feature = "driver")]
-    impl ::fidl_next::CompatFrom<::fidl_test_driverhandle::DriverProtocolMarker>
-        for crate::DriverProtocol
-    {
-        fn compat_from(_: ::fidl_test_driverhandle::DriverProtocolMarker) -> Self {
-            Self
-        }
-    }
-}

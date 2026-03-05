@@ -239,7 +239,6 @@ def _fidl_library_impl(
         enable_rust,
         enable_rust_next,
         enable_rust_drivers,
-        rust_next_emit_compat,
         enable_bindlib,
         enable_banjo,
         enable_zither,
@@ -561,11 +560,6 @@ If not specified, appropriate values will be determined based on the target API 
         "enable_rust_drivers": attr.bool(
             doc = "Set to true to enable experimental rust driver transport support",
             default = False,
-            configurable = False,
-        ),
-        "rust_next_emit_compat": attr.bool(
-            doc = "Set to false to disable compatibility with existing Rust bindings for this library",
-            default = True,
             configurable = False,
         ),
         "enable_bindlib": attr.bool(

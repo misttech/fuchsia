@@ -12,7 +12,6 @@ pub struct Config {
     #[serde(default)]
     pub is_common: bool,
     pub common_lib: Option<String>,
-    pub emit_compat: bool,
     pub emit_debug_impls: bool,
     pub encode_trait_path: String,
     pub decode_trait_path: String,

@@ -7,8 +7,8 @@ use askama::Template;
 use fidl_ir::{Bits, Const, DeclType, Enum, Protocol, Service, Struct, Table, TypeAlias, Union};
 
 use super::{
-    AliasTemplate, BitsTemplate, CompatTemplate, ConstTemplate, Context, Contextual, Denylist,
-    EnumTemplate, ProtocolTemplate, ServiceTemplate, StructTemplate, TableTemplate, UnionTemplate,
+    AliasTemplate, BitsTemplate, ConstTemplate, Context, Contextual, Denylist, EnumTemplate,
+    ProtocolTemplate, ServiceTemplate, StructTemplate, TableTemplate, UnionTemplate,
 };
 
 #[derive(Template)]
@@ -32,10 +32,6 @@ impl<'a> LibraryTemplate<'a> {
 
     fn cnst(&self, cnst: &'a Const) -> ConstTemplate<'a> {
         ConstTemplate::new(cnst, self.context)
-    }
-
-    fn compat(&self) -> CompatTemplate<'a> {
-        CompatTemplate::new(self.context)
     }
 
     fn enm(&self, enm: &'a Enum) -> EnumTemplate<'a> {

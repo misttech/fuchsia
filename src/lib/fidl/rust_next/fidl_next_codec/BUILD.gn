@@ -11,7 +11,6 @@ rustc_library("fidl_next_codec") {
   edition = "2024"
   sources = [
     "src/chunk.rs",
-    "src/compat.rs",
     "src/convert/from.rs",
     "src/convert/into.rs",
     "src/convert/mod.rs",
@@ -53,11 +52,6 @@ rustc_library("fidl_next_codec") {
     "//third_party/rust_crates:zerocopy",
   ]
   features = []
-
-  # Enables compatibility impls with the existing Rust bindings.
-  # This can be removed once we no longer require backwards compatibility.
-  features += [ "compat" ]
-  deps += [ "//src/lib/fidl/rust/fidl" ]
 
   if (is_fuchsia) {
     # "fuchsia" feature

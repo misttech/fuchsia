@@ -25,9 +25,3 @@ pub mod generic {
 pub use self::natural::*;
 
 pub use fidl_next_common_test_struct::*;
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    pub use fidl_next_common_test_struct::compat::*;
-}

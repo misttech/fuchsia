@@ -7,7 +7,6 @@
 
 mod alias;
 mod bits;
-mod compat;
 mod compound_identifier;
 mod r#const;
 mod constant;
@@ -28,7 +27,6 @@ mod wire_type;
 
 pub use self::alias::*;
 pub use self::bits::*;
-pub use self::compat::*;
 pub use self::compound_identifier::*;
 pub use self::r#const::*;
 pub use self::constant::*;

@@ -1,5 +1,4 @@
 {
-    "emit_compat": false,
     "emit_debug_impls": true,
     "encode_trait_path": "::fdomain_client::fidl_next::HandleEncoder",
     "decode_trait_path": "::fdomain_client::fidl_next::HandleDecoder",

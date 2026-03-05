@@ -353,9 +353,3 @@ where
 }
 
 pub use fidl_next_common_test_service::*;
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    pub use fidl_next_common_test_service::compat::*;
-}

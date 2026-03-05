@@ -289,10 +289,6 @@ pub trait Contextual {
         DocStringTemplate::new(attributes)
     }
 
-    fn emit_compat(&self) -> bool {
-        self.context().config.emit_compat
-    }
-
     fn emit_debug_impls(&self) -> bool {
         self.context().config.emit_debug_impls
     }
@@ -306,10 +302,6 @@ pub trait Contextual {
 
     fn common_lib(&self) -> Option<&str> {
         self.context().config.common_lib.as_deref()
-    }
-
-    fn compat_crate_name(&self) -> String {
-        format!("fidl_{}", self.context().library().name.replace('.', "_"))
     }
 
     fn natural_id<'a>(

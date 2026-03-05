@@ -231,8 +231,6 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 mod chunk;
-#[cfg(feature = "compat")]
-mod compat;
 mod convert;
 mod copy_optimization;
 mod decode;

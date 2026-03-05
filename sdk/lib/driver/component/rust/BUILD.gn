@@ -15,11 +15,13 @@ rustc_library("rust") {
 
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_next",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust_next",
     "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/core",

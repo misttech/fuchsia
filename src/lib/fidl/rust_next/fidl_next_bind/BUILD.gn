@@ -31,12 +31,6 @@ rustc_library("fidl_next_bind") {
   ]
   features = []
 
-  # Enables compatibility impls with the existing Rust bindings.
-  # This can be removed once we no longer require backwards compatibility.
-  features += [ "compat" ]
-  sources += [ "src/compat.rs" ]
-  deps += [ "//src/lib/fidl/rust/fidl" ]
-
   # Enables support for fuchsia-async.
   # This feature _should_ be named `fuchsia_async`, but our cargo manifest
   # generator doesn't support features with the same name as mandatory

@@ -146,19 +146,3 @@ pub const CONST1: crate::natural::BitsType = crate::natural::BitsType::A;
 pub const CONST2: crate::natural::BitsType = crate::natural::BitsType::from_bits_retain(129);
 
 pub const CONST3: crate::natural::BitsType = crate::natural::BitsType::from_bits_retain(131);
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    impl ::fidl_next::CompatFrom<crate::BitsType> for ::fidl_test_bitsconstants::BitsType {
-        fn compat_from(value: crate::BitsType) -> Self {
-            Self::from_bits_retain(value.bits())
-        }
-    }
-
-    impl ::fidl_next::CompatFrom<::fidl_test_bitsconstants::BitsType> for crate::BitsType {
-        fn compat_from(value: ::fidl_test_bitsconstants::BitsType) -> Self {
-            Self::from_bits_retain(value.bits())
-        }
-    }
-}

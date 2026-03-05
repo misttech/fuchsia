@@ -130,9 +130,6 @@ import("//build/testing/host_test_data.gni")
 #   enable_rust_next (optional flag, default to false)
 #     Set to true to enable next-generation Rust bindings for this library
 #
-#   rust_next_emit_compat (optional flag, default to true)
-#     Set to false to disable compatibility with existing Rust bindings for this library
-#
 #   enable_zither (optional flag, default to false)
 #     Set to true to enable Zither bindings for this library.
 #     See //zircon/tools/zither/README.md for details.
@@ -214,10 +211,6 @@ template("fidl") {
   enable_rust_drivers =
       defined(invoker.enable_rust_drivers) && invoker.enable_rust_drivers
 
-  # Compatibility impls are enabled by default
-  rust_next_emit_compat =
-      !defined(invoker.rust_next_emit_compat) || invoker.rust_next_emit_compat
-
   not_needed([
                "enable_bindlib",
                "enable_cpp",
@@ -228,7 +221,6 @@ template("fidl") {
                "enable_hlcpp",
                "enable_python",
                "enable_zither",
-               "rust_next_emit_compat",
              ])
 
   # Allow generated targets visibility to their dependant generated targets
@@ -532,11 +524,6 @@ template("fidl") {
         forward_variables_from(common_parameters, "*")
         common = true
         deps = [ "//sdk/categories:marker-${marker_category}" ]
-        if (rust_next_emit_compat) {
-          emit_compat = true
-          assert(enable_rust)
-          deps += [ ":${invoker.target_name}_rust" ]
-        }
         fidl_gen_dir += "/rust_next"
         if (!is_host) {
           forward_variables_from(invoker, [ "contains_drivers" ])
@@ -561,11 +548,6 @@ template("fidl") {
         common_lib =
             "fidl_next_common_" + string_replace(library_name, ".", "_")
         fidl_gen_dir += "/rust_next"
-        if (rust_next_emit_compat) {
-          emit_compat = true
-          assert(enable_rust)
-          deps += [ ":${invoker.target_name}_rust" ]
-        }
         if (!is_host) {
           forward_variables_from(invoker, [ "contains_drivers" ])
         }

@@ -158,7 +158,3 @@ pub use self::natural::*;
 {% if let Some(common) = self.common_lib() %}
 pub use {{ common }}::*;
 {% endif %}
-
-{% if self.emit_compat() %}
-    {{ self.compat() }}
-{% endif %}

@@ -1,6 +1,5 @@
 {
     "is_common": true,
-    "emit_compat": false,
     "emit_debug_impls": true,
     "encode_trait_path": "",
     "decode_trait_path": "",

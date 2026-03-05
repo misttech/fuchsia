@@ -13,7 +13,7 @@ use fdf::{AutoReleaseDispatcher, DispatcherBuilder, WeakDispatcher};
 use fdf_env::Environment;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_driver_framework::Offer;
-use fidl_next::{ClientEnd as NextClientEnd, CompatFrom, ServerEnd as NextServerEnd};
+use fidl_next::{ClientEnd as NextClientEnd, ServerEnd as NextServerEnd};
 use fidl_next_fuchsia_component_runner::natural::ComponentNamespaceEntry;
 use fidl_next_fuchsia_driver_framework::DriverStartArgs;
 use fidl_next_fuchsia_driver_framework::natural::Offer as NextOffer;
@@ -34,7 +34,7 @@ pub struct TestHarness<D> {
     driver_incoming_dir: ClientEnd<fio::DirectoryMarker>,
     config_vmo: Option<zx::Vmo>,
     url: Option<String>,
-    offers: Option<Vec<Offer>>,
+    offers: Option<Vec<NextOffer>>,
     scope: fasync::Scope,
     _d: PhantomData<D>,
 }
@@ -122,7 +122,7 @@ impl<D: Driver> TestHarness<D> {
 
     /// Adds an offer to the driver's start args. Consumes and returns self to allow chaining.
     pub fn add_offer(mut self, offer: Offer) -> Self {
-        self.offers.get_or_insert_default().push(offer);
+        self.offers.get_or_insert_default().push(convert::convert_df_offer(offer));
         self
     }
 
@@ -155,16 +155,15 @@ impl<D: Driver> TestHarness<D> {
                     driver_incoming_svc.into_channel().unwrap().into(),
                 )),
             }]),
-            outgoing_dir: Some(NextServerEnd::compat_from(driver_outgoing_dir_server)),
+            outgoing_dir: Some(NextServerEnd::from_untyped(
+                driver_outgoing_dir_server.into_channel(),
+            )),
             config: self
                 .config_vmo
                 .as_ref()
                 .and_then(|v| v.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
             url: self.url.clone(),
-            node_offers: self
-                .offers
-                .as_ref()
-                .map(|o| o.clone().into_iter().map(NextOffer::compat_from).collect()),
+            node_offers: self.offers.clone(),
             ..DriverStartArgs::default()
         };
 
@@ -191,6 +190,167 @@ impl<D> Drop for TestHarness<D> {
 
         self.fdf_env_environment.destroy_all_dispatchers();
         self.fdf_env_environment.reset();
+    }
+}
+
+mod convert {
+    use {
+        fidl_fuchsia_component_decl as decl, fidl_fuchsia_driver_framework as df,
+        fidl_next_fuchsia_component_decl as decl_next,
+        fidl_next_fuchsia_driver_framework as df_next,
+    };
+
+    pub fn convert_df_offer(offer: df::Offer) -> df_next::Offer {
+        match offer {
+            df::Offer::DictionaryOffer(o) => df_next::Offer::DictionaryOffer(convert_offer(o)),
+            df::Offer::ZirconTransport(o) => df_next::Offer::ZirconTransport(convert_offer(o)),
+            df::Offer::DriverTransport(o) => df_next::Offer::DriverTransport(convert_offer(o)),
+            df::Offer::__SourceBreaking { unknown_ordinal } => {
+                df_next::Offer::UnknownOrdinal_(unknown_ordinal)
+            }
+        }
+    }
+
+    fn convert_offer(offer: decl::Offer) -> decl_next::Offer {
+        match offer {
+            decl::Offer::Service(o) => decl_next::Offer::Service(decl_next::OfferService {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                source_instance_filter: o.source_instance_filter,
+                renamed_instances: o
+                    .renamed_instances
+                    .map(|v| v.into_iter().map(convert_name_mapping).collect()),
+                availability: o.availability.map(convert_availability),
+                source_dictionary: o.source_dictionary,
+                dependency_type: o.dependency_type.map(convert_dependency_type),
+            }),
+            decl::Offer::Protocol(o) => decl_next::Offer::Protocol(decl_next::OfferProtocol {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                dependency_type: o.dependency_type.map(convert_dependency_type),
+                availability: o.availability.map(convert_availability),
+                source_dictionary: o.source_dictionary,
+            }),
+            decl::Offer::Directory(o) => decl_next::Offer::Directory(decl_next::OfferDirectory {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                availability: o.availability.map(convert_availability),
+                source_dictionary: o.source_dictionary,
+                dependency_type: o.dependency_type.map(convert_dependency_type),
+                rights: o.rights.map(convert_rights),
+                subdir: o.subdir,
+            }),
+            decl::Offer::Storage(o) => decl_next::Offer::Storage(decl_next::OfferStorage {
+                source_name: o.source_name,
+                source: o.source.map(convert_ref),
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                availability: o.availability.map(convert_availability),
+            }),
+            decl::Offer::Runner(o) => decl_next::Offer::Runner(decl_next::OfferRunner {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                source_dictionary: o.source_dictionary,
+            }),
+            decl::Offer::Resolver(o) => decl_next::Offer::Resolver(decl_next::OfferResolver {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                source_dictionary: o.source_dictionary,
+            }),
+            decl::Offer::EventStream(o) => {
+                decl_next::Offer::EventStream(decl_next::OfferEventStream {
+                    source: o.source.map(convert_ref),
+                    source_name: o.source_name,
+                    scope: o.scope.map(|v| v.into_iter().map(convert_ref).collect()),
+                    target: o.target.map(convert_ref),
+                    target_name: o.target_name,
+                    availability: o.availability.map(convert_availability),
+                })
+            }
+            decl::Offer::Dictionary(o) => {
+                decl_next::Offer::Dictionary(decl_next::OfferDictionary {
+                    source: o.source.map(convert_ref),
+                    source_name: o.source_name,
+                    target: o.target.map(convert_ref),
+                    target_name: o.target_name,
+                    dependency_type: o.dependency_type.map(convert_dependency_type),
+                    availability: o.availability.map(convert_availability),
+                    source_dictionary: o.source_dictionary,
+                })
+            }
+            decl::Offer::Config(o) => decl_next::Offer::Config(decl_next::OfferConfiguration {
+                source: o.source.map(convert_ref),
+                source_name: o.source_name,
+                target: o.target.map(convert_ref),
+                target_name: o.target_name,
+                availability: o.availability.map(convert_availability),
+                source_dictionary: o.source_dictionary,
+            }),
+            decl::Offer::__SourceBreaking { unknown_ordinal } => {
+                decl_next::Offer::UnknownOrdinal_(unknown_ordinal)
+            }
+        }
+    }
+
+    fn convert_ref(ref_: decl::Ref) -> decl_next::Ref {
+        match ref_ {
+            decl::Ref::Parent(_) => decl_next::Ref::Parent(decl_next::ParentRef {}),
+            decl::Ref::Self_(_) => decl_next::Ref::Self_(decl_next::SelfRef {}),
+            decl::Ref::Child(child_ref) => decl_next::Ref::Child(decl_next::ChildRef {
+                name: child_ref.name,
+                collection: child_ref.collection,
+            }),
+            decl::Ref::Collection(collection_ref) => {
+                decl_next::Ref::Collection(decl_next::CollectionRef { name: collection_ref.name })
+            }
+            decl::Ref::Framework(_) => decl_next::Ref::Framework(decl_next::FrameworkRef {}),
+            decl::Ref::Capability(capability_ref) => {
+                decl_next::Ref::Capability(decl_next::CapabilityRef { name: capability_ref.name })
+            }
+            decl::Ref::Debug(_) => decl_next::Ref::Debug(decl_next::DebugRef {}),
+            decl::Ref::VoidType(_) => decl_next::Ref::VoidType(decl_next::VoidRef {}),
+            decl::Ref::Environment(_) => decl_next::Ref::Environment(decl_next::EnvironmentRef {}),
+            decl::Ref::__SourceBreaking { unknown_ordinal } => {
+                decl_next::Ref::UnknownOrdinal_(unknown_ordinal)
+            }
+        }
+    }
+
+    fn convert_name_mapping(name_mapping: decl::NameMapping) -> decl_next::NameMapping {
+        fidl_next_fuchsia_component_decl::NameMapping {
+            source_name: name_mapping.source_name,
+            target_name: name_mapping.target_name,
+        }
+    }
+
+    fn convert_availability(availability: decl::Availability) -> decl_next::Availability {
+        match availability {
+            decl::Availability::Required => decl_next::Availability::Required,
+            decl::Availability::Optional => decl_next::Availability::Optional,
+            decl::Availability::SameAsTarget => decl_next::Availability::SameAsTarget,
+            decl::Availability::Transitional => decl_next::Availability::Transitional,
+        }
+    }
+
+    fn convert_dependency_type(dependency_type: decl::DependencyType) -> decl_next::DependencyType {
+        match dependency_type {
+            decl::DependencyType::Strong => decl_next::DependencyType::Strong,
+            decl::DependencyType::Weak => decl_next::DependencyType::Weak,
+        }
+    }
+
+    fn convert_rights(rights: fidl_fuchsia_io::Operations) -> fidl_next_fuchsia_io::Operations {
+        fidl_next_fuchsia_io::Operations::from_bits_retain(rights.bits())
     }
 }
 

@@ -243,21 +243,3 @@ pub const ENUM_MEMBER: ::fidl_next_common_test_dependent::natural::MyEnum =
     ::fidl_next_common_test_dependent::natural::MyEnum::Member;
 
 pub const ENUM_MEMBER_PRIMITIVE: u8 = 1 as u8;
-
-/// Compatibility shims which mimic some API surfaces of the current Rust bindings.
-pub mod compat {
-
-    impl ::fidl_next::CompatFrom<crate::MyStruct> for ::fidl_test_importedconstvalues::MyStruct {
-        #[inline]
-        fn compat_from(value: crate::MyStruct) -> Self {
-            Self {}
-        }
-    }
-
-    impl ::fidl_next::CompatFrom<::fidl_test_importedconstvalues::MyStruct> for crate::MyStruct {
-        #[inline]
-        fn compat_from(value: ::fidl_test_importedconstvalues::MyStruct) -> Self {
-            Self {}
-        }
-    }
-}
