@@ -52,5 +52,15 @@ rustc_library("product_bundle") {
     "src/product_bundle_builder.rs",
     "src/v2.rs",
   ]
-  inputs = [ "//build/sdk/meta/test_data/virtual_device.json" ]
+  test_vars = {
+    inputs = [
+      "//build/sdk/meta/test_data/virtual_device.json",
+      "test_data/17.20240101.0.1/product_bundle.json",
+      "test_data/19.20240401.0.1/product_bundle.json",
+      "test_data/22.20240701.0.1/product_bundle.json",
+      "test_data/27.20250401.0.1/product_bundle.json",
+      "test_data/29.20251001.0.1/product_bundle.json",
+      "test_data/31.20260301.0.1/product_bundle.json",
+    ]
+  }
 }

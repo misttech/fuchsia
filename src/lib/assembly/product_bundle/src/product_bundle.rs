@@ -717,4 +717,46 @@ mod tests {
         assert!(actual.is_err());
         Ok(())
     }
+
+    #[test]
+    fn test_parse_pb_17_20240101_0_1() {
+        let pb_json = include_str!("../test_data/17.20240101.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_parse_pb_19_20240401_0_1() {
+        let pb_json = include_str!("../test_data/19.20240401.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_parse_pb_22_20240701_0_1() {
+        let pb_json = include_str!("../test_data/22.20240701.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_parse_pb_27_20250401_0_1() {
+        let pb_json = include_str!("../test_data/27.20250401.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_parse_pb_29_20251001_0_1() {
+        let pb_json = include_str!("../test_data/29.20251001.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_parse_pb_31_20260301_0_1() {
+        let pb_json = include_str!("../test_data/31.20260301.0.1/product_bundle.json");
+        let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
+        assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
 }

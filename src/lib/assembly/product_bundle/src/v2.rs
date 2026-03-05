@@ -80,7 +80,6 @@ pub struct ProductBundleV2 {
     pub platform_tools_r: Vec<Utf8PathBuf>,
 
     /// Version information for this product bundle.
-    #[serde(default)]
     pub release_info: Option<ProductBundleReleaseInfo>,
 
     /// The repositories that hold the TUF metadata, packages, and blobs.
