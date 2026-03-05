@@ -72,7 +72,7 @@ pub struct VolumesDirectory {
 
     // A callback to invoke when a volume is added.  When the volume is removed, this is called
     // again with `None` as the second parameter.
-    on_volume_added: OnceLock<Box<dyn Fn(&str, Option<Arc<ObjectStore>>) + Send + Sync>>,
+    on_volume_added: OnceLock<Box<dyn Fn(&str, Option<Arc<FxVolume>>) + Send + Sync>>,
 
     /// The cache configuration to use under different memory pressure levels.
     memory_pressure_config: MemoryPressureConfig,
@@ -202,9 +202,8 @@ impl MountedVolumesGuard<'_> {
     pub fn add_mount(&mut self, name: &str, volume: &FxVolumeAndRoot) {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let store = volume.volume().store();
         self.mounted_volumes.insert(
-            store.store_object_id(),
+            volume.volume().store().store_object_id(),
             MountedVolume {
                 sequence,
                 name: name.to_string(),
@@ -219,7 +218,7 @@ impl MountedVolumesGuard<'_> {
             )
         }
         if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-            callback(name, Some(Arc::clone(store)));
+            callback(name, Some(volume.volume().clone()));
         }
     }
 
@@ -962,7 +961,7 @@ impl VolumesDirectory {
     /// Sets a callback which is invoked when a volume is added.  When the volume is removed, this
     /// is called again with `None` as the second parameter.
     /// Note that this can only be set once per VolumesDirectory; repeated calls will panic.
-    pub fn set_on_mount_callback<F: Fn(&str, Option<Arc<ObjectStore>>) + Send + Sync + 'static>(
+    pub fn set_on_mount_callback<F: Fn(&str, Option<Arc<FxVolume>>) + Send + Sync + 'static>(
         &self,
         callback: F,
     ) {

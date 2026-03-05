@@ -1060,6 +1060,20 @@ impl ObjectStore {
         }
     }
 
+    /// Returns the id of the internal directory. Returns a NotFound error if this has not been
+    /// initialized.
+    pub fn get_internal_directory_id(self: &Arc<Self>) -> Result<u64, Error> {
+        if let Some(store_info) = self.store_info.lock().as_ref() {
+            if store_info.internal_directory_object_id == INVALID_OBJECT_ID {
+                Err(FxfsError::NotFound.into())
+            } else {
+                Ok(store_info.internal_directory_object_id)
+            }
+        } else {
+            Err(FxfsError::Unavailable.into())
+        }
+    }
+
     pub async fn get_or_create_internal_directory_id(self: &Arc<Self>) -> Result<u64, Error> {
         // Create the transaction first to use the object store lock.
         let mut transaction = self

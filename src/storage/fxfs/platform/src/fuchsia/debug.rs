@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::component::map_to_raw_status;
+use crate::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
+use crate::volume::FxVolume;
 use crate::volumes_directory::VolumesDirectory;
 use fidl_fuchsia_fxfs::DebugRequest;
 use fidl_fuchsia_io as fio;
@@ -13,7 +15,8 @@ use fxfs::lsm_tree::Query;
 use fxfs::lsm_tree::types::LayerIterator;
 use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::{
-    AttributeKey, DataObjectHandle, HandleOptions, ObjectKey, ObjectKeyData, ObjectStore,
+    AttributeKey, DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectKey, ObjectKeyData,
+    ObjectStore,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
@@ -174,6 +177,100 @@ impl FileLike for InternalFile {
     }
 }
 
+/// A way to list an `FxDirectory` without holding any strong references when idle.
+struct LazyInternalDirectory {
+    volume: Weak<FxVolume>,
+    object_id: u64,
+}
+
+impl LazyInternalDirectory {
+    async fn upgrade(&self) -> Result<Arc<FxDirectory>, Status> {
+        let volume = upgrade_weak(&self.volume)?;
+        let node = volume
+            .get_or_load_node(self.object_id, ObjectDescriptor::Directory, None)
+            .await
+            .map_err(|_| Status::INTERNAL)?;
+        node.into_any().downcast::<FxDirectory>().map_err(|_| Status::IO_DATA_INTEGRITY)
+    }
+}
+
+impl DirectoryEntry for LazyInternalDirectory {
+    fn open_entry(self: Arc<Self>, request: OpenRequest<'_>) -> Result<(), Status> {
+        request.open_dir(self)
+    }
+}
+
+impl GetEntryInfo for LazyInternalDirectory {
+    fn entry_info(&self) -> vfs::directory::entry::EntryInfo {
+        vfs::directory::entry::EntryInfo::new(self.object_id, fio::DirentType::Directory)
+    }
+}
+
+impl Node for LazyInternalDirectory {
+    async fn get_attributes(
+        &self,
+        requested_attributes: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        self.upgrade().await?.get_attributes(requested_attributes).await
+    }
+}
+
+impl Directory for LazyInternalDirectory {
+    fn deprecated_open(
+        self: Arc<Self>,
+        scope: ExecutionScope,
+        flags: fio::OpenFlags,
+        path: vfs::path::Path,
+        server_end: fidl::endpoints::ServerEnd<fio::NodeMarker>,
+    ) {
+        scope.clone().spawn(async move {
+            match self.upgrade().await {
+                Ok(dir) => dir.deprecated_open(scope, flags, path, server_end),
+                Err(status) => {
+                    let _ = server_end.close_with_epitaph(status);
+                }
+            }
+        });
+    }
+
+    fn open(
+        self: Arc<Self>,
+        scope: ExecutionScope,
+        path: vfs::path::Path,
+        flags: fio::Flags,
+        object_request: ObjectRequestRef<'_>,
+    ) -> Result<(), Status> {
+        scope.clone().spawn(object_request.take().handle_async(async move |object_request| {
+            match self.upgrade().await {
+                Ok(dir) => {
+                    let _ = dir.open(scope, path, flags, object_request);
+                }
+                Err(s) => object_request.take().shutdown(s),
+            }
+            Ok(())
+        }));
+        Ok(())
+    }
+
+    async fn read_dirents(
+        &self,
+        pos: &TraversalPosition,
+        sink: Box<dyn dirents_sink::Sink>,
+    ) -> Result<(TraversalPosition, Box<dyn dirents_sink::Sealed>), Status> {
+        self.upgrade().await?.read_dirents(pos, sink).await
+    }
+
+    fn register_watcher(
+        self: Arc<Self>,
+        _scope: ExecutionScope,
+        _mask: fio::WatchMask,
+        _watcher: vfs::directory::entry_container::DirectoryWatcher,
+    ) -> Result<(), Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
+    fn unregister_watcher(self: Arc<Self>, _key: usize) {}
+}
+
 /// Exposes a VFS directory containing debug entries for a given object store.
 pub struct ObjectStoreDirectory {
     vfs_root: Arc<vfs::directory::immutable::Simple>,
@@ -183,8 +280,25 @@ pub struct ObjectStoreDirectory {
 }
 
 impl ObjectStoreDirectory {
-    pub fn new(
+    /// Used when creating from an object store, for the root and root_parent stores.
+    fn new_from_object_store(
         store: Arc<ObjectStore>,
+        parent_store: Option<Arc<ObjectStore>>,
+    ) -> Result<Arc<Self>, Status> {
+        Self::new(store, None, parent_store)
+    }
+
+    /// Used for creating from a normal volume.
+    fn new_from_volume(
+        volume: Arc<FxVolume>,
+        parent_store: Option<Arc<ObjectStore>>,
+    ) -> Result<Arc<Self>, Status> {
+        Self::new(volume.store().clone(), Some(volume), parent_store)
+    }
+
+    fn new(
+        store: Arc<ObjectStore>,
+        volume: Option<Arc<FxVolume>>,
         parent_store: Option<Arc<ObjectStore>>,
     ) -> Result<Arc<Self>, Status> {
         let vfs_root = vfs::directory::immutable::simple();
@@ -203,6 +317,16 @@ impl ObjectStoreDirectory {
                 store_object_id: store.store_object_id(),
             }),
         )?;
+
+        if let Some(volume) = volume {
+            if let Ok(object_id) = store.get_internal_directory_id() {
+                vfs_root.add_entry(
+                    "internal_storage",
+                    Arc::new(LazyInternalDirectory { volume: Arc::downgrade(&volume), object_id })
+                        as Arc<dyn DirectoryEntry>,
+                )?;
+            }
+        }
 
         // TODO(b/313524454):
         //  * graveyard_dir
@@ -437,9 +561,13 @@ impl FxfsDebug {
     ) -> Result<Arc<Self>, zx::Status> {
         let vfs_root = vfs::directory::immutable::simple();
 
-        let root_parent_store = ObjectStoreDirectory::new(fs.root_parent_store(), None)?;
+        let root_parent_store =
+            ObjectStoreDirectory::new_from_object_store(fs.root_parent_store(), None)?;
         vfs_root.add_entry("root_parent_store", root_parent_store.vfs_root.clone())?;
-        let root_store = ObjectStoreDirectory::new(fs.root_store(), Some(fs.root_parent_store()))?;
+        let root_store = ObjectStoreDirectory::new_from_object_store(
+            fs.root_store(),
+            Some(fs.root_parent_store()),
+        )?;
         root_parent_store.vfs_root.add_entry("root_store", root_store.vfs_root.clone())?;
         root_parent_store.vfs_root.add_entry(
             "journal",
@@ -488,10 +616,12 @@ impl FxfsDebug {
         self.vfs_root.clone()
     }
 
-    fn add_volume(&self, name: &str, volume: Option<Arc<ObjectStore>>) -> Result<(), Status> {
+    fn add_volume(&self, name: &str, volume: Option<Arc<FxVolume>>) -> Result<(), Status> {
         if let Some(volume) = volume {
-            let object_store_dir =
-                ObjectStoreDirectory::new(volume, Some(upgrade_weak(&self.root_store)?))?;
+            let object_store_dir = ObjectStoreDirectory::new_from_volume(
+                volume,
+                Some(upgrade_weak(&self.root_store)?),
+            )?;
             let node = object_store_dir.vfs_root.clone();
             self.volumes.lock().insert(name.to_string(), object_store_dir);
             self.volumes_dir.add_entry(name, node)
