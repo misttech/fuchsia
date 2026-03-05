@@ -8,6 +8,22 @@ import abc
 from honeydew.affordances import affordance
 
 
+class AsyncLocation(abc.ABC):
+    """Abstract base class for an async Location affordance."""
+
+    @abc.abstractmethod
+    async def set_region(self, region_code: str) -> None:
+        """Set regulatory region.
+
+        Args:
+            region_code: 2-byte ASCII string.
+
+        Raises:
+            HoneydewLocationError: Error from location stack
+            TypeError: Invalid region_code format
+        """
+
+
 class Location(affordance.Affordance):
     """Abstract base class for Location affordance."""
 
@@ -23,3 +39,7 @@ class Location(affordance.Affordance):
             HoneydewLocationError: Error from location stack
             TypeError: Invalid region_code format
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncLocation:
+        """Returns the async version of Location."""

@@ -685,17 +685,17 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def location(self) -> location.Location:
+    def location(self) -> location.AsyncLocation:
         """Returns a location affordance object.
 
         Returns:
-            location.Location object
+            location.AsyncLocation object
         """
-        return location_using_fc.LocationUsingFc(
+        return location_using_fc.AsyncLocationUsingFc(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
+            reboot_affordance=self,
         )
 
     @properties.Affordance

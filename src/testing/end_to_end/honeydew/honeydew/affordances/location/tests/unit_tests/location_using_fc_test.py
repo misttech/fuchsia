@@ -71,31 +71,37 @@ class LocationFCTests(unittest.TestCase):
 
     def test_init_register_for_on_device_boot(self) -> None:
         """Test if Location registers on_device_boot."""
-        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once_with(
-            self.location_obj._connect_proxy
+        self.reboot_affordance_obj.as_async().register_for_on_device_boot.assert_called_once_with(
+            self.location_obj._inner._connect_proxy
         )
 
     def test_init_connect_proxy(self) -> None:
         """Test if Location connects to
         fuchsia.location.namedplace/RegulatoryRegionConfigurator."""
-        self.assertIsNotNone(self.location_obj._regulatory_region_configurator)
+        self.assertIsNotNone(
+            self.location_obj._inner._regulatory_region_configurator
+        )
 
     def test_set_region_works(self) -> None:
         """Test if set_region works with valid input."""
-        self.location_obj._regulatory_region_configurator = mock.MagicMock(
-            spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
+        self.location_obj._inner._regulatory_region_configurator = (
+            mock.MagicMock(
+                spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
+            )
         )
-        self.location_obj._regulatory_region_configurator.set_region.return_value = (
+        self.location_obj._inner._regulatory_region_configurator.set_region.return_value = (
             None
         )
         self.location_obj.set_region("AT")
 
     def test_set_region_fails_internal_error(self) -> None:
         """Verify set_region fails when the location stack errors."""
-        self.location_obj._regulatory_region_configurator = mock.MagicMock(
-            spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
+        self.location_obj._inner._regulatory_region_configurator = (
+            mock.MagicMock(
+                spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
+            )
         )
-        self.location_obj._regulatory_region_configurator.set_region.side_effect = ZxStatus(
+        self.location_obj._inner._regulatory_region_configurator.set_region.side_effect = ZxStatus(
             ZxStatus.ZX_ERR_INTERNAL
         )
         with self.assertRaises(HoneydewLocationError):

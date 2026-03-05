@@ -31,7 +31,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
-from honeydew.affordances.location.location import Location
+from honeydew.affordances.location.location import AsyncLocation
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
@@ -166,7 +166,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         fuchsia_controller: fc_transport.FuchsiaController,
         reboot_affordance: affordances_capable.RebootCapableDevice,
         fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
-        location: Location,
+        location: AsyncLocation,
     ) -> None:
         """Create a WlanPolicy Fuchsia Controller affordance.
 
@@ -311,7 +311,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
     async def _set_country_code(self, country_code: CountryCode) -> None:
         """Sets DUT country code."""
         _LOGGER.info("Setting DUT country code to %s...", country_code)
-        self._location.set_region(country_code)
+        await self._location.set_region(country_code)
         _LOGGER.info(
             "Waiting for configuration of all PHYs with country code %s...",
             country_code,

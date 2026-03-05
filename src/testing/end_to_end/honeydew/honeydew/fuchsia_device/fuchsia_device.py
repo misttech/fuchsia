@@ -30,7 +30,7 @@ from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import wlan_policy_ap
 from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.hello_world import hello_world
-from honeydew.affordances.location import location
+from honeydew.affordances.location import location, location_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
 )
@@ -339,7 +339,12 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def location(self) -> location.Location:
-        return self._inner.location
+        return location_using_fc.LocationUsingFc(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
 
     @properties.Affordance
     def hello_world(self) -> hello_world.HelloWorld:

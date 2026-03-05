@@ -686,7 +686,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        location_using_fc.LocationUsingFc,
+        location_using_fc.AsyncLocationUsingFc,
         "__init__",
         autospec=True,
         return_value=None,

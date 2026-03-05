@@ -6,6 +6,7 @@
 import logging
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
+import fuchsia_async_extension
 from fuchsia_controller_py import ZxStatus
 
 from honeydew import affordances_capable, errors
@@ -32,23 +33,23 @@ _REGULATORY_REGION_CONFIGURATOR_PROXY = FidlEndpoint(
 )
 
 
-class LocationUsingFc(location.Location):
-    """Location affordance implemented with Fuchsia Controller."""
+class AsyncLocationUsingFc(location.AsyncLocation):
+    """Async location affordance implemented with Fuchsia Controller."""
 
     def __init__(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
-        """Create a location Fuchsia Controller affordance.
+        """Create an Async location Fuchsia Controller affordance.
 
         Args:
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements RebootCapableDevice.
+            reboot_affordance: Object that implements AsyncRebootCapableDevice.
         """
         super().__init__()
 
@@ -100,7 +101,7 @@ class LocationUsingFc(location.Location):
             )
         )
 
-    def set_region(self, region_code: str) -> None:
+    async def set_region(self, region_code: str) -> None:
         """Set regulatory region.
 
         Args:
@@ -124,4 +125,56 @@ class LocationUsingFc(location.Location):
             ) from status
 
         # TODO(http://b/370600007): Validate region was set using
-        # RegulatoryRegionWatcher.GetRegionUpdate().
+        # RegulatoryRegionWatcher.GetRegionUpdate()
+
+
+class LocationUsingFc(location.Location):
+    """Location affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+    ) -> None:
+        """Create a location Fuchsia Controller affordance.
+
+        Args:
+            device_name: Device name returned by `ffx target list`.
+            ffx: FFX transport.
+            fuchsia_controller: Fuchsia Controller transport.
+            reboot_affordance: Object that implements RebootCapableDevice.
+        """
+        self._inner = AsyncLocationUsingFc(
+            device_name=device_name,
+            ffx=ffx,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Check if location is supported on the DUT.
+
+        Raises:
+            NotSupportedError: Location affordance is not supported by Fuchsia device.
+        """
+        self._inner.verify_supported()
+
+    def set_region(self, region_code: str) -> None:
+        """Set regulatory region.
+
+        Args:
+            region_code: 2-byte ASCII string.
+
+        Raises:
+            HoneydewLocationError: Error from location stack
+            TypeError: Invalid region_code format
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set_region(region_code)
+        )
+
+    def as_async(self) -> AsyncLocationUsingFc:
+        """Returns the async version of Location."""
+        return self._inner
