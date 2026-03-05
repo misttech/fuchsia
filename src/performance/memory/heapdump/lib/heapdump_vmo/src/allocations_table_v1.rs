@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use memory_mapped_vmo::MemoryMappedVmo;
 use static_assertions::const_assert;
 use std::collections::HashSet;
 use std::mem::{align_of, size_of};
 use std::ops::Deref;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Relaxed, SeqCst};
+use zerocopy::FromBytes;
 
 pub use crate::resources_table_v1::ResourceKey;
-use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
 
 type NodeIndex = u32;
 type BucketHeads = [AtomicNodeIndex; NUM_BUCKETS];
@@ -23,7 +24,7 @@ const_assert!(MIN_ALIGNMENT % align_of::<BucketHeads>() == 0);
 
 // Define AtomicNodeIndex as a newtype so we can implement traits on it.
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 struct AtomicNodeIndex(AtomicU32);
 
 impl AtomicNodeIndex {
@@ -40,11 +41,8 @@ impl Deref for AtomicNodeIndex {
     }
 }
 
-// SAFETY: Our accessor functions never access this type's memory non-atomically.
-unsafe impl MemoryMappable for AtomicNodeIndex {}
-
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 pub struct Node {
     next: AtomicNodeIndex,
     pub address: u64,
@@ -53,8 +51,6 @@ pub struct Node {
     pub thread_info_key: ResourceKey,
     pub stack_trace_key: ResourceKey,
 }
-
-unsafe impl MemoryMappable for Node {}
 
 /// Computes the capacity (number of nodes) of a memory region given its size (bytes).
 fn compute_nodes_count(num_bytes: usize) -> Result<usize, crate::Error> {

@@ -15,6 +15,7 @@ rustc_library("memory_mapped_vmo") {
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   test_deps = [ "//third_party/rust_crates:assert_matches" ]

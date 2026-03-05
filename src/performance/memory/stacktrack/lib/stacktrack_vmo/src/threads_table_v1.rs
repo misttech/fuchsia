@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
+use memory_mapped_vmo::MemoryMappedVmo;
 use static_assertions::const_assert;
 use std::mem::{align_of, size_of};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU32, Ordering};
+use zerocopy::FromBytes;
 
 pub type NodeIndex = u32;
 
@@ -18,7 +19,7 @@ pub const MAX_FRAMES: usize = 128;
 
 // Define AtomicNodeIndex as a newtype so we can implement traits on it.
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 pub struct AtomicNodeIndex(AtomicU32);
 
 impl AtomicNodeIndex {
@@ -35,21 +36,17 @@ impl Deref for AtomicNodeIndex {
     }
 }
 
-// SAFETY: Our accessor functions never access this type's memory non-atomically.
-unsafe impl MemoryMappable for AtomicNodeIndex {}
-
 /// VMO Header.
 #[repr(C)]
+#[derive(Debug, FromBytes)]
 pub struct Header {
     /// Index of the first node in the list.
     head: AtomicNodeIndex,
 }
 
-// SAFETY: It contains only one field, which is itself MemoryMappable.
-unsafe impl MemoryMappable for Header {}
-
 /// A node in the stack track VMO.
 #[repr(C)]
+#[derive(Debug, FromBytes)]
 pub struct Node {
     /// Index of the next node.
     next: AtomicNodeIndex,
@@ -63,25 +60,19 @@ pub struct Node {
     pub frames: [Frame; MAX_FRAMES],
 }
 
-// SAFETY: It contains only fields that are themselves MemoryMappable.
-unsafe impl MemoryMappable for Node {}
-
 // Ensure Header fits in Node 0.
 const_assert!(size_of::<Header>() < size_of::<Node>());
 const_assert!(align_of::<Header>() <= align_of::<Node>());
 
 /// Information about a stack frame.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, FromBytes, PartialEq)]
 pub struct Frame {
     // LINT.IfChange
     pub pc: u64,
     pub fp: u64,
     // LINT.ThenChange(//src/performance/memory/stacktrack/instrumentation/src/unwind.cc)
 }
-
-// SAFETY: It contains only fields that are themselves MemoryMappable.
-unsafe impl MemoryMappable for Frame {}
 
 /// Writer for the Stacktrack VMO.
 pub struct StacktrackWriter {

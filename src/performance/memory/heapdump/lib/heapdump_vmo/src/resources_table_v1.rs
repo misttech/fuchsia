@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use memory_mapped_vmo::MemoryMappedVmo;
 use std::alloc::Layout;
 use std::mem::{align_of, size_of, size_of_val};
-
-use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
+use zerocopy::FromBytes;
 
 /// An offset within the VMO.
 type Offset = u32;
@@ -24,7 +24,7 @@ const NUM_STACK_BUCKETS: usize = 1 << 13;
 type StackBucketHeads = [Offset; NUM_STACK_BUCKETS];
 
 /// A resource key is just an offset into the VMO.
-#[derive(Clone, Copy, Eq, Debug, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct ResourceKey(Offset);
 
@@ -41,14 +41,11 @@ impl ResourceKey {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 pub struct ThreadInfo {
     pub koid: zx::sys::zx_koid_t,
     pub name: zx::Name,
 }
-
-// SAFETY: ThreadInfo only contains memory-mappable types and we never parse the name in it.
-unsafe impl MemoryMappable for ThreadInfo {}
 
 /// Mediates write access to a VMO containing compressed stack traces and thread info structs.
 ///

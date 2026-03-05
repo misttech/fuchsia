@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use std::mem::{align_of, size_of};
+use zerocopy::FromBytes;
 
 #[derive(Debug)]
 pub enum Error {
@@ -97,7 +98,7 @@ impl MemoryMappedVmo {
     /// Returns a reference to a slice of elements in the VMO.
     ///
     /// This method validates the alignment and the bounds against the VMO size.
-    pub fn get_slice<'a, T: MemoryMappable>(
+    pub fn get_slice<'a, T: FromBytes>(
         &'a self,
         byte_offset: usize,
         num_elements: usize,
@@ -109,7 +110,7 @@ impl MemoryMappedVmo {
     /// Returns a reference to an element in the VMO.
     ///
     /// This method validates the alignment and the bounds against the VMO size.
-    pub fn get_object<'a, T: MemoryMappable>(&'a self, byte_offset: usize) -> Result<&'a T, Error> {
+    pub fn get_object<'a, T: FromBytes>(&'a self, byte_offset: usize) -> Result<&'a T, Error> {
         let ptr = self.validate_and_get_ptr(byte_offset, 1)?;
         unsafe { Ok(&*ptr) }
     }
@@ -117,7 +118,7 @@ impl MemoryMappedVmo {
     /// Returns a mutable reference to a slice of elements in the VMO.
     ///
     /// This method validates the alignment and the bounds against the VMO size.
-    pub fn get_slice_mut<'a, T: MemoryMappable>(
+    pub fn get_slice_mut<'a, T: FromBytes>(
         &'a mut self,
         byte_offset: usize,
         num_elements: usize,
@@ -129,7 +130,7 @@ impl MemoryMappedVmo {
     /// Returns a mutable reference to an element in the VMO.
     ///
     /// This method validates the alignment and the bounds against the VMO size.
-    pub fn get_object_mut<'a, T: MemoryMappable>(
+    pub fn get_object_mut<'a, T: FromBytes>(
         &'a mut self,
         byte_offset: usize,
     ) -> Result<&'a mut T, Error> {
@@ -148,26 +149,6 @@ impl Drop for MemoryMappedVmo {
         }
     }
 }
-
-/// Trait for types that can be stored into a MemoryMappedVmo.
-///
-/// # Safety
-/// - In general, since VMOs can be received from potentially hostile processes, types that
-///   implement this trait must be prepared to handle any possible sequence of bytes safely.
-/// - They must not contain references/pointers, as they are useless across process boundaries.
-///
-/// These requirements are similar to zerocopy::FromBytes, but we define our own trait because
-/// zerocopy's FromBytes derive macro does not accept some types that we know that, in the way
-/// we use them, can be stored safely. Having our own trait makes it possible to mark such types
-/// as MemoryMappable.
-pub unsafe trait MemoryMappable {}
-
-unsafe impl MemoryMappable for u8 {}
-unsafe impl MemoryMappable for u16 {}
-unsafe impl MemoryMappable for u32 {}
-unsafe impl MemoryMappable for u64 {}
-unsafe impl<T: MemoryMappable> MemoryMappable for [T] {}
-unsafe impl<T: MemoryMappable, const N: usize> MemoryMappable for [T; N] {}
 
 #[cfg(test)]
 mod tests {

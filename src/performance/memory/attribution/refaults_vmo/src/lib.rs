@@ -2,18 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
+use memory_mapped_vmo::MemoryMappedVmo;
 use std::sync::atomic::{AtomicU64, Ordering};
 use zx::{HandleBased, Rights};
-
-struct SharedAtomicU64(AtomicU64);
-
-unsafe impl MemoryMappable for SharedAtomicU64 {}
 
 pub struct PageRefaultCounter {
     vmo: zx::Vmo,
     _storage: MemoryMappedVmo,
-    count_ptr: *const SharedAtomicU64,
+    count_ptr: *const AtomicU64,
 }
 
 // SAFETY: both `vmo`` and `_storage`` are Send, and they are not modified once created (thus, they
@@ -31,34 +27,34 @@ impl PageRefaultCounter {
 
         // SAFETY: all accesses to [storage] are synchronized (through an Atomic).
         let mut storage: MemoryMappedVmo = unsafe { MemoryMappedVmo::new_readwrite(&vmo)? };
-        let count_ptr: *mut SharedAtomicU64 =
-            storage.get_object_mut::<SharedAtomicU64>(0).map_err(|_| zx::Status::INVALID_ARGS)?;
+        let count_ptr: *mut AtomicU64 =
+            storage.get_object_mut::<AtomicU64>(0).map_err(|_| zx::Status::INVALID_ARGS)?;
         Ok(PageRefaultCounter { vmo: vmo, _storage: storage, count_ptr })
     }
 
     /// Creates a new read-only PageRefaultCounter from the provided VMO. The VMO must have the
     /// READ, MAP, and GET_PROPERTY rights.
     pub fn from_vmo_readonly(vmo: zx::Vmo) -> Result<Self, zx::Status> {
-        if vmo.get_size()? < size_of::<SharedAtomicU64>().try_into().unwrap() {
+        if vmo.get_size()? < size_of::<AtomicU64>().try_into().unwrap() {
             return Err(zx::Status::INVALID_ARGS);
         }
         // SAFETY: all accesses to [storage] are synchronized (through an Atomic).
         let storage: MemoryMappedVmo = unsafe { MemoryMappedVmo::new_readonly(&vmo)? };
-        let count_ptr: *const SharedAtomicU64 =
-            storage.get_object::<SharedAtomicU64>(0).map_err(|_| zx::Status::INVALID_ARGS)?;
+        let count_ptr: *const AtomicU64 =
+            storage.get_object::<AtomicU64>(0).map_err(|_| zx::Status::INVALID_ARGS)?;
         Ok(PageRefaultCounter { vmo: vmo, _storage: storage, count_ptr })
     }
 
     pub fn increment(&self, count: u64, order: Ordering) {
         // SAFETY: `self.count_ptr` is non-null per construction, and valid as long as `_storage`
         // is valid.
-        unsafe { &*self.count_ptr }.0.fetch_add(count, order);
+        unsafe { &*self.count_ptr }.fetch_add(count, order);
     }
 
     pub fn read(&self, order: Ordering) -> u64 {
         // SAFETY: `self.count_ptr` is non-null per construction, and valid as long as `_storage`
         // is valid.
-        unsafe { &*self.count_ptr }.0.load(order)
+        unsafe { &*self.count_ptr }.load(order)
     }
 
     /// Returns a read-only handle for the backing VMO.

@@ -19,6 +19,7 @@ rustc_library("stacktrack_vmo") {
     "//src/performance/memory/memory_mapped_vmo",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   test_deps = [ "//third_party/rust_crates:itertools" ]
