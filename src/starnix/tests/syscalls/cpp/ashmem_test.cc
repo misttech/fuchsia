@@ -5,6 +5,7 @@
 #include "third_party/android/platform/bionic/libc/kernel/uapi/linux/ashmem.h"
 
 #include <fcntl.h>
+#include <lib/stdcompat/string_view.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -1177,7 +1178,7 @@ TEST_F(AshmemTest, ProcMaps) {
   bool has_ashmap = false;
 
   while (getline(proc_maps, line)) {
-    if (line.find("/dev/ashmem/hello") != std::string::npos) {
+    if (cpp23::contains(line, "/dev/ashmem/hello")) {
       has_ashmap = true;
       break;
     }

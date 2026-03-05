@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/stdcompat/string_view.h>
 #include <poll.h>
 #include <string.h>
 #include <sys/klog.h>
@@ -89,7 +90,7 @@ TEST_F(SyslogTest, SyslogReadAll) {
       fprintf(stderr, "Failed to read: %s\n", strerror(errno));
       FAIL();
     }
-  } while (buf.find("Hello from the read-all test") == std::string::npos);
+  } while (!cpp23::contains(buf, "Hello from the read-all test"));
 }
 
 TEST_F(SyslogTest, Read) {
@@ -143,8 +144,8 @@ TEST_F(SyslogTest, Read) {
     fprintf(stderr, "Failed to read: %s\n", strerror(errno));
     FAIL();
   }
-  EXPECT_NE(buf_all.find("SyslogRead -- first"), std::string::npos);
-  EXPECT_NE(buf_all.find("SyslogRead -- second"), std::string::npos);
+  EXPECT_TRUE(cpp23::contains(buf_all, "SyslogRead -- first"));
+  EXPECT_TRUE(cpp23::contains(buf_all, "SyslogRead -- second"));
 
   close(kmsg_fd);
 }

@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <lib/fit/function.h>
+#include <lib/stdcompat/string_view.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
@@ -568,8 +569,8 @@ void WaitUntilBlocked(pid_t target, bool ignore_tracer) {
     }
     std::stringstream buffer;
     buffer << t.rdbuf();
-    if (buffer.str().find("S") != std::string::npos ||
-        (!ignore_tracer && buffer.str().find("t") != std::string::npos)) {
+    if (cpp23::contains(buffer.str(), "S") ||
+        (!ignore_tracer && cpp23::contains(buffer.str(), "t"))) {
       break;
     }
     // Give up if we don't seem to be getting to sleep.

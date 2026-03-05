@@ -5,6 +5,7 @@
 #include <lib/cmdline/args_parser.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/result.h>
+#include <lib/stdcompat/string_view.h>
 #include <sys/mount.h>
 
 #include <cstring>
@@ -50,7 +51,7 @@ void LoadPolicy(const std::string& name) {
 void PrepareTestEnvironment() {
   // Check if selinuxfs is already mounted as a proxy for environment setup.
   auto mounts = ReadFile("/proc/mounts");
-  if (mounts.is_ok() && mounts.value().find("/sys/fs/selinux selinuxfs") != std::string::npos) {
+  if (mounts.is_ok() && cpp23::contains(mounts.value(), "/sys/fs/selinux selinuxfs")) {
     // Environment appears to be already initialized.
     return;
   }

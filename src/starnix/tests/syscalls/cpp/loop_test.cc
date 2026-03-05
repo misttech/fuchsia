@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <ftw.h>
+#include <lib/stdcompat/string_view.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -157,7 +158,7 @@ TEST_F(LoopTest, RemoveLoopDeviceFromKernelDeviceRegistry) {
   ASSERT_TRUE(dir);
   while (struct dirent* entry = readdir(dir)) {
     std::string name = entry->d_name;
-    if (name.find("loop") != std::string::npos) {
+    if (cpp23::contains(name, "loop")) {
       std::string device_path = "/dev/" + name;
       int device_fd = open(device_path.c_str(), O_RDONLY);
       ASSERT_GT(device_fd, 0) << "device path is: " << device_path << strerror(errno);

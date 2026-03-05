@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
+#include <lib/stdcompat/string_view.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -166,7 +167,7 @@ class ContextManagerPermission : public BinderTest,
 TEST_P(ContextManagerPermission, BecomeServiceManager) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   const auto label = ContextManagerPermission::GetParam();
-  bool expect_success = label.find("_no_") == std::string::npos;
+  bool expect_success = !cpp23::contains(label, "_no_");
   ASSERT_TRUE(RunSubprocessAs(label, [&] {
     fbl::unique_fd binder = OpenBinder(temp_dir_.path());
     EXPECT_TRUE(binder) << strerror(errno);
@@ -189,7 +190,7 @@ class CallPermission : public BinderTest, public testing::WithParamInterface<std
 TEST_P(CallPermission, DoCall) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   std::string_view label = CallPermission::GetParam();
-  bool expect_success = label.find("_no_") == std::string::npos;
+  bool expect_success = !cpp23::contains(label, "_no_");
 
   auto context_manager = ScopedContextManagerProcess(temp_dir_.path());
 
@@ -243,8 +244,8 @@ class Impersonation
 TEST_P(Impersonation, ImpersonateViaTransition) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [pretransition_label, posttransition_label] = Impersonation::GetParam();
-  bool expect_success = pretransition_label.find("_allow_") != std::string::npos &&
-                        posttransition_label.find("_allow_") != std::string::npos;
+  bool expect_success = cpp23::contains(pretransition_label, "_allow_") &&
+                        cpp23::contains(posttransition_label, "_allow_");
 
   test_helper::Rendezvous context_manager_ready = test_helper::MakeRendezvous();
 

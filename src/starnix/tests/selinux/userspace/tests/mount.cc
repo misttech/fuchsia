@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/stdcompat/string_view.h>
 #include <mntent.h>
 #include <sys/mount.h>
 #include <unistd.h>
@@ -36,9 +37,9 @@ TEST(MountTest, NoSelinuxMountOptions) {
   ASSERT_THAT(umount("/mount_tests"), SyscallSucceeds());
   ASSERT_THAT(rmdir("/mount_tests"), SyscallSucceeds());
 
-  EXPECT_NE(mount_options.find("nosuid"), std::string::npos);
-  EXPECT_NE(mount_options.find("noexec"), std::string::npos);
-  EXPECT_NE(mount_options.find("nodev"), std::string::npos);
+  EXPECT_TRUE(cpp23::contains(mount_options, "nosuid"));
+  EXPECT_TRUE(cpp23::contains(mount_options, "noexec"));
+  EXPECT_TRUE(cpp23::contains(mount_options, "nodev"));
 }
 
 TEST(MountTest, WithContextOption) {
@@ -51,8 +52,8 @@ TEST(MountTest, WithContextOption) {
   ASSERT_THAT(umount("/mount_tests"), SyscallSucceeds());
   ASSERT_THAT(rmdir("/mount_tests"), SyscallSucceeds());
 
-  EXPECT_EQ(mount_options.find("seclabel"), std::string::npos);
-  EXPECT_NE(mount_options.find("context="), std::string::npos);
+  EXPECT_FALSE(cpp23::contains(mount_options, "seclabel"));
+  EXPECT_TRUE(cpp23::contains(mount_options, "context="));
 }
 
 TEST(MountTest, WithSeclabel) {
@@ -65,7 +66,7 @@ TEST(MountTest, WithSeclabel) {
   ASSERT_THAT(umount("/with_seclabel"), SyscallSucceeds());
   ASSERT_THAT(rmdir("/with_seclabel"), SyscallSucceeds());
 
-  EXPECT_NE(mount_options.find("seclabel"), std::string::npos);
+  EXPECT_TRUE(cpp23::contains(mount_options, "seclabel"));
 }
 
 TEST(MountTest, WithoutSeclabel) {
@@ -79,7 +80,7 @@ TEST(MountTest, WithoutSeclabel) {
   ASSERT_THAT(umount("/without_seclabel"), SyscallSucceeds());
   ASSERT_THAT(rmdir("/without_seclabel"), SyscallSucceeds());
 
-  EXPECT_EQ(mount_options.find("seclabel"), std::string::npos);
+  EXPECT_FALSE(cpp23::contains(mount_options, "seclabel"));
 }
 
 }  // namespace
