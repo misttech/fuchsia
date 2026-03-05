@@ -182,4 +182,60 @@ inline void Scheduler::RescheduleCpus(cpu_mask_t cpu_mask) {
   RescheduleMask(cpu_mask);
 }
 
+inline zx_thread_state_t SchedUserThreadState(const Thread* thread)
+    TA_REQ_SHARED(thread->get_lock()) {
+  switch (thread->state()) {
+    case THREAD_INITIAL:
+    case THREAD_READY:
+      return ZX_THREAD_STATE_NEW;
+    case THREAD_RUNNING:
+      return ZX_THREAD_STATE_RUNNING;
+    case THREAD_BLOCKED:
+    case THREAD_BLOCKED_READ_LOCK:
+    case THREAD_SLEEPING:
+      return ZX_THREAD_STATE_BLOCKED;
+    case THREAD_SUSPENDED:
+      return ZX_THREAD_STATE_SUSPENDED;
+    case THREAD_DEATH:
+      return ZX_THREAD_STATE_DEAD;
+    default:
+      return UINT32_MAX;
+  }
+}
+
+constexpr int32_t kIdleWeight = ktl::numeric_limits<int32_t>::min();
+
+// Writes a context switch record to the ktrace buffer. This is always enabled
+// so that user mode tracing can track which threads are running.
+inline void SchedTraceContextSwitch(Thread* current_thread, Thread* next_thread,
+                                    cpu_num_t current_cpu)
+    TA_REQ(current_thread->get_lock(), next_thread->get_lock()) {
+  SchedulerState& current_state = current_thread->scheduler_state();
+  SchedulerState& next_state = next_thread->scheduler_state();
+  KTRACE_CONTEXT_SWITCH(
+      "kernel:sched", current_cpu, SchedUserThreadState(current_thread), current_thread->fxt_ref(),
+      next_thread->fxt_ref(),
+      ("outgoing_weight",
+       current_thread->IsIdle() ? kIdleWeight : current_state.GetWeightOrPackedDeadlineParams()),
+      ("incoming_weight",
+       next_thread->IsIdle() ? kIdleWeight : next_state.GetWeightOrPackedDeadlineParams()));
+}
+
+// Writes a thread wakeup record to the ktrace buffer. This is always enabled
+// so that user mode tracing can track which threads are waking.
+inline void SchedTraceWakeup(Thread* thread, cpu_num_t target_cpu) TA_REQ(thread->get_lock()) {
+  SchedulerState& state = thread->scheduler_state();
+  const Thread* current_thread = Thread::Current::Get();
+  if (!current_thread->IsIdle()) {
+    KTRACE_THREAD_WAKEUP(
+        "kernel:sched", target_cpu, thread->fxt_ref(),
+        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()),
+        ("waker", ktrace::Koid{current_thread->tid()}));
+  } else {
+    KTRACE_THREAD_WAKEUP(
+        "kernel:sched", target_cpu, thread->fxt_ref(),
+        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()));
+  }
+}
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_INLINE_H_

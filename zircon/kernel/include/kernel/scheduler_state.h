@@ -23,6 +23,7 @@
 #include <ffl/string.h>
 #include <kernel/cpu.h>
 #include <kernel/spinlock.h>
+#include <ktl/algorithm.h>
 #include <ktl/limits.h>
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
@@ -86,6 +87,12 @@ using SchedTime = ffl::Fixed<zx_instant_mono_t, 0>;
 // Ensure these types stay in sync with lib/sched.
 static_assert(ktl::is_same_v<SchedDuration, sched::Duration>);
 static_assert(ktl::is_same_v<SchedTime, sched::Time>);
+
+// A smaller duration type that can represent up to ~2.15 seconds. This is
+// longer than any useful deadline scheduling period.
+// TODO(eieio): Use this type more extensively for profile parameter values to
+// save space.
+using SchedCompactDuration = ffl::Fixed<int32_t, 0>;
 
 // Simplify trace event arguments by automatically converting fixed point values with zero
 // fractional bits to the corresponding integral records.
@@ -226,8 +233,8 @@ class SchedulerState {
           inheritable{true},  // Deadline profiles are always inheritable.
           deadline{deadline_params} {}
 
-    bool IsFair() const { return discipline == SchedDiscipline::Fair; }
-    bool IsDeadline() const { return discipline == SchedDiscipline::Deadline; }
+    constexpr bool IsFair() const { return discipline == SchedDiscipline::Fair; }
+    constexpr bool IsDeadline() const { return discipline == SchedDiscipline::Deadline; }
 
     SchedDiscipline discipline{SchedDiscipline::Fair};
     bool inheritable{true};
@@ -316,52 +323,103 @@ class SchedulerState {
   struct EffectiveProfile
       : public EffectiveProfileDirtyTracker<kSchedulerExtraInvariantValidation> {
     EffectiveProfile() = default;
-    explicit EffectiveProfile(const BaseProfile& base_profile)
-        : params_{FromBaseProfile(base_profile)} {}
 
-    SchedDiscipline discipline() const {
-      return ktl::holds_alternative<SchedWeight>(params_) ? SchedDiscipline::Fair
-                                                          : SchedDiscipline::Deadline;
+    EffectiveProfile(const EffectiveProfile&) = default;
+    EffectiveProfile& operator=(const EffectiveProfile&) = default;
+
+    explicit constexpr EffectiveProfile(const BaseProfile& base_profile) {
+      if (base_profile.IsFair()) {
+        DEBUG_ASSERT(base_profile.fair.weight >= kMinFairWeight);
+        weight_ = base_profile.fair.weight;
+      } else {
+        DEBUG_ASSERT(base_profile.deadline.capacity_ns <= SchedCompactDuration::Max());
+        DEBUG_ASSERT(base_profile.deadline.deadline_ns <= SchedCompactDuration::Max());
+        weight_ = kMaxDeadlineWeight;
+        capacity_ns_ = SchedCompactDuration{base_profile.deadline.capacity_ns};
+        deadline_ns_ = SchedCompactDuration{base_profile.deadline.deadline_ns};
+        utilization_ = base_profile.deadline.utilization;
+      }
     }
 
-    bool IsFair() const { return discipline() == SchedDiscipline::Fair; }
-    bool IsDeadline() const { return discipline() == SchedDiscipline::Deadline; }
+    constexpr SchedDiscipline discipline() const {
+      return weight_ >= kMinFairWeight ? SchedDiscipline::Fair : SchedDiscipline::Deadline;
+    }
 
-    void SetFair(SchedWeight weight) { params_.emplace<SchedWeight>(weight); }
-    void SetDeadline(SchedDeadlineParams params) { params_.emplace<SchedDeadlineParams>(params); }
+    constexpr bool IsFair() const { return discipline() == SchedDiscipline::Fair; }
+    constexpr bool IsDeadline() const { return discipline() == SchedDiscipline::Deadline; }
 
-    SchedWeight& weight() {
+    constexpr void SetFair(SchedWeight weight) {
+      DEBUG_ASSERT(weight >= kMinFairWeight);
+      weight_ = weight;
+    }
+    constexpr void SetDeadline(SchedDeadlineParams deadline_params) {
+      weight_ = kMaxDeadlineWeight;
+      capacity_ns_ = SchedCompactDuration{deadline_params.capacity_ns};
+      deadline_ns_ = SchedCompactDuration{deadline_params.deadline_ns};
+      utilization_ = deadline_params.utilization;
+    }
+
+    constexpr SchedWeight weight() const {
       DEBUG_ASSERT(IsFair());
-      return ktl::get<SchedWeight>(params_);
+      return weight_;
     }
-    SchedWeight weight() const {
-      DEBUG_ASSERT(IsFair());
-      return ktl::get<SchedWeight>(params_);
+    constexpr SchedWeight weight_or(SchedWeight alternative) const {
+      return IsFair() ? weight_ : alternative;
     }
-    SchedWeight weight_or(SchedWeight alternative) const {
-      return IsFair() ? ktl::get<SchedWeight>(params_) : alternative;
+    constexpr SchedDeadlineParams deadline() const {
+      DEBUG_ASSERT(IsDeadline());
+      return SchedDeadlineParams{SchedDuration{capacity_ns_}, SchedDuration{deadline_ns_},
+                                 utilization_};
     }
 
-    SchedDeadlineParams& deadline() {
-      DEBUG_ASSERT(IsDeadline());
-      return ktl::get<SchedDeadlineParams>(params_);
-    }
-    SchedDeadlineParams deadline() const {
-      DEBUG_ASSERT(IsDeadline());
-      return ktl::get<SchedDeadlineParams>(params_);
+    // Returns a signed 32bit diagnostic value representing the effective
+    // profile state. Returns either the positive weight or the negative packed
+    // version of the deadline parameters. Memoizes the packed deadline
+    // parameters in a reserved range of the weight to avoid unnecessary
+    // overhead during context switches when parameters remain constant.
+    //
+    // The packed deadline parameter format renders in decimal as -CCCCDDDD,
+    // where CCCC is the capacity and DDDD is the relative deadline (period),
+    // with a precision of 10us. This is useful for visualization in Perfetto,
+    // which only supports 32bit signed priority values.
+    constexpr int32_t GetWeightOrPackedDeadlineParams() {
+      if (weight_ >= kMinFairWeight || weight_ <= kMaxDiagnosticWeight) {
+        return static_cast<int32_t>(weight_.raw_value());
+      }
+
+      const int32_t clamped_capacity =
+          ktl::clamp(static_cast<int32_t>(capacity_ns_.raw_value()), 10'000, 99'990'000);
+      const int32_t clamped_scaled_deadline =
+          ktl::clamp(static_cast<int32_t>(deadline_ns_.raw_value() / 10'000), 1, 9'999);
+
+      const int32_t diagnostic_value = -(clamped_capacity + clamped_scaled_deadline);
+      weight_ = SchedWeight::FromRaw(diagnostic_value);
+
+      return diagnostic_value;
     }
 
    private:
-    using VariantType = ktl::variant<SchedWeight, SchedDeadlineParams>;
-    static VariantType FromBaseProfile(const BaseProfile& base_profile) {
-      if (base_profile.IsFair()) {
-        return {base_profile.fair.weight};
-      }
-      return {base_profile.deadline};
-    }
+    // Internal weight values greater than or equal to zero indicate a fair
+    // profile with that weight. The internal deadline parameter values are
+    // arbitrary and reading them is not allowed.
+    static constexpr SchedWeight kMinFairWeight{0};
 
-    // The current fair or deadline parameters of the profile.
-    VariantType params_{SchedWeight{0}};
+    // Weight values in the range (-10,001, -1] indicate a deadline profile that
+    // has not been memoized into a packed diagnostic value. The internal values
+    // of the deadline parameters are valid. Directly reading the weight is not
+    // allowed.
+    static constexpr SchedWeight kMaxDeadlineWeight = SchedWeight::FromRaw(-1);
+
+    // Weight values less than or equal to -10,001 indicate a deadline profile
+    // that has been memoized into a packed diagnostic value. The internal
+    // values of the deadline parameters are valid. Directly reading the weight
+    // is not allowed.
+    static constexpr SchedWeight kMaxDiagnosticWeight = SchedWeight::FromRaw(-10'001);
+
+    SchedWeight weight_{0};
+    SchedCompactDuration capacity_ns_{0};
+    SchedCompactDuration deadline_ns_{0};
+    SchedUtilization utilization_{0};
   };
 
   // Values stored in the SchedulerState of Thread instances which tracks the
@@ -503,10 +561,10 @@ class SchedulerState {
   cpu_mask_t hard_affinity() const { return hard_affinity_; }
   cpu_mask_t soft_affinity() const { return soft_affinity_; }
 
-  int32_t weight() const {
-    return discipline() == SchedDiscipline::Fair
-               ? static_cast<int32_t>(effective_profile_.weight().raw_value())
-               : ktl::numeric_limits<int32_t>::max();
+  // This value requires the thread's lock to be held, since it may need to
+  // memoize the packed deadline parameters.
+  int32_t GetWeightOrPackedDeadlineParams() {
+    return effective_profile_.GetWeightOrPackedDeadlineParams();
   }
 
   cpu_num_t curr_cpu() const { return curr_cpu_; }

@@ -106,58 +106,6 @@ constexpr zx_instant_mono_t& operator+=(zx_instant_mono_t& value, SchedDuration 
   return value;
 }
 
-inline zx_thread_state_t UserThreadState(const Thread* thread) TA_REQ_SHARED(thread->get_lock()) {
-  switch (thread->state()) {
-    case THREAD_INITIAL:
-    case THREAD_READY:
-      return ZX_THREAD_STATE_NEW;
-    case THREAD_RUNNING:
-      return ZX_THREAD_STATE_RUNNING;
-    case THREAD_BLOCKED:
-    case THREAD_BLOCKED_READ_LOCK:
-    case THREAD_SLEEPING:
-      return ZX_THREAD_STATE_BLOCKED;
-    case THREAD_SUSPENDED:
-      return ZX_THREAD_STATE_SUSPENDED;
-    case THREAD_DEATH:
-      return ZX_THREAD_STATE_DEAD;
-    default:
-      return UINT32_MAX;
-  }
-}
-
-constexpr int32_t kIdleWeight = ktl::numeric_limits<int32_t>::min();
-
-// Writes a context switch record to the ktrace buffer. This is always enabled
-// so that user mode tracing can track which threads are running.
-inline void TraceContextSwitch(const Thread* current_thread, const Thread* next_thread,
-                               cpu_num_t current_cpu)
-    TA_REQ_SHARED(current_thread->get_lock(), next_thread->get_lock()) {
-  const SchedulerState& current_state = current_thread->scheduler_state();
-  const SchedulerState& next_state = next_thread->scheduler_state();
-  KTRACE_CONTEXT_SWITCH(
-      "kernel:sched", current_cpu, UserThreadState(current_thread), current_thread->fxt_ref(),
-      next_thread->fxt_ref(),
-      ("outgoing_weight", current_thread->IsIdle() ? kIdleWeight : current_state.weight()),
-      ("incoming_weight", next_thread->IsIdle() ? kIdleWeight : next_state.weight()));
-}
-
-// Writes a thread wakeup record to the ktrace buffer. This is always enabled
-// so that user mode tracing can track which threads are waking.
-inline void TraceWakeup(const Thread* thread, cpu_num_t target_cpu)
-    TA_REQ_SHARED(thread->get_lock()) {
-  const SchedulerState& state = thread->scheduler_state();
-  const Thread* current_thread = Thread::Current::Get();
-  if (!current_thread->IsIdle()) {
-    KTRACE_THREAD_WAKEUP("kernel:sched", target_cpu, thread->fxt_ref(),
-                         ("weight", thread->IsIdle() ? kIdleWeight : state.weight()),
-                         ("waker", ktrace::Koid{current_thread->tid()}));
-  } else {
-    KTRACE_THREAD_WAKEUP("kernel:sched", target_cpu, thread->fxt_ref(),
-                         ("weight", thread->IsIdle() ? kIdleWeight : state.weight()));
-  }
-}
-
 // Returns a delta value to additively update a predictor. Compares the given
 // sample to the current value of the predictor and returns a delta such that
 // the predictor either exponentially peaks or decays toward the sample. The
@@ -2275,7 +2223,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     }
 
     // Trace the activation of the next thread before context switching.
-    TraceContextSwitch(current_thread, next_thread, current_cpu);
+    SchedTraceContextSwitch(current_thread, next_thread, current_cpu);
 
     // We invoke the context switch functions before context switching, so that
     // they have a chance to correctly perform the actions required. Doing so
@@ -2949,7 +2897,7 @@ Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime 
     Guard<MonitoredSpinLock, NoIrqSave> target_queue_guard{&target->queue_lock_, SOURCE_TAG};
 
     if (target->IsSchedulerActiveLocked()) {
-      TraceWakeup(thread, target_cpu);
+      SchedTraceWakeup(thread, target_cpu);
       thread->set_ready();
       thread->UpdateRuntimeStats(thread->state());
       if (needs_migration) {

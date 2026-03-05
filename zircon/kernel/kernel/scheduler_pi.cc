@@ -743,6 +743,7 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
       const EffectiveProfile& new_ep = state.effective_profile();
 
       // Update the scheduler bookkeeping, if necessary.
+      bool bandwidth_demand_changed = false;
       if (disposition == Disposition::Associated || disposition == Disposition::Enqueued) {
         SchedWeight weight_delta{0};
         SchedUtilization utilization_delta{0};
@@ -759,10 +760,12 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
         }
 
         if (weight_delta != 0) {
+          bandwidth_demand_changed = true;
           scheduler.weight_total_ += weight_delta;
           scheduler.UpdateFairBandwidthPeriod(now.mono_time);
         }
         if (utilization_delta != 0) {
+          bandwidth_demand_changed = true;
           scheduler.UpdateTotalDeadlineUtilization(utilization_delta);
         }
       }
@@ -787,6 +790,13 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
           scheduler.target_preemption_time_ns_ = ktl::min<SchedTime>(
               scheduler.start_of_current_time_slice_ns_ + scaled_remaining_time_slice_ns,
               state.finish_time_);
+        }
+
+        // Emit a context switch event to and from the same thread to update the
+        // visualized schedling parameters if the bandwidth demand actually
+        // changed.
+        if (bandwidth_demand_changed) {
+          SchedTraceContextSwitch(&target_, &target_, curr_cpu);
         }
       }
 

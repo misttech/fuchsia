@@ -67,16 +67,23 @@ static zx::result<SchedulerState::BaseProfile> validate_and_create_profile(
   // profiles must currently be inheritable.
   const bool inheritable = (info.flags & ZX_PROFILE_INFO_FLAG_NO_INHERIT) == 0;
   if ((info.flags & ZX_PROFILE_INFO_FLAG_DEADLINE) != 0) {
-    // TODO(eieio): Add additional admission criteria to prevent values that are
-    // too large or too small. These values are mediated by a privileged service
-    // so the risk of abuse is low, but it still might be good to implement some
-    // sort of failsafe check to prevent mistakes.
+    // Check that the deadline parameters have the correct relationship to each
+    // other.
     const bool admissible =
         info.deadline_params.capacity > 0 &&
         info.deadline_params.capacity <= info.deadline_params.relative_deadline &&
         info.deadline_params.relative_deadline <= info.deadline_params.period && inheritable;
     if (!admissible) {
       return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+
+    // Check that the parameters are within the range of the signed 32bit
+    // SchedCompactDuration. This permits more compact storage of profile
+    // parameters and provides protection against excessive values.
+    if (info.deadline_params.capacity > SchedCompactDuration::Max() ||
+        info.deadline_params.relative_deadline > SchedCompactDuration::Max() ||
+        info.deadline_params.period > SchedCompactDuration::Max()) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
   }
 
