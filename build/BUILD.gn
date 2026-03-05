@@ -130,7 +130,7 @@ if (is_host) {
       "//zircon/vdso/zx:verify_bazel2gn",
 
       # Bazel migration examples.
-      "//build/beads/migration_examples/go/after:verify_bazel2gn",
+      "//build/beads/.agent/skills/host_tool_bazel_migration/examples/go/after:verify_bazel2gn",
     ]
   }
 }

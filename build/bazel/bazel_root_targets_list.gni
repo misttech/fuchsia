@@ -90,7 +90,7 @@ declare_args() {
 
                                       # Bazel migration example.
                                       {
-                                        bazel_label = "//build/beads/migration_examples/go/after:example_bin_migrated"
+                                        bazel_label = "//build/beads/.agent/skills/host_tool_bazel_migration/examples/go/after:example_bin_migrated"
 
                                         # This copy_outputs is necessary because `go_binary` from
                                         # `rules_go` in Bazel places the executable in a

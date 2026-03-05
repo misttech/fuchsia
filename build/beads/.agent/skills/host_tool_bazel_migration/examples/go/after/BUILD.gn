@@ -84,8 +84,7 @@ if (is_host) {
 if (is_host) {
   go_library("example_lib") {
     sources = [ "main.go" ]
-    importpath =
-        "go.fuchsia.dev/fuchsia/build/beads/migration_examples/go/after"
+    importpath = "go.fuchsia.dev/fuchsia/build/beads/.agent/skills/host_tool_bazel_migration/examples/go/after"
     deps = [ "//third_party/golibs:github.com/kr/pretty" ]
   }
 }
