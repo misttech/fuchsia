@@ -393,14 +393,14 @@
             },
             {
                 "paths": [
-                    "third_party/openssh-portable/CREDITS",
                     "prebuilt/third_party/python3/linux-x64/lib/python3.8/idlelib/CREDITS.txt",
-                    "prebuilt/third_party/vpython/3.8/lib/python3.8/idlelib/CREDITS.txt",
                     "prebuilt/third_party/vpython/2.7/lib/python2.7/idlelib/CREDITS.txt",
-                    "third_party/libpcap/src/CREDITS",
+                    "prebuilt/third_party/vpython/3.11/lib/python3.11/idlelib/CREDITS.txt",
+                    "prebuilt/third_party/vpython/3.8/lib/python3.8/idlelib/CREDITS.txt",
                     "third_party/grpc-migrating/src/php/ext/grpc/CREDITS",
-                    "third_party/tcpdump/src/CREDITS",
-                    "prebuilt/third_party/vpython/3.11/lib/python3.11/idlelib/CREDITS.txt"
+                    "third_party/libpcap/src/CREDITS",
+                    "third_party/openssh-portable/CREDITS",
+                    "third_party/tcpdump/src/CREDITS"
                 ],
                 "notes": [
                     "Credits files that don't actually contain licensing information"
