@@ -29,563 +29,446 @@ std::string GetSpontaneousRebootCrashSignature(
 
 }  // namespace
 
-FinalZirconShutdownInfo::FinalZirconShutdownInfo(
-    const ZirconShutdownReason zircon_reason,
-    std::optional<GracefulShutdownAction> graceful_shutdown_action)
-    : zircon_reason_(zircon_reason), graceful_shutdown_action_(graceful_shutdown_action) {
-  FX_CHECK(zircon_reason_ != ZirconShutdownReason::kNoCrash);
-  FX_CHECK(zircon_reason_ != ZirconShutdownReason::kNotSet);
-}
+FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason)
+    : reason_(reason), graceful_shutdown_action_(std::nullopt) {}
 
-FinalGracefulShutdownInfo::FinalGracefulShutdownInfo(
-    std::optional<GracefulShutdownAction> action,
-    const std::vector<GracefulShutdownReason>& reasons, bool not_a_fdr)
-    : action_(action), not_a_fdr_(not_a_fdr) {
-  final_reason_ = ConsolidateGracefulShutdownReasons(reasons);
-}
+FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason,
+                                     std::optional<GracefulShutdownAction> graceful_shutdown_action)
+    : reason_(reason), graceful_shutdown_action_(graceful_shutdown_action) {}
 
-bool FinalZirconShutdownInfo::IsOom() const { return zircon_reason_ == ZirconShutdownReason::kOOM; }
+bool FinalShutdownInfo::IsOom() const { return reason_ == FinalShutdownReason::kOom; }
 
-bool FinalGracefulShutdownInfo::IsOom() const {
-  return final_reason_ == FinalGracefulShutdownReason::kOutOfMemory;
-}
-
-bool FinalZirconShutdownInfo::IsCrash() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kKernelPanic:
-    case ZirconShutdownReason::kOOM:
-    case ZirconShutdownReason::kHwWatchdog:
-    case ZirconShutdownReason::kSwWatchdog:
-    case ZirconShutdownReason::kBrownout:
-    case ZirconShutdownReason::kUnknown:
-    case ZirconShutdownReason::kRootJobTermination:
-    case ZirconShutdownReason::kNotParseable:
+bool FinalShutdownInfo::IsCrash() const {
+  switch (reason_) {
+    case FinalShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kOom:
+    case FinalShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kBrownout:
+    case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return true;
-    case ZirconShutdownReason::kCold:
-      return false;
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
+    case FinalShutdownReason::kCold:
+    case FinalShutdownReason::kUserRequest:
+    case FinalShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kFdr:
+    case FinalShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kAndroidNoReason:
       return false;
   }
 }
 
-bool FinalGracefulShutdownInfo::IsCrash() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
-    case FinalGracefulShutdownReason::kHighTemperature:
-    case FinalGracefulShutdownReason::kSessionFailure:
-    case FinalGracefulShutdownReason::kSysmgrFailure:
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
-    case FinalGracefulShutdownReason::kOutOfMemory:
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
+    case FinalShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kOom:
+    case FinalShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kBrownout:
+    case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kRootJobTermination:
+      return false;
+    case FinalShutdownReason::kZirconNotParseable:
+      return std::nullopt;
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kUserRequest:
+    case FinalShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kFdr:
+    case FinalShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return true;
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kFdr:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-      return false;
   }
 }
 
-std::optional<bool> FinalZirconShutdownInfo::OptionallyGraceful() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kCold:
-    case ZirconShutdownReason::kKernelPanic:
-    case ZirconShutdownReason::kOOM:
-    case ZirconShutdownReason::kHwWatchdog:
-    case ZirconShutdownReason::kSwWatchdog:
-    case ZirconShutdownReason::kBrownout:
-    case ZirconShutdownReason::kUnknown:
-    case ZirconShutdownReason::kRootJobTermination:
+std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
+    case FinalShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kOom:
+    case FinalShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kBrownout:
+    case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kUserRequest:
+    case FinalShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kFdr:
+    case FinalShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return false;
-    case ZirconShutdownReason::kNotParseable:
+    case FinalShutdownReason::kZirconNotParseable:
       return std::nullopt;
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return std::nullopt;
-  }
-}
-
-std::optional<bool> FinalGracefulShutdownInfo::OptionallyGraceful() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
-    case FinalGracefulShutdownReason::kHighTemperature:
-    case FinalGracefulShutdownReason::kSessionFailure:
-    case FinalGracefulShutdownReason::kSysmgrFailure:
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
-    case FinalGracefulShutdownReason::kFdr:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kNetstackMigration:
       return true;
-    case FinalGracefulShutdownReason::kOutOfMemory:
-      return false;
   }
 }
 
-std::optional<bool> FinalZirconShutdownInfo::OptionallyPlanned() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kCold:
-    case ZirconShutdownReason::kKernelPanic:
-    case ZirconShutdownReason::kOOM:
-    case ZirconShutdownReason::kHwWatchdog:
-    case ZirconShutdownReason::kSwWatchdog:
-    case ZirconShutdownReason::kBrownout:
-    case ZirconShutdownReason::kUnknown:
-    case ZirconShutdownReason::kRootJobTermination:
-      return false;
-    case ZirconShutdownReason::kNotParseable:
-      return std::nullopt;
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return std::nullopt;
-  }
+std::optional<GracefulShutdownAction> FinalShutdownInfo::ToGracefulShutdownAction() const {
+  return graceful_shutdown_action_;
 }
 
-std::optional<bool> FinalGracefulShutdownInfo::OptionallyPlanned() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-      return true;
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
-    case FinalGracefulShutdownReason::kHighTemperature:
-    case FinalGracefulShutdownReason::kSessionFailure:
-    case FinalGracefulShutdownReason::kSysmgrFailure:
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
-    case FinalGracefulShutdownReason::kFdr:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kOutOfMemory:
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
-      return false;
-  }
-}
-
-std::string FinalZirconShutdownInfo::ToRebootReasonString() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kCold:
+std::string FinalShutdownInfo::ToRebootReasonString() const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
       return "COLD";
-    case ZirconShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kKernelPanic:
       return "KERNEL PANIC";
-    case ZirconShutdownReason::kOOM:
+    case FinalShutdownReason::kOom:
       return "OOM";
-    case ZirconShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kHwWatchdog:
       return "HARDWARE WATCHDOG TIMEOUT";
-    case ZirconShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
       return "SOFTWARE WATCHDOG TIMEOUT";
-    case ZirconShutdownReason::kBrownout:
+    case FinalShutdownReason::kBrownout:
       return "BROWNOUT";
-    case ZirconShutdownReason::kUnknown:
+    case FinalShutdownReason::kSpontaneousReboot:
       return "SPONTANEOUS";
-    case ZirconShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kRootJobTermination:
       return "ROOT JOB TERMINATION";
-    case ZirconShutdownReason::kNotParseable:
+    case FinalShutdownReason::kZirconNotParseable:
       return "NOT PARSEABLE";
-    case ZirconShutdownReason::kNoCrash:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with kNoCrash";
-      return "FATAL ERROR";
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with kNotSet";
-      return "FATAL ERROR";
-  }
-}
-
-std::string FinalGracefulShutdownInfo::ToRebootReasonString() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kGenericGraceful:
       return "GENERIC GRACEFUL";
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
       return "UNEXPECTED REASON GRACEFUL";
-    case FinalGracefulShutdownReason::kUserRequest:
+    case FinalShutdownReason::kUserRequest:
       return "USER REQUEST";
-    case FinalGracefulShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kSystemUpdate:
       return "SYSTEM UPDATE";
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kRetrySystemUpdate:
       return "RETRY SYSTEM UPDATE";
-    case FinalGracefulShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kHighTemperature:
       return "HIGH TEMPERATURE";
-    case FinalGracefulShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSessionFailure:
       return "SESSION FAILURE";
-    case FinalGracefulShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kSysmgrFailure:
       return "SYSMGR FAILURE";
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
       return "CRITICAL COMPONENT FAILURE";
-    case FinalGracefulShutdownReason::kFdr:
+    case FinalShutdownReason::kFdr:
       return "FACTORY DATA RESET";
-    case FinalGracefulShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kZbiSwap:
       return "ZBI SWAP";
-    case FinalGracefulShutdownReason::kOutOfMemory:
-      return "OOM";
-    case FinalGracefulShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kNetstackMigration:
       return "NETSTACK MIGRATION";
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
       return "ANDROID UNEXPECTED REASON";
-    case FinalGracefulShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidNoReason:
       return "ANDROID NO REASON";
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidRescueParty:
       return "ANDROID RESCUE PARTY";
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
       return "ANDROID CRITICAL PROCESS FAILURE";
-    case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kDeveloperRequest:
       return "DEVELOPER REQUEST";
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return "USER REQUEST DEVICE STUCK";
   }
 }
 
-std::optional<fuchsia::feedback::RebootReason> FinalZirconShutdownInfo::ToFidlRebootReason() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kCold:
+std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootReason() const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
       return fuchsia::feedback::RebootReason::COLD;
-    case ZirconShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kKernelPanic:
       return fuchsia::feedback::RebootReason::KERNEL_PANIC;
-    case ZirconShutdownReason::kOOM:
+    case FinalShutdownReason::kOom:
       return fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY;
-    case ZirconShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kHwWatchdog:
       return fuchsia::feedback::RebootReason::HARDWARE_WATCHDOG_TIMEOUT;
-    case ZirconShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
       return fuchsia::feedback::RebootReason::SOFTWARE_WATCHDOG_TIMEOUT;
-    case ZirconShutdownReason::kBrownout:
+    case FinalShutdownReason::kBrownout:
       return fuchsia::feedback::RebootReason::BROWNOUT;
-    case ZirconShutdownReason::kUnknown:
+    case FinalShutdownReason::kSpontaneousReboot:
       return fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS;
-    case ZirconShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kRootJobTermination:
       return fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION;
-    case ZirconShutdownReason::kNotParseable:
+    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
       return std::nullopt;
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return std::nullopt;
-  }
-}
-
-std::optional<fuchsia::feedback::RebootReason> FinalGracefulShutdownInfo::ToFidlRebootReason()
-    const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-      return std::nullopt;
-    case FinalGracefulShutdownReason::kUserRequest:
+    case FinalShutdownReason::kUserRequest:
       return fuchsia::feedback::RebootReason::USER_REQUEST;
-    case FinalGracefulShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kSystemUpdate:
       return fuchsia::feedback::RebootReason::SYSTEM_UPDATE;
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kRetrySystemUpdate:
       return fuchsia::feedback::RebootReason::RETRY_SYSTEM_UPDATE;
-    case FinalGracefulShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kHighTemperature:
       return fuchsia::feedback::RebootReason::HIGH_TEMPERATURE;
-    case FinalGracefulShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSessionFailure:
       return fuchsia::feedback::RebootReason::SESSION_FAILURE;
-    case FinalGracefulShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kSysmgrFailure:
       return fuchsia::feedback::RebootReason::SYSMGR_FAILURE;
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
       return fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE;
-    case FinalGracefulShutdownReason::kFdr:
+    case FinalShutdownReason::kFdr:
       return fuchsia::feedback::RebootReason::FACTORY_DATA_RESET;
-    case FinalGracefulShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kZbiSwap:
       return fuchsia::feedback::RebootReason::ZBI_SWAP;
-    case FinalGracefulShutdownReason::kOutOfMemory:
-      return fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY;
-    case FinalGracefulShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kNetstackMigration:
       return fuchsia::feedback::RebootReason::NETSTACK_MIGRATION;
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
       return fuchsia::feedback::RebootReason::ANDROID_UNEXPECTED_REASON;
-    case FinalGracefulShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidNoReason:
       return fuchsia::feedback::RebootReason::ANDROID_NO_REASON;
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidRescueParty:
       return fuchsia::feedback::RebootReason::ANDROID_RESCUE_PARTY;
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
       return fuchsia::feedback::RebootReason::ANDROID_CRITICAL_PROCESS_FAILURE;
-    case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kDeveloperRequest:
       return fuchsia::feedback::RebootReason::DEVELOPER_REQUEST;
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK;
   }
 }
 
-cobalt::LastRebootReason FinalZirconShutdownInfo::ToCobaltLastRebootReason() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kCold:
+cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
       return cobalt::LastRebootReason::kCold;
-    case ZirconShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kKernelPanic:
       return cobalt::LastRebootReason::kKernelPanic;
-    case ZirconShutdownReason::kOOM:
+    case FinalShutdownReason::kOom:
       return cobalt::LastRebootReason::kSystemOutOfMemory;
-    case ZirconShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kHwWatchdog:
       return cobalt::LastRebootReason::kHardwareWatchdogTimeout;
-    case ZirconShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
       return cobalt::LastRebootReason::kSoftwareWatchdogTimeout;
-    case ZirconShutdownReason::kBrownout:
+    case FinalShutdownReason::kBrownout:
       return cobalt::LastRebootReason::kBrownout;
-    case ZirconShutdownReason::kUnknown:
+    case FinalShutdownReason::kSpontaneousReboot:
       return cobalt::LastRebootReason::kBriefPowerLoss;
-    case ZirconShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kRootJobTermination:
       return cobalt::LastRebootReason::kRootJobTermination;
-    case ZirconShutdownReason::kNotParseable:
+    case FinalShutdownReason::kZirconNotParseable:
       return cobalt::LastRebootReason::kUnknown;
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return cobalt::LastRebootReason::kUnknown;
-  }
-}
-
-cobalt::LastRebootReason FinalGracefulShutdownInfo::ToCobaltLastRebootReason() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kGenericGraceful:
       return cobalt::LastRebootReason::kGenericGraceful;
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
       return cobalt::LastRebootReason::kUnexpectedReasonGraceful;
-    case FinalGracefulShutdownReason::kUserRequest:
+    case FinalShutdownReason::kUserRequest:
       return cobalt::LastRebootReason::kUserRequest;
-    case FinalGracefulShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kSystemUpdate:
       return cobalt::LastRebootReason::kSystemUpdate;
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kRetrySystemUpdate:
       return cobalt::LastRebootReason::kRetrySystemUpdate;
-    case FinalGracefulShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kHighTemperature:
       return cobalt::LastRebootReason::kHighTemperature;
-    case FinalGracefulShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSessionFailure:
       return cobalt::LastRebootReason::kSessionFailure;
-    case FinalGracefulShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kSysmgrFailure:
       return cobalt::LastRebootReason::kSysmgrFailure;
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
       return cobalt::LastRebootReason::kCriticalComponentFailure;
-    case FinalGracefulShutdownReason::kFdr:
+    case FinalShutdownReason::kFdr:
       return cobalt::LastRebootReason::kFactoryDataReset;
-    case FinalGracefulShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kZbiSwap:
       return cobalt::LastRebootReason::kZbiSwap;
-    case FinalGracefulShutdownReason::kOutOfMemory:
-      return cobalt::LastRebootReason::kSystemOutOfMemory;
-    case FinalGracefulShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kNetstackMigration:
       return cobalt::LastRebootReason::kNetstackMigration;
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
       return cobalt::LastRebootReason::kAndroidUnexpectedReason;
-    case FinalGracefulShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidNoReason:
       return cobalt::LastRebootReason::kAndroidNoReason;
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidRescueParty:
       return cobalt::LastRebootReason::kAndroidRescueParty;
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
       return cobalt::LastRebootReason::kAndroidCriticalProcessFailure;
-    case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kDeveloperRequest:
       return cobalt::LastRebootReason::kDeveloperRequest;
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return cobalt::LastRebootReason::kUserRequestDeviceStuck;
   }
 }
 
-std::string FinalZirconShutdownInfo::ToCrashProgramName() const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kNotParseable:
+std::string FinalShutdownInfo::ToCrashProgramName() const {
+  switch (reason_) {
+    case FinalShutdownReason::kZirconNotParseable:
       return "reboot-log";
-    case ZirconShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kKernelPanic:
       return "kernel";
-    case ZirconShutdownReason::kHwWatchdog:
-    case ZirconShutdownReason::kBrownout:
-    case ZirconShutdownReason::kUnknown:
+    case FinalShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kBrownout:
+    case FinalShutdownReason::kSpontaneousReboot:
       return "device";
-    case ZirconShutdownReason::kOOM:
-    case ZirconShutdownReason::kSwWatchdog:
-    case ZirconShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kOom:
+    case FinalShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return "system";
-    case ZirconShutdownReason::kCold:
-      FX_LOGS(FATAL) << "Not expecting a program name request for cold boot";
-      return "FATAL ERROR";
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return "FATAL ERROR";
-  }
-}
-
-std::string FinalGracefulShutdownInfo::ToCrashProgramName() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
-    case FinalGracefulShutdownReason::kHighTemperature:
-    case FinalGracefulShutdownReason::kSessionFailure:
-    case FinalGracefulShutdownReason::kSysmgrFailure:
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
-    case FinalGracefulShutdownReason::kOutOfMemory:
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
-      return "system";
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
       return "android";
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kFdr:
+    case FinalShutdownReason::kCold:
+    case FinalShutdownReason::kUserRequest:
+    case FinalShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kFdr:
       FX_LOGS(FATAL) << "Not expecting a program name request for reboot reason: "
                      << ToRebootReasonString();
       return "FATAL ERROR";
   }
 }
 
-std::string FinalZirconShutdownInfo::ToCrashSignature(
+std::string FinalShutdownInfo::ToCrashSignature(
     const SpontaneousRebootReason spontaneous_reboot_reason,
     const std::optional<std::string>& critical_process) const {
-  switch (zircon_reason_) {
-    case ZirconShutdownReason::kNotParseable:
+  switch (reason_) {
+    case FinalShutdownReason::kZirconNotParseable:
       return "fuchsia-reboot-log-not-parseable";
-    case ZirconShutdownReason::kUnknown:
+    case FinalShutdownReason::kSpontaneousReboot:
       return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason);
-    case ZirconShutdownReason::kKernelPanic:
+    case FinalShutdownReason::kKernelPanic:
       return "fuchsia-kernel-panic";
-    case ZirconShutdownReason::kOOM:
+    case FinalShutdownReason::kOom:
       return "fuchsia-oom";
-    case ZirconShutdownReason::kHwWatchdog:
+    case FinalShutdownReason::kHwWatchdog:
       return "fuchsia-hw-watchdog-timeout";
-    case ZirconShutdownReason::kSwWatchdog:
+    case FinalShutdownReason::kSwWatchdog:
       return "fuchsia-sw-watchdog-timeout";
-    case ZirconShutdownReason::kBrownout:
+    case FinalShutdownReason::kBrownout:
       return "fuchsia-brownout";
-    case ZirconShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kRootJobTermination:
       return (!critical_process.has_value())
                  ? "fuchsia-root-job-termination"
                  : std::string("fuchsia-reboot-").append(*critical_process).append("-terminated");
-    case ZirconShutdownReason::kCold:
-      FX_LOGS(FATAL) << "Not expecting a crash for reason: kCold";
-      return "FATAL ERROR";
-    case ZirconShutdownReason::kNoCrash:
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return "FATAL ERROR";
-  }
-}
-
-std::string FinalGracefulShutdownInfo::ToCrashSignature(
-    const SpontaneousRebootReason spontaneous_reboot_reason,
-    const std::optional<std::string>& critical_process) const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
+    case FinalShutdownReason::kRetrySystemUpdate:
       return "fuchsia-retry-system-update";
-    case FinalGracefulShutdownReason::kHighTemperature:
+    case FinalShutdownReason::kHighTemperature:
       return "fuchsia-shutdown-high-temperature";
-    case FinalGracefulShutdownReason::kSessionFailure:
+    case FinalShutdownReason::kSessionFailure:
       return "fuchsia-session-failure";
-    case FinalGracefulShutdownReason::kSysmgrFailure:
+    case FinalShutdownReason::kSysmgrFailure:
       return "fuchsia-sysmgr-failure";
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalComponentFailure:
       return "fuchsia-critical-component-failure";
-    case FinalGracefulShutdownReason::kOutOfMemory:
-      return "fuchsia-oom";
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalShutdownReason::kAndroidUnexpectedReason:
       return "fuchsia-shutdown-android-unexpected-reason";
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
+    case FinalShutdownReason::kAndroidRescueParty:
       return "fuchsia-shutdown-android-rescue-party";
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
       return "fuchsia-shutdown-android-critical-process-failure";
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kUserRequestDeviceStuck:
       return "fuchsia-shutdown-user-request-device-stuck";
-    case FinalGracefulShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kGenericGraceful:
       return "fuchsia-shutdown-undetermined-userspace-reason";
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
       return "fuchsia-shutdown-unexpected-userspace-reason";
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kFdr:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kCold:
+    case FinalShutdownReason::kUserRequest:
+    case FinalShutdownReason::kSystemUpdate:
+    case FinalShutdownReason::kFdr:
+    case FinalShutdownReason::kZbiSwap:
+    case FinalShutdownReason::kNetstackMigration:
+    case FinalShutdownReason::kDeveloperRequest:
+    case FinalShutdownReason::kAndroidNoReason:
       FX_LOGS(FATAL) << "Not expecting a crash for reason: " << ToRebootReasonString();
       return "FATAL ERROR";
   }
 }
 
-FinalGracefulShutdownInfo::FinalGracefulShutdownReason
-FinalGracefulShutdownInfo::ConsolidateGracefulShutdownReasons(
-    const std::vector<GracefulShutdownReason>& reasons) const {
-  if (!not_a_fdr_) {
-    return FinalGracefulShutdownReason::kFdr;
-  }
+namespace {
 
+FinalShutdownReason ConsolidateGracefulShutdownReasons(
+    const std::vector<GracefulShutdownReason>& reasons) {
   if (reasons.empty()) {
-    return FinalGracefulShutdownReason::kGenericGraceful;
+    return FinalShutdownReason::kGenericGraceful;
   }
 
   // If there's only one reason, consolidation is trivial.
   if (reasons.size() == 1) {
     switch (reasons[0]) {
       case GracefulShutdownReason::kUserRequest:
-        return FinalGracefulShutdownReason::kUserRequest;
+        return FinalShutdownReason::kUserRequest;
       case GracefulShutdownReason::kSystemUpdate:
-        return FinalGracefulShutdownReason::kSystemUpdate;
+        return FinalShutdownReason::kSystemUpdate;
       case GracefulShutdownReason::kRetrySystemUpdate:
-        return FinalGracefulShutdownReason::kRetrySystemUpdate;
+        return FinalShutdownReason::kRetrySystemUpdate;
       case GracefulShutdownReason::kHighTemperature:
-        return FinalGracefulShutdownReason::kHighTemperature;
+        return FinalShutdownReason::kHighTemperature;
       case GracefulShutdownReason::kSessionFailure:
-        return FinalGracefulShutdownReason::kSessionFailure;
+        return FinalShutdownReason::kSessionFailure;
       case GracefulShutdownReason::kSysmgrFailure:
-        return FinalGracefulShutdownReason::kSysmgrFailure;
+        return FinalShutdownReason::kSysmgrFailure;
       case GracefulShutdownReason::kCriticalComponentFailure:
-        return FinalGracefulShutdownReason::kCriticalComponentFailure;
+        return FinalShutdownReason::kCriticalComponentFailure;
       case GracefulShutdownReason::kFdr:
-        return FinalGracefulShutdownReason::kFdr;
+        return FinalShutdownReason::kFdr;
       case GracefulShutdownReason::kZbiSwap:
-        return FinalGracefulShutdownReason::kZbiSwap;
+        return FinalShutdownReason::kZbiSwap;
       case GracefulShutdownReason::kNotSupported:
       case GracefulShutdownReason::kNotParseable:
-        return FinalGracefulShutdownReason::kGenericGraceful;
+        return FinalShutdownReason::kGenericGraceful;
       case GracefulShutdownReason::kOutOfMemory:
-        return FinalGracefulShutdownReason::kOutOfMemory;
+        return FinalShutdownReason::kOom;
       case GracefulShutdownReason::kNetstackMigration:
-        return FinalGracefulShutdownReason::kNetstackMigration;
+        return FinalShutdownReason::kNetstackMigration;
       case GracefulShutdownReason::kAndroidUnexpectedReason:
-        return FinalGracefulShutdownReason::kAndroidUnexpectedReason;
+        return FinalShutdownReason::kAndroidUnexpectedReason;
       case GracefulShutdownReason::kAndroidNoReason:
-        return FinalGracefulShutdownReason::kAndroidNoReason;
+        return FinalShutdownReason::kAndroidNoReason;
       case GracefulShutdownReason::kAndroidRescueParty:
-        return FinalGracefulShutdownReason::kAndroidRescueParty;
+        return FinalShutdownReason::kAndroidRescueParty;
       case GracefulShutdownReason::kAndroidCriticalProcessFailure:
-        return FinalGracefulShutdownReason::kAndroidCriticalProcessFailure;
+        return FinalShutdownReason::kAndroidCriticalProcessFailure;
       case GracefulShutdownReason::kDeveloperRequest:
-        return FinalGracefulShutdownReason::kDeveloperRequest;
+        return FinalShutdownReason::kDeveloperRequest;
       case GracefulShutdownReason::kUserRequestDeviceStuck:
-        return FinalGracefulShutdownReason::kUserRequestDeviceStuck;
+        return FinalShutdownReason::kUserRequestDeviceStuck;
       case GracefulShutdownReason::kNotSet:
         FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
-        return FinalGracefulShutdownReason::kUnexpectedReasonGraceful;
+        return FinalShutdownReason::kUnexpectedReasonGraceful;
     }
   }
 
@@ -594,12 +477,66 @@ FinalGracefulShutdownInfo::ConsolidateGracefulShutdownReasons(
   if (reasons_set.size() == 2 && reasons_set.contains(GracefulShutdownReason::kNetstackMigration) &&
       reasons_set.contains(GracefulShutdownReason::kSystemUpdate)) {
     // Netstack Migration + System Update is consolidated to System Update.
-    return FinalGracefulShutdownReason::kSystemUpdate;
+    return FinalShutdownReason::kSystemUpdate;
   }
 
   FX_LOGS(WARNING) << "Unexpected combination of graceful shutdown reasons: "
                    << ToRawStrings(reasons);
-  return FinalGracefulShutdownReason::kUnexpectedReasonGraceful;
+  return FinalShutdownReason::kUnexpectedReasonGraceful;
+}
+
+}  // namespace
+
+// static
+std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
+    const ZirconShutdownReason zircon_reason,
+    std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr) {
+  switch (zircon_reason) {
+    case ZirconShutdownReason::kKernelPanic:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kKernelPanic);
+    case ZirconShutdownReason::kOOM:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom);
+    case ZirconShutdownReason::kHwWatchdog:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kHwWatchdog);
+    case ZirconShutdownReason::kSwWatchdog:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSwWatchdog);
+    case ZirconShutdownReason::kBrownout:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kBrownout);
+    case ZirconShutdownReason::kUnknown:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSpontaneousReboot);
+    case ZirconShutdownReason::kNotParseable:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kZirconNotParseable);
+    case ZirconShutdownReason::kRootJobTermination:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kRootJobTermination);
+    case ZirconShutdownReason::kCold:
+      // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
+      // reasons more informative than just "cold."
+      if (graceful_shutdown_info.has_value() &&
+          graceful_shutdown_info->action == GracefulShutdownAction::kPoweroff) {
+        return std::make_unique<FinalShutdownInfo>(
+            ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
+            graceful_shutdown_info->action);
+      }
+      // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
+      return std::make_unique<FinalShutdownInfo>(
+          FinalShutdownReason::kCold, graceful_shutdown_info.has_value()
+                                          ? std::make_optional(graceful_shutdown_info->action)
+                                          : std::nullopt);
+    case ZirconShutdownReason::kNoCrash: {
+      if (!not_a_fdr) {
+        return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kFdr);
+      }
+      if (graceful_shutdown_info.has_value()) {
+        return std::make_unique<FinalShutdownInfo>(
+            ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
+            graceful_shutdown_info->action);
+      }
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kGenericGraceful);
+    }
+    case ZirconShutdownReason::kNotSet:
+      FX_LOGS(FATAL) << "|zircon_reason| must be set";
+      return nullptr;
+  }
 }
 
 }  // namespace forensics::feedback

@@ -8,33 +8,26 @@
 
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
-#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 
 namespace forensics::feedback {
 namespace {
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationSpontaneous) {
-  EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
-                                                         /*graceful_shutdown_action=*/std::nullopt),
-                                 SpontaneousRebootReason::kSpontaneous),
-      "spontaneous");
+  EXPECT_EQ(LastRebootReasonAnnotation(FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot),
+                                       SpontaneousRebootReason::kSpontaneous),
+            "spontaneous");
 }
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationBriefPowerLoss) {
-  EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
-                                                         /*graceful_shutdown_action=*/std::nullopt),
-                                 SpontaneousRebootReason::kBriefPowerLoss),
-      "brief loss of power");
+  EXPECT_EQ(LastRebootReasonAnnotation(FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot),
+                                       SpontaneousRebootReason::kBriefPowerLoss),
+            "brief loss of power");
 }
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationHardReset) {
-  EXPECT_EQ(
-      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconShutdownReason::kUnknown,
-                                                         /*graceful_shutdown_action=*/std::nullopt),
-                                 SpontaneousRebootReason::kHardReset),
-      "hard reset");
+  EXPECT_EQ(LastRebootReasonAnnotation(FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot),
+                                       SpontaneousRebootReason::kHardReset),
+            "hard reset");
 }
 
 }  // namespace

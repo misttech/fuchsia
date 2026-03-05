@@ -9,7 +9,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/fxl/strings/substitute.h"
 #include "src/lib/timekeeper/async_test_clock.h"
@@ -32,38 +31,36 @@ class MainServiceTest : public UnitTestFixture {
   MainServiceTest()
       : clock_(dispatcher()),
         cobalt_(dispatcher(), services(), &clock_),
-        main_service_(
-            dispatcher(), services(), &clock_, &InspectRoot(), &cobalt_,
-            /*startup_annotations=*/{}, {}, /*dlog=*/std::nullopt,
-            MainService::Options{
-                BuildTypeConfig{},
-                "",
-                "",
-                LastReboot::Options{
-                    .is_first_instance = kIsFirstInstance,
-                    .reboot_log = RebootLog(std::make_unique<FinalZirconShutdownInfo>(
-                                                ZirconShutdownReason::kCold,
-                                                /*graceful_shutdown_action=*/std::nullopt),
-                                            "reboot log",
-                                            /*dlog=*/std::nullopt,
-                                            /*last_boot_uptime=*/zx::sec(100),
-                                            /*last_boot_runtime=*/zx::sec(90),
-                                            /*critical_process=*/std::nullopt),
-                    .oom_crash_reporting_delay = zx::sec(1),
-                },
-                CrashReports::Options{
-                    .build_type_config = BuildTypeConfig{},
-                    .snapshot_store_max_archives_size = StorageSize::Bytes(0),
-                    .snapshot_collector_window_duration = zx::sec(0),
-                },
-                FeedbackData::Options{
-                    .snapshot_config{},
-                    .snapshot_exclusion_config{},
-                    .is_first_instance = kIsFirstInstance,
-                    .limit_inspect_data = false,
-                    .delete_previous_boot_logs_time = std::nullopt,
-                },
-            }) {
+        main_service_(dispatcher(), services(), &clock_, &InspectRoot(), &cobalt_,
+                      /*startup_annotations=*/{}, {}, /*dlog=*/std::nullopt,
+                      MainService::Options{
+                          BuildTypeConfig{},
+                          "",
+                          "",
+                          LastReboot::Options{
+                              .is_first_instance = kIsFirstInstance,
+                              .reboot_log = RebootLog(
+                                  std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kCold),
+                                  "reboot log",
+                                  /*dlog=*/std::nullopt,
+                                  /*last_boot_uptime=*/zx::sec(100),
+                                  /*last_boot_runtime=*/zx::sec(90),
+                                  /*critical_process=*/std::nullopt),
+                              .oom_crash_reporting_delay = zx::sec(1),
+                          },
+                          CrashReports::Options{
+                              .build_type_config = BuildTypeConfig{},
+                              .snapshot_store_max_archives_size = StorageSize::Bytes(0),
+                              .snapshot_collector_window_duration = zx::sec(0),
+                          },
+                          FeedbackData::Options{
+                              .snapshot_config{},
+                              .snapshot_exclusion_config{},
+                              .is_first_instance = kIsFirstInstance,
+                              .limit_inspect_data = false,
+                              .delete_previous_boot_logs_time = std::nullopt,
+                          },
+                      }) {
     AddHandler(main_service_.GetHandler<fuchsia::feedback::LastRebootInfoProvider>());
     AddHandler(main_service_.GetHandler<fuchsia::feedback::CrashReporter>());
     AddHandler(main_service_.GetHandler<fuchsia::feedback::CrashReportingProductRegister>());

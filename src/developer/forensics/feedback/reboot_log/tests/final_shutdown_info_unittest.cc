@@ -10,17 +10,15 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/config.h"
-#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
 namespace {
 
-TEST(FinalZirconShutdownInfoTest, NotParseable) {
+TEST(FinalShutdownInfoTest, ZirconNotParseable) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kNotParseable,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kZirconNotParseable);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kUnknown);
@@ -33,10 +31,9 @@ TEST(FinalZirconShutdownInfoTest, NotParseable) {
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), std::nullopt);
 }
 
-TEST(FinalZirconShutdownInfoTest, Cold) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(
-          ZirconShutdownReason::kCold, std::make_optional(GracefulShutdownAction::kPoweroff));
+TEST(FinalShutdownInfoTest, Cold) {
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = std::make_unique<FinalShutdownInfo>(
+      FinalShutdownReason::kCold, GracefulShutdownAction::kPoweroff);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kCold);
@@ -44,10 +41,9 @@ TEST(FinalZirconShutdownInfoTest, Cold) {
   EXPECT_EQ(final_shutdown_info->ToGracefulShutdownAction(), GracefulShutdownAction::kPoweroff);
 }
 
-TEST(FinalZirconShutdownInfoTest, Spontaneous) {
+TEST(FinalShutdownInfoTest, Spontaneous) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSpontaneousReboot);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -62,10 +58,9 @@ TEST(FinalZirconShutdownInfoTest, Spontaneous) {
             fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
 }
 
-TEST(FinalZirconShutdownInfoTest, BriefPowerLoss) {
+TEST(FinalShutdownInfoTest, BriefPowerLoss) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSpontaneousReboot);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -81,10 +76,9 @@ TEST(FinalZirconShutdownInfoTest, BriefPowerLoss) {
             fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
 }
 
-TEST(FinalZirconShutdownInfoTest, HardReset) {
+TEST(FinalShutdownInfoTest, HardReset) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kUnknown,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSpontaneousReboot);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -99,10 +93,9 @@ TEST(FinalZirconShutdownInfoTest, HardReset) {
             fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
 }
 
-TEST(FinalZirconShutdownInfoTest, KernelPanic) {
+TEST(FinalShutdownInfoTest, KernelPanic) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kKernelPanic,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kKernelPanic);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -117,10 +110,9 @@ TEST(FinalZirconShutdownInfoTest, KernelPanic) {
             fuchsia::feedback::RebootReason::KERNEL_PANIC);
 }
 
-TEST(FinalZirconShutdownInfoTest, OOM) {
+TEST(FinalShutdownInfoTest, OOM) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kOOM,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -135,10 +127,9 @@ TEST(FinalZirconShutdownInfoTest, OOM) {
             fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY);
 }
 
-TEST(FinalZirconShutdownInfoTest, HardwareWatchdogTimeout) {
+TEST(FinalShutdownInfoTest, HardwareWatchdogTimeout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kHwWatchdog,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kHwWatchdog);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -153,10 +144,9 @@ TEST(FinalZirconShutdownInfoTest, HardwareWatchdogTimeout) {
             fuchsia::feedback::RebootReason::HARDWARE_WATCHDOG_TIMEOUT);
 }
 
-TEST(FinalZirconShutdownInfoTest, SoftwareWatchdogTimeout) {
+TEST(FinalShutdownInfoTest, SoftwareWatchdogTimeout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kSwWatchdog,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSwWatchdog);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -171,10 +161,9 @@ TEST(FinalZirconShutdownInfoTest, SoftwareWatchdogTimeout) {
             fuchsia::feedback::RebootReason::SOFTWARE_WATCHDOG_TIMEOUT);
 }
 
-TEST(FinalZirconShutdownInfoTest, Brownout) {
+TEST(FinalShutdownInfoTest, Brownout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kBrownout,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kBrownout);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kBrownout);
@@ -187,10 +176,9 @@ TEST(FinalZirconShutdownInfoTest, Brownout) {
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), fuchsia::feedback::RebootReason::BROWNOUT);
 }
 
-TEST(FinalZirconShutdownInfoTest, RootJobTermination) {
+TEST(FinalShutdownInfoTest, RootJobTermination) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalZirconShutdownInfo>(ZirconShutdownReason::kRootJobTermination,
-                                                /*graceful_shutdown_action=*/std::nullopt);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kRootJobTermination);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -206,18 +194,6 @@ TEST(FinalZirconShutdownInfoTest, RootJobTermination) {
             fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION);
 }
 
-TEST(FinalZirconShutdownInfoDeathTest, NoCrash) {
-  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconShutdownReason::kNoCrash,
-                                        /*graceful_shutdown_action=*/std::nullopt)),
-               "");
-}
-
-TEST(FinalZirconShutdownInfoDeathTest, NotSet) {
-  ASSERT_DEATH((FinalZirconShutdownInfo(ZirconShutdownReason::kNotSet,
-                                        /*graceful_shutdown_action=*/std::nullopt)),
-               "");
-}
-
 struct GracefulNoReportTestParams {
   std::string test_name;
   std::vector<GracefulShutdownReason> reasons;
@@ -225,10 +201,10 @@ struct GracefulNoReportTestParams {
   fuchsia::feedback::RebootReason expected_fidl_reboot_reason;
 };
 
-class FinalGracefulShutdownInfoNoReportTest
+class FinalShutdownInfoGracefulNoReportTest
     : public testing::TestWithParam<GracefulNoReportTestParams> {};
 
-INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoNoReportTest,
+INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulNoReportTest,
                          ::testing::ValuesIn(std::vector<GracefulNoReportTestParams>({
                              {
                                  "SystemUpdateAndNetstackMigration",
@@ -280,11 +256,12 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoNoReportTe
                            return info.param.test_name;
                          });
 
-TEST_P(FinalGracefulShutdownInfoNoReportTest, CheckProperties) {
+TEST_P(FinalShutdownInfoGracefulNoReportTest, CheckProperties) {
   const GracefulNoReportTestParams& params = GetParam();
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      ZirconShutdownReason::kNoCrash,
+      GracefulShutdownInfo{GracefulShutdownAction::kNotParseable, params.reasons},
+      /*not_a_fdr=*/true);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
@@ -300,9 +277,9 @@ struct GracefulTestParams {
   std::string expected_crash_program_name;
 };
 
-class FinalGracefulShutdownInfoTest : public testing::TestWithParam<GracefulTestParams> {};
+class FinalShutdownInfoGracefulTest : public testing::TestWithParam<GracefulTestParams> {};
 
-INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
+INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
                          ::testing::ValuesIn(std::vector<GracefulTestParams>(
                              {{
                                   "GenericGraceful",
@@ -407,11 +384,12 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                            return info.param.test_name;
                          });
 
-TEST_P(FinalGracefulShutdownInfoTest, CheckProperties) {
+TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
   const GracefulTestParams& params = GetParam();
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      ZirconShutdownReason::kNoCrash,
+      GracefulShutdownInfo{GracefulShutdownAction::kReboot, params.reasons},
+      /*not_a_fdr=*/true);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
@@ -426,11 +404,11 @@ TEST_P(FinalGracefulShutdownInfoTest, CheckProperties) {
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), params.expected_crash_program_name);
 }
 
-TEST(FinalGracefulShutdownInfoTest, InferredFdr) {
+TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalGracefulShutdownInfo>(
-          /*action=*/std::nullopt, std::vector<GracefulShutdownReason>(),
-          /*not_a_fdr=*/false);
+      FinalShutdownInfo::MakeFinalShutdownInfo(ZirconShutdownReason::kNoCrash,
+                                               /*graceful_shutdown_info=*/std::nullopt,
+                                               /*not_a_fdr=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),

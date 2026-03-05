@@ -19,7 +19,6 @@
 
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
-#include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/forensics/testing/stubs/crash_reporter.h"
@@ -139,8 +138,8 @@ using GenericReporterTest = ReporterTest<UngracefulShutdownTestParam /*does not 
 TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
@@ -168,9 +167,8 @@ TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
 TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kRootJobTermination,
-      /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info = std::make_unique<feedback::FinalShutdownInfo>(
+      feedback::FinalShutdownReason::kRootJobTermination);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072\n"
@@ -197,8 +195,8 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
 }
 
 TEST_F(GenericReporterTest, Succeed_NoUptime) {
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info), "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
@@ -223,8 +221,8 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
 
 TEST_F(GenericReporterTest, Succeed_NoRuntime) {
   const zx::duration uptime = zx::msec(74715002);
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002", /*dlog=*/std::nullopt, uptime,
@@ -265,8 +263,8 @@ class SimpleRedactor : public RedactorBase {
 };
 
 TEST_F(GenericReporterTest, Succeed_RedactsData) {
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info), "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
@@ -293,8 +291,8 @@ TEST_F(GenericReporterTest, Succeed_RedactsData) {
 TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  auto final_shutdown_info = std::make_unique<feedback::FinalGracefulShutdownInfo>(
-      std::nullopt, std::vector<GracefulShutdownReason>(), /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<feedback::FinalShutdownInfo>(
+      feedback::FinalShutdownReason::kGenericGraceful);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
@@ -319,8 +317,8 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
 }
 
 TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kCold, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kCold);
   const feedback::RebootLog reboot_log(std::move(final_shutdown_info), "",
                                        /*dlog=*/std::nullopt, std::nullopt, std::nullopt,
                                        std::nullopt);
@@ -339,8 +337,8 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
 TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
@@ -359,8 +357,8 @@ TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
 TEST_F(GenericReporterTest, Succeed_DoesNothingIfAlreadyReportedOn) {
   ASSERT_TRUE(files::WriteFile(kHasReportedOnPath, /*data=*/"", /*size=*/0));
 
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
-      feedback::ZirconShutdownReason::kKernelPanic, /*graceful_shutdown_action=*/std::nullopt);
+  auto final_shutdown_info =
+      std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",

@@ -235,45 +235,6 @@ std::optional<GracefulShutdownInfo> ExtractGracefulShutdownInfo(
   return FromJson(file_content);
 }
 
-std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
-    const ZirconShutdownReason zircon_reason,
-    const std::optional<GracefulShutdownInfo>& graceful_info, const bool not_a_fdr) {
-  switch (zircon_reason) {
-    case ZirconShutdownReason::kKernelPanic:
-    case ZirconShutdownReason::kOOM:
-    case ZirconShutdownReason::kHwWatchdog:
-    case ZirconShutdownReason::kSwWatchdog:
-    case ZirconShutdownReason::kBrownout:
-    case ZirconShutdownReason::kUnknown:
-    case ZirconShutdownReason::kRootJobTermination:
-    case ZirconShutdownReason::kNotParseable:
-      return std::make_unique<FinalZirconShutdownInfo>(zircon_reason,
-                                                       /*graceful_shutdown_action=*/std::nullopt);
-    case ZirconShutdownReason::kCold:
-      // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
-      // reasons more informative than just "cold."
-      if (graceful_info.has_value() && graceful_info->action == GracefulShutdownAction::kPoweroff) {
-        return std::make_unique<FinalGracefulShutdownInfo>(graceful_info->action,
-                                                           graceful_info->reasons, not_a_fdr);
-      }
-      // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
-      return std::make_unique<FinalZirconShutdownInfo>(
-          zircon_reason,
-          graceful_info.has_value() ? std::make_optional(graceful_info->action) : std::nullopt);
-    case ZirconShutdownReason::kNoCrash: {
-      if (graceful_info.has_value()) {
-        return std::make_unique<FinalGracefulShutdownInfo>(graceful_info->action,
-                                                           graceful_info->reasons, not_a_fdr);
-      }
-      return std::make_unique<FinalGracefulShutdownInfo>(
-          std::nullopt, std::vector<GracefulShutdownReason>(), not_a_fdr);
-    }
-    case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "|zircon_reason| must be set";
-      return nullptr;
-  }
-}
-
 std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
                           const std::optional<GracefulShutdownInfo>& graceful_info,
                           const std::string& reboot_reason) {
@@ -320,7 +281,7 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      DetermineFinalShutdownInfo(zircon_reason, graceful_info, not_a_fdr);
+      FinalShutdownInfo::MakeFinalShutdownInfo(zircon_reason, graceful_info, not_a_fdr);
   const auto reboot_log =
       MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString());
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);

@@ -47,10 +47,8 @@ class StartupAnnotationsTest : public ::testing::Test {
 };
 
 TEST_F(StartupAnnotationsTest, Keys) {
-  auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   const RebootLog reboot_log(std::move(final_shutdown_info), "",
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
@@ -110,10 +108,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
       {kBootIdTimelinePath, "boot-id-timeline"},
   });
 
-  auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   const RebootLog reboot_log(std::move(final_shutdown_info), "",
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
@@ -153,10 +149,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
 }
 
 TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
-  auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   const RebootLog reboot_log(std::move(final_shutdown_info), "",
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
@@ -203,10 +197,8 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
       {kBuildMinUtcStampPath, "invalid"},
   });
 
-  auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   const RebootLog reboot_log(std::move(final_shutdown_info), "",
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
@@ -233,10 +225,8 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
       {kCurrentBuildProductVersionPath, "current-product-version"},
   });
 
-  auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   const RebootLog reboot_log(std::move(final_shutdown_info), "",
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,

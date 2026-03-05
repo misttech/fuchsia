@@ -57,10 +57,8 @@ class LastRebootTest : public UnitTestFixture {
 
 TEST_F(LastRebootTest, FirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  auto final_shutdown_info = std::make_unique<feedback::FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   RebootLog reboot_log(std::move(final_shutdown_info), "reboot log",
                        /*dlog=*/std::nullopt,
                        /*last_boot_uptime=*/zx::sec(1),
@@ -94,10 +92,8 @@ TEST_F(LastRebootTest, FirstInstance) {
 
 TEST_F(LastRebootTest, IsNotFirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  auto final_shutdown_info = std::make_unique<feedback::FinalGracefulShutdownInfo>(
-      GracefulShutdownAction::kReboot,
-      std::vector<GracefulShutdownReason>({GracefulShutdownReason::kOutOfMemory}),
-      /*not_a_fdr=*/true);
+  auto final_shutdown_info = std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom,
+                                                                 GracefulShutdownAction::kReboot);
   RebootLog reboot_log(std::move(final_shutdown_info), "reboot log",
                        /*dlog=*/std::nullopt,
                        /*last_boot_uptime=*/zx::sec(1),

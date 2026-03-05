@@ -7,6 +7,7 @@
 
 #include <fuchsia/feedback/cpp/fidl.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -17,142 +18,92 @@
 
 namespace forensics::feedback {
 
+enum class FinalShutdownReason : std::uint8_t {
+  // Should map to ZirconRebootReason without kNotSet and kNoCrash.
+  kCold,
+  kBrownout,
+  kHwWatchdog,
+  kSpontaneousReboot,
+  kKernelPanic,
+  kOom,
+  kSwWatchdog,
+  kRootJobTermination,
+  kZirconNotParseable,
+
+  // Should map to GracefulShutdownReason without kNotSet, kNotSupported and kNotParseable.
+  kGenericGraceful,
+  kUnexpectedReasonGraceful,
+  kUserRequest,
+  kSystemUpdate,
+  kRetrySystemUpdate,
+  kHighTemperature,
+  kSessionFailure,
+  // TODO(https://fxbug.dev/394392398): kSysmgrFailure is from CFv1, remove once it's no longer
+  // written as a graceful shutdown reason or once deprecated reasons can be ignored.
+  kSysmgrFailure,
+  kCriticalComponentFailure,
+  kFdr,
+  kZbiSwap,
+  kNetstackMigration,
+  kAndroidUnexpectedReason,
+  kAndroidNoReason,
+  kAndroidRescueParty,
+  kAndroidCriticalProcessFailure,
+  kDeveloperRequest,
+  kUserRequestDeviceStuck,
+};
+
 // Encapsulates the final information about why a device shutdown regardless of its source, e.g.
 // Zircon's shutdown information or shutdown information from userspace.
 class FinalShutdownInfo {
  public:
-  virtual ~FinalShutdownInfo() = default;
+  static std::unique_ptr<FinalShutdownInfo> MakeFinalShutdownInfo(
+      const ZirconShutdownReason zircon_reason,
+      std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr);
+
+  // For testing purposes.
+  FinalShutdownInfo(FinalShutdownReason reason);
+  FinalShutdownInfo(FinalShutdownReason reason,
+                    std::optional<GracefulShutdownAction> graceful_shutdown_action);
 
   // Whether the reason is "out of memory."
-  virtual bool IsOom() const = 0;
+  bool IsOom() const;
 
   // Whether the reason justifies a crash report.
-  virtual bool IsCrash() const = 0;
+  bool IsCrash() const;
 
   // Whether the reboot is graceful, ungraceful or undetermined.
-  virtual std::optional<bool> OptionallyGraceful() const = 0;
+  std::optional<bool> OptionallyGraceful() const;
 
   // Whether the reboot is planned, unplanned or undetermined.
-  virtual std::optional<bool> OptionallyPlanned() const = 0;
+  std::optional<bool> OptionallyPlanned() const;
 
   // Returns the graceful shutdown action, if the action was available and deemed relevant.
-  virtual std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const = 0;
+  std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const;
 
   // Returns the string representation of the reboot reason.
-  virtual std::string ToRebootReasonString() const = 0;
+  std::string ToRebootReasonString() const;
 
   // Returns the reboot reason, translated into fuchsia::feedback::RebootReason. Returns
   // std::nullopt if an appropriate translation isn't possible.
-  virtual std::optional<fuchsia::feedback::RebootReason> ToFidlRebootReason() const = 0;
+  // TODO(https://fxbug.dev/441569016): Spontaneous reasons shouldn't all map to brief power loss.
+  std::optional<fuchsia::feedback::RebootReason> ToFidlRebootReason() const;
 
   // Returns the reboot reason, translated into cobalt::LastRebootReason.
-  virtual cobalt::LastRebootReason ToCobaltLastRebootReason() const = 0;
+  cobalt::LastRebootReason ToCobaltLastRebootReason() const;
 
   // Returns the program name that should be used for the crash.
-  virtual std::string ToCrashProgramName() const = 0;
+  std::string ToCrashProgramName() const;
 
   // Creates a crash signature for the underlying shutdown reason and action, if applicable.
   //
-  // Note: |critical_process| is only supported for |ZirconShutdownReason::kRootJobTermination|.
-  virtual std::string ToCrashSignature(
-      SpontaneousRebootReason spontaneous_reboot_reason,
-      const std::optional<std::string>& critical_process) const = 0;
-};
-
-class FinalZirconShutdownInfo : public FinalShutdownInfo {
- public:
-  // |zircon_reason| cannot be kNotSet nor kNoCrash.
-  explicit FinalZirconShutdownInfo(ZirconShutdownReason zircon_reason,
-                                   std::optional<GracefulShutdownAction> graceful_shutdown_action);
-
-  bool IsOom() const override;
-
-  bool IsCrash() const override;
-
-  std::optional<bool> OptionallyGraceful() const override;
-
-  std::optional<bool> OptionallyPlanned() const override;
-
-  std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const override {
-    return graceful_shutdown_action_;
-  }
-
-  std::string ToRebootReasonString() const override;
-
-  // TODO(https://fxbug.dev/441569016): Spontaneous reasons shouldn't all map to brief power loss.
-  std::optional<fuchsia::feedback::RebootReason> ToFidlRebootReason() const override;
-
-  cobalt::LastRebootReason ToCobaltLastRebootReason() const override;
-
-  std::string ToCrashProgramName() const override;
-
+  // Note: |critical_process| is only supported for |FinalShutdownReason::kRootJobTermination|.
   std::string ToCrashSignature(SpontaneousRebootReason spontaneous_reboot_reason,
-                               const std::optional<std::string>& critical_process) const override;
+                               const std::optional<std::string>& critical_process) const;
 
  private:
-  ZirconShutdownReason zircon_reason_;
+  FinalShutdownReason reason_;
   std::optional<GracefulShutdownAction> graceful_shutdown_action_;
-};
-
-class FinalGracefulShutdownInfo : public FinalShutdownInfo {
- public:
-  FinalGracefulShutdownInfo(std::optional<GracefulShutdownAction> action,
-                            const std::vector<GracefulShutdownReason>& reasons, bool not_a_fdr);
-
-  bool IsOom() const override;
-
-  bool IsCrash() const override;
-
-  std::optional<bool> OptionallyGraceful() const override;
-
-  std::optional<bool> OptionallyPlanned() const override;
-
-  std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const override {
-    return action_;
-  }
-
-  std::string ToRebootReasonString() const override;
-
-  std::optional<fuchsia::feedback::RebootReason> ToFidlRebootReason() const override;
-
-  cobalt::LastRebootReason ToCobaltLastRebootReason() const override;
-
-  std::string ToCrashProgramName() const override;
-
-  std::string ToCrashSignature(SpontaneousRebootReason spontaneous_reboot_reason,
-                               const std::optional<std::string>& critical_process) const override;
-
- private:
-  enum class FinalGracefulShutdownReason : std::uint8_t {
-    kGenericGraceful,
-    kUnexpectedReasonGraceful,
-    kUserRequest,
-    kSystemUpdate,
-    kRetrySystemUpdate,
-    kHighTemperature,
-    kSessionFailure,
-    // TODO(https://fxbug.dev/394392398): kSysmgrFailure is from CFv1, remove once it's no longer
-    // written as a graceful shutdown reason or once deprecated reasons can be ignored.
-    kSysmgrFailure,
-    kCriticalComponentFailure,
-    kFdr,
-    kZbiSwap,
-    kOutOfMemory,
-    kNetstackMigration,
-    kAndroidUnexpectedReason,
-    kAndroidNoReason,
-    kAndroidRescueParty,
-    kAndroidCriticalProcessFailure,
-    kDeveloperRequest,
-    kUserRequestDeviceStuck,
-  };
-
-  FinalGracefulShutdownReason ConsolidateGracefulShutdownReasons(
-      const std::vector<GracefulShutdownReason>& reasons) const;
-
-  std::optional<GracefulShutdownAction> action_;
-  FinalGracefulShutdownReason final_reason_;
-  bool not_a_fdr_;
 };
 
 }  // namespace forensics::feedback
