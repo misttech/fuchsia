@@ -15,21 +15,33 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import fidl_fuchsia_wlan_common_security as fidl_security
-from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import BandType
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as HostapdSecurityMode,
+)
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 
 @dataclass
 class TestParams:
-    band: BandType
-    security: SecurityMode
+    band: Band
+    security: Security
 
 
 class WlanScanTest(base_test.WifiBaseTest):
@@ -45,10 +57,6 @@ class WlanScanTest(base_test.WifiBaseTest):
         super().__init__(configs)
         self.log = logging.getLogger()
 
-        if len(self.access_points) < 1:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
-
     def pre_run(self) -> None:
         test_params: list[tuple[TestParams]] = []
         for (
@@ -60,8 +68,8 @@ class WlanScanTest(base_test.WifiBaseTest):
             #
             # TODO(https://github.com/python/mypy/issues/14688): Replace the code below
             # with the commented code above once the bug affecting StrEnum resolves.
-            [e for e in BandType],
-            [SecurityMode.OPEN, SecurityMode.WPA2],
+            [e for e in Band],
+            [Security.NONE, Security.WPA2],
         ):
             test_params.append(
                 (
@@ -88,10 +96,18 @@ class WlanScanTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
 
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
+            raise signals.TestAbortClass(
+                "Requires at least one access point and one Fuchsia device"
+            )
+
         for fd in self.fuchsia_devices:
             fd.configure_wlan(association_mechanism="drivers")
-
-        self.access_point.stop_all_aps()
 
     def on_fail(self, record: TestResultRecord) -> None:
         for fd in self.fuchsia_devices:
@@ -101,35 +117,49 @@ class WlanScanTest(base_test.WifiBaseTest):
     def teardown_test(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_core.disconnect()
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
 
     def teardown_class(self) -> None:
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
 
     def scan_while_connected(self, t: TestParams) -> None:
         """Connects to as specified network and initiates a scan."""
-        ssid = utils.rand_ascii_str(20)
+        ssid = AccessPointConfig.random_string(20)
         password = (
-            utils.rand_ascii_str(10)
-            if t.security == SecurityMode.WPA2
+            AccessPointConfig.random_string(10)
+            if t.security == Security.WPA2
             else None
         )
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=t.band.default_channel(),
-            ssid=ssid,
-            security=Security(
-                security_mode=t.security,
+        if self.openwrt_ap:
+            config = AccessPointConfig.generate(
+                band=t.band,
+                ssid=ssid,
                 password=password,
-            ),
-        )
+                security=t.security,
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=t.band)
+        elif self.access_point:
+            band = ConfigMapper.to_hostapd_band(t.band)
+            security = ConfigMapper.to_hostapd_security(t.security)
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=band.default_channel(),
+                ssid=ssid,
+                security=HostapdSecurity(
+                    security_mode=security,
+                    password=password,
+                ),
+            )
 
-        if t.security == SecurityMode.OPEN:
+        if t.security == Security.NONE:
             protocol = fidl_security.Protocol.OPEN
             credentials = None
-        elif t.security == SecurityMode.WPA2:
+        elif t.security == Security.WPA2:
             if password is None:
                 raise signals.TestError("Password is required for WPA2")
             protocol = fidl_security.Protocol.WPA2_PERSONAL
@@ -192,17 +222,26 @@ class WlanScanTest(base_test.WifiBaseTest):
 
     def test_basic_scan_request(self) -> None:
         """Verify a general scan trigger returns at least one result"""
-        ssid = utils.rand_ascii_str(20)
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=BandType.BAND_2G.default_channel(),
-            ssid=ssid,
-            security=Security(
-                security_mode=SecurityMode.OPEN,
-                password=None,
-            ),
-        )
+        ssid = AccessPointConfig.random_string(20)
+        if self.openwrt_ap:
+            config = AccessPointConfig.generate(
+                band=Band.BAND_2G,
+                ssid=ssid,
+                security=Security.NONE,
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+        elif self.access_point:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=BandType.BAND_2G.default_channel(),
+                ssid=ssid,
+                security=HostapdSecurity(
+                    security_mode=HostapdSecurityMode.OPEN,
+                    password=None,
+                ),
+            )
         for fd in self.fuchsia_devices:
             self.basic_scan_request(fd, ssid)
 

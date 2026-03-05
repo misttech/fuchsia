@@ -30,6 +30,7 @@ python_library("mobly_controller_no_testonly") {
     "openwrt_access_point/__init__.py",
     "openwrt_access_point/lib/__init__.py",
     "openwrt_access_point/lib/access_point_config.py",
+    "openwrt_access_point/lib/access_point_config_mapper.py",
   ]
   source_root = "."
   library_deps = [
