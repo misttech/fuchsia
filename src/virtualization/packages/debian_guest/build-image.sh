@@ -9,7 +9,7 @@
 set -e
 
 usage() {
-  echo "usage: ${0} <output dir> (arm64|x64) [--disable-fakemachine]"
+  echo "usage: ${0} <output dir> (arm64|x64) [--disable-fakemachine] [--sideload-kernel <deb-url>]"
   echo
   echo "Builds a Debian based image, initrd, and kernel suitable for Machina."
   echo
@@ -37,6 +37,7 @@ main() {
   mkdir -p "${output_dir}" || exit 1
 
   local disable_fakemachine=false
+  local sideload_kernel=""
 
   # Target architecture.
   case "${2}" in
@@ -50,14 +51,19 @@ main() {
       usage;;
   esac
 
-  for option in "${@:3}"
-  do
-    case "${option}" in
+  shift 2
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
       --disable-fakemachine)
-        local disable_fakemachine=true
+        disable_fakemachine=true
+        shift
         ;;
-    *)
-      usage;;
+      --sideload-kernel)
+        sideload_kernel="$2"
+        shift 2
+        ;;
+      *)
+        usage;;
     esac
   done
 
@@ -76,12 +82,19 @@ main() {
   local script_dir
   script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+  local debos_args=("-v" "--artifactdir=${working_dir}" "-t" "arch:${arch}")
+
   # If we disable the fakemachine VM we also need to use sudo for losetup
   if [ "$disable_fakemachine" == true ]
   then
-    debos="sudo debos --disable-fakemachine"
+    debos="sudo debos"
+    debos_args+=("--disable-fakemachine")
   else
     debos="debos"
+  fi
+
+  if [[ -n "${sideload_kernel}" ]]; then
+    debos_args+=("-t" "kernel:${sideload_kernel}")
   fi
 
   # Create the image.
@@ -90,7 +103,7 @@ main() {
   # unhelpfully writes files to its current working directory.
   echo "Starting image creation VM..."
   pushd $working_dir;
-  $debos -v --artifactdir="${working_dir}" -t "arch:${arch}" "${script_dir}/debos/debos.yaml"
+  $debos "${debos_args[@]}" "${script_dir}/debos/debos.yaml"
   popd
 
   # Move files to the output directory.

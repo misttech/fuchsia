@@ -11,6 +11,7 @@
 {{ $output_image := or .output_image "output.img" -}}
 {{ $output_rootfs := or .output_rootfs "rootfs.tar.gz" -}}
 {{ $use_rootfs := or .use_rootfs "" -}}
+{{ $kernel := or .kernel "" -}}
 
 architecture: {{ $arch }}
 
@@ -38,6 +39,7 @@ actions:
         - procps
         - socat
         - sudo
+        - wget
         - zstd
         # Packages for network and automatic tests of network.
         - iproute2
@@ -65,6 +67,22 @@ actions:
   - action: unpack
     file: {{ $use_rootfs }}
 
+  {{ end }}
+
+  {{ if $kernel }}
+  - action: run
+    description: Optional injection of specific kernel image
+    chroot: true
+    script: |
+      # Download the specific signed image
+      wget -O /tmp/sideloaded-kernel.deb {{ $kernel }}
+
+      # Install it using dpkg (this places vmlinuz in /boot and modules in /lib/modules)
+      # We use --force-depends if there are minor version mismatches in secondary tools
+      dpkg -i --force-depends /tmp/sideloaded-kernel.deb
+
+      # Clean up the deb file to keep the image small
+      rm /tmp/sideloaded-kernel.deb
   {{ end }}
 
   # Run customization actions inside the image.
