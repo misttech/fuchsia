@@ -442,7 +442,7 @@ impl ContextCapabilityClause for ContextExpose {
             "runner",
             "resolver",
             "config",
-            "dicitionary",
+            "dictionary",
         ]
     }
     fn are_many_names_allowed(&self) -> bool {
@@ -454,7 +454,7 @@ impl ContextCapabilityClause for ContextExpose {
             "resolver",
             "event_stream",
             "config",
-            "dicitionary",
+            "dictionary",
         ]
         .contains(&self.capability_type(None).unwrap())
     }

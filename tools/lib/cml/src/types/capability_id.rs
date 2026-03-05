@@ -5,11 +5,10 @@
 use crate::one_or_many::OneOrMany;
 use crate::types::capability::ContextCapability;
 use crate::types::common::{ContextCapabilityClause, option_one_or_many_as_ref_context};
-use crate::types::offer::ContextOffer;
 use crate::types::r#use::ContextUse;
 use crate::{
-    AsClause, AsClauseContext, Capability, CapabilityClause, ContextExpose, ContextSpanned, Error,
-    PathClause, Use, alias_or_name, alias_or_name_context,
+    AsClause, AsClauseContext, Capability, CapabilityClause, ContextSpanned, Error, PathClause,
+    Use, alias_or_name, alias_or_name_context,
 };
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
@@ -506,72 +505,75 @@ impl<'a> CapabilityId<'a> {
         ))
     }
 
-    pub fn from_context_offer(
-        offer_input: &'a ContextSpanned<ContextOffer>,
-    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error> {
-        let offer = &offer_input.value;
-        let origin = &offer_input.origin;
+    pub fn from_context_offer_expose<T>(
+        clause_input: &'a ContextSpanned<T>,
+    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error>
+    where
+        T: ContextCapabilityClause + AsClauseContext + fmt::Debug,
+    {
+        let clause = &clause_input.value;
+        let origin = &clause_input.origin;
 
-        let alias = offer.r#as();
+        let alias = clause.r#as();
 
-        if let Some(n) = offer.service() {
+        if let Some(n) = clause.service() {
             return Ok(Self::services_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.protocol() {
+        } else if let Some(n) = clause.protocol() {
             return Ok(Self::protocols_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.directory() {
+        } else if let Some(n) = clause.directory() {
             return Ok(Self::directories_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.storage() {
+        } else if let Some(n) = clause.storage() {
             return Ok(Self::storages_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.runner() {
+        } else if let Some(n) = clause.runner() {
             return Ok(Self::runners_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.resolver() {
+        } else if let Some(n) = clause.resolver() {
             return Ok(Self::resolvers_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(event_stream) = offer.event_stream() {
+        } else if let Some(event_stream) = clause.event_stream() {
             return Ok(Self::event_streams_from_context(Self::get_one_or_many_names_context(
                 event_stream,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.dictionary() {
+        } else if let Some(n) = clause.dictionary() {
             return Ok(Self::dictionaries_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
-        } else if let Some(n) = offer.config() {
+        } else if let Some(n) = clause.config() {
             return Ok(Self::configurations_from_context(Self::get_one_or_many_names_context(
                 n,
                 alias,
-                offer.capability_type(Some(origin.clone())).unwrap(),
+                clause.capability_type(Some(origin.clone())).unwrap(),
             )?));
         }
 
         // Unsupported capability type.
-        let supported_keywords = offer
+        let supported_keywords = clause
             .supported()
             .into_iter()
             .map(|k| format!("\"{}\"", k))
@@ -580,88 +582,7 @@ impl<'a> CapabilityId<'a> {
         Err(Error::validate_context(
             format!(
                 "`{}` declaration is missing a capability keyword, one of: {}",
-                offer.decl_type(),
-                supported_keywords,
-            ),
-            Some(origin.clone()),
-        ))
-    }
-
-    pub fn from_context_expose(
-        expose_input: &'a ContextSpanned<ContextExpose>,
-    ) -> Result<Vec<(Self, Arc<PathBuf>)>, Error> {
-        let expose = &expose_input.value;
-        let origin = &expose_input.origin;
-
-        let alias = expose.r#as();
-
-        if let Some(n) = expose.service() {
-            return Ok(Self::services_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.protocol() {
-            return Ok(Self::protocols_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.directory() {
-            return Ok(Self::directories_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.storage() {
-            return Ok(Self::storages_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.runner() {
-            return Ok(Self::runners_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.resolver() {
-            return Ok(Self::resolvers_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(event_stream) = expose.event_stream() {
-            return Ok(Self::event_streams_from_context(Self::get_one_or_many_names_context(
-                event_stream,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.dictionary() {
-            return Ok(Self::dictionaries_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        } else if let Some(n) = expose.config() {
-            return Ok(Self::configurations_from_context(Self::get_one_or_many_names_context(
-                n,
-                alias,
-                expose.capability_type(Some(origin.clone())).unwrap(),
-            )?));
-        }
-
-        // Unsupported capability type.
-        let supported_keywords = expose
-            .supported()
-            .into_iter()
-            .map(|k| format!("\"{}\"", k))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(Error::validate_context(
-            format!(
-                "`{}` declaration is missing a capability keyword, one of: {}",
-                expose.decl_type(),
+                clause.decl_type(),
                 supported_keywords,
             ),
             Some(origin.clone()),
@@ -691,6 +612,19 @@ impl<'a> CapabilityId<'a> {
                 use_input.capability_type(Some(origin.clone())).unwrap(),
             )?));
         } else if let Some(n) = option_one_or_many_as_ref_context(&use_.protocol) {
+            if let Some(numbered_handle) = &use_.numbered_handle {
+                return Ok(n
+                    .value
+                    .iter()
+                    .map(|_| {
+                        (
+                            CapabilityId::UsedProtocolNumberedHandle(numbered_handle.value),
+                            n.origin.clone(),
+                        )
+                    })
+                    .collect());
+            }
+
             return Ok(Self::used_protocols_from_context(Self::get_one_or_many_svc_paths_context(
                 n,
                 alias,
@@ -932,7 +866,7 @@ impl fmt::Display for CapabilityId<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::offer::Offer;
+    use crate::types::offer::{ContextOffer, Offer};
     use crate::types::r#use::Use;
     use assert_matches::assert_matches;
     use std::path::PathBuf;
@@ -953,7 +887,7 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     service: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -975,7 +909,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     service: Some(ContextSpanned {
                         value: OneOrMany::Many(vec![a.clone(), b.clone()]),
@@ -1002,7 +936,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     service: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -1191,7 +1125,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     protocol: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -1213,7 +1147,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     protocol: Some(ContextSpanned {
                         value: OneOrMany::Many(vec![a.clone(), b.clone()]),
@@ -1334,7 +1268,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     directory: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -1356,7 +1290,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     directory: Some(ContextSpanned {
                         value: OneOrMany::Many(vec![a.clone(), b.clone()]),
@@ -1427,7 +1361,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     storage: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -1449,7 +1383,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     storage: Some(ContextSpanned {
                         value: OneOrMany::Many(vec![a.clone(), b.clone()]),
@@ -1552,7 +1486,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     dictionary: Some(ContextSpanned {
                         value: OneOrMany::One(a.clone()),
@@ -1574,7 +1508,7 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     dictionary: Some(ContextSpanned {
                         value: OneOrMany::Many(vec![a.clone(), b.clone()]),
@@ -1690,7 +1624,7 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_matches!(
-            CapabilityId::from_context_offer(&ContextSpanned {
+            CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer::default(),
                 origin: synthetic_origin
             }),

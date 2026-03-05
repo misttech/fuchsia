@@ -268,7 +268,7 @@ impl<'a> ValidationContextV2<'a> {
                      -> Result<(), Error> {
                         if field_is_some {
                             for (cap_id, cap_origin) in
-                                CapabilityId::from_context_offer(offer_wrapper)?
+                                CapabilityId::from_context_offer_expose(offer_wrapper)?
                             {
                                 if !offered_ids.insert(cap_id.clone()) {
                                     conflict_list.push((cap_id, cap_origin));
@@ -737,6 +737,49 @@ which is almost certainly a mistake: {}",
             };
         }
 
+        match (&use_.from, &use_.dependency) {
+            (Some(ContextSpanned { value: UseFromRef::Named(name), origin }), _)
+                if use_.service.is_some() =>
+            {
+                self.validate_component_child_or_collection_ref(
+                    "\"use\" source",
+                    &AnyRef::Named(&name.clone()),
+                    Some(origin),
+                )?;
+            }
+            (Some(ContextSpanned { value: UseFromRef::Named(name), origin }), _) => {
+                self.validate_component_child_or_capability_ref(
+                    "\"use\" source",
+                    &AnyRef::Named(&name.clone()),
+                    Some(origin),
+                )?;
+            }
+            (
+                Some(ContextSpanned {
+                    value:
+                        UseFromRef::Dictionary(DictionaryRef {
+                            path: _,
+                            root: RootDictionaryRef::Named(name),
+                        }),
+                    origin,
+                }),
+                _,
+            ) => {
+                self.validate_component_child_or_capability_ref(
+                    "\"use\" source",
+                    &AnyRef::Named(&name.clone()),
+                    Some(origin),
+                )?;
+            }
+            (_, Some(ContextSpanned { value: DependencyType::Weak, origin })) => {
+                return Err(Error::validate_context(
+                    format!("Only `use` from children can have dependency: \"weak\""),
+                    Some(origin.clone()),
+                ));
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
@@ -851,7 +894,7 @@ which is almost certainly a mistake: {}",
         }
 
         // Ensure we haven't already exposed an entity of the same name.
-        let target_cap_ids_with_origin = CapabilityId::from_context_expose(expose_wrapper)?;
+        let target_cap_ids_with_origin = CapabilityId::from_context_offer_expose(expose_wrapper)?;
         for (capability_id, cap_origin) in target_cap_ids_with_origin {
             let mut ids = &mut *used_ids;
             if let Some(e2) = &expose.to
@@ -984,7 +1027,7 @@ which is almost certainly a mistake: {}",
             }
         }
 
-        let target_cap_ids_with_origin = CapabilityId::from_context_offer(offer_wrapper)?;
+        let target_cap_ids_with_origin = CapabilityId::from_context_offer_expose(offer_wrapper)?;
 
         let to_wrapper = &offer.to;
 
@@ -1080,7 +1123,7 @@ which is almost certainly a mistake: {}",
                     to_target
                 }
                 OfferToRef::OwnDictionary(to_target) => {
-                    let r2 = CapabilityId::from_context_offer(offer_wrapper)?;
+                    let r2 = CapabilityId::from_context_offer_expose(offer_wrapper)?;
                     for (id, cap_origin) in r2 {
                         match &id {
                             CapabilityId::Protocol(_)
@@ -2635,13 +2678,7 @@ which is almost certainly a mistake: {}",
         }
 
         for ref_ in offer.from.iter() {
-            if let OfferFromRef::Dictionary(d) = ref_ {
-                match &d.root {
-                    RootDictionaryRef::Self_
-                    | RootDictionaryRef::Named(_)
-                    | RootDictionaryRef::Parent => {}
-                }
-
+            if let OfferFromRef::Dictionary(_) = ref_ {
                 if offer.storage.is_some() {
                     return Err(Error::validate(
                         "Dictionaries do not support \"storage\" capabilities",

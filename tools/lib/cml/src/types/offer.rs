@@ -937,9 +937,9 @@ pub fn offer_to_all_would_duplicate_context(
 
     // If none of the pairs of the cross products of the two offer's protocols
     // match, then the offer is certainly not a duplicate
-    if CapabilityId::from_context_offer(specific_offer).iter().flatten().all(
+    if CapabilityId::from_context_offer_expose(specific_offer).iter().flatten().all(
         |specific_offer_cap_id| {
-            CapabilityId::from_context_offer(offer_to_all)
+            CapabilityId::from_context_offer_expose(offer_to_all)
                 .iter()
                 .flatten()
                 .all(|offer_to_all_cap_id| offer_to_all_cap_id.0 != specific_offer_cap_id.0)

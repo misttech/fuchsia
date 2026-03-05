@@ -461,21 +461,11 @@ impl ContextCapabilityClause for ContextCapability {
             "runner",
             "resolver",
             "config",
-            "dicitionary",
+            "dictionary",
         ]
     }
     fn are_many_names_allowed(&self) -> bool {
-        [
-            "service",
-            "protocol",
-            "directory",
-            "runner",
-            "resolver",
-            "event_stream",
-            "config",
-            "dicitionary",
-        ]
-        .contains(&self.capability_type(None).unwrap())
+        ["service", "protocol", "event_stream"].contains(&self.capability_type(None).unwrap())
     }
 
     fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
