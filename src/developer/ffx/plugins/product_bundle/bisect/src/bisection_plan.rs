@@ -138,7 +138,7 @@ impl BisectionPlan {
             name.clone(),
             version.clone()
         ))?;
-        let response = client.get_pb_release_info(name.clone(), version.clone()).await.context(format!("Unable to retrieve information about {}@{} from MOS. Perhaps this product bundle is not yet supported?\n\n -> For more info, see go/fuchsia-product-bisection-userguide\n",
+        let response = client.get_pb_release_info(name.clone(), version.clone()).await.context(format!("*** Unknown MOS Identifier ***\n\nUnable to retrieve information about {}@{} from MOS. Perhaps this product bundle is not yet supported?\n\nFor more info, see go/fuchsia-product-bisection-userguide\n",
         name.clone(),
         version.clone()
         ))?;
@@ -184,7 +184,33 @@ impl BisectionPlan {
         end: &MOSIdentifier,
         writer: &mut SimpleWriter,
     ) -> Result<Vec<MOSIdentifier>> {
-        let versions = client.interpolate(start, end).await?;
+        let versions = match client.interpolate(start, end).await {
+            Ok(versions) => versions,
+            Err(e) => {
+                let original_message = extract_mos_error_message(&e);
+
+                if original_message.contains("no common ancestor exists") {
+                    anyhow::bail!(
+                        "*** No Common Ancestor ***\n\nThere is a missing link in the history chain for {} {} between {} and {}.\nWe unfortunately cannot fix this until b/462795427 is addressed.\nConsider shrinking the bisection range until this begins to work.\n\nFor more info, see go/fuchsia-product-bisection-userguide\n\nOriginal Message: {}\n",
+                        start.artifact_type,
+                        start.name,
+                        start.version,
+                        end.version,
+                        original_message
+                    );
+                } else if original_message.contains("accidentally swapped") {
+                    anyhow::bail!(
+                        "*** Backwards Chain ***\n\nIn the history chain for {} {}, the from-success version ({}) appears _after_ the to-failure version ({}).\nPerhaps these arguments should be reversed?\n\nFor more info, see go/fuchsia-product-bisection-userguide\n\nOriginal Message: {}\n",
+                        start.artifact_type,
+                        start.name,
+                        start.version,
+                        end.version,
+                        original_message
+                    );
+                }
+                return Err(e);
+            }
+        };
         writer.line(&format!("  - {} [{} releases]", start.id_no_version(), versions.len()))?;
         ensure!(
             versions.first() == Some(start),
@@ -204,6 +230,28 @@ impl BisectionPlan {
         );
         Ok(versions)
     }
+}
+
+#[derive(Deserialize)]
+struct MOSErrorResponse {
+    error: MOSErrorDetail,
+}
+
+#[derive(Deserialize)]
+struct MOSErrorDetail {
+    message: String,
+}
+
+/// Helper function to extract the original message from a MOS JSON error response,
+/// falling back to the default Display message if parsing fails.
+fn extract_mos_error_message(e: &anyhow::Error) -> String {
+    let err_str = format!("{:?}", e);
+    if let Some(json_start) = err_str.find('{') {
+        if let Ok(parsed) = serde_json::from_str::<MOSErrorResponse>(&err_str[json_start..]) {
+            return parsed.error.message;
+        }
+    }
+    format!("{}", e)
 }
 
 /// Represents the result of a single bisection step.
@@ -344,5 +392,34 @@ mod tests {
         assert_eq!(plan.results.len(), 1);
         assert!(matches!(status, BisectionStatus::Continue));
         assert!(matches!(plan.status, BisectionStatus::Continue));
+    }
+
+    #[test]
+    fn test_extract_mos_error_message_valid_json() {
+        let err_json = r#"{
+            "error": {
+                "message": "no common ancestor exists"
+            }
+        }"#;
+        let err = anyhow::anyhow!("Some context: {}", err_json);
+        let extracted = extract_mos_error_message(&err);
+        assert_eq!(extracted, "no common ancestor exists");
+    }
+
+    #[test]
+    fn test_extract_mos_error_message_invalid_json() {
+        let err = anyhow::anyhow!("Some other error");
+        let extracted = extract_mos_error_message(&err);
+        assert_eq!(extracted, "Some other error");
+    }
+
+    #[test]
+    fn test_extract_mos_error_message_json_missing_fields() {
+        let err_json = r#"{
+            "foo": "bar"
+        }"#;
+        let err = anyhow::anyhow!("Some context: {}", err_json);
+        let extracted = extract_mos_error_message(&err);
+        assert_eq!(extracted, format!("{}", err));
     }
 }
