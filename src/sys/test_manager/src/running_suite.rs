@@ -883,6 +883,7 @@ async fn get_realm(
     wrapper_realm
         .add_route(
             Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.diagnostics.LogStream"))
                 .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
                 .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
                 .from(&archivist)

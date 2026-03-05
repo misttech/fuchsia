@@ -187,6 +187,7 @@
         {
             protocol: [
                 "fuchsia.diagnostics.LogSettings",
+                "fuchsia.diagnostics.LogStream",
                 "fuchsia.diagnostics.system.SerialLogControl",
                 "fuchsia.logger.Log",
                 "fuchsia.logger.LogSink",
