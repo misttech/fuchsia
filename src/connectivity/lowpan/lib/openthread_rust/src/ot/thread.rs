@@ -150,6 +150,15 @@ pub trait Thread {
             ot_iter: OT_NEIGHBOR_INFO_ITERATOR_INIT.try_into().unwrap(),
         }
     }
+
+    /// Functional equivalent of [`otsys::otThreadSetVendorName`](crate::otsys::otThreadSetVendorName).
+    fn set_vendor_name(&self, name: &str) -> Result;
+
+    /// Functional equivalent of [`otsys::otThreadSetVendorModel`](crate::otsys::otThreadSetVendorModel).
+    fn set_vendor_model(&self, model: &str) -> Result;
+
+    /// Functional equivalent of [`otsys::otThreadSetVendorSwVersion`](crate::otsys::otThreadSetVendorSwVersion).
+    fn set_vendor_sw_version(&self, version: &str) -> Result;
 }
 
 impl<T: Thread + Boxable> Thread for ot::Box<T> {
@@ -258,6 +267,18 @@ impl<T: Thread + Boxable> Thread for ot::Box<T> {
         ot_iter: &mut otNeighborInfoIterator,
     ) -> Option<NeighborInfo> {
         self.as_ref().iter_next_neighbor_info(ot_iter)
+    }
+
+    fn set_vendor_name(&self, name: &str) -> Result {
+        self.as_ref().set_vendor_name(name)
+    }
+
+    fn set_vendor_model(&self, model: &str) -> Result {
+        self.as_ref().set_vendor_model(model)
+    }
+
+    fn set_vendor_sw_version(&self, version: &str) -> Result {
+        self.as_ref().set_vendor_sw_version(version)
     }
 }
 
@@ -415,5 +436,39 @@ impl Thread for Instance {
                 err => unreachable!("Unexpected error from otThreadGetNextNeighborInfo: {:?}", err),
             }
         }
+    }
+
+    fn set_vendor_name(&self, name: &str) -> Result {
+        let vendor_name = CString::new(name).expect("Vendor name must not contain null bytes");
+        Error::from(unsafe {
+            otThreadSetVendorName(
+                self.as_ot_ptr(),
+                vendor_name.as_ptr() as *const ::std::os::raw::c_char,
+            )
+        })
+        .into_result()
+    }
+
+    fn set_vendor_model(&self, model: &str) -> Result {
+        let vendor_model = CString::new(model).expect("Vendor model must not contain null bytes");
+        Error::from(unsafe {
+            otThreadSetVendorModel(
+                self.as_ot_ptr(),
+                vendor_model.as_ptr() as *const ::std::os::raw::c_char,
+            )
+        })
+        .into_result()
+    }
+
+    fn set_vendor_sw_version(&self, version: &str) -> Result {
+        let vendor_sw_version =
+            CString::new(version).expect("Vendor SW Version must not contain null bytes");
+        Error::from(unsafe {
+            otThreadSetVendorSwVersion(
+                self.as_ot_ptr(),
+                vendor_sw_version.as_ptr() as *const ::std::os::raw::c_char,
+            )
+        })
+        .into_result()
     }
 }

@@ -34,8 +34,8 @@ pub use convert::*;
 pub use dhcpv6pd::*;
 use driver_state::*;
 pub use error_adapter::*;
-use lowpan_driver_common::net::{BackboneInterface, NetworkInterface};
 use lowpan_driver_common::AsyncCondition;
+use lowpan_driver_common::net::{BackboneInterface, NetworkInterface};
 use multicast_routing_manager::MulticastRoutingManager;
 pub use nat64::*;
 pub use srp_proxy::*;
@@ -173,16 +173,18 @@ impl<F: FnOnce()> Drop for CleanupFunc<F> {
 
 static DEFAULT_VENDOR: &str = "Unknown";
 static DEFAULT_PRODUCT: &str = "Fuchsia";
+static DEFAULT_BUILD_NAME: &str = "Unknown";
 
 #[derive(Debug)]
 pub(crate) struct ProductMetadata {
     vendor: String,
     product: String,
+    build_name: String,
 }
 
 impl ProductMetadata {
-    fn new(vendor: String, product: String) -> Self {
-        Self { vendor, product }
+    fn new(vendor: String, product: String, build_name: String) -> Self {
+        Self { vendor, product, build_name }
     }
 
     pub(crate) fn vendor(&self) -> String {
@@ -192,11 +194,19 @@ impl ProductMetadata {
     pub(crate) fn product(&self) -> String {
         self.product.clone()
     }
+
+    pub(crate) fn build_name(&self) -> String {
+        self.build_name.clone()
+    }
 }
 
 impl std::default::Default for ProductMetadata {
     fn default() -> Self {
-        Self::new(DEFAULT_VENDOR.to_string(), DEFAULT_PRODUCT.to_string())
+        Self::new(
+            DEFAULT_VENDOR.to_string(),
+            DEFAULT_PRODUCT.to_string(),
+            DEFAULT_BUILD_NAME.to_string(),
+        )
     }
 }
 
@@ -207,7 +217,8 @@ pub(crate) async fn get_product_metadata(
         Ok(info) => {
             let vendor = info.manufacturer.unwrap_or_else(|| DEFAULT_VENDOR.to_string());
             let product = info.model.unwrap_or_else(|| DEFAULT_PRODUCT.to_string());
-            ProductMetadata::new(vendor, product)
+            let build_name = info.build_name.unwrap_or_else(|| DEFAULT_BUILD_NAME.to_string());
+            ProductMetadata::new(vendor, product, build_name)
         }
         Err(err) => {
             warn!("Unable to get product info: {:?}", err);
@@ -229,10 +240,13 @@ mod test {
     fn test_product_metadata() {
         let vendor = "qwer";
         let product = "asdf";
-        let product_metadata = ProductMetadata::new(vendor.to_string(), product.to_string());
+        let build_name = "1.0";
+        let product_metadata =
+            ProductMetadata::new(vendor.to_string(), product.to_string(), build_name.to_string());
 
         assert_eq!(product_metadata.vendor(), vendor.to_string());
         assert_eq!(product_metadata.product(), product.to_string());
+        assert_eq!(product_metadata.build_name(), build_name.to_string());
     }
 
     #[fuchsia::test]
@@ -241,6 +255,7 @@ mod test {
 
         assert_eq!(product_metadata.vendor(), DEFAULT_VENDOR.to_string());
         assert_eq!(product_metadata.product(), DEFAULT_PRODUCT.to_string());
+        assert_eq!(product_metadata.build_name(), DEFAULT_BUILD_NAME.to_string());
     }
 
     #[fuchsia::test]
@@ -253,6 +268,7 @@ mod test {
 
         let fake_manufacturer = String::from("asdf");
         let fake_model = String::from("qwer");
+        let fake_build_name = String::from("1.0");
 
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
         assert_matches!(
@@ -261,6 +277,7 @@ mod test {
                 responder.send(&fidl_fuchsia_hwinfo::ProductInfo {
                     manufacturer: Some(fake_manufacturer.clone()),
                     model: Some(fake_model.clone()),
+                    build_name: Some(fake_build_name.clone()),
                     ..Default::default()
                 }).expect("failed to send response")
             }
@@ -269,6 +286,7 @@ mod test {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(metadata) => {
             assert_eq!(metadata.vendor(), fake_manufacturer.to_string());
             assert_eq!(metadata.product(), fake_model.to_string());
+            assert_eq!(metadata.build_name(), fake_build_name.to_string());
         });
     }
 
@@ -293,6 +311,7 @@ mod test {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(metadata) => {
             assert_eq!(metadata.vendor(), DEFAULT_VENDOR.to_string());
             assert_eq!(metadata.product(), DEFAULT_PRODUCT.to_string());
+            assert_eq!(metadata.build_name(), DEFAULT_BUILD_NAME.to_string());
         });
     }
 
@@ -308,6 +327,7 @@ mod test {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(metadata) => {
             assert_eq!(metadata.vendor(), DEFAULT_VENDOR.to_string());
             assert_eq!(metadata.product(), DEFAULT_PRODUCT.to_string());
+            assert_eq!(metadata.build_name(), DEFAULT_BUILD_NAME.to_string());
         });
     }
 }

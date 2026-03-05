@@ -254,6 +254,15 @@ impl Config {
         let product_metadata =
             get_product_metadata(connect_to_protocol::<fidl_fuchsia_hwinfo::ProductMarker>()?)
                 .await;
+        if let Err(e) = ot_instance.set_vendor_name(&product_metadata.vendor()) {
+            warn!("Failed to set the vendor name {:?}", e);
+        }
+        if let Err(e) = ot_instance.set_vendor_model(&product_metadata.product()) {
+            warn!("Failed to set the vendor model {:?}", e);
+        }
+        if let Err(e) = ot_instance.set_vendor_sw_version(&product_metadata.build_name()) {
+            warn!("Failed to set the vendor sw version {:?}", e);
+        }
 
         let publisher =
             connect_to_protocol::<fidl_fuchsia_net_mdns::ServiceInstancePublisherMarker>().unwrap();
