@@ -143,12 +143,12 @@ fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& curre
     next = Registers(regs.arch());
   }
 
-  auto cfi = GetCfiModuleInfoForPc(pc);
-  if (cfi.is_error()) {
-    return cfi.take_error();
+  auto cfi_module = GetCfiModuleInfoForPc(pc);
+  if (cfi_module.is_error()) {
+    return cfi_module.take_error();
   }
 
-  auto result = cfi->get().binary->Step(stack, regs, next);
+  auto result = cfi_module->get().Step(stack, regs, next);
   if (result.is_error()) {
     return result;
   }
@@ -196,49 +196,15 @@ void CfiUnwinder::AsyncStep(AsyncMemory* stack, const Registers& current, bool i
     regs = result.value();
   }
 
-  auto cfi_info_res = GetCfiModuleInfoForPc(pc);
-  if (cfi_info_res.is_error()) {
-    return cb(cfi_info_res.error_value(), Registers(current.arch()));
+  auto cfi_module = GetCfiModuleInfoForPc(pc);
+  if (cfi_module.is_error()) {
+    return cb(cfi_module.error_value(), Registers(current.arch()));
   }
 
-  const CfiModuleInfo& cfi_info = cfi_info_res->get();
-  if (cfi_info.debug_info) {
-    // Try stepping with the debug_info if it is available. This could contain both .debug_frame and
-    // .eh_frame sections in the case of a fully unstripped binary, or just a .debug_frame section
-    // in the case of a separated debug_info binary. Both have to fail for us to try again with the
-    // "binary" file, which will only contain an .eh_frame section.
-    cfi_info.debug_info->AsyncStep(
-        stack, regs,
-        [&cfi_info, stack, regs, cb = std::move(cb)](Error err, Registers next_regs) mutable {
-          if (err.has_err()) {
-            // debug_info didn't work, try again with the binary module instead. If this fails it's
-            // a fatal error for this unwinder.
-            if (cfi_info.binary) {
-              return cfi_info.binary->AsyncStep(
-                  stack, regs, [e = err, cb = std::move(cb)](Error err, Registers regs) mutable {
-                    if (err.has_err()) {
-                      // Propagate both errors up.
-                      return cb(Error("debug_info:" + e.msg() + ";binary:" + err.msg()),
-                                std::move(regs));
-                    }
-
-                    // Using the binary worked.
-                    cb(err, std::move(regs));
-                  });
-            } else {
-              return cb(Error("debug_info:" + err.msg() + ";binary not present."), next_regs);
-            }
-          }
-
-          // Unwinding with the debug_info module worked, issue the callback.
-          cb(err, std::move(next_regs));
-        });
-  } else if (cfi_info.binary) {
-    // No debug_info available, unwind with the binary module.
-    cfi_info.binary->AsyncStep(stack, regs, std::move(cb));
-  } else {
-    return cb(Error("Module has no associated memory."), Registers(current.arch()));
-  }
+  return cfi_module->get().AsyncStep(stack, regs,
+                                     [cb = std::move(cb)](Error err, Registers next_regs) mutable {
+                                       cb(err, std::move(next_regs));
+                                     });
 }
 
 fit::result<Error, Registers> CfiUnwinder::ConvertTo32BitIfNeeded(uint64_t pc,
@@ -283,40 +249,28 @@ fit::result<Error, Registers> CfiUnwinder::ConvertTo32BitIfNeeded(uint64_t pc,
   return fit::error(Error("Invalid input: current.arch = %d, pc = 0x%lx\n", current.arch(), pc));
 }
 
-fit::result<Error, CfiUnwinder::CfiModuleInfoRef> CfiUnwinder::GetCfiModuleInfoForPc(uint64_t pc) {
+fit::result<Error, CfiUnwinder::CfiModuleRef> CfiUnwinder::GetCfiModuleInfoForPc(uint64_t pc) {
   auto loaded_elf_module_res = module_cache().GetLoadedElfModuleForPc(pc);
   if (loaded_elf_module_res.is_error()) {
     return loaded_elf_module_res.take_error();
   }
 
   const LoadedElfModule& loaded_elf_module = loaded_elf_module_res->get();
-  // Gets or inserts the CfiModuleInfo we need for this |loaded_elf_module|.
-  auto& cfi_info =
-      module_map_.try_emplace(loaded_elf_module.load_address(), loaded_elf_module.module())
-          .first->second;
+  auto found = module_map_.find(loaded_elf_module.load_address());
 
-  if (!cfi_info.binary && loaded_elf_module.binary_memory()) {
-    cfi_info.binary =
-        std::make_unique<CfiModule>(loaded_elf_module.binary_memory(), loaded_elf_module);
-    // Loading the main binary file should always contain either an eh_frame section or a
-    // debug_frame section.
-    if (auto err = cfi_info.binary->Load(); err.has_err()) {
-      return fit::error(err);
+  if (found == module_map_.end()) {
+    // Not in our cache yet, create a new one from the ELF module.
+    auto cfi_module = CfiModule::FromLoadedElfModule(loaded_elf_module);
+    if (cfi_module.is_error()) {
+      return cfi_module.take_error();
     }
+
+    auto inserted = module_map_.emplace(loaded_elf_module.load_address(), std::move(*cfi_module));
+    return fit::ok(CfiModuleRef(*inserted.first->second));
   }
 
-  if (!cfi_info.debug_info && loaded_elf_module.debug_info_memory()) {
-    cfi_info.debug_info =
-        std::make_unique<CfiModule>(loaded_elf_module.debug_info_memory(), loaded_elf_module);
-    // A split debug info file may contain neither eh_frame nor debug_frame sections, it is not an
-    // error if this fails to load.
-    if (auto err = cfi_info.debug_info->Load(); err.has_err()) {
-      // Reset the pointer to null to indicate that it should not be used for look ups later.
-      cfi_info.debug_info.reset();
-    }
-  }
-
-  return fit::ok(CfiUnwinder::CfiModuleInfoRef(cfi_info));
+  // Already loaded.
+  return fit::ok(CfiUnwinder::CfiModuleRef(*found->second));
 }
 
 }  // namespace unwinder

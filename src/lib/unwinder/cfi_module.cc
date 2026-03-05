@@ -112,6 +112,21 @@ const constexpr uint64_t kDwarf64CieId = std::numeric_limits<uint64_t>::max();
 
 }  // namespace
 
+// static.
+fit::result<Error, std::unique_ptr<CfiModule>> CfiModule::FromLoadedElfModule(
+    const LoadedElfModule& loaded_elf_module) {
+  // CfiModule's constructor is private to force the use of this method, which guarantees that only
+  // valid objects are returned, or errors. Unfortunately that means we also cannot use
+  // std::make_unique here.
+  auto cfi_module = std::unique_ptr<CfiModule>(new CfiModule(loaded_elf_module));
+
+  if (auto err = cfi_module->Load(); err.is_error()) {
+    return err.take_error();
+  }
+
+  return fit::ok(std::move(cfi_module));
+}
+
 // Load the .eh_frame and/or .debug_frame.
 //
 // If |address_mode_| is kProcess, then .eh_frame will be loaded from the loaded segment in process
@@ -125,18 +140,36 @@ const constexpr uint64_t kDwarf64CieId = std::numeric_limits<uint64_t>::max();
 // and a reference implementation in LLVM
 // https://github.com/llvm/llvm-project/blob/main/libunwind/src/DwarfParser.hpp
 // https://github.com/llvm/llvm-project/blob/main/libunwind/src/EHHeaderParser.hpp
-Error CfiModule::Load() {
-  if (!elf_) {
-    return Error("no elf memory");
+fit::result<Error> CfiModule::Load() {
+  if (!binary_elf_) {
+    return fit::error(Error("no elf memory"));
   }
 
   // ElfModule already handles the ELF header and program headers.
   // We just need them here to find the unwind sections.
   Elf64_Ehdr ehdr;
-  if (auto err = elf_->Read(loaded_elf_module_.load_address(), ehdr); err.has_err()) {
-    return err;
+  if (auto err = binary_elf_->Read(loaded_elf_module_.load_address(), ehdr); err.has_err()) {
+    return fit::error(err);
   }
 
+  auto eh_frame_err = LoadEhFrame(ehdr);
+  auto debug_frame_err = LoadDebugFrame(ehdr);
+
+  if (eh_frame_err.has_err() && debug_frame_err.has_err()) {
+    return fit::error(
+        Error("Failed to load both eh_frame (err=\"%s\") and debug_frame (\"%s\") sections\n.",
+              eh_frame_err.msg().c_str(), debug_frame_err.msg().c_str()));
+  }
+
+  return fit::ok();
+}
+
+Error CfiModule::LoadEhFrame(const Elf64_Ehdr& ehdr) {
+  // ==============================================================================================
+  // Load from the .eh_frame_hdr section.
+  // This section may not always be present - it's purely an optimization when we get to use it.
+  // When not present, we have to resort to linearly scanning the FDE list.
+  // ==============================================================================================
   eh_frame_hdr_ptr_ = 0;
   auto phdr = loaded_elf_module_.GetSegmentByType(PT_GNU_EH_FRAME);
   if (phdr.is_error()) {
@@ -155,27 +188,10 @@ Error CfiModule::Load() {
     }
   }
 
-  auto eh_frame_err = LoadEhFrame(ehdr);
-  auto debug_frame_err = LoadDebugFrame(ehdr);
-
-  if (eh_frame_err.has_err() && debug_frame_err.has_err()) {
-    return Error("Failed to load both eh_frame (err=\"%s\") and debug_frame (\"%s\") sections\n.",
-                 eh_frame_err.msg().c_str(), debug_frame_err.msg().c_str());
-  }
-
-  return Success();
-}
-
-Error CfiModule::LoadEhFrame(const Elf64_Ehdr& ehdr) {
-  // ==============================================================================================
-  // Load from the .eh_frame_hdr section.
-  // This section may not always be present - it's purely an optimization when we get to use it.
-  // When not present, we have to resort to linearly scanning the FDE list.
-  // ==============================================================================================
   if (eh_frame_hdr_ptr_ > 0) {
     auto p = eh_frame_hdr_ptr_;
     uint8_t version;
-    if (auto err = elf_->ReadAndAdvance(p, version); err.has_err()) {
+    if (auto err = binary_elf_->ReadAndAdvance(p, version); err.has_err()) {
       return err;
     }
     if (version != 1) {
@@ -185,24 +201,25 @@ Error CfiModule::LoadEhFrame(const Elf64_Ehdr& ehdr) {
     uint8_t eh_frame_ptr_enc;
     uint8_t fde_count_enc;
     uint64_t eh_frame_ptr;  // not used
-    if (auto err = elf_->ReadAndAdvance(p, eh_frame_ptr_enc); err.has_err()) {
+    if (auto err = binary_elf_->ReadAndAdvance(p, eh_frame_ptr_enc); err.has_err()) {
       return err;
     }
-    if (auto err = elf_->ReadAndAdvance(p, fde_count_enc); err.has_err()) {
+    if (auto err = binary_elf_->ReadAndAdvance(p, fde_count_enc); err.has_err()) {
       return err;
     }
-    if (auto err = elf_->ReadAndAdvance(p, table_enc_); err.has_err()) {
+    if (auto err = binary_elf_->ReadAndAdvance(p, table_enc_); err.has_err()) {
       return err;
     }
     if (auto err = DecodeTableEntrySize(table_enc_, table_entry_size_); err.has_err()) {
       return err;
     }
-    if (auto err =
-            elf_->ReadEncodedAndAdvance(p, eh_frame_ptr, eh_frame_ptr_enc, eh_frame_hdr_ptr_);
+    if (auto err = binary_elf_->ReadEncodedAndAdvance(p, eh_frame_ptr, eh_frame_ptr_enc,
+                                                      eh_frame_hdr_ptr_);
         err.has_err()) {
       return err;
     }
-    if (auto err = elf_->ReadEncodedAndAdvance(p, fde_count_, fde_count_enc, eh_frame_hdr_ptr_);
+    if (auto err =
+            binary_elf_->ReadEncodedAndAdvance(p, fde_count_, fde_count_enc, eh_frame_hdr_ptr_);
         err.has_err()) {
       return err;
     }
@@ -247,16 +264,21 @@ Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
     return Error("Overflowed finding debug_frame end.");
   }
 
+  if (auto err = BuildDebugFrameMap(); err.has_err()) {
+    return err;
+  }
   return Success();
 }
 
-fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current, Registers& next) {
+fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current,
+                                         Registers& next) const {
   DwarfCie cie;
-  if (auto err = PrepareToStep(current, cie); err.has_err()) {
-    return fit::error(err);
+  auto cfi_parser = PrepareToStep(current, cie);
+  if (cfi_parser.is_error()) {
+    return cfi_parser.take_error();
   }
 
-  if (auto err = cfi_parser_->Step(stack, cie.return_address_register, current, next);
+  if (auto err = cfi_parser->Step(stack, cie.return_address_register, current, next);
       err.has_err()) {
     return fit::error(err);
   }
@@ -265,22 +287,28 @@ fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current
 }
 
 void CfiModule::AsyncStep(AsyncMemory* stack, const Registers& current,
-                          fit::callback<void(Error, Registers)> cb) {
+                          fit::callback<void(Error, Registers)> cb) const {
   DwarfCie cie;
-  if (auto err = PrepareToStep(current, cie); err.has_err()) {
-    return cb(err, Registers(current.arch()));
+  auto cfi_parser = PrepareToStep(current, cie);
+  if (cfi_parser.is_error()) {
+    cb(cfi_parser.error_value(), Registers(current.arch()));
+    return;
   }
 
-  cfi_parser_->AsyncStep(stack, cie.return_address_register, current, std::move(cb));
+  // Make sure |cfi_parser| lives as long as the callback.
+  cfi_parser->AsyncStep(stack, cie.return_address_register, current,
+                        [cfi_parser = std::move(cfi_parser), cb = std::move(cb)](
+                            Error err, Registers regs) mutable { cb(err, std::move(regs)); });
 }
 
-Error CfiModule::PrepareToStep(const Registers& current, DwarfCie& cie) {
+fit::result<Error, std::unique_ptr<CfiParser>> CfiModule::PrepareToStep(const Registers& current,
+                                                                        DwarfCie& cie) const {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
-    return err;
+    return fit::error(err);
   }
-  if (!IsValidPC(pc)) {
-    return Error("pc %#" PRIx64 " is outside of the executable area", pc);
+  if (!loaded_elf_module_.IsValidPC(pc)) {
+    return fit::error(Error("pc %#" PRIx64 " is outside of the executable area", pc));
   }
 
   DwarfFde fde;
@@ -293,33 +321,34 @@ Error CfiModule::PrepareToStep(const Registers& current, DwarfCie& cie) {
   // program being unwound.
   if (auto debug_frame_err = SearchDebugFrame(pc, cie, fde); debug_frame_err.has_err()) {
     if (auto eh_frame_err = SearchEhFrame(pc, cie, fde); eh_frame_err.has_err()) {
-      return Error(debug_frame_err.msg() + "; " + eh_frame_err.msg());
+      return fit::error(Error(debug_frame_err.msg() + "; " + eh_frame_err.msg()));
     }
   }
 
-  cfi_parser_ = std::make_unique<CfiParser>(current.arch(), loaded_elf_module_.size(),
-                                            cie.code_alignment_factor, cie.data_alignment_factor);
+  auto cfi_parser =
+      std::make_unique<CfiParser>(current.arch(), loaded_elf_module_.size(),
+                                  cie.code_alignment_factor, cie.data_alignment_factor);
 
   // Parse instructions in CIE first.
-  if (auto err =
-          cfi_parser_->ParseInstructions(elf_, cie.instructions_begin, cie.instructions_end, -1);
+  if (auto err = cfi_parser->ParseInstructions(binary_elf_, cie.instructions_begin,
+                                               cie.instructions_end, -1);
       err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
-  cfi_parser_->Snapshot();
+  cfi_parser->Snapshot();
 
   // Parse instructions in FDE until pc.
-  if (auto err = cfi_parser_->ParseInstructions(elf_, fde.instructions_begin, fde.instructions_end,
-                                                pc - fde.pc_begin);
+  if (auto err = cfi_parser->ParseInstructions(binary_elf_, fde.instructions_begin,
+                                               fde.instructions_end, pc - fde.pc_begin);
       err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
-  return Success();
+  return fit::ok(std::move(cfi_parser));
 }
 
-Error CfiModule::BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
+Error CfiModule::BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const {
   // Binary search for fde_ptr in the range [low, high).
   uint64_t low = 0;
   uint64_t high = fde_count_;
@@ -327,7 +356,8 @@ Error CfiModule::BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) 
     uint64_t mid = (low + high) / 2;
     uint64_t addr = table_ptr_ + mid * table_entry_size_;
     uint64_t mid_pc;
-    if (auto err = elf_->ReadEncoded(addr, mid_pc, table_enc_, eh_frame_hdr_ptr_); err.has_err()) {
+    if (auto err = binary_elf_->ReadEncoded(addr, mid_pc, table_enc_, eh_frame_hdr_ptr_);
+        err.has_err()) {
       return err;
     }
     if (pc < mid_pc) {
@@ -340,22 +370,25 @@ Error CfiModule::BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) 
   uint64_t addr = table_ptr_ + low * table_entry_size_ + table_entry_size_ / 2;
 
   uint64_t fde_ptr;
-  if (auto err = elf_->ReadEncoded(addr, fde_ptr, table_enc_, eh_frame_hdr_ptr_); err.has_err()) {
+  if (auto err = binary_elf_->ReadEncoded(addr, fde_ptr, table_enc_, eh_frame_hdr_ptr_);
+      err.has_err()) {
     return err;
   }
 
-  if (auto err = DecodeFde(UnwindTableSectionType::kEhFrame, fde_ptr, cie, fde); err.has_err()) {
+  if (auto err = DecodeFde(UnwindTableSectionType::kEhFrame, binary_elf_, fde_ptr, cie, fde);
+      err.has_err()) {
     return err;
   }
   return Success();
 }
 
-Error CfiModule::LinearSearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
+Error CfiModule::LinearSearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const {
   // A length of 0 indicates the terminator FDE.
   uint64_t addr = eh_frame_begin_;
 
   while (true) {
-    if (auto err = DecodeFde(UnwindTableSectionType::kEhFrame, addr, cie, fde); err.has_err()) {
+    if (auto err = DecodeFde(UnwindTableSectionType::kEhFrame, binary_elf_, addr, cie, fde);
+        err.has_err()) {
       return err;
     }
 
@@ -370,7 +403,7 @@ Error CfiModule::LinearSearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) 
   return Success();
 }
 
-Error CfiModule::SearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
+Error CfiModule::SearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const {
   if (eh_frame_hdr_ptr_ != 0) {
     // We always expect the eh_frame_hdr section to be complete, so there's no fallback mechanism
     // for errors.
@@ -393,14 +426,11 @@ Error CfiModule::SearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
   return Success();
 }
 
-Error CfiModule::SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
+Error CfiModule::SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const {
   if (!debug_frame_ptr_) {
     return Error("no .debug_frame section");
-  }
-  if (debug_frame_map_.empty()) {
-    if (auto err = BuildDebugFrameMap(); err.has_err()) {
-      return err;
-    }
+  } else if (debug_frame_map_.empty()) {
+    return Error("debug frame map not loaded");
   }
 
   auto debug_frame_map_it = debug_frame_map_.upper_bound(pc);
@@ -410,7 +440,8 @@ Error CfiModule::SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) {
   debug_frame_map_it--;
   uint64_t fde_ptr = debug_frame_map_it->second;
 
-  if (auto err = DecodeFde(UnwindTableSectionType::kDebugFrame, fde_ptr, cie, fde); err.has_err()) {
+  if (auto err = DecodeFde(UnwindTableSectionType::kDebugFrame, debug_info_elf_, fde_ptr, cie, fde);
+      err.has_err()) {
     return err;
   }
   if (pc < fde.pc_begin || pc >= fde.pc_end) {
@@ -427,8 +458,8 @@ Error CfiModule::BuildDebugFrameMap() {
   for (uint64_t p = debug_frame_ptr_, next_p; p < debug_frame_end_; p = next_p) {
     uint64_t hdr_p = p;
     uint64_t cie_id;
-    if (auto err =
-            DecodeCieFdeHdrAndAdvance(elf_, UnwindTableSectionType::kDebugFrame, p, next_p, cie_id);
+    if (auto err = DecodeCieFdeHdrAndAdvance(debug_info_elf_, UnwindTableSectionType::kDebugFrame,
+                                             p, next_p, cie_id);
         err.has_err()) {
       return err;
     }
@@ -439,15 +470,16 @@ Error CfiModule::BuildDebugFrameMap() {
       }
       DwarfCie cie;
       // This will only be called once, so it's fine that |DecodeCie| decodes the header again.
-      if (auto err = DecodeCie(UnwindTableSectionType::kDebugFrame, hdr_p, cie); err.has_err()) {
+      if (auto err = DecodeCie(UnwindTableSectionType::kDebugFrame, debug_info_elf_, hdr_p, cie);
+          err.has_err()) {
         return err;
       }
       fde_address_encoding = cie.fde_address_encoding;
     } else {  // is FDE
       // We only need pc_begin, so don't go through |DecodeFde|.
       uint64_t pc_begin;
-      if (auto err = elf_->ReadEncoded(p, pc_begin, fde_address_encoding,
-                                       loaded_elf_module_.load_address());
+      if (auto err = binary_elf_->ReadEncoded(p, pc_begin, fde_address_encoding,
+                                              loaded_elf_module_.load_address());
           err.has_err()) {
         return err;
       }
@@ -461,9 +493,10 @@ Error CfiModule::BuildDebugFrameMap() {
   return Success();
 }
 
-Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfCie& cie) {
+Error CfiModule::DecodeCie(UnwindTableSectionType type, Memory* elf, uint64_t cie_ptr,
+                           DwarfCie& cie) const {
   uint64_t cie_id;
-  if (auto err = DecodeCieFdeHdrAndAdvance(elf_, type, cie_ptr, cie.instructions_end, cie_id);
+  if (auto err = DecodeCieFdeHdrAndAdvance(elf, type, cie_ptr, cie.instructions_end, cie_id);
       err.has_err()) {
     return err;
   }
@@ -474,7 +507,7 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
 
   // Versions should match.
   uint8_t this_version;
-  if (auto err = elf_->ReadAndAdvance(cie_ptr, this_version); err.has_err()) {
+  if (auto err = elf->ReadAndAdvance(cie_ptr, this_version); err.has_err()) {
     return err;
   }
   if (this_version != type) {
@@ -484,7 +517,7 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
   std::string augmentation_string;
   while (true) {
     char ch;
-    if (auto err = elf_->ReadAndAdvance(cie_ptr, ch); err.has_err()) {
+    if (auto err = elf->ReadAndAdvance(cie_ptr, ch); err.has_err()) {
       return err;
     }
     if (ch) {
@@ -497,7 +530,7 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
   if (type == UnwindTableSectionType::kDebugFrame) {
     // Read the address_size.
     uint8_t address_size;
-    if (auto err = elf_->ReadAndAdvance(cie_ptr, address_size); err.has_err()) {
+    if (auto err = elf->ReadAndAdvance(cie_ptr, address_size); err.has_err()) {
       return err;
     }
     // Set fde_address_encoding to DW_EH_PE_datarel so that we can set the base to elf_ptr_.
@@ -518,20 +551,20 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
     cie_ptr++;
   }
 
-  if (auto err = elf_->ReadULEB128AndAdvance(cie_ptr, cie.code_alignment_factor); err.has_err()) {
+  if (auto err = elf->ReadULEB128AndAdvance(cie_ptr, cie.code_alignment_factor); err.has_err()) {
     return err;
   }
-  if (auto err = elf_->ReadSLEB128AndAdvance(cie_ptr, cie.data_alignment_factor); err.has_err()) {
+  if (auto err = elf->ReadSLEB128AndAdvance(cie_ptr, cie.data_alignment_factor); err.has_err()) {
     return err;
   }
   if (type == UnwindTableSectionType::kDebugFrame) {
     uint64_t return_address_register;
-    if (auto err = elf_->ReadULEB128AndAdvance(cie_ptr, return_address_register); err.has_err()) {
+    if (auto err = elf->ReadULEB128AndAdvance(cie_ptr, return_address_register); err.has_err()) {
       return err;
     }
     cie.return_address_register = static_cast<RegisterID>(return_address_register);
   } else {
-    if (auto err = elf_->ReadAndAdvance(cie_ptr, cie.return_address_register); err.has_err()) {
+    if (auto err = elf->ReadAndAdvance(cie_ptr, cie.return_address_register); err.has_err()) {
       return err;
     }
   }
@@ -552,7 +585,7 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
       return Error("invalid augmentation string: %s", augmentation_string.c_str());
     }
     uint64_t augmentation_length;
-    if (auto err = elf_->ReadULEB128AndAdvance(cie_ptr, augmentation_length); err.has_err()) {
+    if (auto err = elf->ReadULEB128AndAdvance(cie_ptr, augmentation_length); err.has_err()) {
       return err;
     }
     cie.instructions_begin = cie_ptr + augmentation_length;
@@ -564,7 +597,7 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
           // LSDA (language-specific data area) is used by some languages such as C++ to ensure
           // the correct destruction of objects on stack. We don't need to handle it.
           uint8_t lsda_encoding;
-          if (auto err = elf_->ReadAndAdvance(cie_ptr, lsda_encoding); err.has_err()) {
+          if (auto err = elf->ReadAndAdvance(cie_ptr, lsda_encoding); err.has_err()) {
             return err;
           }
           break;
@@ -572,16 +605,16 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
           // The personality routine is used to handle language and vendor-specific tasks to ensure
           // the correct unwinding. We don't need to handle it.
           uint8_t enc;
-          if (auto err = elf_->ReadAndAdvance(cie_ptr, enc); err.has_err()) {
+          if (auto err = elf->ReadAndAdvance(cie_ptr, enc); err.has_err()) {
             return err;
           }
           uint64_t personality;
-          if (auto err = elf_->ReadEncodedAndAdvance(cie_ptr, personality, enc, 0); err.has_err()) {
+          if (auto err = elf->ReadEncodedAndAdvance(cie_ptr, personality, enc, 0); err.has_err()) {
             return err;
           }
           break;
         case 'R':
-          if (auto err = elf_->ReadAndAdvance(cie_ptr, cie.fde_address_encoding); err.has_err()) {
+          if (auto err = elf->ReadAndAdvance(cie_ptr, cie.fde_address_encoding); err.has_err()) {
             return err;
           }
           break;
@@ -595,11 +628,11 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
   return Success();
 }
 
-Error CfiModule::DecodeFde(UnwindTableSectionType section_type, uint64_t fde_ptr, DwarfCie& cie,
-                           DwarfFde& fde) {
+Error CfiModule::DecodeFde(UnwindTableSectionType section_type, Memory* elf, uint64_t fde_ptr,
+                           DwarfCie& cie, DwarfFde& fde) const {
   uint64_t cie_offset;
   if (auto err =
-          DecodeCieFdeHdrAndAdvance(elf_, section_type, fde_ptr, fde.instructions_end, cie_offset);
+          DecodeCieFdeHdrAndAdvance(elf, section_type, fde_ptr, fde.instructions_end, cie_offset);
       err.has_err()) {
     return err;
   }
@@ -615,16 +648,16 @@ Error CfiModule::DecodeFde(UnwindTableSectionType section_type, uint64_t fde_ptr
   } else {
     cie_ptr = fde_ptr - 4 - cie_offset;
   }
-  if (auto err = DecodeCie(section_type, cie_ptr, cie); err.has_err()) {
+  if (auto err = DecodeCie(section_type, elf, cie_ptr, cie); err.has_err()) {
     return err;
   }
 
-  if (auto err = elf_->ReadEncodedAndAdvance(fde_ptr, fde.pc_begin, cie.fde_address_encoding,
-                                             loaded_elf_module_.load_address());
+  if (auto err = elf->ReadEncodedAndAdvance(fde_ptr, fde.pc_begin, cie.fde_address_encoding,
+                                            loaded_elf_module_.load_address());
       err.has_err()) {
     return err;
   }
-  if (auto err = elf_->ReadEncodedAndAdvance(fde_ptr, fde.pc_end, cie.fde_address_encoding & 0x0F);
+  if (auto err = elf->ReadEncodedAndAdvance(fde_ptr, fde.pc_end, cie.fde_address_encoding & 0x0F);
       err.has_err()) {
     return err;
   }
@@ -632,7 +665,7 @@ Error CfiModule::DecodeFde(UnwindTableSectionType section_type, uint64_t fde_ptr
 
   if (cie.fde_have_augmentation_data) {
     uint64_t augmentation_length;
-    if (auto err = elf_->ReadULEB128AndAdvance(fde_ptr, augmentation_length); err.has_err()) {
+    if (auto err = elf->ReadULEB128AndAdvance(fde_ptr, augmentation_length); err.has_err()) {
       return err;
     }
     // We don't really care about the augmentation data.

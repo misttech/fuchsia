@@ -35,6 +35,38 @@ fit::result<Error, Elf64_Ehdr> ReadEhdr(Memory* memory, uint64_t load_address) {
   return fit::ok(ehdr64);
 }
 
+fit::result<Error, Elf64_Shdr> TryFindSectionByName(Memory* elf_memory, const Module* elf_module,
+                                                    const Elf64_Ehdr& ehdr,
+                                                    std::string_view target_section) {
+  if (!elf_memory) {
+    return fit::error(Error("No memory."));
+  }
+
+  switch (elf_module->size) {
+    case Module::AddressSize::k32Bit: {
+      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf32_Shdr>(
+          elf_memory, elf_module->load_address, target_section, ehdr);
+      if (res.is_error()) {
+        return res.take_error();
+      }
+
+      return fit::ok(elf_utils::UpcastShdr(*res));
+    }
+    case Module::AddressSize::k64Bit: {
+      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(
+          elf_memory, elf_module->load_address, target_section, ehdr);
+      if (res.is_error()) {
+        return res;
+      }
+
+      return fit::ok(*res);
+    }
+    case Module::AddressSize::kUnknown: {
+      return fit::error(Error("Unknown ELF class."));
+    }
+  }
+}
+
 }  // namespace
 
 fit::result<Error> LoadedElfModule::Load() {
@@ -90,10 +122,6 @@ fit::result<Error> LoadedElfModule::LoadElfHeader() {
     return fit::error(Error("Invalid ELF header"));
   }
 
-  if (auto err = LoadPhdrs(*ehdr_); err.is_error()) {
-    return err;
-  }
-
   return fit::ok();
 }
 
@@ -103,34 +131,12 @@ fit::result<Error, Elf64_Shdr> LoadedElfModule::GetSectionByName(
     return fit::error(Error("ELF Header not loaded!"));
   }
 
-  Elf64_Shdr shdr;
-  switch (module_.size) {
-    case Module::AddressSize::k32Bit: {
-      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf32_Shdr>(
-          module_.binary_memory, module_.load_address, target_section, *ehdr_);
-      if (res.is_error()) {
-        return res.take_error();
-      }
-
-      shdr = elf_utils::UpcastShdr(*res);
-      break;
-    }
-    case Module::AddressSize::k64Bit: {
-      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(
-          module_.binary_memory, module_.load_address, target_section, *ehdr_);
-      if (res.is_error()) {
-        return res;
-      }
-
-      shdr = *res;
-      break;
-    }
-    case Module::AddressSize::kUnknown: {
-      return fit::error(Error("Unknown ELF class."));
-    }
+  if (auto res = TryFindSectionByName(module_.binary_memory, &module_, *ehdr_, target_section);
+      res.is_ok()) {
+    return res.take_value();
   }
 
-  return fit::ok(shdr);
+  return TryFindSectionByName(module_.debug_info_memory, &module_, *ehdr_, target_section);
 }
 
 fit::result<Error, Elf64_Phdr> LoadedElfModule::GetSegmentByType(uint32_t p_type) const {

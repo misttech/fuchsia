@@ -37,34 +37,33 @@ enum UnwindTableSectionType {
 // of one ELF module.
 //
 // This class doesn't cache the memory so if repeated lookups are required, it's recommended to use
-// a cached Memory implementation.
+// a cached Memory implementation. Create via |FromLoadedElfModule|.
 class CfiModule {
  public:
-  // Caller must ensure elf to outlive us. We explicitly take in a memory object so that callers may
-  // pass in either binary memory data or debuginfo symbols data to use to find the unwinding
-  // metadata.
-  CfiModule(Memory* elf, const LoadedElfModule& loaded_elf_module)
-      : elf_(elf), loaded_elf_module_(loaded_elf_module) {}
-
-  // Load the CFI from the ELF file.
-  [[nodiscard]] Error Load();
+  // Constructs, validates, and loads a new |CfiModule| from the given |loaded_elf_module|. Returns
+  // any errors that occur in any of the above steps, and releases any allocated memory. The object
+  // is guaranteed to be valid if this function returns fit::ok().
+  [[nodiscard]] static fit::result<Error, std::unique_ptr<CfiModule>> FromLoadedElfModule(
+      const LoadedElfModule& loaded_elf_module);
 
   // Unwind one frame. The returned result will contain whether or not the next frame is a signal
   // frame in the case of success, otherwise the Error field will be populated with additional
   // information.
   [[nodiscard]] fit::result<Error, bool> Step(Memory* stack, const Registers& current,
-                                              Registers& next);
+                                              Registers& next) const;
 
   void AsyncStep(AsyncMemory* stack, const Registers& current,
-                 fit::callback<void(Error, Registers)> cb);
-
-  // Check whether a given PC is in the valid range.
-  bool IsValidPC(uint64_t pc) const { return loaded_elf_module_.IsValidPC(pc); }
-
-  // Memory accessor.
-  Memory* memory() const { return elf_; }
+                 fit::callback<void(Error, Registers)> cb) const;
 
  private:
+  // Caller must ensure the LoadedElfModule outlives us. |loaded_elf_module| is the source of truth
+  // for both the binary and debug-info memory. The binary memory must always be valid, but the
+  // debug-info memory may be optionally null.
+  explicit CfiModule(const LoadedElfModule& loaded_elf_module)
+      : loaded_elf_module_(loaded_elf_module),
+        binary_elf_(loaded_elf_module.binary_memory()),
+        debug_info_elf_(loaded_elf_module.debug_info_memory()) {}
+
   // DWARF Common Information Entry.
   struct DwarfCie {
     uint64_t code_alignment_factor = 0;       // usually 1.
@@ -87,16 +86,8 @@ class CfiModule {
     uint64_t instructions_end = 0;  // exclusive.
   };
 
-  // Common code before using the cfi_parser to perform the actual step.
-  [[nodiscard]] Error PrepareToStep(const Registers& current, DwarfCie& cie);
-
-  // Search for CIE and FDE in .eh_frame section.
-  [[nodiscard]] Error SearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde);
-  [[nodiscard]] Error BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde);
-  [[nodiscard]] Error LinearSearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde);
-
-  // Search for CIE and FDE in .debug_frame section.
-  [[nodiscard]] Error SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde);
+  // Load the CFI from the ELF file.
+  fit::result<Error> Load();
   [[nodiscard]] Error BuildDebugFrameMap();
 
   // Both of these functions read the ELF file header locally to avoid needing to include elf.h here
@@ -105,15 +96,29 @@ class CfiModule {
 
   [[nodiscard]] Error LoadDebugFrame(const Elf64_Ehdr& ehdr);
 
+  // Common code before using the cfi_parser to perform the actual step.
+  [[nodiscard]] fit::result<Error, std::unique_ptr<CfiParser>> PrepareToStep(
+      const Registers& current, DwarfCie& cie) const;
+
+  // Search for CIE and FDE in .eh_frame section.
+  [[nodiscard]] Error SearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const;
+  [[nodiscard]] Error BinarySearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const;
+  [[nodiscard]] Error LinearSearchEhFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const;
+
+  // Search for CIE and FDE in .debug_frame section.
+  [[nodiscard]] Error SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde) const;
+
   // Helpers to decode CIE and FDE in either the eh_frame or debug_frame sections. |type|
   // determines the exact decoding details based on the section.
-  [[nodiscard]] Error DecodeFde(UnwindTableSectionType type, uint64_t fde_ptr, DwarfCie& cie,
-                                DwarfFde& fde);
-  [[nodiscard]] Error DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfCie& cie);
+  [[nodiscard]] Error DecodeFde(UnwindTableSectionType type, Memory* elf, uint64_t fde_ptr,
+                                DwarfCie& cie, DwarfFde& fde) const;
+  [[nodiscard]] Error DecodeCie(UnwindTableSectionType type, Memory* elf, uint64_t cie_ptr,
+                                DwarfCie& cie) const;
 
   // Inputs. Use const to prevent accidental modification.
-  Memory* const elf_;
   const LoadedElfModule& loaded_elf_module_;
+  Memory* const binary_elf_;
+  Memory* const debug_info_elf_;
 
   // Marks the beginning of the eh_frame section within some segment of the loaded program. Requires
   // section info to not be stripped from the binary.
@@ -129,8 +134,6 @@ class CfiModule {
   // .debug_frame info.
   uint64_t debug_frame_ptr_ = 0;
   uint64_t debug_frame_end_ = 0;
-
-  std::unique_ptr<CfiParser> cfi_parser_;
 
   // Binary search table for .debug_frame, similar to .eh_frame_hdr.
   // To save space, we only store the mapping from pc to the start of FDE.
