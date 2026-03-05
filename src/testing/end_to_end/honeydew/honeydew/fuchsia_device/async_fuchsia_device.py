@@ -582,7 +582,7 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def bluetooth_avrcp(self) -> avrcp.Avrcp:
+    def bluetooth_avrcp(self) -> avrcp.AsyncAvrcp:
         """Returns a Bluetooth Avrcp affordance object.
 
         Returns:
@@ -592,10 +592,10 @@ class AsyncFuchsiaDevice(
             self._get_bluetooth_affordances_implementation()
             == bluetooth_types.Implementation.SL4F
         ):
-            return avrcp_using_sl4f.AvrcpUsingSl4f(
+            return avrcp_using_sl4f.AsyncAvrcpUsingSl4f(
                 device_name=self.device_name,
                 sl4f=self.sl4f,
-                reboot_affordance=self.as_sync(),
+                reboot_affordance=self,
             )
         raise NotImplementedError
 

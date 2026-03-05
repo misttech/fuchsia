@@ -40,20 +40,18 @@ BluetoothAvrcpCommand = bluetooth_types.BluetoothAvrcpCommand
 
 
 # pylint: disable=protected-access
-class BluetoothAvrcpSL4FTests(unittest.TestCase):
-    """Unit tests for
-    honeydew.affordances.sl4f.bluetooth.bluetooth_avrcp.py.
-    """
+class BluetoothAvrcpAsyncSL4FTests(unittest.IsolatedAsyncioTestCase):
+    """Unit tests for honeydew.affordances.sl4f.bluetooth.bluetooth_avrcp.py AsyncAvrcpUsingSl4f."""
 
-    def setUp(self) -> None:
-        super().setUp()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
 
         self.sl4f_obj = mock.MagicMock(spec=sl4f_transport.SL4F)
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
+            spec=affordances_capable.AsyncRebootCapableDevice
         )
 
-        self.bluetooth_obj = avrcp_using_sl4f.AvrcpUsingSl4f(
+        self.bluetooth_obj = avrcp_using_sl4f.AsyncAvrcpUsingSl4f(
             device_name="fuchsia-emulator",
             sl4f=self.sl4f_obj,
             reboot_affordance=self.reboot_affordance_obj,
@@ -62,26 +60,22 @@ class BluetoothAvrcpSL4FTests(unittest.TestCase):
         self.sl4f_obj.run.assert_called()
         self.sl4f_obj.reset_mock()
 
-    def test_verify_supported(self) -> None:
-        """Test if verify_supported works."""
-        # TODO(http://b/409622631): Implement the test method logic
-
-    def test_avrcp_init(self) -> None:
+    async def test_avrcp_init(self) -> None:
         """Test for Bluetooth.avrcp_init() method."""
-        self.bluetooth_obj.init_avrcp(target_id="0")
+        await self.bluetooth_obj.init_avrcp(target_id="0")
 
         self.sl4f_obj.run.assert_called()
 
-    def test_list_received_requests(self) -> None:
+    async def test_list_received_requests(self) -> None:
         """Test for Bluetooth.list_received_requests() method."""
         self.sl4f_obj.run.return_value = _SAMPLE_RECEIVED_REQUESTS
-        res = self.bluetooth_obj.list_received_requests()
+        res = await self.bluetooth_obj.list_received_requests()
         self.sl4f_obj.run.assert_called()
         assert "play" in res
 
-    def test_publish_mock_player(self) -> None:
+    async def test_publish_mock_player(self) -> None:
         """Test for Bluetooth.publish_mock_player() method."""
-        self.bluetooth_obj.publish_mock_player()
+        await self.bluetooth_obj.publish_mock_player()
 
         self.sl4f_obj.run.assert_called()
 
@@ -97,18 +91,22 @@ class BluetoothAvrcpSL4FTests(unittest.TestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    def test_send_avrcp_command(
+    async def test_send_avrcp_command(
         self, parameterized_dict: dict[str, Any]
     ) -> None:
         """Test for Bluetooth.send_avrcp_command() method."""
-        self.bluetooth_obj.send_avrcp_command(
+        await self.bluetooth_obj.send_avrcp_command(
             command=parameterized_dict["command"]
         )
 
         self.sl4f_obj.run.assert_called()
 
-    def test_stop_mock_player(self) -> None:
+    async def test_stop_mock_player(self) -> None:
         """Test for Bluetooth.stop_mock_player() method"""
-        self.bluetooth_obj.stop_mock_player()
+        await self.bluetooth_obj.stop_mock_player()
 
         self.sl4f_obj.run.assert_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

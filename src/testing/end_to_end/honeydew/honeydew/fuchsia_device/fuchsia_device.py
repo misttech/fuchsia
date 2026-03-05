@@ -15,7 +15,10 @@ import fuchsia_inspect
 from fuchsia_controller_py.wrappers import BoundAsyncMethod
 
 from honeydew import affordances_capable
-from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
+from honeydew.affordances.connectivity.bluetooth.avrcp import (
+    avrcp,
+    avrcp_using_sl4f,
+)
 from honeydew.affordances.connectivity.bluetooth.gap import gap
 from honeydew.affordances.connectivity.bluetooth.le import le
 from honeydew.affordances.connectivity.netstack import (
@@ -327,7 +330,11 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def bluetooth_avrcp(self) -> avrcp.Avrcp:
-        return self._inner.bluetooth_avrcp
+        return avrcp_using_sl4f.AvrcpUsingSl4f(
+            device_name=self.device_name,
+            sl4f=self.sl4f,
+            reboot_affordance=self,
+        )
 
     @properties.Affordance
     def bluetooth_le(self) -> le.LE:

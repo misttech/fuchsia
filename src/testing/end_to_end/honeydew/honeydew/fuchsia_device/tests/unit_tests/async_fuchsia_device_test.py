@@ -25,9 +25,6 @@ from parameterized import param, parameterized
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
-from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
-    bluetooth_common_using_sl4f,
-)
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
@@ -649,21 +646,21 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             self.fd_fc_obj.bluetooth_avrcp  # pylint: disable=pointless-statement
 
     @mock.patch.object(
-        bluetooth_common_using_sl4f.BluetoothCommonUsingSl4f,
+        avrcp_using_sl4f.AsyncAvrcpUsingSl4f,
         "__init__",
         autospec=True,
         return_value=None,
     )
     def test_bluetooth_avrcp_sl4f_impl(
-        self, mock_bluetooth_common_init: mock.Mock
+        self, mock_avrcp_init: mock.Mock
     ) -> None:
         """Test case to make sure fuchsia_device only supports
         SL4F based bluetooth_avrcp affordance."""
         self.assertIsInstance(
             self.fd_sl4f_obj.bluetooth_avrcp,
-            avrcp_using_sl4f.AvrcpUsingSl4f,
+            avrcp_using_sl4f.AsyncAvrcpUsingSl4f,
         )
-        mock_bluetooth_common_init.assert_called_once()
+        mock_avrcp_init.assert_called_once()
 
     @mock.patch.object(
         gap_using_fc.GapUsingFc,
