@@ -822,7 +822,7 @@ impl Node {
         self.binding.borrow_mut().restart_driver_url_suffix = Some(suffix);
     }
 
-    pub(crate) fn set_host(&self, host: Rc<dyn DriverHost>) {
+    pub fn set_host(&self, host: Rc<dyn DriverHost>) {
         self.driver_host.borrow_mut().set_host(host);
     }
 
@@ -1159,10 +1159,7 @@ impl Node {
     pub(crate) fn component_controller_proxy(
         &self,
     ) -> Option<fidl_fuchsia_component::ControllerProxy> {
-        self.component
-            .borrow()
-            .as_ref()
-            .map(|c| c.controller.component_controller_proxy.clone())
+        self.component.borrow().as_ref().map(|c| c.controller.component_controller_proxy.clone())
     }
 
     pub(crate) fn set_driver_stopped(&self) {

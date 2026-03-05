@@ -13,6 +13,7 @@
 namespace driver_manager {
 
 class BindManager;
+class Node;
 
 class BootupTracker {
  public:
@@ -27,7 +28,8 @@ class BootupTracker {
   void Start();
 
   // Called when there's a new request to start a driver for the given node.
-  void NotifyNewStartRequest(std::string node_moniker, std::string driver_url);
+  void NotifyNewStartRequest(std::string node_moniker, std::string driver_url,
+                             std::weak_ptr<Node> node = {});
 
   // Called when a start driver request is completed for the given node.
   void NotifyStartComplete(std::string node_moniker);
@@ -52,12 +54,19 @@ class BootupTracker {
   // Invoked by |bootup_timeout_task_|. Exposed for testing.
   void OnBootupTimeout();
 
+  zx::duration current_timeout_;
+
  private:
   void CheckBootupDone();
   void UpdateTrackerAndResetTimer();
 
+  struct StartRequest {
+    std::string driver_url;
+    std::weak_ptr<Node> node;
+  };
+
   // Contains all outstanding start requests. Maps the node's component moniker to a driver url.
-  std::unordered_map<std::string, std::string> outstanding_start_requests_;
+  std::unordered_map<std::string, StartRequest> outstanding_start_requests_;
 
   BindManager* bind_manager_;
 

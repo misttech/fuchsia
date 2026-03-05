@@ -850,7 +850,7 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
   std::weak_ptr node_weak = node.shared_from_this();
   std::string url_string(url.data(), url.size());
   auto moniker = node.MakeComponentMoniker();
-  bootup_tracker_->NotifyNewStartRequest(moniker, url_string);
+  bootup_tracker_->NotifyNewStartRequest(moniker, url_string, node.shared_from_this());
 
   node.PrepareDictionary([this, node_weak, moniker, url_string](zx::result<> result) {
     if (!result.is_ok()) {

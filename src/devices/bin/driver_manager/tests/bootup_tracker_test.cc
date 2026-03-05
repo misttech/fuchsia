@@ -6,18 +6,21 @@
 
 #include "src/devices/bin/driver_manager/tests/bind_manager_test_base.h"
 
-class TestBootupTracker : public driver_manager::BootupTracker {
- public:
-  TestBootupTracker(driver_manager::BindManager* manager, async_dispatcher_t* dispatcher)
-      : driver_manager::BootupTracker(manager, dispatcher) {}
+namespace driver_manager {
 
-  void ResetBootupTimer() override {}
+class TestBootupTracker : public BootupTracker {
+ public:
+  TestBootupTracker(BindManager* manager, async_dispatcher_t* dispatcher)
+      : BootupTracker(manager, dispatcher) {}
+
+  void ResetBootupTimer() override { last_timeout = current_timeout_; }
 
   virtual bool IsUpdateDeadlineExceeded() const override { return should_exceed_update_deadline; }
 
   void TimeoutBootup() { OnBootupTimeout(); }
 
   bool should_exceed_update_deadline = false;
+  zx::duration last_timeout;
 };
 
 class BootupTrackerTest : public BindManagerTestBase {
@@ -143,3 +146,37 @@ TEST_F(BootupTrackerTest, WaitForBootupAfterComplete) {
   RunLoopUntilIdle();
   EXPECT_TRUE(bootup_completed());
 }
+
+TEST_F(BootupTrackerTest, ExponentialBackoff) {
+  tracker->NotifyNewStartRequest("node_1", "driver_url");
+
+  // First timeout, not exceeded deadline yet.
+  tracker->should_exceed_update_deadline = false;
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(2));
+
+  // Exceed deadline.
+  tracker->should_exceed_update_deadline = true;
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(4));
+
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(8));
+
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(16));
+
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(32));
+
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(60));
+
+  TriggerBootupTimeout();
+  EXPECT_EQ(tracker->last_timeout, zx::sec(60));
+
+  // New request should reset timeout.
+  tracker->NotifyNewStartRequest("node_2", "driver_url");
+  EXPECT_EQ(tracker->last_timeout, zx::sec(2));
+}
+}  // namespace driver_manager

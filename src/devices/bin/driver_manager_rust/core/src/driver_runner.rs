@@ -232,7 +232,11 @@ impl DriverRunner {
         node.set_driver_package_type(package_type);
 
         let moniker = node.make_component_moniker();
-        self.bootup_tracker.notify_new_start_request(moniker.clone(), url.to_string());
+        self.bootup_tracker.notify_new_start_request(
+            moniker.clone(),
+            url.to_string(),
+            node.weak_from_this(),
+        );
 
         match self.start_driver_internal(node, url, &moniker).await {
             Ok(_) => {

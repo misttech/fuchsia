@@ -6,9 +6,13 @@
 
 #include <lib/async/cpp/time.h>
 
+#include <unordered_set>
+
 #include <src/devices/lib/log/log.h>
 
 #include "src/devices/bin/driver_manager/bind/bind_manager.h"
+#include "src/devices/bin/driver_manager/driver_host.h"
+#include "src/devices/bin/driver_manager/node.h"
 
 namespace driver_manager {
 
@@ -16,10 +20,14 @@ namespace {
 
 zx::duration kBootupTimeoutDuration = zx::sec(2);
 zx::duration kLastUpdatedTimeoutDuration = zx::sec(10);
+zx::duration kMaxTimeoutDuration = zx::sec(60);
 
 }  // namespace
 
-void BootupTracker::Start() { UpdateTrackerAndResetTimer(); }
+void BootupTracker::Start() {
+  current_timeout_ = kBootupTimeoutDuration;
+  UpdateTrackerAndResetTimer();
+}
 
 void BootupTracker::WaitForBootup(fit::callback<void()> callback) {
   if (bootup_done_) {
@@ -29,11 +37,15 @@ void BootupTracker::WaitForBootup(fit::callback<void()> callback) {
   }
 }
 
-void BootupTracker::NotifyNewStartRequest(std::string node_moniker, std::string driver_url) {
+void BootupTracker::NotifyNewStartRequest(std::string node_moniker, std::string driver_url,
+                                          std::weak_ptr<Node> node) {
   if (outstanding_start_requests_.find(node_moniker) != outstanding_start_requests_.end()) {
     fdf_log::warn("Bootup tracker received conflicting start requests for node {}", node_moniker);
   }
-  outstanding_start_requests_[node_moniker] = driver_url;
+  outstanding_start_requests_[node_moniker] = {
+      .driver_url = std::move(driver_url),
+      .node = std::move(node),
+  };
   UpdateTrackerAndResetTimer();
 }
 
@@ -63,11 +75,25 @@ void BootupTracker::CheckBootupDone() {
   if (IsUpdateDeadlineExceeded()) {
     fdf_log::warn("Deadline exceeded in the bootup tracker with:");
     fdf_log::warn("    {} unfinished start requests:", outstanding_start_requests_.size());
-    for (const auto& [moniker, url] : outstanding_start_requests_) {
-      fdf_log::warn("         - {} - {}", moniker, url);
+    std::unordered_set<const DriverHost*> driver_hosts;
+    for (const auto& [moniker, request] : outstanding_start_requests_) {
+      fdf_log::warn("         - {} - {}", moniker, request.driver_url);
+      if (auto node = request.node.lock()) {
+        if (auto host = node->driver_host()) {
+          if (driver_hosts.find(host) == driver_hosts.end()) {
+            host->TriggerStackTrace();
+            driver_hosts.insert(host);
+          }
+        }
+      }
     }
     if (bind_manager_->HasOngoingBind()) {
       fdf_log::warn("    a hanging bind process in the bind manager");
+    }
+
+    current_timeout_ *= 2;
+    if (current_timeout_ > kMaxTimeoutDuration) {
+      current_timeout_ = kMaxTimeoutDuration;
     }
   }
 
@@ -89,6 +115,7 @@ void BootupTracker::CheckBootupDone() {
 
 void BootupTracker::UpdateTrackerAndResetTimer() {
   last_update_timestamp_ = async::Now(dispatcher_);
+  current_timeout_ = kBootupTimeoutDuration;
   ResetBootupTimer();
 }
 
@@ -109,7 +136,7 @@ void BootupTracker::ResetBootupTimer() {
   if (bootup_timeout_task_.is_pending()) {
     bootup_timeout_task_.Cancel();
   }
-  bootup_timeout_task_.PostDelayed(dispatcher_, kBootupTimeoutDuration);
+  bootup_timeout_task_.PostDelayed(dispatcher_, current_timeout_);
 }
 
 }  // namespace driver_manager
