@@ -299,13 +299,22 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
   TRACE_DURATION("gfx", "DefaultFrameScheduler::ScheduleUpdateForSession",
                  "requested_presentation_time", requested_presentation_time.get() / 1'000'000);
 
-  // TODO(https://fxbug.dev/414450649): remove this, since it is a subset of the
-  // `scenic_session_present` flow.  This will require updating trace-processing scripts.
-  TRACE_FLOW_END("gfx", "ScheduleUpdate", id_pair.present_id);
+  // Utilized in low-hanging optimizations below.  If desired, we could also optimize TRACE_DURATION
+  // calls, although (because we could no longer rely on a RAII scope for duration) we would need
+  // to split each into a TRACE_DURATION_BEGIN/TRACE_DURATION_END pair.
+  const bool trace_enabled = TRACE_CATEGORY_ENABLED("gfx");
 
-  TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "request_frame",
-                       SESSION_TRACE_ID(id_pair.session_id, id_pair.present_id), "session_id",
-                       TA_UINT64(id_pair.session_id), "present_id", TA_UINT64(id_pair.present_id));
+  // Micro-optimize tracing.
+  if (trace_enabled) {
+    // TODO(https://fxbug.dev/414450649): remove this, since it is a subset of the
+    // `scenic_session_present` flow.  This will require updating trace-processing scripts.
+    TRACE_FLOW_END("gfx", "ScheduleUpdate", id_pair.present_id);
+
+    TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "request_frame",
+                         SESSION_TRACE_ID(id_pair.session_id, id_pair.present_id), "session_id",
+                         TA_UINT64(id_pair.session_id), "present_id",
+                         TA_UINT64(id_pair.present_id));
+  }
 
   // Logging the first few frames to find common startup bugs.
   if (frame_number_ < kNumDebugFrames) {
@@ -318,8 +327,10 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
                          << "  requested_presentation_time=" << requested_presentation_time.get();
   }
 
-  const trace_flow_id_t flow_id = TRACE_NONCE();
-  TRACE_FLOW_BEGIN("gfx", "request_to_render", flow_id);
+  const trace_flow_id_t flow_id = trace_enabled ? TRACE_NONCE() : 0;
+  if (trace_enabled) {
+    TRACE_FLOW_BEGIN("gfx", "request_to_render", flow_id);
+  }
   pending_present_requests_.emplace(std::make_pair(
       id_pair, PresentRequest{.requested_presentation_time = requested_presentation_time,
                               .flow_id = flow_id,
@@ -473,7 +484,9 @@ std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesFo
     if (!hit_limit && present_request.requested_presentation_time <= target_presentation_time &&
         preceding_update_is_squashable &&
         !sessions_with_unsquashable_updates_pending_presentation_.contains(id_pair.session_id)) {
-      TRACE_FLOW_END("gfx", "request_to_render", present_request.flow_id);
+      if (present_request.flow_id) {
+        TRACE_FLOW_END("gfx", "request_to_render", present_request.flow_id);
+      }
       // Return only the last relevant present id for each session.
       updates[current_session] = id_pair.present_id;
       if (!present_request.squashable) {
@@ -581,11 +594,16 @@ bool DefaultFrameScheduler::ApplyUpdates(zx::time target_presentation_time, zx::
   std::vector<zx::event> fences_from_previous_presents =
       PrepareUpdates(update_map, latched_time, frame_number);
 
-  for (auto [session_id, present_id] : update_map) {
-    TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "prepare_to_render",
-                         SESSION_TRACE_ID(session_id, present_id), "session_id",
-                         TA_UINT64(session_id), "present_id", TA_UINT64(present_id), "frame_number",
-                         TA_UINT64(frame_number), "latched_time", TA_INT64(latched_time.get()));
+  // Micro-optimize tracing.
+  if (TRACE_CATEGORY_ENABLED("gfx")) {
+    // The straightforward approach would be to use TRACE_INSTAFLOW_STEP for each session-present,
+    // but there is a non-negligible cost if there are multiple presents.
+    TRACE_DURATION("gfx", "scenic_session_present/prepare_to_render", "frame_number",
+                   TA_UINT64(frame_number), "latched_time", TA_INT64(latched_time.get()));
+    for (auto [session_id, present_id] : update_map) {
+      TRACE_FLOW_STEP("gfx", "scenic_session_present/prepare_to_render",
+                      SESSION_TRACE_ID(session_id, present_id));
+    }
   }
 
   update_sessions_(update_map, frame_number, std::move(fences_from_previous_presents));
@@ -603,16 +621,26 @@ void DefaultFrameScheduler::SignalPresentedUpTo(uint64_t frame_number,
   while (!latched_updates_.empty() && latched_updates_.front().frame_number <= frame_number) {
     const FrameUpdate& latched_update = latched_updates_.front();
 
-    for (const auto& [session_id, present_id] : latched_update.updated_sessions) {
-      TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "frame_presented",
-                           SESSION_TRACE_ID(session_id, present_id), "session_id",
-                           TA_UINT64(session_id), "present_id", TA_UINT64(present_id),
-                           "frame_number", TA_UINT64(frame_number), "latched_time",
-                           TA_INT64(latched_update.latched_time.get()), "presentation_time",
-                           TA_INT64(actual_presentation_time.get()));
+    // Micro-optimize tracing.
+    if (TRACE_CATEGORY_ENABLED("gfx")) {
+      // The straightforward approach would be to use TRACE_INSTAFLOW_STEP for each session-present,
+      // but there is a non-negligible cost if there are multiple presents.
+      TRACE_DURATION("gfx", "scenic_session_present/frame_presented", "frame_number",
+                     TA_UINT64(frame_number), "latched_time",
+                     TA_INT64(latched_update.latched_time.get()), "presentation_time",
+                     TA_INT64(actual_presentation_time.get()));
 
-      last_updates[session_id] = present_id;
+      for (auto [session_id, present_id] : latched_update.updated_sessions) {
+        TRACE_FLOW_STEP("gfx", "scenic_session_present/frame_presented",
+                        SESSION_TRACE_ID(session_id, present_id));
+        last_updates[session_id] = present_id;
+      }
+    } else {
+      for (auto [session_id, present_id] : latched_update.updated_sessions) {
+        last_updates[session_id] = present_id;
+      }
     }
+
     latched_updates_.pop();
   }
 
