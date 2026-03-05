@@ -698,7 +698,7 @@ zx_status_t Dwc3::CheckHwVersion() {
   const int major = c1 - '0';
   const int minor = ((c2 - '0') * 10) + (c3 - '0');
 
-  if (major != 1) {
+  if (major != 1 && major != 2) {
     fdf::error("Unsupported USB IP Version {}.{:02}{:c}", major, minor, c4);
     return ZX_ERR_NOT_SUPPORTED;
   }

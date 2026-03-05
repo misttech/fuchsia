@@ -244,6 +244,8 @@ class TestFixture : public testing::Test {
     }
   }
 
+  void SetVerNumber(uint32_t ver_number) { ver_number_ = ver_number; }
+
  protected:
   // Section 1.3.22 of the DWC3 Programmer's guide
   //
@@ -257,7 +259,9 @@ class TestFixture : public testing::Test {
   uint64_t Read_GHWPARAMS3() { return 0x10420086; }
 
   // Section 1.3.45 of the DWC3 Programmer's guide
-  uint64_t Read_USB31_VER_NUMBER() { return 0x31363061; }  // 1.60a
+  uint64_t Read_USB31_VER_NUMBER() { return ver_number_; }
+
+  uint32_t ver_number_{0x31363061};  // 1.60a by default
 
   // Section 1.4.2 of the DWC3 Programmer's guide
   uint64_t Read_DCTL() { return dctl_val_; }
@@ -310,6 +314,21 @@ TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(0UL, node.children().size()); });
 
   // The dfv2 driver did not start, nothing to stop.
+}
+
+TEST_F(UnmanagedTestFixture, Dfv2HwVersion2) {
+  SetVerNumber(0x32303061);  // 2.00a
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.RunInNodeContext(
+      [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
 }  // namespace dwc3
