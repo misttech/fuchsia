@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/zircon-internal/unique-backtrace.h>
+#include <stdint.h>
 #include <zircon/compiler.h>
 
 // In the HWASan build, this file provides weak definitions for all the
@@ -59,5 +60,11 @@ HWASAN_STUB(tag_memory)
 // before the runtime has been loaded. Additionally, if hwasan were to find an
 // actual bug, we should end up crashing in one of the trap stubs above.
 HWASAN_STUB(add_frame_record)
+
+// This is referenced by HWASan-instrumented code for getting the start
+// of a dynamically placed shadow. Currently shadow is still placed zero and the
+// HWASan runtime default initializes this to zero so this is just here since
+// the early libc startup path needs some definition of this.
+extern "C" __EXPORT __WEAK const uintptr_t __hwasan_shadow_memory_dynamic_address = 0;
 
 #endif  // __has_feature(hwaddress_sanitizer)

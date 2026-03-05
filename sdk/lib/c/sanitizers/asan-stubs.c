@@ -33,6 +33,12 @@
 // Never use stack malloc before the real runtime library is loaded.
 __EXPORT __WEAK const int __asan_option_detect_stack_use_after_return = 0;
 
+// This is referenced by ASan-instrumented code for getting the start
+// of a dynamically placed shadow. Currently shadow is still placed zero and the
+// ASan runtime default initializes this to zero so this is just here since
+// the early libc startup path needs some definition of this.
+__EXPORT __WEAK const uintptr_t __asan_shadow_memory_dynamic_address = 0;
+
 // This is the one set of things we define for real just as the
 // sanitizer runtime does.  Generated code calls these.  In practice,
 // almost certainly nothing in the the startup path needs them, but
