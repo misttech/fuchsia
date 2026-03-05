@@ -311,7 +311,8 @@ class ThrasherTest : public gtest::RealLoopFixture {
   // The event loop is run to allow asynchronous teardown tasks to complete.
 };
 
-TEST_F(ThrasherTest, ParentVmoAccountingTest) {
+// TODO(https://fxbug.dev/485307031): Disabled until flakes are fixed.
+TEST_F(ThrasherTest, DISABLED_ParentVmoAccountingTest) {
   const size_t kPageSize = zx_system_get_page_size();
   const size_t kVmoSize = kPageSize * 4;
   zx::vmo parent_vmo;
