@@ -132,9 +132,9 @@ VmAspace::VmAspace(vaddr_t base, size_t size, Type type, AslrConfig aslr_config,
     : base_(base),
       size_(size),
       type_(type),
-      root_vmar_(nullptr),
       aslr_prng_(nullptr, 0),
       aslr_config_(aslr_config),
+      root_vmar_(nullptr),
       arch_aspace_(base, size, arch_aspace_flags_from_type(type)) {
   Rename(name);
 

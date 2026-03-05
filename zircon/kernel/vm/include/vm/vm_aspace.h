@@ -36,7 +36,7 @@ class VmObject;
 
 class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCounted<VmAspace> {
  public:
-  enum class Type {
+  enum class Type : uint8_t {
     User = 0,
     Kernel,
     // You probably do not want to use LOW_KERNEL. It is primarily used for SMP bootstrap or mexec
@@ -311,6 +311,17 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   char name_[ZX_MAX_NAME_LEN] TA_GUARDED(lock_);
   bool aspace_destroyed_ TA_GUARDED(lock_) = false;
 
+  // The number of page table reclamations attempted since last active. This is used since we need
+  // to perform pt reclamation twice in a row (once to clear accessed bits, another time to
+  // reclaim page tables) before the aspace is at a fixed point and we can actually stop
+  // performing the harvests. Is only ever updated to a maximum value of 2.
+  uint8_t pt_harvest_since_active_ TA_GUARDED(AspaceListLock::Get()) = 0;
+
+  // PRNG used by VMARs for address choices. The PRNG is thread safe and does not need to be guarded
+  // by the lock.
+  crypto::Prng aslr_prng_;
+  const AslrConfig aslr_config_;
+
   // The high priority count is used to determine whether this aspace should perform page table
   // reclamation, with any non-zero count completely disabling reclamation. This is an atomic so
   // that it can be safely read outside the lock, however writes should occur inside the lock.
@@ -344,22 +355,11 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   // Access to this reference is guarded by lock_.
   fbl::RefPtr<VmAddressRegion> root_vmar_ TA_GUARDED(lock_);
 
-  // PRNG used by VMARs for address choices. The PRNG is thread safe and does not need to be guarded
-  // by the lock.
-  crypto::Prng aslr_prng_;
-  const AslrConfig aslr_config_;
-
   // architecturally specific part of the aspace. This is internally locked and does not need to be
   // guarded by lock_.
   ArchVmAspace arch_aspace_;
 
   fbl::RefPtr<VmMapping> vdso_code_mapping_ TA_GUARDED(lock_);
-
-  // The number of page table reclamations attempted since last active. This is used since we need
-  // to perform pt reclamation twice in a row (once to clear accessed bits, another time to
-  // reclaim page tables) before the aspace is at a fixed point and we can actually stop
-  // performing the harvests.
-  uint32_t pt_harvest_since_active_ TA_GUARDED(AspaceListLock::Get()) = 0;
 
   DECLARE_SINGLETON_MUTEX(AspaceListLock);
   static fbl::DoublyLinkedList<VmAspace*> aspaces_list_ TA_GUARDED(AspaceListLock::Get());
