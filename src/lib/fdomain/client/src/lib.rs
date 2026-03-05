@@ -336,6 +336,14 @@ impl Transport {
     }
 }
 
+impl Drop for Transport {
+    fn drop(&mut self) {
+        if let Transport::Transport(_, _, wakers) = self {
+            wakers.drain(..).for_each(Waker::wake);
+        }
+    }
+}
+
 /// State of a socket that is or has been read from.
 struct SocketReadState {
     wakers: Vec<Waker>,
@@ -584,6 +592,7 @@ impl Drop for ClientInner {
         for state in self.socket_read_states.values_mut() {
             state.wakers.drain(..).for_each(Waker::wake);
         }
+        self.waiting_to_close_waker.wake_by_ref();
     }
 }
 
