@@ -34,47 +34,35 @@ fho::embedded_plugin!(ListTool);
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<Vec<JsonTarget>>;
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
-        self.update_from_target();
         // XXX Shouldn't check `is_strict()`. Eventually we'll _always_ do local discovery,
         // at which point this check goes away.
         let direct_mode = self.context.is_strict()
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context);
 
-        let spec = ffx_target::get_target_specifier(&self.context)?;
-        let query = TargetInfoQuery::from(spec.clone());
-        let infos = if direct_mode {
-            self.list_targets_direct(query).await?
+        let list_query = TargetInfoQuery::from(self.cmd.nodename.clone());
+        let mut infos = if direct_mode {
+            self.list_targets_direct(list_query).await?
         } else {
             let fidl_infos = list_targets(self.tc_proxy.await?, &self.cmd).await?;
-            fidl_infos
-                .into_iter()
-                .map(|fi| {
-                    let mut ti = TargetInfo::from(fi);
-                    if !matches!(query, TargetInfoQuery::First) && ti.match_query(&query) {
-                        ti.is_default = Some(true);
-                    }
-                    ti
-                })
-                .collect()
+            fidl_infos.into_iter().map(TargetInfo::from).collect()
         };
-        emit_device_stats_event(infos.len(), &spec).await;
+
+        let spec = ffx_target::get_target_specifier(&self.context)?;
+        let default_query = TargetInfoQuery::from(spec);
+        for ti in infos.iter_mut() {
+            ti.is_default = (!matches!(default_query, TargetInfoQuery::First)
+                && ti.match_query(&default_query))
+            .then_some(true);
+        }
+
+        emit_device_stats_event(infos.len(), &self.cmd.nodename).await;
         show_targets(self.cmd, infos, &mut writer).await?;
         Ok(())
     }
 }
 
 impl ListTool {
-    // Users might reasonable expect that they can say `ffx -t foo target list`, rather
-    // than `ffx target list foo`. Update the environment as though they had typed the
-    // command "correctly". (If they use both, the positional argument at the end takes
-    // precedence over the "-t" argument.)
-    fn update_from_target(&mut self) {
-        if self.cmd.nodename.is_some() {
-            self.context.override_target_specifier(&self.cmd.nodename);
-        }
-    }
-
     async fn list_targets_direct(&self, query: TargetInfoQuery) -> Result<Vec<TargetInfo>> {
         let connect_to_rcs =
             !self.cmd.no_probe && !matches!(self.cmd.format, ffx_list_args::Format::Addresses);
@@ -89,12 +77,14 @@ impl ListTool {
                 // then there's not much to be done. Unfortunately we can't
                 // know if a device is undiscoverable or not, so we can't give the
                 // user useful guidance in that situation.)
+                let mut context = self.context.clone();
+                context.override_target_specifier(&self.cmd.nodename);
                 let target_env = target_interface(&self.fho_env);
-                let behavior = target_env.init_connection_behavior(&self.context).await?;
+                let behavior = target_env.init_connection_behavior(&context).await?;
                 let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
                     ffx_bail!("Could not get direct connector for {}", String::from(query));
                 };
-                vec![connector.resolution().await?.get_target_info(addr, &self.context).await?]
+                vec![connector.resolution().await?.get_target_info(addr, &context).await?]
             }
             _ => {
                 ffx_target::list_targets(
@@ -504,37 +494,6 @@ mod test {
             fho_env,
             context: env.context.clone(),
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_update_from_target_overrides_context() {
-        let ffx_cmd_line = FfxCommandLine::default();
-        let env = ffx_config::test_init().unwrap();
-        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
-        let list_cmd =
-            ListCommand { nodename: Some(String::from("mytarget")), ..Default::default() };
-        let mut tool = build_list_tool(list_cmd, &env, fho_env).await;
-        tool.update_from_target();
-
-        let spec = ffx_target::get_target_specifier(&tool.context).unwrap();
-        assert_eq!(spec, Some(String::from("mytarget")));
-    }
-
-    #[fuchsia::test]
-    async fn test_update_from_target_no_op_when_none() {
-        let ffx_cmd_line = FfxCommandLine::default();
-        let env = ffx_config::test_init().unwrap();
-        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
-        let list_cmd = ListCommand { nodename: None, ..Default::default() };
-        let mut tool = build_list_tool(list_cmd, &env, fho_env).await;
-
-        // Capture initial state
-        let initial_spec = ffx_target::get_target_specifier(&tool.context).unwrap();
-
-        tool.update_from_target();
-
-        // Post-condition: spec should be unchanged
-        assert_eq!(ffx_target::get_target_specifier(&tool.context).unwrap(), initial_spec);
     }
 
     #[fuchsia::test]

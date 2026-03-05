@@ -72,8 +72,8 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
             [
                 "target",
                 "list",
+                f"{self.dut_ssh_address}",
             ],
-            f"{self.dut_ssh_address}",
         )
         asserts.assert_equal(out[0]["target_state"], "Product")
         asserts.assert_equal(out[0]["rcs_state"], "Y")
