@@ -77,11 +77,11 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice,
+            spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
         )
         self.fuchsia_device_close_obj = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceClose,
+            spec=affordances_capable.AsyncFuchsiaDeviceClose,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(
@@ -170,12 +170,14 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        self.wlan_policy_ap_obj = wlan_policy_ap_using_fc.WlanPolicyAp(
-            device_name="fuchsia-emulator",
-            ffx=self.ffx_transport_obj,
-            fuchsia_controller=self.fc_transport_obj,
-            reboot_affordance=self.reboot_affordance_obj,
-            fuchsia_device_close=self.fuchsia_device_close_obj,
+        self.wlan_policy_ap_obj = (
+            wlan_policy_ap_using_fc.AsyncWlanPolicyApUsingFc(
+                device_name="fuchsia-emulator",
+                ffx=self.ffx_transport_obj,
+                fuchsia_controller=self.fc_transport_obj,
+                reboot_affordance=self.reboot_affordance_obj,
+                fuchsia_device_close=self.fuchsia_device_close_obj,
+            )
         )
 
         # Call make_ready() to ensure the affordance is initialized. This is
@@ -186,12 +188,12 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
 
         assert self.access_point_state_updates_proxy is not None
 
-    def test_verify_supported(self) -> None:
+    async def test_verify_supported(self) -> None:
         """Verify verify_supported fails."""
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            self.wlan_policy_ap_obj = wlan_policy_ap_using_fc.WlanPolicyAp(
+            wlan_policy_ap_using_fc.AsyncWlanPolicyApUsingFc(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,
@@ -199,16 +201,11 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
                 fuchsia_device_close=self.fuchsia_device_close_obj,
             )
 
-    def test_init_register_for_on_device_boot(self) -> None:
+    async def test_init_register_for_on_device_boot(self) -> None:
         """Verify WlanPolicyAp registers on_device_boot."""
         self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once()
-        (
-            args,
-            _,
-        ) = self.reboot_affordance_obj.register_for_on_device_boot.call_args
-        self.assertTrue(args[0].__name__ == "make_ready")
 
-    def test_init_connect_proxy(self) -> None:
+    async def test_init_connect_proxy(self) -> None:
         """Verify WlanPolicyAp connects to
         fuchsia.wlan.policy/AccessPointProvider."""
         self.assertIsNotNone(self.wlan_policy_ap_obj._access_point_controller)
@@ -275,9 +272,9 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
                 None,
             )
 
-    def test_stop_all(self) -> None:
+    async def test_stop_all(self) -> None:
         """Verify WlanPolicyAp.stop_all()."""
-        self.wlan_policy_ap_obj.stop_all()
+        await self.wlan_policy_ap_obj.stop_all()
 
     async def test_set_new_update_listener_overrides(self) -> None:
         """Verify WlanPolicyAp.set_new_update_listener() overrides the existing

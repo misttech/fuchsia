@@ -60,27 +60,29 @@ class _AccessPointControllerState:
     access_point_state_updates_server_task: asyncio.Task[None]
 
 
-class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
-    """WlanPolicyAp affordance implemented with Fuchsia Controller."""
+class AsyncWlanPolicyApUsingFc(
+    wlan_policy_ap.AsyncWlanPolicyAp, AsyncLazyReady
+):
+    """Async WlanPolicyAp affordance implemented with Fuchsia Controller."""
 
     def __init__(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
     ) -> None:
-        """Create a WlanPolicyAp Fuchsia Controller affordance.
+        """Create an Async WlanPolicyAp Fuchsia Controller affordance.
 
         Args:
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements RebootCapableDevice.
-            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+            reboot_affordance: Object that implements AsyncRebootCapableDevice.
+            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
         """
-        super().__init__()
+        AsyncLazyReady.__init__(self)
 
         self._device_name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
@@ -199,18 +201,6 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
             access_point_state_updates_server_task=task,
         )
 
-    def start_sync(
-        self,
-        ssid: str,
-        security: SecurityType,
-        password: str | None,
-        mode: ConnectivityMode,
-        band: OperatingBand,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.start(ssid, security, password, mode, band)
-        )
-
     @ensure_ready
     async def start(
         self,
@@ -257,16 +247,6 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
                 request_status,
             )
 
-    def stop_sync(
-        self,
-        ssid: str,
-        security: SecurityType,
-        password: str | None,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.stop(ssid, security, password)
-        )
-
     @ensure_ready
     async def stop(
         self,
@@ -307,7 +287,8 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
                 request_status,
             )
 
-    def stop_all(self) -> None:
+    @ensure_ready
+    async def stop_all(self) -> None:
         """Stop all active access points.
 
         Raises:
@@ -315,11 +296,6 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         """
         if self._access_point_controller:
             self._access_point_controller.proxy.stop_all_access_points()
-
-    def set_new_update_listener_sync(self) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.set_new_update_listener()
-        )
 
     @ensure_ready
     async def set_new_update_listener(self) -> None:
@@ -341,7 +317,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         self._access_point_controller.access_point_state_updates_server_task.cancel()
         try:
             await self._access_point_controller.access_point_state_updates_server_task
-        except asyncio.CancelledError:
+        except asyncio.exceptions.CancelledError:
             pass
 
         access_point_listener_proxy = f_wlan_policy.AccessPointListenerClient(
@@ -369,14 +345,6 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         self._access_point_controller.updates = updates
         self._access_point_controller.access_point_state_updates_server_task = (
             task
-        )
-
-    def get_update_sync(
-        self,
-        timeout: float | None = None,
-    ) -> list[AccessPointState]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_update(timeout)
         )
 
     @ensure_ready
@@ -408,6 +376,151 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         return await asyncio.wait_for(
             self._access_point_controller.updates.get(), timeout
         )
+
+
+class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
+    """WlanPolicyAp affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+    ) -> None:
+        """Create a WlanPolicyAp Fuchsia Controller affordance.
+
+        Args:
+            device_name: Device name returned by `ffx target list`.
+            ffx: FFX transport.
+            fuchsia_controller: Fuchsia Controller transport.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+        """
+        self._inner = AsyncWlanPolicyApUsingFc(
+            device_name=device_name,
+            ffx=ffx,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+            fuchsia_device_close=fuchsia_device_close.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Verifies that the WlanPolicyAp affordance using FuchsiaController is supported by the
+        Fuchsia device.
+
+        This method should be called in `__init__()` so that if this affordance was called on a
+        Fuchsia device that does not support it, it will raise NotSupportedError.
+
+        Raises:
+            NotSupportedError: If affordance is not supported.
+        """
+        self._inner.verify_supported()
+
+    def start(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+        mode: ConnectivityMode,
+        band: OperatingBand,
+    ) -> None:
+        """Start an access point.
+
+        Args:
+            ssid: SSID of the network to start.
+            security: The security protocol of the network.
+            password: Credential used to connect to the network. None is
+                equivalent to no password.
+            mode: The connectivity mode to use
+            band: The operating band to use
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            HoneydewWlanRequestRejectedError: WLAN rejected the request
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.start(ssid, security, password, mode, band)
+        )
+
+    def stop(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+    ) -> None:
+        """Stop an active access point.
+
+        Args:
+            ssid: SSID of the network to stop.
+            security: The security protocol of the network.
+            password: Credential used to connect to the network. None is
+                equivalent to no password.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            HoneydewWlanRequestRejectedError: WLAN rejected the request
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop(ssid, security, password)
+        )
+
+    def stop_all(self) -> None:
+        """Stop all active access points.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop_all()
+        )
+
+    def set_new_update_listener(self) -> None:
+        """Sets the update listener stream of the facade to a new stream.
+
+        This causes updates to be reset. Intended to be used between tests so
+        that the behavior of updates in a test is independent from previous
+        tests.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set_new_update_listener()
+        )
+
+    def get_update(
+        self,
+        timeout: float | None = None,
+    ) -> list[AccessPointState]:
+        """Get a list of AP state listener updates.
+
+        This call will return with an update immediately the
+        first time the update listener is initialized by setting a new listener
+        or by creating a client controller before setting a new listener.
+        Subsequent calls will hang until there is a change since the last
+        update call.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_update command to
+                return. By default it is set to None (which means timeout is
+                disabled)
+
+        Returns:
+            A list of AP state updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_update(timeout)
+        )
+
+    def as_async(self) -> AsyncWlanPolicyApUsingFc:
+        """Returns the async version of WlanPolicyAp."""
+        return self._inner
 
 
 class AccessPointStateUpdatesImpl(f_wlan_policy.AccessPointStateUpdatesServer):

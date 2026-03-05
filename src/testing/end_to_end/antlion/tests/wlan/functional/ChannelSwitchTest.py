@@ -361,7 +361,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         ssid = rand_ascii_str(10)
         self.log.info(f'Starting SoftAP on DUT with ssid "{ssid}"')
 
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start_sync(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start(
             ssid,
             SecurityType.NONE,
             None,

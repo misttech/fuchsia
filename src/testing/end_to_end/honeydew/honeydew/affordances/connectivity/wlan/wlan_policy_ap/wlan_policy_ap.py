@@ -14,21 +14,9 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 
 
-class WlanPolicyAp(affordance.Affordance):
-    """Abstract base class for the WLAN Policy Access Point affordance."""
+class AsyncWlanPolicyAp(abc.ABC):
+    """Abstract base class for an async WLAN Policy Access Point affordance."""
 
-    @abc.abstractmethod
-    def start_sync(
-        self,
-        ssid: str,
-        security: SecurityType,
-        password: str | None,
-        mode: ConnectivityMode,
-        band: OperatingBand,
-    ) -> None:
-        pass
-
-    # List all the public methods
     @abc.abstractmethod
     async def start(
         self,
@@ -54,16 +42,102 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def stop_sync(
+    async def stop(
         self,
         ssid: str,
         security: SecurityType,
         password: str | None,
     ) -> None:
-        pass
+        """Stop an active access point.
+
+        Args:
+            ssid: SSID of the network to stop.
+            security: The security protocol of the network.
+            password: Credential used to connect to the network. None is
+                equivalent to no password.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            HoneydewWlanRequestRejectedError: WLAN rejected this request
+        """
 
     @abc.abstractmethod
-    async def stop(
+    async def stop_all(self) -> None:
+        """Stop all active access points.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+        """
+
+    @abc.abstractmethod
+    async def set_new_update_listener(self) -> None:
+        """Sets the update listener stream of the facade to a new stream.
+
+        This causes updates to be reset. Intended to be used between tests so
+        that the behavior of updates in a test is independent from previous
+        tests.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+
+    @abc.abstractmethod
+    async def get_update(
+        self,
+        timeout: float | None = None,
+    ) -> list[AccessPointState]:
+        """Get a list of AP state listener updates.
+
+        This call will return with an update immediately the
+        first time the update listener is initialized by setting a new listener
+        or by creating a client controller before setting a new listener.
+        Subsequent calls will hang until there is a change since the last
+        update call.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_update command to
+                return. By default it is set to None (which means timeout is
+                disabled)
+
+        Returns:
+            A list of AP state updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+
+
+class WlanPolicyAp(affordance.Affordance):
+    """Abstract base class for the WLAN Policy Access Point affordance."""
+
+    # List all the public methods
+    @abc.abstractmethod
+    def start(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+        mode: ConnectivityMode,
+        band: OperatingBand,
+    ) -> None:
+        """Start an access point.
+
+        Args:
+            ssid: SSID of the network to start.
+            security: The security protocol of the network.
+            password: Credential used to connect to the network. None is
+                equivalent to no password.
+            mode: The connectivity mode to use
+            band: The operating band to use
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack
+            HoneydewWlanRequestRejectedError: WLAN rejected this request
+        """
+
+    @abc.abstractmethod
+    def stop(
         self,
         ssid: str,
         security: SecurityType,
@@ -91,11 +165,7 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def set_new_update_listener_sync(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def set_new_update_listener(self) -> None:
+    def set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -107,14 +177,7 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def get_update_sync(
-        self,
-        timeout: float | None = None,
-    ) -> list[AccessPointState]:
-        pass
-
-    @abc.abstractmethod
-    async def get_update(
+    def get_update(
         self,
         timeout: float | None = None,
     ) -> list[AccessPointState]:
@@ -138,3 +201,7 @@ class WlanPolicyAp(affordance.Affordance):
             HoneydewWlanError: Error from WLAN stack.
             TimeoutError: Reached timeout without any updates.
         """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncWlanPolicyAp:
+        """Returns the async version of WlanPolicyAp."""

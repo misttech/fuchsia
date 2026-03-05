@@ -63,7 +63,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.device.wlan_policy.start_client_connections()
         self.device_supports_ap = True
         try:
-            self.device.wlan_policy_ap.start_sync(
+            self.device.wlan_policy_ap.start(
                 "test_ssid",
                 SecurityType.NONE,
                 None,
@@ -106,7 +106,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         )
         if self.device_supports_ap:
-            self.device.wlan_policy_ap.stop_all()
+            await self.device.wlan_policy_ap.as_async().stop_all()
 
         # Change the country code while all interfaces are destroyed
         await self.device.wlan_policy.as_async().set_country_code(
@@ -123,8 +123,10 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.set_new_update_listener()
-            ap_updates = await self.device.wlan_policy_ap.get_update()
+            await self.device.wlan_policy_ap.as_async().set_new_update_listener()
+            ap_updates = (
+                await self.device.wlan_policy_ap.as_async().get_update()
+            )
             if ap_updates:
                 raise signals.TestFailure(
                     f"AP in unexpected state: {ap_updates}"
@@ -145,7 +147,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         )
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.start(
+            await self.device.wlan_policy_ap.as_async().start(
                 "test_ssid",
                 SecurityType.NONE,
                 None,
@@ -169,8 +171,10 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Don't reset the update listener so that this verifies
         # changing the country code recreates the interfaces.
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.set_new_update_listener()
-            ap_updates = await self.device.wlan_policy_ap.get_update()
+            await self.device.wlan_policy_ap.as_async().set_new_update_listener()
+            ap_updates = (
+                await self.device.wlan_policy_ap.as_async().get_update()
+            )
             if len(ap_updates) != 1:
                 raise signals.TestFailure(f"No APs are running: {ap_updates}")
             asserts.assert_equal(

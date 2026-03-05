@@ -30,7 +30,10 @@ from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy,
     wlan_policy_using_fc,
 )
-from honeydew.affordances.connectivity.wlan.wlan_policy_ap import wlan_policy_ap
+from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
+    wlan_policy_ap,
+    wlan_policy_ap_using_fc,
+)
 from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.hello_world import hello_world
 from honeydew.affordances.location import location, location_using_fc
@@ -326,7 +329,13 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def wlan_policy_ap(self) -> wlan_policy_ap.WlanPolicyAp:
-        return self._inner.wlan_policy_ap
+        return wlan_policy_ap_using_fc.WlanPolicyAp(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+        )
 
     @properties.Affordance
     def wlan_core(self) -> wlan_core.WlanCore:

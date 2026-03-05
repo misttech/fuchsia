@@ -67,7 +67,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         # Retrieve initial ap mac address
         logger.info("Creating SoftAP and retrieving its AP MAC address...")
-        await self.device.wlan_policy_ap.start(
+        await self.device.wlan_policy_ap.as_async().start(
             TEST_SSID,
             SecurityType.NONE,
             None,
@@ -90,11 +90,11 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         logger.info(
             f"Creating SoftAP with suggested MAC: {suggested_mac_addr}..."
         )
-        self.device.wlan_policy_ap.stop_all()
+        await self.device.wlan_policy_ap.as_async().stop_all()
         await self.deprecated_configurator.suggest_access_point_mac_address(
             mac=fidl_net.MacAddress(octets=suggested_mac_addr.bytes())
         )
-        await self.device.wlan_policy_ap.start(
+        await self.device.wlan_policy_ap.as_async().start(
             TEST_SSID,
             SecurityType.NONE,
             None,
@@ -114,11 +114,11 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Reset to initial mac address and verify
         logger.info(f"Resetting to initial mac address ({initial_mac_addr}).")
-        self.device.wlan_policy_ap.stop_all()
+        await self.device.wlan_policy_ap.as_async().stop_all()
         await self.deprecated_configurator.suggest_access_point_mac_address(
             mac=fidl_net.MacAddress(octets=initial_mac_addr.bytes())
         )
-        await self.device.wlan_policy_ap.start(
+        await self.device.wlan_policy_ap.as_async().start(
             TEST_SSID,
             SecurityType.NONE,
             None,
