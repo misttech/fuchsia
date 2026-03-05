@@ -457,7 +457,7 @@ class FuchsiaDevice:
                 "policy layer."
             )
         else:
-            self.wlan_policy_controller.configure_wlan_sync(
+            self.wlan_policy_controller.configure_wlan(
                 clear_networks=clear_networks
             )
 
@@ -482,7 +482,7 @@ class FuchsiaDevice:
         # If using policy, stop client connections. Otherwise, just clear
         # variables.
         if self.association_mechanism != "drivers":
-            self.wlan_policy_controller._deconfigure_wlan_sync()
+            self.wlan_policy_controller._deconfigure_wlan()
         self.association_mechanism = None
 
     def channel_create(self) -> Tuple[Any, Any]:
@@ -669,7 +669,7 @@ class FuchsiaDevice:
         # If and only if wlan is configured, and using the policy layer
         if self.association_mechanism == "policy":
             try:
-                self.wlan_policy_controller.clean_up_sync()
+                self.wlan_policy_controller.clean_up()
             except Exception as err:
                 self.log.warning(f"Unable to clean up WLAN Policy layer: {err}")
 

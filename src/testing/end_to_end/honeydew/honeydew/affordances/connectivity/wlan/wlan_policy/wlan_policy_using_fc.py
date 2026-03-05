@@ -31,7 +31,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
-from honeydew.affordances.location.location import AsyncLocation
+from honeydew.affordances.location.location import AsyncLocation, Location
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
@@ -156,28 +156,29 @@ class ClientControllerState:
     client_state_updates_server_task: asyncio.Task[None]
 
 
-class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
-    """WlanPolicy affordance implemented with Fuchsia Controller."""
+class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
+    """Async WlanPolicy affordance implemented with Fuchsia Controller."""
 
     def __init__(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
         location: AsyncLocation,
     ) -> None:
-        """Create a WlanPolicy Fuchsia Controller affordance.
+        """Create an Async WlanPolicy Fuchsia Controller affordance.
 
         Args:
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements RebootCapableDevice.
-            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+            reboot_affordance: Object that implements AsyncRebootCapableDevice.
+            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
+            location: Object that implements AsyncLocation.
         """
-        super().__init__()
+        AsyncLazyReady.__init__(self)
 
         self._device_name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
@@ -299,11 +300,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                     "WLAN FC affordance."
                 )
 
-    def set_country_code_sync(self, country_code: CountryCode) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.set_country_code(country_code)
-        )
-
     @ensure_ready
     async def set_country_code(self, country_code: CountryCode) -> None:
         await self._set_country_code(country_code)
@@ -366,18 +362,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
             "All PHYs configured for new country code: %s", country_code
         )
 
-    def connect_sync(
-        self,
-        target_ssid: str,
-        security_type: SecurityType,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> f_wlan_policy.RequestStatus:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.connect(target_ssid, security_type, timeout=timeout)
-        )
-
     @ensure_ready
     async def connect(
         self,
@@ -425,16 +409,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 f"ClientController.Connect() error {status}"
             ) from status
 
-    def get_saved_networks_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> list[NetworkConfig]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_saved_networks(timeout=timeout)
-        )
-
     @ensure_ready
     async def get_saved_networks(
         self,
@@ -477,16 +451,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
             for config in resp.configs:
                 configs.append(NetworkConfig.from_fidl(config))
         return configs
-
-    def get_status_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ClientStateSummary:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_status(timeout=timeout)
-        )
 
     async def get_status(
         self,
@@ -548,16 +512,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 await task
             except asyncio.CancelledError:
                 pass
-
-    def get_update_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ClientStateSummary:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.get_update(timeout=timeout)
-        )
 
     @ensure_ready
     async def get_update(
@@ -632,17 +586,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                     f"{pprint.pformat(client_state_summaries, indent=4)}"
                 ) from e
 
-    def wait_until_update_sync(
-        self,
-        expected_update: ClientStateSummary,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.wait_until_update(expected_update, timeout=timeout)
-        )
-
     @ensure_ready
     async def wait_until_update(
         self,
@@ -665,16 +608,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
             raise wlan_errors.HoneydewWlanError(
                 f"Never received {expected_update}."
             ) from e
-
-    def remove_all_networks_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.remove_all_networks(timeout=timeout)
-        )
 
     @ensure_ready
     async def remove_all_networks(
@@ -703,21 +636,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 target_pwd=network.credential_value,
                 timeout=timeout,
             )
-
-    def remove_network_sync(
-        self,
-        target_ssid: str,
-        security_type: SecurityType,
-        target_pwd: str | None = None,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.remove_network(
-                target_ssid, security_type, target_pwd, timeout=timeout
-            )
-        )
 
     @ensure_ready
     async def remove_network(
@@ -777,21 +695,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 f"ClientController.RemoveNetwork() ZxStatus error {status}"
             )
 
-    def save_network_sync(
-        self,
-        target_ssid: str,
-        security_type: SecurityType,
-        target_pwd: str | None = None,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.save_network(
-                target_ssid, security_type, target_pwd, timeout=timeout
-            )
-        )
-
     @ensure_ready
     async def save_network(
         self,
@@ -850,16 +753,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 f"ClientController.SaveNetwork() error {status}"
             ) from status
 
-    def scan_for_networks_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> list[str]:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.scan_for_networks(timeout=timeout)
-        )
-
     @ensure_ready
     async def scan_for_networks(
         self,
@@ -908,11 +801,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 scan_results.add(bytes(scan_result.id_.ssid).decode("utf-8"))
 
         return list(scan_results)
-
-    def set_new_update_listener_sync(self) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.set_new_update_listener()
-        )
 
     @ensure_ready
     async def set_new_update_listener(self) -> None:
@@ -976,16 +864,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         self._client_controller.updates = updates
         self._client_controller.client_state_updates_server_task = task
 
-    def start_client_connections_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.start_client_connections(timeout=timeout)
-        )
-
     @ensure_ready
     async def start_client_connections(
         self,
@@ -1027,16 +905,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 f"ClientController.StartClientConnections() ZxStatus error {status}"
             )
 
-    def stop_client_connections_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.stop_client_connections(timeout=timeout)
-        )
-
     @ensure_ready
     async def stop_client_connections(
         self,
@@ -1075,16 +943,6 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 f"ClientController.StopClientConnections() error {status}"
             ) from status
 
-    def wait_for_no_connections_sync(
-        self,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self.wait_for_no_connections(timeout=timeout)
-        )
-
     async def wait_for_no_connections(
         self,
         *,
@@ -1109,6 +967,339 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
             raise wlan_errors.HoneydewWlanError(
                 "Networks still connected."
             ) from e
+
+
+class WlanPolicy(wlan_policy.WlanPolicy):
+    """WlanPolicy affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        location: Location,
+    ) -> None:
+        """Create a WlanPolicy Fuchsia Controller affordance.
+
+        Args:
+            device_name: Device name returned by `ffx target list`.
+            ffx: ffx transport.
+            fuchsia_controller: Fuchsia Controller transport.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+            location: Object that implements Location.
+        """
+        self._inner = AsyncWlanPolicyUsingFc(
+            device_name=device_name,
+            ffx=ffx,
+            fuchsia_controller=fuchsia_controller,
+            reboot_affordance=reboot_affordance.as_async(),
+            fuchsia_device_close=fuchsia_device_close.as_async(),
+            location=location.as_async(),
+        )
+
+    def verify_supported(self) -> None:
+        """Verifies that the WlanPolicy affordance using FuchsiaController is supported by the
+        Fuchsia device.
+
+        This method should be called in `__init__()` so that if this affordance was called on a
+        Fuchsia device that does not support it, it will raise NotSupportedError.
+
+        Raises:
+            NotSupportedError: If affordance is not supported.
+        """
+        self._inner.verify_supported()
+
+    def set_country_code(self, country_code: CountryCode) -> None:
+        """Set regulatory region and wait for wlancfg to change country code of each phy."""
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set_country_code(country_code)
+        )
+
+    def connect(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> f_wlan_policy.RequestStatus:
+        """Triggers connection to a network.
+
+        Args:
+            target_ssid: The network to connect to. Must have been previously
+                saved in order for a successful connection to happen.
+            security_type: The security protocol of the network.
+            timeout: timeout value.
+
+        Returns:
+            A RequestStatus response to the connect request
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TypeError: Return value not a string.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.connect(target_ssid, security_type, timeout=timeout)
+        )
+
+    def get_saved_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[NetworkConfig]:
+        """Gets networks saved on device.
+
+        Returns:
+            A list of NetworkConfigs.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TypeError: Return values not correct types.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_saved_networks(timeout=timeout)
+        )
+
+    def get_status(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        """Gets the current client listener state immediately.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_status command to
+                return.
+
+        Returns:
+            An update of connection status. If there is no error, the result is
+            a WlanPolicyUpdate with a structure that matches the FIDL
+            ClientStateSummary struct given for updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_status(timeout=timeout)
+        )
+
+    def get_update(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        """Gets one client listener update.
+
+        This call will return with an update immediately the
+        first time the update listener is initialized by setting a new listener
+        or by creating a client controller before setting a new listener.
+        Subsequent calls will hang until there is a change since the last
+        update call.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_update command to
+                return. By default it is set to None (which means timeout is
+                disabled)
+
+        Returns:
+            An update of connection status. If there is no error, the result is
+            a WlanPolicyUpdate with a structure that matches the FIDL
+            ClientStateSummary struct given for updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_update(timeout=timeout)
+        )
+
+    def wait_until_update(
+        self,
+        expected_update: ClientStateSummary,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Wait until the expected update.
+
+        Raises:
+            HoneydewWlanError: If expected update does not arrive by end of timeout.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_until_update(expected_update, timeout=timeout)
+        )
+
+    def remove_all_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Deletes all saved networks on the device.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Operation takes longer than expected.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.remove_all_networks(timeout=timeout)
+        )
+
+    def remove_network(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Removes or "forgets" a network from saved networks.
+
+        Args:
+            target_ssid: The network to remove.
+            security_type: The security protocol of the network.
+            target_pwd: The credential being saved with the network. No password
+                is equivalent to an empty string.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Operation takes longer than expected.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.remove_network(
+                target_ssid, security_type, target_pwd, timeout=timeout
+            )
+        )
+
+    def save_network(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Saves a network to the device.
+
+        Args:
+            target_ssid: The network to save.
+            security_type: The security protocol of the network.
+            target_pwd: The credential being saved with the network. No password
+                is equivalent to an empty string.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.save_network(
+                target_ssid, security_type, target_pwd, timeout=timeout
+            )
+        )
+
+    def scan_for_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[str]:
+        """Scans for networks.
+
+        Returns:
+            A list of network SSIDs that can be connected to.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TypeError: Return value not a list.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.scan_for_networks(timeout=timeout)
+        )
+
+    def set_new_update_listener(self) -> None:
+        """Sets the update listener stream of the facade to a new stream.
+
+        This causes updates to be reset. Intended to be used between tests so
+        that the behavior of updates in a test is independent from previous
+        tests.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.set_new_update_listener()
+        )
+
+    def start_client_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Enables device to initiate connections to networks.
+
+        Either by auto-connecting to saved networks or acting on incoming calls
+        triggering connections.
+
+        See fuchsia.wlan.policy/ClientController.StartClientConnections().
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            RuntimeError: A client controller has not been created yet
+            TimeoutError: Operation takes longer than expected.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.start_client_connections(timeout=timeout)
+        )
+
+    def stop_client_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Disables device for initiating connections to networks.
+
+        Tears down any existing connections to WLAN networks and disables
+        initiation of new connections.
+
+        See fuchsia.wlan.policy/ClientController.StopClientConnections().
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            RuntimeError: A client controller has not been created yet
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.stop_client_connections(timeout=timeout)
+        )
+
+    def wait_for_no_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Waits until the WLAN network state is disconnected
+
+        Raises:
+            HoneydewWlanError: Failure to observe no connection within timeout.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_no_connections(timeout=timeout)
+        )
+
+    def as_async(self) -> AsyncWlanPolicyUsingFc:
+        """Returns the async version of WlanPolicy."""
+        return self._inner
 
 
 class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):

@@ -625,18 +625,18 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_policy(self) -> wlan_policy.WlanPolicy:
+    def wlan_policy(self) -> wlan_policy.AsyncWlanPolicy:
         """Returns a wlan_policy affordance object.
 
         Returns:
-            wlan_policy.WlanPolicy object
+            wlan_policy.AsyncWlanPolicy object
         """
-        return wlan_policy_using_fc.WlanPolicy(
+        return wlan_policy_using_fc.AsyncWlanPolicyUsingFc(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self.as_sync(),
-            fuchsia_device_close=self.as_sync(),
+            reboot_affordance=self,
+            fuchsia_device_close=self,
             location=self.location,
         )
 

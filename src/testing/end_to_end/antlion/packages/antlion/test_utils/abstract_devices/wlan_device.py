@@ -439,17 +439,17 @@ class FuchsiaWlanDevice(SupportsWLAN):
                 )
             case AssociationMode.POLICY:
                 try:
-                    self.device.honeydew_fd.wlan_policy.save_network_sync(
+                    self.device.honeydew_fd.wlan_policy.save_network(
                         target_ssid,
                         HdSecurityType(target_security.fuchsia_security_type()),
                         target_pwd=target_pwd,
                     )
-                    status = self.device.honeydew_fd.wlan_policy.connect_sync(
+                    status = self.device.honeydew_fd.wlan_policy.connect(
                         target_ssid,
                         HdSecurityType(target_security.fuchsia_security_type()),
                     )
                     if status is f_wlan_policy.RequestStatus.ACKNOWLEDGED:
-                        self.device.wlan_policy_controller.wait_for_network_state_sync(
+                        self.device.wlan_policy_controller.wait_for_network_state(
                             target_ssid,
                             ConnectionState.CONNECTED,
                             timeout_sec=timeout_sec,
@@ -477,8 +477,8 @@ class FuchsiaWlanDevice(SupportsWLAN):
             case AssociationMode.DRIVER:
                 self.device.honeydew_fd.wlan_core.disconnect()
             case AssociationMode.POLICY:
-                self.device.honeydew_fd.wlan_policy.remove_all_networks_sync()
-                self.device.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
+                self.device.honeydew_fd.wlan_policy.remove_all_networks()
+                self.device.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def ping(
         self,

@@ -28,7 +28,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
 )
-from honeydew.affordances.location.location import Location
+from honeydew.affordances.location.location import AsyncLocation
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -134,11 +134,11 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice,
+            spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
         )
         self.fuchsia_device_close_obj = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceClose,
+            spec=affordances_capable.AsyncFuchsiaDeviceClose,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(
@@ -150,7 +150,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             autospec=True,
         )
         self.location_obj = mock.MagicMock(
-            spec=Location,
+            spec=AsyncLocation,
             autospec=True,
         )
 
@@ -158,7 +158,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             wlan_policy_using_fc._REQUIRED_CAPABILITIES
         )
 
-        self.wlan_policy_obj = wlan_policy_using_fc.WlanPolicy(
+        self.wlan_policy_obj = wlan_policy_using_fc.AsyncWlanPolicyUsingFc(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -260,7 +260,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            self.wlan_policy_obj = wlan_policy_using_fc.WlanPolicy(
+            wlan_policy_using_fc.AsyncWlanPolicyUsingFc(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

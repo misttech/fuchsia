@@ -698,7 +698,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        wlan_policy_using_fc.WlanPolicy,
+        wlan_policy_using_fc.AsyncWlanPolicyUsingFc,
         "__init__",
         autospec=True,
         return_value=None,
@@ -715,15 +715,15 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         affordance."""
         self.assertIsInstance(
             self.fd_fc_obj.wlan_policy,
-            wlan_policy_using_fc.WlanPolicy,
+            wlan_policy_using_fc.AsyncWlanPolicyUsingFc,
         )
         wlan_policy_using_fc_init.assert_called_once_with(
             self.fd_fc_obj.wlan_policy,
             device_name=self.fd_fc_obj._device_info.name,
             ffx=self.fd_fc_obj.ffx,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj.as_sync(),
-            fuchsia_device_close=self.fd_fc_obj.as_sync(),
+            reboot_affordance=self.fd_fc_obj,
+            fuchsia_device_close=self.fd_fc_obj,
             location=self.fd_fc_obj.location,
         )
 

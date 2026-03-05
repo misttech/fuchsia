@@ -94,8 +94,8 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
 
     def setup_test(self) -> None:
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.remove_all_networks_sync()
-            fd.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
+            fd.honeydew_fd.wlan_policy.remove_all_networks()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def teardown_class(self) -> None:
         if hasattr(self, "access_point") and self.access_point:
@@ -114,22 +114,20 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             TestFailure if we fail to see hidden network in scans before timing out.
         """
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.stop_client_connections_sync()
-            fd.wlan_policy_controller.wait_for_client_state_sync(
+            fd.honeydew_fd.wlan_policy.stop_client_connections()
+            fd.wlan_policy_controller.wait_for_client_state(
                 WlanClientState.CONNECTIONS_DISABLED
             )
-            fd.honeydew_fd.wlan_policy.save_network_sync(
+            fd.honeydew_fd.wlan_policy.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )
-            fd.honeydew_fd.wlan_policy.start_client_connections_sync()
+            fd.honeydew_fd.wlan_policy.start_client_connections()
             start_time = time.time()
             num_performed_scans = 0
 
             while time.time() < start_time + TIME_ATTEMPT_SCANS:
                 num_performed_scans = num_performed_scans + 1
-                scan_result = (
-                    fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
-                )
+                scan_result = fd.honeydew_fd.wlan_policy.scan_for_networks()
 
                 if self.hidden_ssid in scan_result:
                     self.log.info(
@@ -155,15 +153,15 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         # Start up AP with an open network with a random SSID
 
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.stop_client_connections_sync()
-            fd.honeydew_fd.wlan_policy.save_network_sync(
+            fd.honeydew_fd.wlan_policy.stop_client_connections()
+            fd.honeydew_fd.wlan_policy.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )
 
             # Reboot the device and check that it auto connects.
             fd.reboot()
             try:
-                fd.wlan_policy_controller.wait_for_network_state_sync(
+                fd.wlan_policy_controller.wait_for_network_state(
                     self.hidden_ssid,
                     ConnectionState.CONNECTED,
                     timeout_sec=TIME_WAIT_FOR_CONNECT,
@@ -184,12 +182,12 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             it.
         """
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
-            fd.honeydew_fd.wlan_policy.save_network_sync(
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )
             try:
-                fd.wlan_policy_controller.wait_for_network_state_sync(
+                fd.wlan_policy_controller.wait_for_network_state(
                     self.hidden_ssid,
                     ConnectionState.CONNECTED,
                     timeout_sec=TIME_WAIT_FOR_CONNECT,
