@@ -113,6 +113,26 @@ zx_status_t EndpointClientBase::DeleteRequest(usb::FidlRequest&& request) {
   return ret_status;
 }
 
+zx_status_t EndpointClientBase::Close() {
+  zx_status_t ret_status = ZX_OK;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    while (std::optional<usb::FidlRequest> req = free_reqs_.Remove()) {
+      for (fuchsia_hardware_usb_request::BufferRegion& d : *req.value()->data()) {
+        zx_status_t status = Unmap(d);
+        if (status != ZX_OK) {
+          zxlogf(ERROR, "Could not unmap buffer region %d", status);
+          // Return the latest failed status value, but keep trying to unmap the rest of the buffer
+          // regions
+          ret_status = status;
+        }
+      }
+    }
+  }
+  client_.AsyncTeardown();
+  return ret_status;
+}
+
 size_t EndpointClientBase::RegisterVmos(size_t vmo_count, size_t vmo_size) {
   std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
   vmo_info.reserve(vmo_count);

@@ -87,8 +87,22 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     ASSERT_TRUE(binding_ref_);
     EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
   }
-  // CancelAll: succeeds without checking anything.
-  void CancelAll(CancelAllCompleter::Sync& completer) override { completer.Reply(fit::ok()); }
+
+  void CancelAll(CancelAllCompleter::Sync& completer) override {
+    std::lock_guard<std::mutex> _(lock_);
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+    std::vector<fuchsia_hardware_usb_request::Request> requests = std::move(requests_);
+    completions.reserve(requests_.size());
+    for (auto& request : requests) {
+      completions.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
+                                             .request(std::move(request))
+                                             .status(ZX_ERR_CANCELED)
+                                             .transfer_size(0)));
+    }
+    EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
+    completer.Reply(fit::ok());
+  }
+
   // RegisterVmos: succeeds without checking anything.
   void RegisterVmos(RegisterVmosRequest& request, RegisterVmosCompleter::Sync& completer) override {
     std::vector<fuchsia_hardware_usb_endpoint::VmoHandle> ret;

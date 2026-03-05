@@ -92,7 +92,7 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
                           ZX_ERR_IO_NOT_PRESENT, 0);
     }
     requests_.erase(requests_.begin(), requests_.end());
-    fake_usb_endpoint::FakeEndpoint::CancelAll(completer);
+    completer.Reply(fit::ok());
   }
 
   // Returns the next waiting request. The caller is responsible for ensuring that

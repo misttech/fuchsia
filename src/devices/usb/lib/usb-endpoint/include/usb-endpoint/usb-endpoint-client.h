@@ -36,6 +36,7 @@ class EndpointClientBase {
   // QueueRequests, and CancelAll, where RegisterVmos and UnregisterVmos will be called accordingly
   // by AddRequests and DeleteRequest.
   fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint>& operator->() { return client_; }
+  fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint>& client() { return client_; }
 
   // Helper functions that manage access to the request pool. Buffer regions of a request will be
   // mapped upon addition to the pool. If mapping upon addition is not desired, one may use
@@ -51,6 +52,9 @@ class EndpointClientBase {
   // deleting a request from the pool, it will stay mapped (and registered) until the endpoint is
   // destructed.
   zx_status_t DeleteRequest(usb::FidlRequest&& request) __TA_REQUIRES(mutex_);
+
+  // Closes the endpoint client. This will free all requests and unmap all VMOs.
+  zx_status_t Close() __TA_EXCLUDES(mutex_);
 
   std::mutex& mutex() __TA_RETURN_CAPABILITY(mutex_) { return mutex_; }
 
