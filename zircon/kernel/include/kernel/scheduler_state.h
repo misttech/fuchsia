@@ -143,11 +143,23 @@ struct SchedDeadlineParams {
     DEBUG_ASSERT(capacity_ns <= deadline_ns);
   }
 
-  constexpr SchedDeadlineParams(SchedUtilization utilization, SchedDuration deadline_ns)
-      : capacity_ns{deadline_ns * utilization}, deadline_ns{deadline_ns}, utilization{utilization} {
-    DEBUG_ASSERT(0 < deadline_ns);
-    DEBUG_ASSERT(0 < utilization);
-    DEBUG_ASSERT(utilization <= 1);
+  constexpr SchedDeadlineParams(SchedDuration capacity_ns, SchedDuration deadline_ns,
+                                SchedUtilization utilization)
+      : capacity_ns{capacity_ns}, deadline_ns{deadline_ns}, utilization{utilization} {
+    DEBUG_ASSERT(0 < capacity_ns);
+    DEBUG_ASSERT(capacity_ns <= deadline_ns);
+    // Because different code paths either use capacity and deadline to derive
+    // utilization or utilization and deadline to derive capacity, there can be
+    // small differences, due to rounding, between the resulting utilization
+    // values, even when the capacity and deadline values are the same here.
+    // Checking consistency requires verifying that at least one relationship is
+    // valid.
+    DEBUG_ASSERT_MSG(
+        utilization == capacity_ns / deadline_ns || capacity_ns == utilization * deadline_ns,
+        "%" PRId64 " = %" PRId64 "/%" PRId64 " ; %" PRId64 " = %" PRId64 "*%" PRId64,
+        SchedUtilization{capacity_ns / deadline_ns}.raw_value(), capacity_ns.raw_value(),
+        deadline_ns.raw_value(), SchedDuration{utilization * deadline_ns}.raw_value(),
+        utilization.raw_value(), deadline_ns.raw_value());
   }
 
   constexpr SchedDeadlineParams(const SchedDeadlineParams&) = default;

@@ -149,8 +149,9 @@ struct WaitQueueOrderingTests {
     // we pick as our utilization/capacity/timeslice-remaining should not factor
     // into queue ordering right now.
     constexpr SchedUtilization kUtil = SchedUtilization{1} / 5;
+    const SchedDuration capacity = kUtil * rel_deadline;
     ss.base_profile_.discipline = SchedDiscipline::Deadline;
-    ss.base_profile_.deadline = SchedDeadlineParams{kUtil, rel_deadline};
+    ss.base_profile_.deadline = SchedDeadlineParams{capacity, rel_deadline};
 
     ss.effective_profile_.SetDeadline(ss.base_profile_.deadline);
 

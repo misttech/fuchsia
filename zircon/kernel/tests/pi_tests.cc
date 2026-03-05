@@ -64,7 +64,8 @@ class AutoProfileBooster {
   AutoProfileBooster() : initial_base_profile_(Thread::Current::Get()->SnapshotBaseProfile()) {
     constexpr SchedUtilization utilization = ffl::FromRatio(90, 100);
     constexpr SchedDuration deadline{ZX_USEC(200)};
-    const SchedulerState::BaseProfile new_base_profile{SchedDeadlineParams{utilization, deadline}};
+    constexpr SchedDuration capacity = utilization * deadline;
+    const SchedulerState::BaseProfile new_base_profile{SchedDeadlineParams{capacity, deadline}};
     Thread::Current::Get()->SetBaseProfile(new_base_profile);
   }
 
@@ -177,7 +178,18 @@ class ThreadEffectiveProfileObserver {
       }
       effective_utilization = ktl::min(effective_utilization, SchedUtilization{1});
 
-      SchedDeadlineParams expected{effective_utilization, effective_deadline};
+      SchedDuration effective_capacity = effective_deadline * effective_utilization;
+      ASSERT_LE(effective_capacity.raw_value(), effective_deadline.raw_value());
+
+      // Rounding can cause differences between expressions that derive capacity
+      // from utilization and deadline and expressions that derive utilization
+      // from capacity and deadline. For this reason, use the constructor that
+      // takes all three values to ensure consistent test comparisons. The two
+      // parameter constructor that derives utilization from the given capacity
+      // and deadline may produce a slightly different utilization value than the
+      // effective utilization value here.
+      SchedDeadlineParams expected{effective_capacity, effective_deadline, effective_utilization};
+
       EXPECT_EQ(expected.capacity_ns.raw_value(),
                 observed_profile_.deadline().capacity_ns.raw_value());
       EXPECT_EQ(expected.deadline_ns.raw_value(),
@@ -278,8 +290,9 @@ class DeadlineProfile : public Profile {
   }
 
   size_t DebugPrint(char* buf, size_t space) override {
-    return snprintf(buf, space, "[capacity %ld deadline %ld]",
-                    sched_params_.capacity_ns.raw_value(), sched_params_.deadline_ns.raw_value());
+    return snprintf(buf, space, "[capacity %ld deadline %ld utilization %ld]",
+                    sched_params_.capacity_ns.raw_value(), sched_params_.deadline_ns.raw_value(),
+                    sched_params_.utilization.raw_value());
   }
 
   const SchedDeadlineParams& sched_params() const { return sched_params_; }
