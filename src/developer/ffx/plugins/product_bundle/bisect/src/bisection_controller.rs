@@ -19,7 +19,7 @@ use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use product_bundle::{ProductBundleBuilder, Slot as PBSlot};
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use tempfile::tempdir;
 use {assembly_api, serde_json};
 
@@ -152,6 +152,11 @@ impl<'a> BisectionController<'a> {
     /// * Prompts the user to run a test with the generated image
     /// * Reports the test results to the strategy.
     async fn step(&mut self) -> Result<BisectionStatus> {
+        if std::io::stdout().is_terminal() {
+            let _ = self.writer.write_all(b"\x1B[2J\x1B[1;1H");
+            let _ = self.writer.flush();
+        }
+
         self.print("====================")?;
         self.print(&self.plan.status())?;
         self.print("")?;
@@ -204,10 +209,12 @@ impl<'a> BisectionController<'a> {
             match code {
                 0 => {
                     self.print("Script returned 0 (Pass).")?;
+                    std::thread::sleep(std::time::Duration::from_secs(2));
                     Ok(true)
                 }
                 1..=124 => {
                     self.print(&format!("Script returned {} (Fail).", code))?;
+                    std::thread::sleep(std::time::Duration::from_secs(2));
                     Ok(false)
                 }
                 125 => {
