@@ -192,9 +192,19 @@ pub async fn migrate(
     dir: Directory<ObjectStore>,
     files_to_copy: &mut HashSet<u64>,
     f2fs_metadata_blocks: &mut HashSet<u32>,
+    peek_inode_counts: impl Fn(usize),
 ) -> Result<(), Error> {
-    migrate_with_peek(offset, f2fs, fxfs, ino, dir, files_to_copy, f2fs_metadata_blocks, |_| {})
-        .await
+    migrate_with_peek(
+        offset,
+        f2fs,
+        fxfs,
+        ino,
+        dir,
+        files_to_copy,
+        f2fs_metadata_blocks,
+        peek_inode_counts,
+    )
+    .await
 }
 
 /// Migrates f2fs nodes to fxfs.
