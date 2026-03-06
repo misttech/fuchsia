@@ -18,11 +18,13 @@
 
 namespace {
 
+using ::testing::AnyOf;
 using ::testing::Each;
 using ::testing::Field;
 using ::testing::IsTrue;
 using ::testing::Pointee;
 using ::testing::Property;
+using ::testing::Truly;
 using ::testing::VariantWith;
 
 // These tests reuse the fixture that supports the LdLoadTests (load-tests.cc)
@@ -411,6 +413,15 @@ TEST_F(LdRemoteTests, SecondSession) {
     EXPECT_EQ(second_linker.modules().at(4).name().str(), ld::abi::Abi<>::kSoname.str());
 
     ASSERT_NO_FATAL_FAILURE(VerifyAndClearNeeded());
+
+    // The second session uses the default TLS resolver.
+    constexpr auto is_preloaded = [](const auto& module) -> bool { return module.preloaded(); };
+    constexpr auto has_no_tls = [](const auto& module) -> bool {
+      return module.tls_module_id() == 0 && !module.uses_static_tls();
+    };
+    EXPECT_THAT(second_linker.modules(),  //
+                Each(AnyOf(Truly(is_preloaded), Truly(has_no_tls))))
+        << "some module in the second linking session has PT_TLS or uses IE";
 
     // Allocate should place the root module and leave preloaded ones alone.
     ASSERT_NO_FATAL_FAILURE(CheckProcess());
