@@ -47,11 +47,12 @@ use std::sync::LazyLock;
 use time_pretty::{MSEC_IN_NANOS, format_duration, format_timer};
 use zx::AsHandleRef;
 use {
-    fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_time_alarms as fta,
-    fuchsia_async as fasync, fuchsia_inspect as finspect, fuchsia_runtime as fxr,
-    fuchsia_trace as trace,
+    fidl_fuchsia_driver_token as fdt, fidl_fuchsia_hardware_hrtimer as ffhh,
+    fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_inspect as finspect,
+    fuchsia_runtime as fxr, fuchsia_trace as trace,
 };
 
+static DEBUG_STACK_TRACE_TOKEN: std::sync::OnceLock<zx::Event> = std::sync::OnceLock::new();
 static I64_MAX_AS_U64: LazyLock<u64> = LazyLock::new(|| i64::MAX.try_into().expect("infallible"));
 static I32_MAX_AS_U64: LazyLock<u64> = LazyLock::new(|| i32::MAX.try_into().expect("infallible"));
 
@@ -71,6 +72,26 @@ const MAIN_TIMER_ID: usize = 6;
 const LONG_DELAY_NANOS: i64 = 2000 * MSEC_IN_NANOS;
 
 const TIMEOUT_SECONDS: i64 = 40;
+
+async fn request_stack_trace() {
+    if let Some(ev) = DEBUG_STACK_TRACE_TOKEN.get() {
+        log::warn!("*** DRIVER STACK TRACE REQUESTED: expect a driver stack trace below.");
+        let ev_dup = clone_handle(ev);
+        let debug_proxy = fuchsia_component::client::connect_to_protocol::<fdt::DebugMarker>();
+        match debug_proxy {
+            Ok(proxy) => {
+                if let Err(e) = proxy.log_stack_trace(ev_dup).await {
+                    log::warn!("failed to log stack trace: {:?}", e);
+                }
+            }
+            Err(e) => {
+                log::warn!("failed to connect to Debug protocol: {:?}", e);
+            }
+        }
+    } else {
+        log::warn!("DEBUG_STACK_TRACE_TOKEN not initialized, cannot log stack trace");
+    }
+}
 
 /// Waits on a future, but if the future takes longer than `TIMEOUT_SECONDS`, we log a warning and
 /// a stack trace. A stack trace is requested at most once once for each call.
@@ -97,6 +118,7 @@ macro_rules! log_long_op {
                     if !logged {
                         #[cfg(all(target_os = "fuchsia", not(doc)))]
                         ::debug::backtrace_request_all_threads();
+                        fasync::Task::local(request_stack_trace()).detach();
                     }
                     logged = true;
                 }
@@ -222,6 +244,9 @@ impl TimerOps for HardwareTimerOps {
     async fn get_timer_properties(&self) -> TimerConfig {
         match log_long_op!(self.proxy.get_properties()) {
             Ok(p) => {
+                if let Some(token) = p.driver_node_token {
+                    let _ = DEBUG_STACK_TRACE_TOKEN.set(token);
+                }
                 let timers_properties = &p.timers_properties.expect("timers_properties must exist");
                 debug!("get_timer_properties: got: {:?}", timers_properties);
 
