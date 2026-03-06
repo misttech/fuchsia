@@ -14,10 +14,11 @@ import (
 // Flash flashes the target.
 func (f *FFXInstance) Flash(ctx context.Context, target, sshKey, productBundle string, tcp bool) error {
 	configs := map[string]any{
-		"discovery.mdns.enabled":      false,
-		"fastboot.usb.disabled":       true,
-		"discovery.timeout":           12000,
-		"fastboot.flash.timeout_rate": "4",
+		"discovery.mdns.enabled":          false,
+		"fastboot.usb.disabled":           true,
+		"discovery.timeout":               12000,
+		"fastboot.flash.timeout_rate":     "1",
+		"fastboot.flash.min_timeout_secs": "600",
 	}
 
 	// Set the machine format to json so that errors will get printed to stdout

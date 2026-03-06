@@ -165,7 +165,8 @@ func (r *TestOrchestrator) setupFfx() error {
 	cmds := [][]string{
 		{"config", "set", "log.level", "Debug"},
 		{"config", "set", "test.experimental_json_input", "true"},
-		{"config", "set", "fastboot.flash.timeout_rate", "4"},
+		{"config", "set", "fastboot.flash.timeout_rate", "1"},
+		{"config", "set", "fastboot.flash.min_timeout_secs", "600"},
 		{"config", "set", "discovery.mdns.enabled", "false"},
 		{"config", "set", "fastboot.usb.disabled", "true"},
 		{"config", "set", "proactive_log.enabled", "false"},
