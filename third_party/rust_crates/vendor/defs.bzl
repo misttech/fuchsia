@@ -535,7 +535,7 @@ _NORMAL_DEPENDENCIES = {
             "termios": Label("//third_party/rust_crates/vendor/termios-0.3.3:termios"),
             "tinyjson": Label("//third_party/rust_crates/vendor/tinyjson-2.5.1:tinyjson"),
             "tokio": Label("//third_party/rust_crates/vendor/tokio-1.38.1:tokio"),
-            "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.17:tokio_stream"),
+            "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.18:tokio_stream"),
             "wait-timeout": Label("//third_party/rust_crates/vendor/wait-timeout-0.2.1:wait_timeout"),
             "xattr": Label("//third_party/rust_crates/vendor/xattr-0.2.3:xattr"),
             "zip": Label("//third_party/rust_crates/vendor/zip-0.5.5:zip"),

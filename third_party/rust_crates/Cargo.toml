@@ -345,7 +345,7 @@ tinyjson = "2.5.1"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
 tokio = { version = "=1.38.1", default-features = false }
-tokio-stream = "0.1.17"
+tokio-stream = "0.1.18"
 wait-timeout = "0.2.1"
 xattr = "0.2.3"
 zip = { version = "0.5.5", default-features = false, features = ["deflate"] }
