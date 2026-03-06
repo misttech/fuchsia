@@ -709,6 +709,11 @@
             to: [ "#timekeeper" ],
         },
         {
+            protocol: [ "fuchsia.driver.token.Debug" ],
+            from: "parent",
+            to: [ "#timekeeper" ],
+        },
+        {
             protocol: "fuchsia.stash.Store",
             from: "#stash",
             to: "self/toolbox",

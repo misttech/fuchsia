@@ -191,6 +191,7 @@
                 "fuchsia.driver.crash.CrashIntrospect",
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.registrar.DriverRegistrar",
+                "fuchsia.driver.token.Debug",
                 "fuchsia.fshost.Admin",
                 "fuchsia.fxfs.BlobCreator",
                 "fuchsia.fxfs.BlobReader",

@@ -42,6 +42,7 @@
         },
         {
             protocol: [
+                "fuchsia.driver.token.Debug",
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.time.Maintenance",
             ],
