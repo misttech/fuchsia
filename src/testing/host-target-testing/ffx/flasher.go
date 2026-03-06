@@ -56,6 +56,17 @@ func (f *Flasher) Flash(ctx context.Context) (string, error) {
 
 	args = append(args, "target", "flash")
 
+	// It's known that some devices take a longer time to flash. To avoid the ffx
+	// command exiting before the device is fully flashed, we set the timeout
+	// rate to 1(MB/s). This tells ffx to wait longer when transferring image
+	// files. See https://fxbug.dev/42076970 for more details and the issue
+	// previously noticed.
+	args = append(args, "--timeout-rate", "1")
+	// ffx doesn't allow the timeout rate to be less than 1MB/s, so also set the
+	// minimum timeout to 10 minutes which makes the effective rate to ~0.5MB/s on
+	// Astro with a roughly 300MB of fvm file.
+	args = append(args, "--min-timeout-secs", "600")
+
 	// Write out the public key's authorized keys.
 	if f.sshPublicKey != nil {
 		authorizedKeys, err := os.CreateTemp("", "")

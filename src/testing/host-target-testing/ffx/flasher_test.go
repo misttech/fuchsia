@@ -58,7 +58,7 @@ func createAndRunFlasher(t *testing.T, setupFlasher func(t *testing.T, flasher *
 
 func TestDefault(t *testing.T) {
 	result := createAndRunFlasher(t, func(t *testing.T, flasher *Flasher) {})
-	expected_result := "target flash --manifest dir/flash.json"
+	expected_result := "target flash --timeout-rate 1 --min-timeout-secs 600 --manifest dir/flash.json"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
 		t.Fatalf("target flash result mismatched: " + result)
 	}
@@ -71,7 +71,7 @@ func TestSSHKeys(t *testing.T) {
 	})
 	segs := strings.Fields(result)
 	result = strings.Join(segs[:len(segs)-3], " ")
-	expected_result := "target flash --authorized-keys"
+	expected_result := "target flash --timeout-rate 1 --min-timeout-secs 600 --authorized-keys"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
 		t.Fatalf("target flash result mismatched: " + result)
 	}
