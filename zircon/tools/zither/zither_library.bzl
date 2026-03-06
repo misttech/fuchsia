@@ -20,7 +20,7 @@ _CLANG_FORMAT = {
     "args": ["--style=file:" + paths.join(".clang-format")],
     # TODO(https://fxbug.dev/427976639): When supporting zither_golden_files(),
     # it may be necessary to add this and allow these definitions to be reused.
-    # See the description of `formatter` for `supported_zither_backend_info` in
+    # See the description of `formatter` for `_SUPPORTED_ZITHER_BACKEND_INFO` in
     # zither_library.gni.
     # extensions = [ ".h" ]
 }
@@ -39,10 +39,6 @@ _COMMON_ATTRS = {
         allow_single_file = True,
         mandatory = True,
         configurable = False,
-    ),
-    "fidl_ir_target": attr.label(
-        doc = "The label of the target that generates the FIDL IR JSON file.",
-        mandatory = True,
     ),
     "testonly": attr.bool(
         default = False,
@@ -93,7 +89,6 @@ def _zither_impl(
         name,
         backend,
         fidl_ir_json,
-        fidl_ir_target,
         output_dir,
         generated_files,
         formatter,
@@ -142,13 +137,14 @@ def _zither_impl(
     # fully specified; used for testing.
     output_check_target = name + ".check"
     check_target_stamp = paths.join(output_dir, output_check_target + ".stamp")
+    check_outputs = "//zircon/tools/zither/scripts:check_outputs"
     native.genrule(
         name = output_check_target,
-        tools = ["//zircon/tools/zither/scripts:check_outputs"],
+        tools = [check_outputs],
         # The manifest must be first
         srcs = [output_manifest] + generated_files,
         outs = [check_target_stamp],
-        cmd = "$(location //zircon/tools/zither/scripts:check_outputs) --stamp $@ --manifest $(SRCS)",
+        cmd = "$(location %s) --stamp $@ --manifest $(SRCS)" % check_outputs,
     )
 
 _zither = macro(
@@ -177,7 +173,6 @@ def _zither_c_family_library_impl(
         output_namespace,
         backend,
         fidl_ir_json,
-        fidl_ir_target,
         formatter,
         output_namespace_override,
         testonly,
@@ -233,7 +228,6 @@ def _zither_c_family_library_impl(
         name = zither_target,
         backend = backend,
         fidl_ir_json = fidl_ir_json,
-        fidl_ir_target = fidl_ir_target,
         output_dir = output_dir,
         generated_files = generated_files,
         formatter = formatter,
@@ -262,7 +256,6 @@ def _zither_rust_library_impl(
         output_namespace,
         backend,
         fidl_ir_json,
-        fidl_ir_target,
         formatter,
         testonly,
         visibility):
@@ -296,7 +289,6 @@ def _zither_rust_library_impl(
         name = zither_target,
         backend = backend,
         fidl_ir_json = fidl_ir_json,
-        fidl_ir_target = fidl_ir_target,
         output_dir = output_dir,
         generated_files = generated_files,
         formatter = formatter,
@@ -324,7 +316,6 @@ def _zither_zircon_ifs_file_impl(
         name,
         output_dir,
         fidl_ir_json,
-        fidl_ir_target,
         testonly,
         visibility):
     """Implementation of the _zither_zircon_ifs_file() macro."""
@@ -344,7 +335,6 @@ def _zither_zircon_ifs_file_impl(
         name = zither_target,
         backend = "zircon_ifs",
         fidl_ir_json = fidl_ir_json,
-        fidl_ir_target = fidl_ir_target,
         output_dir = output_dir,
         generated_files = generated_files,
         testonly = testonly,
@@ -364,7 +354,6 @@ def _zither_kernel_sources_impl(
         output_dir,
         output_namespace,
         fidl_ir_json,
-        fidl_ir_target,
         formatter,
         testonly,
         visibility):
@@ -387,7 +376,6 @@ def _zither_kernel_sources_impl(
         name = zither_target,
         backend = "kernel",
         fidl_ir_json = fidl_ir_json,
-        fidl_ir_target = fidl_ir_target,
         output_dir = output_dir,
         generated_files = generated_files,
         formatter = formatter,
@@ -413,7 +401,6 @@ def _zither_legacy_syscall_cdecl_sources_impl(
         output_dir,
         output_namespace,
         fidl_ir_json,
-        fidl_ir_target,
         formatter,
         testonly,
         visibility):
@@ -426,7 +413,6 @@ def _zither_syscall_docs_impl(
         name,
         output_dir,
         fidl_ir_json,
-        fidl_ir_target,
         testonly,
         visibility):
     """Implementation of the _zither_syscall_docs() macro."""
@@ -439,7 +425,6 @@ def _zither_syscall_docs_impl(
         name = zither_target,
         backend = "syscall_docs",
         fidl_ir_json = fidl_ir_json,
-        fidl_ir_target = fidl_ir_target,
         output_dir = output_dir,
         # The set of generated files is not statically known and is instead
         # dynamically determined from zither's output manifest, outputs.json.
@@ -653,7 +638,6 @@ def _zither_library_impl(
         srcs,
         fidl_gen_dir,
         fidl_ir_json,
-        fidl_ir_target,
         backend_overrides,
         testonly,
         visibility):
@@ -689,7 +673,6 @@ def _zither_library_impl(
             "name": name + "." + backend,
             "output_dir": paths.join(fidl_gen_dir, backend),
             "fidl_ir_json": fidl_ir_json,
-            "fidl_ir_target": fidl_ir_target,
             "testonly": testonly,
             "visibility": visibility,
         }
@@ -715,7 +698,7 @@ collect the bindings of the various supported Zither backends. These backends
 are defined in `_SUPPORTED_ZITHER_BACKEND_INFO` and the details of their
 bindings can be found in //zircon/tools/zither/README.md. The associated backend library
 subtargets are as follows where `${output_namespace}` is as described above in
-`supported_zither_backend_info`:
+`_SUPPORTED_ZITHER_BACKEND_INFO`:
 
 Subtargets:
  * ${target_name}.${backend_name}

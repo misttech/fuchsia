@@ -337,7 +337,6 @@ def _fidl_library_impl(
             library_name = library_name,
             srcs = srcs,
             fidl_gen_dir = fidl_gen_dir + "/zither",
-            fidl_ir_target = compilation_target_name,
             fidl_ir_json = fidl_ir_json,
             testonly = testonly,
             visibility = visibility,
