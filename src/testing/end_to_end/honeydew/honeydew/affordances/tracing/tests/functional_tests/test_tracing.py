@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -18,19 +18,19 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 TRACE2JSON = "trace_runtime_deps/trace2json"
 
 
-class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+class TracingAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Tracing affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `device` variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
 
         It does the following things:
@@ -41,14 +41,14 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         """
         try:
             # in case if any trace session started by the test cases remains initialized.
-            self.device.tracing.terminate()
+            await self.device.tracing.terminate()
         finally:
-            super().teardown_test()
+            await super().teardown_test()
 
     # Mobly enumerates test cases alphabetically, change in order of test cases
     # or their names or mobly enumeration logic can break tests. To avoid this,
     # we call all dependent operations in a single test method.
-    def test_tracing_terminate(self) -> None:
+    async def test_tracing_terminate(self) -> None:
         """Test case for all tracing methods.
 
         This test case calls the following tracing methods:
@@ -61,15 +61,15 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device.tracing.initialize()
 
         # Start Tracing.
-        self.device.tracing.start()
+        await self.device.tracing.start()
 
         # Stop Tracing.
-        self.device.tracing.stop()
+        await self.device.tracing.stop()
 
         # Terminate the tracing session.
-        self.device.tracing.terminate()
+        await self.device.tracing.terminate()
 
-    def test_tracing_trace_download(self) -> None:
+    async def test_tracing_trace_download(self) -> None:
         """This test case tests the following tracing methods and asserts that
             the trace was downloaded successfully.
 
@@ -83,12 +83,12 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device.tracing.initialize()
 
         # Start Tracing.
-        self.device.tracing.start()
+        await self.device.tracing.start()
 
         time.sleep(1)
 
         # Stop Tracing.
-        self.device.tracing.stop()
+        await self.device.tracing.stop()
 
         # Terminate the tracing session.
         with tempfile.NamedTemporaryFile(
@@ -96,7 +96,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         ) as trace_fxt, tempfile.NamedTemporaryFile(
             mode="w+", suffix=".json", encoding="utf8"
         ) as trace_json:
-            res = self.device.tracing.terminate_and_download(
+            res = await self.device.tracing.terminate_and_download(
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
             )
@@ -143,17 +143,17 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 "Expected at least one captured trace event",
             )
 
-    def test_tracing_session(self) -> None:
+    async def test_tracing_session(self) -> None:
         """This test case tests the `tracing.trace_session()` context manager"""
-        with self.device.tracing.trace_session():
+        async with self.device.tracing.trace_session():
             pass
 
-    def test_tracing_session_download(self) -> None:
+    async def test_tracing_session_download(self) -> None:
         """This test case tests the `tracing.trace_session()` context manager
         and asserts that the trace was downloaded successfully.
         """
         with tempfile.NamedTemporaryFile(suffix=".fxt") as trace_fxt:
-            with self.device.tracing.trace_session(
+            async with self.device.tracing.trace_session(
                 download=True,
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
@@ -163,12 +163,12 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 os.path.exists(trace_fxt.name), msg="trace failed"
             )
 
-    def test_multi_tracing_session(self) -> None:
+    async def test_multi_tracing_session(self) -> None:
         """This test case tests the multiple traces using trace context manager"""
-        with self.device.tracing.trace_session():
-            self.device.tracing.stop()
+        async with self.device.tracing.trace_session():
+            await self.device.tracing.stop()
             time.sleep(1)
-            self.device.tracing.start()
+            await self.device.tracing.start()
 
 
 if __name__ == "__main__":
