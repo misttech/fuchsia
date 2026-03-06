@@ -267,9 +267,8 @@ class AsyncFuchsiaDevice(
         """
         return self._device_info.name
 
-    @properties.async_persistent_method
     async def manufacturer(self) -> str:
-        """Returns the manufacturer of the device.
+        """Returns the manufacturer of the device, cached after the first retrieval.
 
         Returns:
             Manufacturer of device.
@@ -279,9 +278,8 @@ class AsyncFuchsiaDevice(
         """
         return (await self._product_info())["manufacturer"]
 
-    @properties.async_persistent_method
     async def model(self) -> str:
-        """Returns the model of the device.
+        """Returns the model of the device, cached after the first retrieval.
 
         Returns:
             Model of device.
@@ -303,9 +301,8 @@ class AsyncFuchsiaDevice(
         """
         return self.ffx.get_target_product()
 
-    @properties.async_persistent_method
     async def product_name(self) -> str:
-        """Returns the product name of the device.
+        """Returns the product name of the device, cached after the first retrieval.
 
         Returns:
             Product name of the device.
@@ -315,9 +312,8 @@ class AsyncFuchsiaDevice(
         """
         return (await self._product_info())["name"]
 
-    @properties.async_persistent_method
     async def serial_number(self) -> str:
-        """Returns the serial number of the device.
+        """Returns the serial number of the device, cached after the first retrieval.
 
         Returns:
             Serial number of the device.
@@ -1270,6 +1266,7 @@ class AsyncFuchsiaDevice(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
+    @properties.async_persistent_method
     async def _device_info_from_fidl(self) -> f_hwinfo.DeviceInfo:
         """Returns the device information of the device.
 
@@ -1292,6 +1289,7 @@ class AsyncFuchsiaDevice(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
+    @properties.async_persistent_method
     async def _product_info(self) -> f_hwinfo.ProductInfo:
         """Returns the product information of the device.
 
