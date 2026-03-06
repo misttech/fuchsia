@@ -12,7 +12,7 @@
         name: "temperature_soc_pll",
         config: {
             sensor_name: "soc_thermal",
-            cache_duration_ms: 50,
+            cache_duration_ms: 0,
         },
     },
     {

@@ -178,10 +178,12 @@ impl TemperatureHandler {
         let last_poll_time = self.mutable_inner.borrow().last_poll_time;
         let last_temperature = self.mutable_inner.borrow().last_temperature;
 
-        // If the last temperature value is sufficiently fresh, return it instead of polling.
-        // Note that if the previous poll generated an error, `last_poll_time` was not updated,
-        // and (barring clock glitches) a new poll will occur.
-        if fasync::MonotonicInstant::now() <= last_poll_time + self.cache_duration {
+        // If caching is enabled and the last temperature value is sufficiently fresh, return
+        // it instead of polling. Note that if the previous poll generated an error,
+        // `last_poll_time` was not updated, and (barring clock glitches) a new poll will occur.
+        if self.cache_duration.into_nanos() > 0
+            && fasync::MonotonicInstant::now() <= last_poll_time + self.cache_duration
+        {
             return Ok(MessageReturn::ReadTemperature(last_temperature));
         }
 

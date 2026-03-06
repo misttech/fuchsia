@@ -69,9 +69,6 @@ async fn test_connect_passes_through_temperature_with_no_override() {
             sensor_control.set_temperature_celsius(expected_temperature).await.unwrap();
         zx::ok(set_status).unwrap();
 
-        // Temperature is cached for 50ms.
-        // Wait until the cache expires to prevent random test failures.
-        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
         let (status, temperature_c) = sensor.get_temperature_celsius().await.unwrap();
         zx::ok(status).unwrap();
         assert_eq!(expected_temperature, temperature_c);
@@ -84,9 +81,6 @@ async fn test_connect_passes_through_temperature_with_no_override() {
             sensor_control.set_temperature_celsius(expected_temperature).await.unwrap();
         zx::ok(set_status).unwrap();
 
-        // Temperature is cached for 50ms.
-        // Wait until the cache expires to prevent random test failures.
-        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
         let (status, temperature_c) = sensor.get_temperature_celsius().await.unwrap();
         zx::ok(status).unwrap();
         assert_eq!(expected_temperature, temperature_c);
@@ -128,9 +122,6 @@ async fn test_connect_passes_through_temperature_with_no_override_when_sensor_ma
             sensor_control.set_temperature_celsius(expected_temperature).await.unwrap();
         zx::ok(set_status).unwrap();
 
-        // Temperature is cached for 50ms.
-        // Wait until the cache expires to prevent random test failures.
-        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
         let (status, temperature_c) = sensor.get_temperature_celsius().await.unwrap();
         zx::ok(status).unwrap();
         assert_eq!(expected_temperature, temperature_c);
@@ -143,9 +134,6 @@ async fn test_connect_passes_through_temperature_with_no_override_when_sensor_ma
             sensor_control.set_temperature_celsius(expected_temperature).await.unwrap();
         zx::ok(set_status).unwrap();
 
-        // Temperature is cached for 50ms.
-        // Wait until the cache expires to prevent random test failures.
-        fasync::Timer::new(std::time::Duration::from_millis(50)).await;
         let (status, temperature_c) = sensor.get_temperature_celsius().await.unwrap();
         zx::ok(status).unwrap();
         assert_eq!(expected_temperature, temperature_c);
