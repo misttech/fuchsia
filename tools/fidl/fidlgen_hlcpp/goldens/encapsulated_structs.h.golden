@@ -75,7 +75,7 @@ class ArrayInt16Int8 final {
  public:
   static const fidl_type_t* FidlType;
 
-  ::std::array<::test::encapsulatedstructs::Int16Int8, 3> arr{};
+  ::std::array<::test::encapsulatedstructs::Int16Int8, 3> arr;
 
   static ::std::unique_ptr<ArrayInt16Int8> New();
 

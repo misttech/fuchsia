@@ -641,9 +641,9 @@ class ArrayBasic final {
 
   ::std::array<double, 5> array_float64{};
 
-  ::std::array<::std::string, 5> array_string{};
+  ::std::array<::std::string, 5> array_string;
 
-  ::std::array<::fidl::StringPtr, 5> array_opt_string{};
+  ::std::array<::fidl::StringPtr, 5> array_opt_string;
 
   static ::std::unique_ptr<ArrayBasic> New();
 
@@ -676,15 +676,15 @@ class ArrayCompound final {
 
   ::std::array<::test::typesinprotocols::Enum, 5> array_enum{};
 
-  ::std::array<::test::typesinprotocols::Struct, 5> array_struct{};
+  ::std::array<::test::typesinprotocols::Struct, 5> array_struct;
 
-  ::std::array<::test::typesinprotocols::Table, 5> array_table{};
+  ::std::array<::test::typesinprotocols::Table, 5> array_table;
 
-  ::std::array<::test::typesinprotocols::Union, 5> array_union{};
+  ::std::array<::test::typesinprotocols::Union, 5> array_union;
 
-  ::std::array<::std::unique_ptr<::test::typesinprotocols::Struct>, 5> array_opt_struct{};
+  ::std::array<::std::unique_ptr<::test::typesinprotocols::Struct>, 5> array_opt_struct;
 
-  ::std::array<::std::unique_ptr<::test::typesinprotocols::Union>, 5> array_opt_union{};
+  ::std::array<::std::unique_ptr<::test::typesinprotocols::Union>, 5> array_opt_union;
 
   static ::std::unique_ptr<ArrayCompound> New();
 
@@ -842,7 +842,7 @@ class ArrayVectorNested final {
 
   ::std::array<::std::array<uint8_t, 5>, 5> array_array_uint8{};
 
-  ::std::array<::std::vector<uint8_t>, 5> array_vector_uint8{};
+  ::std::array<::std::vector<uint8_t>, 5> array_vector_uint8;
 
   ::std::vector<::std::array<uint8_t, 5>> vector_array_uint8;
 
@@ -903,19 +903,19 @@ class Resource final {
 
   ::std::unique_ptr<::test::typesinprotocols::ResourceUnion> opt_union;
 
-  ::std::array<::zx::handle, 5> array_handle{};
+  ::std::array<::zx::handle, 5> array_handle;
 
-  ::std::array<::zx::vmo, 5> array_vmo{};
+  ::std::array<::zx::vmo, 5> array_vmo;
 
-  ::std::array<::fidl::InterfaceHandle<::test::typesinprotocols::Protocol>, 5> array_client_end{};
+  ::std::array<::fidl::InterfaceHandle<::test::typesinprotocols::Protocol>, 5> array_client_end;
 
-  ::std::array<::fidl::InterfaceRequest<::test::typesinprotocols::Protocol>, 5> array_server_end{};
+  ::std::array<::fidl::InterfaceRequest<::test::typesinprotocols::Protocol>, 5> array_server_end;
 
-  ::std::array<::test::typesinprotocols::ResourceStruct, 5> array_struct{};
+  ::std::array<::test::typesinprotocols::ResourceStruct, 5> array_struct;
 
-  ::std::array<::test::typesinprotocols::ResourceTable, 5> array_table{};
+  ::std::array<::test::typesinprotocols::ResourceTable, 5> array_table;
 
-  ::std::array<::test::typesinprotocols::ResourceUnion, 5> array_union{};
+  ::std::array<::test::typesinprotocols::ResourceUnion, 5> array_union;
 
   ::std::vector<::zx::handle> vector_handle;
 

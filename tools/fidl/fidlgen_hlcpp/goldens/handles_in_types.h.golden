@@ -218,7 +218,7 @@ class HandlesInTypes final {
 
   ::std::vector<::zx::vmo> handle_in_vec;
 
-  ::std::array<::zx::vmo, 5> handle_in_array{};
+  ::std::array<::zx::vmo, 5> handle_in_array;
 
   ::std::vector<::std::array<::zx::vmo, 5>> handle_in_mixed_vec_array;
 

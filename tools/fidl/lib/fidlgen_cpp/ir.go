@@ -174,7 +174,15 @@ func (t *Type) WireInitMessage(n string) string {
 
 // HLCPPShouldInitialize returns true if the type in HLCPP must be explicitly initialized.
 func (t *Type) HLCPPShouldInitialize() bool {
-	return t.IsPrimitiveType() || t.Kind == TypeKinds.Array
+	if t.IsPrimitiveType() {
+		return true
+	}
+
+	if t.Kind == TypeKinds.Array {
+		return t.ElementType.HLCPPShouldInitialize()
+	}
+
+	return false
 }
 
 type namingContextKey = string
