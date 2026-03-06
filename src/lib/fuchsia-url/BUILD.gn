@@ -37,9 +37,11 @@ rustc_library("fuchsia-url") {
     "src/host.rs",
     "src/lib.rs",
     "src/parse.rs",
+    "src/path.rs",
     "src/relative_component_url.rs",
     "src/relative_package_url.rs",
     "src/repository_url.rs",
+    "src/resource.rs",
     "src/test.rs",
   ]
 }

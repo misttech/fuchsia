@@ -1559,12 +1559,12 @@ impl PackagelessAttempt<'_> {
 
 async fn write_image_from_package(
     package: &update_package::UpdateImagePackage,
-    resource_path: &str,
+    resource: &fuchsia_url::Resource,
     data_sink: &fpaver::DataSinkProxy,
     target_config: paver::TargetConfiguration,
     image_type: ImageType<'_>,
 ) -> Result<(), StageError> {
-    let buffer = package.open_image(resource_path).await.map_err(StageError::OpenImageError)?;
+    let buffer = package.open_image(resource).await.map_err(StageError::OpenImageError)?;
     paver::write_image(data_sink, buffer, target_config, image_type)
         .await
         .map_err(StageError::Write)

@@ -52,7 +52,10 @@ pub fn match_absolute_component_urls(
         .into()
 }
 
-fn match_component_url_resource(a: &str, b: &str) -> PkgUrlMatch {
+fn match_component_url_resource(
+    a: &fuchsia_url::Resource,
+    b: &fuchsia_url::Resource,
+) -> PkgUrlMatch {
     match a == b {
         true => PkgUrlMatch::StrongMatch,
         false => PkgUrlMatch::NoMatch,

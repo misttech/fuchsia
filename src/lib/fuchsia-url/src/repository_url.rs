@@ -28,7 +28,7 @@ impl RepositoryUrl {
         let UrlParts { scheme, host, path, hash, resource } = UrlParts::parse(url)?;
         let scheme = scheme.ok_or(ParseError::MissingScheme)?;
         let host = host.ok_or(ParseError::MissingHost)?;
-        if path != "/" {
+        if path.as_ref() != "/" {
             return Err(ParseError::ExtraPathSegments);
         }
         if hash.is_some() {
@@ -112,8 +112,14 @@ mod tests {
             ("fuchsia-pkg://", ParseError::MissingHost),
             ("fuchsia-pkg://exaMple.org", ParseError::InvalidHost),
             ("fuchsia-pkg://example.org/path", ParseError::ExtraPathSegments),
-            ("fuchsia-pkg://example.org//", ParseError::InvalidPathSegment(PackagePathSegmentError::Empty)),
-            ("fuchsia-pkg://example.org?hash=0000000000000000000000000000000000000000000000000000000000000000", ParseError::CannotContainHash),
+            (
+                "fuchsia-pkg://example.org//",
+                ParseError::InvalidPathSegment(PackagePathSegmentError::Empty),
+            ),
+            (
+                "fuchsia-pkg://example.org?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                ParseError::CannotContainHash,
+            ),
             ("fuchsia-pkg://example.org#resource", ParseError::CannotContainResource),
             ("fuchsia-pkg://example.org/#resource", ParseError::CannotContainResource),
         ] {
@@ -135,7 +141,8 @@ mod tests {
             assert_matches!(
                 serde_json::from_str::<RepositoryUrl>(url),
                 Err(_),
-                "the url {:?}", url
+                "the url {:?}",
+                url
             );
         }
     }

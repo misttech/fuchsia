@@ -15,9 +15,11 @@ mod fuchsia_pkg_pinned_absolute_package_url;
 mod fuchsia_pkg_unpinned_absolute_package_url;
 mod host;
 mod parse;
+mod path;
 mod relative_component_url;
 mod relative_package_url;
 mod repository_url;
+mod resource;
 pub mod test;
 
 pub use crate::errors::ParseError;
@@ -36,12 +38,12 @@ pub mod fuchsia_pkg {
         FuchsiaPkgUnpinnedAbsolutePackageUrl as UnpinnedAbsolutePackageUrl,
     };
 }
-pub use crate::parse::{
-    MAX_PACKAGE_PATH_SEGMENT_BYTES, PackageName, PackageVariant, validate_resource_path,
-};
+pub use crate::parse::{MAX_PACKAGE_PATH_SEGMENT_BYTES, PackageName, PackageVariant};
+pub use crate::path::Path;
 pub use crate::relative_component_url::RelativeComponentUrl;
 pub use crate::relative_package_url::RelativePackageUrl;
 pub use crate::repository_url::RepositoryUrl;
+pub use crate::resource::{Resource, ResourcePathError};
 
 use crate::host::Host;
 use percent_encoding::{AsciiSet, CONTROLS};
@@ -58,7 +60,7 @@ static RELATIVE_BASE: LazyLock<url::Url> =
     LazyLock::new(|| url::Url::parse(&format!("{RELATIVE_SCHEME}:///")).unwrap());
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Scheme {
+pub enum Scheme {
     Builtin,
     FuchsiaPkg,
     FuchsiaBoot,
@@ -68,11 +70,9 @@ enum Scheme {
 struct UrlParts {
     scheme: Option<Scheme>,
     host: Option<Host>,
-    // a forward slash followed by zero or more validated path segments separated by forward slashes
-    path: String,
+    path: Path,
     hash: Option<Hash>,
-    // if present, String is a validated resource path
-    resource: Option<String>,
+    resource: Option<Resource>,
 }
 
 impl UrlParts {
@@ -116,7 +116,7 @@ impl UrlParts {
             .transpose()?;
 
         let path = String::from(if url.path().is_empty() { "/" } else { url.path() });
-        let () = validate_path(&path)?;
+        let path = Path::try_from(path)?;
 
         let hash = parse_query_pairs(url.query_pairs())?;
 
@@ -124,13 +124,13 @@ impl UrlParts {
             let resource = percent_encoding::percent_decode(resource.as_bytes())
                 .decode_utf8()
                 .map_err(ParseError::ResourcePathPercentDecode)?;
-
             if resource.is_empty() {
                 None
             } else {
-                let () =
-                    validate_resource_path(&resource).map_err(ParseError::InvalidResourcePath)?;
-                Some(resource.to_string())
+                Some(
+                    Resource::try_from(resource.into_owned())
+                        .map_err(ParseError::InvalidResourcePath)?,
+                )
             }
         } else {
             None
@@ -172,21 +172,6 @@ fn parse_query_pairs(pairs: url::form_urlencoded::Parse<'_>) -> Result<Option<Ha
     Ok(query_hash)
 }
 
-// Validates path is a forward slash followed by zero or more valid path segments separated by slash
-fn validate_path(path: &str) -> Result<(), ParseError> {
-    if let Some(suffix) = path.strip_prefix('/') {
-        if !suffix.is_empty() {
-            for s in suffix.split('/') {
-                let () = crate::parse::validate_package_path_segment(s)
-                    .map_err(ParseError::InvalidPathSegment)?;
-            }
-        }
-        Ok(())
-    } else {
-        Err(ParseError::PathMustHaveLeadingSlash)
-    }
-}
-
 // Validates that `path` is "/name[/variant]" and returns the name and optional variant if so.
 fn parse_path_to_name_and_variant(
     path: &str,
@@ -210,59 +195,6 @@ fn parse_path_to_name_and_variant(
         return Err(ParseError::ExtraPathSegments);
     }
     Ok((name, variant))
-}
-
-#[cfg(test)]
-mod test_validate_path {
-    use super::*;
-    use assert_matches::assert_matches;
-
-    macro_rules! test_err {
-        (
-            $(
-                $test_name:ident => {
-                    path = $path:expr,
-                    err = $err:pat,
-                }
-            )+
-        ) => {
-            $(
-                #[test]
-                fn $test_name() {
-                    assert_matches!(
-                        validate_path($path),
-                        Err($err)
-                    );
-                }
-            )+
-        }
-    }
-
-    test_err! {
-        err_no_leading_slash => {
-            path = "just-name",
-            err = ParseError::PathMustHaveLeadingSlash,
-        }
-        err_trailing_slash => {
-            path = "/name/",
-            err = ParseError::InvalidPathSegment(_),
-        }
-        err_empty_segment => {
-            path = "/name//trailing",
-            err = ParseError::InvalidPathSegment(_),
-        }
-        err_invalid_segment => {
-            path = "/name/#/trailing",
-            err = ParseError::InvalidPathSegment(_),
-        }
-    }
-
-    #[test]
-    fn success() {
-        for path in ["/", "/name", "/name/other", "/name/other/more"] {
-            let () = validate_path(path).unwrap();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -405,7 +337,6 @@ mod test_parse_path_to_name_and_variant {
 #[cfg(test)]
 mod test_url_parts {
     use super::*;
-    use crate::errors::ResourcePathError;
     use assert_matches::assert_matches;
 
     macro_rules! test_parse_err {
@@ -536,7 +467,7 @@ mod test_url_parts {
                         UrlParts {
                             scheme: $scheme,
                             host: $host,
-                            path: $path.into(),
+                            path: $path.parse().unwrap(),
                             hash: $hash,
                             resource: $resource,
                         }
@@ -603,7 +534,7 @@ mod test_url_parts {
             host = None,
             path = "/",
             hash = None,
-            resource = Some("resource".into()),
+            resource = Some("resource".parse().unwrap()),
         }
         ok_resource_multiple_segment => {
             url =  "fuchsia-pkg://#resource/again/third",
@@ -611,7 +542,7 @@ mod test_url_parts {
             host = None,
             path = "/",
             hash = None,
-            resource = Some("resource/again/third".into()),
+            resource = Some("resource/again/third".parse().unwrap()),
         }
         ok_resource_encoded_control_character => {
             url =  "fuchsia-pkg://#reso%09urce",
@@ -619,7 +550,7 @@ mod test_url_parts {
             host = None,
             path = "/",
             hash = None,
-            resource = Some("reso\turce".into()),
+            resource = Some("reso\turce".parse().unwrap()),
         }
         ok_all_fields => {
             url =  "fuchsia-pkg://example.org/name\
@@ -631,7 +562,7 @@ mod test_url_parts {
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),
-            resource = Some("resource".into()),
+            resource = Some("resource".parse().unwrap()),
         }
         ok_relative_path_single_segment => {
             url =  "name",
@@ -681,7 +612,7 @@ mod test_url_parts {
             host = None,
             path = "/",
             hash = None,
-            resource = Some("resource".into()),
+            resource = Some("resource".parse().unwrap()),
         }
         ok_relative_resource_multiple_segment => {
             url =  "#resource/again/third",
@@ -689,7 +620,7 @@ mod test_url_parts {
             host = None,
             path = "/",
             hash = None,
-            resource = Some("resource/again/third".into()),
+            resource = Some("resource/again/third".parse().unwrap()),
         }
         ok_relative_all_fields => {
             url =  "name\
@@ -701,7 +632,7 @@ mod test_url_parts {
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),
-            resource = Some("resource".into()),
+            resource = Some("resource".parse().unwrap()),
         }
     }
 }

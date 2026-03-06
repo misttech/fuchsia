@@ -40,7 +40,7 @@ impl Resolver for BuiltinResolver {
             return Err(ResolverError::manifest_not_found(ManifestNotFoundError(url)));
         };
         let mut dependencies = DirectedGraph::new();
-        let decl = match resource {
+        let decl = match resource.as_ref() {
             "elf_runner.cm" => {
                 resolving::read_and_validate_manifest_bytes(ELF_RUNNER_CM_BYTES, &mut dependencies)?
             }

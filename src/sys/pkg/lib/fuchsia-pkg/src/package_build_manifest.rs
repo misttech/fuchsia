@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::errors::PackageBuildManifestError;
-use fuchsia_url::validate_resource_path;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet, btree_map};
 use std::fs;
@@ -55,7 +54,7 @@ impl PackageBuildManifest {
         far_contents: BTreeMap<String, String>,
     ) -> Result<Self, PackageBuildManifestError> {
         for (resource_path, _) in external_contents.iter().chain(far_contents.iter()) {
-            validate_resource_path(resource_path).map_err(|e| {
+            fuchsia_url::Resource::validate_str(resource_path).map_err(|e| {
                 PackageBuildManifestError::ResourcePath {
                     cause: e,
                     path: resource_path.to_string(),
@@ -120,7 +119,7 @@ impl PackageBuildManifest {
         // Validate package resource paths in far contents before "meta/" is prepended
         // for better error messages.
         for (resource_path, host_path) in v1.far_contents.into_iter() {
-            validate_resource_path(&resource_path).map_err(|e| {
+            fuchsia_url::Resource::validate_str(&resource_path).map_err(|e| {
                 PackageBuildManifestError::ResourcePath {
                     cause: e,
                     path: resource_path.to_string(),
@@ -340,7 +339,6 @@ mod tests {
     use super::*;
     use crate::test::*;
     use assert_matches::assert_matches;
-    use fuchsia_url::errors::ResourcePathError::PathStartsWithSlash;
     use maplit::btreemap;
     use proptest::prelude::*;
     use serde_json::json;
@@ -384,7 +382,7 @@ mod tests {
                 )
             ),
             Err(PackageBuildManifestError::ResourcePath {
-                cause: PathStartsWithSlash,
+                cause: fuchsia_url::ResourcePathError::PathStartsWithSlash,
                 path: s
             }) if s == "/starts-with-slash"
         );

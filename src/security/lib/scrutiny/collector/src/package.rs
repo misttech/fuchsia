@@ -315,11 +315,12 @@ impl PackageDataCollector {
         zbi: &Zbi,
     ) -> Result<()> {
         if let Some(package_index) = &zbi.bootfs_packages.bootfs_pkgs {
-            for ((name, variant), merkle) in package_index {
-                let name_and_variant = match variant {
-                    None => name.to_string(),
-                    Some(variant) => format!("{}/{}", name, variant),
-                };
+            // TODO(https://fxbug.dev/326308365): Delete package variant concept.
+            // We leave the `variant` out of the component URL that is used in the manifest because
+            // SWD is in the long, slow process of deleting the variant concept, and as part of that
+            // process the variant is always zero and component and package resolvers will insert
+            // a variant of zero if given a URL without a variant.
+            for ((name, _variant), merkle) in package_index {
                 let package_path = format!("blob/{}", merkle);
                 let far_cursor =
                     Cursor::new(zbi.bootfs_files.bootfs_files.get(&package_path).ok_or_else(
@@ -333,10 +334,8 @@ impl PackageDataCollector {
                     })?;
                     match cm {
                         ComponentManifest::Version2(bytes) => {
-                            let url = BootUrl::new_resource_without_variant(
-                                format!("/{}", name_and_variant),
-                                path_str.to_string(),
-                            )?;
+                            let url =
+                                BootUrl::new_resource(format!("/{name}"), path_str.to_string())?;
                             let url = Url::parse(&url.to_string()).with_context(|| {
                                 format!("Failed to convert boot URL to standard URL: {}", url)
                             })?;

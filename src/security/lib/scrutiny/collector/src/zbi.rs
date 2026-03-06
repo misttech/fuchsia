@@ -176,7 +176,7 @@ fn lookup_zbi_hash_in_images_json(
             )
         })?;
 
-    let zbi_path = PathBuf::from(images_component_url.resource());
+    let zbi_path = PathBuf::from(images_component_url.resource().as_ref());
     images_package.contents.get(&zbi_path).map(Hash::clone).ok_or_else(|| {
         anyhow!(
             "Update package images package contains no {} zbi entry {:?}",

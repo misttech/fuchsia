@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::ParseError;
-use crate::{RelativePackageUrl, UrlParts};
+use crate::{RelativePackageUrl, Resource, UrlParts};
 
 /// A relative URL locating a Fuchsia component. Used with a subpackage context.
 /// Has the form "<name>#<resource>" where:
@@ -13,7 +13,7 @@ use crate::{RelativePackageUrl, UrlParts};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RelativeComponentUrl {
     package: RelativePackageUrl,
-    resource: String,
+    resource: Resource,
 }
 
 impl RelativeComponentUrl {
@@ -22,7 +22,7 @@ impl RelativeComponentUrl {
         let package =
             RelativePackageUrl::from_parts(UrlParts { scheme, host, path, hash, resource: None })?;
         let resource = resource.ok_or(ParseError::MissingResource)?;
-        Ok(Self { package, resource: resource })
+        Ok(Self { package, resource })
     }
 
     /// Parse a relative component URL.
@@ -38,11 +38,11 @@ impl RelativeComponentUrl {
     }
 
     /// The resource path of this URL.
-    pub fn resource(&self) -> &str {
+    pub fn resource(&self) -> &Resource {
         &self.resource
     }
 
-    pub(crate) fn into_package_and_resource(self) -> (RelativePackageUrl, String) {
+    pub(crate) fn into_package_and_resource(self) -> (RelativePackageUrl, Resource) {
         let Self { package, resource } = self;
         (package, resource)
     }
@@ -66,12 +66,7 @@ impl std::convert::TryFrom<&str> for RelativeComponentUrl {
 
 impl std::fmt::Display for RelativeComponentUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}#{}",
-            self.package,
-            percent_encoding::utf8_percent_encode(&self.resource, crate::FRAGMENT)
-        )
+        write!(f, "{}#{}", self.package, self.resource.percent_encode())
     }
 }
 
@@ -94,7 +89,8 @@ impl<'de> serde::Deserialize<'de> for RelativeComponentUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::{PackagePathSegmentError, ResourcePathError};
+    use crate::errors::PackagePathSegmentError;
+    use crate::resource::ResourcePathError;
     use assert_matches::assert_matches;
     use std::convert::TryFrom as _;
 
@@ -181,7 +177,7 @@ mod tests {
             // Creation
             let validate = |parsed: &RelativeComponentUrl| {
                 assert_eq!(parsed.package_url().as_ref(), package);
-                assert_eq!(parsed.resource(), resource);
+                assert_eq!(parsed.resource().as_ref(), resource);
             };
             validate(&RelativeComponentUrl::parse(url).unwrap());
             validate(&url.parse::<RelativeComponentUrl>().unwrap());

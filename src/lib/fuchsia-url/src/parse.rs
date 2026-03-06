@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::errors::{PackagePathSegmentError, ResourcePathError};
+use crate::errors::PackagePathSegmentError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto as _;
 
 pub const MAX_PACKAGE_PATH_SEGMENT_BYTES: usize = 255;
-pub const MAX_RESOURCE_PATH_SEGMENT_BYTES: usize = 255;
 
 /// Check if a string conforms to r"^[0-9a-z\-\._]{1,255}$" and is neither "." nor ".."
 pub fn validate_package_path_segment(string: &str) -> Result<(), PackagePathSegmentError> {
@@ -50,6 +49,20 @@ impl TryFrom<String> for PackageName {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let () = validate_package_path_segment(&value)?;
         Ok(Self(value))
+    }
+}
+
+impl TryFrom<&crate::Path> for PackageName {
+    type Error = crate::ParseError;
+    fn try_from(value: &crate::Path) -> Result<Self, Self::Error> {
+        // This split should never fail, `Path` should always have a leading slash.
+        value
+            .as_ref()
+            .split_at_checked(1)
+            .ok_or(Self::Error::PathMustHaveLeadingSlash)?
+            .1
+            .parse()
+            .map_err(Self::Error::InvalidName)
     }
 }
 
@@ -148,44 +161,6 @@ impl<'de> Deserialize<'de> for PackageVariant {
     }
 }
 
-/// Checks if `input` is a valid resource path for a Fuchsia Package URL.
-/// Fuchsia package resource paths are Fuchsia object relative paths without
-/// the limit on maximum path length.
-/// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url#resource-path
-pub fn validate_resource_path(input: &str) -> Result<(), ResourcePathError> {
-    if input.is_empty() {
-        return Err(ResourcePathError::PathIsEmpty);
-    }
-    if input.starts_with('/') {
-        return Err(ResourcePathError::PathStartsWithSlash);
-    }
-    if input.ends_with('/') {
-        return Err(ResourcePathError::PathEndsWithSlash);
-    }
-    for segment in input.split('/') {
-        if segment.contains('\0') {
-            return Err(ResourcePathError::NameContainsNull);
-        }
-        if segment == "." {
-            return Err(ResourcePathError::NameIsDot);
-        }
-        if segment == ".." {
-            return Err(ResourcePathError::NameIsDotDot);
-        }
-        if segment.is_empty() {
-            return Err(ResourcePathError::NameEmpty);
-        }
-        if segment.len() > MAX_RESOURCE_PATH_SEGMENT_BYTES {
-            return Err(ResourcePathError::NameTooLong);
-        }
-        // TODO(https://fxbug.dev/42096516) allow newline once meta/contents supports it in blob paths
-        if segment.contains('\n') {
-            return Err(ResourcePathError::NameContainsNewline);
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod test_validate_package_path_segment {
     use super::*;
@@ -249,6 +224,7 @@ mod test_validate_package_path_segment {
 #[cfg(test)]
 mod test_package_name {
     use super::*;
+    use assert_matches::assert_matches;
 
     #[test]
     fn from_str_rejects_invalid() {
@@ -307,6 +283,23 @@ mod test_package_name {
     fn deserialize_rejects_invalid() {
         let msg = serde_json::from_str::<PackageName>("\"pack!age-name\"").unwrap_err().to_string();
         assert!(msg.contains("invalid package name"), r#"Bad error message: "{}""#, msg);
+    }
+
+    #[test]
+    fn try_from_path_ref_success() {
+        let path: crate::Path = "/valid-name".parse().unwrap();
+        assert_eq!(PackageName::try_from(&path).unwrap().as_ref(), "valid-name");
+    }
+
+    #[test]
+    fn try_from_path_ref_error() {
+        let path: crate::Path = "/invalid/name".parse().unwrap();
+        assert_matches!(
+            PackageName::try_from(&path),
+            Err(crate::ParseError::InvalidName(PackagePathSegmentError::InvalidCharacter {
+                character: '/'
+            }))
+        );
     }
 }
 
@@ -371,133 +364,5 @@ mod test_package_variant {
         let msg =
             serde_json::from_str::<PackageVariant>("\"pack!age-variant\"").unwrap_err().to_string();
         assert!(msg.contains("invalid package variant"), r#"Bad error message: "{}""#, msg);
-    }
-}
-
-#[cfg(test)]
-mod test_validate_resource_path {
-    use super::*;
-    use crate::test::*;
-    use proptest::prelude::*;
-
-    // Tests for invalid paths
-    #[test]
-    fn test_empty_string() {
-        assert_eq!(validate_resource_path(""), Err(ResourcePathError::PathIsEmpty));
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig{
-            failure_persistence: None,
-            ..Default::default()
-        })]
-
-        #[test]
-        fn test_reject_empty_object_name(
-            ref s in random_resource_path_with_regex_segment_str(5, "")) {
-            prop_assume!(!s.starts_with('/') && !s.ends_with('/'));
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameEmpty));
-        }
-
-        #[test]
-        fn test_reject_long_object_name(
-            ref s in random_resource_path_with_regex_segment_str(5, r"[[[:ascii:]]--\.--/--\x00]{256}")) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameTooLong));
-        }
-
-        #[test]
-        fn test_reject_contains_null(
-            ref s in random_resource_path_with_regex_segment_string(
-                5, format!(r"{}{{0,3}}\x00{}{{0,3}}",
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE,
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE))) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameContainsNull));
-        }
-
-        #[test]
-        fn test_reject_name_is_dot(
-            ref s in random_resource_path_with_regex_segment_str(5, r"\.")) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameIsDot));
-        }
-
-        #[test]
-        fn test_reject_name_is_dot_dot(
-            ref s in random_resource_path_with_regex_segment_str(5, r"\.\.")) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameIsDotDot));
-        }
-
-        #[test]
-        fn test_reject_starts_with_slash(
-            ref s in format!(
-                "/{}{{1,5}}",
-                ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE).as_str()) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::PathStartsWithSlash));
-        }
-
-        #[test]
-        fn test_reject_ends_with_slash(
-            ref s in format!(
-                "{}{{1,5}}/",
-                ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE).as_str()) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::PathEndsWithSlash));
-        }
-
-        #[test]
-        fn test_reject_contains_newline(
-            ref s in random_resource_path_with_regex_segment_string(
-                5, format!(r"{}{{0,3}}\x0a{}{{0,3}}",
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE,
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE))) {
-            prop_assert_eq!(validate_resource_path(s), Err(ResourcePathError::NameContainsNewline));
-        }
-    }
-
-    // Tests for valid paths
-    proptest! {
-        #![proptest_config(ProptestConfig{
-            failure_persistence: None,
-            ..Default::default()
-        })]
-
-        #[test]
-        fn test_name_contains_dot(
-            ref s in random_resource_path_with_regex_segment_string(
-                5, format!(r"{}{{1,4}}\.{}{{1,4}}",
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE,
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE)))
-        {
-            prop_assert_eq!(validate_resource_path(s), Ok(()));
-        }
-
-        #[test]
-        fn test_name_contains_dot_dot(
-            ref s in random_resource_path_with_regex_segment_string(
-                5, format!(r"{}{{1,4}}\.\.{}{{1,4}}",
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE,
-                           ANY_UNICODE_EXCEPT_SLASH_NULL_DOT_OR_NEWLINE)))
-        {
-            prop_assert_eq!(validate_resource_path(s), Ok(()));
-        }
-
-        #[test]
-        fn test_single_segment(ref s in always_valid_resource_path_chars(1, 4)) {
-            prop_assert_eq!(validate_resource_path(s), Ok(()));
-        }
-
-        #[test]
-        fn test_multi_segment(
-            ref s in prop::collection::vec(always_valid_resource_path_chars(1, 4), 1..5))
-        {
-            let path = s.join("/");
-            prop_assert_eq!(validate_resource_path(&path), Ok(()));
-        }
-
-        #[test]
-        fn test_long_name(
-            ref s in random_resource_path_with_regex_segment_str(
-                5, "[[[:ascii:]]--\0--/--\n]{255}")) // TODO(https://fxbug.dev/42096516) allow newline once meta/contents supports it in blob paths
-        {
-            prop_assert_eq!(validate_resource_path(s), Ok(()));
-        }
     }
 }

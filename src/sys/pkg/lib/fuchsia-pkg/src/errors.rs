@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_merkle::Hash;
-use fuchsia_url::errors::{PackagePathSegmentError, ResourcePathError};
+use fuchsia_url::errors::PackagePathSegmentError;
 use std::io;
 use std::path::PathBuf;
 use tempfile::PersistError;
@@ -14,7 +14,7 @@ pub enum PackageBuildManifestError {
     #[error("manifest contains an invalid resource path '{}'.", path)]
     ResourcePath {
         #[source]
-        cause: ResourcePathError,
+        cause: fuchsia_url::ResourcePathError,
         path: String,
     },
 
@@ -104,7 +104,7 @@ pub enum MetaContentsError {
     #[error("invalid resource path: '{:?}'", path)]
     InvalidResourcePath {
         #[source]
-        cause: ResourcePathError,
+        cause: fuchsia_url::ResourcePathError,
         path: String,
     },
 

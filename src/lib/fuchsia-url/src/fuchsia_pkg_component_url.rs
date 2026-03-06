@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::errors::ParseError;
-use crate::{FuchsiaPkgAbsoluteComponentUrl, FuchsiaPkgPackageUrl, RelativeComponentUrl, UrlParts};
+use crate::{
+    FuchsiaPkgAbsoluteComponentUrl, FuchsiaPkgPackageUrl, RelativeComponentUrl, Resource, UrlParts,
+};
 
 /// A URL locating a Fuchsia component. Can be either absolute or relative.
 /// See `FuchsiaPkgAbsoluteComponentUrl` and `RelativeComponentUrl` for more details.
@@ -11,7 +13,7 @@ use crate::{FuchsiaPkgAbsoluteComponentUrl, FuchsiaPkgPackageUrl, RelativeCompon
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FuchsiaPkgComponentUrl {
     package: FuchsiaPkgPackageUrl,
-    resource: String,
+    resource: Resource,
 }
 
 impl FuchsiaPkgComponentUrl {
@@ -35,7 +37,7 @@ impl FuchsiaPkgComponentUrl {
     }
 
     /// The resource path of this URL.
-    pub fn resource(&self) -> &str {
+    pub fn resource(&self) -> &Resource {
         &self.resource
     }
 }
@@ -58,12 +60,7 @@ impl std::convert::TryFrom<&str> for FuchsiaPkgComponentUrl {
 
 impl std::fmt::Display for FuchsiaPkgComponentUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}#{}",
-            self.package,
-            percent_encoding::utf8_percent_encode(&self.resource, crate::FRAGMENT)
-        )
+        write!(f, "{}#{}", self.package, self.resource.percent_encode())
     }
 }
 

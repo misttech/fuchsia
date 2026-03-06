@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::UrlParts;
 use crate::errors::ParseError;
 use crate::parse::PackageName;
-use crate::UrlParts;
 
 /// A relative URL locating a Fuchsia package. Used with a subpackage context.
 /// Has the form "<name>" where:
@@ -30,7 +30,7 @@ impl RelativePackageUrl {
         if resource.is_some() {
             return Err(ParseError::CannotContainResource);
         }
-        let (name, variant) = crate::parse_path_to_name_and_variant(&path)?;
+        let (name, variant) = crate::parse_path_to_name_and_variant(path.as_ref())?;
         if variant.is_some() {
             return Err(ParseError::RelativePathCannotSpecifyVariant);
         }

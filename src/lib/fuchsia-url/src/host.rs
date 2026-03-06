@@ -6,7 +6,7 @@ use crate::errors::ParseError;
 
 // The host of a fuchsia-pkg:// URL.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Host(String);
+pub struct Host(String);
 
 impl Host {
     /// Returns an error if the provided hostname does not comply to the package URL spec:

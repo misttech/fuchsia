@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 pub use crate::errors::ParseError;
-pub use crate::parse::{validate_package_path_segment, validate_resource_path};
 use crate::{Scheme, UrlParts};
 
 pub const SCHEME: &str = "fuchsia-builtin";
@@ -18,7 +17,7 @@ pub const SCHEME: &str = "fuchsia-builtin";
 /// The path in builtin URLs must be "/". Following that, they may contain a fragment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuiltinUrl {
-    resource: Option<String>,
+    resource: Option<crate::Resource>,
 }
 
 impl BuiltinUrl {
@@ -41,15 +40,15 @@ impl BuiltinUrl {
             return Err(ParseError::CannotContainHash);
         }
 
-        if path != "/" {
+        if path.as_ref() != "/" {
             return Err(ParseError::PathMustBeRoot);
         }
 
         Ok(Self { resource })
     }
 
-    pub fn resource(&self) -> Option<&str> {
-        self.resource.as_ref().map(|s| s.as_str())
+    pub fn resource(&self) -> Option<&crate::Resource> {
+        self.resource.as_ref()
     }
 }
 
@@ -57,9 +56,8 @@ impl std::fmt::Display for BuiltinUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}://", SCHEME)?;
         if let Some(ref resource) = self.resource {
-            write!(f, "#{}", percent_encoding::utf8_percent_encode(resource, crate::FRAGMENT))?;
+            write!(f, "#{}", resource.percent_encode())?;
         }
-
         Ok(())
     }
 }
@@ -67,15 +65,22 @@ impl std::fmt::Display for BuiltinUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::{PackagePathSegmentError, ResourcePathError};
+    use crate::errors::PackagePathSegmentError;
+    use crate::resource::ResourcePathError;
     use assert_matches::assert_matches;
 
     #[test]
     fn test_parse_ok() {
         assert_eq!(BuiltinUrl::parse("fuchsia-builtin://").unwrap().resource(), None);
-        assert_eq!(BuiltinUrl::parse("fuchsia-builtin://#a").unwrap().resource(), Some("a"));
         assert_eq!(
-            BuiltinUrl::parse("fuchsia-builtin://#elf_runner.cm").unwrap().resource(),
+            BuiltinUrl::parse("fuchsia-builtin://#a").unwrap().resource().map(|r| r.as_ref()),
+            Some("a")
+        );
+        assert_eq!(
+            BuiltinUrl::parse("fuchsia-builtin://#elf_runner.cm")
+                .unwrap()
+                .resource()
+                .map(|r| r.as_ref()),
             Some("elf_runner.cm")
         );
     }

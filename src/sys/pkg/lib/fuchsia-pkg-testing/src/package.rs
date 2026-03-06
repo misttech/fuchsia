@@ -610,7 +610,7 @@ impl PackageBuilder {
     ) -> Self {
         let path = path.into();
         let path_str = path.to_str().unwrap();
-        let () = fuchsia_url::validate_resource_path(
+        let () = fuchsia_url::Resource::validate_str(
             path.to_str().unwrap_or_else(|| panic!("path must be utf8: {path:?}")),
         )
         .unwrap_or_else(|_| panic!("path must be an object relative path expression: {path:?}"));

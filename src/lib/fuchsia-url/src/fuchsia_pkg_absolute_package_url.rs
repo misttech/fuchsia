@@ -33,7 +33,7 @@ impl FuchsiaPkgAbsolutePackageUrl {
         if resource.is_some() {
             return Err(ParseError::CannotContainResource);
         }
-        Self::new_with_path(repo, &path, hash)
+        Self::new_with_path(repo, path.as_ref(), hash)
     }
 
     /// Parse a "fuchsia-pkg://" URL that locates an optionally pinned package.
