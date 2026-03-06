@@ -8,6 +8,7 @@
 
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
@@ -28,20 +29,20 @@ TEST_F(ConsoleContextTest, CurrentBreakpoint) {
   // Breakpoint 1.
   console().ProcessInputLine("b 0x10000");
   auto event = console().GetOutputEvent();
-  ASSERT_NE(std::string::npos, event.output.AsString().find("Created Breakpoint 1"))
+  ASSERT_TRUE(debug::StringContains(event.output.AsString(), "Created Breakpoint 1"))
       << event.output.AsString();
   int breakpoint_1_backend_id = mock_remote_api()->last_breakpoint_id();
 
   // Breakpoint 2.
   console().ProcessInputLine("b 0x20000");
   event = console().GetOutputEvent();
-  ASSERT_NE(std::string::npos, event.output.AsString().find("Created Breakpoint 2"))
+  ASSERT_TRUE(debug::StringContains(event.output.AsString(), "Created Breakpoint 2"))
       << event.output.AsString();
 
   // Breakpoint 2 should be active, so its address should be returned when we ask for the location.
   console().ProcessInputLine("bp get location");
   event = console().GetOutputEvent();
-  ASSERT_NE(std::string::npos, event.output.AsString().find("location = 0x20000"))
+  ASSERT_TRUE(debug::StringContains(event.output.AsString(), "location = 0x20000"))
       << event.output.AsString();
 
   // Provide a stop at breakpoint 1.
@@ -57,13 +58,13 @@ TEST_F(ConsoleContextTest, CurrentBreakpoint) {
 
   // Should have issued a stop at the first location.
   event = console().GetOutputEvent();
-  ASSERT_NE(std::string::npos, event.output.AsString().find("0x10000 (no symbol info)"))
+  ASSERT_TRUE(debug::StringContains(event.output.AsString(), "0x10000 (no symbol info)"))
       << event.output.AsString();
 
   // Breakpoint 1 should now be active.
   console().ProcessInputLine("bp get location");
   event = console().GetOutputEvent();
-  ASSERT_NE(std::string::npos, event.output.AsString().find("location = 0x10000"))
+  ASSERT_TRUE(debug::StringContains(event.output.AsString(), "location = 0x10000"))
       << event.output.AsString();
 }
 

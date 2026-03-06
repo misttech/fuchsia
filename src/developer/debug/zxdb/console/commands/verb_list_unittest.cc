@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
@@ -40,10 +41,10 @@ TEST_F(VerbListTest, ListSource) {
 
   console().ProcessInputLine("list");
   auto event = console().GetOutputEvent();
-  EXPECT_TRUE(event.output.AsString().find("1 line1") != std::string::npos);
-  EXPECT_TRUE(event.output.AsString().find("▶ 2 line2") != std::string::npos);
-  EXPECT_TRUE(event.output.AsString().find("3 line3") != std::string::npos);
-  EXPECT_TRUE(event.output.AsString().find("4 line4") != std::string::npos);
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "1 line1"));
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "▶ 2 line2"));
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "3 line3"));
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "4 line4"));
 }
 
 }  // namespace zxdb

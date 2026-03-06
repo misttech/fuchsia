@@ -207,7 +207,7 @@ static_library("console") {
     "verbs_settings.cc",
   ]
 
-  deps = []
+  deps = [ "//src/developer/debug/shared" ]
   public_deps = [
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
@@ -295,6 +295,7 @@ source_set("tests") {
 
   deps = [
     ":console",
+    "//src/developer/debug/shared",
     "//src/developer/debug/zxdb/client:test_support",
     "//src/developer/debug/zxdb/common:test_support",
     "//src/developer/debug/zxdb/expr:test_support",

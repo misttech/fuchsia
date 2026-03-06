@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 
 namespace zxdb {
@@ -59,8 +60,8 @@ TEST_F(CommandSequence, Success) {
 
   // This just searches for some keywords we know are in the output, so we don't depend on the
   // exact wording of the messages.
-  EXPECT_NE(std::string::npos, output.find("Created Breakpoint")) << "Got: " << output;
-  EXPECT_NE(std::string::npos, output.find("show-stdout")) << "Got: " << output;
+  EXPECT_TRUE(debug::StringContains(output, "Created Breakpoint")) << "Got: " << output;
+  EXPECT_TRUE(debug::StringContains(output, "show-stdout")) << "Got: " << output;
 }
 
 TEST_F(CommandSequence, Error) {

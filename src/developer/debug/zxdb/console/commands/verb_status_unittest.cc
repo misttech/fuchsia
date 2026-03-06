@@ -105,7 +105,7 @@ TEST_F(VerbStatus, ConnectionStatus) {
 
   // No connection state.
   std::string no_conn_string = GetConnectionStatus(&session).AsString();
-  EXPECT_NE(std::string::npos, no_conn_string.find("Not connected"));
+  EXPECT_TRUE(debug::StringContains(no_conn_string, "Not connected"));
 
   // Testing the connected connection status is currently difficult to mock and
   // is low-priority for testing. If Session were refactored this could become

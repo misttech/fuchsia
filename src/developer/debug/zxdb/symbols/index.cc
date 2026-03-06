@@ -314,7 +314,7 @@ void UnitIndexer::Scan(std::vector<IndexNode::SymbolRef>* main_functions) {
       // we've modified anything. If this is the case, it's likely that the program was not compiled
       // with the simple-template-names flag and the template parameters will be present directly in
       // the name.
-      if (!parent.has_modified_template_name() && parent.name().find('<') != std::string::npos)
+      if (!parent.has_modified_template_name() && debug::StringContains(parent.name(), "<"))
         continue;
 
       std::string fixup_template_name = parent.name();

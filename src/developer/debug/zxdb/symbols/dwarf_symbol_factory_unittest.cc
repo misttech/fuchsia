@@ -78,7 +78,7 @@ TEST(DwarfSymbolFactory, Function) {
   // it's reasonable. The mangled name shouldn't be exactly the same as the unmangled name, but
   // should at least contain it.
   EXPECT_NE(kGetIntPtrName, function->linkage_name());
-  EXPECT_NE(std::string::npos, function->linkage_name().find(kGetIntPtrName));
+  EXPECT_TRUE(debug::StringContains(function->linkage_name(), kGetIntPtrName));
 
   // Declaration location.
   EXPECT_TRUE(function->decl_line().is_valid());

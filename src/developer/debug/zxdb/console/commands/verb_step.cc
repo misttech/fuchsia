@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/console/commands/verb_step.h"
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/step_into_thread_controller.h"
 #include "src/developer/debug/zxdb/client/step_over_thread_controller.h"
@@ -104,7 +105,7 @@ void RunVerbStep(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
           const Symbol* symbol = frame->GetLocation().symbol().Get();
           if (!symbol)
             return false;  // Unsymbolized location, continue.
-          return symbol->GetFullName().find(substr) != std::string::npos;
+          return debug::StringContains(symbol->GetFullName(), substr);
         });
     cmd.thread()->ContinueWith(std::move(controller), std::move(completion));
   } else {

@@ -11,6 +11,7 @@
 
 #include <limits>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_location.h"
 #include "src/developer/debug/zxdb/client/client_eval_context_impl.h"
@@ -587,7 +588,7 @@ std::string FormatConsoleString(const std::string& input) {
 
     // Make sure there's a unique delimiter in case the string has an embedded )".
     std::string delim;
-    while (input.find(")" + delim + "\"") != std::string::npos)
+    while (debug::StringContains(input, ")" + delim + "\""))
       delim += "*";
 
     result = "R\"" + delim + "(";

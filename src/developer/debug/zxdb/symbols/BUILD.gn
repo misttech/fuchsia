@@ -343,6 +343,7 @@ source_set("tests") {
   deps = [
     ":symbols",
     ":test_support",
+    "//src/developer/debug/shared",
     "//src/developer/debug/zxdb/common:test_support",
     "//src/lib/llvm/host:LLVMDebugInfoDWARF",
     "//third_party/googletest:gtest",

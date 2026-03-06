@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/console/commands/verb_up.h"
@@ -95,8 +96,8 @@ TEST_F(VerbDownTest, DownWithSource) {
     output += console().GetOutputEvent().output.AsString();
   }
 
-  EXPECT_NE(std::string::npos, output.find("Frame 0"));
-  EXPECT_NE(std::string::npos, output.find("▶ 2 line2"));
+  EXPECT_TRUE(debug::StringContains(output, "Frame 0"));
+  EXPECT_TRUE(debug::StringContains(output, "▶ 2 line2"));
 }
 
 }  // namespace zxdb
