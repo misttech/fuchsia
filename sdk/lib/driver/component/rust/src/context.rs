@@ -96,6 +96,20 @@ impl DriverContext {
         Ok(())
     }
 
+    /// Returns the VMAR which the driver can use to map memory.
+    ///
+    /// If the driver was not provided with an explicit VMAR in its start arguments, the root VMAR
+    /// is returned.
+    pub fn vmar(&self) -> zx::Unowned<'_, zx::Vmar> {
+        // NB: We can't use `map_or_else` here, because the compiler gets confused about lifetimes
+        // when attempting to unify the types of the two function arguments.
+        if let Some(vmar) = self.start_args.vmar.as_ref().map(zx::Unowned::new) {
+            vmar
+        } else {
+            fuchsia_runtime::vmar_root_self()
+        }
+    }
+
     pub(crate) fn new(
         root_dispatcher: DispatcherRef<'static>,
         mut start_args: DriverStartArgs,
