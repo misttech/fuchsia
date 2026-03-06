@@ -28,9 +28,8 @@ using LdLoadFailureTests = Fixture;
 // This lists all the types that are compatible with both LdLoadTests and LdLoadFailureTests.
 template <class... Tests>
 using TestTypes = ::testing::Types<
-// TODO(https://fxbug.dev/42080760): The separate-process tests require symbolic
-// relocation so they can make the syscall to exit. The spawn-process
-// tests also need a loader service to get ld.so.1 itself.
+// TODO(https://fxbug.dev/479521328): LdStartupSpawnProcessTests is disabled on
+// Fuchsia due to stack size issues.
 #ifdef __Fuchsia__
     ld::testing::LdStartupCreateProcessTests<>,  //
     ld::testing::LdRemoteProcessTests,
