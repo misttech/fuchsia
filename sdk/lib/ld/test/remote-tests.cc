@@ -206,9 +206,11 @@ TEST_F(LdRemoteTests, RemoteDynamicLinker) {
 // This demonstrates using ld::RemoteDynamicLinker::Preplaced in the initial
 // modules list.
 TEST_F(LdRemoteTests, Preplaced) {
-  constexpr uint64_t kLoadAddress = 0x12340000;
-
   ASSERT_NO_FATAL_FAILURE(Init());
+
+  const zx_info_vmar_t aspace = RootVmarInfo();
+  const uint64_t top_gig = aspace.base + aspace.len - 0x40000000;
+  const uint64_t load_address = top_gig + 0x1230000;
 
   auto diag = elfldltl::testing::ExpectOkDiagnostics();
 
@@ -233,7 +235,7 @@ TEST_F(LdRemoteTests, Preplaced) {
 
   auto init_result = linker.Init(  //
       diag,
-      {Linker::Preplaced(std::move(decoded_executable), kLoadAddress,
+      {Linker::Preplaced(std::move(decoded_executable), load_address,
                          ld::abi::Abi<>::kExecutableName),
        Linker::Implicit(std::move(decoded_vdso))},
       GetDepFunction(diag));
@@ -244,13 +246,13 @@ TEST_F(LdRemoteTests, Preplaced) {
   set_stack_size(linker.main_stack_size());
   set_vdso_base(init_result->back()->module().vaddr_start());
 
-  EXPECT_EQ(init_result->front()->module().vaddr_start, kLoadAddress);
+  EXPECT_EQ(init_result->front()->module().vaddr_start, load_address);
 
   EXPECT_TRUE(linker.Relocate(diag));
   ASSERT_TRUE(linker.Load(diag));
   linker.Commit();
 
-  EXPECT_EQ(Run(), static_cast<int64_t>(kLoadAddress));
+  EXPECT_EQ(Run(), static_cast<int64_t>(load_address));
 
   ExpectLog("");
 }

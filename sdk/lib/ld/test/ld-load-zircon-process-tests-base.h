@@ -52,12 +52,12 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // Assert that the process is valid and not terminated.
   void CheckProcess();
 
-  void LegacyAddressSpaceReservation();
-
   // Use transfer_fd as the child's target_number fd in the main (libc)
   // bootstrap message.  STDERR_FILENO is already implicitly redirected to
   // process_log_fd() before this is applied.
   void RedirectFd(int target_number, fbl::unique_fd transfer_fd);
+
+  zx_info_vmar_t RootVmarInfo() const;
 
  protected:
   const zx::process& process() const { return process_; }
@@ -65,8 +65,15 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // A subclass calls this when not using CreateProcess().
   void set_process(zx::process process);
 
+  // A subclass can optionally call this before calling CreateProcess().
+  void set_create_options(uint32_t options) { create_options_ = options; }
+
   // A subclass calls CreateProcess() to set process(), root_vmar(), and thread().
   void CreateProcess();
+
+  // Call this after CreateProcess() to mimic the system program loader's
+  // behavior of avoiding the low half of the address space.
+  void LegacyAddressSpaceReservation();
 
   // These are set by CreateProcess() and used by Start() and Run().
   const zx::vmar& root_vmar() { return root_vmar_; }
@@ -103,6 +110,7 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
  private:
   void ClearLegacyAddressSpaceReservation();
 
+  uint32_t create_options_ = 0;
   zx::process process_;
 
   // Not all subclasses use these.

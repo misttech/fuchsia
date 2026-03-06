@@ -89,6 +89,14 @@ class LdStartupCreateProcessTests
   using typename Base::LoadResult;
 };
 
+// Just the same, but create the process with the ZX_PROCESS_SHARED flag so
+// that its root VMAR will be the "top half only" VMAR.
+template <class Elf = elfldltl::Elf<>>
+class LdStartupCreateSharedProcessTests : public LdStartupCreateProcessTests<Elf> {
+ public:
+  LdStartupCreateSharedProcessTests() { this->set_create_options(ZX_PROCESS_SHARED); }
+};
+
 }  // namespace ld::testing
 
 #endif  // LIB_LD_TEST_LD_STARTUP_CREATE_PROCESS_TESTS_H_

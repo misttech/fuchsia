@@ -148,7 +148,11 @@ class VmarLoader {
     if (zx_status_t status =
             AllocateVmar(load_info.vaddr_size(), load_info.vaddr_start(), vmar_offset);
         status != ZX_OK) [[unlikely]] {
-      return diag.SystemError("Failed to allocate address space: ", ZirconError{status});
+      constexpr std::string_view kFailed = "Failed to allocate address space: ";
+      if (!vmar_offset) {
+        return diag.SystemError(kFailed, ZirconError{status});
+      }
+      return diag.SystemError(kFailed, ZirconError{status}, " at VMAR offset ", *vmar_offset);
     }
     return true;
   }

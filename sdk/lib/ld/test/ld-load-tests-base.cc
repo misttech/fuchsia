@@ -34,8 +34,11 @@ std::string LdLoadTestsBase::CollectLog() {
 LdLoadTestsBase::~LdLoadTestsBase() {
   // The log should have been collected by ExpectLog.  If the test is bailing
   // out early anyway, then don't confuse things with more failures.
-  if (!::testing::Test::HasFatalFailure()) {
+  if (!::testing::Test::HasFatalFailure() && !::testing::Test::IsSkipped()) {
     EXPECT_FALSE(log_);
+  }
+  if (log_) {
+    std::ignore = std::move(*std::exchange(log_, {})).Finish();
   }
 }
 

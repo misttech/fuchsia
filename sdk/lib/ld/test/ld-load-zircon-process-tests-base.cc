@@ -5,6 +5,7 @@
 #include "ld-load-zircon-process-tests-base.h"
 
 #include <lib/elfldltl/machine.h>
+#include <lib/elfldltl/vmo.h>
 #include <lib/ld/abi.h>
 #include <lib/zx/job.h>
 #include <zircon/processargs.h>
@@ -26,9 +27,10 @@ void LdLoadZirconProcessTestsBase::CreateProcess() {
   ASSERT_FALSE(process_);
 
   std::string_view name = process_name();
-  ASSERT_EQ(zx::process::create(*zx::job::default_job(), name.data(),
-                                static_cast<uint32_t>(name.size()), 0, &process_, &root_vmar_),
-            ZX_OK);
+  ASSERT_EQ(
+      zx::process::create(*zx::job::default_job(), name.data(), static_cast<uint32_t>(name.size()),
+                          create_options_, &process_, &root_vmar_),
+      ZX_OK);
 
   ASSERT_EQ(zx::thread::create(this->process(), name.data(), static_cast<uint32_t>(name.size()), 0,
                                &thread_),
@@ -155,25 +157,40 @@ void LdLoadZirconProcessTestsBase::ClearLegacyAddressSpaceReservation() {
   }
 }
 
+zx_info_vmar_t LdLoadZirconProcessTestsBase::RootVmarInfo() const {
+  EXPECT_TRUE(root_vmar_);
+  zx_info_vmar_t info;
+  zx_status_t status = root_vmar_.get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr);
+  EXPECT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  if (status != ZX_OK) {
+    info = {};
+  }
+  return info;
+}
+
+// This is only called after CreateProcess(), via some subclass Init().
+// But it's before anything has used the root VMAR for anything.
 void LdLoadZirconProcessTestsBase::LegacyAddressSpaceReservation() {
   ASSERT_FALSE(legacy_reserve_vmar_) << "called twice??";
 
-  // This is only called after CreateProcess(), via some subclass Init().
-  // But it's before anything has used the root VMAR for anything.
-  ASSERT_TRUE(root_vmar_);
-
-  zx_info_vmar_t info;
-  zx_status_t status = root_vmar_.get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  zx_info_vmar_t info = RootVmarInfo();
 
   // TODO(https://fxbug.dev/42099306): Match the system program loader
   // (//src/lib/process_builder) legacy behavior: reserve the lower half of the
   // full address space, not just half of the VMAR length; (base+len)
   // represents the full address space.
   const uint64_t page_size = zx_system_get_page_size();
-  const uint64_t size = ((((info.base + info.len) / 2) + page_size - 1) & -page_size) - info.base;
+  const uint64_t top_half_start = ((((info.base + info.len) / 2) + page_size - 1) & -page_size);
+  if (info.base >= top_half_start) {
+    //  Punt if the root VMAR actually starts much higher up, as in a
+    // ZX_PROCESS_SHARED process.
+    return;
+  }
+
+  const uint64_t size = top_half_start - info.base;
   uintptr_t reserve_base;
-  status = root_vmar_.allocate(ZX_VM_SPECIFIC, 0, size, &legacy_reserve_vmar_, &reserve_base);
+  zx_status_t status =
+      root_vmar_.allocate(ZX_VM_SPECIFIC, 0, size, &legacy_reserve_vmar_, &reserve_base);
   ASSERT_EQ(status, ZX_OK) << "zx_vmar_allocate " << std::hex << std::showbase << size << " at 0 "
                            << zx_status_get_string(status) << " vs root base=" << info.base
                            << " len=" << info.len;

@@ -31,8 +31,10 @@ using TestTypes = ::testing::Types<
 // TODO(https://fxbug.dev/479521328): LdStartupSpawnProcessTests is disabled on
 // Fuchsia due to stack size issues.
 #ifdef __Fuchsia__
-    ld::testing::LdStartupCreateProcessTests<>,  //
-    ld::testing::LdRemoteProcessTests,
+    ld::testing::LdStartupCreateProcessTests<>,        //
+    ld::testing::LdStartupCreateSharedProcessTests<>,  //
+    ld::testing::LdRemoteProcessTests,                 //
+    ld::testing::LdRemoteSharedProcessTests,
 #else
     ld::testing::LdStartupSpawnProcessTests,
 #endif

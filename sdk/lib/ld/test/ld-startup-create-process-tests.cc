@@ -17,6 +17,7 @@ void LdStartupCreateProcessTestsBase::Init(std::initializer_list<std::string_vie
 
   std::string_view name = process_name();
   ASSERT_NO_FATAL_FAILURE(CreateProcess());
+  ASSERT_NO_FATAL_FAILURE(LegacyAddressSpaceReservation());
 
   // Start packing the bootstrap message for the startup dynamic linker.
   // The packing will be completed in Run.

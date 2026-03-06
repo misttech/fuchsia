@@ -209,6 +209,13 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
   zx::vmo stub_ld_vmo_;
 };
 
+// Just the same, but create the process with the ZX_PROCESS_SHARED flag so
+// that its root VMAR will be the "top half only" VMAR.
+class LdRemoteSharedProcessTests : public LdRemoteProcessTests {
+ public:
+  LdRemoteSharedProcessTests() { this->set_create_options(ZX_PROCESS_SHARED); }
+};
+
 }  // namespace ld::testing
 
 #endif  // LIB_LD_TEST_LD_REMOTE_PROCESS_TESTS_H_
