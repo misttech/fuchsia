@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/common/scoped_temp_file.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 
 namespace zxdb {
 
@@ -111,6 +112,22 @@ TEST(FileUtil, PathRelativeTo) {
   EXPECT_EQ("../def", PathRelativeTo("abc/def", "abc/ghi"));
   EXPECT_EQ("def", PathRelativeTo("abc/def", "abc"));
   EXPECT_EQ("abc/def", PathRelativeTo("abc/def", "."));
+}
+
+TEST(FileUtil, ExpandAndNormalizePath) {
+  ScopedTestEnv env;
+  env.Set("HOME", "/home/user_name");
+
+  EXPECT_EQ("/home/user_name/file.txt", *ExpandAndNormalizePath("~/file.txt"));
+  EXPECT_EQ("/home/user_name/file.txt", *ExpandAndNormalizePath("$HOME/file.txt"));
+  auto user_name = ExtractLastFileComponent("/home/user_name");
+
+  EXPECT_EQ("/home/user_name/file.txt", *ExpandAndNormalizePath("/home/user_name/./file.txt"));
+  EXPECT_EQ("/home/user_name/file.txt",
+            *ExpandAndNormalizePath("/home/user_name/../" + std::string(user_name) + "/file.txt"));
+
+  // We don't support ~username
+  EXPECT_FALSE(ExpandAndNormalizePath("~user_name/file.txt"));
 }
 
 }  // namespace zxdb

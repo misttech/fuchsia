@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/client/setting_schema.h"
+#include "src/developer/debug/zxdb/client/setting_schema_definition.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 
 namespace zxdb {
 
@@ -23,10 +25,34 @@ fxl::RefPtr<SettingSchema> GetSchema() {
   schema->AddBool("bool", "bool_option", true);
   schema->AddInt("int", "int_option", kDefaultInt);
   schema->AddString("string", "string_option", kDefaultString);
+  schema->AddString(ClientSettings::System::kSymbolCache, "symbol-cache_option", kDefaultString);
   if (!schema->AddList("list", "list_option", DefaultList())) {
     FX_NOTREACHED() << "Schema should be valid!";
     return nullptr;
   }
+
+  if (!schema->AddList(ClientSettings::System::kSymbolIndexFiles, "symbol-index-files_option",
+                       DefaultList())) {
+    FX_NOTREACHED() << "Schema should be valid!";
+    return nullptr;
+  }
+  if (!schema->AddList(ClientSettings::System::kSymbolPaths, "symbol-paths_option",
+                       DefaultList())) {
+    FX_NOTREACHED() << "Schema should be valid!";
+    return nullptr;
+  }
+
+  if (!schema->AddList(ClientSettings::System::kBuildIdDirs, "build-id-dirs_option",
+                       DefaultList())) {
+    FX_NOTREACHED() << "Schema should be valid!";
+    return nullptr;
+  }
+
+  if (!schema->AddList(ClientSettings::System::kIdsTxts, "ids-txts_option", DefaultList())) {
+    FX_NOTREACHED() << "Schema should be valid!";
+    return nullptr;
+  }
+
   if (!schema->AddList("list_with_options", "list_with_options", {}, DefaultList())) {
     FX_NOTREACHED() << "Schema should be valid!";
     return nullptr;
@@ -257,6 +283,71 @@ TEST(MapSettingStore, Notifications) {
 
   EXPECT_EQ(observer.notifications().size(), 4u);
   EXPECT_EQ(observer2.notifications().size(), 2u);
+}
+
+TEST(MapSettingStore, TildeExpansion) {
+  MapSettingStore store(GetSchema(), nullptr);
+  Err err;
+
+  ScopedTestEnv env;
+  env.Set("HOME", "/home/user_name");
+
+  err = store.SetString(ClientSettings::System::kSymbolCache, "~/the_symbol_cache");
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetString(ClientSettings::System::kSymbolCache),
+            "/home/user_name/the_symbol_cache");
+
+  err = store.SetString(ClientSettings::System::kSymbolCache, "$HOME/the_symbol_cache");
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetString(ClientSettings::System::kSymbolCache),
+            "/home/user_name/the_symbol_cache");
+
+  err = store.SetList(ClientSettings::System::kBuildIdDirs,
+                      std::vector<std::string>{"~/the_build_dirs"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kBuildIdDirs),
+            std::vector<std::string>{"/home/user_name/the_build_dirs"});
+
+  err = store.SetList(ClientSettings::System::kBuildIdDirs,
+                      std::vector<std::string>{"$HOME/the_build_dirs"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kBuildIdDirs),
+            std::vector<std::string>{"/home/user_name/the_build_dirs"});
+
+  err = store.SetList(ClientSettings::System::kSymbolIndexFiles,
+                      std::vector<std::string>{"~/the_symbol_index_files"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kSymbolIndexFiles),
+            std::vector<std::string>{"/home/user_name/the_symbol_index_files"});
+
+  err = store.SetList(ClientSettings::System::kSymbolIndexFiles,
+                      std::vector<std::string>{"$HOME/the_symbol_index_files"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kSymbolIndexFiles),
+            std::vector<std::string>{"/home/user_name/the_symbol_index_files"});
+
+  err = store.SetList(ClientSettings::System::kSymbolPaths,
+                      std::vector<std::string>{"~/the_symbol_paths"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kSymbolPaths),
+            std::vector<std::string>{"/home/user_name/the_symbol_paths"});
+
+  err = store.SetList(ClientSettings::System::kSymbolPaths,
+                      std::vector<std::string>{"$HOME/the_symbol_paths"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kSymbolPaths),
+            std::vector<std::string>{"/home/user_name/the_symbol_paths"});
+
+  err = store.SetList(ClientSettings::System::kIdsTxts, std::vector<std::string>{"~/the_ids_txts"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kIdsTxts),
+            std::vector<std::string>{"/home/user_name/the_ids_txts"});
+
+  err = store.SetList(ClientSettings::System::kIdsTxts,
+                      std::vector<std::string>{"$HOME/the_ids_txts"});
+  EXPECT_FALSE(err.has_error()) << err.msg();
+  EXPECT_EQ(store.GetList(ClientSettings::System::kIdsTxts),
+            std::vector<std::string>{"/home/user_name/the_ids_txts"});
 }
 
 }  // namespace zxdb

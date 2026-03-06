@@ -5,10 +5,17 @@
 #include "src/developer/debug/zxdb/common/file_util.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <vector>
 
+#include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/string_util.h"
 
 namespace zxdb {
@@ -98,6 +105,39 @@ std::filesystem::path PathRelativeTo(const std::filesystem::path& path,
     path_it++;
   }
   return res;
+}
+
+std::optional<std::string> ExpandAndNormalizePath(const std::string& path) {
+  // Remove all the ".." and "." components from the path.
+  std::string normalized_path = NormalizePath(path);
+  std::filesystem::path p(normalized_path);
+  if (p.is_absolute() || p.empty()) {
+    return normalized_path;
+  }
+
+  std::filesystem::path expand;
+
+  // Support "~", "~/", $HOME, and "$HOME/".
+  if (PathStartsWith(p, "~") || PathStartsWith(p, "$HOME")) {
+    const char* home = getenv("HOME");
+    if (home) {
+      expand = std::filesystem::path(home);
+      // Collect the rest of the path.
+      auto it = p.begin();
+      for (++it; it != p.end(); ++it) {
+        expand /= *it;
+      }
+    } else {
+      LOGS(Warn) << "HOME environment variable is not set.";
+      return std::nullopt;
+    }
+  } else if (normalized_path.starts_with('~')) {
+    LOGS(Warn) << "~username is not supported yet.";
+    return std::nullopt;
+  } else {  // Start of a relative path.
+    expand = std::filesystem::absolute(normalized_path);
+  }
+  return expand.string();
 }
 
 }  // namespace zxdb

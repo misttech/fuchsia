@@ -93,6 +93,7 @@ source_set("tests") {
 
   deps = [
     ":common",
+    ":test_support",
     "//src/lib/files",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",

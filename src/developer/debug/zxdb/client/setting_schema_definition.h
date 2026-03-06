@@ -161,6 +161,9 @@ struct ClientSettings {
   };
 };
 
+// Returns true if the given key is a path-related setting.
+bool IsPathSetting(const std::string& key);
+
 // Schemas need to be initialized together because some schemas can add settings to other schemas.
 // If we made it completely lazy, when the first thread is spun up, it could make new settings
 // appear which is not what the user would expect.

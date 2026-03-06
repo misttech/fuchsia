@@ -8,6 +8,8 @@
 
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/zxdb/client/setting_schema.h"
+#include "src/developer/debug/zxdb/client/setting_schema_definition.h"
+#include "src/developer/debug/zxdb/common/file_util.h"
 
 namespace zxdb {
 
@@ -89,6 +91,22 @@ Err SettingStore::SetList(const std::string& key, std::vector<std::string> list)
 Err SettingStore::SetValue(const std::string& key, SettingValue value) {
   if (Err err = schema_->ValidateSetting(key, value); err.has_error())
     return err;
+
+  // Tilde expansion (~/), ~<user> and $HOME are not supported by file streams.
+  // Handle expansion here for path-related settings.
+  if (IsPathSetting(key)) {
+    if (value.is_list()) {
+      const auto& list = value.get_list();
+      std::vector<std::string> new_list;
+      new_list.reserve(list.size());
+      for (const auto& path : list) {
+        new_list.push_back(ExpandAndNormalizePath(path).value_or(path));
+      }
+      value.set_list(std::move(new_list));
+    } else if (value.is_string()) {
+      value.set_string(ExpandAndNormalizePath(value.get_string()).value_or(value.get_string()));
+    }
+  }
   return SetStorageValue(key, value);
 }
 

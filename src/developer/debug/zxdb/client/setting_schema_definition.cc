@@ -25,5 +25,12 @@ void InitializeSchemas() {
   Target::GetSchema();
   Thread::GetSchema();
 }
+// Returns true if the given key is a path-related setting.
+bool IsPathSetting(const std::string& key) {
+  return key == ClientSettings::System::kSymbolCache ||
+         key == ClientSettings::System::kSymbolIndexFiles ||
+         key == ClientSettings::System::kSymbolPaths ||
+         key == ClientSettings::System::kBuildIdDirs || key == ClientSettings::System::kIdsTxts;
+}
 
 }  // namespace zxdb

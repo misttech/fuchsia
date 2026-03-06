@@ -7,6 +7,7 @@
 
 #include <ctime>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -51,6 +52,11 @@ bool PathStartsWith(const std::filesystem::path& path, const std::filesystem::pa
 // Compute the relative path from base. Both inputs must be absolute.
 std::filesystem::path PathRelativeTo(const std::filesystem::path& path,
                                      const std::filesystem::path& base);
+
+// Returns the expanded and normalized path. It handles the following cases:
+// - "~" and "$HOME" are expanded to the home directory.
+// - "." and ".." components are resolved.
+std::optional<std::string> ExpandAndNormalizePath(const std::string& path);
 
 }  // namespace zxdb
 
