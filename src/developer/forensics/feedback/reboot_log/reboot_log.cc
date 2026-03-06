@@ -96,7 +96,6 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
   // We expect the format to be:
   //
   // ZIRCON REBOOT REASON (<SOME REASON>)
-  // <empty>
   // UPTIME (ms)
   // <SOME UPTIME>
   // RUNTIME (ms)
@@ -106,7 +105,7 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
   if (lines.size() < 3) {
     FX_LOGS(ERROR) << "Zircon reboot log is missing uptime information";
   } else if (lines[1] != "UPTIME (ms)") {
-    FX_LOGS(ERROR) << "'UPTIME(ms)' not present, found '" << lines[1] << "'";
+    FX_LOGS(ERROR) << "'UPTIME (ms)' not present, found '" << lines[1] << "'";
   } else {
     *uptime = ExtractTime(lines[2]);
   }
@@ -114,7 +113,7 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
   if (lines.size() < 5) {
     FX_LOGS(ERROR) << "Zircon reboot log is missing runtime information";
   } else if (lines[3] != "RUNTIME (ms)") {
-    FX_LOGS(ERROR) << "'RUNTIME(ms)' not present, found '" << lines[3] << "'";
+    FX_LOGS(ERROR) << "'RUNTIME (ms)' not present, found '" << lines[3] << "'";
   } else {
     *runtime = ExtractTime(lines[4]);
   }
