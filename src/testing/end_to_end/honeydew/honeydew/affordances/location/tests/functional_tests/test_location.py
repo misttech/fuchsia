@@ -5,7 +5,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
@@ -16,19 +16,21 @@ TIMEOUT_COUNTRY_CODE_SEC = 10.0
 """Seconds to wait for the country code to propagate to WLAN PHYs."""
 
 
-class LocationTests(fuchsia_base_test.FuchsiaBaseTest):
+class LocationTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Location affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def test_set_region(self) -> None:
+    async def test_set_region(self) -> None:
         """Verify set_region() works on device."""
-        self.device.location.set_region(CountryCode.UNITED_STATES_OF_AMERICA)
+        await self.device.location.set_region(
+            CountryCode.UNITED_STATES_OF_AMERICA
+        )
 
-    def test_set_region_fails(self) -> None:
+    async def test_set_region_fails(self) -> None:
         """Verify set_region() fails on device with incorrect args."""
 
         # Do not expect an error. wlancfg's regulatory_manager does not
@@ -37,7 +39,7 @@ class LocationTests(fuchsia_base_test.FuchsiaBaseTest):
         #
         # TODO(http://b/370600007): Replace with assert_raises once there is
         # error checking in set_region.
-        self.device.location.set_region("??")
+        await self.device.location.set_region("??")
 
 
 if __name__ == "__main__":
