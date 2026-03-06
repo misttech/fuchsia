@@ -213,6 +213,9 @@ class AsyncFuchsiaDevice(
         self._outer = _outer
         self._device_info: custom_types.DeviceInfo = device_info
 
+        # Track if the device was created with a statically provided IP.
+        self._is_static_ip: bool = device_info.ip_port is not None
+
         self._ffx_config_data: FfxConfigData = ffx_config_data
 
         self._on_device_boot_fns: list[
@@ -1199,7 +1202,7 @@ class AsyncFuchsiaDevice(
         """
         _LOGGER.info("Waiting for %s to go online...", self.device_name)
         try:
-            if self._device_info.ip_port:
+            if self._is_static_ip:
                 # If the device was specified as an address,
                 # just continue to use that address. This is the
                 # norm when run by builders in Infra, because they

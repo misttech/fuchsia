@@ -1534,6 +1534,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             ip_port=None,
             serial_socket=None,
         )
+        self.fd_fc_obj._is_static_ip = False
         await self.fd_fc_obj.wait_for_online()
 
         mock_ffx_wait_for_rcs_connection.assert_called_with(
