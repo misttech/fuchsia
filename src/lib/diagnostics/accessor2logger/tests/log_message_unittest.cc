@@ -4,6 +4,7 @@
 
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
+#include <lib/stdcompat/string_view.h>
 
 #include <cinttypes>
 #include <optional>
@@ -106,9 +107,10 @@ TEST(LogMessage, MonikerStringification) {
                         static_cast<int>((message.time.get() / 1000000ULL) % 1000ULL), message.pid,
                         message.tid, fxl::JoinStrings(message.tags, ", ").c_str(),
                         SeverityToString(message.severity).c_str(), message.msg.c_str());
-  ASSERT_TRUE(encoded_message.find("[test_moniker] INFO: "
-                                   "[src/diagnostics/lib/cpp-log-decoder/test.cc(24)] test "
-                                   "message user property=5.2") != std::string::npos);
+  ASSERT_TRUE(cpp23::contains(encoded_message,
+                              "[test_moniker] INFO: "
+                              "[src/diagnostics/lib/cpp-log-decoder/test.cc(24)] test "
+                              "message user property=5.2"));
 }
 
 TEST(LogMessage, LegacyHostEncoding) {
@@ -163,9 +165,10 @@ TEST(LogMessage, LegacyHostEncoding) {
                         static_cast<int>((message.time.get() / 1000000ULL) % 1000ULL), message.pid,
                         message.tid, fxl::JoinStrings(message.tags, ", ").c_str(),
                         SeverityToString(message.severity).c_str(), message.msg.c_str());
-  ASSERT_TRUE(encoded_message.find("[test_moniker, some tag, some other tag] INFO: "
-                                   "[src/diagnostics/lib/cpp-log-decoder/test.cc(24)] test "
-                                   "message user property=5.2") != std::string::npos);
+  ASSERT_TRUE(cpp23::contains(encoded_message,
+                              "[test_moniker, some tag, some other tag] INFO: "
+                              "[src/diagnostics/lib/cpp-log-decoder/test.cc(24)] test "
+                              "message user property=5.2"));
 }
 
 struct ValidationTestCase {
