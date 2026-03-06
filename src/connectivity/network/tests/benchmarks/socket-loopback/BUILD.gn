@@ -223,6 +223,10 @@ if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
       "//src/starnix/kernel:starnix_kernel_package",
       "//src/connectivity/network:netstack2",
     ]
+
+    test_specs = {
+      package_resolution_timeout_secs = 660
+    }
   }
 
   fuchsia_package("netstack3") {
@@ -242,6 +246,10 @@ if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
       "//src/starnix/kernel:starnix_kernel_package",
       ":netstack3",
     ]
+
+    test_specs = {
+      package_resolution_timeout_secs = 660
+    }
   }
 
   fuchsia_test_package(
@@ -255,6 +263,10 @@ if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
       "//src/starnix/kernel:starnix_kernel_package",
       "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg",
     ]
+
+    test_specs = {
+      package_resolution_timeout_secs = 660
+    }
   }
 
   starnix_benchmarks = [
