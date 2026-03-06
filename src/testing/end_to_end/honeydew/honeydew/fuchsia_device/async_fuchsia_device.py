@@ -612,16 +612,16 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def bluetooth_gap(self) -> gap.AsyncGap:
+    def bluetooth_gap(self) -> gap.Gap:
         """Returns a Bluetooth Gap affordance object.
 
         Returns:
             Bluetooth Gap object
         """
-        return gap_using_fc.AsyncGapUsingFc(
+        return gap_using_fc.GapUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
+            reboot_affordance=self.as_sync(),
         )
 
     @properties.Affordance

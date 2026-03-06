@@ -663,7 +663,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_avrcp_init.assert_called_once()
 
     @mock.patch.object(
-        gap_using_fc.AsyncGapUsingFc,
+        gap_using_fc.GapUsingFc,
         "__init__",
         autospec=True,
         return_value=None,
@@ -673,13 +673,13 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         Fuchsia-Controller based bluetooth_gap affordance."""
         self.assertIsInstance(
             self.fd_fc_obj.bluetooth_gap,
-            gap_using_fc.AsyncGapUsingFc,
+            gap_using_fc.GapUsingFc,
         )
         bt_gap_fc_init.assert_called_once_with(
             self.fd_fc_obj.bluetooth_gap,
             device_name=self.fd_fc_obj._device_info.name,
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
-            reboot_affordance=self.fd_fc_obj,
+            reboot_affordance=self.fd_fc_obj.as_sync(),
         )
 
     @mock.patch.object(
