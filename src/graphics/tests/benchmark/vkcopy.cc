@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <chrono>
 #include <vector>
@@ -28,7 +29,8 @@ constexpr uint32_t kTimestampEnd = 1;
 
 class VkCopyTest {
  public:
-  explicit VkCopyTest(uint32_t buffer_size) : buffer_size_(buffer_size) {}
+  explicit VkCopyTest(uint32_t buffer_size, bool time_alloc = false)
+      : buffer_size_(buffer_size), time_alloc_(time_alloc) {}
   virtual ~VkCopyTest();
 
   bool Initialize();
@@ -41,6 +43,7 @@ class VkCopyTest {
 
   bool is_initialized_ = false;
   uint32_t buffer_size_;
+  bool time_alloc_ = false;
 
   std::unique_ptr<VulkanContext> ctx_;
 
@@ -160,12 +163,24 @@ bool VkCopyTest::InitBuffers(uint32_t buffer_size) {
     alloc_info.allocationSize = buffer_size;
     alloc_info.memoryTypeIndex = memory_type;
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+    if (time_alloc_) {
+      start_time = std::chrono::high_resolution_clock::now();
+    }
+
     auto rvt_memory = device->allocateMemoryUnique(alloc_info);
     if (vk::Result::eSuccess != rvt_memory.result) {
       RTN_MSG(false, "VK Error: 0x%x - Create buffer memory.\n",
               static_cast<unsigned int>(rvt_memory.result));
     }
     buffer.memory = std::move(rvt_memory.value);
+
+    if (time_alloc_) {
+      auto end_time = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+      printf("Time-alloc: allocate device memory %u bytes took %llu us\n", buffer_size,
+             duration.count());
+    }
 
     void *addr;
     rv = device->mapMemory(*(buffer.memory), 0 /* offset */, buffer_size, vk::MemoryMapFlags(),
@@ -354,11 +369,20 @@ void VkCopyTest::Elapsed(uint32_t kBufferSize, uint32_t kIterations) {
   fflush(stdout);
 }
 
-int main() {
-  constexpr uint32_t kBufferSize = 6 * kMB;
+int main(int argc, char **argv) {
+  uint32_t buffer_size = 6 * kMB;
   constexpr uint32_t kIterations = 1000;
 
-  VkCopyTest app(kBufferSize);
+  bool time_alloc = false;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--time-alloc") == 0) {
+      time_alloc = true;
+    } else if (strncmp(argv[i], "--mb=", 5) == 0) {
+      buffer_size = atoi(argv[i] + 5) * kMB;
+    }
+  }
+
+  VkCopyTest app(buffer_size, time_alloc);
 
   if (!app.Initialize()) {
     RTN_MSG(EXIT_FAILURE, "Could not initialize app.\n");
@@ -368,7 +392,7 @@ int main() {
       "Copying    : %.2f MB\n"
       "Iterations : %u\n"
       "...\n",
-      static_cast<double>(kBufferSize) / kMB,  //
+      static_cast<double>(buffer_size) / kMB,  //
       kIterations);
   fflush(stdout);
 
@@ -382,7 +406,7 @@ int main() {
     RTN_MSG(EXIT_FAILURE, "Validate failed.\n");
   }
 
-  app.Elapsed(kBufferSize, kIterations);
+  app.Elapsed(buffer_size, kIterations);
 
   return EXIT_SUCCESS;
 }
