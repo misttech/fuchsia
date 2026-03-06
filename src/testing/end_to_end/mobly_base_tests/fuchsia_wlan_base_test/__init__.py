@@ -5,11 +5,8 @@
 import logging
 import time
 
-import fuchsia_base_test
-from honeydew.affordances.connectivity.netstack.netstack import (
-    AsyncNetstack,
-    Netstack,
-)
+from fuchsia_base_test import fuchsia_base_test
+from honeydew.affordances.connectivity.netstack.netstack import Netstack
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
     PortClass,
@@ -20,11 +17,11 @@ from mobly import signals
 INTERFACE_TIMEOUT = 30
 
 
-class FuchsiaWlanBaseTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Wlan base test class."""
 
     async def wait_for_interface(
-        self, netstack: AsyncNetstack, port_class: PortClass
+        self, netstack: Netstack, port_class: PortClass
     ) -> None:
         """Wait for an interface to become available.
 
@@ -38,7 +35,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = await netstack.list_interfaces()
+            interfaces = await netstack.as_async().list_interfaces()
             for interface in interfaces:
                 if interface.port_class is port_class:
                     return

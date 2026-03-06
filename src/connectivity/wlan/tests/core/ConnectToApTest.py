@@ -4,6 +4,7 @@
 """
 Tests for connecting to an access point.
 """
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,13 @@ from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import Ie, read_ssid
+from fuchsia_controller_py.wrappers import asyncmethod
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 
 
 class ConnectToApTest(base_test.ConnectionBaseTestClass):
-    async def pre_run(self) -> None:
+    def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
             name_func=self.name_func,
@@ -47,6 +49,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
     def name_func(self, security: Security) -> str:
         return f"test_successfully_connect_to_ap_{security.security_mode}"
 
+    @asyncmethod
     async def _test_logic(self, security: Security) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
 
@@ -92,7 +95,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 break
         assert bss_description is not None, f"Failed to find SSID: {ssid}"
 
-        async with ConnectTransactionEventHandler() as ctx:
+        with ConnectTransactionEventHandler(
+            loop=asyncio.get_running_loop()
+        ) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

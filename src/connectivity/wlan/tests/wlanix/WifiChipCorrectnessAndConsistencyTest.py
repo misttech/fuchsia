@@ -6,14 +6,19 @@ Tests of various (mostly hardcoded) properties returned from a WifiChip.
 """
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_async_extension
 from mobly import test_runner
 from mobly.asserts import assert_equal
 from wlanix_testing import base_test
 
 
 class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
-    async def test_chip_id_match(self) -> None:
-        response = (await self.wifi_chip_proxy.get_id()).unwrap()
+    def test_chip_id_match(self) -> None:
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_id())
+            .unwrap()
+        )
         assert_equal(
             response.id_,
             self.chip_id,
@@ -21,19 +26,27 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
         )
 
     # TODO(https://fxbug.dev/366028666): GetMode is hardcoded.
-    async def test_chip_mode_zeroed(
+    def test_chip_mode_zeroed(
         self,
     ) -> None:
-        response = (await self.wifi_chip_proxy.get_mode()).unwrap()
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_mode())
+            .unwrap()
+        )
         assert_equal(
             response.mode, 0, "WifiChip should have returned a hardcoded 0 mode"
         )
 
     # TODO(https://fxbug.dev/366027488): GetAvailableModes is hardcoded.
-    async def test_chip_available_modes_as_hardcoded(
+    def test_chip_available_modes_as_hardcoded(
         self,
     ) -> None:
-        response = (await self.wifi_chip_proxy.get_available_modes()).unwrap()
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_available_modes())
+            .unwrap()
+        )
         assert_equal(
             response,
             fidl_wlanix.WifiChipGetAvailableModesResponse(
@@ -59,16 +72,24 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
         )
 
     # TODO(https://fxbug.dev/366027491): GetCapabilities is hardcoded.
-    async def test_chip_capabilities_zeroed(self) -> None:
-        response = (await self.wifi_chip_proxy.get_capabilities()).unwrap()
+    def test_chip_capabilities_zeroed(self) -> None:
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_capabilities())
+            .unwrap()
+        )
         assert_equal(
             response.capabilities_mask,
             0,
             "WifiChip should have returned a hardcoded 0 capabilities_mask",
         )
 
-    async def test_chip_iface_names_empty(self) -> None:
-        response = (await self.wifi_chip_proxy.get_sta_iface_names()).unwrap()
+    def test_chip_iface_names_empty(self) -> None:
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
+            .unwrap()
+        )
         assert response.iface_names is not None
         assert_equal(
             len(response.iface_names),

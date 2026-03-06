@@ -9,13 +9,14 @@ import struct
 from typing import Any, Sequence
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-import fuchsia_base_test
+import fuchsia_async_extension
 from antlion import controllers
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.packet_capture import PacketCapture
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.wifi import wifi_test_utils as wutils
+from fuchsia_base_test import fuchsia_base_test
 from fuchsia_controller_py import Channel
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
@@ -100,11 +101,11 @@ def verify_new_interface_response(
     )
 
 
-class WlanixBaseTestClass(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class WlanixBaseTestClass(fuchsia_base_test.FuchsiaBaseTest):
     wlanix_proxy: fidl_wlanix.WlanixClient
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def setup_class(self) -> None:
+        super().setup_class()
         if len(self.fuchsia_devices) != 1:
             raise signals.TestAbortClass(
                 "Requires exactly one Fuchsia device",
@@ -132,14 +133,18 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
         super().__init__(*args, **kwargs)
         self.allow_ifaces_between_tests = allow_ifaces_between_tests
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def setup_class(self) -> None:
+        super().setup_class()
 
         proxy, server = Channel.create()
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
-        response = (await wifi_proxy.get_chip_ids()).unwrap()
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(wifi_proxy.get_chip_ids())
+            .unwrap()
+        )
         assert (
             response.chip_ids is not None
         ), "Wifi.GetChipIds() response is missing a chip_ids value"
@@ -151,16 +156,18 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
 
         self.chip_id = response.chip_ids[0]
         proxy, server = Channel.create()
-        (
-            await wifi_proxy.get_chip(chip_id=self.chip_id, chip=server.take())
+        fuchsia_async_extension.get_loop().run_until_complete(
+            wifi_proxy.get_chip(chip_id=self.chip_id, chip=server.take())
         ).unwrap()
         self.wifi_chip_proxy = fidl_wlanix.WifiChipClient(proxy)
 
-    async def teardown_test(self) -> None:
+    def teardown_test(self) -> None:
         if not self.allow_ifaces_between_tests:
             response = (
-                await self.wifi_chip_proxy.get_sta_iface_names()
-            ).unwrap()
+                fuchsia_async_extension.get_loop()
+                .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
+                .unwrap()
+            )
             assert (
                 response.iface_names is not None
             ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
@@ -169,7 +176,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
                 0,
                 "Every test should end with no ifaces.",
             )
-        await super().teardown_test()
+        super().teardown_test()
 
 
 class IfaceBaseTestClass(WifiChipBaseTestClass):
@@ -180,12 +187,14 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, allow_ifaces_between_tests=True, **kwargs)
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def setup_class(self) -> None:
+        super().setup_class()
 
         get_sta_iface_names_response = (
-            await self.wifi_chip_proxy.get_sta_iface_names()
-        ).unwrap()
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
+            .unwrap()
+        )
         assert (
             get_sta_iface_names_response.iface_names is not None
         ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
@@ -196,14 +205,16 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         )
 
         proxy, server = Channel.create()
-        (
-            await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()
         self.wifi_sta_iface_proxy = fidl_wlanix.WifiStaIfaceClient(proxy)
 
         get_name_response = (
-            await self.wifi_sta_iface_proxy.get_name()
-        ).unwrap()
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(self.wifi_sta_iface_proxy.get_name())
+            .unwrap()
+        )
         assert (
             get_name_response.iface_name is not None
         ), "WifiStaIface.GetName() response is missing an iface_name value"
@@ -226,25 +237,28 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
             proxy
         )
 
-    async def teardown_class(self) -> None:
-        (
-            await self.wifi_chip_proxy.remove_sta_iface(
-                iface_name=self.iface_name
-            )
-        ).unwrap()
+    def teardown_class(self) -> None:
+        async def destroy_iface() -> None:
+            (
+                await self.wifi_chip_proxy.remove_sta_iface(
+                    iface_name=self.iface_name
+                )
+            ).unwrap()
 
-        get_sta_iface_names_response = (
-            await self.wifi_chip_proxy.get_sta_iface_names()
-        ).unwrap()
-        assert (
-            get_sta_iface_names_response.iface_names is not None
-        ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
-        assert_equal(
-            len(get_sta_iface_names_response.iface_names),
-            0,
-            "WifiChip should no longer contain the iface just removed",
-        )
-        await super().teardown_class()
+            get_sta_iface_names_response = (
+                await self.wifi_chip_proxy.get_sta_iface_names()
+            ).unwrap()
+            assert (
+                get_sta_iface_names_response.iface_names is not None
+            ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
+            assert_equal(
+                len(get_sta_iface_names_response.iface_names),
+                0,
+                "WifiChip should no longer contain the iface just removed",
+            )
+
+        fuchsia_async_extension.get_loop().run_until_complete(destroy_iface())
+        super().teardown_class()
 
 
 class ConnectionBaseTestClass(IfaceBaseTestClass):
@@ -260,28 +274,28 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
             raise RuntimeError("Connection tests require an access point.")
         return self.__access_point
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def setup_class(self) -> None:
+        super().setup_class()
         self.pdu_devices = None
         self.packet_capture = None
         self.packet_logger = None
         self.packet_log_pid = {}
 
-        access_points = await self.register_controller(
+        access_points = self.register_controller(
             controllers.access_point, min_number=1
         )
         if access_points is None or len(access_points) == 0:
             raise signals.TestAbortClass("Requires at least one access point")
         self.__access_point = access_points[0]
 
-        self.pdu_devices = await self.register_controller(
+        self.pdu_devices = self.register_controller(
             controllers.pdu,
             # TODO(https://fxbug.dev/369159708) This should be required, but it inhibits
             # local testing when a PDU is not present.
             required=False,
         )
 
-        self.packet_capture = await self.register_controller(
+        self.packet_capture = self.register_controller(
             controllers.packet_capture, required=False
         )
         if self.packet_capture and len(self.packet_capture) > 0:
@@ -295,8 +309,8 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
 
         self.access_point().stop_all_aps()
 
-    async def setup_test(self) -> None:
-        await super().setup_test()
+    def setup_test(self) -> None:
+        super().setup_test()
 
         # Start a packet capture that can be used for debugging tests upon success or failure.
         if self.packet_logger:
@@ -304,7 +318,7 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
                 self.packet_logger, "dual", self.current_test_info.name
             )
 
-    async def teardown_test(self) -> None:
+    def teardown_test(self) -> None:
         # Save a packet capture for debugging
         if self.packet_logger and self.packet_log_pid:
             wutils.stop_pcap(
@@ -316,17 +330,19 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         self.access_point().download_ap_logs(self.log_path)
         self.access_point().stop_all_aps()
         # Ensure that our supplicant is fully disconnected.
-        await self.supplicant_sta_iface_proxy.disconnect()
-        await super().teardown_test()
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.supplicant_sta_iface_proxy.disconnect()
+        )
+        super().teardown_test()
 
-    async def on_fail(self, record: TestResultRecord) -> None:
+    def on_fail(self, record: TestResultRecord) -> None:
         """A function that is executed upon a test failure.
 
         Args:
         record: A copy of the test record for this test, containing all information of
             the test execution including exception objects.
         """
-        await super().on_fail(record)
+        super().on_fail(record)
         # Save a packet capture for debugging
         if self.packet_logger and self.packet_log_pid:
             wutils.stop_pcap(

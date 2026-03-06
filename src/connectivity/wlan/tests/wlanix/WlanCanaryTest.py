@@ -8,17 +8,19 @@ wlandevicemonitor is not running.
 
 import logging
 
+from fuchsia_base_test import fuchsia_base_test
+
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_device_service as fidl_wlan_device_service
-import fuchsia_base_test
+from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
 
 
-class WlanCanaryTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
-    async def setup_class(self) -> None:
-        await super().setup_class()
+class WlanCanaryTest(AsyncAdapter, fuchsia_base_test.FuchsiaBaseTest):
+    def setup_class(self) -> None:
+        super().setup_class()
         self.wlan_device_monitor_proxy = (
             fidl_wlan_device_service.DeviceMonitorClient(
                 self.fuchsia_devices[0].fuchsia_controller.connect_device_proxy(
@@ -30,6 +32,7 @@ class WlanCanaryTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             )
         )
 
+    @asyncmethod
     async def test_wlandevicemonitor_is_responsive(self) -> None:
         phy_list = (await self.wlan_device_monitor_proxy.list_phys()).phy_list
         logger.info(f"List of PHY IDs: {phy_list}")
