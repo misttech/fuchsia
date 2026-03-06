@@ -15,17 +15,10 @@ group("tests") {
   }
 }
 
-if (is_linux) {
-  go_library("lib") {
-    testonly = true
-
-    deps = [ "//tools/emulator/emulatortest" ]
-
-    sources = [ "oom_test.go" ]
-  }
-
+if (is_host) {
   go_test("oom_tests") {
-    embed = [ ":lib" ]
+    sources = [ "oom_test.go" ]
+    deps = [ "//tools/emulator/emulatortest" ]
     non_go_deps = [ "//build/images/fuchsia:fuchsia_zbi_for_host_tests" ]
   }
 }

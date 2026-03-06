@@ -5,6 +5,7 @@
 # A template for an action that creates a Fuchsia Go test binary.
 
 import("//build/go/go_build.gni")
+import("//build/go/go_library.gni")
 import("//build/testing/host_test.gni")
 
 # Parameters: same as go_build, along with
@@ -108,12 +109,29 @@ template("go_test") {
     }
   }
 
-  go_build(_go_build_target_name) {
-    test = true
-    output_name = _output_name
+  go_sources = []
+  if (!defined(invoker.embed) && !defined(invoker.gopackages)) {
+    lib_target = "_${target_name}_go_lib"
+    go_library(lib_target) {
+      testonly = true
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "embedsrcs",
+                               "source_dir",
+                               "sources",
+                             ])
+    }
+    embed = [ ":${lib_target}" ]
+  } else {
     if (defined(invoker.sources)) {
       go_sources = invoker.sources
     }
+  }
+
+  go_build(_go_build_target_name) {
+    test = true
+    output_name = _output_name
     forward_variables_from(invoker,
                            "*",
                            [
