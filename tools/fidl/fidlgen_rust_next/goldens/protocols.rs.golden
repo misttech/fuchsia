@@ -3562,7 +3562,7 @@ pub mod channel_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TakeHandle {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TakeHandle {

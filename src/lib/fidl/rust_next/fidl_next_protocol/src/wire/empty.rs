@@ -4,7 +4,10 @@
 
 use core::mem::MaybeUninit;
 
-use fidl_next_codec::{Constrained, Decode, Encode, EncodeError, Slot, ValidationError, Wire};
+use fidl_next_codec::{
+    Constrained, Decode, Encode, EncodeError, FromWire, FromWireRef, IntoNatural, Slot,
+    ValidationError, Wire,
+};
 
 /// The wire type for an empty message body.
 #[derive(Clone, Copy, Debug)]
@@ -61,4 +64,16 @@ unsafe impl<D: ?Sized> Decode<D> for EmptyMessageBody {
     ) -> Result<(), fidl_next_codec::DecodeError> {
         Ok(())
     }
+}
+
+impl FromWire<EmptyMessageBody> for () {
+    fn from_wire(_: EmptyMessageBody) -> Self {}
+}
+
+impl FromWireRef<EmptyMessageBody> for () {
+    fn from_wire_ref(_: &EmptyMessageBody) -> Self {}
+}
+
+impl IntoNatural for EmptyMessageBody {
+    type Natural = ();
 }

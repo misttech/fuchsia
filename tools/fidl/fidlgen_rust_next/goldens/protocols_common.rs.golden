@@ -6152,7 +6152,7 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for NoRequestEmptyResponse {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for NoRequestEmptyResponse {
@@ -6218,7 +6218,7 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for WithRequestEmptyResponse {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for WithRequestEmptyResponse {

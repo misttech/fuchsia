@@ -94,14 +94,14 @@ pub mod {{ module_name }} {
                         {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
                             {{ self.static_wire_type(success) }}
                         {% else %}
-                            ()
+                            ::fidl_next::wire::EmptyMessageBody
                         {% endif %}
                         >
                     {% else %}
                         {% if let Some(response) = method.maybe_response_payload.as_ref() %}
                             {{ self.static_wire_type(response) }}
                         {% else %}
-                            ()
+                            ::fidl_next::wire::EmptyMessageBody
                         {% endif %}
                     {% endif %}
                     ;

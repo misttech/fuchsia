@@ -22084,7 +22084,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
@@ -22809,7 +22809,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
@@ -24098,7 +24098,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
@@ -24758,7 +24758,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
@@ -25753,7 +25753,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
@@ -26988,7 +26988,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ();
+        type Response = ::fidl_next::wire::EmptyMessageBody;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
