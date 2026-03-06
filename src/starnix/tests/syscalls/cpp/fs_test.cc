@@ -87,6 +87,11 @@ TEST(FsTest, FchmodTest) {
 // This test passes non-null arguments and has other quirks that fail under sanitizers.
 #if (!__has_feature(address_sanitizer) && !defined(__arm__))
 TEST(FsTest, DevZeroAndNullQuirks) {
+  // TODO(https://fxbug.dev/317285180) these fail on hosts > kernel 6.1 (e.g. Debian 13+)
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+
   size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGESIZE));
 
   for (const auto path : {"/dev/zero", "/dev/null"}) {

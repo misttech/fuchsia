@@ -123,6 +123,10 @@ TEST_F(MemfdTest, ChmodWithNOEXEC) {
 }
 
 TEST_F(MemfdTest, MapExecutableWithNOEXEC) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "This test does not work on host in CQ";
+  }
+
   auto fd = fbl::unique_fd(
       static_cast<int>(syscall(__NR_memfd_create, "memfd_no_exec", MFD_NOEXEC_SEAL)));
 
