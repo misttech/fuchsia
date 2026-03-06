@@ -8,6 +8,9 @@ use std::pin::{Pin, pin};
 use std::time::Duration;
 
 use cobalt_client::traits::AsEventCode as _;
+use fidl_fuchsia_metrics as fmetrics;
+use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+use fidl_fuchsia_power_internal as fpower;
 use fuchsia_async::Task;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_inspect::Property as _;
@@ -15,10 +18,6 @@ use futures::channel::mpsc;
 use futures::{FutureExt as _, Stream, StreamExt as _};
 use log::{error, info, warn};
 use networking_metrics_registry::networking_metrics_registry as metrics_registry;
-use {
-    fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration,
-    fidl_fuchsia_power_internal as fpower,
-};
 
 const DEFAULT_NETSTACK: NetstackVersion = NetstackVersion::Netstack3;
 
@@ -32,7 +31,7 @@ const MAX_ROLLBACKS_PER_EPOCH: u8 = 3;
 ///
 /// Pragmatically the intention is to increment this number every time a Fuchsia
 /// Release is cut that contains a known fix to a Netstack3 bug.
-const CURRENT_EPOCH: u32 = 2;
+const CURRENT_EPOCH: u32 = 3;
 
 /// The number of failed healthchecks at which we begin generating crash
 /// reports.
