@@ -113,6 +113,8 @@ fuchsia_test_package("verity-benchmarks") {
   # is run by a host-side wrapper.
   test_specs = {
     environments = []
+
+    package_resolution_timeout_secs = 660
   }
 }
 

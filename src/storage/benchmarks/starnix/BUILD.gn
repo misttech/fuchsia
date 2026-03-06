@@ -48,6 +48,8 @@ fuchsia_test_package("storage-starnix-benchmarks") {
   deps = [ "//src/starnix/containers/debian:container_resources" ]
   test_specs = {
     environments = []
+
+    package_resolution_timeout_secs = 660
   }
 }
 
