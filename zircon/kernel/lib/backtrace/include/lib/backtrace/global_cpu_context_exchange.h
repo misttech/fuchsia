@@ -16,7 +16,7 @@
 #if defined __x86_64__
 
 // TODO(maniscalco): Find a new home for the declaration and definition.  Needs to be visible to
-// both lockup_detector.cc and faults.cc.
+// both lockup_detector.cc and exceptions_c.cc.
 
 static void SendNmiIpi(cpu_num_t target_cpu) {
   DEBUG_ASSERT(is_valid_cpu_num(target_cpu));

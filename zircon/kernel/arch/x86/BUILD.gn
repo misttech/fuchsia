@@ -120,7 +120,7 @@ source_set("x86") {
     "debugger.cc",
     "descriptor.cc",
     "exceptions.S",
-    "faults.cc",
+    "exceptions_c.cc",
     "feature.cc",
     "gdt.S",
     "handoff.cc",
