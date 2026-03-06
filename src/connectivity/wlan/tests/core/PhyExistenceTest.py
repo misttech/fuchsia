@@ -13,13 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 from core_testing import base_test
-from fuchsia_controller_py.wrappers import asyncmethod
 from mobly import test_runner
 from mobly.asserts import assert_equal
 
 
 class PhyExistenceTest(base_test.CoreBaseTestClass):
-    @asyncmethod
     async def test_get_phy_ids(self) -> None:
         list_phys_response = await self.test_kit.device_monitor.list_phys()
         assert (

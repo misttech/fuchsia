@@ -7,7 +7,6 @@ import time
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
-import fuchsia_async_extension
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -20,19 +19,19 @@ from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Wlan_core affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `device` variable with FuchsiaDevice object
             * Assigns `access_point` variable with AccessPoint object
         """
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
         access_points: list[
             access_point.AccessPoint
-        ] | None = self.register_controller(
+        ] | None = await self.register_controller(
             access_point, required=False, min_number=0
         )
 
@@ -40,8 +39,8 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             access_points[0] if access_points else None
         )
 
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.wait_for_interface(self.device.netstack, PortClass.WLAN_CLIENT)
+        await self.wait_for_interface(
+            self.device.netstack, PortClass.WLAN_CLIENT
         )
 
     async def test_iface_methods(self) -> None:
@@ -108,11 +107,11 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     )
                 time.sleep(1)
 
-        self.device.location.set_region("US")
+        await self.device.location.set_region("US")
         for phy_id in await self.device.wlan_core.get_phy_id_list():
             await check_country_code(phy_id, "US", 10)
 
-        self.device.location.set_region("WW")
+        await self.device.location.set_region("WW")
         for phy_id in await self.device.wlan_core.get_phy_id_list():
             await check_country_code(phy_id, "WW", 10)
 

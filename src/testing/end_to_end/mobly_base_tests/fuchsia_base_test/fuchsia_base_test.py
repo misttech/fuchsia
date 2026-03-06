@@ -24,7 +24,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 )
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
-from mobly import signals, test_runner
+from mobly import signals
 from mobly.base_test import BaseTestClass as MoblyBaseTestClass
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
@@ -33,6 +33,13 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
+
+# LINT.IfChange
+HEALTH_CHECK_FAILURE_MESSAGE = (
+    "One or more FuchsiaDevice's health check failed in "
+    "teardown_test. So failing the test case..."
+)
+# LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
 
 
 class SnapshotOn(enum.StrEnum):
@@ -76,6 +83,13 @@ class TracingOn(enum.StrEnum):
     NEVER = "never"
 
 
+# TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
+# AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
+# implementations instead. FuchsiaBaseTest will soon be deleted in favor
+# of AsyncFuchsiaBaseTest.
+
+
+# LINT.IfChange
 class FuchsiaBaseTest(MoblyBaseTestClass):
     """Fuchsia-specific base test class
 
@@ -200,12 +214,7 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
             os.rmdir(self.test_case_path)
 
         if self._devices_not_healthy:
-            # LINT.IfChange
-            message: str = (
-                "One or more FuchsiaDevice's health check failed in "
-                "teardown_test. So failing the test case..."
-            )
-            # LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
+            message = HEALTH_CHECK_FAILURE_MESSAGE
             _LOGGER.warning(message)
             raise signals.TestFailure(message)
 
@@ -776,5 +785,4 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
                 setattr(cls, attr_name, make_sync_wrapper(attr_value))
 
 
-if __name__ == "__main__":
-    test_runner.main()
+# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/__init__.py)

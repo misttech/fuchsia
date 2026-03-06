@@ -35,14 +35,9 @@ class DeviceWatcherEventHandler(fidl_device_service.DeviceWatcherEventHandler):
         client: fidl_device_service.DeviceWatcherClient,
         verbose: bool = True,
     ) -> None:
+        # Defer initialization of parent class to __aenter__
         self.client = client
         self.verbose = verbose
-        self.txn_queue: asyncio.Queue[
-            fidl_device_service.DeviceWatcherOnPhyAddedRequest
-            | fidl_device_service.DeviceWatcherOnPhyRemovedRequest
-            | fidl_device_service.DeviceWatcherOnIfaceAddedRequest
-            | fidl_device_service.DeviceWatcherOnIfaceRemovedRequest
-        ] = asyncio.Queue()
 
     def on_phy_added(
         self,
@@ -78,6 +73,13 @@ class DeviceWatcherEventHandler(fidl_device_service.DeviceWatcherEventHandler):
 
     async def __aenter__(self) -> DeviceWatcherContext:
         super().__init__(client=self.client)
+
+        self.txn_queue: asyncio.Queue[
+            fidl_device_service.DeviceWatcherOnPhyAddedRequest
+            | fidl_device_service.DeviceWatcherOnPhyRemovedRequest
+            | fidl_device_service.DeviceWatcherOnIfaceAddedRequest
+            | fidl_device_service.DeviceWatcherOnIfaceRemovedRequest
+        ] = asyncio.Queue()
         self.server_task = asyncio.create_task(self.serve())
         return DeviceWatcherContext(
             txn_queue=self.txn_queue,
@@ -103,18 +105,10 @@ class ConnectTransactionContext:
 class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
     def __init__(
         self,
-        loop: asyncio.AbstractEventLoop,
         verbose: bool = True,
     ) -> None:
-        self.loop = loop
+        # Defer initialization of parent class to __aenter__
         self.verbose = verbose
-        self.txn_queue: asyncio.Queue[
-            fidl_sme.ConnectTransactionOnConnectResultRequest
-            | fidl_sme.ConnectTransactionOnDisconnectRequest
-            | fidl_sme.ConnectTransactionOnRoamResultRequest
-            | fidl_sme.ConnectTransactionOnSignalReportRequest
-            | fidl_sme.ConnectTransactionOnChannelSwitchedRequest
-        ] = asyncio.Queue()
 
     def on_connect_result(
         self,
@@ -156,15 +150,22 @@ class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
             logger.info("Channel switched: %s", request)
         self.txn_queue.put_nowait(request)
 
-    def __enter__(self) -> ConnectTransactionContext:
+    async def __aenter__(self) -> ConnectTransactionContext:
         proxy, server = Channel.create()
         super().__init__(client=fidl_sme.ConnectTransactionClient(proxy.take()))
-        self.server_task = self.loop.create_task(self.serve())
+        self.txn_queue: asyncio.Queue[
+            fidl_sme.ConnectTransactionOnConnectResultRequest
+            | fidl_sme.ConnectTransactionOnDisconnectRequest
+            | fidl_sme.ConnectTransactionOnRoamResultRequest
+            | fidl_sme.ConnectTransactionOnSignalReportRequest
+            | fidl_sme.ConnectTransactionOnChannelSwitchedRequest
+        ] = asyncio.Queue()
+        self.server_task = asyncio.create_task(self.serve())
         return ConnectTransactionContext(
             txn_queue=self.txn_queue,
             server=server,
         )
 
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
         if self.server_task:
             self.server_task.cancel()
