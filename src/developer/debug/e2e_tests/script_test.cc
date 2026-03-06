@@ -72,9 +72,8 @@ void ScriptTest::TestBody() {
   loop().Run();
 
   if (!script_success) {
-    // Error reporting is handled by ScriptRunner by printing to console.
-    // We just fail the test here.
-    FAIL() << "Script execution failed: " << script_path_;
+    FAIL() << "Script execution failed: " << script_path_ << "\n"
+           << runner.GetFailureContext().AsString();
   }
 }
 
