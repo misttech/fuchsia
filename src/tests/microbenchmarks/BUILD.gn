@@ -376,7 +376,14 @@ if (host_os == "linux" && !is_asan) {
 
       deps = [ "//src/lib/testing/expectation:expectation_comparer" ]
 
-      forward_variables_from(invoker, [ "test_specs" ])
+      test_specs = {
+        if (defined(invoker.test_specs)) {
+          forward_variables_from(invoker.test_specs, "*")
+        }
+        if (!defined(package_resolution_timeout_secs)) {
+          package_resolution_timeout_secs = 660
+        }
+      }
     }
 
     fuchsia_package(perftest_package_label) {
