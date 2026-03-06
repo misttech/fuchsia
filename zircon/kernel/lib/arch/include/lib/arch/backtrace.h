@@ -10,11 +10,12 @@
 #include <lib/arch/internal/arch-backtrace.h>
 #include <zircon/compiler.h>
 
+#include <concepts>
 #include <cstdint>
 #include <iterator>
+#include <ranges>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 namespace arch {
 
@@ -72,27 +73,42 @@ inline size_t StoreBacktrace(Backtrace&& bt, std::span<uintptr_t> pcs, void* rap
 // (SP at call site / entry); so it points *just past* the FP, PC pair
 // describing the caller, but it's also guaranteed to be the CFA.
 struct CallFrame {
+  // Frames are ordered by FP address.  Since stacks grow down, the least
+  // address means the innermost callee.
+  constexpr auto operator<=>(const CallFrame&) const = default;
+
+  // On most machines, this is the CFA, which is the SP at the call site and
+  // thus the address that's the upper bound on this call frame.  On ARM it's
+  // more likely to be near the bottom of the frame, but will still at least be
+  // an upper bound on the address range of the next frame in.
+  uintptr_t frame_address() const {
+    return fp ? reinterpret_cast<uintptr_t>(fp + arch::internal::kArchFpOffset + 1) : 0;
+  }
+
   const CallFrame* fp = nullptr;
   uintptr_t pc = 0;
 };
 
-// This is parameterized by the type of some object that's callable as
-// `bool(const CallFrame*)` to determine whether it's safe to dereference a
-// known-aligned pointer that's expected to be on the stack.  The IsOnStack
-// object must be default-constructible, copyable, and copy-assignable. But a
-// non-default value can be passed to BackTrace().
-template <typename IsOnStack>
+// The template parameter to FramePointerBacktrace is the type of a callable
+// object to determine whether it's safe to dereference a known-aligned pointer
+// that's expected to be on the stack.  The type must be default-constructible
+// and copyable.  But a non-default object can be passed to BackTrace().
+template <typename T>
+concept IsOnStackApi = std::default_initializable<T> && std::copyable<T> &&
+                       requires(T is_on_stack, const CallFrame* fp) {
+                         { is_on_stack(fp) } -> std::convertible_to<bool>;
+                       };
+
+// A FramePointerBacktrace is a forward iterator object that also acts as its
+// own forward-range object.  So in a range-based for loop it yields a list of
+// uintptr_t PC values.  When the optional second template parameter is true,
+// it instead yields a list of CallFrame values.
+template <IsOnStackApi IsOnStack, bool WithFp = false>
 class FramePointerBacktrace {
  public:
-  static_assert(std::is_copy_constructible_v<IsOnStack>);
-  static_assert(std::is_copy_assignable_v<IsOnStack>);
-
-  // A FramePointerBacktrace is a forward iterator object that also acts as
-  // its own container object.  So in a range-based for loop it yields a list
-  // of uintptr_t PC values.
   using iterator = FramePointerBacktrace;
   using const_iterator = iterator;
-  using value_type = uintptr_t;
+  using value_type = std::conditional_t<WithFp, CallFrame, uintptr_t>;
   using difference_type = ptrdiff_t;
   using reference = const value_type&;
   using pointer = const value_type*;
@@ -104,13 +120,14 @@ class FramePointerBacktrace {
 
   // The caller evaluates the default argument to supply its own backtrace:
   // `for (uintptr_t pc : FramePointerBacktrace::BackTrace()) { ... }` or
-  // `vector<uintptr_t>(FramePointerBacktrace::BackTrace(), FramePointerBacktrace::end())`.
-  // That way the immediate caller itself is not included in the backtrace.
+  // `vector<uintptr_t>(FramePointerBacktrace::BackTrace(),
+  // FramePointerBacktrace::end())`.  That way the immediate caller itself is
+  // not included in the backtrace.
   static FramePointerBacktrace BackTrace(
       const CallFrame* fp = static_cast<const CallFrame*>(__builtin_frame_address(0)),
       IsOnStack is_on_stack = {}) {
     FramePointerBacktrace bt;
-    bt.is_on_stack_ = std::move(is_on_stack);
+    bt.is_on_stack_ = is_on_stack;
     // frame_ is a copy of the CallFrame describing the caller's caller.  If
     // this object instead held only a CallFrame* pointer, that would be a
     // pointer into the caller's frame and so would not be valid after the
@@ -138,12 +155,10 @@ class FramePointerBacktrace {
 
   // Iterator interface.
 
-  bool operator==(const FramePointerBacktrace& other) const {
-    return frame_.fp == other.frame_.fp && frame_.pc == other.frame_.pc;
-  }
-  bool operator!=(const FramePointerBacktrace& other) const { return !(*this == other); }
+  bool operator==(const FramePointerBacktrace& other) const { return frame_ == other.frame_; }
 
   FramePointerBacktrace& operator++() {  // prefix
+    static_assert(std::ranges::forward_range<FramePointerBacktrace>);
     if (frame_.fp && IsAligned(frame_.fp)) {
       const CallFrame* fp = frame_.fp + arch::internal::kArchFpOffset;
       if (is_on_stack_(fp)) [[likely]] {
@@ -161,7 +176,13 @@ class FramePointerBacktrace {
     return old;
   }
 
-  value_type operator*() const { return frame_.pc; }
+  value_type operator*() const {
+    if constexpr (WithFp) {
+      return frame_;
+    } else {
+      return frame_.pc;
+    }
+  }
 
  private:
   static bool IsAligned(const CallFrame* fp) {
@@ -226,6 +247,7 @@ class ShadowCallStackBacktrace {
  private:
   std::span<const uintptr_t> stack_;
 };
+static_assert(std::ranges::random_access_range<ShadowCallStackBacktrace>);
 
 #if __has_feature(shadow_call_stack)
 // This has to be defined separately in assembly (not inline asm), even though
