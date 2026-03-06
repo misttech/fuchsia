@@ -1650,6 +1650,7 @@ void Thread::Current::Yield() {
  * queue and then yields the cpu to another thread.
  */
 void Thread::Current::Preempt() {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt: int");
   Thread* current_thread = Thread::Current::Get();
 
   current_thread->canary_.Assert();
