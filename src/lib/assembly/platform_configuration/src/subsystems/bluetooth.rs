@@ -126,6 +126,19 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             Config::new(ConfigValueType::Bool, profiles.rfcomm.enabled().into()),
         )?;
 
+        // `bt-gap` is included as part of the `bluetooth_core` platform bundle (packaged
+        // with `bt-init`).
+        // While `bredr_connectable` is the only configurable field, we must override the entire
+        // config. Default values are taken from bt-gap's default.
+        builder
+            .package("bt-init")
+            .component("meta/bt-gap.cm")?
+            .field("le_privacy", true)?
+            .field("le_background_scanning", false)?
+            .field("le_security_mode", "Mode1")?
+            .field("bredr_connectable", core.start_connectable)?
+            .field("bredr_security_mode", "Mode4")?;
+
         if profiles.rfcomm.enabled() {
             builder.platform_bundle("bluetooth_rfcomm")?;
         }

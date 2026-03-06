@@ -110,13 +110,6 @@ fuchsia_component("component") {
   deps = [ ":bin" ]
 }
 
-fuchsia_package("bt-gap-default") {
-  deps = [
-    ":component",
-    ":default_config_values",
-  ]
-}
-
 fuchsia_test_component("test-stash-secure") {
   deps = [ "//src/sys/stash:bin" ]
   manifest = "meta/test-stash-secure.cml"

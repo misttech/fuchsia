@@ -445,6 +445,9 @@ pub struct BluetoothCoreConfig {
     /// What we should override the Vendor Capabilities version to, if necessary
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub override_vendor_capabilities_version: u16,
+    /// Whether the device is BR/EDR connectable by default on boot.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub start_connectable: bool,
 }
 
 impl Default for BluetoothCoreConfig {
@@ -453,6 +456,7 @@ impl Default for BluetoothCoreConfig {
             legacy_pairing_enabled: Default::default(),
             sco_offload_path_index: 6,
             override_vendor_capabilities_version: 0,
+            start_connectable: true,
         }
     }
 }
@@ -612,6 +616,7 @@ mod tests {
                 "legacy_pairing_enabled": true,
                 "sco_offload_path_index": 1,
                 "override_vendor_capabilities_version": 0x9900,
+                "start_connectable": false,
             },
         });
 
@@ -662,6 +667,7 @@ mod tests {
             legacy_pairing_enabled: true,
             sco_offload_path_index: 1,
             override_vendor_capabilities_version: 0x9900,
+            start_connectable: false,
         };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,
@@ -709,6 +715,7 @@ mod tests {
                 legacy_pairing_enabled: false,
                 sco_offload_path_index: 6,
                 override_vendor_capabilities_version: 0,
+                start_connectable: true,
             },
             snoop: Snoop::None,
         };
@@ -766,6 +773,7 @@ mod tests {
                 legacy_pairing_enabled: false,
                 sco_offload_path_index: 6,
                 override_vendor_capabilities_version: 0,
+                start_connectable: true,
             },
             snoop: Snoop::None,
         };

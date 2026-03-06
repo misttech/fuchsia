@@ -67,11 +67,11 @@ fuchsia_component("component") {
 }
 
 fuchsia_package("bt-init") {
+  validate_structured_config = false
   deps = [
     ":component",
     ":default_config_values",
     "//src/connectivity/bluetooth/core/bt-gap:component",
-    "//src/connectivity/bluetooth/core/bt-gap:default_config_values",
   ]
   subpackages = [ "//src/connectivity/bluetooth/core/bt-host" ]
 }
