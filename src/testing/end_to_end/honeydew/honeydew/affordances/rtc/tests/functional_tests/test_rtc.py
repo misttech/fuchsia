@@ -7,20 +7,20 @@ import datetime
 import logging
 import random
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class RtcAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+class RtcAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """RTC affordance tests."""
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def teardown_class(self) -> None:
+    async def teardown_class(self) -> None:
         """Post-test teardown logic.
 
         Because this test affects the real value in the RTC, the value needs to
@@ -29,15 +29,15 @@ class RtcAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         the value stored in the RTC chip.
         """
         LOGGER.info("Reverting RTC to host walltime")
-        self.rtc.set(datetime.datetime.now())
-        LOGGER.info("Walltime is now: %s", self.rtc.get())
-        super().teardown_class()
+        await self.rtc.set(datetime.datetime.now())
+        LOGGER.info("Walltime is now: %s", await self.rtc.get())
+        await super().teardown_class()
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.rtc = self.dut.rtc
 
-    def test_rtc_chip_io(self) -> None:
+    async def test_rtc_chip_io(self) -> None:
         """Test the fuchsia.hardware.rtc.Device protocol.
 
         This test verifies that the RTC can be written to, and subsequently read
@@ -59,12 +59,12 @@ class RtcAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # possible field transposition errors in the driver.
         base_time = datetime.datetime(randyear, 12, 20, 23, 30, 0)
         LOGGER.info("Setting RTC time: %s", base_time)
-        self.rtc.set(base_time)
+        await self.rtc.set(base_time)
 
         # Ensure the time was actually set by re-reading the time and ensuring
         # the time elapsed is within some reasonable threshold. The threshold
         # value may need tuning.
-        time = self.rtc.get()
+        time = await self.rtc.get()
         delta = abs(time - base_time)
         LOGGER.info("Time read off RTC is: %s", time)
         LOGGER.info("Time delta: %s", delta)
