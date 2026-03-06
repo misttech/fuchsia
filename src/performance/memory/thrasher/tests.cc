@@ -373,12 +373,16 @@ TEST_F(ThrasherTest, DISABLED_ParentVmoAccountingTest) {
 
   size_t actual = 0;
   size_t avail = 0;
-  ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, nullptr, 0, &actual, &avail),
-            ZX_OK);
-  std::vector<zx_info_maps_t> maps(avail);
-  ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, maps.data(),
-                                          avail * sizeof(zx_info_maps_t), &actual, &avail),
-            ZX_OK);
+  std::vector<zx_info_maps_t> maps;
+  do {
+    ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, nullptr, 0, &actual, &avail),
+              ZX_OK);
+    // Add headroom to avoid spinning if mappings are being created rapidly.
+    maps.resize(avail + 16);
+    ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, maps.data(),
+                                            maps.size() * sizeof(zx_info_maps_t), &actual, &avail),
+              ZX_OK);
+  } while (actual < avail);
 
   bool found_mapping = false;
   for (size_t i = 0; i < actual; ++i) {
@@ -1420,14 +1424,16 @@ TEST_F(ThrasherTest, ParentVmoAccountingNoParentHandleTest) {
   // Now check ZX_INFO_PROCESS_VMOS to see if we can still find the parent.
   size_t actual = 0;
   size_t avail = 0;
-  ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_VMOS, nullptr, 0, &actual, &avail),
-            ZX_OK);
-  // The number of VMOs can fluctuate, so we might need a loop or a larger buffer.
-  // For this test, a reasonably large buffer should suffice.
-  std::vector<zx_info_vmo_t> vmos(avail + 100);
-  ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_VMOS, vmos.data(),
-                                          vmos.size() * sizeof(zx_info_vmo_t), &actual, &avail),
-            ZX_OK);
+  std::vector<zx_info_vmo_t> vmos;
+  do {
+    ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_VMOS, nullptr, 0, &actual, &avail),
+              ZX_OK);
+    // Add headroom to avoid spinning if VMOs are being created rapidly.
+    vmos.resize(avail + 100);
+    ASSERT_EQ(zx::process::self()->get_info(ZX_INFO_PROCESS_VMOS, vmos.data(),
+                                            vmos.size() * sizeof(zx_info_vmo_t), &actual, &avail),
+              ZX_OK);
+  } while (actual < avail);
 
   bool found_parent = false;
   for (size_t i = 0; i < actual; ++i) {
