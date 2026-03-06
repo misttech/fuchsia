@@ -964,7 +964,6 @@ pub(crate) fn fields_to_retain_from_response_to_request(
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use bstr::BString;
     use dhcp_protocol::{CLIENT_PORT, SERVER_PORT};
     use net_declare::net::prefix_length_v4;
     use net_declare::{net_ip_v4, net_mac, std_ip_v4};
@@ -984,8 +983,8 @@ mod test {
             siaddr: net_ip_v4!("9.10.11.12").into(),
             giaddr: net_ip_v4!("13.14.15.16").into(),
             chaddr: net_mac!("17:18:19:20:21:22"),
-            sname: BString::from("this is a sname"),
-            file: BString::from("this is the boot filename"),
+            sname: "this is a sname".to_owned(),
+            file: "this is the boot filename".to_owned(),
             options: vec![
                 dhcp_protocol::DhcpOption::DhcpMessageType(
                     dhcp_protocol::MessageType::DHCPDISCOVER,
@@ -1251,8 +1250,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: net_mac!("01:02:03:04:05:06"),
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options: message_type
                 .map(DhcpOption::DhcpMessageType)
                 .into_iter()
@@ -1588,8 +1587,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: net_mac!("01:02:03:04:05:06"),
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options: std::iter::empty()
                 .chain(message_type.map(DhcpOption::DhcpMessageType))
                 .chain(server_identifier.map(DhcpOption::ServerIdentifier))

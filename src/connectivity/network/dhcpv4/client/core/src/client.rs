@@ -12,7 +12,6 @@ use crate::inspect::{
 use crate::parse::{OptionCodeMap, OptionRequested};
 
 use anyhow::Context as _;
-use bstr::BString;
 use dhcp_protocol::{AtLeast, AtMostBytes, CLIENT_PORT, SERVER_PORT};
 use diagnostics_traits::Inspector;
 use futures::channel::mpsc;
@@ -1035,8 +1034,8 @@ fn build_outgoing_message(
         siaddr: Ipv4Addr::UNSPECIFIED,
         giaddr: Ipv4Addr::UNSPECIFIED,
         chaddr: *client_hardware_address,
-        sname: BString::default(),
-        file: BString::default(),
+        sname: String::new(),
+        file: String::new(),
         // NB: The DHCP Options RFC (RFC 2132) does not impose any requirements
         // on the order of options.  However, there is an industry norm to place
         // the DHCP Message Type first.
@@ -2649,8 +2648,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: TEST_MAC_ADDRESS,
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options,
         };
         assert_eq!(got_message, &want_message);
@@ -2798,8 +2797,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: message_chaddr,
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options: Vec::new(),
         };
 
@@ -3223,8 +3222,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: TEST_MAC_ADDRESS,
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options,
         }
     }
@@ -4017,8 +4016,8 @@ mod test {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: TEST_MAC_ADDRESS,
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options,
         };
         assert_eq!(got_message, &want_message);

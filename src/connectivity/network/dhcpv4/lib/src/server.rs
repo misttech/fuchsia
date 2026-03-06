@@ -10,7 +10,6 @@ use crate::protocol::{DhcpOption, Message, MessageType, OpCode, OptionCode, Prot
 use crate::protocol::{FidlCompatible, FromFidlExt, IntoFidlExt};
 
 use anyhow::{Context as _, Error};
-use bstr::BString;
 
 #[cfg(target_os = "fuchsia")]
 use zx::Status;
@@ -849,8 +848,8 @@ pub fn build_offer(
         yiaddr: offered_ip,
         ciaddr: Ipv4Addr::UNSPECIFIED,
         siaddr: Ipv4Addr::UNSPECIFIED,
-        sname: BString::default(),
-        file: BString::default(),
+        sname: String::new(),
+        file: String::new(),
         options,
         ..disc
     };
@@ -1532,7 +1531,6 @@ pub mod tests {
     };
     use anyhow::Error;
     use assert_matches::assert_matches;
-    use bstr::BString;
     use datastore::{ActionRecordingDataStore, DataStoreAction};
     use dhcp_protocol::{AtLeast, AtMostBytes};
     use fidl_fuchsia_net_ext::IntoExt as _;
@@ -1807,8 +1805,8 @@ pub mod tests {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: random_mac_generator(),
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options: options.into_iter().collect(),
         }
     }
@@ -1850,8 +1848,8 @@ pub mod tests {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: *chaddr,
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::new(),
+            file: String::new(),
             options: vec![
                 DhcpOption::DhcpMessageType(message_type),
                 DhcpOption::ServerIdentifier(
@@ -2495,8 +2493,8 @@ pub mod tests {
                 siaddr: Ipv4Addr::UNSPECIFIED,
                 giaddr: Ipv4Addr::UNSPECIFIED,
                 chaddr: MacAddr::new([0; 6]),
-                sname: BString::default(),
-                file: BString::default(),
+                sname: String::new(),
+                file: String::new(),
                 options: vec![DhcpOption::DhcpMessageType(message_type),],
             }),
             Err(ServerError::UnexpectedClientMessageType(message_type))
@@ -4433,8 +4431,8 @@ pub mod tests {
                 siaddr: Ipv4Addr::UNSPECIFIED,
                 giaddr: Ipv4Addr::UNSPECIFIED,
                 chaddr,
-                sname: BString::default(),
-                file: BString::default(),
+                sname: String::new(),
+                file: String::new(),
                 options: vec![
                     DhcpOption::DhcpMessageType(MessageType::DHCPOFFER),
                     DhcpOption::ServerIdentifier(server_ip),

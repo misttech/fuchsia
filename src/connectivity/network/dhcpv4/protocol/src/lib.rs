@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bstr::BString;
 use log::debug;
 use net_types::ethernet::Mac as MacAddr;
 use net_types::ip::{Ipv4, NotSubnetMaskError, PrefixLength};
@@ -155,9 +154,9 @@ pub struct Message {
     /// e.g `[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]`.
     pub chaddr: MacAddr,
     /// `sname` should not exceed 64 characters.
-    pub sname: BString,
+    pub sname: String,
     /// `file` should not exceed 128 characters.
-    pub file: BString,
+    pub file: String,
     pub options: Vec<DhcpOption>,
 }
 
@@ -264,12 +263,12 @@ impl Message {
                     })?,
             ),
             sname: match overload {
-                Some(Overload::SName) | Some(Overload::Both) => BString::default(),
-                Some(Overload::File) | None => buf_to_msg_string(sname),
+                Some(Overload::SName) | Some(Overload::Both) => String::from(""),
+                Some(Overload::File) | None => buf_to_msg_string(sname)?,
             },
             file: match overload {
-                Some(Overload::File) | Some(Overload::Both) => BString::default(),
-                Some(Overload::SName) | None => buf_to_msg_string(file),
+                Some(Overload::File) | Some(Overload::Both) => String::from(""),
+                Some(Overload::SName) | None => buf_to_msg_string(file)?,
             },
             options,
         })
@@ -2331,33 +2330,23 @@ pub fn ip_addr_from_buf_at(buf: &[u8], start: usize) -> Result<Ipv4Addr, Protoco
     Ok(buf.into())
 }
 
-const NULL_TERMINATOR: u8 = 0;
-
-fn buf_to_msg_string(buf: &[u8]) -> BString {
-    // As per RFC 2131, Section 2: the `sname` and `file` fields are each a
-    // "null terminated string". This leaves it ambiguous whether the null
-    // terminator is expected to be present in the buffer. We implement relaxed
-    // parsing, allowing it to be absent.
-    let null_terminator_position =
-        buf.iter().position(|&b| b == NULL_TERMINATOR).unwrap_or(buf.len());
-    BString::from(&buf[..null_terminator_position])
+fn buf_to_msg_string(buf: &[u8]) -> Result<String, ProtocolError> {
+    Ok(std::str::from_utf8(buf)
+        .map_err(|e| ProtocolError::Utf8(e.valid_up_to()))?
+        .trim_end_matches(ASCII_NULL)
+        .to_string())
 }
-fn trunc_string_to_n_and_push(s: &BString, n: usize, buffer: &mut Vec<u8>) {
-    let s: &[u8] = s.as_ref();
-    // As per RFC 2131, Section 2: the `sname` and `file` fields are each a
-    // "null terminated string". This leaves it ambiguous whether the null
-    // terminator is expected to be present in the buffer. We implement strict
-    // serialization, requiring it be present.
-    if s.len() >= n {
-        let (truncated, _dropped) = s.split_at(n - 1);
-        buffer.extend(truncated);
-        buffer.push(NULL_TERMINATOR);
+
+fn trunc_string_to_n_and_push(s: &str, n: usize, buffer: &mut Vec<u8>) {
+    if s.len() > n {
+        let truncated = s.split_at(n);
+        buffer.extend(truncated.0.as_bytes());
         return;
     }
-    buffer.extend(s);
+    buffer.extend(s.as_bytes());
     let unused_bytes = n - s.len();
     let old_len = buffer.len();
-    buffer.resize(old_len + unused_bytes, NULL_TERMINATOR);
+    buffer.resize(old_len + unused_bytes, 0);
 }
 
 #[cfg(test)]
@@ -2382,8 +2371,8 @@ mod tests {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: MacAddr::new([0; 6]),
-            sname: BString::from("relay.example.com"),
-            file: BString::from("boot.img"),
+            sname: String::from("relay.example.com"),
+            file: String::from("boot.img"),
             options: Vec::new(),
         }
     }
@@ -2418,6 +2407,8 @@ mod tests {
 
     #[test]
     fn message_from_buffer_returns_correct_message() {
+        use std::string::ToString;
+
         let mut buf = Vec::new();
         buf.push(1u8);
         buf.push(1u8);
@@ -2462,8 +2453,8 @@ mod tests {
                 siaddr: Ipv4Addr::UNSPECIFIED,
                 giaddr: Ipv4Addr::UNSPECIFIED,
                 chaddr: MacAddr::new([0; 6]),
-                sname: BString::from("relay.example.com"),
-                file: BString::from("boot.img"),
+                sname: "relay.example.com".to_string(),
+                file: "boot.img".to_string(),
                 options: vec![
                     DhcpOption::SubnetMask(DEFAULT_SUBNET_MASK),
                     DhcpOption::ServerIdentifier(server_id),
@@ -2780,8 +2771,8 @@ mod tests {
             siaddr: Ipv4Addr::UNSPECIFIED,
             giaddr: Ipv4Addr::UNSPECIFIED,
             chaddr: MacAddr::new([0; 6]),
-            sname: BString::default(),
-            file: BString::default(),
+            sname: String::from(""),
+            file: String::from(""),
             options: vec![DhcpOption::OptionOverload(overload)],
         }
         .serialize();
@@ -2819,8 +2810,8 @@ mod tests {
                 siaddr: Ipv4Addr::UNSPECIFIED,
                 giaddr: Ipv4Addr::UNSPECIFIED,
                 chaddr: MacAddr::new([0; 6]),
-                sname: BString::default(),
-                file: BString::default(),
+                sname: String::from(""),
+                file: String::from(""),
                 options: vec![
                     DhcpOption::OptionOverload(overload),
                     DhcpOption::RequestedIpAddress(ip)
@@ -2865,26 +2856,5 @@ mod tests {
         assert_matches::assert_matches!(ClientIdentifier::from_str("id:123456789"), Err(..));
         // insufficient digits for chaddr
         assert_matches::assert_matches!(ClientIdentifier::from_str("chaddr:1234567890"), Err(..));
-    }
-
-    #[test]
-    fn buf_to_msg_string_truncates_at_null_terminator() {
-        let buf = [b'a', b'b', b'c', 0, b'd', b'e', b'f'];
-        assert_eq!(buf_to_msg_string(&buf), BString::from("abc"));
-    }
-
-    #[test]
-    fn trunc_string_to_n_and_push_adds_null_terminator() {
-        let string = BString::from("abc");
-
-        // There is enough room for the entire string.
-        let mut buf = Vec::new();
-        trunc_string_to_n_and_push(&string, 4, &mut buf);
-        assert_eq!(&buf[..], &[b'a', b'b', b'c', 0,]);
-
-        // The string has to be truncated to fit.
-        let mut buf = Vec::new();
-        trunc_string_to_n_and_push(&string, 3, &mut buf);
-        assert_eq!(&buf[..], &[b'a', b'b', 0]);
     }
 }
