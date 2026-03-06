@@ -1663,6 +1663,62 @@ TEST_P(DriverRunnerTest, DeviceControllerBind) {
       {CreateChildRef("root", "boot-drivers"), CreateChildRef("dev.child", "boot-drivers")});
 }
 
+TEST_P(DriverRunnerTest, LogStackTrace_Success) {
+  SetupDriverRunner();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  auto& node_token = root_driver->driver->node_token();
+  ASSERT_TRUE(node_token.has_value());
+
+  zx::event token_copy;
+  ASSERT_EQ(ZX_OK, node_token->duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+  auto debug_client = fidl::WireClient<fuchsia_driver_token::Debug>(ConnectToDebug(), dispatcher());
+
+  bool callback_called = false;
+  debug_client->LogStackTrace(std::move(token_copy))
+      .ThenExactlyOnce(
+          [&callback_called](
+              fidl::WireUnownedResult<fuchsia_driver_token::Debug::LogStackTrace>& result) {
+            ASSERT_TRUE(result.ok());
+            ASSERT_TRUE(result->is_ok());
+            callback_called = true;
+          });
+
+  EXPECT_TRUE(RunLoopUntilIdle());
+  EXPECT_TRUE(callback_called);
+  EXPECT_TRUE(driver_host().stack_trace_triggered());
+}
+
+TEST_P(DriverRunnerTest, LogStackTrace_NotFound) {
+  SetupDriverRunner();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  zx::event random_token;
+  ASSERT_EQ(ZX_OK, zx::event::create(0, &random_token));
+
+  auto debug_client = fidl::WireClient<fuchsia_driver_token::Debug>(ConnectToDebug(), dispatcher());
+
+  bool callback_called = false;
+  debug_client->LogStackTrace(std::move(random_token))
+      .ThenExactlyOnce(
+          [&callback_called](
+              fidl::WireUnownedResult<fuchsia_driver_token::Debug::LogStackTrace>& result) {
+            ASSERT_TRUE(result.ok());
+            ASSERT_TRUE(result->is_error());
+            ASSERT_EQ(ZX_ERR_NOT_FOUND, result->error_value());
+            callback_called = true;
+          });
+
+  EXPECT_TRUE(RunLoopUntilIdle());
+  EXPECT_TRUE(callback_called);
+  EXPECT_FALSE(driver_host().stack_trace_triggered());
+}
+
 TEST(CompositeServiceOfferTest, WorkingOffer) {
   const std::string_view kServiceName = "fuchsia.service";
 

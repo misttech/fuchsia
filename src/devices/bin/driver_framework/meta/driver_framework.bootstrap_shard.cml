@@ -509,6 +509,7 @@
             protocol: [
                 "fuchsia.driver.crash.CrashIntrospect",
                 "fuchsia.driver.development.Manager",
+                "fuchsia.driver.token.Debug",
                 "fuchsia.firmware.crash.Watcher",
             ],
             from: "#driver_manager",

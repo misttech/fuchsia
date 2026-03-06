@@ -274,6 +274,12 @@ DriverRunnerTestBase::ConnectToCapabilityStore() {
   return std::move(store_endpoints.client);
 }
 
+fidl::ClientEnd<fuchsia_driver_token::Debug> DriverRunnerTestBase::ConnectToDebug() {
+  auto debug_endpoints = fidl::Endpoints<fuchsia_driver_token::Debug>::Create();
+  fidl::BindServer(dispatcher(), std::move(debug_endpoints.server), &driver_runner());
+  return std::move(debug_endpoints.client);
+}
+
 FakeDriverIndex DriverRunnerTestBase::CreateDriverIndex() {
   return FakeDriverIndex(dispatcher(), [](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
     if (args.name().get() == "second") {

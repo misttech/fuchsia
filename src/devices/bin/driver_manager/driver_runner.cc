@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
+#include <fidl/fuchsia.driver.token/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.process/cpp/wire.h>
@@ -242,6 +243,14 @@ void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moni
   }
 }
 
+// Exists in fsl, but perhaps a bit of duplication is better than a bit of dependency.
+zx_koid_t GetKoid(const zx::event& handle) {
+  zx_info_handle_basic_t info;
+  zx_status_t status =
+      zx_object_get_info(handle.get(), ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
+}
+
 }  // namespace
 
 Collection ToCollection(const Node& node, fdf::DriverPackageType package_type) {
@@ -417,6 +426,52 @@ void DriverRunner::CreateStoragePowerElement(fuchsia_power_broker::DependencyTok
         // fail.
         ZX_ASSERT(add_result.is_ok());
       });
+}
+
+// fidl::WireServer<fuchsia_driver_token::Debug>
+void DriverRunner::LogStackTrace(LogStackTraceRequestView request,
+                                 LogStackTraceCompleter::Sync& completer) {
+  const zx_koid_t node_token_koid = GetKoid(request->node_token);
+  if (node_token_koid == ZX_KOID_INVALID) {
+    fdf_log::error("provided node token is not valid");
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+  }
+
+  std::shared_ptr<const Node> node = nullptr;
+  PerformBFS(
+      root_node_,
+      [&node, node_token_koid](const std::shared_ptr<driver_manager::Node>& current) -> bool {
+        if (node != nullptr) {
+          // Already found it.
+          return false;
+        }
+        std::optional current_koid = current->token_koid();
+        if (current_koid && current_koid.value() == node_token_koid) {
+          node = current;
+          return false;
+        }
+        return true;
+      });
+  if (node == nullptr) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    fdf_log::warn("no such node: node_token_koid={}", node_token_koid);
+    return;
+  }
+  const DriverHost* host = node->driver_host();
+  if (host == nullptr) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    fdf_log::warn("node has no host: node_token_koid={}", node_token_koid);
+    return;
+  }
+  fdf_log::info("stack trace requested for host: node_token_koid={}", node_token_koid);
+  host->TriggerStackTrace();
+  completer.ReplySuccess();
+}
+
+void DriverRunner::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_driver_token::Debug> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf_log::warn("Unknown Debug request: {}", metadata.method_ordinal);
 }
 
 void DriverRunner::SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) {

@@ -56,6 +56,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                      public fidl::Server<fuchsia_driver_token::NodeBusTopology>,
                      public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
                      public fidl::WireServer<fuchsia_power_system::CpuElementManager>,
+                     public fidl::WireServer<fuchsia_driver_token::Debug>,
                      public BindManagerBridge,
                      public CompositeManagerBridge,
                      public std::enable_shared_from_this<DriverRunner>,
@@ -124,6 +125,12 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_power_system::CpuElementManager> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  // fidl::WireServer<fuchsia_driver_token::Debug>
+  void LogStackTrace(LogStackTraceRequestView request,
+                     LogStackTraceCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_token::Debug> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // CompositeManagerBridge interface
   void BindNodesForCompositeNodeSpec() override;

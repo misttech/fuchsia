@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.component/cpp/test_base.h>
 #include <fidl/fuchsia.driver.framework/cpp/test_base.h>
 #include <fidl/fuchsia.driver.host/cpp/test_base.h>
+#include <fidl/fuchsia.driver.token/cpp/test_base.h>
 #include <fidl/fuchsia.io/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -323,6 +324,12 @@ class TestDriverHost : public fidl::testing::TestBase<fdh::DriverHost> {
 
   void SetStartHandler(StartHandler start_handler) { start_handler_ = std::move(start_handler); }
 
+  void TriggerStackTrace(TriggerStackTraceCompleter::Sync& completer) override {
+    stack_trace_triggered_ = true;
+  }
+
+  bool stack_trace_triggered() const { return stack_trace_triggered_; }
+
  private:
   void Start(StartRequest& request, StartCompleter::Sync& completer) override {
     start_handler_(std::move(request.start_args()), std::move(request.driver()));
@@ -337,6 +344,7 @@ class TestDriverHost : public fidl::testing::TestBase<fdh::DriverHost> {
   }
 
   StartHandler start_handler_;
+  bool stack_trace_triggered_ = false;
 };
 
 // Calls the driver host runner's component Start implementation.
@@ -366,6 +374,7 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   fidl::ClientEnd<fuchsia_component::Realm> ConnectToRealm();
   fidl::ClientEnd<fuchsia_component::Introspector> ConnectToIntrospector();
   fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> ConnectToCapabilityStore();
+  fidl::ClientEnd<fuchsia_driver_token::Debug> ConnectToDebug();
 
   void EnableIntrospector() { introspector_.Enable(); }
 
