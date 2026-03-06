@@ -14,7 +14,7 @@ END_FUNCTION(breakpoint_for_module_changes)
 //  x1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
 //  x2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
 //  x3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-//  x4    extended_pstate: *mut ExtendedPstateState,
+//  x4    extended_pstate_ptr: *mut ExtendedPstatePointer,
 //  x0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // This function:
@@ -170,14 +170,20 @@ FUNCTION(restricted_return_loop)
   //       fn restricted_exit_callback_c(
   // x0      context: usize,
   // x1      reason_code: zx::sys::zx_restricted_reason_t,
+  // x2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // x0    ) -> bool
 
   // Load callback context and function pointers stack
-  ldp x2, x0, [sp, #16]
+  ldp x3, x0, [sp, #16]
 
   // Restore reason code that we saved in x19 earlier.
   mov x1, x19
-  blr x2
+
+  // Restore the extended pstate pointer
+  ldr x2, [sp, #8]
+
+  // Call the callback
+  blr x3
 
   // Restore CFI state after callback
   .cfi_restore_state
@@ -277,14 +283,20 @@ FUNCTION(restricted_return_loop_aarch32)
   //       fn restricted_exit_callback_c(
   // x0      context: usize,
   // x1      reason_code: zx::sys::zx_restricted_reason_t,
+  // x2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // x0    ) -> bool
 
   // Load callback context and function pointers stack
-  ldp x2, x0, [sp, #16]
+  ldp x3, x0, [sp, #16]
 
   // Restore reason code that we saved in x19 earlier.
   mov x1, x19
-  blr x2
+
+  // Load the extended pstate pointer
+  ldr x2, [sp, #8]
+
+  // Call the callback.
+  blr x3
 
   // Restore CFI state after callback
   .cfi_restore_state

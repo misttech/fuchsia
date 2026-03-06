@@ -144,15 +144,27 @@ impl ExtendedPstateState {
     }
 }
 
+/// Stores a pointer to the currently active extended pstate storage.
+/// The caller to the C entry points is responsible for ensuring that the active union
+/// member corresponds to the entry points being called.
+#[repr(C)]
+pub union ExtendedPstatePointer {
+    pub extended_pstate: *mut ExtendedPstateState,
+    #[cfg(target_arch = "aarch64")]
+    pub extended_aarch32_pstate: *mut ExtendedAarch32PstateState,
+}
+
 #[unsafe(no_mangle)]
 /// Restores the current extended architectural process state.
 ///
 /// # Safety
-///    - state_addr must point to a pointer to an instance of ExtendedPstateState.
+///    - state_addr must point to a pointer to an instance of ExtendedPstatePointer.
+///    - The active member of the ExtendedPstatePointer union must be extended_pstate.
 pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
-    let state = state_addr as *const ExtendedPstateState;
+    let pointer = state_addr as *const ExtendedPstatePointer;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
+        let state = (*pointer).extended_pstate;
         (*state).restore()
     }
 }
@@ -162,10 +174,12 @@ pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
 ///
 /// # Safety
 ///    - state_addr must point to pointer to an an exclusively owned instance of ExtendedPstateState.
+///    - The active member of the ExtendedPstatePointer union must be extended_pstate.
 pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
-    let state = state_addr as *mut ExtendedPstateState;
+    let pointer = state_addr as *const ExtendedPstatePointer;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
+        let state = (*pointer).extended_pstate;
         (*state).save()
     }
 }
@@ -176,10 +190,12 @@ pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
 ///
 /// # Safety
 ///    - state_addr must point to pointer to an instance of ExtendedAarch32PstateState.
+///    - The active member of the ExtendedPstatePointer union must be extended_aarch32_pstate.
 pub unsafe extern "C" fn restore_extended_aarch32_pstate(state_addr: usize) {
-    let state = state_addr as *const ExtendedAarch32PstateState;
+    let pointer = state_addr as *const ExtendedPstatePointer;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
+        let state = (*pointer).extended_aarch32_pstate;
         (*state).restore()
     }
 }
@@ -190,10 +206,12 @@ pub unsafe extern "C" fn restore_extended_aarch32_pstate(state_addr: usize) {
 ///
 /// # Safety
 ///    - state_addr must point to a pointer to an exclusively owned instance of ExtendedAarch32PstateState.
+///    - The active member of the ExtendedPstatePointer union must be extended_aarch32_pstate.
 pub unsafe extern "C" fn save_extended_aarch32_pstate(state_addr: usize) {
-    let state = state_addr as *mut ExtendedAarch32PstateState;
+    let pointer = state_addr as *const ExtendedPstatePointer;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
+        let state = (*pointer).extended_aarch32_pstate;
         (*state).save()
     }
 }

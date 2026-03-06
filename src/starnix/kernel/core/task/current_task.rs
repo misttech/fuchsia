@@ -12,17 +12,16 @@ use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
-    SeccompState, SeccompStateValue, Task, TaskFlags, Waiter,
+    SeccompState, SeccompStateValue, Task, TaskFlags, ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,
     NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
-use extended_pstate::ExtendedPstateState;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
-use starnix_registers::{HeapRegs, RegisterState, RegisterStorage, RegisterStorageEnum};
+use starnix_registers::{HeapRegs, RegisterStorageEnum};
 use starnix_stack::clean_stack;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
@@ -31,7 +30,6 @@ use starnix_sync::{
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
 use starnix_task_command::TaskCommand;
-use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, release_on_error};
 use starnix_uapi::auth::{
@@ -39,7 +37,7 @@ use starnix_uapi::auth::{
     PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
 };
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{Errno, ErrnoCode};
+use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
@@ -167,132 +165,6 @@ impl CurrentCreds {
         }
     }
 }
-
-#[derive(Clone)]
-pub enum ArchExtendedPstateStorage {
-    // Storage for 64 bit restricted mode.
-    State64(Box<ExtendedPstateState>),
-}
-
-impl ArchExtendedPstateStorage {
-    pub fn as_ptr(&mut self) -> *mut ExtendedPstateState {
-        match self {
-            ArchExtendedPstateStorage::State64(state) => state.as_mut() as *mut _,
-        }
-    }
-
-    fn reset(&mut self) {
-        match self {
-            ArchExtendedPstateStorage::State64(state) => state.reset(),
-        }
-    }
-}
-
-impl Default for ArchExtendedPstateStorage {
-    fn default() -> Self {
-        Self::State64(Default::default())
-    }
-}
-
-/// The thread related information of a `CurrentTask`. The information should never be used outside
-/// of the thread owning the `CurrentTask`.
-#[derive(Default)]
-pub struct ThreadState<T: RegisterStorage> {
-    /// A copy of the registers associated with the Zircon thread. Up-to-date values can be read
-    /// from `self.handle.read_state_general_regs()`. To write these values back to the thread, call
-    /// `self.handle.write_state_general_regs(self.thread_state.registers.into())`.
-    pub registers: RegisterState<T>,
-
-    /// Copy of the current extended processor state including floating point and vector registers.
-    pub extended_pstate: ArchExtendedPstateStorage,
-
-    /// The errno code (if any) that indicated this task should restart a syscall.
-    pub restart_code: Option<ErrnoCode>,
-
-    /// A custom function to resume a syscall that has been interrupted by SIGSTOP.
-    /// To use, call set_syscall_restart_func and return ERESTART_RESTARTBLOCK. sys_restart_syscall
-    /// will eventually call it.
-    pub syscall_restart_func: Option<Box<SyscallRestartFunc>>,
-}
-
-impl<T: RegisterStorage> ThreadState<T> {
-    pub fn arch_width(&self) -> ArchWidth {
-        #[cfg(target_arch = "aarch64")]
-        {
-            return if self.is_arch32() { ArchWidth::Arch32 } else { ArchWidth::Arch64 };
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        ArchWidth::Arch64
-    }
-
-    /// Returns a new `ThreadState` with the same `registers` as this one.
-    fn snapshot<R: RegisterStorage>(&self) -> ThreadState<R>
-    where
-        RegisterState<R>: From<RegisterState<T>>,
-    {
-        ThreadState::<R> {
-            registers: self.registers.clone().into(),
-            extended_pstate: Default::default(),
-            restart_code: self.restart_code,
-            syscall_restart_func: None,
-        }
-    }
-
-    pub fn extended_snapshot<R: RegisterStorage>(&self) -> ThreadState<R>
-    where
-        RegisterState<R>: From<RegisterState<T>>,
-    {
-        ThreadState::<R> {
-            registers: self.registers.clone().into(),
-            extended_pstate: self.extended_pstate.clone(),
-            restart_code: self.restart_code,
-            syscall_restart_func: None,
-        }
-    }
-
-    pub fn replace_registers<O: RegisterStorage>(&mut self, other: &ThreadState<O>) {
-        self.registers.load(*other.registers);
-        self.extended_pstate = other.extended_pstate.clone();
-    }
-
-    pub fn get_user_register(&mut self, offset: usize) -> Result<usize, Errno> {
-        let mut result: usize = 0;
-        self.registers.apply_user_register(offset, &mut |register| result = *register as usize)?;
-        Ok(result)
-    }
-
-    pub fn set_user_register(&mut self, offset: usize, value: usize) -> Result<(), Errno> {
-        self.registers.apply_user_register(offset, &mut |register| *register = value as u64)
-    }
-}
-
-impl From<ThreadState<HeapRegs>> for ThreadState<RegisterStorageEnum> {
-    fn from(value: ThreadState<HeapRegs>) -> Self {
-        ThreadState {
-            registers: value.registers.into(),
-            extended_pstate: value.extended_pstate,
-            restart_code: value.restart_code,
-            syscall_restart_func: value.syscall_restart_func,
-        }
-    }
-}
-
-impl<T: RegisterStorage> ArchSpecific for ThreadState<T> {
-    fn is_arch32(&self) -> bool {
-        #[cfg(target_arch = "aarch64")]
-        {
-            (self.registers.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK != 0
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            false
-        }
-    }
-}
-
-type SyscallRestartFunc = dyn FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> Result<SyscallResult, Errno>
-    + Send
-    + Sync;
 
 impl Releasable for CurrentTask {
     type Context<'a> = &'a mut Locked<TaskRelease>;

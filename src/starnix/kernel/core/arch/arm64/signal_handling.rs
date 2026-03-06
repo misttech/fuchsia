@@ -244,6 +244,11 @@ fn get_pstate_extended_data(
             // but the signal handler may still need to read it from `sigcontext`.
             result
         }
+        ArchExtendedPstateStorage::State32(_extended_aarch32_pstate) => {
+            let result = [0u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE];
+            // TODO(https://fxbug.dev/486225910): We should parse aarch32 specific data.
+            result
+        }
     }
 }
 
@@ -254,76 +259,78 @@ fn parse_pstate_extended_data(
     const FPSIMD_CONTEXT_SIZE: u32 = std::mem::size_of::<fpsimd_context>() as u32;
     const ESR_CONTEXT_SIZE: u32 = std::mem::size_of::<esr_context>() as u32;
 
-    // TODO(https://fxbug.dev/486225910): This isn't right for aarch32. We should parse aarch32 specific data.
-    let extended_pstate = match extended_pstate {
-        ArchExtendedPstateStorage::State64(state) => state,
-    };
+    match extended_pstate {
+        ArchExtendedPstateStorage::State64(extended_pstate) => {
+            let mut found_fpsimd = false;
+            let mut offset: usize = 0;
+            loop {
+                match _aarch64_ctx::read_from_prefix(&data[offset..]) {
+                    Ok((_aarch64_ctx { magic: 0, size: 0 }, _)) => break,
 
-    let mut found_fpsimd = false;
-    let mut offset: usize = 0;
-    loop {
-        match _aarch64_ctx::read_from_prefix(&data[offset..]) {
-            Ok((_aarch64_ctx { magic: 0, size: 0 }, _)) => break,
+                    Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size: FPSIMD_CONTEXT_SIZE }, _))
+                        if found_fpsimd =>
+                    {
+                        log_debug!("Found duplicate `fpsimd_context` in `sigcontext`");
+                        return error!(EINVAL);
+                    }
 
-            Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size: FPSIMD_CONTEXT_SIZE }, _))
-                if found_fpsimd =>
-            {
-                log_debug!("Found duplicate `fpsimd_context` in `sigcontext`");
+                    Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size: FPSIMD_CONTEXT_SIZE }, _)) => {
+                        found_fpsimd = true;
+
+                        // Set Q registers.
+                        let (fpsimd, _) = fpsimd_context::read_from_prefix(&data[offset..])
+                            .expect("Failed to get fpsimd_context from array");
+                        extended_pstate.set_arm64_state(&fpsimd.vregs, fpsimd.fpsr, fpsimd.fpcr);
+
+                        offset += FPSIMD_CONTEXT_SIZE as usize;
+                    }
+
+                    Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size }, _)) => {
+                        log_debug!("Invalid size for `fpsimd_context` in `sigcontext`: {}", size);
+                        return error!(EINVAL);
+                    }
+
+                    Ok((_aarch64_ctx { magic: ESR_MAGIC, size: ESR_CONTEXT_SIZE }, _)) => {
+                        // ESR register is read-only so we can skip it.
+                        offset += ESR_CONTEXT_SIZE as usize;
+                    }
+
+                    Ok((_aarch64_ctx { magic: ESR_MAGIC, size }, _)) => {
+                        log_debug!("Invalid size for `fpsimd_context` in `sigcontext`: {}", size);
+                        return error!(EINVAL);
+                    }
+
+                    Ok((_aarch64_ctx { magic: EXTRA_MAGIC, size }, _)) => {
+                        if size as usize <= std::mem::size_of::<_aarch64_ctx>() {
+                            log_debug!("Invalid size for `EXTRA_MAGIC` section in `sigcontext`");
+                            return error!(EINVAL);
+                        }
+
+                        track_stub!(TODO("https://fxbug.dev/322873793"), "sigcontext EXTRA_MAGIC");
+                        offset += ESR_CONTEXT_SIZE as usize;
+                    }
+
+                    Ok((_aarch64_ctx { magic, size }, _)) => {
+                        log_debug!(
+                            "Unrecognized sectionin `sigcontext` (magic: 0x{:x}. size: {})",
+                            magic,
+                            size
+                        );
+                        return error!(EINVAL);
+                    }
+
+                    Err(_) => return error!(EINVAL),
+                };
+            }
+
+            if !found_fpsimd {
+                log_debug!("Couldn't find `fpsimd_context` in `sigcontext`");
                 return error!(EINVAL);
             }
-
-            Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size: FPSIMD_CONTEXT_SIZE }, _)) => {
-                found_fpsimd = true;
-
-                // Set Q registers.
-                let (fpsimd, _) = fpsimd_context::read_from_prefix(&data[offset..])
-                    .expect("Failed to get fpsimd_context from array");
-                extended_pstate.set_arm64_state(&fpsimd.vregs, fpsimd.fpsr, fpsimd.fpcr);
-
-                offset += FPSIMD_CONTEXT_SIZE as usize;
-            }
-
-            Ok((_aarch64_ctx { magic: FPSIMD_MAGIC, size }, _)) => {
-                log_debug!("Invalid size for `fpsimd_context` in `sigcontext`: {}", size);
-                return error!(EINVAL);
-            }
-
-            Ok((_aarch64_ctx { magic: ESR_MAGIC, size: ESR_CONTEXT_SIZE }, _)) => {
-                // ESR register is read-only so we can skip it.
-                offset += ESR_CONTEXT_SIZE as usize;
-            }
-
-            Ok((_aarch64_ctx { magic: ESR_MAGIC, size }, _)) => {
-                log_debug!("Invalid size for `fpsimd_context` in `sigcontext`: {}", size);
-                return error!(EINVAL);
-            }
-
-            Ok((_aarch64_ctx { magic: EXTRA_MAGIC, size }, _)) => {
-                if size as usize <= std::mem::size_of::<_aarch64_ctx>() {
-                    log_debug!("Invalid size for `EXTRA_MAGIC` section in `sigcontext`");
-                    return error!(EINVAL);
-                }
-
-                track_stub!(TODO("https://fxbug.dev/322873793"), "sigcontext EXTRA_MAGIC");
-                offset += ESR_CONTEXT_SIZE as usize;
-            }
-
-            Ok((_aarch64_ctx { magic, size }, _)) => {
-                log_debug!(
-                    "Unrecognized sectionin `sigcontext` (magic: 0x{:x}. size: {})",
-                    magic,
-                    size
-                );
-                return error!(EINVAL);
-            }
-
-            Err(_) => return error!(EINVAL),
-        };
-    }
-
-    if !found_fpsimd {
-        log_debug!("Couldn't find `fpsimd_context` in `sigcontext`");
-        return error!(EINVAL);
+        }
+        ArchExtendedPstateStorage::State32(_extended_aarch32_pstate) => {
+            // TODO(https://fxbug.dev/486225910): We should parse aarch32 specific data.
+        }
     }
 
     Ok(())

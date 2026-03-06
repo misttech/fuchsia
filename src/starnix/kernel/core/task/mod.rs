@@ -24,6 +24,7 @@ pub(crate) mod syslog;
 #[allow(clippy::module_inception)]
 mod task;
 mod thread_group;
+mod thread_state;
 pub mod tracing;
 mod uts_namespace;
 pub mod waiter;
@@ -47,6 +48,7 @@ pub use session::*;
 pub use syslog::*;
 pub use task::*;
 pub use thread_group::*;
+pub use thread_state::*;
 pub use uts_namespace::*;
 pub use waiter::*;
 

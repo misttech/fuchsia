@@ -43,12 +43,15 @@ fn main() {
     let bench_strategy = |bench: criterion::Benchmark, strategy| {
         if *PREFERRED_STRATEGY <= strategy {
             bench.with_function(&format!("SaveAndRestore/{:?}", strategy), move |b| {
+                use extended_pstate::ExtendedPstatePointer;
+
                 let mut state = ExtendedPstateState::with_strategy(strategy);
-                let state_ptr = &raw mut state as usize;
+                let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
+                let ptr_ptr = &raw mut pstate_ptr as usize;
                 #[allow(clippy::undocumented_unsafe_blocks)]
                 b.iter(|| unsafe {
-                    save_extended_pstate(state_ptr);
-                    restore_extended_pstate(state_ptr);
+                    save_extended_pstate(ptr_ptr);
+                    restore_extended_pstate(ptr_ptr);
                 });
             })
         } else {
@@ -73,11 +76,12 @@ fn main() {
     {
         bench = bench.with_function("SaveAndRestore/Aarch64", |b| {
             let mut state = ExtendedPstateState::default();
-            let state_ptr = &raw mut state as usize;
+            let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
+            let ptr_ptr = &raw mut pstate_ptr as usize;
             #[allow(clippy::undocumented_unsafe_blocks)]
             b.iter(|| unsafe {
-                save_extended_pstate(state_ptr);
-                restore_extended_pstate(state_ptr);
+                save_extended_pstate(ptr_ptr);
+                restore_extended_pstate(ptr_ptr);
             });
         });
         bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
@@ -86,11 +90,12 @@ fn main() {
                 save_extended_aarch32_pstate,
             };
             let mut state = ExtendedAarch32PstateState::default();
-            let state_ptr = &raw mut state as usize;
+            let mut pstate_ptr = ExtendedPstatePointer { extended_aarch32_pstate: &raw mut state };
+            let ptr_ptr = &raw mut pstate_ptr as usize;
             #[allow(clippy::undocumented_unsafe_blocks)]
             b.iter(|| unsafe {
-                save_extended_aarch32_pstate(state_ptr);
-                restore_extended_aarch32_pstate(state_ptr);
+                save_extended_aarch32_pstate(ptr_ptr);
+                restore_extended_aarch32_pstate(ptr_ptr);
             });
         });
     }

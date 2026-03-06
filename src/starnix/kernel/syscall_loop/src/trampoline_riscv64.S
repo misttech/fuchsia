@@ -15,7 +15,7 @@ END_FUNCTION(breakpoint_for_module_changes)
 //  a1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
 //  a2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
 //  a3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-//  a4    extended_pstate: *mut ExtendedPstateState,
+//  a4    extended_pstate_ptr: *mut ExtendedPstatePointer,
 //  a0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Make space for all 12 callee saved registers, return address, thread pointer, shadow call
@@ -137,12 +137,14 @@ FUNCTION(restricted_return_loop)
   //       fn restricted_exit_callback_c(
   // a0      context: usize,
   // a1      reason_code: zx::sys::zx_restricted_reason_t,
+  // a2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // a0    ) -> bool
 
   // Load callback function and context pointers
   ld t0, 16*8(sp)
   ld a0, 17*8(sp)
   mv a1, s1
+  ld a2, 19*8(sp)
   jalr t0
 
   // TODO: restore CFI directives

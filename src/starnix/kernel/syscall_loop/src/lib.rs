@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
-use extended_pstate::ExtendedPstateState;
+use extended_pstate::ExtendedPstatePointer;
 use starnix_core::arch::execution::new_syscall;
 use starnix_core::ptrace::{PtraceStatus, StopState, ptrace_syscall_enter, ptrace_syscall_exit};
 use starnix_core::signals::{
@@ -41,16 +41,22 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
     }
 }
 
+type RestrictedExitCallback = extern "C" fn(
+    *mut RestrictedEnterContext<'_>,
+    zx::sys::zx_restricted_reason_t,
+    *mut ExtendedPstatePointer,
+) -> bool;
+
 unsafe extern "C" {
     // rustc doesn't like RestrictedEnterContext for FFI but we're just passing it back to
     // ourselves with extra steps.
     #[allow(improper_ctypes)]
     fn restricted_enter_loop(
         options: u32,
-        restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
+        restricted_exit_callback: RestrictedExitCallback,
         restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
         restricted_state: *mut zx::sys::zx_restricted_exception_t,
-        extended_pstate: *mut ExtendedPstateState,
+        extended_pstate_ptr_ptr: *mut ExtendedPstatePointer,
     ) -> zx::sys::zx_status_t;
 }
 
@@ -105,9 +111,10 @@ fn run_task(
     // same value for the duration of the restricted loop. The value it points
     // out will be mutated by restricted_enter_loop.
     let restricted_state_ptr = restricted_state.bound_state.as_ptr();
+
     // This extended pstate pointer points to the storage for extended processor
     // state (vector and FP registers).
-    let extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
+    let mut extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
 
     let mut restricted_enter_context = RestrictedEnterContext {
         current_task,
@@ -126,7 +133,7 @@ fn run_task(
             restricted_exit_callback_c,
             &mut restricted_enter_context,
             restricted_state_ptr,
-            extended_pstate_ptr,
+            &raw mut extended_pstate_ptr,
         )
     });
     if restricted_enter_status != zx::Status::OK {
@@ -144,17 +151,24 @@ fn run_task(
 extern "C" fn restricted_exit_callback_c(
     context: *mut RestrictedEnterContext<'_>,
     reason_code: zx::sys::zx_restricted_reason_t,
+    extended_pstate_ptr_ptr: *mut ExtendedPstatePointer,
 ) -> bool {
-    // SAFETY: `context` is a pointer to a `RestrictedEnterContext` that was passed to
-    // `restricted_enter_loop`. Our restricted return assembly and Zircon together guarantee that
-    // this thread has exclusive access to the restricted enter context.
-    let restricted_context = unsafe { &mut *context };
+    // SAFETY:
+    // `context` is a pointer to a `RestrictedEnterContext` that was passed to
+    // `restricted_enter_loop`.
+    //  `extended_pstate_ptr` is a pointer to the ExtendedPstatePointer instance
+    //  that was passed to `restricted_enter_loop.`
+    // Our restricted return assembly and Zircon together guarantee that this
+    // thread has exclusive access to these variables.
+    let (restricted_context, extended_pstate_ptr) =
+        unsafe { (&mut *context, extended_pstate_ptr_ptr.as_mut_unchecked()) };
     restricted_exit_callback(
         reason_code,
         restricted_context.current_task,
         &mut restricted_context.restricted_state,
         &mut restricted_context.error_context,
         &mut restricted_context.exit_status,
+        extended_pstate_ptr,
     )
 }
 
@@ -164,6 +178,7 @@ fn restricted_exit_callback(
     restricted_state: &mut RestrictedState,
     error_context: &mut Option<ErrorContext>,
     exit_status: &mut Result<ExitStatus, Error>,
+    extended_pstate_ptr: &mut ExtendedPstatePointer,
 ) -> bool {
     debug_assert_eq!(
         current_task.thread_state.restart_code, None,
@@ -174,6 +189,9 @@ fn restricted_exit_callback(
         match process_restricted_exit(reason_code, current_task, restricted_state, error_context) {
             Ok(None) => {
                 // Keep going!
+
+                *extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
+
                 true
             }
             Ok(Some(completed_exit_status)) => {

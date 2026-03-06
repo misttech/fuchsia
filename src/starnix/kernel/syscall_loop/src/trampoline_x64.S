@@ -15,7 +15,7 @@ END_FUNCTION(breakpoint_for_module_changes)
 // %rsi    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
 // %rdx    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
 // %rcx    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-// %r8     extended_pstate: *mut ExtendedPstateState,
+// %r8     extended_pstate_ptr: *mut ExtendedPstatePointer,
 // %rax  ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Save callee saved registers on the stack.
@@ -104,7 +104,7 @@ FUNCTION(restricted_return_loop)
   call save_extended_pstate
 
   // Load callback function pointer from stack
-  mov 24(%rsp), %rdx
+  mov 24(%rsp), %rcx
 
   // Load callback function context pointer from stack
   mov 16(%rsp), %rdi
@@ -144,13 +144,17 @@ FUNCTION(restricted_return_loop)
   //       fn restricted_exit_callback_c(
   // %rdi    context: usize,
   // %rsi    reason_code: zx::sys::zx_restricted_reason_t,
+  // %rdx    extended_pstate_ptr: *mut ExtendedPstatePointer,
   // %rax  ) -> bool
 
   // Restore reason code
   mov %rbx, %rsi
 
+  // Restore extended pstate pointer
+  mov 0(%rsp), %rdx
+
   // Invoke callback
-  callq *%rdx
+  callq *%rcx
 
   // Restore CFI state
   .cfi_restore_state
