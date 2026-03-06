@@ -9,7 +9,10 @@ use crate::inspect::{
     Counters, MessagingRelatedCounters, RebindingCounters, RenewingCounters, RequestingCounters,
     SelectingCounters, record_optional_duration_secs,
 };
-use crate::parse::{OptionCodeMap, OptionRequested};
+use crate::parse::{
+    FieldsFromOfferToUseInRequest, FieldsToRetainFromAck, FieldsToRetainFromNak, OptionCodeMap,
+    OptionRequested,
+};
 
 use anyhow::Context as _;
 use bstr::BString;
@@ -25,6 +28,7 @@ use rand::Rng as _;
 use std::fmt::{Debug, Display};
 use std::net::Ipv4Addr;
 use std::num::{NonZeroU32, NonZeroU64};
+use std::ops::Deref as _;
 use std::pin::pin;
 use std::time::Duration;
 
@@ -1249,13 +1253,7 @@ impl<I: deps::Instant> Selecting<I> {
             fields_to_use_in_request_result = offer_fields_stream.select_next_some() => {
                 let (src_addr, fields_from_offer_to_use_in_request) =
                     fields_to_use_in_request_result?;
-
-                if src_addr != fields_from_offer_to_use_in_request.server_identifier.get() {
-                    log::warn!("{debug_log_prefix} received offer from {src_addr} with \
-                        differing server_identifier = {}",
-                        fields_from_offer_to_use_in_request.server_identifier);
-                }
-
+                log_offer(&debug_log_prefix, &src_addr, &fields_from_offer_to_use_in_request);
                 // Currently, we take the naive approach of accepting the first
                 // DHCPOFFER we see without doing any special selection logic.
                 Ok(SelectingOutcome::Requesting(Requesting {
@@ -1343,7 +1341,7 @@ pub(crate) enum RequestingOutcome<I> {
     RanOutOfRetransmits,
     GracefulShutdown,
     Bound(LeaseState<I>, Vec<dhcp_protocol::DhcpOption>),
-    Nak(crate::parse::FieldsToRetainFromNak),
+    Nak(FieldsToRetainFromNak),
 }
 
 /// The Requesting state as depicted in the state-transition diagram in [RFC 2131].
@@ -1504,7 +1502,8 @@ impl<I: deps::Instant> Requesting<I> {
 
         match fields_to_retain {
             crate::parse::IncomingResponseToRequest::Ack(ack) => {
-                let crate::parse::FieldsToRetainFromAck {
+                log_ack(&debug_log_prefix, &src_addr, &ack);
+                let FieldsToRetainFromAck {
                     yiaddr,
                     server_identifier,
                     ip_address_lease_time_secs,
@@ -1512,7 +1511,6 @@ impl<I: deps::Instant> Requesting<I> {
                     rebinding_time_value_secs,
                     parameters,
                 } = ack;
-
                 let server_identifier = server_identifier.unwrap_or({
                     let crate::parse::FieldsFromOfferToUseInRequest {
                         server_identifier,
@@ -1521,13 +1519,6 @@ impl<I: deps::Instant> Requesting<I> {
                     } = fields_from_offer_to_use_in_request;
                     *server_identifier
                 });
-
-                if src_addr != server_identifier.get() {
-                    log::warn!(
-                        "{debug_log_prefix} accepting DHCPACK from {src_addr} \
-                        with differing server_identifier = {server_identifier}"
-                    );
-                }
 
                 let ip_address_lease_time = match ip_address_lease_time_secs {
                     Some(lease_time) => Duration::from_secs(lease_time.get().into()),
@@ -1579,6 +1570,7 @@ impl<I: deps::Instant> Requesting<I> {
                 ))
             }
             crate::parse::IncomingResponseToRequest::Nak(nak) => {
+                log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RequestingOutcome::Nak(nak))
             }
@@ -1901,7 +1893,7 @@ pub(crate) enum RenewingOutcome<I, R> {
     // that we should be prepared for a DHCP server to send us a different
     // address from the one we asked for while renewing.
     NewAddress(LeaseState<I>, Vec<dhcp_protocol::DhcpOption>),
-    Nak(crate::parse::FieldsToRetainFromNak),
+    Nak(FieldsToRetainFromNak),
     Rebinding(Rebinding<I>),
     AddressRemoved(R),
     AddressRejected(WaitingToRestart<I>),
@@ -2031,6 +2023,7 @@ impl<I: deps::Instant> Renewing<I> {
                     )
                     .inspect_err(|e| recv_error.increment(e))
                     .context("error extracting needed fields from DHCP message during Renewing")
+                    .map(|fields_to_retain| (addr, fields_to_retain))
                 },
                 debug_log_prefix,
                 messaging
@@ -2074,7 +2067,7 @@ impl<I: deps::Instant> Renewing<I> {
                 }
             }));
 
-        let response = select_biased! {
+        let (src_addr, response) = select_biased! {
             response = responses_stream.select_next_some() => {
                 response?
             },
@@ -2095,7 +2088,8 @@ impl<I: deps::Instant> Renewing<I> {
 
         match response {
             crate::parse::IncomingResponseToRequest::Ack(ack) => {
-                let crate::parse::FieldsToRetainFromAck {
+                log_ack(&debug_log_prefix, &src_addr, &ack);
+                let FieldsToRetainFromAck {
                     yiaddr: new_yiaddr,
                     server_identifier: _,
                     ip_address_lease_time_secs,
@@ -2104,10 +2098,6 @@ impl<I: deps::Instant> Renewing<I> {
                     parameters,
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
-                    log::debug!(
-                        "{debug_log_prefix} renewed with new lease time: {:?}",
-                        ip_address_lease_time_secs
-                    );
                     RenewingOutcome::Renewed
                 } else {
                     log::info!(
@@ -2153,6 +2143,7 @@ impl<I: deps::Instant> Renewing<I> {
                 ))
             }
             crate::parse::IncomingResponseToRequest::Nak(nak) => {
+                log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RenewingOutcome::Nak(nak))
             }
@@ -2193,7 +2184,7 @@ pub(crate) enum RebindingOutcome<I, R> {
     // that we should be prepared for a DHCP server to send us a different
     // address from the one we asked for while rebinding.
     NewAddress(LeaseState<I>, Vec<dhcp_protocol::DhcpOption>),
-    Nak(crate::parse::FieldsToRetainFromNak),
+    Nak(FieldsToRetainFromNak),
     TimedOut,
     AddressRemoved(R),
     AddressRejected(WaitingToRestart<I>),
@@ -2288,7 +2279,7 @@ impl<I: deps::Instant> Rebinding<I> {
             recv_stream(
                 &socket,
                 &mut recv_buf,
-                |packet, _addr| {
+                |packet, addr| {
                     let message = dhcp_protocol::Message::from_buffer(packet)
                         .map_err(crate::parse::ParseError::Dhcp)
                         .context("error while parsing DHCP message from UDP datagram")
@@ -2321,6 +2312,7 @@ impl<I: deps::Instant> Rebinding<I> {
                         recv_error.increment(e);
                     })
                     .context("error extracting needed fields from DHCP message during Rebinding")
+                    .map(|fields_to_retain| (addr, fields_to_retain))
                 },
                 debug_log_prefix,
                 messaging
@@ -2364,7 +2356,7 @@ impl<I: deps::Instant> Rebinding<I> {
                 }
             }));
 
-        let response = select_biased! {
+        let (src_addr, response) = select_biased! {
             response = responses_stream.select_next_some() => {
                 response?
             },
@@ -2383,7 +2375,8 @@ impl<I: deps::Instant> Rebinding<I> {
 
         match response {
             crate::parse::IncomingResponseToRequest::Ack(ack) => {
-                let crate::parse::FieldsToRetainFromAck {
+                log_ack(&debug_log_prefix, &src_addr, &ack);
+                let FieldsToRetainFromAck {
                     yiaddr: new_yiaddr,
                     server_identifier,
                     ip_address_lease_time_secs,
@@ -2392,10 +2385,6 @@ impl<I: deps::Instant> Rebinding<I> {
                     parameters,
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
-                    log::debug!(
-                        "{debug_log_prefix} rebound with new lease time: {:?}",
-                        ip_address_lease_time_secs
-                    );
                     RebindingOutcome::Renewed
                 } else {
                     log::info!(
@@ -2441,11 +2430,81 @@ impl<I: deps::Instant> Rebinding<I> {
                 ))
             }
             crate::parse::IncomingResponseToRequest::Nak(nak) => {
+                log_nak(&debug_log_prefix, &src_addr, &nak);
                 recv_nak.increment();
                 Ok(RebindingOutcome::Nak(nak))
             }
         }
     }
+}
+
+fn log_offer(
+    prefix: &DebugLogPrefix,
+    src_addr: &net_types::ip::Ipv4Addr,
+    offer_fields: &FieldsFromOfferToUseInRequest,
+) {
+    let FieldsFromOfferToUseInRequest {
+        server_identifier,
+        ip_address_lease_time_secs: lease_time,
+        ip_address_to_request: yiaddr,
+    } = offer_fields;
+    log::info!(
+        "{prefix} received DHCPOFFER from {src_addr}: \
+        yiaddr={yiaddr}, lease_time={lease_time:?}, server_identifier={server_identifier}"
+    );
+}
+
+fn log_ack<A: Display, S: Debug>(
+    prefix: &DebugLogPrefix,
+    src_addr: &A,
+    ack_fields: &FieldsToRetainFromAck<S>,
+) {
+    let FieldsToRetainFromAck {
+        yiaddr,
+        server_identifier,
+        ip_address_lease_time_secs: lease_time,
+        renewal_time_value_secs: renew_time,
+        rebinding_time_value_secs: rebinding_time,
+        parameters,
+    } = ack_fields;
+    // NB: Don't log the raw parameters, they may contain unstructured PII.
+    // Instead extract the parameters that are known to be useful for debugging.
+    let (prefix_len, routers, dns_servers): (
+        Option<u8>,
+        Option<Vec<Ipv4Addr>>,
+        Option<Vec<Ipv4Addr>>,
+    ) = parameters.iter().fold(
+        (None, None, None),
+        |(mut prefix_len, mut routers, mut dns_servers), option| {
+            match option {
+                dhcp_protocol::DhcpOption::SubnetMask(prefix_length) => {
+                    prefix_len = Some(prefix_length.get());
+                }
+                dhcp_protocol::DhcpOption::Router(at_least) => {
+                    routers.get_or_insert_default().extend(at_least.deref());
+                }
+                dhcp_protocol::DhcpOption::DomainNameServer(at_least) => {
+                    dns_servers.get_or_insert_default().extend(at_least.deref());
+                }
+                _ => {}
+            }
+            (prefix_len, routers, dns_servers)
+        },
+    );
+    log::info!(
+        "{prefix} received DHCPACK from {src_addr}: \
+        yiaddr={yiaddr}, lease_time={lease_time:?}, renewal_time={renew_time:?}, \
+        rebinding_time={rebinding_time:?}, server_identifier={server_identifier:?}, \
+        prefix_len={prefix_len:?}, routers={routers:?}, dns_servers={dns_servers:?}"
+    );
+}
+
+fn log_nak<A: Display>(prefix: &DebugLogPrefix, src_addr: &A, nak_fields: &FieldsToRetainFromNak) {
+    let FieldsToRetainFromNak { server_identifier, message, client_identifier: _ } = nak_fields;
+    log::info!(
+        "{prefix} received DHCPNAK from {src_addr}: \
+        server_identifier={server_identifier}, message={message:?}"
+    );
 }
 
 #[cfg(test)]
