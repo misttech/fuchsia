@@ -1208,10 +1208,19 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(
     volatile pte_t* page_table, ConsistencyManager& cm) {
   const vaddr_t block_size = 1UL << index_shift;
   const vaddr_t block_mask = block_size - 1;
-  // We always want to recursively call `HarvestAccessedPageTable` on entries in the top level page
-  // of shared address spaces. We have to do this because entries in these aspaces will be accessed
-  // via the unified aspace, which will not set the accessed bits on those entries.
-  const bool always_recurse = index_shift == top_index_shift_ && IsShared();
+
+  // We need to retain top level page table entries and their accessed information in shared
+  // aspaces. Since the top level page tables are pre-allocated and the corresponding top level
+  // entries copied into unified aspaces, these page tables can never be unmapped, because the
+  // copied entries cannot change.
+  //
+  // Because of this, we cannot clear the AF bit at the top level too, otherwise we lose information
+  // about whether we should recurse further down to potentially reclaim lower level page tables in
+  // the next harvest. (Unmapping would have taken care of recursion if we could unmap.) The
+  // alternative to this would be to always recurse down irrespective of whether the AF bit is set.
+  // Experiments show that this is wasteful as majority of the top level page tables remain
+  // unaccessed. Instead we choose to have the AF bit sticky at the top level in shared aspaces.
+  const bool retain_shared_entries = index_shift == top_index_shift_ && IsShared();
 
   vaddr_t vaddr_rel = vaddr_rel_in;
 
@@ -1252,7 +1261,7 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(
       // Check for our emulated non-terminal AF so we can potentially skip the recursion.
       // TODO: make this optional when hardware AF is supported (see todo on
       // MMU_PTE_ATTR_RES_SOFTWARE_AF for details)
-      bool should_recurse = always_recurse || (pte & MMU_PTE_ATTR_RES_SOFTWARE_AF);
+      bool should_recurse = pte & MMU_PTE_ATTR_RES_SOFTWARE_AF;
       vm_page_t* lower_page = nullptr;
       if (should_recurse) {
         chunk_size = HarvestAccessedPageTable(
@@ -1263,18 +1272,22 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(
         lower_page = Pmm::Node().PaddrToPage(page_table_paddr);
 
         do_unmap = lower_page->mmu.num_mappings == 0;
-        // If we processed till the end of sub page table, and we are not retaining page tables,
-        // then we can clear the AF as we know we will not have to process entries from this one
-        // again.
-        if (!do_unmap && (vaddr_rel + chunk_size) >> index_shift != index &&
-            non_terminal_action != NonTerminalAction::Retain) {
-          pte &= ~MMU_PTE_ATTR_RES_SOFTWARE_AF;
-          update_pte(&page_table[index], pte);
+
+        // We cannot clear the AF bit for top level page table entries in shared aspaces.
+        if (!retain_shared_entries) {
+          // If we processed till the end of sub page table, and we are not retaining page tables,
+          // then we can clear the AF as we know we will not have to process entries from this one
+          // again.
+          if (!do_unmap && (vaddr_rel + chunk_size) >> index_shift != index &&
+              non_terminal_action != NonTerminalAction::Retain) {
+            pte &= ~MMU_PTE_ATTR_RES_SOFTWARE_AF;
+            update_pte(&page_table[index], pte);
+          }
         }
       }
       // We can't unmap any top level page table entries in an address space with a prepopulated
       // top level page.
-      if (index_shift == top_index_shift_ && IsShared()) {
+      if (retain_shared_entries) {
         do_unmap = false;
       }
       if (do_unmap) {
@@ -1718,6 +1731,10 @@ zx_status_t ArmArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
     return ZX_ERR_INVALID_ARGS;
   }
 
+  // Harvesting is done on the restricted and shared aspaces that form the unified aspace, never
+  // directly on the unified aspace.
+  DEBUG_ASSERT(!IsUnified());
+
   // Avoid preemption while "involuntarily" holding the arch aspace lock during
   // access harvesting. The harvest loop below is O(n), however, the amount of
   // work performed with the lock held and preemption disabled is limited. Other
@@ -1782,6 +1799,10 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
   if (!IsPageRounded(vaddr) || !IsValidVaddr(vaddr)) {
     return ZX_ERR_OUT_OF_RANGE;
   }
+
+  // Mark accessed is called on the restricted and shared aspaces that form the unified aspace,
+  // never directly on the unified aspace.
+  DEBUG_ASSERT(!IsUnified());
 
   AutoPendingAccessFault pending_access_fault{this};
   Guard<CriticalMutex> a{&lock_};
@@ -1934,7 +1955,24 @@ zx_status_t ArmArchVmAspace::InitShared() {
     void* pt_vaddr = paddr_to_physmap(page_table_paddr);
     arch_zero_page(pt_vaddr);
     __dsb(ARM_MB_ISHST);
-    tt_virt_[i] = page_table_paddr | MMU_PTE_L012_DESCRIPTOR_TABLE | MMU_PTE_ATTR_RES_SOFTWARE_AF;
+    // Do not eagerly set MMU_PTE_ATTR_RES_SOFTWARE_AF for these top level entries. Let the accessed
+    // fault (or mapping) path set it only for entries that actually do get accessed, as is the case
+    // with any typical aspace.
+    //
+    // When resolving an accessed fault that originated in the unified aspace, we will look up the
+    // faulting address, and if it falls in the shared region, switch to the shared aspace to
+    // resolve it. No accessed faults or regular hardware page faults get resolved on the unified
+    // aspace. So we do have the ability to set the AF bit only on portions of the shared aspace
+    // that are indeed accessed. This saves the accessed bit harvesting code from having to do
+    // unnecessary work recursing *all* top level page tables every time.
+    //
+    // When these top level entries are copied into a unified aspace, they might not have the AF
+    // bit set, and since no faults are resolved on the unified aspace, the AF bit might never be
+    // set for these entries. This is fine, because we never do any harvesting on the unified aspace
+    // anyway, so whether or not AF is set is irrelevant. Similarly any entries that did have AF set
+    // at the time of copying are fine too. All harvesting is done on the shared and restricted
+    // aspaces that the unified aspace is composed of.
+    tt_virt_[i] = page_table_paddr | MMU_PTE_L012_DESCRIPTOR_TABLE;
   }
   return ZX_OK;
 }
