@@ -19,7 +19,7 @@ from honeydew.affordances.connectivity.bluetooth.avrcp import (
     avrcp,
     avrcp_using_sl4f,
 )
-from honeydew.affordances.connectivity.bluetooth.gap import gap
+from honeydew.affordances.connectivity.bluetooth.gap import gap, gap_using_fc
 from honeydew.affordances.connectivity.bluetooth.le import le, le_using_fc
 from honeydew.affordances.connectivity.netstack import (
     netstack,
@@ -346,7 +346,11 @@ class FuchsiaDevice(
 
     @properties.Affordance
     def bluetooth_gap(self) -> gap.Gap:
-        return self._inner.bluetooth_gap
+        return gap_using_fc.GapUsingFc(
+            device_name=self.device_name,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
 
     @properties.Affordance
     def wlan_policy(self) -> wlan_policy.WlanPolicy:
