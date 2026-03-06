@@ -44,11 +44,7 @@ from honeydew.affordances.virtual_audio import audio_using_fuchsia_controller
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
-from honeydew.fuchsia_device import async_fuchsia_device
-from honeydew.fuchsia_device import (
-    async_fuchsia_device as async_fuchsia_device_interface,
-)
-from honeydew.fuchsia_device import fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
@@ -378,10 +374,10 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     def test_device_is_a_fuchsia_device(self) -> None:
         """Test case to make sure DUT is a fuchsia device"""
         self.assertIsInstance(
-            self.fd_fc_obj, async_fuchsia_device_interface.AsyncFuchsiaDevice
+            self.fd_fc_obj, async_fuchsia_device.AsyncFuchsiaDevice
         )
         self.assertIsInstance(
-            self.fd_sl4f_obj, async_fuchsia_device_interface.AsyncFuchsiaDevice
+            self.fd_sl4f_obj, async_fuchsia_device.AsyncFuchsiaDevice
         )
 
     # List all the tests related to transports
