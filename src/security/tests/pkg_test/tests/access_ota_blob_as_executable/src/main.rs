@@ -358,7 +358,6 @@ async fn perform_update(update_url: &str) {
             },
             monitor_client_end,
             Some(reboot_controller_server_end),
-            None,
         )
         .await
         .unwrap()

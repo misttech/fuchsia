@@ -73,17 +73,18 @@ async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
 
 #[fasync::run_singlethreaded(test)]
 async fn packageless_update_fails_with_wrong_signature() {
-    let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
-
+    let manifest = make_manifest([]);
     let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[1; 32]).unwrap();
-    let signature = key_pair.sign(env.http_loader_service.manifest.as_ref().unwrap());
+    let bad_signed_manifest =
+        ::update_package::signed_manifest::generate(manifest, &key_pair).unwrap();
+
+    let env = TestEnv::builder().ota_manifest_raw(bad_signed_manifest).build().await;
 
     let mut attempt = start_update(
         &MANIFEST_URL.parse().unwrap(),
         default_options(),
         &env.installer_proxy(),
         None,
-        Some(signature.as_ref()),
     )
     .await
     .unwrap();

@@ -105,22 +105,17 @@ enum PrepareError {
     #[error("while fetching update url")]
     FetchUrl(#[source] fetch_url::errors::FetchUrlError),
 
-    #[error("while parsing OTA manifest")]
-    ParseManifest(#[source] update_package::manifest::OtaManifestError),
-
     #[error("while opening blobfs")]
     OpenBlobfs(#[source] blobfs::BlobfsError),
 
     #[error(
-        "could not verify manifest against signature {signature:?} with public keys {public_keys:?}"
+        "could not parse or verify signed manifest against public keys {public_keys:?}: {source:#}"
     )]
-    VerifyManifestSignature {
-        signature: Option<String>,
+    ParseAndVerifyManifest {
         public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
+        #[source]
+        source: update_package::signed_manifest::SignedManifestError,
     },
-
-    #[error("signature is not allowed in package-based updates")]
-    SignatureNotAllowed { signature: String },
 
     #[error("while joining update url '{update_url}' with blob base url '{blob_base_url}'")]
     JoinUrl { update_url: String, blob_base_url: String, source: url::ParseError },
@@ -820,9 +815,6 @@ impl Attempt<'_> {
         ),
         PrepareError,
     > {
-        if let Some(signature) = &self.config.signature {
-            return Err(PrepareError::SignatureNotAllowed { signature: hex::encode(signature) });
-        }
         // Ensure that the partition boot metadata is ready for the update to begin. Specifically:
         // - the current configuration must be Healthy and Active, and
         // - the non-current configuration must be Unbootable.
@@ -1283,10 +1275,14 @@ impl PackagelessAttempt<'_> {
             .await
             .map_err(PrepareError::FetchUrl)?;
 
-        self.verify_manifest_signature(&manifest_bytes)?;
-
-        let manifest = update_package::manifest::parse_ota_manifest(&manifest_bytes)
-            .map_err(PrepareError::ParseManifest)?;
+        let manifest = update_package::signed_manifest::parse_and_verify(
+            &manifest_bytes,
+            &self.manifest_public_keys,
+        )
+        .map_err(|source| PrepareError::ParseAndVerifyManifest {
+            public_keys: self.manifest_public_keys.clone(),
+            source,
+        })?;
 
         let blob_base_url = self.config.update_url.join(&manifest.blob_base_url).map_err(|e| {
             PrepareError::JoinUrl {
@@ -1539,21 +1535,6 @@ impl PackagelessAttempt<'_> {
         let () = sync_package_cache(&self.env.pkg_cache).await.map_err(FetchError::Sync)?;
 
         Ok(())
-    }
-
-    #[allow(clippy::result_large_err)]
-    fn verify_manifest_signature(&self, manifest_bytes: &[u8]) -> Result<(), PrepareError> {
-        if let Some(signature) = &self.config.signature {
-            for key in &self.manifest_public_keys {
-                if let Ok(()) = key.verify(manifest_bytes, signature) {
-                    return Ok(());
-                }
-            }
-        }
-        Err(PrepareError::VerifyManifestSignature {
-            signature: self.config.signature.as_ref().map(hex::encode),
-            public_keys: self.manifest_public_keys.clone(),
-        })
     }
 }
 

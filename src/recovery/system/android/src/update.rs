@@ -14,7 +14,6 @@ use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 pub async fn apply_update(
     url: &str,
-    signature: &[u8],
     view_sender: &crate::view_sender::ViewSender,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -69,7 +68,7 @@ pub async fn apply_update(
     }
 
     view_sender.queue_message(RecoveryMessages::Log(format!("Installing update...")));
-    let res = install_update(url, signature, view_sender).await;
+    let res = install_update(url, view_sender).await;
     // Explicitly closing the `blob_exposed_dir` to let fshost shutdown the filesystem and destroy
     // the fxblob component, if not closed, this should still happen when `blob_exposed_dir` goes
     // out of scope. The `blob_root` and `blob_svc` handles are connected directly to the fxblob
@@ -88,14 +87,11 @@ pub async fn apply_update(
 
 async fn install_update(
     url: &str,
-    signature: &[u8],
     view_sender: &crate::view_sender::ViewSender,
 ) -> Result<(), Error> {
     let mut updater = Updater::new().context("Failed to create updater")?;
-    let mut attempt = updater
-        .start_update(Some(&url.parse()?), Some(signature))
-        .await
-        .context("Failed to start update")?;
+    let mut attempt =
+        updater.start_update(Some(&url.parse()?)).await.context("Failed to start update")?;
     view_sender.queue_message(RecoveryMessages::Log(format!("update started...")));
     while let Some(state) = attempt.try_next().await.context("fetching next update state")? {
         log::info!("Install: {:?}", state);

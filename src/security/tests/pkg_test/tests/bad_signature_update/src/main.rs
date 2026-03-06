@@ -110,7 +110,6 @@ async fn attempt_update(update_url: &str) -> Result<State> {
             },
             monitor_client_end,
             Some(reboot_controller_server_end),
-            None,
         )
         .await
         .unwrap()

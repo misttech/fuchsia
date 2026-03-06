@@ -40,7 +40,7 @@ async fn handle_force_install_impl(
         fidl::endpoints::create_proxy::<RebootControllerMarker>();
 
     let mut update_attempt =
-        start_update(&update_url, options, installer, Some(reboot_controller_server_end), None)
+        start_update(&update_url, options, installer, Some(reboot_controller_server_end))
             .await
             .context("starting update")?;
 

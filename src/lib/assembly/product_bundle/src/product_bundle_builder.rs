@@ -194,18 +194,14 @@ impl ProductBundleBuilder {
         let gen_dir = TempDir::new().context("creating temporary directory")?;
         let gen_dir_path = Utf8Path::from_path(gen_dir.path())
             .context("checking if temporary directory is UTF-8")?;
-        let mut ota_manifest_signature_path = None;
         let update_package = if let Some(update_details) = update_details {
-            if let Some(repository_details) = &repository_details {
-                if update_details.ota_manifest_key_path.is_some() {
-                    ota_manifest_signature_path = Some(out_dir.join("repository/ota_manifest.sig"))
-                }
-
+            if let Some(repository_details) = &repository_details
+                && let Some(key_path) = &update_details.ota_manifest_key_path
+            {
                 write_ota_manifest(
                     &update_details.version_file,
                     &update_details.epoch,
-                    update_details.ota_manifest_key_path.as_ref(),
-                    ota_manifest_signature_path.as_ref(),
+                    &key_path,
                     repository_details.delivery_blob_type,
                     &system_a,
                     &system_r,
@@ -247,7 +243,6 @@ impl ProductBundleBuilder {
             write_repositories(
                 repository_details,
                 update_package,
-                ota_manifest_signature_path,
                 packages_a,
                 packages_r,
                 blobs_path,
@@ -383,7 +378,6 @@ fn write_update_package(
 async fn write_repositories(
     repository_details: RepositoryDetails,
     update_package: Option<UpdatePackage>,
-    ota_manifest_signature_path: Option<Utf8PathBuf>,
     packages_a: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     packages_r: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     blobs_path: impl AsRef<Utf8Path>,
@@ -444,7 +438,6 @@ async fn write_repositories(
         targets_private_key_path: copy_file(tuf_keys.join("targets.json"), &keys_path).ok(),
         snapshot_private_key_path: copy_file(tuf_keys.join("snapshot.json"), &keys_path).ok(),
         timestamp_private_key_path: copy_file(tuf_keys.join("timestamp.json"), &keys_path).ok(),
-        ota_manifest_signature_path,
     }])
 }
 
@@ -806,9 +799,6 @@ mod test {
                 targets_private_key_path: Some(product_bundle_path.join("keys/targets.json")),
                 snapshot_private_key_path: Some(product_bundle_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(product_bundle_path.join("keys/timestamp.json")),
-                ota_manifest_signature_path: Some(
-                    product_bundle_path.join("repository/ota_manifest.sig"),
-                ),
             }],
             update_package_hash: Some(
                 "4198e7b88cc98aa87b16afa134e1f1ec8580fd9105f7db399adf6ff65426b49c".parse().unwrap(),

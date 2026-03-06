@@ -15,12 +15,11 @@ pub struct Config {
     pub(super) start_time: SystemTime,
     pub(super) start_time_mono: Instant,
     pub allow_attach_to_existing_attempt: bool,
-    pub signature: Option<Vec<u8>>,
 }
 
 impl Config {
     /// Constructs update configuration from url, options and signature.
-    pub fn new(update_url: url::Url, options: Options, signature: Option<Vec<u8>>) -> Self {
+    pub fn new(update_url: url::Url, options: Options) -> Self {
         let start_time = SystemTime::now();
         let start_time_mono =
             metrics::system_time_to_monotonic_time(start_time).unwrap_or_else(Instant::now);
@@ -32,7 +31,6 @@ impl Config {
             start_time,
             start_time_mono,
             allow_attach_to_existing_attempt: options.allow_attach_to_existing_attempt,
-            signature,
         }
     }
 }
@@ -46,7 +44,6 @@ impl std::fmt::Debug for Config {
             .field("start_time", &chrono::DateTime::<chrono::Utc>::from(self.start_time))
             .field("start_time_mono", &self.start_time_mono)
             .field("allow_attach_to_existing_attempt", &self.allow_attach_to_existing_attempt)
-            .field("signature", &self.signature.as_ref().map(hex::encode))
             .finish()
     }
 }
@@ -80,7 +77,6 @@ pub struct ConfigBuilder<'a> {
     update_url: &'a str,
     should_write_recovery: bool,
     allow_attach_to_existing_attempt: bool,
-    signature: Option<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -90,7 +86,6 @@ impl<'a> ConfigBuilder<'a> {
             update_url: "fuchsia-pkg://fuchsia.test/update",
             should_write_recovery: true,
             allow_attach_to_existing_attempt: false,
-            signature: None,
         }
     }
     pub fn update_url(mut self, update_url: &'a str) -> Self {
@@ -108,14 +103,8 @@ impl<'a> ConfigBuilder<'a> {
         self.should_write_recovery = should_write_recovery;
         self
     }
-    pub fn signature(mut self, signature: Vec<u8>) -> Self {
-        assert_eq!(self.signature, None);
-        self.signature = Some(signature);
-        self
-    }
     pub fn build(self) -> Result<Config, anyhow::Error> {
-        let Self { update_url, should_write_recovery, allow_attach_to_existing_attempt, signature } =
-            self;
+        let Self { update_url, should_write_recovery, allow_attach_to_existing_attempt } = self;
         Ok(Config::new(
             update_url.parse()?,
             Options {
@@ -123,7 +112,6 @@ impl<'a> ConfigBuilder<'a> {
                 should_write_recovery,
                 initiator: ExtInitiator::User,
             },
-            signature,
         ))
     }
 }
@@ -141,7 +129,7 @@ mod tests {
         };
         let update_url = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 
-        let config = Config::new(update_url, options, Some(vec![1, 2, 3]));
+        let config = Config::new(update_url, options);
 
         assert_matches::assert_matches!(
             config,
@@ -150,9 +138,8 @@ mod tests {
                 update_url: url,
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
-                signature,
                 ..
-            } if url == "fuchsia-pkg://fuchsia.test/foo".parse().unwrap() && signature == Some(vec![1, 2, 3])
+            } if url == "fuchsia-pkg://fuchsia.test/foo".parse().unwrap()
         );
     }
 }

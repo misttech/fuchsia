@@ -94,14 +94,8 @@ impl UpdateInstaller for RealUpdateInstaller {
         reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
     ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
         async move {
-            start_update(
-                &update_url,
-                options,
-                &self.installer_proxy,
-                reboot_controller_server_end,
-                None,
-            )
-            .await
+            start_update(&update_url, options, &self.installer_proxy, reboot_controller_server_end)
+                .await
         }
         .boxed()
     }

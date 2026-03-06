@@ -14,6 +14,7 @@ pub mod images;
 pub mod manifest;
 mod name;
 mod packages;
+pub mod signed_manifest;
 mod update_mode;
 mod version;
 

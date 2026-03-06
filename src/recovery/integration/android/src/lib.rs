@@ -241,7 +241,7 @@ async fn test_sideload_auto_reboot() {
 
     // This returns after update has finished, but the update is expected to fail, because the test
     // doesn't provide all the dependencies needed for a successful update.
-    let () = env.updater_proxy().update("https://fuchsia.com/ota_manifest", &[]).await.unwrap();
+    let () = env.updater_proxy().update("https://fuchsia.com/ota_manifest").await.unwrap();
     assert_eq!(env.mount_called(), 1);
 
     let reboot_options = env.wait_for_reboot().await;

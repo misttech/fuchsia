@@ -442,10 +442,6 @@ impl<N: Notify> ControlRequest<N> {
                     "allow_attach_to_existing_attempt",
                     format!("{:?}", data.config.allow_attach_to_existing_attempt),
                 );
-                node.record_string(
-                    "signature",
-                    format!("{:?}", data.config.signature.as_ref().map(hex::encode)),
-                );
             }
             Self::Monitor(data) => {
                 node.record_string("request", "monitor");
@@ -1271,11 +1267,7 @@ mod tests {
         let (notifier, mut state_receiver) = FakeStateNotifier::new_callback_and_receiver();
         assert_eq!(
             install_manager_ch
-                .start_update(
-                    ConfigBuilder::new().signature(vec![1, 2, 3]).build().unwrap(),
-                    notifier,
-                    None
-                )
+                .start_update(ConfigBuilder::new().build().unwrap(), notifier, None)
                 .await,
             Ok(Ok("my-attempt".to_string()))
         );
@@ -1305,7 +1297,6 @@ mod tests {
                             allow_attach_to_existing_attempt: "false",
                             initiator: "Manual",
                             should_write_recovery: "true",
-                            signature: r#"Some("010203")"#,
                             update_url: "fuchsia-pkg://fuchsia.test/update",
                         },
                     },

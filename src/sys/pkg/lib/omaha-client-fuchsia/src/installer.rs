@@ -179,7 +179,7 @@ where
         }
 
         let mut update_attempt =
-            start_update(url, options, &proxy, Some(reboot_controller_server_end), None).await?;
+            start_update(url, options, &proxy, Some(reboot_controller_server_end)).await?;
 
         while let Some(state) = update_attempt.try_next().await? {
             info!("Installer entered state: {}", state.name());
@@ -585,7 +585,6 @@ mod tests {
                     options,
                     monitor,
                     reboot_controller,
-                    signature: _,
                     responder,
                 }) => {
                     assert_eq!(url.url, TEST_URL);
@@ -686,7 +685,6 @@ mod tests {
                     options,
                     monitor,
                     reboot_controller,
-                    signature: _,
                     responder,
                 }) => {
                     assert_eq!(url.url, TEST_URL);

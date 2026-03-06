@@ -226,7 +226,10 @@ impl TestEnvBuilder {
     }
 
     fn ota_manifest(mut self, manifest: OtaManifest) -> Self {
-        self.ota_manifest = Some(manifest.serialize());
+        let key_bytes = hex::decode(MANIFEST_PRIVATE_KEY).unwrap();
+        let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
+        self.ota_manifest =
+            Some(::update_package::signed_manifest::generate(manifest, &key_pair).unwrap());
         self
     }
 
@@ -784,23 +787,8 @@ impl TestEnv {
         reboot_controller_server_end: Option<ServerEnd<finstaller::RebootControllerMarker>>,
     ) -> Result<UpdateAttempt, UpdateAttemptError> {
         let url: url::Url = url.parse().unwrap();
-        let signature = match url.scheme() {
-            "http" | "https" => {
-                let key_bytes = hex::decode(MANIFEST_PRIVATE_KEY).unwrap();
-                let key_pair =
-                    ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
-                self.http_loader_service.manifest.as_ref().map(|manifest| key_pair.sign(manifest))
-            }
-            _ => None,
-        };
-        start_update(
-            &url,
-            options,
-            &self.installer_proxy(),
-            reboot_controller_server_end,
-            signature.as_ref().map(|s| s.as_ref()),
-        )
-        .await
+
+        start_update(&url, options, &self.installer_proxy(), reboot_controller_server_end).await
     }
 
     async fn run_update(&self) -> Result<(), Error> {

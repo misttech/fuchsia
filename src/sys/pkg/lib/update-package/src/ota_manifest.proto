@@ -93,3 +93,8 @@ message Blob {
   // The uncompressed size of the blob in bytes.
   uint64 uncompressed_size = 2;
 }
+
+// A list of Ed25519 signatures.
+message Signatures {
+  repeated bytes signatures = 1;
+}
