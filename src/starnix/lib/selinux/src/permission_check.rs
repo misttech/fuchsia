@@ -524,8 +524,8 @@ mod tests {
 
     #[test]
     fn has_permission_both() {
-        let deny_all: DenyAllPermissions = Default::default();
-        let allow_all: AllowAllPermissions = Default::default();
+        let deny_all = DenyAllPermissions::default();
+        let allow_all = AllowAllPermissions::default();
 
         // Use permissions that are mapped to access vector bits in
         // `access_vector_from_permission`.
@@ -560,10 +560,10 @@ mod tests {
 
     #[test]
     fn has_ioctl_permission_enforcing() {
-        let deny_all: DenyAllPermissions = Default::default();
-        let allow_all: AllowAllPermissions = Default::default();
-        let deny_perms_allow_xperms: DenyPermissionsAllowXperms = Default::default();
-        let allow_perms_deny_xperms: AllowPermissionsDenyXperms = Default::default();
+        let deny_all = DenyAllPermissions::default();
+        let allow_all = AllowAllPermissions::default();
+        let deny_perms_allow_xperms = DenyPermissionsAllowXperms::default();
+        let allow_perms_deny_xperms = AllowPermissionsDenyXperms::default();
         let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
 
         // DenyAllPermissions denies.
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn has_ioctl_permission_not_enforcing() {
-        let deny_all: DenyAllPermissions = Default::default();
+        let deny_all = DenyAllPermissions::default();
         let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
 
         // DenyAllPermissions denies, but the permission is allowed when the security server
