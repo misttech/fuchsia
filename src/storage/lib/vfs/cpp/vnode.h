@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/natural_types.h>
 #include <lib/fit/function.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/zx/result.h>
 #include <limits.h>
 #include <stdint.h>
@@ -56,7 +57,7 @@ class FuchsiaVfs;
 
 inline bool IsValidName(std::string_view name) {
   return !name.empty() && name != "." && name != ".." && name.length() <= NAME_MAX &&
-         name.find('/') == std::string::npos;
+         !cpp23::contains(name, '/');
 }
 
 // The VFS interface declares a default abstract Vnode class with common operations that may be

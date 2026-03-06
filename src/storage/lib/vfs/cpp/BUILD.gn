@@ -30,6 +30,8 @@ static_library("cpp") {
     "vnode.cc",
   ]
 
+  deps = [ "//sdk/lib/stdcompat" ]
+
   public_deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio:constants",
@@ -98,7 +100,7 @@ static_library("cpp") {
       # Required for fs::PagedVnode
       "//sdk/lib/async:async-cpp",
     ]
-    deps = [
+    deps += [
       "//sdk/lib/fidl",
       "//zircon/system/ulib/sync",
     ]

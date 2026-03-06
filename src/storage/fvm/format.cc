@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #endif
 
+#include <lib/stdcompat/string_view.h>
 #include <zircon/assert.h>
 
 #include "src/lib/uuid/uuid.h"
@@ -259,7 +260,7 @@ VPartitionEntry::VPartitionEntry(const uint8_t in_type[kGuidSize], const uint8_t
   memcpy(&guid, in_guid, kGuidSize);
 
   // The input name should not have any embedded nulls.
-  ZX_DEBUG_ASSERT(in_name.find('\0') == std::string::npos);
+  ZX_DEBUG_ASSERT(!cpp23::contains(in_name, '\0'));
   memcpy(unsafe_name, in_name.data(), std::min(kMaxVPartitionNameLength, in_name.size()));
 }
 

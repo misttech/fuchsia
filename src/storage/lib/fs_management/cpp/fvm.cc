@@ -20,6 +20,7 @@
 #include <lib/fdio/limits.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fit/defer.h>
+#include <lib/stdcompat/string_view.h>
 #include <string.h>
 #include <unistd.h>
 #include <zircon/assert.h>
@@ -199,7 +200,7 @@ zx::result<bool> PartitionMatches(fidl::UnownedClientEnd<fuchsia_device::Control
       return zx::ok(false);
     }
     if (!matcher.ignore_if_path_contains.empty() &&
-        path.find(matcher.ignore_if_path_contains) != std::string::npos) {
+        cpp23::contains(path, matcher.ignore_if_path_contains)) {
       return zx::ok(false);
     }
   }

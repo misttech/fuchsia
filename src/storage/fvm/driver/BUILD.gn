@@ -65,6 +65,8 @@ source_set("shared") {
     "vpartition_manager.h",
   ]
 
+  deps = [ "//sdk/lib/stdcompat" ]
+
   public_deps = [
     ":fvm_bind",
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",

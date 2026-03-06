@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <lib/fpromise/result.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/zx/result.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -442,7 +443,7 @@ TEST(BlobfsHostTest, VisitBlobsForwardsVisitorErrors) {
   auto res = blobfs->VisitBlobs([](auto view) { return fpromise::error("1234"); });
 
   ASSERT_TRUE(res.is_error());
-  ASSERT_TRUE(res.error().find("1234") != std::string::npos);
+  ASSERT_TRUE(cpp23::contains(res.error(), "1234"));
 }
 
 std::vector<uint8_t> ReadFileContents(int fd) {

@@ -12,6 +12,7 @@
 #include <lib/ddk/driver.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/owned-vmo-mapper.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/vmo.h>
@@ -835,7 +836,7 @@ zx::result<std::unique_ptr<VPartition>> VPartitionManager::AllocatePartition(
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   std::string name_str(name.get());
-  if (name_str.find('\0') != std::string::npos) {
+  if (cpp23::contains(name_str, '\0')) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 

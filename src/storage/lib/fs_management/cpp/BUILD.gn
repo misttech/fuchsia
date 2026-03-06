@@ -48,6 +48,7 @@ if (is_fuchsia) {
       "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/device-watcher/cpp",
+      "//sdk/lib/stdcompat",
       "//src/lib/digest",
       "//src/lib/fxl",
       "//src/storage/fvm",

@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/natural_types.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/zx/result.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -130,7 +131,7 @@ Vfs::DeprecatedOpenResult Vfs::DeprecatedOpen(fbl::RefPtr<Vnode> vndir, std::str
     return DeprecatedOpenResult::Remote{.vnode = std::move(vndir), .path = path};
   }
   // |Traverse()| should guarantee |path| is only a single and valid component.
-  ZX_DEBUG_ASSERT(!path.empty() && path.find('/') == std::string_view::npos && path != "..");
+  ZX_DEBUG_ASSERT(!path.empty() && !cpp23::contains(path, '/') && path != "..");
 
   fbl::RefPtr<Vnode> vn;
   bool vn_is_open;
@@ -224,7 +225,7 @@ zx::result<Vfs::OpenResult> Vfs::Open(fbl::RefPtr<Vnode> vndir, std::string_view
     return OpenResult::Remote(std::move(vndir), path);
   }
   // |Traverse()| should guarantee |path| is only a single and valid component.
-  ZX_DEBUG_ASSERT(!path.empty() && path.find('/') == std::string_view::npos && path != "..");
+  ZX_DEBUG_ASSERT(!path.empty() && !cpp23::contains(path, '/') && path != "..");
 
   // Try to open or create the object at |path| inside |vndir|.
   fbl::RefPtr<Vnode> vn;
@@ -401,7 +402,7 @@ zx::result<bool> Vfs::TrimName(std::string_view& name) {
     // Name must be less than the maximum-expected length.
     return zx::error(ZX_ERR_BAD_PATH);
   }
-  if (name.find('/') != std::string::npos) {
+  if (cpp23::contains(name, '/')) {
     // Name must not contain '/' characters after being trimmed.
     return zx::error(ZX_ERR_INVALID_ARGS);
   }

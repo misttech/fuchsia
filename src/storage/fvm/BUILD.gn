@@ -36,6 +36,7 @@ static_library("fvm") {
 
   deps = [
     "//sdk/lib/fit",
+    "//sdk/lib/stdcompat",
     "//src/lib/digest",
     "//src/lib/uuid",
     "//zircon/system/ulib/fbl",
