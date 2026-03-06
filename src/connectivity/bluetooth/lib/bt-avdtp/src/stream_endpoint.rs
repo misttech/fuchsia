@@ -576,8 +576,9 @@ mod tests {
     use crate::tests::{expect_remote_recv, setup_peer};
 
     use assert_matches::assert_matches;
+    use async_utils::PollExt;
     use fidl::endpoints::create_request_stream;
-    use futures::io::AsyncWriteExt;
+    use futures::io::{AsyncReadExt, AsyncWriteExt};
     use futures::stream::StreamExt;
     use {
         fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
@@ -763,10 +764,10 @@ mod tests {
 
     #[test]
     fn stream_establishment() {
-        let _exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
-        let (remote, transport) = Channel::create();
+        let (mut remote, transport) = Channel::create();
 
         // Can't establish before configuring
         assert_matches!(s.establish(), Err(ErrorCode::BadState));
@@ -776,7 +777,10 @@ mod tests {
 
         let buf: &mut [u8] = &mut [0; 1];
 
-        assert_matches!(remote.read(buf), Err(zx::Status::PEER_CLOSED));
+        let mut read_fut = remote.read(buf);
+        let res = exec.run_until_stalled(&mut read_fut).expect("should be ready");
+        // When the peer is closed, Ok(0) is returned as per the AsyncRead contract.
+        assert_matches!(res, Ok(0));
 
         assert_matches!(s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]), Ok(()));
 
@@ -810,12 +814,12 @@ mod tests {
 
         let remote_transport = establish_stream(&mut s);
 
-        let (peer, signaling, responder) = setup_peer_for_release(&mut exec);
+        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec);
 
         // We expect release to succeed in this state.
         s.release(responder, &peer).unwrap();
         // Expect a "yes" response.
-        expect_remote_recv(&[0x42, 0x08], &signaling);
+        expect_remote_recv(&[0x42, 0x08], &mut signaling);
 
         // Close the transport channel by dropping it.
         drop(remote_transport);
@@ -835,7 +839,7 @@ mod tests {
         // Before the stream is opened, we shouldn't be able to take the transport.
         assert!(s.take_transport().is_none());
 
-        let remote_transport = establish_stream(&mut s);
+        let mut remote_transport = establish_stream(&mut s);
 
         // Should be able to get the transport from the stream now.
         let temp_stream = s.take_transport();
@@ -860,7 +864,7 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut write_fut), Poll::Ready(Ok(8)));
 
-        expect_remote_recv(hearts, &remote_transport);
+        expect_remote_recv(hearts, &mut remote_transport);
 
         // Closing the media stream should close the channel.
         let mut close_fut = media_stream.close();
@@ -870,9 +874,12 @@ mod tests {
 
         drop(s);
 
-        // Reading from the remote end should fail.
+        // Reading from the remote end should return 0.
         let mut result = vec![0];
-        assert_matches!(remote_transport.read(&mut result[..]), Err(zx::Status::PEER_CLOSED));
+        let mut read_fut = remote_transport.read(&mut result[..]);
+        let res = exec.run_until_stalled(&mut read_fut).expect("should be ready");
+        // When the peer is closed, Ok(0) is returned as per the AsyncRead contract.
+        assert_matches!(res, Ok(0));
 
         // After the stream is gone, any write should return an Err
         let mut write_fut = media_stream.write(&[0xDE, 0xAD]);
@@ -900,7 +907,7 @@ mod tests {
         // We expect release to succeed in this state, then start the task to wait for the close.
         s.release(responder, &peer).unwrap();
         // Expect a "yes" response.
-        expect_remote_recv(&[0x42, 0x08], &signaling);
+        expect_remote_recv(&[0x42, 0x08], &mut signaling);
 
         // Should get an abort
         let next = std::pin::pin!(signaling.next());
@@ -986,12 +993,12 @@ mod tests {
         assert_matches!(s.suspend(), Ok(()));
 
         // After we close, we are back at idle and can't start / stop
-        let (peer, signaling, responder) = setup_peer_for_release(&mut exec);
+        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec);
 
         {
             s.release(responder, &peer).unwrap();
             // Expect a "yes" response.
-            expect_remote_recv(&[0x42, 0x08], &signaling);
+            expect_remote_recv(&[0x42, 0x08], &mut signaling);
             // Close the transport channel by dropping it.
             drop(remote);
             while s.state() != StreamState::Idle {

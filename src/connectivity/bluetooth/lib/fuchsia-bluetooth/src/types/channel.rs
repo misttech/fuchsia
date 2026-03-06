@@ -232,12 +232,6 @@ impl Channel {
         self.socket.poll_datagram(cx, out)
     }
 
-    /// Read from the channel. This will return zx::Status::SHOULD_WAIT if there is no data
-    /// available.  If `buf` is not large enough, the rest of the packet will be thrown out.
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize, zx::Status> {
-        self.socket.as_ref().read(buf)
-    }
-
     /// Write to the channel.  This will return zx::Status::SHOULD_WAIT if the
     /// the channel is too full.  Use the poll_write for asynchronous writing.
     pub fn write(&self, bytes: &[u8]) -> Result<usize, zx::Status> {
@@ -651,5 +645,84 @@ mod tests {
         // And with dropping
         drop(offload_ext);
         assert!(channel.audio_offload().is_some());
+    }
+
+    #[test]
+    fn channel_async_read() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut recv, send) = Channel::create();
+
+        // Test `read` with a datagram smaller than the read buffer.
+        let max_tx_size = recv.max_tx_size();
+        let mut read_buf = vec![0; max_tx_size];
+        let mut read_fut = recv.read(&mut read_buf[..]);
+
+        assert!(exec.run_until_stalled(&mut read_fut).is_pending());
+
+        let data = &[0x01, 0x02, 0x03, 0x04];
+        assert_eq!(data.len(), send.write(data).expect("should write successfully"));
+
+        // The read should complete, with the length of the datagram.
+        let read_len = match exec.run_until_stalled(&mut read_fut) {
+            Poll::Ready(Ok(read_len)) => read_len,
+            x => panic!("Expected successful read, got {x:?}"),
+        };
+        assert_eq!(read_len, data.len());
+        assert_eq!(&data[..], &read_buf[..data.len()]);
+
+        // Test `read` with a datagram that is larger than the read buffer.
+        let mut read_buf = [0; 4]; // buffer too small
+        let mut read_fut = recv.read(&mut read_buf);
+
+        let oversized_data = &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        assert_eq!(
+            oversized_data.len(),
+            send.write(oversized_data).expect("should write successfully")
+        );
+
+        // The read should complete, filling the buffer.
+        let read_len = match exec.run_until_stalled(&mut read_fut) {
+            Poll::Ready(Ok(read_len)) => read_len,
+            x => panic!("Expected successful read, got {x:?}"),
+        };
+        assert_eq!(read_len, read_buf.len());
+        assert_eq!(&oversized_data[..read_buf.len()], &read_buf[..]);
+
+        // The rest of the datagram should be discarded. A subsequent read should be pending.
+        let mut leftover_buf = [0; 1];
+        let mut leftover_fut = recv.read(&mut leftover_buf);
+        assert!(exec.run_until_stalled(&mut leftover_fut).is_pending());
+    }
+
+    #[test]
+    fn channel_stream() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut recv, send) = Channel::create();
+
+        let mut stream_fut = recv.next();
+
+        assert!(exec.run_until_stalled(&mut stream_fut).is_pending());
+
+        let heart: &[u8] = &[0xF0, 0x9F, 0x92, 0x96];
+        assert_eq!(heart.len(), send.write(heart).expect("should write successfully"));
+
+        match exec.run_until_stalled(&mut stream_fut) {
+            Poll::Ready(Some(Ok(bytes))) => {
+                assert_eq!(heart.to_vec(), bytes);
+            }
+            x => panic!("Expected Some(Ok(bytes)) from the stream, got {x:?}"),
+        };
+
+        // After the sender is dropped, the stream should terminate.
+        drop(send);
+
+        let mut stream_fut = recv.next();
+        match exec.run_until_stalled(&mut stream_fut) {
+            Poll::Ready(None) => {}
+            x => panic!("Expected None from the stream after close, got {x:?}"),
+        }
+
+        // It should continue to report terminated.
+        assert!(recv.is_terminated());
     }
 }
