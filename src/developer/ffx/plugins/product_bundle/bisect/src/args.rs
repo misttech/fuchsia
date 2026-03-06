@@ -52,13 +52,57 @@ impl FromArgValue for Strategy {
     note = "\
     For more information about how to use this tool, see go/fuchsia-product-bisection-userguide
     ",
+    note = "\
+    VALIDATION SCRIPT REQUIREMENTS:
+  If a --script is provided, it will be executed for each bisection step.
+  The script will receive the following arguments:
+    --pb <path>  : The absolute path to the assembled product bundle for the current step.
+
+  The script must exit with one of the following codes:
+    0          : Pass (The bug is NOT present in this version)
+    1-124      : Fail (The bug IS present in this version)
+    125        : Skip (The PB was untestable, e.g. failed to flash)
+    128+       : Abort (A critical infrastructure failure occurred)
+    ",
     example = "\
-    // Bisect the core.vim3 product bundle between two provided versions.
+    // 1. Bisect the core.vim3 product bundle between two provided versions.
 // (Note: core.vim3 is not yet supported: https://fxbug.dev/485981469 .)
 
 ffx product-bundle bisect core.vim3 \\
     --from-success 29.20250826.6.1 \\
     --to-failure 29.20250905.6.1
+
+
+// 2. Automate bisection with a validation script.
+// Create a file called `validate.sh` with the following content:
+
+#!/bin/bash
+# Extract the PB path from the arguments
+while [[ \"$#\" -gt 0 ]]; do
+    case $1 in
+        --pb) PB_PATH=\"$2\"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+
+# Flash the device with the assembled product bundle
+ffx target flash \"$PB_PATH\"
+if [ $? -ne 0 ]; then
+    echo \"Failed to flash, skipping...\"
+    exit 125 # Skip
+fi
+
+# <this is where the test code goes>
+# e.g., ffx test run ...
+
+# Return 0 for Pass, 1 for Fail
+exit 0
+
+// Then pass the script to the bisection tool:
+ffx product-bundle bisect core.vim3 \\
+    --from-success 29.20250826.6.1 \\
+    --to-failure 29.20250905.6.1 \\
+    --script ./validate.sh
     "
 )]
 pub struct BisectCommand {
@@ -90,6 +134,10 @@ pub struct BisectCommand {
     /// directory to write intermediate files. Defaults to ~/<plan_directory>/gen
     #[argh(option)]
     pub gen_dir: Option<Utf8PathBuf>,
+
+    /// script to run for automated bisection.
+    #[argh(option)]
+    pub script: Option<Utf8PathBuf>,
 
     /// authentication method to use.
     #[argh(option, default = "AuthFlowChoice::Default")]

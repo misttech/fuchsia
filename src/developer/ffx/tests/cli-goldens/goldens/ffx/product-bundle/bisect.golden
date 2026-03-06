@@ -2,7 +2,7 @@
   "name": "bisect",
   "description": "Generate a list of released versions between [--from-success] and [--to-failure] for every artifact contained within the given product bundle (e.g. platform, product, board). Assemble intermediate product bundles using combinations of the artifacts, and facilitate running tests on those PBs to quickly identify which artifact is the source of a bug or behavior change.",
   "examples": [
-    "// Bisect the core.vim3 product bundle between two provided versions.\n// (Note: core.vim3 is not yet supported: https://fxbug.dev/485981469 .)\n\nffx product-bundle bisect core.vim3 \\\n    --from-success 29.20250826.6.1 \\\n    --to-failure 29.20250905.6.1\n    "
+    "// 1. Bisect the core.vim3 product bundle between two provided versions.\n// (Note: core.vim3 is not yet supported: https://fxbug.dev/485981469 .)\n\nffx product-bundle bisect core.vim3 \\\n    --from-success 29.20250826.6.1 \\\n    --to-failure 29.20250905.6.1\n\n\n// 2. Automate bisection with a validation script.\n// Create a file called `validate.sh` with the following content:\n\n#!/bin/bash\n# Extract the PB path from the arguments\nwhile [[ \"$#\" -gt 0 ]]; do\n    case $1 in\n        --pb) PB_PATH=\"$2\"; shift 2 ;;\n        *) shift ;;\n    esac\ndone\n\n# Flash the device with the assembled product bundle\nffx target flash \"$PB_PATH\"\nif [ $? -ne 0 ]; then\n    echo \"Failed to flash, skipping...\"\n    exit 125 # Skip\nfi\n\n# <this is where the test code goes>\n# e.g., ffx test run ...\n\n# Return 0 for Pass, 1 for Fail\nexit 0\n\n// Then pass the script to the bisection tool:\nffx product-bundle bisect core.vim3 \\\n    --from-success 29.20250826.6.1 \\\n    --to-failure 29.20250905.6.1 \\\n    --script ./validate.sh\n    "
   ],
   "flags": [
     {
@@ -88,6 +88,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "script"
+        }
+      },
+      "optionality": "optional",
+      "long": "--script",
+      "short": null,
+      "description": "script to run for automated bisection.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "auth"
         }
       },
@@ -100,7 +112,8 @@
   ],
   "notes": [
     "VERSION formats:\n  This parameter type (from-success, to-failure) refers to the product bundle version.\n\n  Steps to retrieve this information depends on which product bundle is being bisected,\n  but it can always be retrieved from the product bundle itself by running:\n\n    ffx product-bundle get-version <path/to/product/bundle>\n    ",
-    "For more information about how to use this tool, see go/fuchsia-product-bisection-userguide\n    "
+    "For more information about how to use this tool, see go/fuchsia-product-bisection-userguide\n    ",
+    "VALIDATION SCRIPT REQUIREMENTS:\n  If a --script is provided, it will be executed for each bisection step.\n  The script will receive the following arguments:\n    --pb <path>  : The absolute path to the assembled product bundle for the current step.\n\n  The script must exit with one of the following codes:\n    0          : Pass (The bug is NOT present in this version)\n    1-124      : Fail (The bug IS present in this version)\n    125        : Skip (The PB was untestable, e.g. failed to flash)\n    128+       : Abort (A critical infrastructure failure occurred)\n    "
   ],
   "commands": [],
   "positionals": [

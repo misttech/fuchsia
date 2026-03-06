@@ -34,6 +34,8 @@ pub struct BisectionController<'a> {
     writer: &'a mut SimpleWriter,
     /// The ffx environment context.
     env_context: &'a EnvironmentContext,
+    /// The path to the validation script for automated testing.
+    script: Option<Utf8PathBuf>,
 }
 
 impl<'a> BisectionController<'a> {
@@ -48,6 +50,7 @@ impl<'a> BisectionController<'a> {
         writer: &'a mut SimpleWriter,
         env_context: &'a EnvironmentContext,
     ) -> Result<Self> {
+        let script = cmd.script.clone();
         let plan_file = plan_home.join("plan.json");
 
         // Load existing plan if it exists.
@@ -66,7 +69,13 @@ impl<'a> BisectionController<'a> {
                             "\nContinuing existing plan: {}",
                             shorten_path(&plan_file)
                         ))?;
-                        return Ok(Self { plan, cache, writer, env_context });
+                        return Ok(Self {
+                            plan,
+                            cache,
+                            writer,
+                            env_context,
+                            script: script.clone(),
+                        });
                     } else {
                         writer.line(format!(
                             "\nDeleting previous plan: {}",
@@ -104,7 +113,7 @@ impl<'a> BisectionController<'a> {
         // No plan exists, or the user chose to delete the old one. Create a new one.
         let plan = BisectionPlan::new(&cmd, plan_home, &mut client, writer).await?;
 
-        Ok(Self { plan, cache, writer, env_context })
+        Ok(Self { plan, cache, writer, env_context, script })
     }
 
     /// Run the bisection plan.
@@ -155,8 +164,10 @@ impl<'a> BisectionController<'a> {
         let product_bundle_path = self.assemble(versioned_artifact_set.clone()).await?;
 
         // Instruct the user to flash the pb, and wait for tests results.
-        // TODO: support automated tests
-        let test_passed = self.prompt_for_manual_test(&product_bundle_path)?;
+        let test_passed = match self.script.clone() {
+            Some(script) => self.run_automated_test(&script, &product_bundle_path).await?,
+            None => self.prompt_for_manual_test(&product_bundle_path)?,
+        };
 
         // Report results
         let result = crate::bisection_plan::StepResult {
@@ -167,6 +178,53 @@ impl<'a> BisectionController<'a> {
         let status = self.plan.update(result);
         self.save()?;
         Ok(status)
+    }
+
+    /// Run an automated test script and return the results.
+    async fn run_automated_test(
+        &mut self,
+        script: &Utf8PathBuf,
+        pb_path: &Utf8PathBuf,
+    ) -> Result<bool> {
+        self.print("")?;
+        self.print(&format!("Running automated validation script: {}", script))?;
+        self.print(&format!("  --pb {}", pb_path))?;
+        self.print("-----------")?;
+
+        let mut child = std::process::Command::new(script)
+            .arg("--pb")
+            .arg(pb_path)
+            .spawn()
+            .with_context(|| format!("Failed to execute validation script: {}", script))?;
+
+        let status = child.wait().with_context(|| "Failed to wait on validation script")?;
+
+        self.print("-----------")?;
+        if let Some(code) = status.code() {
+            match code {
+                0 => {
+                    self.print("Script returned 0 (Pass).")?;
+                    Ok(true)
+                }
+                1..=124 => {
+                    self.print(&format!("Script returned {} (Fail).", code))?;
+                    Ok(false)
+                }
+                125 => {
+                    anyhow::bail!(
+                        "Script returned 125 (Skip). Skipping is not yet fully supported by the bisection tool, aborting to prevent misinterpretation."
+                    )
+                }
+                _ => {
+                    anyhow::bail!(
+                        "Script returned {} (Abort). A critical infrastructure failure occurred.",
+                        code
+                    )
+                }
+            }
+        } else {
+            anyhow::bail!("Validation script was terminated by a signal.")
+        }
     }
 
     /// Ask the user to run a test with the given fuchsia image,
@@ -375,6 +433,7 @@ mod tests {
             auth: pbms::AuthFlowChoice::Default,
             strategy: args::Strategy::LongestDimension,
             slot: Slot::default(),
+            script: None,
         }
     }
 
@@ -424,6 +483,56 @@ mod tests {
                 .await
                 .unwrap();
         (controller, dir)
+    }
+
+    #[test]
+    fn test_run_automated_test_pass() {
+        let start_pb = mock_vas_as_vec("1.0", "1.0", "1.0");
+        let end_pb = mock_vas_as_vec("2.0", "2.0", "2.0");
+        let responses = vec![
+            Ok(start_pb.clone()),
+            Ok(end_pb.clone()),
+            Ok(vec![start_pb[0].clone(), end_pb[0].clone()]),
+            Ok(vec![start_pb[1].clone(), end_pb[1].clone()]),
+            Ok(vec![start_pb[2].clone(), end_pb[2].clone()]),
+        ];
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let env_context = EnvironmentContext::default();
+        let (mut controller, _dir) =
+            block_on(setup_controller(responses, &mut writer, &env_context));
+
+        // Use a simple true command
+        let script = Utf8PathBuf::from("true");
+        let pb_path = Utf8PathBuf::from("/fake/pb/path");
+
+        let result = block_on(controller.run_automated_test(&script, &pb_path));
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_run_automated_test_fail() {
+        let start_pb = mock_vas_as_vec("1.0", "1.0", "1.0");
+        let end_pb = mock_vas_as_vec("2.0", "2.0", "2.0");
+        let responses = vec![
+            Ok(start_pb.clone()),
+            Ok(end_pb.clone()),
+            Ok(vec![start_pb[0].clone(), end_pb[0].clone()]),
+            Ok(vec![start_pb[1].clone(), end_pb[1].clone()]),
+            Ok(vec![start_pb[2].clone(), end_pb[2].clone()]),
+        ];
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let mut writer = SimpleWriter::new_test(&test_buffers);
+        let env_context = EnvironmentContext::default();
+        let (mut controller, _dir) =
+            block_on(setup_controller(responses, &mut writer, &env_context));
+
+        // Use a simple false command
+        let script = Utf8PathBuf::from("false");
+        let pb_path = Utf8PathBuf::from("/fake/pb/path");
+
+        let result = block_on(controller.run_automated_test(&script, &pb_path));
+        assert!(!result.unwrap());
     }
 
     // Tests that a new BisectionController can be created successfully.
