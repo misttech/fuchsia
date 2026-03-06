@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -123,6 +124,7 @@ var (
 )
 
 type buildModules interface {
+	Args() build.Args
 	BuildDir() string
 	ClippyTargets() []build.ClippyTarget
 	GeneratedSources() []string
@@ -130,6 +132,10 @@ type buildModules interface {
 	PrebuiltBinarySets() []build.PrebuiltBinarySet
 	TestSpecs() []build.TestSpec
 	Tools() build.Tools
+}
+
+type buildAPIClient interface {
+	ExportDebugSymbols(context.Context, string) error
 }
 
 type ninjaDebugFileSet struct {
@@ -210,7 +216,12 @@ func Build(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintpb.C
 		return nil, err
 	}
 
-	artifacts, err := buildImpl(ctx, newRunner(contextSpec), subninjaTraceIsRecent, checkFileExists, staticSpec, contextSpec, modules, platform)
+	client, err := build.NewBuildAPIClient(buildDir)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts, err := buildImpl(ctx, newRunner(contextSpec), subninjaTraceIsRecent, checkFileExists, staticSpec, contextSpec, modules, client, platform)
 	if err != nil && artifacts != nil && artifacts.FailureSummary == "" {
 		// Fall back to using the error text as the failure summary if the
 		// failure summary is unset. It's better than failing without emitting
@@ -230,6 +241,7 @@ func buildImpl(
 	staticSpec *fintpb.Static,
 	contextSpec *fintpb.Context,
 	modules buildModules,
+	buildAPIClient buildAPIClient,
 	platform string,
 ) (*fintpb.BuildArtifacts, error) {
 	buildDir := contextSpec.BuildDir
@@ -254,6 +266,7 @@ func buildImpl(
 	// Initialize maps, otherwise they will be nil and attempts to set keys will
 	// fail.
 	artifacts.LogFiles = make(map[string]string)
+	artifacts.NonFatalFailures = make(map[string]string)
 
 	ninjaName := "ninja"
 	if staticSpec.BuildEventServiceNinja == "resultstore_infra" {
@@ -529,6 +542,32 @@ func buildImpl(
 
 			artifacts.FailureSummary = ninjaNoopFailureMessage(platform, msg)
 			return artifacts, fmt.Errorf("ninja build did not converge to no-op")
+		}
+	}
+
+	var outputBreakpadSyms bool
+	if err := modules.Args().Get("output_breakpad_syms", &outputBreakpadSyms); err != nil && !errors.Is(err, build.ErrArgNotSet) {
+		return artifacts, err
+	}
+
+	if outputBreakpadSyms {
+		// TODO(https://fxbug.dev/480109290): Write symbols to a non-temporary
+		// directory.
+		symbolDir, err := os.MkdirTemp("", "")
+		if err != nil {
+			return artifacts, err
+		}
+		defer os.RemoveAll(symbolDir)
+		if symbolsJSON, err := exportDebugSymbols(ctx, buildAPIClient, contextSpec, symbolDir); err != nil {
+			// TODO(https://fxbug.dev/480109290): Propagate these errors after
+			// this step is confirmed to be stable.
+			artifacts.NonFatalFailures["debug_symbol_export"] = err.Error()
+		} else if symbolsJSON != "" {
+			if err := saveLogs(contextSpec.ArtifactDir, artifacts, map[string]string{
+				"debug_symbols.json": symbolsJSON,
+			}); err != nil {
+				return artifacts, err
+			}
 		}
 	}
 
@@ -1036,4 +1075,19 @@ func writeBuildDirManifest(buildDir string, outputPath string) error {
 	}
 
 	return jsonutil.WriteToFile(outputPath, ret)
+}
+
+// exportDebugSymbols exports debug symbols to the give `outputDir` and returns
+// the contents of the generated `debug_symbols.json` file.
+func exportDebugSymbols(ctx context.Context, buildAPIClient buildAPIClient, contextSpec *fintpb.Context, outputDir string) (string, error) {
+	if err := buildAPIClient.ExportDebugSymbols(ctx, outputDir); err != nil {
+		return "", err
+	}
+
+	b, err := os.ReadFile(filepath.Join(outputDir, "debug_symbols.json"))
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
 }

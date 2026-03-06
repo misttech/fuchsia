@@ -32,6 +32,7 @@ import (
 )
 
 type fakeBuildModules struct {
+	args             build.Args
 	buildDir         string
 	clippyTargets    []build.ClippyTarget
 	generatedSources []string
@@ -41,6 +42,7 @@ type fakeBuildModules struct {
 	tools            build.Tools
 }
 
+func (m fakeBuildModules) Args() build.Args                              { return m.args }
 func (m fakeBuildModules) BuildDir() string                              { return m.buildDir }
 func (m fakeBuildModules) ClippyTargets() []build.ClippyTarget           { return m.clippyTargets }
 func (m fakeBuildModules) GeneratedSources() []string                    { return m.generatedSources }
@@ -48,6 +50,12 @@ func (m fakeBuildModules) Images() []build.Image                         { retur
 func (m fakeBuildModules) PrebuiltBinarySets() []build.PrebuiltBinarySet { return m.pbinSets }
 func (m fakeBuildModules) TestSpecs() []build.TestSpec                   { return m.testSpecs }
 func (m fakeBuildModules) Tools() build.Tools                            { return m.tools }
+
+type fakeBuildAPIClient struct{}
+
+func (c fakeBuildAPIClient) ExportDebugSymbols(ctx context.Context, dir string) error {
+	return os.WriteFile(filepath.Join(dir, "debug_symbols.json"), []byte(`[]`), 0o600)
+}
 
 // An enum type describing the presence of a build success stamp file
 // after a build. The BuildSuccessStampAuto value is the default and
@@ -659,6 +667,16 @@ func TestBuild(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name:       "export debug symbols",
+			staticSpec: &fintpb.Static{},
+			modules: fakeBuildModules{
+				args: build.Args{
+					"output_breakpad_syms": jsonRawMessage(t, "true"),
+				},
+			},
+			buildDirFiles: []string{"debug_symbols.json"},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -715,7 +733,7 @@ func TestBuild(t *testing.T) {
 			)...)
 			ctx := context.Background()
 			artifacts, err := buildImpl(
-				ctx, runner, subninjaLogIsRecent, fileExists, tc.staticSpec, tc.contextSpec, tc.modules, platform)
+				ctx, runner, subninjaLogIsRecent, fileExists, tc.staticSpec, tc.contextSpec, tc.modules, fakeBuildAPIClient{}, platform)
 			if err != nil {
 				if !tc.expectErr {
 					t.Fatalf("Got unexpected error: %s", err)
@@ -859,11 +877,22 @@ func createEmptyFile(t *testing.T, path string) {
 // mustStructPB converts a Go struct to a protobuf Struct, failing the test in
 // case of failure.
 func mustStructPB(t *testing.T, s any) *structpb.Struct {
+	t.Helper()
+
 	ret, err := toStructPB(s)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ret
+}
+
+func jsonRawMessage(t *testing.T, data string) json.RawMessage {
+	t.Helper()
+	var m json.RawMessage
+	if err := m.UnmarshalJSON([]byte(data)); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 func Test_gnCheckGenerated(t *testing.T) {

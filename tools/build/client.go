@@ -5,7 +5,9 @@
 package build
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -74,4 +76,21 @@ func (c BuildAPIClient) GetModulePaths() ([]string, error) {
 		paths = append(paths, module.File)
 	}
 	return paths, nil
+}
+
+func (c BuildAPIClient) ExportDebugSymbols(ctx context.Context, outputDir string) error {
+	cmd := exec.CommandContext(
+		ctx,
+		c.toolPath,
+		"--build-dir",
+		c.buildDir,
+		"export_last_build_debug_symbols",
+		"--with-breakpad-symbols",
+		fmt.Sprintf("--output-dir=%s", outputDir),
+	)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("export_last_build_debug_symbols failed: %w", err)
+	}
+	return nil
 }

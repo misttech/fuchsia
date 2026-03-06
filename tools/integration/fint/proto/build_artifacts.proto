@@ -80,4 +80,10 @@ message BuildArtifacts {
   // tests. This is determined by doing a build graph analysis of the files
   // reported in the `changed_files` context spec field.
   repeated string affected_tests = 11;
+
+  // Human-readable names of fint operations that failed, e.g.
+  // "debug_symbol_export", mapped to short error messages (unenforced but
+  // suggested limit of 100 chars). These are purely used for reporting purposes
+  // for bulk detection of failures.
+  map<string, string> non_fatal_failures = 12;
 }
