@@ -17,10 +17,12 @@ import random
 
 import fidl_fuchsia_wlan_common as fw_common
 from core_testing import base_test
+from fuchsia_controller_py.wrappers import asyncmethod
 from mobly import asserts, test_runner
 
 
 class CreateApIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
+    @asyncmethod
     async def test_create_ap_iface_with_particular_mac(self) -> None:
         # Generate a valid randomized MAC to set in the driver
         random_six_bytes = [random.randint(0, 255) for _ in range(6)]

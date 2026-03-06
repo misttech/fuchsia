@@ -18,6 +18,7 @@ import fidl_fuchsia_wlan_sme as fw_sme
 from antlion import controllers
 from core_testing.handlers import DeviceWatcherEventHandler
 from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
@@ -31,7 +32,7 @@ class CoreTestKit:
     phy_id: int
 
 
-class CoreBaseTestClass(FuchsiaWlanBaseTest):
+class CoreBaseTestClass(AsyncAdapter, FuchsiaWlanBaseTest):
     _core_test_kit: CoreTestKit
 
     _PAUSE_FOR_ADDITIONAL_PHY_DEVICES = timedelta(seconds=1)
@@ -40,8 +41,10 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
     def test_kit(self) -> CoreTestKit:
         return self._core_test_kit
 
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
     async def setup_class(self) -> None:
-        await super().setup_class()
+        super().setup_class()
 
         abort_class_if(
             len(self.fuchsia_devices) != 1,
@@ -106,13 +109,13 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
             device_monitor=device_monitor, phy_id=phy_id
         )
 
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        await self._destroy_all_ifaces()
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.loop().run_until_complete(self._destroy_all_ifaces())
 
-    async def teardown_class(self) -> None:
-        await self._destroy_all_ifaces()
-        await super().teardown_class()
+    def teardown_class(self) -> None:
+        self.loop().run_until_complete(self._destroy_all_ifaces())
+        super().teardown_class()
 
     async def _destroy_all_ifaces(self) -> None:
         list_ifaces_response = (
@@ -144,16 +147,16 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
     def test_kit(self) -> ConnectionTestKit:
         return self._connection_test_kit
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def setup_class(self) -> None:
+        super().setup_class()
 
         # Set the country code to US, to allow for 2.4 and 5 GHz connections.
         set_country_request = fw_device_service.SetCountryRequest(
             phy_id=self._core_test_kit.phy_id,
             alpha2=[ord("U"), ord("S")],
         )
-        set_country_response = (
-            await self._core_test_kit.device_monitor.set_country(
+        set_country_response = self.loop().run_until_complete(
+            self._core_test_kit.device_monitor.set_country(
                 req=set_country_request
             )
         )
@@ -163,7 +166,7 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
             "DeviceMonitor.SetCountry() failed",
         )
 
-        access_points = await self.register_controller(
+        access_points = self.register_controller(
             controllers.access_point, min_number=1
         )
 
@@ -172,14 +175,14 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         self.class_test_kit = ClassTestKit(access_point=access_points[0])
         self.class_test_kit.access_point.stop_all_aps()
 
-    async def setup_test(self) -> None:
-        await super().setup_test()
+    def setup_test(self) -> None:
+        super().setup_test()
 
         self.class_test_kit.access_point.stop_all_aps()
 
         create_iface_response = (
-            (
-                await self._core_test_kit.device_monitor.create_iface(
+            self.loop().run_until_complete(
+                self._core_test_kit.device_monitor.create_iface(
                     phy_id=self._core_test_kit.phy_id,
                     role=fw_common.WlanMacRole.CLIENT,
                     sta_address=[0, 0, 0, 0, 0, 0],
@@ -193,8 +196,8 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
 
         proxy, server = Channel.create()
         (
-            (
-                await self._core_test_kit.device_monitor.get_client_sme(
+            self.loop().run_until_complete(
+                self._core_test_kit.device_monitor.get_client_sme(
                     iface_id=iface_id,
                     sme_server=server.take(),
                 )
@@ -208,19 +211,19 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
             client_sme=fw_sme.ClientSmeClient(proxy),
         )
 
-    async def teardown_test(self) -> None:
+    def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
         self._connection_test_kit.access_point.download_ap_logs(self.log_path)
         self._connection_test_kit.access_point.stop_all_aps()
-        (
-            await self._connection_test_kit.client_sme.disconnect(
+        self.loop().run_until_complete(
+            self._connection_test_kit.client_sme.disconnect(
                 reason=fw_sme.UserDisconnectReason.UNKNOWN
             )
         )
-        await super().teardown_test()
+        super().teardown_test()
 
-    async def on_fail(self, record: TestResultRecord) -> None:
-        await super().on_fail(record)
+    def on_fail(self, record: TestResultRecord) -> None:
+        super().on_fail(record)
 
         # Maintain the invariant that every test starts with no access points.
         self.class_test_kit.access_point.stop_all_aps()

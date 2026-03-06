@@ -24,13 +24,14 @@ from antlion.controllers.ap_lib.hostapd_constants import (
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from fuchsia_controller_py import Channel
+from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from mobly import base_test, signals, test_runner
 from mobly.asserts import assert_equal, assert_true
 from wlanix_testing import base_test
 
 
-class ConnectToApTest(base_test.ConnectionBaseTestClass):
-    async def pre_run(self) -> None:
+class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
+    def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
             name_func=self.name_func,
@@ -54,6 +55,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
     def name_func(self, security: Security) -> str:
         return f"test_successfully_connect_to_ap_{security.security_mode}"
 
+    @asyncmethod
     async def _test_logic(self, security: Security) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
         password = getattr(security, "password", None)
@@ -92,7 +94,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
         logger.info("Using IfaceIndex %d for connection test", iface_index)
 
         logger.info("Triggering a scan on IfaceIndex %d", iface_index)
-        async with Nl80211MulticastServer() as ctx:
+        with Nl80211MulticastServer() as ctx:
             scan_queue = ctx.message_queue
             scan_callback_channel = ctx.callback_channel
 
@@ -150,7 +152,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     "Did not receive a scan result within 20 seconds"
                 )
 
-        async with SupplicantStaIfaceCallbackServer() as ctx:
+        with SupplicantStaIfaceCallbackServer() as ctx:
             state_change_queue = ctx.state_change_queue
             callback_channel = ctx.callback_channel
 
@@ -217,8 +219,12 @@ class SupplicantStaIfaceCallbackServer(
         self,
         verbose: bool = True,
     ) -> None:
-        # Defer initialization of parent class to __aenter__
         self.verbose = verbose
+        self.state_change_queue: asyncio.Queue[
+            fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest
+            | fidl_wlanix.SupplicantStaIfaceCallbackOnDisconnectedRequest
+            | fidl_wlanix.SupplicantStaIfaceCallbackOnAssociationRejectedRequest
+        ] = asyncio.Queue()
 
     def on_state_changed(
         self,
@@ -244,22 +250,16 @@ class SupplicantStaIfaceCallbackServer(
             logger.info("Association rejected: %s", request)
         self.state_change_queue.put_nowait(request)
 
-    async def __aenter__(self) -> SupplicantStaIfaceCallbackContext:
+    def __enter__(self) -> SupplicantStaIfaceCallbackContext:
         client, server = Channel.create()
         super().__init__(channel=server)
-
-        self.state_change_queue: asyncio.Queue[
-            fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest
-            | fidl_wlanix.SupplicantStaIfaceCallbackOnDisconnectedRequest
-            | fidl_wlanix.SupplicantStaIfaceCallbackOnAssociationRejectedRequest
-        ] = asyncio.Queue()
-        self.server_task = asyncio.create_task(self.serve())
+        self.server_task = asyncio.get_running_loop().create_task(self.serve())
         return SupplicantStaIfaceCallbackContext(
             state_change_queue=self.state_change_queue,
             callback_channel=client,
         )
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
         if self.server_task:
             self.server_task.cancel()
 
@@ -272,29 +272,27 @@ class Nl80211MulticastServerContext:
 
 class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
     def __init__(self) -> None:
-        # Defer initialization of parent class to __aenter__
-        pass
+        self.message_queue: asyncio.Queue[
+            fidl_wlanix.Nl80211Message
+        ] = asyncio.Queue()
 
-    async def message(
-        self, request: fidl_wlanix.Nl80211MulticastMessageRequest
+    def message(
+        self,
+        request: fidl_wlanix.Nl80211MulticastMessageRequest,
     ) -> None:
         if request.message is not None:
             self.message_queue.put_nowait(request.message)
 
-    async def __aenter__(self) -> Nl80211MulticastServerContext:
+    def __enter__(self) -> Nl80211MulticastServerContext:
         client, server = Channel.create()
         super().__init__(channel=server)
-
-        self.message_queue: asyncio.Queue[
-            fidl_wlanix.Nl80211Message
-        ] = asyncio.Queue()
-        self.server_task = asyncio.create_task(self.serve())
+        self.server_task = asyncio.get_running_loop().create_task(self.serve())
         return Nl80211MulticastServerContext(
             message_queue=self.message_queue,
             callback_channel=client,
         )
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
         if self.server_task:
             self.server_task.cancel()
 
