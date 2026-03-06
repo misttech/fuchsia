@@ -18,12 +18,14 @@ mod sync;
 /// Allow callers to use the kernel class & permission definitions.
 pub use kernel_permissions::*;
 
-use policy::arrays::FsUseType;
-
 /// Numeric class Ids are provided to the userspace AVC surfaces (e.g. "create", "access", etc).
 pub use policy::ClassId;
 
 pub use starnix_uapi::selinux::{InitialSid, ReferenceInitialSid, SecurityId, TaskAttrs};
+
+use policy::arrays::FsUseType;
+use strum::VariantArray as _;
+use strum_macros::VariantArray;
 
 /// Identifies a specific class by its policy-defined Id, or as a kernel object class enum Id.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -138,7 +140,7 @@ pub trait SeLinuxStatusPublisher: Send + Sync {
 }
 
 /// Reference policy capability Ids.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
 pub enum PolicyCap {
     NetworkPeerControls = 0,
     OpenPerms = 1,
@@ -157,25 +159,6 @@ pub enum PolicyCap {
 }
 
 impl PolicyCap {
-    pub fn all_values() -> &'static [Self] {
-        &[
-            Self::NetworkPeerControls,
-            Self::OpenPerms,
-            Self::ExtendedSocketClass,
-            Self::AlwaysCheckNetwork,
-            Self::CgroupSeclabel,
-            Self::NnpNosuidTransition,
-            Self::GenfsSeclabelSymlinks,
-            Self::IoctlSkipCloexec,
-            Self::UserspaceInitialContext,
-            Self::NetlinkXperm,
-            Self::NetifWildcard,
-            Self::GenfsSeclabelWildcard,
-            Self::FunctionfsSeclabel,
-            Self::MemfdClass,
-        ]
-    }
-
     pub fn name(&self) -> &str {
         match self {
             Self::NetworkPeerControls => "network_peer_controls",
@@ -196,7 +179,7 @@ impl PolicyCap {
     }
 
     pub fn by_name(name: &str) -> Option<Self> {
-        Self::all_values().iter().find(|x| x.name() == name).copied()
+        Self::VARIANTS.iter().find(|x| x.name() == name).copied()
     }
 }
 
@@ -209,18 +192,18 @@ mod tests {
     fn object_class_permissions() {
         let test_class_id = ClassId::new(NonZeroU32::new(20).unwrap());
         assert_eq!(ObjectClass::ClassId(test_class_id), test_class_id.into());
-        for variant in ProcessPermission::all_variants() {
+        for variant in ProcessPermission::VARIANTS {
             assert_eq!(KernelClass::Process, variant.class());
             assert_eq!("process", variant.class().name());
-            let permission: KernelPermission = variant.clone().into();
-            assert_eq!(KernelPermission::Process(variant.clone()), permission);
+            let permission = (*variant).into();
+            assert_eq!(KernelPermission::Process(*variant), permission);
             assert_eq!(ObjectClass::Kernel(KernelClass::Process), variant.class().into());
         }
     }
 
     #[test]
     fn policy_capabilities() {
-        for capability in PolicyCap::all_values() {
+        for capability in PolicyCap::VARIANTS {
             assert_eq!(Some(*capability), PolicyCap::by_name(capability.name()));
         }
     }

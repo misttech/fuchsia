@@ -14,6 +14,7 @@ use starnix_logging::{log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use std::sync::atomic::Ordering;
+use strum::VariantArray as _;
 
 pub(in crate::security) fn selinuxfs_init_null(
     current_task: &CurrentTask,
@@ -52,7 +53,7 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
 
     // Compare the policy capabilities against this kernel's support level, and emit warnings for
     // each mismatch.
-    for capability in PolicyCap::all_values() {
+    for capability in PolicyCap::VARIANTS {
         let is_enabled = security_server.is_policycap_enabled(*capability);
         log_info!("SELinux:  policy capability {}={}", capability.name(), is_enabled as u8);
         match policycap_support(*capability) {

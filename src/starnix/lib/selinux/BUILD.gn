@@ -84,6 +84,8 @@ rustc_library("selinux") {
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:rapidhash",
     "//third_party/rust_crates:static_assertions",
+    "//third_party/rust_crates:strum",
+    "//third_party/rust_crates:strum_macros",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]

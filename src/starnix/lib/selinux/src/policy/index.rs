@@ -10,6 +10,7 @@ use super::{AccessVector, ClassId, ClassPermissionId, ParsedPolicy, RoleId, Type
 use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
+use strum::VariantArray as _;
 
 /// The [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
 pub struct FsUseLabelAndType {
@@ -48,15 +49,15 @@ impl PolicyIndex {
         let policy_classes = parsed_policy.classes();
         let common_symbols = parsed_policy.common_symbols();
 
-        let mut classes = HashMap::with_capacity(crate::KernelClass::all_variants().count());
+        let mut classes = HashMap::with_capacity(crate::KernelClass::VARIANTS.len());
 
         // Insert elements for each kernel object class. If the policy defines that unknown
         // kernel classes should cause rejection then return an error describing the missing
         // element.
-        for known_class in crate::KernelClass::all_variants() {
+        for known_class in crate::KernelClass::VARIANTS {
             match find_class_by_name(&policy_classes, known_class.name()) {
                 Some(class) => {
-                    classes.insert(known_class, class.id());
+                    classes.insert(*known_class, class.id());
                 }
                 None => {
                     if parsed_policy.handle_unknown() == HandleUnknown::Reject {

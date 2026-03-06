@@ -2,139 +2,139 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// Declares an `enum` and implements an `all_variants()` API for it.
-macro_rules! enumerable_enum {
-    ($(#[$meta:meta])* $name:ident $(extends $common_name:ident)? {
-        $($(#[$variant_meta:meta])* $variant:ident,)*
+use strum::VariantArray as _;
+use strum_macros::VariantArray;
+
+/// Declares an `enum` with a `name()` method that returns the name for the given variant.
+macro_rules! named_enum {
+    ($(#[$meta:meta])* $name:ident {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         $(#[$meta])*
-        pub enum $name {
+        pub enum $name  {
             $($(#[$variant_meta])* $variant,)*
-            $(Common($common_name),)?
         }
 
         impl $name {
-            pub fn all_variants() -> impl Iterator<Item=Self> {
-                let iter = [$($name::$variant),*].iter().map(Clone::clone);
-                $(let iter = iter.chain($common_name::all_variants().map($name::Common));)?
-                iter
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $($name::$variant => $variant_name,)*
+                }
             }
         }
     }
 }
 
-enumerable_enum! {
-    /// A well-known class in SELinux policy that has a particular meaning in policy enforcement
-    /// hooks.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    KernelClass {
-        // keep-sorted start
-        /// The SELinux "anon_inode" object class.
-        AnonFsNode,
-        /// The SELinux "binder" object class.
-        Binder,
-        /// The SELinux "blk_file" object class.
-        Block,
-        /// The SELinux "bpf" object class.
-        Bpf,
-        /// The SELinux "capability" object class.
-        Capability,
-        /// The SELinux "capability2" object class.
-        Capability2,
-        /// The SELinux "chr_file" object class.
-        Character,
-        /// The SELinux "dir" object class.
-        Dir,
-        /// The SELinux "fd" object class.
-        Fd,
-        /// The SELinux "fifo_file" object class.
-        Fifo,
-        /// The SELinux "file" object class.
-        File,
-        /// The SELinux "filesystem" object class.
-        FileSystem,
-        /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
-        IcmpSocket,
-        /// The SELinux "key_socket" object class.
-        KeySocket,
-        /// The SELinux "lnk_file" object class.
-        Link,
-        /// The SELinux "memfd_file" object class.
-        MemFdFile,
-        /// The SELinux "netlink_audit_socket" object class.
-        NetlinkAuditSocket,
-        /// The SELinux "netlink_connector_socket" object class.
-        NetlinkConnectorSocket,
-        /// The SELinux "netlink_crypto_socket" object class.
-        NetlinkCryptoSocket,
-        /// The SELinux "netlink_dnrt_socket" object class.
-        NetlinkDnrtSocket,
-        /// The SELinux "netlink_fib_lookup_socket" object class.
-        NetlinkFibLookupSocket,
-        /// The SELinux "netlink_firewall_socket" object class.
-        NetlinkFirewallSocket,
-        /// The SELinux "netlink_generic_socket" object class.
-        NetlinkGenericSocket,
-        /// The SELinux "netlink_ip6fw_socket" object class.
-        NetlinkIp6FwSocket,
-        /// The SELinux "netlink_iscsi_socket" object class.
-        NetlinkIscsiSocket,
-        /// The SELinux "netlink_kobject_uevent_socket" object class.
-        NetlinkKobjectUeventSocket,
-        /// The SELinux "netlink_netfilter_socket" object class.
-        NetlinkNetfilterSocket,
-        /// The SELinux "netlink_nflog_socket" object class.
-        NetlinkNflogSocket,
-        /// The SELinux "netlink_rdma_socket" object class.
-        NetlinkRdmaSocket,
-        /// The SELinux "netlink_route_socket" object class.
-        NetlinkRouteSocket,
-        /// The SELinux "netlink_scsitransport_socket" object class.
-        NetlinkScsitransportSocket,
-        /// The SELinux "netlink_selinux_socket" object class.
-        NetlinkSelinuxSocket,
-        /// The SELinux "netlink_socket" object class.
-        NetlinkSocket,
-        /// The SELinux "netlink_tcpdiag_socket" object class.
-        NetlinkTcpDiagSocket,
-        /// The SELinux "netlink_xfrm_socket" object class.
-        NetlinkXfrmSocket,
-        /// The SELinux "packet_socket" object class.
-        PacketSocket,
-        /// The SELinux "perf_event" object class.
-        PerfEvent,
-        /// The SELinux "process" object class.
-        Process,
-        /// The SELinux "process2" object class.
-        Process2,
-        /// The SELinux "qipcrtr_socket" object class.
-        QipcrtrSocket,
-        /// The SELinux "rawip_socket" object class.
-        RawIpSocket,
-        /// "sctp_socket" class enabled via the "extended_socket_class" policy capability.
-        SctpSocket,
-        /// The SELinux "security" object class.
-        Security,
-        /// The SELinux "sock_file" object class.
-        SockFile,
-        /// The SELinux "socket" object class.
-        Socket,
-        /// The SELinux "system" object class.
-        System,
-        /// The SELinux "tcp_socket" object class.
-        TcpSocket,
-        /// The SELinux "tun_socket" object class.
-        TunSocket,
-        /// The SELinux "udp_socket" object class.
-        UdpSocket,
-        /// The SELinux "unix_dgram_socket" object class.
-        UnixDgramSocket,
-        /// The SELinux "unix_stream_socket" object class.
-        UnixStreamSocket,
-        /// "vsock_socket" class enabled via the "extended_socket_class" policy capability.
-        VSockSocket,
-        // keep-sorted end
-    }
+/// A well-known class in SELinux policy that has a particular meaning in policy enforcement
+/// hooks.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
+pub enum KernelClass {
+    // keep-sorted start
+    /// The SELinux "anon_inode" object class.
+    AnonFsNode,
+    /// The SELinux "binder" object class.
+    Binder,
+    /// The SELinux "blk_file" object class.
+    Block,
+    /// The SELinux "bpf" object class.
+    Bpf,
+    /// The SELinux "capability" object class.
+    Capability,
+    /// The SELinux "capability2" object class.
+    Capability2,
+    /// The SELinux "chr_file" object class.
+    Character,
+    /// The SELinux "dir" object class.
+    Dir,
+    /// The SELinux "fd" object class.
+    Fd,
+    /// The SELinux "fifo_file" object class.
+    Fifo,
+    /// The SELinux "file" object class.
+    File,
+    /// The SELinux "filesystem" object class.
+    FileSystem,
+    /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
+    IcmpSocket,
+    /// The SELinux "key_socket" object class.
+    KeySocket,
+    /// The SELinux "lnk_file" object class.
+    Link,
+    /// The SELinux "memfd_file" object class.
+    MemFdFile,
+    /// The SELinux "netlink_audit_socket" object class.
+    NetlinkAuditSocket,
+    /// The SELinux "netlink_connector_socket" object class.
+    NetlinkConnectorSocket,
+    /// The SELinux "netlink_crypto_socket" object class.
+    NetlinkCryptoSocket,
+    /// The SELinux "netlink_dnrt_socket" object class.
+    NetlinkDnrtSocket,
+    /// The SELinux "netlink_fib_lookup_socket" object class.
+    NetlinkFibLookupSocket,
+    /// The SELinux "netlink_firewall_socket" object class.
+    NetlinkFirewallSocket,
+    /// The SELinux "netlink_generic_socket" object class.
+    NetlinkGenericSocket,
+    /// The SELinux "netlink_ip6fw_socket" object class.
+    NetlinkIp6FwSocket,
+    /// The SELinux "netlink_iscsi_socket" object class.
+    NetlinkIscsiSocket,
+    /// The SELinux "netlink_kobject_uevent_socket" object class.
+    NetlinkKobjectUeventSocket,
+    /// The SELinux "netlink_netfilter_socket" object class.
+    NetlinkNetfilterSocket,
+    /// The SELinux "netlink_nflog_socket" object class.
+    NetlinkNflogSocket,
+    /// The SELinux "netlink_rdma_socket" object class.
+    NetlinkRdmaSocket,
+    /// The SELinux "netlink_route_socket" object class.
+    NetlinkRouteSocket,
+    /// The SELinux "netlink_scsitransport_socket" object class.
+    NetlinkScsitransportSocket,
+    /// The SELinux "netlink_selinux_socket" object class.
+    NetlinkSelinuxSocket,
+    /// The SELinux "netlink_socket" object class.
+    NetlinkSocket,
+    /// The SELinux "netlink_tcpdiag_socket" object class.
+    NetlinkTcpDiagSocket,
+    /// The SELinux "netlink_xfrm_socket" object class.
+    NetlinkXfrmSocket,
+    /// The SELinux "packet_socket" object class.
+    PacketSocket,
+    /// The SELinux "perf_event" object class.
+    PerfEvent,
+    /// The SELinux "process" object class.
+    Process,
+    /// The SELinux "process2" object class.
+    Process2,
+    /// The SELinux "qipcrtr_socket" object class.
+    QipcrtrSocket,
+    /// The SELinux "rawip_socket" object class.
+    RawIpSocket,
+    /// "sctp_socket" class enabled via the "extended_socket_class" policy capability.
+    SctpSocket,
+    /// The SELinux "security" object class.
+    Security,
+    /// The SELinux "sock_file" object class.
+    SockFile,
+    /// The SELinux "socket" object class.
+    Socket,
+    /// The SELinux "system" object class.
+    System,
+    /// The SELinux "tcp_socket" object class.
+    TcpSocket,
+    /// The SELinux "tun_socket" object class.
+    TunSocket,
+    /// The SELinux "udp_socket" object class.
+    UdpSocket,
+    /// The SELinux "unix_dgram_socket" object class.
+    UnixDgramSocket,
+    /// The SELinux "unix_stream_socket" object class.
+    UnixStreamSocket,
+    /// "vsock_socket" class enabled via the "extended_socket_class" policy capability.
+    VSockSocket,
+    // keep-sorted end
 }
 
 impl KernelClass {
@@ -202,7 +202,7 @@ impl KernelClass {
 impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
     fn for_class(&self, class: T) -> KernelPermission {
         assert_eq!(self.class(), class.into());
-        self.clone()
+        *self
     }
 }
 
@@ -213,16 +213,14 @@ pub trait ForClass<T> {
     fn for_class(&self, class: T) -> KernelPermission;
 }
 
-enumerable_enum! {
-    /// Covers the set of classes that inherit from the common "cap" symbol (e.g. "capability" for
-    /// now and "cap_userns" after Starnix gains user namespacing support).
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-    CapClass {
-        // keep-sorted start
-        /// The SELinux "capability" object class.
-        Capability,
-        // keep-sorted end
-    }
+/// Covers the set of classes that inherit from the common "cap" symbol (e.g. "capability" for
+/// now and "cap_userns" after Starnix gains user namespacing support).
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CapClass {
+    // keep-sorted start
+    /// The SELinux "capability" object class.
+    Capability,
+    // keep-sorted end
 }
 
 impl From<CapClass> for KernelClass {
@@ -235,16 +233,14 @@ impl From<CapClass> for KernelClass {
     }
 }
 
-enumerable_enum! {
-    /// Covers the set of classes that inherit from the common "cap2" symbol (e.g. "capability2" for
-    /// now and "cap2_userns" after Starnix gains user namespacing support).
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-    Cap2Class {
-        // keep-sorted start
-        /// The SELinux "capability2" object class.
-        Capability2,
-        // keep-sorted end
-    }
+/// Covers the set of classes that inherit from the common "cap2" symbol (e.g. "capability2" for
+/// now and "cap2_userns" after Starnix gains user namespacing support).
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Cap2Class {
+    // keep-sorted start
+    /// The SELinux "capability2" object class.
+    Capability2,
+    // keep-sorted end
 }
 
 impl From<Cap2Class> for KernelClass {
@@ -257,32 +253,30 @@ impl From<Cap2Class> for KernelClass {
     }
 }
 
-enumerable_enum! {
-    /// A well-known file-like class in SELinux policy that has a particular meaning in policy
-    /// enforcement hooks.
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-    FileClass {
-        // keep-sorted start
-        /// The SELinux "anon_inode" object class.
-        AnonFsNode,
-        /// The SELinux "blk_file" object class.
-        Block,
-        /// The SELinux "chr_file" object class.
-        Character,
-        /// The SELinux "dir" object class.
-        Dir,
-        /// The SELinux "fifo_file" object class.
-        Fifo,
-        /// The SELinux "file" object class.
-        File,
-        /// The SELinux "lnk_file" object class.
-        Link,
-        /// The SELinux "memfd_file" object class.
-        MemFdFile,
-        /// The SELinux "sock_file" object class.
-        SockFile,
-        // keep-sorted end
-    }
+/// A well-known file-like class in SELinux policy that has a particular meaning in policy
+/// enforcement hooks.
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FileClass {
+    // keep-sorted start
+    /// The SELinux "anon_inode" object class.
+    AnonFsNode,
+    /// The SELinux "blk_file" object class.
+    Block,
+    /// The SELinux "chr_file" object class.
+    Character,
+    /// The SELinux "dir" object class.
+    Dir,
+    /// The SELinux "fifo_file" object class.
+    Fifo,
+    /// The SELinux "file" object class.
+    File,
+    /// The SELinux "lnk_file" object class.
+    Link,
+    /// The SELinux "memfd_file" object class.
+    MemFdFile,
+    /// The SELinux "sock_file" object class.
+    SockFile,
+    // keep-sorted end
 }
 
 impl From<FileClass> for KernelClass {
@@ -303,47 +297,45 @@ impl From<FileClass> for KernelClass {
     }
 }
 
-enumerable_enum! {
-    /// Distinguishes socket-like kernel object classes defined in SELinux policy.
-    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-    SocketClass {
-        // keep-sorted start
-        Icmp,
-        Key,
-        Netlink,
-        NetlinkAudit,
-        NetlinkConnector,
-        NetlinkCrypto,
-        NetlinkDnrt,
-        NetlinkFibLookup,
-        NetlinkFirewall,
-        NetlinkGeneric,
-        NetlinkIp6Fw,
-        NetlinkIscsi,
-        NetlinkKobjectUevent,
-        NetlinkNetfilter,
-        NetlinkNflog,
-        NetlinkRdma,
-        NetlinkRoute,
-        NetlinkScsitransport,
-        NetlinkSelinux,
-        NetlinkTcpDiag,
-        NetlinkXfrm,
-        Packet,
-        Qipcrtr,
-        RawIp,
-        Sctp,
-        /// Generic socket class applied to all socket-like objects for which no more specific
-        /// class is defined.
-        Socket,
-        Tcp,
-        Tun,
-        Udp,
-        UnixDgram,
-        UnixStream,
-        Vsock,
-        // keep-sorted end
-    }
+/// Distinguishes socket-like kernel object classes defined in SELinux policy.
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SocketClass {
+    // keep-sorted start
+    Icmp,
+    Key,
+    Netlink,
+    NetlinkAudit,
+    NetlinkConnector,
+    NetlinkCrypto,
+    NetlinkDnrt,
+    NetlinkFibLookup,
+    NetlinkFirewall,
+    NetlinkGeneric,
+    NetlinkIp6Fw,
+    NetlinkIscsi,
+    NetlinkKobjectUevent,
+    NetlinkNetfilter,
+    NetlinkNflog,
+    NetlinkRdma,
+    NetlinkRoute,
+    NetlinkScsitransport,
+    NetlinkSelinux,
+    NetlinkTcpDiag,
+    NetlinkXfrm,
+    Packet,
+    Qipcrtr,
+    RawIp,
+    Sctp,
+    /// Generic socket class applied to all socket-like objects for which no more specific
+    /// class is defined.
+    Socket,
+    Tcp,
+    Tun,
+    Udp,
+    UnixDgram,
+    UnixStream,
+    Vsock,
+    // keep-sorted end
 }
 
 impl From<SocketClass> for KernelClass {
@@ -418,6 +410,7 @@ impl From<SocketClass> for FsNodeClass {
 
 pub trait ClassPermission {
     fn class(&self) -> KernelClass;
+    fn id(&self) -> u8;
 }
 
 macro_rules! permission_enum {
@@ -441,6 +434,11 @@ macro_rules! permission_enum {
                     $($name::$variant(_) => KernelClass::$variant),*
                 }
             }
+            fn id(&self) -> u8 {
+                match self {
+                    $($name::$variant(v) => v.id()),*
+                }
+            }
         }
 
         impl $name {
@@ -452,7 +450,8 @@ macro_rules! permission_enum {
 
             pub fn all_variants() -> impl Iterator<Item=Self> {
                 let iter = [].iter().map(Clone::clone);
-                $(let iter = iter.chain($inner::all_variants().map($name::from));)*
+                $(let variant_iter = $inner::VARIANTS.iter().map(Clone::clone).map($name::from);
+                let iter = iter.chain(variant_iter);)*
                 iter
             }
         }
@@ -462,7 +461,7 @@ macro_rules! permission_enum {
 permission_enum! {
     /// A well-known `(class, permission)` pair in SELinux policy that has a particular meaning in
     /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     KernelPermission {
         // keep-sorted start
         /// Permissions for the well-known SELinux "anon_inode" file-like object class.
@@ -573,30 +572,6 @@ permission_enum! {
     }
 }
 
-/// Helper used to define an enum of permission values, with specified names.
-/// Uses of this macro should not rely on "extends", which is solely for use to express permission
-/// inheritance in `class_permission_enum`.
-macro_rules! common_permission_enum {
-    ($(#[$meta:meta])* $name:ident $(extends $common_name:ident)? {
-        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
-    }) => {
-        enumerable_enum! {
-            $(#[$meta])* $name $(extends $common_name)? {
-                $($(#[$variant_meta])* $variant,)*
-            }
-        }
-
-        impl $name {
-            fn name(&self) -> &'static str {
-                match self {
-                    $($name::$variant => $variant_name,)*
-                    $(Self::Common(v) => {let v:$common_name = v.clone(); v.name()},)?
-                }
-            }
-        }
-    }
-}
-
 /// Helper used to declare the set of named permissions associated with an SELinux class.
 /// The `ClassType` trait is implemented on the declared `enum`, enabling values to be wrapped into
 /// the generic `KernelPermission` container.
@@ -604,74 +579,88 @@ macro_rules! common_permission_enum {
 /// of that underlying permission type. This is used to represent e.g. SELinux "dir" class deriving
 /// a basic set of permissions from the common "file" symbol.
 macro_rules! class_permission_enum {
-    ($(#[$meta:meta])* $name:ident $(extends $common_name:ident)? {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
-        common_permission_enum! {
-            $(#[$meta])* $name $(extends $common_name)? {
+        named_enum! {
+            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
+            #[repr(u8)]
+            $(#[$meta])* $name {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }
         }
 
-        impl ClassPermission for $name {
+        $(impl ClassPermission for $name {
             fn class(&self) -> KernelClass {
-                KernelPermission::from(self.clone()).class()
+                KernelClass::$kernel_class
+            }
+            fn id(&self) -> u8 {
+                *self as u8
+            }
+        })?
+    }
+}
+
+/// Permissions common to all cap-like object classes (e.g. "capability" for now and
+/// "cap_userns" after Starnix gains user namespacing support). These are combined with a
+/// specific `CapabilityClass` by policy enforcement hooks, to obtain class-affine permission
+/// values to check.
+macro_rules! cap_class_permission_enum {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        class_permission_enum! {
+            $(#[$meta])* $ name $(for $kernel_class)? {
+                // keep-sorted start
+
+                AuditControl("audit_control"),
+                AuditWrite("audit_write"),
+                Chown("chown"),
+                DacOverride("dac_override"),
+                DacReadSearch("dac_read_search"),
+                Fowner("fowner"),
+                Fsetid("fsetid"),
+                IpcLock("ipc_lock"),
+                IpcOwner("ipc_owner"),
+                Kill("kill"),
+                Lease("lease"),
+                LinuxImmutable("linux_immutable"),
+                Mknod("mknod"),
+                NetAdmin("net_admin"),
+                NetBindService("net_bind_service"),
+                NetBroadcast("net_broadcast"),
+                NetRaw("net_raw"),
+                Setfcap("setfcap"),
+                Setgid("setgid"),
+                Setpcap("setpcap"),
+                Setuid("setuid"),
+                SysAdmin("sys_admin"),
+                SysBoot("sys_boot"),
+                SysChroot("sys_chroot"),
+                SysModule("sys_module"),
+                SysNice("sys_nice"),
+                SysPacct("sys_pacct"),
+                SysPtrace("sys_ptrace"),
+                SysRawio("sys_rawio"),
+                SysResource("sys_resource"),
+                SysTime("sys_time"),
+                SysTtyConfig("sys_tty_config"),
+
+                // keep-sorted end
+
+                // Additional permissions specific to the derived class.
+                $($(#[$variant_meta])* $variant ($variant_name),)*
             }
         }
     }
 }
 
-common_permission_enum! {
-    /// Permissions common to all cap-like object classes (e.g. "capability" for now and
-    /// "cap_userns" after Starnix gains user namespacing support). These are combined with a
-    /// specific `CapabilityClass` by policy enforcement hooks, to obtain class-affine permission
-    /// values to check.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CommonCapPermission {
-        // keep-sorted start
-
-        AuditControl("audit_control"),
-        AuditWrite("audit_write"),
-        Chown("chown"),
-        DacOverride("dac_override"),
-        DacReadSearch("dac_read_search"),
-        Fowner("fowner"),
-        Fsetid("fsetid"),
-        IpcLock("ipc_lock"),
-        IpcOwner("ipc_owner"),
-        Kill("kill"),
-        Lease("lease"),
-        LinuxImmutable("linux_immutable"),
-        Mknod("mknod"),
-        NetAdmin("net_admin"),
-        NetBindService("net_bind_service"),
-        NetBroadcast("net_broadcast"),
-        NetRaw("net_raw"),
-        Setfcap("setfcap"),
-        Setgid("setgid"),
-        Setpcap("setpcap"),
-        Setuid("setuid"),
-        SysAdmin("sys_admin"),
-        SysBoot("sys_boot"),
-        SysChroot("sys_chroot"),
-        SysModule("sys_module"),
-        SysNice("sys_nice"),
-        SysPacct("sys_pacct"),
-        SysPtrace("sys_ptrace"),
-        SysRawio("sys_rawio"),
-        SysResource("sys_resource"),
-        SysTime("sys_time"),
-        SysTtyConfig("sys_tty_config"),
-
-        // keep-sorted end
-    }
+cap_class_permission_enum! {
+    CapabilityPermission for Capability {}
 }
 
-class_permission_enum! {
-    /// A well-known "capability" class permission in SELinux policy that has a particular meaning
-    /// in policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CapabilityPermission extends CommonCapPermission {}
+cap_class_permission_enum! {
+    CommonCapPermission {}
 }
 
 impl ForClass<CapClass> for CommonCapPermission {
@@ -680,38 +669,56 @@ impl ForClass<CapClass> for CommonCapPermission {
     /// "allow" rules for the correct target object class.
     fn for_class(&self, class: CapClass) -> KernelPermission {
         match class {
-            CapClass::Capability => CapabilityPermission::Common(self.clone()).into(),
+            CapClass::Capability => CapabilityPermission::from(*self).into(),
         }
     }
 }
 
-common_permission_enum! {
-    /// Permissions common to all cap2-like object classes (e.g. "capability2" for now and
-    /// "cap2_userns" after Starnix gains user namespacing support). These are combined with a
-    /// specific `Capability2Class` by policy enforcement hooks, to obtain class-affine permission
-    /// values to check.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CommonCap2Permission {
-        // keep-sorted start
-
-        AuditRead("audit_read"),
-        BlockSuspend("block_suspend"),
-        Bpf("bpf"),
-        MacAdmin("mac_admin"),
-        MacOverride("mac_override"),
-        Perfmon("perfmon"),
-        Syslog("syslog"),
-        WakeAlarm("wake_alarm"),
-
-        // keep-sorted end
+impl From<CommonCapPermission> for CapabilityPermission {
+    fn from(other: CommonCapPermission) -> Self {
+        // SAFETY: CapabilityPermission's values include all of CommonCapPermission.
+        unsafe { std::mem::transmute(other) }
     }
 }
 
-class_permission_enum! {
-    /// A well-known "capability2" class permission in SELinux policy that has a particular meaning
-    /// in policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    Capability2Permission extends CommonCap2Permission {}
+/// Permissions common to all cap2-like object classes (e.g. "capability2" for now and
+/// "cap2_userns" after Starnix gains user namespacing support). These are combined with a
+/// specific `Capability2Class` by policy enforcement hooks, to obtain class-affine permission
+/// values to check.
+macro_rules! cap2_class_permission_enum {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        class_permission_enum! {
+            $(#[$meta])* $ name $(for $kernel_class)? {
+                // keep-sorted start
+
+                AuditRead("audit_read"),
+                BlockSuspend("block_suspend"),
+                Bpf("bpf"),
+                MacAdmin("mac_admin"),
+                MacOverride("mac_override"),
+                Perfmon("perfmon"),
+                Syslog("syslog"),
+                WakeAlarm("wake_alarm"),
+
+                // keep-sorted end
+
+                // Additional permissions specific to the derived class.
+                $($(#[$variant_meta])* $variant ($variant_name),)*
+            }
+        }
+    }
+}
+
+cap2_class_permission_enum! {
+    /// Permissions for the kernel "capability" class.
+    Capability2Permission for Capability2 {}
+}
+
+cap2_class_permission_enum! {
+    /// Common symbol inherited by "capability2" and "capuser2" classes.
+    CommonCap2Permission {}
 }
 
 impl ForClass<Cap2Class> for CommonCap2Permission {
@@ -720,48 +727,67 @@ impl ForClass<Cap2Class> for CommonCap2Permission {
     /// the "allow" rules for the correct target object class.
     fn for_class(&self, class: Cap2Class) -> KernelPermission {
         match class {
-            Cap2Class::Capability2 => Capability2Permission::Common(self.clone()).into(),
+            Cap2Class::Capability2 => Capability2Permission::from(*self).into(),
         }
     }
 }
 
-common_permission_enum! {
-    /// Permissions meaningful for all [`crate::vfs::FsNode`]s, whether file- or socket-like.
-    ///
-    /// This extra layer of common permissions is not reflected in the hierarchy defined by the
-    /// SELinux Reference Policy. Because even common permissions are mapped per-class, by name, to
-    /// the policy equivalents, the implementation and policy notions of common permissions need not
-    /// be identical.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CommonFsNodePermission {
-        // keep-sorted start
-        /// Permission to append to a file or socket.
-        Append("append"),
-        /// Pseudo-permission used in `dontaudit` access-rules to allow access checks to be made
-        /// between specific sources & targets without generating audit logs.
-        AuditAccess("audit_access"),
-        /// Permission to create a file or socket.
-        Create("create"),
-        /// Permission to query attributes, including uid, gid and extended attributes.
-        GetAttr("getattr"),
-        /// Permission to execute ioctls on the file or socket.
-        Ioctl("ioctl"),
-        /// Permission to set and unset file or socket locks.
-        Lock("lock"),
-        /// Permission to map a file.
-        Map("map"),
-        /// Permission to read content from a file or socket, as well as reading or following links.
-        Read("read"),
-        /// Permission checked against the existing label when updating a node's security label.
-        RelabelFrom("relabelfrom"),
-        /// Permission checked against the new label when updating a node's security label.
-        RelabelTo("relabelto"),
-        /// Permission to modify attributes, including uid, gid and extended attributes.
-        SetAttr("setattr"),
-        /// Permission to write contents to the file or socket.
-        Write("write"),
-        // keep-sorted end
+impl From<CommonCap2Permission> for Capability2Permission {
+    fn from(other: CommonCap2Permission) -> Self {
+        // SAFETY: Capability2Permission's values include all of CommonCap2Permission.
+        unsafe { std::mem::transmute(other) }
     }
+}
+
+/// Permissions meaningful for all [`crate::vfs::FsNode`]s, whether file- or socket-like.
+///
+/// This extra layer of common permissions is not reflected in the hierarchy defined by the
+/// SELinux Reference Policy. Because even common permissions are mapped per-class, by name, to
+/// the policy equivalents, the implementation and policy notions of common permissions need not
+/// be identical.
+macro_rules! fs_node_class_permission_enum {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        class_permission_enum! {
+            $(#[$meta])* $ name $(for $kernel_class)? {
+                // keep-sorted start
+                /// Permission to append to a file or socket.
+                Append("append"),
+                /// Pseudo-permission used in `dontaudit` access-rules to allow access checks to be made
+                /// between specific sources & targets without generating audit logs.
+                AuditAccess("audit_access"),
+                /// Permission to create a file or socket.
+                Create("create"),
+                /// Permission to query attributes, including uid, gid and extended attributes.
+                GetAttr("getattr"),
+                /// Permission to execute ioctls on the file or socket.
+                Ioctl("ioctl"),
+                /// Permission to set and unset file or socket locks.
+                Lock("lock"),
+                /// Permission to map a file.
+                Map("map"),
+                /// Permission to read content from a file or socket, as well as reading or following links.
+                Read("read"),
+                /// Permission checked against the existing label when updating a node's security label.
+                RelabelFrom("relabelfrom"),
+                /// Permission checked against the new label when updating a node's security label.
+                RelabelTo("relabelto"),
+                /// Permission to modify attributes, including uid, gid and extended attributes.
+                SetAttr("setattr"),
+                /// Permission to write contents to the file or socket.
+                Write("write"),
+                // keep-sorted end
+
+                // Additional permissions specific to the derived class.
+                $($(#[$variant_meta])* $variant ($variant_name),)*
+            }
+        }
+    }
+}
+
+fs_node_class_permission_enum! {
+    CommonFsNodePermission {}
 }
 
 impl<T: Into<FsNodeClass>> ForClass<T> for CommonFsNodePermission {
@@ -771,38 +797,74 @@ impl<T: Into<FsNodeClass>> ForClass<T> for CommonFsNodePermission {
     fn for_class(&self, class: T) -> KernelPermission {
         match class.into() {
             FsNodeClass::File(file_class) => {
-                CommonFilePermission::Common(self.clone()).for_class(file_class)
+                CommonFilePermission::from(*self).for_class(file_class)
             }
             FsNodeClass::Socket(sock_class) => {
-                CommonSocketPermission::Common(self.clone()).for_class(sock_class)
+                CommonSocketPermission::from(*self).for_class(sock_class)
             }
         }
     }
 }
-common_permission_enum! {
-    /// Permissions common to all socket-like object classes. These are combined with a specific
-    /// `SocketClass` by policy enforcement hooks, to obtain class-affine permission values.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CommonSocketPermission extends CommonFsNodePermission {
-        // keep-sorted start
-        /// Permission to accept a connection.
-        Accept("accept"),
-        /// Permission to bind to a name.
-        Bind("bind"),
-        /// Permission to initiate a connection.
-        Connect("connect"),
-        /// Permission to get socket options.
-        GetOpt("getopt"),
-        /// Permission to listen for connections.
-        Listen("listen"),
-        /// Permission to send datagrams to the socket.
-        SendTo("sendto"),
-        /// Permission to set socket options.
-        SetOpt("setopt"),
-        /// Permission to terminate connection.
-        Shutdown("shutdown"),
-        // keep-sorted end
+
+impl From<CommonFsNodePermission> for CommonFilePermission {
+    fn from(other: CommonFsNodePermission) -> Self {
+        // SAFETY: CommonFilePermission's values include all of CommonFsNodePermission.
+        unsafe { std::mem::transmute(other) }
     }
+}
+
+impl From<CommonFsNodePermission> for CommonSocketPermission {
+    fn from(other: CommonFsNodePermission) -> Self {
+        // SAFETY: CommonSocketPermission's values include all of CommonFsNodePermission.
+        unsafe { std::mem::transmute(other) }
+    }
+}
+
+/// Permissions common to all socket-like object classes. These are combined with a specific
+/// `SocketClass` by policy enforcement hooks, to obtain class-affine permission values.
+macro_rules! socket_class_permission_enum {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        fs_node_class_permission_enum! {
+            $(#[$meta])* $ name $(for $kernel_class)? {
+                // keep-sorted start
+                /// Permission to accept a connection.
+                Accept("accept"),
+                /// Permission to bind to a name.
+                Bind("bind"),
+                /// Permission to initiate a connection.
+                Connect("connect"),
+                /// Permission to get socket options.
+                GetOpt("getopt"),
+                /// Permission to listen for connections.
+                Listen("listen"),
+                /// Permission to send datagrams to the socket.
+                SendTo("sendto"),
+                /// Permission to set socket options.
+                SetOpt("setopt"),
+                /// Permission to terminate connection.
+                Shutdown("shutdown"),
+                // keep-sorted end
+
+                // Additional permissions specific to the derived class.
+                $($(#[$variant_meta])* $variant ($variant_name),)*
+            }
+        }
+
+        $(impl From<CommonSocketPermission> for $name {
+            fn from(other: CommonSocketPermission) -> Self {
+                // SAFETY: $name's values include all of CommonSocketPermission.
+                let result: $name = unsafe { std::mem::transmute(other) };
+                debug_assert_eq!(result.class(), KernelClass::$kernel_class);
+                result
+            }
+        })?
+    }
+}
+
+socket_class_permission_enum! {
+    CommonSocketPermission {}
 }
 
 impl ForClass<SocketClass> for CommonSocketPermission {
@@ -811,82 +873,57 @@ impl ForClass<SocketClass> for CommonSocketPermission {
     /// "allow" rules for the correct target object class.
     fn for_class(&self, class: SocketClass) -> KernelPermission {
         match class {
-            SocketClass::Key => KeySocketPermission::Common(self.clone()).into(),
-            SocketClass::Netlink => NetlinkSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkAudit => NetlinkAuditSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkConnector => {
-                NetlinkConnectorSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkCrypto => {
-                NetlinkCryptoSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkDnrt => NetlinkDnrtSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkFibLookup => {
-                NetlinkFibLookupSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkFirewall => {
-                NetlinkFirewallSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkGeneric => {
-                NetlinkGenericSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkIp6Fw => NetlinkIp6FwSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkIscsi => NetlinkIscsiSocketPermission::Common(self.clone()).into(),
+            SocketClass::Key => KeySocketPermission::from(*self).into(),
+            SocketClass::Netlink => NetlinkSocketPermission::from(*self).into(),
+            SocketClass::NetlinkAudit => NetlinkAuditSocketPermission::from(*self).into(),
+            SocketClass::NetlinkConnector => NetlinkConnectorSocketPermission::from(*self).into(),
+            SocketClass::NetlinkCrypto => NetlinkCryptoSocketPermission::from(*self).into(),
+            SocketClass::NetlinkDnrt => NetlinkDnrtSocketPermission::from(*self).into(),
+            SocketClass::NetlinkFibLookup => NetlinkFibLookupSocketPermission::from(*self).into(),
+            SocketClass::NetlinkFirewall => NetlinkFirewallSocketPermission::from(*self).into(),
+            SocketClass::NetlinkGeneric => NetlinkGenericSocketPermission::from(*self).into(),
+            SocketClass::NetlinkIp6Fw => NetlinkIp6FwSocketPermission::from(*self).into(),
+            SocketClass::NetlinkIscsi => NetlinkIscsiSocketPermission::from(*self).into(),
             SocketClass::NetlinkKobjectUevent => {
-                NetlinkKobjectUeventSocketPermission::Common(self.clone()).into()
+                NetlinkKobjectUeventSocketPermission::from(*self).into()
             }
-            SocketClass::NetlinkNetfilter => {
-                NetlinkNetfilterSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkNflog => NetlinkNflogSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkRdma => NetlinkRdmaSocketPermission::Common(self.clone()).into(),
-            SocketClass::NetlinkRoute => NetlinkRouteSocketPermission::Common(self.clone()).into(),
+            SocketClass::NetlinkNetfilter => NetlinkNetfilterSocketPermission::from(*self).into(),
+            SocketClass::NetlinkNflog => NetlinkNflogSocketPermission::from(*self).into(),
+            SocketClass::NetlinkRdma => NetlinkRdmaSocketPermission::from(*self).into(),
+            SocketClass::NetlinkRoute => NetlinkRouteSocketPermission::from(*self).into(),
             SocketClass::NetlinkScsitransport => {
-                NetlinkScsitransportSocketPermission::Common(self.clone()).into()
+                NetlinkScsitransportSocketPermission::from(*self).into()
             }
-            SocketClass::NetlinkSelinux => {
-                NetlinkSelinuxSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkTcpDiag => {
-                NetlinkTcpDiagSocketPermission::Common(self.clone()).into()
-            }
-            SocketClass::NetlinkXfrm => NetlinkXfrmSocketPermission::Common(self.clone()).into(),
-            SocketClass::Packet => PacketSocketPermission::Common(self.clone()).into(),
-            SocketClass::Qipcrtr => QipcrtrSocketPermission::Common(self.clone()).into(),
-            SocketClass::RawIp => RawIpSocketPermission::Common(self.clone()).into(),
-            SocketClass::Sctp => SctpSocketPermission::Common(self.clone()).into(),
-            SocketClass::Socket => SocketPermission::Common(self.clone()).into(),
-            SocketClass::Tcp => TcpSocketPermission::Common(self.clone()).into(),
-            SocketClass::Tun => TunSocketPermission::Common(self.clone()).into(),
-            SocketClass::Udp => UdpSocketPermission::Common(self.clone()).into(),
-            SocketClass::UnixDgram => UnixDgramSocketPermission::Common(self.clone()).into(),
-            SocketClass::UnixStream => UnixStreamSocketPermission::Common(self.clone()).into(),
-            SocketClass::Vsock => VsockSocketPermission::Common(self.clone()).into(),
-            SocketClass::Icmp => IcmpSocketPermission::Common(self.clone()).into(),
+            SocketClass::NetlinkSelinux => NetlinkSelinuxSocketPermission::from(*self).into(),
+            SocketClass::NetlinkTcpDiag => NetlinkTcpDiagSocketPermission::from(*self).into(),
+            SocketClass::NetlinkXfrm => NetlinkXfrmSocketPermission::from(*self).into(),
+            SocketClass::Packet => PacketSocketPermission::from(*self).into(),
+            SocketClass::Qipcrtr => QipcrtrSocketPermission::from(*self).into(),
+            SocketClass::RawIp => RawIpSocketPermission::from(*self).into(),
+            SocketClass::Sctp => SctpSocketPermission::from(*self).into(),
+            SocketClass::Socket => SocketPermission::from(*self).into(),
+            SocketClass::Tcp => TcpSocketPermission::from(*self).into(),
+            SocketClass::Tun => TunSocketPermission::from(*self).into(),
+            SocketClass::Udp => UdpSocketPermission::from(*self).into(),
+            SocketClass::UnixDgram => UnixDgramSocketPermission::from(*self).into(),
+            SocketClass::UnixStream => UnixStreamSocketPermission::from(*self).into(),
+            SocketClass::Vsock => VsockSocketPermission::from(*self).into(),
+            SocketClass::Icmp => IcmpSocketPermission::from(*self).into(),
         }
     }
 }
 
-class_permission_enum! {
-    /// A well-known "key_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    KeySocketPermission extends CommonSocketPermission {
-    }
-}
-class_permission_enum! {
-    /// A well-known "netlink_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    KeySocketPermission for KeySocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_route_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkRouteSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkSocketPermission for NetlinkSocket {}
+}
+
+socket_class_permission_enum! {
+    NetlinkRouteSocketPermission for NetlinkRouteSocket {
         // keep-sorted start
         /// Permission for nlmsg xperms.
         Nlmsg("nlmsg"),
@@ -898,19 +935,13 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_firewall_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkFirewallSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkFirewallSocketPermission for NetlinkFirewallSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_tcpdiag_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkTcpDiagSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkTcpDiagSocketPermission for NetlinkTcpDiagSocket {
         // keep-sorted start
         /// Permission for nlmsg xperms.
         Nlmsg("nlmsg"),
@@ -922,19 +953,13 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_nflog_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkNflogSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkNflogSocketPermission for NetlinkNflogSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_xfrm_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkXfrmSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkXfrmSocketPermission  for NetlinkXfrmSocket {
         // keep-sorted start
         /// Permission for nlmsg xperms.
         Nlmsg("nlmsg"),
@@ -946,27 +971,18 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_selinux_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkSelinuxSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkSelinuxSocketPermission for NetlinkSelinuxSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_iscsi_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkIscsiSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkIscsiSocketPermission for NetlinkIscsiSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_audit_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkAuditSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkAuditSocketPermission for NetlinkAuditSocket {
         // keep-sorted start
         /// Permission for nlmsg xperms.
         Nlmsg("nlmsg"),
@@ -984,115 +1000,73 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_fib_lookup_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkFibLookupSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkFibLookupSocketPermission for NetlinkFibLookupSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_connector_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkConnectorSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkConnectorSocketPermission for NetlinkConnectorSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_netfilter_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkNetfilterSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkNetfilterSocketPermission for NetlinkNetfilterSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_ip6fw_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkIp6FwSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkIp6FwSocketPermission for NetlinkIp6FwSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_dnrt_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkDnrtSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkDnrtSocketPermission for NetlinkDnrtSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_kobject_uevent_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkKobjectUeventSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkKobjectUeventSocketPermission for NetlinkKobjectUeventSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_generic_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkGenericSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkGenericSocketPermission for NetlinkGenericSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_scsitransport_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkScsitransportSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkScsitransportSocketPermission for NetlinkScsitransportSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_rdma_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkRdmaSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkRdmaSocketPermission for NetlinkRdmaSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "netlink_crypto_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    NetlinkCryptoSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    NetlinkCryptoSocketPermission for NetlinkCryptoSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "packet_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    PacketSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    PacketSocketPermission for PacketSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "qipcrtr_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    QipcrtrSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    QipcrtrSocketPermission for QipcrtrSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "rawip_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    RawIpSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    RawIpSocketPermission for RawIpSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "sctp_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    SctpSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    SctpSocketPermission for SctpSocket {
         // keep-sorted start
         /// Permission to create an SCTP association.
         Associate("associate"),
@@ -1104,43 +1078,28 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    SocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    SocketPermission for Socket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "tcp_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    TcpSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    TcpSocketPermission for TcpSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "tun_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    TunSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    TunSocketPermission for TunSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "udp_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    UdpSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    UdpSocketPermission for UdpSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "unix_stream_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    UnixStreamSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    UnixStreamSocketPermission for UnixStreamSocket {
         // keep-sorted start
         /// Permission to connect a streaming Unix-domain socket.
         ConnectTo("connectto"),
@@ -1148,27 +1107,18 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "unix_dgram_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    UnixDgramSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    UnixDgramSocketPermission for UnixDgramSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "vsock_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    VsockSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    VsockSocketPermission for VSockSocket {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "icmp_socket" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    IcmpSocketPermission extends CommonSocketPermission {
+socket_class_permission_enum! {
+    IcmpSocketPermission for IcmpSocket {
         // keep-sorted start
         /// Permission to `bind()` an ICMP socket.
         NodeBind("node_bind"),
@@ -1176,27 +1126,48 @@ class_permission_enum! {
     }
 }
 
-common_permission_enum! {
-    /// Permissions common to all file-like object classes (e.g. "lnk_file", "dir"). These are
-    /// combined with a specific `FileClass` by policy enforcement hooks, to obtain class-affine
-    /// permission values to check.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CommonFilePermission extends CommonFsNodePermission {
-        // keep-sorted start
-        /// Permission to execute a file with domain transition.
-        Execute("execute"),
-        /// Permissions to create hard link.
-        Link("link"),
-        /// Permission to use as mount point; only useful for directories and files.
-        MountOn("mounton"),
-        /// Permission to open a file.
-        Open("open"),
-        /// Permission to rename a file.
-        Rename("rename"),
-        /// Permission to delete a file or remove a hard link.
-        Unlink("unlink"),
-        // keep-sorted end
+/// Permissions common to all file-like object classes (e.g. "lnk_file", "dir"). These are
+/// combined with a specific `FileClass` by policy enforcement hooks, to obtain class-affine
+/// permission values to check.
+macro_rules! file_class_permission_enum {
+    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        fs_node_class_permission_enum! {
+        $(#[$meta])* $name $(for $kernel_class)? {
+            // keep-sorted start
+
+            /// Permission to execute a file with domain transition.
+            Execute("execute"),
+            /// Permissions to create hard link.
+            Link("link"),
+            /// Permission to use as mount point; only useful for directories and files.
+            MountOn("mounton"),
+            /// Permission to open a file.
+            Open("open"),
+            /// Permission to rename a file.
+            Rename("rename"),
+            /// Permission to delete a file or remove a hard link.
+            Unlink("unlink"),
+            // keep-sorted end
+
+            // Additional permissions specific to the derived class.
+            $($(#[$variant_meta])* $variant ($variant_name),)*
+        }}
+
+        $(impl From<CommonFilePermission> for $name {
+            fn from(other: CommonFilePermission) -> Self {
+                // SAFETY: $name's values include all of CommonFilePermission.
+                let result: $name = unsafe { std::mem::transmute(other) };
+                debug_assert_eq!(result.class(), KernelClass::$kernel_class);
+                result
+            }
+        })?
     }
+}
+
+file_class_permission_enum! {
+    CommonFilePermission {}
 }
 
 impl ForClass<FileClass> for CommonFilePermission {
@@ -1205,32 +1176,26 @@ impl ForClass<FileClass> for CommonFilePermission {
     /// "allow" rules for the correct target object class.
     fn for_class(&self, class: FileClass) -> KernelPermission {
         match class {
-            FileClass::AnonFsNode => AnonFsNodePermission::Common(self.clone()).into(),
-            FileClass::Block => BlockFilePermission::Common(self.clone()).into(),
-            FileClass::Character => CharacterFilePermission::Common(self.clone()).into(),
-            FileClass::Dir => DirPermission::Common(self.clone()).into(),
-            FileClass::Fifo => FifoFilePermission::Common(self.clone()).into(),
-            FileClass::File => FilePermission::Common(self.clone()).into(),
-            FileClass::Link => LinkFilePermission::Common(self.clone()).into(),
-            FileClass::SockFile => SockFilePermission::Common(self.clone()).into(),
-            FileClass::MemFdFile => MemFdFilePermission::Common(self.clone()).into(),
+            FileClass::AnonFsNode => AnonFsNodePermission::from(*self).into(),
+            FileClass::Block => BlockFilePermission::from(*self).into(),
+            FileClass::Character => CharacterFilePermission::from(*self).into(),
+            FileClass::Dir => DirPermission::from(*self).into(),
+            FileClass::Fifo => FifoFilePermission::from(*self).into(),
+            FileClass::File => FilePermission::from(*self).into(),
+            FileClass::Link => LinkFilePermission::from(*self).into(),
+            FileClass::SockFile => SockFilePermission::from(*self).into(),
+            FileClass::MemFdFile => MemFdFilePermission::from(*self).into(),
         }
     }
 }
 
-class_permission_enum! {
-    /// A well-known "anon_file" class permission used to manage special file-like nodes not linked
-    /// into any directory structures.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    AnonFsNodePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    AnonFsNodePermission for AnonFsNode {
     }
 }
 
 class_permission_enum! {
-    /// A well-known "binder" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    BinderPermission {
+    BinderPermission for Binder {
         // keep-sorted start
         /// Permission to perform a binder IPC to a given target process.
         Call("call"),
@@ -1244,27 +1209,18 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "blk_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    BlockFilePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    BlockFilePermission for Block {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "chr_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    CharacterFilePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    CharacterFilePermission for Character {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "dir" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    DirPermission extends CommonFilePermission {
+file_class_permission_enum! {
+    DirPermission for Dir {
         // keep-sorted start
         /// Permission to add a file to the directory.
         AddName("add_name"),
@@ -1281,10 +1237,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "fd" class permission in SELinux policy that has a particular meaning in policy
-    /// enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    FdPermission {
+    FdPermission for Fd {
         // keep-sorted start
         /// Permission to use file descriptors copied/retained/inherited from another security
         /// context. This permission is generally used to control whether an `exec*()` call from a
@@ -1295,10 +1248,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "bpf" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    BpfPermission {
+    BpfPermission for Bpf {
         // keep-sorted start
         /// Permission to create a map.
         MapCreate("map_create"),
@@ -1315,10 +1265,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "perf_event" class permission in SELinux policy that has a particular meaning
-    /// in policy hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    PerfEventPermission {
+    PerfEventPermission for PerfEvent {
         // keep-sorted start
         /// Permission to monitor the cpu.
         Cpu("cpu"),
@@ -1336,19 +1283,13 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "fifo_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    FifoFilePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    FifoFilePermission for Fifo {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    FilePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    FilePermission for File {
         // keep-sorted start
         /// Permission to use a file as an entry point into the new domain on transition.
         Entrypoint("entrypoint"),
@@ -1360,10 +1301,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "filesystem" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    FileSystemPermission {
+    FileSystemPermission for FileSystem {
         // keep-sorted start
         /// Permission to associate a file to the filesystem.
         Associate("associate"),
@@ -1379,35 +1317,23 @@ class_permission_enum! {
     }
 }
 
-class_permission_enum! {
-    /// A well-known "lnk_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    LinkFilePermission extends CommonFilePermission {
+file_class_permission_enum! {
+    LinkFilePermission for Link {
+    }
+}
+
+file_class_permission_enum! {
+    MemFdFilePermission for MemFdFile {
+    }
+}
+
+file_class_permission_enum! {
+    SockFilePermission for SockFile {
     }
 }
 
 class_permission_enum! {
-    /// A well-known "mem_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    MemFdFilePermission extends CommonFilePermission {
-    }
-}
-
-class_permission_enum! {
-    /// A well-known "sock_file" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    SockFilePermission extends CommonFilePermission {
-    }
-}
-
-class_permission_enum! {
-    /// A well-known "process" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    ProcessPermission {
+    ProcessPermission for Process {
         // keep-sorted start
         /// Permission to dynamically transition a process to a different security domain.
         DynTransition("dyntransition"),
@@ -1474,10 +1400,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "process2" class permission in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    Process2Permission {
+    Process2Permission for Process2 {
         // keep-sorted start
         /// Permission to transition to an unbounded domain when no-new-privileges is set.
         NnpTransition("nnp_transition"),
@@ -1488,10 +1411,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "security" class permission in SELinux policy, used to control access to
-    /// sensitive administrative and query API surfaces in the "selinuxfs".
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    SecurityPermission {
+    SecurityPermission for Security {
         // keep-sorted start
         /// Permission to validate Security Context using the "context" API.
         CheckContext("check_context"),
@@ -1518,10 +1438,7 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
-    /// A well-known "system" class permission in SELinux policy, used to control access to
-    /// sensitive administrative and query API surfaces in the "selinuxfs".
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    SystemPermission {
+    SystemPermission for System {
         // keep-sorted start
         /// Permission to use the syslog(2) CONSOLE action types.
         SyslogConsole("syslog_console"),

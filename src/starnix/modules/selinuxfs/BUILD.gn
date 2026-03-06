@@ -31,6 +31,7 @@ rustc_library("selinuxfs") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:strum",
     "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [

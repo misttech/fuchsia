@@ -370,6 +370,7 @@ _starnix_core_deps = [
   "//third_party/rust_crates:slab",
   "//third_party/rust_crates:smallvec",
   "//third_party/rust_crates:static_assertions",
+  "//third_party/rust_crates:strum",
   "//third_party/rust_crates:thiserror",
   "//third_party/rust_crates:tracing-mutex",
   "//third_party/rust_crates:zerocopy",

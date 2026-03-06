@@ -8,6 +8,7 @@ use crate::{KernelClass, ObjectClass};
 use anyhow::{anyhow, bail};
 use std::collections::HashMap;
 use std::num::NonZeroU64;
+use strum::VariantArray as _;
 
 /// Encapsulates a set of access-check exceptions parsed from a supplied configuration.
 pub(super) struct ExceptionsConfig {
@@ -159,7 +160,7 @@ fn bug_ref_to_id(bug_ref: &str) -> Result<NonZeroU64, anyhow::Error> {
 /// Returns the `KernelClass` corresponding to the supplied `name`, if any.
 /// `None` is returned if no such kernel object class exists in the Starnix implementation.
 fn object_class_by_name(name: &str) -> Option<KernelClass> {
-    KernelClass::all_variants().find(|class| class.name() == name)
+    KernelClass::VARIANTS.iter().find(|class| class.name() == name).map(Clone::clone)
 }
 
 #[cfg(test)]

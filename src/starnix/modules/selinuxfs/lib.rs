@@ -47,6 +47,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
+use strum::VariantArray as _;
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, HandleBased as _};
 
@@ -173,7 +174,7 @@ impl SeLinuxFs {
         dir.entry("mls", BytesFile::new_node(b"1".to_vec()), mode!(IFREG, 0o444));
         dir.entry("policy", PolicyFile::new_node(security_server.clone()), mode!(IFREG, 0o600));
         dir.subdir("policy_capabilities", 0o555, |dir| {
-            for capability in PolicyCap::all_values() {
+            for capability in PolicyCap::VARIANTS {
                 dir.entry(
                     capability.name(),
                     PolicyCapFile::new_node(security_server.clone(), *capability),

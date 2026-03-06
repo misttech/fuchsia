@@ -257,8 +257,7 @@ mod tests {
     use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
     use crate::policy::{AccessDecision, AccessVector, XpermsAccessDecision};
     use crate::{
-        CommonFilePermission, CommonFsNodePermission, FileClass, FilePermission, ForClass,
-        ObjectClass, ProcessPermission,
+        CommonFsNodePermission, FileClass, FilePermission, ForClass, ObjectClass, ProcessPermission,
     };
 
     use std::num::NonZeroU32;
@@ -282,9 +281,7 @@ mod tests {
             KernelPermission::Process(ProcessPermission::Fork) => ACCESS_VECTOR_0001,
             KernelPermission::Process(ProcessPermission::Transition) => ACCESS_VECTOR_0010,
             // File class permissions
-            KernelPermission::File(FilePermission::Common(CommonFilePermission::Common(
-                CommonFsNodePermission::Ioctl,
-            ))) => ACCESS_VECTOR_0001,
+            KernelPermission::File(FilePermission::Ioctl) => ACCESS_VECTOR_0001,
             _ => AccessVector::NONE,
         }
     }
