@@ -90,7 +90,7 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
 
   if (lines.size() == 0) {
     FX_LOGS(ERROR) << "Zircon reboot log has no content";
-    return ZirconShutdownReason::kNotSet;
+    return ZirconShutdownReason::kNotParseable;
   }
 
   // We expect the format to be:
