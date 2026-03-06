@@ -39,28 +39,33 @@ class FakeTraceManager : public fidl::Server<fuchsia_tracing_provider::Registry>
   }
 
   void RegisterProvider(fuchsia_tracing_provider::RegistryRegisterProviderRequest& request,
-                        RegisterProviderCompleter::Sync& completer) override {}
+                        RegisterProviderCompleter::Sync& completer) override {
+    provider_client_ = std::make_optional<fidl::Client<fuchsia_tracing_provider::Provider>>(
+        std::move(request.provider()), dispatcher_);
+
+    zx::vmo buffer_vmo;
+    ASSERT_EQ(zx::vmo::create(42, 0u, &buffer_vmo), ZX_OK);
+
+    zx::fifo fifo, fifo_for_provider;
+    ASSERT_EQ(zx::fifo::create(42, sizeof(trace_provider_packet_t), 0u, &fifo, &fifo_for_provider),
+              ZX_OK);
+
+    fuchsia_tracing_provider::ProviderConfig config({
+        .buffering_mode = buffering_mode_,
+        .buffer = std::move(buffer_vmo),
+        .fifo = std::move(fifo_for_provider),
+        .categories = categories_,
+    });
+    fit::result result = provider_client_.value()->Initialize({std::move(config)});
+    ASSERT_TRUE(result.is_ok(), "%s error calling Initialize: %s", request.name().c_str(),
+                result.error_value().status_string());
+  }
 
   void RegisterProviderSynchronously(
       fuchsia_tracing_provider::RegistryRegisterProviderSynchronouslyRequest& request,
       RegisterProviderSynchronouslyCompleter::Sync& completer) override {}
 
-  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override {
-    provider_client_.emplace(std::move(request.provider()), dispatcher_);
-
-    zx::vmo buffer_vmo;
-    ASSERT_EQ(zx::vmo::create(42, 0u, &buffer_vmo), ZX_OK);
-
-    fuchsia_tracing_provider::ProviderConfigV2 config{{
-        .buffering_mode = buffering_mode_,
-        .buffer = std::move(buffer_vmo),
-        .categories = categories_,
-    }};
-
-    fit::result result = provider_client_.value()->Initialize({std::move(config)});
-    ASSERT_TRUE(result.is_ok(), "%s error calling Initialize: %s", request.name().c_str(),
-                result.error_value().status_string());
-  }
+  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override {}
 
   void RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
                                RegisterV2SynchronouslyCompleter::Sync& completer) override {
@@ -73,14 +78,14 @@ class FakeTraceManager : public fidl::Server<fuchsia_tracing_provider::Registry>
       fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  std::optional<fidl::Client<fuchsia_tracing_provider::ProviderV2>>& provider_client() {
+  std::optional<fidl::Client<fuchsia_tracing_provider::Provider>>& provider_client() {
     return provider_client_;
   }
 
  private:
   const std::vector<std::string> categories_;
   const fuchsia_tracing::BufferingMode buffering_mode_;
-  std::optional<fidl::Client<fuchsia_tracing_provider::ProviderV2>> provider_client_;
+  std::optional<fidl::Client<fuchsia_tracing_provider::Provider>> provider_client_;
   async_dispatcher_t* dispatcher_;
 };
 
@@ -126,7 +131,7 @@ TEST_F(ProviderTest, GetKnownCategoriesDefault) {
 
   ASSERT_TRUE(manager_->provider_client().has_value());
   manager_->provider_client().value()->GetKnownCategories().Then(
-      [](fidl::Result<::fuchsia_tracing_provider::ProviderV2::GetKnownCategories>& result) {
+      [](fidl::Result<::fuchsia_tracing_provider::Provider::GetKnownCategories>& result) {
         ASSERT_TRUE(result.is_ok());
         // The default known category list will be empty until static compile-time registration is
         // implemented.
@@ -149,7 +154,7 @@ TEST_F(ProviderTest, GetKnownCategoriesFromSetCallback) {
 
   ASSERT_TRUE(manager_->provider_client().has_value());
   manager_->provider_client().value()->GetKnownCategories().Then(
-      [](fidl::Result<::fuchsia_tracing_provider::ProviderV2::GetKnownCategories>& result) {
+      [](fidl::Result<::fuchsia_tracing_provider::Provider::GetKnownCategories>& result) {
         ASSERT_TRUE(result.is_ok());
         std::vector<fuchsia_tracing::KnownCategory> expected_known_categories = {
             {{.name = "foo"}},
