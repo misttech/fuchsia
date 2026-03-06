@@ -315,6 +315,22 @@ func TestParseArgsAndEnv(t *testing.T) {
 				isDebug:       true,
 			},
 		},
+		{
+			name: "no-change-env flag is parsed alongside explicit directory via env",
+			args: []string{"core.x64", "--no-change-env"},
+			env: map[string]string{
+				checkoutDirEnvVar: "dir",
+				buildDirEnvVar:    "out/temp1",
+			},
+			expected: setArgs{
+				product:       "core",
+				board:         "x64",
+				checkoutDir:   "dir",
+				buildDir:      "out/temp1",
+				noChangeEnv:   true,
+				includeClippy: true,
+			},
+		},
 	}
 
 	for _, tc := range testCases {

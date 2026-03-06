@@ -171,6 +171,14 @@ func mainImpl(ctx context.Context) error {
 		BuildDir:    filepath.Join(args.checkoutDir, args.buildDir),
 	}
 
+	if args.noChangeEnv {
+		// Set an environment variable so downstream tools like build/regenerator.py
+		// know to avoid natively overwriting global symlinks across the workspace.
+		if err := os.Setenv("FX_NO_ENV_SYMLINK", "1"); err != nil {
+			return fmt.Errorf("failed to set FX_NO_ENV_SYMLINK: %w", err)
+		}
+	}
+
 	_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
 	if err != nil {
 		return err
@@ -195,8 +203,10 @@ func mainImpl(ctx context.Context) error {
 	if relBuildDir, err := filepath.Rel(contextSpec.CheckoutDir, contextSpec.BuildDir); err == nil {
 		buildDir = relBuildDir
 	}
-	if err := fx.run(ctx, "use", buildDir); err != nil {
-		return fmt.Errorf("failed to set build directory: %w", err)
+	if !args.noChangeEnv {
+		if err := fx.run(ctx, "use", buildDir); err != nil {
+			return fmt.Errorf("failed to set build directory: %w", err)
+		}
 	}
 	return nil
 }
@@ -208,6 +218,7 @@ type setArgs struct {
 	checkoutDir   string
 	buildDir      string
 	skipLocalArgs bool
+	noChangeEnv   bool
 
 	// Flags passed to GN.
 	board     string
@@ -284,6 +295,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	flagSet.SetOutput(io.Discard)
 
 	flagSet.BoolVar(&cmd.skipLocalArgs, "skip-local-args", false, "")
+	flagSet.BoolVar(&cmd.noChangeEnv, "no-change-env", false, "Do not configure global .fx-build-dir or symlink")
 
 	var autoDir = true // default to automatically creating a named build directory
 

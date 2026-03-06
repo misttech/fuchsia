@@ -126,6 +126,8 @@
 ##                         "main" assembly for the product will be assumed.
 ##   --main-pb             Build label for the main product bundle to work with.
 ##                         Useful for multi-product builds.
+##   --no-change-env       Configure the build graph without modifying global .fx-build-dir
+##                         or out/default symlinks. Keep environment pristine.
 ##
 ## Example:
 ##

@@ -713,11 +713,13 @@ def main() -> int:
             ensure_regenerator_will_run_again()
             return result
 
-    create_convenience_symlinks()
+    do_not_change_fuchsia_checkout = "FX_NO_ENV_SYMLINK" in os.environ
+    if not do_not_change_fuchsia_checkout:
+        create_convenience_symlinks()
 
     # These symlinks point out/default to the active build directory for
-    # developer convenience
-    if build_dir.name != "default":
+    # developer convenience. We skip this if FX_NO_ENV_SYMLINK is set.
+    if build_dir.name != "default" and not do_not_change_fuchsia_checkout:
         out_default = fuchsia_dir / "out" / "default"
         # if out/default was previously a hard directory
         if out_default.exists() and not out_default.is_symlink():
