@@ -50,7 +50,29 @@ var dhcpServerExpectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{10, 9}:  Pass,
 	{10, 10}: Pass,
 	{10, 11}: Pass,
-	{10, 12}: Pass,
+	// This test verifies that the DHCP Server will ignore DHCPREQUEST messages
+	// that provide a `file` or `sname`. That requirement is not sanctioned by
+	// the RFC. RFC 2131, section 4.4.1, states:
+	//
+	// Field      DHCPDISCOVER          DHCPREQUEST           DHCPDECLINE,
+	//            DHCPINFORM                                  DHCPRELEASE
+	// -----      ------------          -----------           -----------
+	// 'sname'    options, if           options, if           (unused)
+	//            indicated in          indicated in
+	//            'sname/file'          'sname/file'
+	//            option; otherwise     option; otherwise
+	//            unused                unused
+	// 'file'     options, if           options, if           (unused)
+	//            indicated in          indicated in
+	//            'sname/file'          'sname/file'
+	//            option; otherwise     option; otherwise
+	//            unused.               unused.
+	//
+	// The test seems to interpret "otherwise unused" to mean that the server
+	// should fail to parse the message. However, for the sake of robustness,
+	// our server implementations interprets this as the fields should be
+	// ignored.
+	{10, 12}: Fail,
 	{10, 13}: Pass,
 	{10, 14}: Pass,
 	{10, 15}: Pass,
