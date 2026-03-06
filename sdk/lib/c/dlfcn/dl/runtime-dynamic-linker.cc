@@ -46,8 +46,6 @@ void* RuntimeDynamicLinker::TlsBlock(const RuntimeModule& module) const {
     // ld::TpRelative.
     return ld::TpRelative(static_cast<ptrdiff_t>(module.static_tls_bias()));
   }
-  // TODO(https://fxbug.dev/403366387): Introduce a dynamic_tls_index accessor
-  // method on RuntimeModule
   auto dynamic_tls_index = module.tls_module_id() - max_static_tls_modid_ - 1;
   DynamicTlsPtr& module_tls = _dl_tlsdesc_runtime_dynamic_blocks[dynamic_tls_index];
   return module_tls.contents(module.tls_module()).data();
