@@ -519,26 +519,32 @@ INSTANTIATE_TEST_SUITE_P(
             std::nullopt,
         },
         {
+            "MalformedLog",
+            "BAD REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
+            std::nullopt,
+            std::nullopt,
+        },
+        {
             "TooFewLinesForUptime",
-            "BAD REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n",
             std::nullopt,
             std::nullopt,
         },
         {
             "BadUptimeString",
-            "BAD REBOOT REASON (NO CRASH)\n\nDOWNTIME (ms)\n1234",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nDOWNTIME (ms)\n1234",
             std::nullopt,
             std::nullopt,
         },
         {
             "TooFewLinesForRuntime",
-            "BAD REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n",
             zx::msec(1234),
             std::nullopt,
         },
         {
             "BadRuntimeString",
-            "BAD REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nWALKTIME (ms)\n1098",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nWALKTIME (ms)\n1098",
             zx::msec(1234),
             std::nullopt,
         },
@@ -593,7 +599,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "TooFewLines",
-            "BAD REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n",
             std::nullopt,
         },
         {

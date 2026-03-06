@@ -101,6 +101,9 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
   // RUNTIME (ms)
   // <SOME RUNTIME>
   const auto reason = ExtractZirconShutdownReason(lines[0]);
+  if (reason == ZirconShutdownReason::kNotParseable) {
+    return reason;
+  }
 
   if (lines.size() < 3) {
     FX_LOGS(ERROR) << "Zircon reboot log is missing uptime information";
