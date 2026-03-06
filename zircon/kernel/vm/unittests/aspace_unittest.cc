@@ -569,14 +569,23 @@ static bool vmaspace_unified_accessed_test() {
   EXPECT_OK(restricted_mem->CommitAndMap(kPageSize, kMiddleOffset));
 
   // Switch to the unified aspace.
+  // NOTE: This test takes care to not trigger any page faults or accessed faults from this point
+  // on, because the unified aspace cannot resolve faults. For a user thread, we would rely on the
+  // process dispatcher to look up if the faulting address lies in the shared aspace or the
+  // restricted aspace, and use one of those to resolve the fault instead. We cannot exercise that
+  // behavior from within a kernel unit test.
   VmAspace* old_aspace = Thread::Current::Get()->active_aspace();
   vmm_set_active_aspace(unified_aspace.get());
   auto reset_old_aspace = fit::defer([&old_aspace]() { vmm_set_active_aspace(old_aspace); });
 
-  // Touch the the shared and restricted regions via the unified aspace. This will guarantee that
-  // the accessed bits are set.
+#if defined __x86_64__
+  // Touch the shared and restricted regions via the unified aspace. This will guarantee that
+  // the accessed bits are set on x86, where the hardware sets the accessed bits.
+  // On ARM, where we use software managed accessed bits, the CommitAndMap above will already have
+  // set them.
   shared_mem->put<char>(42, kMiddleOffset);
   restricted_mem->put<char>(42, kMiddleOffset);
+#endif
 
   // Harvest the accessed information. This should not actually unmap the pages.
   harvest_access_bits(VmAspace::NonTerminalAction::FreeUnaccessed,
@@ -584,11 +593,17 @@ static bool vmaspace_unified_accessed_test() {
   EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, shared_mem->CommitAndMap(kPageSize, kMiddleOffset));
   EXPECT_EQ(ZX_ERR_ALREADY_EXISTS, restricted_mem->CommitAndMap(kPageSize, kMiddleOffset));
 
-  // Touch the memory again so that the accessed bits are guaranteed to be set.
-  // We must do this because `CommitAndMap` does not set the accessed flag on x86.
-  // On ARM and RISC-V, this is redundant, as `CommitAndMap` does set the accessed flag.
+#if defined __x86_64__
+  // Touch the memory again so that the accessed bits are guaranteed to be set. We must do this
+  // because `CommitAndMap` does not set the accessed flag on x86.
+  //
+  // We specifically want to avoid doing this on ARM because the harvest will have cleared accessed
+  // bits, and this `put` now will trigger an accessed fault on the unified aspace, which cannot
+  // resolve any faults. Moreover, the CommitAndMap above will have already set the non-terminal
+  // accessed bits on the walk down to the page.
   shared_mem->put<char>(43, kMiddleOffset);
   restricted_mem->put<char>(43, kMiddleOffset);
+#endif
 
   // Harvest the accessed information, then attempt to do it again so that it gets unmapped.
   // The first `harvest_access_bits` call will clear the accessed bits, and the second will unmap
