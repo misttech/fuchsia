@@ -23,7 +23,6 @@ from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import read_ssid
-from fuchsia_controller_py.wrappers import asyncmethod
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import signals, test_runner
 from mobly.asserts import (
@@ -101,7 +100,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
     roaming tests.
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         """
         Generates test permutations.
 
@@ -238,7 +237,6 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
         return (ssid, origin_ap_security_config, target_ap_security_config)
 
-    @asyncmethod
     async def _test_logic(
         self,
         test_params: TestParams,
@@ -306,7 +304,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             origin_bss_desc = bss_desc_5g
             target_bss_desc = bss_desc_2g
 
-        with ConnectTransactionEventHandler(loop=self.loop()) as ctx:
+        async with ConnectTransactionEventHandler() as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

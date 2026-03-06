@@ -14,12 +14,10 @@ logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_common as fw_common
 from core_testing import base_test
-from fuchsia_controller_py.wrappers import asyncmethod
 from mobly import asserts, test_runner
 
 
 class CreateApIfaceWithNullMacTest(base_test.CoreBaseTestClass):
-    @asyncmethod
     async def test_create_ap_iface_with_null_mac(self) -> None:
         create_iface_response = (
             await self.test_kit.device_monitor.create_iface(

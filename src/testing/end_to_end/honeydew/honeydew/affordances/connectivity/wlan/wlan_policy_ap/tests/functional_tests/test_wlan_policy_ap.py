@@ -46,16 +46,16 @@ def random_str(
 class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WlanPolicyAp affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
         # Wait for a WLAN interface to become available.
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + WLAN_INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = self.device.netstack.list_interfaces()
+            interfaces = await self.device.netstack.list_interfaces()
             for interface in interfaces:
                 if interface.port_class is PortClass.WLAN_CLIENT:
                     return
@@ -64,14 +64,14 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f"Expected presence of a WLAN interface, got {interfaces}"
         )
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         # Don't allow access points to leak into other tests.
-        self.device.wlan_policy_ap.stop_all()
-        return super().teardown_test()
+        await self.device.wlan_policy_ap.stop_all()
+        await super().teardown_test()
 
     async def test_ap_methods(self) -> None:
         """Verify WLAN policy access point methods."""
-        self.device.wlan_policy_ap.stop_all()
+        await self.device.wlan_policy_ap.stop_all()
         await self.device.wlan_policy_ap.set_new_update_listener()
         asserts.assert_equal(
             await self.device.wlan_policy_ap.get_update(),

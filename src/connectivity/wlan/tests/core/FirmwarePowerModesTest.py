@@ -4,14 +4,11 @@
 """
 Tests for validating performance of firmware PM_MODEs.
 """
+import asyncio
 import logging
-
-from fuchsia_controller_py.wrappers import asyncmethod
 
 logger = logging.getLogger(__name__)
 
-
-import time
 
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_common_security as fidl_security
@@ -33,7 +30,7 @@ from mobly.asserts import assert_equal, assert_true, fail
 
 
 class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
             name_func=self.name_func,
@@ -43,7 +40,6 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
     def name_func(self, ps_mode: fidl_common.PowerSaveType) -> str:
         return f"test_pm_mode_{ps_mode.name.replace('PS_MODE_', '').lower()}"
 
-    @asyncmethod
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
 
@@ -95,7 +91,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
                 break
         assert bss_description is not None, f"Failed to find SSID: {ssid}"
 
-        with ConnectTransactionEventHandler(loop=self.loop()) as ctx:
+        async with ConnectTransactionEventHandler() as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 
@@ -140,7 +136,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         #    self.fuchsia_device.wait_for_ipv4_addr(iface_name)
         # For now, wait for the DHCP server to assign the DUT an IP address.
         # This should take no more than 5 seconds, typically.
-        time.sleep(10)
+        await asyncio.sleep(10)
 
         ap_test_interface = self.test_kit.access_point.wlan_5g
         ap_address = utils.get_addr(

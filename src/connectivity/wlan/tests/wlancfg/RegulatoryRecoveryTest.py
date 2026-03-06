@@ -4,8 +4,6 @@
 
 import logging
 
-import fuchsia_async_extension
-
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
@@ -24,8 +22,8 @@ from mobly import asserts, signals, test_runner
 
 
 class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
@@ -42,15 +40,15 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         )
         get_region_update_response = (
-            fuchsia_async_extension.get_loop().run_until_complete(
-                regulatory_region_watcher.get_region_update()
-            )
+            await regulatory_region_watcher.get_region_update()
         )
 
         # If no region was set before this test runs, then the result could be None.
         # In that case, the only reasonable choice is to set the region to worldwide.
         if get_region_update_response.new_region is None:
-            self.device.wlan_policy.set_country_code(CountryCode.WORLDWIDE)
+            await self.device.wlan_policy.set_country_code(
+                CountryCode.WORLDWIDE
+            )
             self.before_test_country_code = CountryCode.WORLDWIDE
         else:
             self.before_test_country_code = CountryCode(
@@ -60,17 +58,17 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f"Country code before tests is {self.before_test_country_code}."
         )
 
-        self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.start_client_connections()
         self.device_supports_ap = True
         try:
-            self.device.wlan_policy_ap.start(
+            await self.device.wlan_policy_ap.start(
                 "test_ssid",
                 SecurityType.NONE,
                 None,
                 ConnectivityMode.LOCAL_ONLY,
                 OperatingBand.ANY,
             )
-            self.device.wlan_policy_ap.stop_all()
+            await self.device.wlan_policy_ap.stop_all()
         except wlan_errors.HoneydewWlanError:
             logger.info(
                 "Detected this device does not support an access point interface."
@@ -82,12 +80,14 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
             self.device_supports_ap = True
 
-    def teardown_class(self) -> None:
+    async def teardown_class(self) -> None:
         logger.info(
             f"Finishing test suite by setting country code back to {self.before_test_country_code}..."
         )
-        self.device.wlan_policy.set_country_code(self.before_test_country_code)
-        super().teardown_class()
+        await self.device.wlan_policy.set_country_code(
+            self.before_test_country_code
+        )
+        await super().teardown_class()
 
     async def test_interfaces_not_recreated_when_initially_disabled(
         self,
@@ -95,27 +95,23 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Test no interfaces created after applying a new country code."""
 
         # With the country code set to US, destroy all interfaces
-        await self.device.wlan_policy.as_async().set_country_code(
-            CountryCode("US")
-        )
-        await self.device.wlan_policy.as_async().stop_client_connections()
-        await self.device.wlan_policy.as_async().wait_until_update(
+        await self.device.wlan_policy.set_country_code(CountryCode("US"))
+        await self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             )
         )
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.as_async().stop_all()
+            await self.device.wlan_policy_ap.stop_all()
 
         # Change the country code while all interfaces are destroyed
-        await self.device.wlan_policy.as_async().set_country_code(
-            CountryCode("AU")
-        )
+        await self.device.wlan_policy.set_country_code(CountryCode("AU"))
 
         # Verify changing the country code does not create interfaces
-        await self.device.wlan_policy.as_async().set_new_update_listener()
-        await self.device.wlan_policy.as_async().wait_until_update(
+        await self.device.wlan_policy.set_new_update_listener()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
@@ -123,10 +119,8 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.as_async().set_new_update_listener()
-            ap_updates = (
-                await self.device.wlan_policy_ap.as_async().get_update()
-            )
+            await self.device.wlan_policy_ap.set_new_update_listener()
+            ap_updates = await self.device.wlan_policy_ap.get_update()
             if ap_updates:
                 raise signals.TestFailure(
                     f"AP in unexpected state: {ap_updates}"
@@ -136,18 +130,16 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """Test client and AP interfaces are automatically recreated after applying a new country code."""
 
         # With the country code set to US, create interfaces.
-        await self.device.wlan_policy.as_async().set_country_code(
-            CountryCode("US")
-        )
-        await self.device.wlan_policy.as_async().start_client_connections()
-        await self.device.wlan_policy.as_async().wait_until_update(
+        await self.device.wlan_policy.set_country_code(CountryCode("US"))
+        await self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             )
         )
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.as_async().start(
+            await self.device.wlan_policy_ap.start(
                 "test_ssid",
                 SecurityType.NONE,
                 None,
@@ -156,12 +148,10 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
 
         # Change the country code while interfaces are up.
-        await self.device.wlan_policy.as_async().set_country_code(
-            CountryCode("AU")
-        )
+        await self.device.wlan_policy.set_country_code(CountryCode("AU"))
 
         # Verify changing the country code cycles the client back to enabled.
-        await self.device.wlan_policy.as_async().wait_until_update(
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
@@ -171,10 +161,8 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # Don't reset the update listener so that this verifies
         # changing the country code recreates the interfaces.
         if self.device_supports_ap:
-            await self.device.wlan_policy_ap.as_async().set_new_update_listener()
-            ap_updates = (
-                await self.device.wlan_policy_ap.as_async().get_update()
-            )
+            await self.device.wlan_policy_ap.set_new_update_listener()
+            ap_updates = await self.device.wlan_policy_ap.get_update()
             if len(ap_updates) != 1:
                 raise signals.TestFailure(f"No APs are running: {ap_updates}")
             asserts.assert_equal(
