@@ -18,6 +18,9 @@ pub struct FsUseLabelAndType {
     pub use_type: FsUseType,
 }
 
+/// Array of `ClassPermissionId` values each of a kernel security class' permissions.
+type KernelPermissionIdsArray = [Option<ClassPermissionId>; 32];
+
 /// An index for facilitating fast lookup of common abstractions inside parsed binary policy data
 /// structures. Typically, data is indexed by an enum that describes a well-known value and the
 /// index stores the offset of the data in the binary policy to avoid scanning a collection to find
@@ -30,8 +33,8 @@ pub(super) struct PolicyIndex {
     /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
     /// [`super::symbols::Classes`] collection.
     classes: HashMap<KernelClass, ClassId>,
-    /// Map from well-known permissions to their class-specific `AccessVector` bit index.
-    permissions: HashMap<crate::KernelPermission, ClassPermissionId>,
+    /// Index mapping kernel class permissions to their policy-specific `AccessVector` bit index.
+    permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// The parsed binary policy.
     parsed_policy: ParsedPolicy,
     /// The "object_r" role used as a fallback for new file context transitions.
@@ -73,25 +76,25 @@ impl PolicyIndex {
         // Accumulate permissions indexed by kernel permission enum. If the policy defines that
         // unknown permissions or classes should cause rejection then return an error describing the
         // missing element.
-        let mut permissions =
-            HashMap::with_capacity(crate::KernelPermission::all_variants().count());
-        for known_permission in crate::KernelPermission::all_variants() {
-            let known_class_name = known_permission.class().name();
-            if let Some(class) = find_class_by_name(&policy_classes, known_class_name) {
+        let mut permissions = [KernelPermissionIdsArray::default(); _];
+        for kernel_permission in crate::KernelPermission::all_variants() {
+            let kernel_class_name = kernel_permission.class().name();
+            if let Some(class) = find_class_by_name(&policy_classes, kernel_class_name) {
                 if let Some(permission_id) =
-                    get_permission_id_by_name(common_symbols, &class, known_permission.name())
+                    get_permission_id_by_name(common_symbols, &class, kernel_permission.name())
                 {
-                    permissions.insert(known_permission, permission_id);
+                    let kernel_class_id = kernel_permission.class() as usize;
+                    let kernel_permission_id = kernel_permission.id() as usize;
+                    permissions[kernel_class_id][kernel_permission_id] = Some(permission_id);
                 } else if parsed_policy.handle_unknown() == HandleUnknown::Reject {
                     return Err(anyhow::anyhow!(
                         "missing permission {:?}:{:?}",
-                        known_class_name,
-                        known_permission.name(),
+                        kernel_class_name,
+                        kernel_permission.name(),
                     ));
                 }
             }
         }
-        permissions.shrink_to_fit();
 
         // Locate the "object_r" role.
         let cached_object_r_role = parsed_policy
@@ -132,8 +135,10 @@ impl PolicyIndex {
         permission: P,
     ) -> Option<AccessVector> {
         let permission = permission.into();
-        let permission_index = self.permissions.get(&permission)?;
-        Some(AccessVector::from_class_permission_id(*permission_index))
+        let class_index = permission.class() as usize;
+        let permission_index = permission.id() as usize;
+        let permission_id = self.permissions[class_index][permission_index]?;
+        Some(AccessVector::from_class_permission_id(permission_id))
     }
 
     /// Returns the security context that should be applied to a newly created SELinux
