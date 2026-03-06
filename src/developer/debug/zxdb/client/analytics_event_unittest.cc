@@ -10,6 +10,7 @@
 
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 
 namespace zxdb {
 
@@ -17,8 +18,9 @@ class AnalyticsEventTest : public RemoteAPITest {};
 
 TEST_F(AnalyticsEventTest, DoNotLeakUsername) {
   const std::string kUsername = "BobAlice";
+  ScopedTestEnv env;
 
-  ASSERT_EQ(setenv("USER", kUsername.c_str(), true), 0);
+  ASSERT_EQ(env.Set("USER", kUsername), 0);
 
   // A valid verb with an invalid argument that contains a username should be anonymized.
   CommandReport report;

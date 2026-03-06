@@ -15,6 +15,7 @@
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/common/host_util.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 #include "src/developer/debug/zxdb/common/test_with_loop.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
 
@@ -25,16 +26,17 @@ class SymbolServerTest : public TestWithLoop {
   SymbolServerTest() {
     static auto fake_home =
         std::filesystem::path(GetSelfPath()).parent_path() / "test_data" / "zxdb" / "fake_home";
-    setenv("HOME", fake_home.string().c_str(), true);
-    unsetenv("XDG_CACHE_HOME");
-    unsetenv("GCE_METADATA_HOST");
+
+    test_env_.Set("HOME", fake_home.string());
+    test_env_.Unset("XDG_CACHE_HOME");
+    test_env_.Unset("GCE_METADATA_HOST");
 
     auto server = std::make_unique<MockSymbolServer>(&session_, "gs://fake-bucket");
     server_ = server.get();
     session_.system().InjectSymbolServerForTesting(std::move(server));
   }
 
-  virtual ~SymbolServerTest() = default;
+  ~SymbolServerTest() override = default;
 
   Session* session() { return &session_; }
   MockSymbolServer* server() { return server_; }
@@ -55,6 +57,7 @@ class SymbolServerTest : public TestWithLoop {
  private:
   Session session_;
   MockSymbolServer* server_;
+  ScopedTestEnv test_env_;
 };
 
 TEST_F(SymbolServerTest, LoadAuth) {

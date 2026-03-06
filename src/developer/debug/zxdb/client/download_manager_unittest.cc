@@ -15,6 +15,8 @@
 #include "src/developer/debug/zxdb/client/process_impl.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/common/host_util.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 #include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols.h"
@@ -30,7 +32,14 @@ constexpr char kPrivateBuildId2[] = "fee567";
 
 class DownloadManagerTest : public DownloadObserver, public RemoteAPITest {
  public:
-  DownloadManagerTest() = default;
+  DownloadManagerTest() {
+    static auto fake_home =
+        std::filesystem::path(GetSelfPath()).parent_path() / "test_data" / "zxdb" / "fake_home";
+
+    test_env_.Set("HOME", fake_home.string());
+    test_env_.Unset("XDG_CACHE_HOME");
+    test_env_.Unset("GCE_METADATA_HOST");
+  }
   ~DownloadManagerTest() = default;
 
   size_t succeeded() const { return downloads_succeeded_; }
@@ -145,6 +154,8 @@ class DownloadManagerTest : public DownloadObserver, public RemoteAPITest {
 
   size_t downloads_succeeded_ = 0;
   size_t downloads_failed_ = 0;
+
+  ScopedTestEnv test_env_;
 
   // This server will become ready immediately.
   MockSymbolServer* mock_public_server_;

@@ -62,7 +62,10 @@ static_library("common") {
 
 source_set("test_support") {
   testonly = true
-  sources = [ "test_with_loop.h" ]
+  sources = [
+    "scoped_test_env.h",
+    "test_with_loop.h",
+  ]
   public_deps = [
     ":common",
     "//src/developer/debug/shared:test_support",

@@ -6,6 +6,8 @@
 
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/mock_symbol_server.h"
+#include "src/developer/debug/zxdb/common/host_util.h"
+#include "src/developer/debug/zxdb/common/scoped_test_env.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 
@@ -44,6 +46,10 @@ TEST_F(VerbSymStat, SymStat) {
 }
 
 TEST_F(VerbSymStat, SymStatDownloading) {
+  ScopedTestEnv env;
+  static auto fake_home =
+      std::filesystem::path(GetSelfPath()).parent_path() / "test_data" / "zxdb" / "fake_home";
+  ASSERT_EQ(env.Set("HOME", fake_home), 0);
   auto server = std::make_unique<MockSymbolServer>(&session(), "gs://fake-bucket");
   server->InitForTest();
   session().system().InjectSymbolServerForTesting(std::move(server));
