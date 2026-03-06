@@ -222,6 +222,7 @@ test("zxdump-unittests") {
     ":test-tool-process",
     ":zxdump",
     "//sdk/lib/fit",
+    "//sdk/lib/stdcompat",
     "//src/lib/elfldltl",
     "//src/lib/elfldltl/testing",
     "//src/lib/fxl/test:gtest_main",

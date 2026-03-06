@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <lib/fit/defer.h>
+#include <lib/stdcompat/string_view.h>
 
 #include <cerrno>
 
@@ -106,7 +107,7 @@ TEST(ZxdumpTests, TestToolProcessInputFile) {
     ASSERT_NO_FATAL_FAILURE(child.Init());
     auto& in_file = child.MakeFile("input");
     in_file_name = in_file.name();
-    EXPECT_NE(in_file_name.find("input"), std::string::npos);
+    EXPECT_TRUE(cpp23::contains(in_file_name, "input"));
     {
       fbl::unique_fd in_fd = in_file.CreateInput();
       ASSERT_TRUE(in_fd) << strerror(errno);
@@ -140,7 +141,7 @@ TEST(ZxdumpTests, TestToolProcessOutputFile) {
   ASSERT_NO_FATAL_FAILURE(child.Init());
   auto& out_file = child.MakeFile("output");
   const std::string out_file_name = out_file.name();
-  EXPECT_NE(out_file_name.find("output"), std::string::npos);
+  EXPECT_TRUE(cpp23::contains(out_file_name, "output"));
   ASSERT_NO_FATAL_FAILURE(child.Start(kTestChild, {"-o", out_file_name, "-x", "0"}));
   ASSERT_NO_FATAL_FAILURE(child.CollectStdout());
   ASSERT_NO_FATAL_FAILURE(child.CollectStderr());
