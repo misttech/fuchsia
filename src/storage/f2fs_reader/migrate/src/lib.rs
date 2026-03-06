@@ -194,40 +194,6 @@ pub async fn migrate(
     f2fs_metadata_blocks: &mut HashSet<u32>,
     peek_inode_counts: impl Fn(usize),
 ) -> Result<(), Error> {
-    migrate_with_peek(
-        offset,
-        f2fs,
-        fxfs,
-        ino,
-        dir,
-        files_to_copy,
-        f2fs_metadata_blocks,
-        peek_inode_counts,
-    )
-    .await
-}
-
-/// Migrates f2fs nodes to fxfs.
-///
-/// We preserve inode mappings (to object_id), attributes, xattr -- basically everything we can.
-/// Some of these things are not easily achievable with standard fxfs interfaces like 'add_child'
-/// so much of this work has to be done at the raw transaction/mutation level.
-///
-/// `offset` specifies where the f2fs file system starts - typically 0 but may differ
-///   if migrating across partition boundaries.
-/// `existing_inodes` is used to handle hard links.
-/// `f2fs_metadata_blocks` must be preserved to ensure that the resulting image is still parsable
-/// as a valid f2fs image.
-pub async fn migrate_with_peek(
-    offset: u64,
-    f2fs: &F2fsReader,
-    fxfs: &mut OpenFxFilesystem,
-    ino: u32,
-    dir: Directory<ObjectStore>,
-    files_to_copy: &mut HashSet<u64>,
-    f2fs_metadata_blocks: &mut HashSet<u32>,
-    peek_inode_counts: impl Fn(usize),
-) -> Result<(), Error> {
     assert_eq!(
         F2FS_BLOCK_SIZE as u64, FXFS_BLOCK_SIZE,
         "We currently assume block sizes are the same."
@@ -1084,7 +1050,7 @@ pub async fn migrate_device(
         // Copy everything from f2fs to userdata, reusing existing extents.
         let mut files_to_copy = HashSet::new();
         let mut f2fs_metadata_blocks = HashSet::new();
-        migrate_with_peek(
+        migrate(
             offset,
             &f2fs,
             &mut fxfs,
