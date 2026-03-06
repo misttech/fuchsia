@@ -8,6 +8,9 @@ use chrono::LocalResult;
 use chrono::prelude::*;
 use fdio::service_connect;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_hardware_hrtimer as ffhh;
+use fidl_fuchsia_hardware_rtc as frtc;
+use fidl_fuchsia_io as fio;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_fs::directory;
 use fuchsia_runtime::{UtcDuration, UtcInstant};
@@ -20,10 +23,6 @@ use std::rc::Rc;
 use thiserror::Error;
 use time_persistence::State;
 use time_pretty::format_duration;
-use {
-    fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_hardware_rtc as frtc,
-    fidl_fuchsia_io as fio,
-};
 #[cfg(test)]
 use {fuchsia_sync::Mutex, std::sync::Arc};
 
@@ -127,6 +126,12 @@ where
             // correct time estimates during suspend.  However, on reboot, we typically
             // restart the boot clock, leading to a negative offset adjustment, which is wrong.
             // To avoid incorrect UTC adjustments, we disallow negative offsets.
+            log::warn!(concat!(
+                "negative RTC diff detected. References:",
+                "\n\tpersisted: {:?}",
+                "\n\tnow:       {:?}",
+                "\n\tutc:       {:?}"
+            ), &boot_reference, &boot_now, &utc_reference);
             Err(anyhow!(
                 "negative offset adjustment for RTC is not allowed: {}",
                 format_duration(diff)
