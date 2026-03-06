@@ -263,6 +263,7 @@ impl BatteryManager {
         self.info_recorders.record_remaining_capacity(info.remaining_charge_uah);
         self.info_recorders.record_present_current(info.present_charging_current_ua);
         self.info_recorders.record_average_current(info.average_charging_current_ua);
+        self.info_recorders.record_health_on_change(info.health);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {

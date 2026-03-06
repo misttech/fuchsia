@@ -10,8 +10,8 @@ use futures::StreamExt;
 use futures::channel::mpsc;
 use log::{error, info, warn};
 use state_recorder::{
-    EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableNumericType,
-    RecorderOptions, Units, units,
+    EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableEnum,
+    RecordableNumericType, RecorderOptions, Units, units,
 };
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -29,6 +29,7 @@ static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt"
 
 const MAX_BATTERY_LEVEL_MEASUREMENTS: usize = 200;
 const MAX_FAULT_MEASUREMENTS: usize = 20;
+const MAX_HEALTH_MEASUREMENTS: usize = 20;
 const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
 const STALE_DATA_TIMER: zx::Duration<zx::MonotonicTimeline> = zx::Duration::from_minutes(10);
 
@@ -42,6 +43,46 @@ pub enum FaultState {
 impl From<FaultState> for u64 {
     fn from(value: FaultState) -> Self {
         value as Self
+    }
+}
+
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[repr(u8)]
+pub enum BatteryHealth {
+    Unknown = 0,
+    Good = 1,
+    Cold = 2,
+    Hot = 3,
+    Dead = 4,
+    OverVoltage = 5,
+    UnspecifiedFailure = 6,
+    Cool = 7,
+    Warm = 8,
+    Overheat = 9,
+}
+
+impl From<BatteryHealth> for u64 {
+    fn from(value: BatteryHealth) -> Self {
+        value as Self
+    }
+}
+
+impl From<fidl_fuchsia_power_battery::HealthStatus> for BatteryHealth {
+    fn from(status: fidl_fuchsia_power_battery::HealthStatus) -> Self {
+        match status {
+            fidl_fuchsia_power_battery::HealthStatus::Unknown => BatteryHealth::Unknown,
+            fidl_fuchsia_power_battery::HealthStatus::Good => BatteryHealth::Good,
+            fidl_fuchsia_power_battery::HealthStatus::Cold => BatteryHealth::Cold,
+            fidl_fuchsia_power_battery::HealthStatus::Hot => BatteryHealth::Hot,
+            fidl_fuchsia_power_battery::HealthStatus::Dead => BatteryHealth::Dead,
+            fidl_fuchsia_power_battery::HealthStatus::OverVoltage => BatteryHealth::OverVoltage,
+            fidl_fuchsia_power_battery::HealthStatus::UnspecifiedFailure => {
+                BatteryHealth::UnspecifiedFailure
+            }
+            fidl_fuchsia_power_battery::HealthStatus::Cool => BatteryHealth::Cool,
+            fidl_fuchsia_power_battery::HealthStatus::Warm => BatteryHealth::Warm,
+            fidl_fuchsia_power_battery::HealthStatus::Overheat => BatteryHealth::Overheat,
+        }
     }
 }
 
@@ -255,6 +296,8 @@ pub struct BatteryInfoRecorders {
     present_current: RefCell<NumericStateRecorder<i32>>,
     average_current: RefCell<NumericStateRecorder<i32>>,
     time_to_full: RefCell<NumericStateRecorder<u64>>,
+    health: RefCell<EnumStateRecorder<BatteryHealth>>,
+    previous_health: RefCell<Option<BatteryHealth>>,
     fault_detector: Rc<FaultDetector>,
     crash_reporter: Rc<CrashReporter>,
 }
@@ -276,11 +319,15 @@ impl BatteryInfoRecorders {
         let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
         let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
         let mut time_to_full_opts = PersistenceOptions::new("time_to_full".to_string());
+        let mut health_opts = PersistenceOptions::new("health".to_string());
 
         let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs.clone());
 
         // Apply overrides if they exist
         if let Some(PersistenceDirs { storage_dir, volatile_dir }) = &config.persistence_dirs {
+            let _ = std::fs::create_dir_all(storage_dir);
+            let _ = std::fs::create_dir_all(volatile_dir);
+
             raw_level_percent_opts =
                 raw_level_percent_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             level_percent_opts =
@@ -295,6 +342,7 @@ impl BatteryInfoRecorders {
                 average_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             time_to_full_opts =
                 time_to_full_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            health_opts = health_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
         }
 
         let raw_level_percent_recorder = Self::create_recorder(
@@ -339,6 +387,8 @@ impl BatteryInfoRecorders {
             MAX_POWER_CONSUMPTION_MEASUREMENTS,
             time_to_full_opts,
         );
+        let health_recorder =
+            Self::create_enum_recorder("health", MAX_HEALTH_MEASUREMENTS, health_opts);
 
         Self {
             raw_level_percent: RefCell::new(raw_level_percent_recorder),
@@ -350,6 +400,8 @@ impl BatteryInfoRecorders {
             present_current: RefCell::new(present_current_recorder),
             average_current: RefCell::new(average_current_recorder),
             time_to_full: RefCell::new(time_to_full_recorder),
+            health: RefCell::new(health_recorder),
+            previous_health: RefCell::new(None),
             fault_detector,
             crash_reporter,
         }
@@ -428,6 +480,20 @@ impl BatteryInfoRecorders {
         }
     }
 
+    pub fn record_health_on_change(
+        &self,
+        health: Option<fidl_fuchsia_power_battery::HealthStatus>,
+    ) {
+        if let Some(health) = health {
+            let battery_health = BatteryHealth::from(health);
+            let mut previous_health = self.previous_health.borrow_mut();
+            if Some(battery_health) != *previous_health {
+                *previous_health = Some(battery_health);
+                self.health.borrow_mut().record(battery_health);
+            }
+        }
+    }
+
     fn create_recorder<T>(
         name: &str,
         unit: Units,
@@ -442,6 +508,27 @@ impl BatteryInfoRecorders {
             c"power",
             unit,
             None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity,
+                manager: None,
+                persistence: Some(persistence),
+            },
+        )
+        .unwrap_or_else(|_| panic!("{} construction failed", name))
+    }
+
+    fn create_enum_recorder<T>(
+        name: &str,
+        capacity: usize,
+        persistence: PersistenceOptions,
+    ) -> EnumStateRecorder<T>
+    where
+        T: RecordableEnum + 'static,
+    {
+        EnumStateRecorder::new(
+            name.to_string(),
+            c"power",
             RecorderOptions {
                 lazy_record: true,
                 capacity,
