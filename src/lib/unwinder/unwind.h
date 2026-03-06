@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <span>
-#include <utility>
 #include <vector>
 
 #include "sdk/lib/fit/include/lib/fit/function.h"
@@ -50,31 +49,19 @@ class Unwinder {
 
 class AsyncUnwinder {
  public:
-  explicit AsyncUnwinder(std::span<const Module> modules);
+  explicit AsyncUnwinder(AsyncMemory::Delegate* delegate, std::span<const Module> modules);
 
-  void Unwind(AsyncMemory::Delegate* delegate, const Registers& registers, size_t max_depth,
-              fit::callback<void(std::vector<Frame>)> cb);
+  void Unwind(const Registers& registers, size_t max_depth,
+              fit::callback<void(std::vector<Frame>)> on_done);
 
  private:
-  void Step(const Frame& current);
-  void OnUnwinderStep(const Error& err, Frame next);
-  void OnStep(Frame next);
+  void TryNextUnwinder(const Frame& current, size_t index, fit::callback<void(Error, Frame)> cb);
 
-  // Returns the next unwinder from |unwinders_|. The pointer is guaranteed to always be valid.
-  // Returns fit::error when all unwinders have been exhausted.
-  fit::result<Error, UnwinderBase*> NextUnwinder();
-
-  fit::callback<void(std::vector<Frame>)> on_done_;
-  size_t max_depth_;
-  std::vector<Frame> result_;
   std::unique_ptr<AsyncMemory> stack_;
   ElfModuleCache module_cache_;
   CfiUnwinder cfi_unwinder_;
 
   std::vector<std::unique_ptr<UnwinderBase>> unwinders_;
-  // Initialized to nullopt to indicate that we're working with our own |cfi_unwinder_| before
-  // reaching into |unwinders_|.
-  std::optional<size_t> current_unwinder_ = std::nullopt;
 };
 
 // Unwind with given memory, modules, and registers.

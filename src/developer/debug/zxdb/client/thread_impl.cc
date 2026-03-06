@@ -602,9 +602,9 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
   // potentially better .debug_frame section that is not loaded in the target executable, if
   // present, or deal with cases where the .eh_frame section has been stripped from the target but
   // remains in an unstripped binary that we have access to on the host.
-  auto unwinder = std::make_unique<unwinder::AsyncUnwinder>(modules);
+  auto unwinder = std::make_unique<unwinder::AsyncUnwinder>(GetProcess(), modules);
   unwinder->Unwind(
-      GetProcess(), regs, kMaxDepth,
+      regs, kMaxDepth,
       // Move the unwinder itself and the memory into the callback so they stay alive for the
       // duration of unwinding.
       // In the typical case the reference counts for the unwinder drops to zero once unwinding

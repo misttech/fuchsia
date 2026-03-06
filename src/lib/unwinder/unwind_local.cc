@@ -61,8 +61,8 @@ void UnwindLocalAsync(Memory* local_memory, AsyncMemory::Delegate* delegate,
 
   constexpr size_t kMaxDepth = 255;
 
-  auto unwinder = std::make_unique<AsyncUnwinder>(modules);
-  unwinder->Unwind(delegate, GetContext(), kMaxDepth,
+  auto unwinder = std::make_unique<AsyncUnwinder>(delegate, modules);
+  unwinder->Unwind(GetContext(), kMaxDepth,
                    [unwinder = std::move(unwinder),
                     on_done = std::move(on_done)](std::vector<Frame> frames) mutable {
                      if (frames.empty()) {

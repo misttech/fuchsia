@@ -24,90 +24,6 @@
 
 namespace unwinder {
 
-namespace {
-
-bool PcIsReturnAddress(const Registers& regs) {
-  // If |regs| is recovered from a regular function call, rax/lr/ra will be scratched.
-  // Otherwise, they will be available.
-  RegisterID reg_id;
-  switch (regs.arch()) {
-    case Registers::Arch::kX64:
-      reg_id = RegisterID::kX64_rax;
-      break;
-    case Registers::Arch::kArm32:
-      reg_id = RegisterID::kArm32_lr;
-      break;
-    case Registers::Arch::kArm64:
-      reg_id = RegisterID::kArm64_lr;
-      break;
-    case Registers::Arch::kRiscv64:
-      reg_id = RegisterID::kRiscv64_ra;
-      break;
-  }
-  uint64_t val;
-
-  return regs.Get(reg_id, val).has_err();
-}
-
-void FixupFrame(const ElfModuleCache& module_cache, Frame& next) {
-  // If the frame was identified with an S augmentation by the CFI unwinder, then we know that
-  // this definitely not a return address.
-  if (next.is_signal_frame) {
-    next.pc_is_return_address = false;
-    return;
-  }
-
-  // Successfully probing a sigreturn frame means the next frame needs to be unwound by the
-  // sigreturn unwinder. Only do this if the CFI unwinder failed to detect the 'S' augmentation.
-  if (!next.is_signal_frame) {
-    if (auto err = SigReturnUnwinder::ProbePCForSigReturn(module_cache, next.regs); err.ok()) {
-      next.pc_is_return_address = false;
-      next.is_signal_frame = true;
-      return;
-    }
-  }
-
-  // Otherwise defer to the value of the return address register.
-  if (next.trust == Frame::Trust::kCFI) {
-    next.pc_is_return_address = PcIsReturnAddress(next.regs);
-  } else if (next.trust == Frame::Trust::kSigReturn) {
-    next.pc_is_return_address = false;
-  } else {
-    next.pc_is_return_address = true;
-  }
-}
-
-Error TryUnwinder(UnwinderBase* unwinder, Memory* stack, const Frame& current, Frame& next) {
-  auto err = unwinder->Step(stack, current, next);
-
-  if (err.has_err()) {
-    return err;
-  }
-
-  next.trust = unwinder->trust();
-  FixupFrame(unwinder->module_cache(), next);
-
-  return Success();
-}
-
-void TryAsyncUnwinder(UnwinderBase* unwinder, AsyncMemory* stack, const Frame& current,
-                      fit::callback<void(Error, Frame)> cb) {
-  unwinder->AsyncStep(stack, current, [=, cb = std::move(cb)](Error err, Registers next) mutable {
-    Frame next_frame(std::move(next), false, unwinder->trust());
-
-    if (err.has_err()) {
-      next_frame.error = err;
-      return cb(err, std::move(next_frame));
-    }
-
-    next_frame.trust = unwinder->trust();
-    FixupFrame(unwinder->module_cache(), next_frame);
-    return cb(Success(), std::move(next_frame));
-  });
-}
-
-}  // namespace
-
 std::string Frame::Describe() const {
   std::string res = "registers={" + regs.Describe() + "}  trust=";
   switch (trust) {
@@ -257,8 +173,10 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   }
 }
 
-AsyncUnwinder::AsyncUnwinder(std::span<const Module> modules)
-    : module_cache_(modules), cfi_unwinder_(module_cache_) {
+AsyncUnwinder::AsyncUnwinder(AsyncMemory::Delegate* delegate, std::span<const Module> modules)
+    : stack_(std::make_unique<AsyncMemory>(delegate)),
+      module_cache_(modules),
+      cfi_unwinder_(module_cache_) {
   // The order here is important! This will be the order that the unwinders are attempted and should
   // not be changed without careful thought.
   //
@@ -285,94 +203,51 @@ AsyncUnwinder::AsyncUnwinder(std::span<const Module> modules)
   unwinders_.emplace_back(std::make_unique<ShadowCallStackUnwinder>(module_cache_));
 }
 
-void AsyncUnwinder::Unwind(AsyncMemory::Delegate* delegate, const Registers& registers,
-                           size_t max_depth, fit::callback<void(std::vector<Frame>)> cb) {
-  if (!delegate) {
+void AsyncUnwinder::Unwind(const Registers& registers, size_t max_depth,
+                           fit::callback<void(std::vector<Frame>)> on_done) {
+  if (!stack_->delegate()) {
     // Memory delegate must be provided.
-    return cb({});
-  }
-
-  stack_ = std::make_unique<AsyncMemory>(delegate);
-  max_depth_ = max_depth;
-  on_done_ = std::move(cb);
-
-  result_ = {{registers, false, Frame::Trust::kContext}};
-
-  uint64_t sp;
-  if (auto err = registers.GetSP(sp); err.has_err()) {
-    return cb(std::move(result_));
-  }
-
-  constexpr uint32_t kDefaultStackSize = 8192;
-
-  // We'll mostly be working with the stack, so we request a chunk to start off with. 8KiB should be
-  // plenty.
-  stack_->FetchMemoryRanges({{sp, kDefaultStackSize}}, [this]() {
-    // Now we can kick everything off with the contextual first frame.
-    Step(result_.back());
-  });
-}
-
-void AsyncUnwinder::Step(const Frame& current) {
-  // TODO(https://fxbug.dev/316047562): Make CFI work on RISC-V.
-  TryAsyncUnwinder(&cfi_unwinder_, stack_.get(), current,
-                   [this](const Error& err, Frame next) { OnUnwinderStep(err, std::move(next)); });
-}
-
-void AsyncUnwinder::OnUnwinderStep(const Error& err, Frame next) {
-  if (err.ok()) {
-    // The current unwinder reported success, and we have a new valid frame. Reset the current
-    // unwinder state and report success.
-    current_unwinder_ = std::nullopt;
-    OnStep(std::move(next));
+    on_done({});
     return;
   }
 
-  UnwinderBase* unwinder;
-  if (auto result = NextUnwinder(); result.is_ok()) {
-    unwinder = result.value();
-  } else {
-    // Indicate that we're done by setting PC to 0.
-    next.regs.SetPC(0);
-    OnStep(std::move(next));
+  UnwinderBase::AsyncUnwind(
+      stack_.get(), registers, max_depth,
+      [this](AsyncMemory* stack, const Frame& current, fit::callback<void(Error, Frame)> cb) {
+        // First try CFI.
+        TryAsyncUnwinder(&cfi_unwinder_, stack, current,
+                         [this, current, cb = std::move(cb)](Error err, Frame next) mutable {
+                           if (err.ok()) {
+                             cb(Success(), std::move(next));
+                             return;
+                           }
+                           // If CFI failed, try other unwinders in order.
+                           TryNextUnwinder(current, 0, std::move(cb));
+                         });
+      },
+      std::move(on_done));
+}
+
+void AsyncUnwinder::TryNextUnwinder(const Frame& current, size_t index,
+                                    fit::callback<void(Error, Frame)> cb) {
+  if (index >= unwinders_.size()) {
+    cb(Error("All unwinders failed"),
+       Frame(Registers(current.regs.arch()), true, Frame::Trust::kScan));
     return;
   }
 
-  // TODO: Maybe allow the caller to configure this?
-  // Safe to capture |unwinder| because the pointer location is stable in |this|, which is owned
-  // by the caller.
-  stack_->delegate()->PostTask([this, unwinder]() {
-    TryAsyncUnwinder(unwinder, stack_.get(), result_.back(), [this](const Error& err, Frame next) {
-      OnUnwinderStep(err, std::move(next));
-    });
+  UnwinderBase* unwinder = unwinders_[index].get();
+  // Safe to capture |this| because the caller owns it and it's stable.
+  stack_->delegate()->PostTask([this, current, index, cb = std::move(cb), unwinder]() mutable {
+    TryAsyncUnwinder(unwinder, stack_.get(), current,
+                     [this, current, index, cb = std::move(cb)](Error err, Frame next) mutable {
+                       if (err.ok()) {
+                         cb(Success(), std::move(next));
+                         return;
+                       }
+                       TryNextUnwinder(current, index + 1, std::move(cb));
+                     });
   });
-}
-
-void AsyncUnwinder::OnStep(Frame next) {
-  // An undefined PC (e.g. on Linux) or 0 PC (e.g. on Fuchsia) marks the end of the unwinding.
-  // Don't include this in the output because it's not a real frame and provides no
-  // information. A failed unwinding will also end up with an undefined PC.
-  if (uint64_t pc; next.regs.GetPC(pc).has_err() || pc == 0 || max_depth_ == 0) {
-    return on_done_(std::move(result_));
-  }
-
-  result_.push_back(std::move(next));
-  max_depth_--;
-  Step(result_.back());
-}
-
-fit::result<Error, UnwinderBase*> AsyncUnwinder::NextUnwinder() {
-  // The first unwinder failed, so we need to initialize |current_unwinder_| now.
-  if (!current_unwinder_) {
-    current_unwinder_ = 0;
-  } else if (current_unwinder_.value() == unwinders_.size() - 1) {
-    return fit::error(Error("No more unwinders."));
-  } else {
-    // Else advance to the next unwinder.
-    (*current_unwinder_)++;
-  }
-
-  return fit::ok(unwinders_[*current_unwinder_].get());
 }
 
 std::vector<Frame> Unwind(Memory* memory, const std::vector<uint64_t>& modules,

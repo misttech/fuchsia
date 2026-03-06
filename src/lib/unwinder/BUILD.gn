@@ -7,17 +7,24 @@ import("//build/test.gni")
 
 static_library("unwinder") {
   public = [
+    "arm_ehabi_unwinder.h",
     "cfi_module.h",
     "cfi_parser.h",
+    "cfi_unwinder.h",
     "dwarf_expr.h",
+    "elf_module_cache.h",
     "error.h",
-    "fp_unwinder.h",  # Used by
-                      # //src/performance/experimental/profiler/sampler.cc.
+    "fp_unwinder.h",
+    "frame.h",
     "memory.h",
     "module.h",
     "platform.h",
+    "plt_unwinder.h",
     "registers.h",
+    "scs_unwinder.h",
+    "sigreturn_unwinder.h",
     "unwind.h",
+    "unwinder_base.h",
   ]
   sources = [
     "arm_ehabi_module.cc",
@@ -25,37 +32,30 @@ static_library("unwinder") {
     "arm_ehabi_parser.cc",
     "arm_ehabi_parser.h",
     "arm_ehabi_unwinder.cc",
-    "arm_ehabi_unwinder.h",
     "cfi_module.cc",
     "cfi_parser.cc",
     "cfi_unwinder.cc",
-    "cfi_unwinder.h",
     "dwarf_expr.cc",
     "elf_module_cache.cc",
-    "elf_module_cache.h",
     "elf_utils.cc",
     "elf_utils.h",
     "error.cc",
     "fp_unwinder.cc",
-    "frame.h",
     "loaded_elf_module.cc",
     "loaded_elf_module.h",
     "memory.cc",
     "module.cc",
     "plt_unwinder.cc",
-    "plt_unwinder.h",
     "registers.cc",
     "scs_unwinder.cc",
-    "scs_unwinder.h",
     "sigreturn_unwinder.cc",
-    "sigreturn_unwinder.h",
     "unwind.cc",
-    "unwinder_base.h",
+    "unwinder_base.cc",
   ]
-  deps = [
+  deps = [ "//zircon/third_party/ulib/safemath" ]
+  public_deps = [
     "//sdk/lib/fit",
     "//third_party/googletest:gtest_prod",
-    "//zircon/third_party/ulib/safemath",
   ]
   friend = [ ":*" ]
 
@@ -104,10 +104,12 @@ test("unwinder_tests_bin") {
     "elf_module_cache_unittest.cc",
     "loaded_elf_module_unittest.cc",
     "memory_unittest.cc",
+    "unwinder_base_unittest.cc",
   ]
 
   deps = [
     ":unwinder",
+    "testing",
     "tests",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
