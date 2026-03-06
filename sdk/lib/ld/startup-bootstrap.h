@@ -34,7 +34,7 @@ class StartupBootstrap : public ld::Bootstrap {
       abi::Abi<>::Module::LinkerZeroInitialized();
 };
 
-// TODO(https://fxbug.dev/42080826): After LlvmProfdata:UseCounters, functions will load
+// TODO(https://fxbug.dev/478258626): After LlvmProfdata:UseCounters, functions will load
 // the new value of __llvm_profile_counter_bias and use it. However, functions
 // already in progress will use a cached value from before it changed. This
 // means they'll still be pointing into the data segment and updating the old

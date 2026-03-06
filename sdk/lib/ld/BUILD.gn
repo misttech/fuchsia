@@ -382,7 +382,7 @@ source_set("startup-bootstrap") {
     ":headers",
     "//src/lib/elfldltl",
 
-    # TODO(https://fxbug.dev/42080826): This gets users of startup-bootstrap.h
+    # TODO(https://fxbug.dev/478258626): This gets users of startup-bootstrap.h
     # the config that plumbs the HAVE_LLVM_PROFDATA predefine used there.
     "//src/lib/llvm-profdata",
   ]
