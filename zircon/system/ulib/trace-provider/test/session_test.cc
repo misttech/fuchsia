@@ -4,6 +4,7 @@
 
 #include "../session.h"
 
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/trace-provider/provider.h>
@@ -15,35 +16,36 @@ namespace trace {
 namespace {
 
 static constexpr size_t kBufferSize = 65535;
-static constexpr size_t kFifoCount = 4;
 static const std::string kAlertName = "alert_name";
 static const std::string kAlertNameMin = "a";
 static const std::string kAlertNameMax = "alert_name_max";
 
-void CheckAlertNameAndZeroPadding(const std::string& alert_name, const void* p, size_t size) {
-  const char* pchar = reinterpret_cast<const char*>(p);
-  for (size_t index = 0; size > 0; --size, ++pchar, ++index) {
-    if (index >= alert_name.size()) {
-      ASSERT_EQ(0, *pchar);
-      continue;
-    }
-
-    ASSERT_EQ(alert_name[index], *pchar);
+class DummyProvider : public fidl::Server<fuchsia_tracing_provider::ProviderV2> {
+ public:
+  void Initialize(InitializeRequest& request, InitializeCompleter::Sync& completer) override {}
+  void Start(StartRequest& request, StartCompleter::Sync& completer) override {}
+  void Stop(StopCompleter::Sync& completer) override {}
+  void GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) override {}
+  void NotifyBufferSaved(NotifyBufferSavedRequest& request,
+                         NotifyBufferSavedCompleter::Sync& completer) override {}
+  void Terminate(TerminateCompleter::Sync& completer) override {}
+  void Flush(FlushCompleter::Sync& completer) override {}
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_provider::ProviderV2> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
-}
+};
 
-// Tests that alerts are send over the fifo.
+// Tests that alerts are sent over FIDL events.
 TEST(SessionTest, AlertSent) {
   async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  DummyProvider provider;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::ProviderV2>::Create();
+  auto binding = fidl::BindServer(loop.dispatcher(), std::move(server_end), &provider);
 
   zx::vmo buffer;
   zx_status_t status = zx::vmo::create(kBufferSize, 0, &buffer);
-  ASSERT_EQ(ZX_OK, status);
-
-  zx::fifo fifo_provider;
-  zx::fifo fifo_manager;
-  status = zx::fifo::create(kFifoCount, sizeof(trace_provider_packet_t), 0, &fifo_provider,
-                            &fifo_manager);
   ASSERT_EQ(ZX_OK, status);
 
   std::vector<std::string> categories = {
@@ -54,66 +56,86 @@ TEST(SessionTest, AlertSent) {
       // Empty filter to make sure the wildcard matcher can handle the empty case
       ""};
 
-  internal::Session::InitializeEngine(loop.dispatcher(), TRACE_BUFFERING_MODE_CIRCULAR,
-                                      std::move(buffer), std::move(fifo_provider), categories);
+  std::unique_ptr<internal::Session> session =
+      internal::Session::InitializeEngine(loop.dispatcher(), TRACE_BUFFERING_MODE_CIRCULAR,
+                                          std::move(buffer), categories, std::move(binding));
+
+  // Create a client to listen for events.
+
+  class EventHandler : public fidl::AsyncEventHandler<fuchsia_tracing_provider::ProviderV2> {
+   public:
+    void OnAlert(fidl::Event<fuchsia_tracing_provider::ProviderV2::OnAlert>& event) override {
+      alert_name_ = event.name();
+      alert_received_ = true;
+    }
+    // Let's check if we need to implement OnSaveBuffer.
+    void OnSaveBuffer(
+        fidl::Event<fuchsia_tracing_provider::ProviderV2::OnSaveBuffer>& event) override {}
+
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_tracing_provider::ProviderV2> metadata) override {}
+
+    std::string alert_name_;
+    bool alert_received_ = false;
+  };
+
+  EventHandler event_handler;
+  fidl::Client<fuchsia_tracing_provider::ProviderV2> client(std::move(client_end),
+                                                            loop.dispatcher(), &event_handler);
 
   // Not started yet.
   TRACE_ALERT("test_category", kAlertName.c_str());
+  loop.RunUntilIdle();
+  ASSERT_FALSE(event_handler.alert_received_);
 
-  trace_provider_packet_t packet;
-  size_t actual;
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_ERR_SHOULD_WAIT, status);
+  session->StartEngine(TRACE_START_CLEAR_ENTIRE_BUFFER, []() {});
+  loop.RunUntilIdle();
 
-  internal::Session::StartEngine(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  // Alert with enabled category.
+  TRACE_ALERT("test_category", kAlertName.c_str());
+  loop.RunUntilIdle();
+  ASSERT_TRUE(event_handler.alert_received_);
+  ASSERT_EQ(kAlertName, event_handler.alert_name_);
 
-  // No alerts since start.
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_ERR_SHOULD_WAIT, status);
+  // Reset
+  event_handler.alert_received_ = false;
+  event_handler.alert_name_.clear();
 
   // Alert name neither min nor max length.
   TRACE_ALERT("wildcard_category", kAlertName.c_str());
+  loop.RunUntilIdle();
+  ASSERT_TRUE(event_handler.alert_received_);
+  ASSERT_EQ(kAlertName, event_handler.alert_name_);
 
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_OK, status);
-  ASSERT_EQ(1, actual);
-
-  ASSERT_EQ(TRACE_PROVIDER_ALERT, packet.request);
-  CheckAlertNameAndZeroPadding(
-      kAlertName, &packet.data16,
-      sizeof(packet.data16) + sizeof(packet.data32) + sizeof(packet.data64));
+  // Reset
+  event_handler.alert_received_ = false;
+  event_handler.alert_name_.clear();
 
   // Alert name of min length (1).
   TRACE_ALERT("test_category", kAlertNameMin.c_str());
+  loop.RunUntilIdle();
+  ASSERT_TRUE(event_handler.alert_received_);
+  ASSERT_EQ(kAlertNameMin, event_handler.alert_name_);
 
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_OK, status);
-  ASSERT_EQ(1, actual);
-
-  ASSERT_EQ(TRACE_PROVIDER_ALERT, packet.request);
-  CheckAlertNameAndZeroPadding(
-      kAlertNameMin, &packet.data16,
-      sizeof(packet.data16) + sizeof(packet.data32) + sizeof(packet.data64));
+  // Reset
+  event_handler.alert_received_ = false;
+  event_handler.alert_name_.clear();
 
   // Alert name of max length (14).
   TRACE_ALERT("wildcard_category", kAlertNameMax.c_str());
-
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_OK, status);
-  ASSERT_EQ(1, actual);
-
-  ASSERT_EQ(TRACE_PROVIDER_ALERT, packet.request);
-  CheckAlertNameAndZeroPadding(
-      kAlertNameMax, &packet.data16,
-      sizeof(packet.data16) + sizeof(packet.data32) + sizeof(packet.data64));
-
-  // Disabled category.
-  TRACE_ALERT("other_category", kAlertName.c_str());
-
-  status = fifo_manager.read(sizeof(trace_provider_packet_t), &packet, 1, &actual);
-  ASSERT_EQ(ZX_ERR_SHOULD_WAIT, status);
-
   loop.RunUntilIdle();
+  ASSERT_TRUE(event_handler.alert_received_);
+  ASSERT_EQ(kAlertNameMax, event_handler.alert_name_);
+
+  // Reset
+  event_handler.alert_received_ = false;
+  event_handler.alert_name_.clear();
+
+  // Alert with disabled category.
+  TRACE_ALERT("other_category", kAlertName.c_str());
+  loop.RunUntilIdle();
+  ASSERT_FALSE(event_handler.alert_received_);
+
   loop.Shutdown();
 }
 
