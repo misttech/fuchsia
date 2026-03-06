@@ -8,19 +8,20 @@ use std::pin::pin;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use futures::channel::{mpsc, oneshot};
 use futures::stream::BoxStream;
 use futures::{FutureExt as _, StreamExt as _};
 use linux_uapi::rtnetlink_groups_RTNLGRP_ND_USEROPT;
 use net_types::ip::{Ip, IpInvariant, Ipv4, Ipv6};
-use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-};
 
 use crate::client::{AsyncWorkItem, ClientTable};
 use crate::logging::{log_debug, log_info};
@@ -612,16 +613,43 @@ impl<
 
                             }
                             SysctlInterfaceSelector::Id(id) => {
-                                interfaces
+                                let mut route_table_maps = route_table_maps;
+                                let maps_for_call = route_table_maps.as_mut().map(
+                                    |(v4, v6)| (&mut **v4, &mut **v6)
+                                );
+                                let new_table = interfaces
                                     .interface_properties
                                     .get_mut(&id.into())
                                     .ok_or(SysctlError::NoInterface)?
                                     .state.set_accept_ra_rt_table(
-                                        id,
                                         value,
                                         interfaces_proxy.get_ref(),
-                                        route_table_maps,
+                                        id,
+                                        maps_for_call,
                                     ).await?;
+
+                                if let Some(new_table_idx) = new_table {
+                                    if let (Some(worker), Some((table, _))) = (
+                                        routes_v4_worker.present_mut(),
+                                        route_table_maps.as_mut()
+                                    ) {
+                                        worker.process_stashed_routes(
+                                            table,
+                                            route_clients.get_ref(),
+                                            new_table_idx
+                                        );
+                                    }
+                                    if let (Some(worker), Some((_, table))) = (
+                                        routes_v6_worker.present_mut(),
+                                        route_table_maps.as_mut()
+                                    ) {
+                                        worker.process_stashed_routes(
+                                            table,
+                                            route_clients.get_ref(),
+                                            new_table_idx
+                                        );
+                                    }
+                                }
                             }
                             SysctlInterfaceSelector::All => {
                                 // Note: It is intentional that we don't update
@@ -737,10 +765,30 @@ impl<
                         )
                     },
                     UnifiedEvent::InterfacesEvent(event) => {
-                        interfaces_worker.get_mut().handle_interface_watcher_event(
+                        let new_table = interfaces_worker.get_mut().handle_interface_watcher_event(
                             event,
                             v4_route_table_map.present_mut().zip(
-                                v6_route_table_map.present_mut())).await;
+                                v6_route_table_map.present_mut()
+                            )
+                        ).await;
+
+                        if let Some(new_table) = new_table {
+                            if let Some(worker) = routes_v4_worker.present_mut() {
+                                worker.process_stashed_routes(
+                                    v4_route_table_map.get_mut(),
+                                    route_clients.get_ref(),
+                                    new_table
+                                );
+                            }
+                            if let Some(worker) = routes_v6_worker.present_mut() {
+                                worker.process_stashed_routes(
+                                    v6_route_table_map.get_mut(),
+                                    route_clients.get_ref(),
+                                    new_table
+                                );
+                            }
+                        }
+
                         Cleanup::None
                     },
                     UnifiedEvent::NeighborsEvent(event) => {

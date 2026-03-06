@@ -11,7 +11,9 @@ use std::fmt::Debug;
 use std::net::IpAddr;
 use std::num::{NonZeroU32, NonZeroU64};
 
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin::{
     self as fnet_interfaces_admin, AddressRemovalReason, InterfaceRemovedReason,
 };
@@ -19,10 +21,7 @@ use fidl_fuchsia_net_interfaces_ext::admin::{
     AddressStateProviderError, TerminalError, wait_for_address_added_event,
 };
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_root as fnet_root,
-};
+use fidl_fuchsia_net_root as fnet_root;
 
 use derivative::Derivative;
 use either::Either;
@@ -331,16 +330,21 @@ impl InterfaceState {
         self.accept_ra_rt_table
     }
 
+    /// Sets the sysctl for the interface, creates a new netlink table for the
+    /// interface-local route table if needed.
+    ///
+    /// If successful, this method returns [`Some`] if a new interface-local
+    /// table became mapped. Otherwise, [`None`] is returned.
     pub(crate) async fn set_accept_ra_rt_table(
         &mut self,
-        interface_id: NonZeroU64,
         new_accept_ra_rt_table: AcceptRaRtTable,
         interfaces_proxy: &fnet_root::InterfacesProxy,
+        interface_id: NonZeroU64,
         route_table_maps: Option<(&mut RouteTableMap<Ipv4>, &mut RouteTableMap<Ipv6>)>,
-    ) -> Result<(), SysctlError> {
+    ) -> Result<Option<NetlinkRouteTableIndex>, SysctlError> {
         let old_accept_ra_rt_table = self.accept_ra_rt_table;
         if old_accept_ra_rt_table == new_accept_ra_rt_table {
-            return Ok(());
+            return Ok(None);
         }
 
         enum InsertOrRemove {
@@ -377,7 +381,7 @@ impl InterfaceState {
         self.accept_ra_rt_table = new_accept_ra_rt_table;
 
         let Some((v4_route_table_map, v6_route_table_map)) = route_table_maps else {
-            return Ok(());
+            return Ok(None);
         };
         let control = self.control(interfaces_proxy, interface_id);
         match insert_or_remove {
@@ -395,28 +399,32 @@ impl InterfaceState {
                 .await;
                 match result {
                     Ok((local_table_v4, local_table_v6)) => {
+                        let fidl_table_id_v4 = local_table_v4.fidl_table_id;
+                        let fidl_table_id_v6 = local_table_v6.fidl_table_id;
                         log::info!(
                             "local table mapping for {interface_id}: \
                             {netlink_id:?} -> ({:?}, {:?})",
-                            local_table_v4.fidl_table_id,
-                            local_table_v6.fidl_table_id,
+                            fidl_table_id_v4,
+                            fidl_table_id_v6,
                         );
                         v4_route_table_map
                             .insert(netlink_id, RouteTable::Unmanaged(local_table_v4));
                         v6_route_table_map
                             .insert(netlink_id, RouteTable::Unmanaged(local_table_v6));
+                        Ok(Some(netlink_id))
                     }
                     Err(err) => {
-                        log::info!("failed to get a local table for {interface_id}: {err:?}");
+                        log::error!("failed to get a local table for {interface_id}: {err:?}");
+                        Ok(None)
                     }
                 }
             }
             InsertOrRemove::Remove => {
                 let _: Option<_> = v4_route_table_map.remove(netlink_id);
                 let _: Option<_> = v6_route_table_map.remove(netlink_id);
+                Ok(None)
             }
         }
-        Ok(())
     }
 
     pub(crate) fn control(
@@ -556,11 +564,14 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
     ///
     /// Panics if an unexpected Interface Watcher Event is published by the
     /// Netstack.
+    ///
+    /// Returns [`Some`] if a new interface-local table is mapped. The caller
+    /// should use this to process stashed routes for this new table.
     pub(crate) async fn handle_interface_watcher_event(
         &mut self,
         event: fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
         route_table_maps: Option<(&mut RouteTableMap<Ipv4>, &mut RouteTableMap<Ipv6>)>,
-    ) {
+    ) -> Option<NetlinkRouteTableIndex> {
         let update = self
             .interface_properties
             .update(event)
@@ -575,16 +586,17 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
 
                 // The newly added device should have the default sysctl.
                 let initial_value = self.default_accept_ra_rt_table;
-                state
+                let new_table = state
                     .set_accept_ra_rt_table(
-                        interface_id,
                         initial_value,
                         &self.interfaces_proxy,
+                        interface_id,
                         route_table_maps,
                     )
                     .await
                     .unwrap_or_else(|_err| {
-                        log::error!("failed to update the accept_ra_rt_table for {interface_id:?}")
+                        log::error!("failed to update the accept_ra_rt_table for {interface_id:?}");
+                        None
                     });
 
                 if let Some(message) =
@@ -608,6 +620,8 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
                 self.interfaces_handler.handle_new_link(&properties.name, properties.id);
 
                 log_debug!("processed add/existing event for id {}", properties.id);
+
+                new_table
             }
             fnet_interfaces_ext::UpdateResult::Changed {
                 previous:
@@ -671,6 +685,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
 
                     log_debug!("processed interface address change event for id {}", id);
                 }
+                None
             }
             fnet_interfaces_ext::UpdateResult::Removed(
                 fnet_interfaces_ext::PropertiesAndState {
@@ -701,11 +716,12 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
                 self.interfaces_handler.handle_deleted_link(&properties.name);
 
                 log_debug!("processed interface remove event for id {}", properties.id);
+                None
             }
             fnet_interfaces_ext::UpdateResult::Existing { properties, state: _ } => {
                 panic!("Netstack reported the addition of an existing interface: {properties:?}");
             }
-            fnet_interfaces_ext::UpdateResult::NoChange => {}
+            fnet_interfaces_ext::UpdateResult::NoChange => None,
         }
     }
 

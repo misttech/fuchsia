@@ -5,19 +5,19 @@
 //! A module for managing RTM_ROUTE information by receiving RTM_ROUTE
 //! Netlink messages and maintaining route table state from Netstack.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin::RouteSetError;
-use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-};
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
 use derivative::Derivative;
 use futures::StreamExt as _;
@@ -37,7 +37,7 @@ use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::Nla;
 
 use crate::client::{ClientTable, InternalClient};
-use crate::logging::{log_debug, log_error, log_warn};
+use crate::logging::{log_debug, log_error, log_info, log_warn};
 use crate::messaging::Sender;
 use crate::multicast_groups::ModernGroup;
 use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
@@ -231,6 +231,18 @@ pub(crate) struct RoutesWorker<
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
     fidl_route_map: FidlRouteMap<I>,
+    /// Stashed routes that are learned from netstack but don't yet have a
+    /// mapping for the netlink table ID.
+    stashed_routes: HashMap<fnet_routes_ext::TableId, HashSet<fnet_routes_ext::InstalledRoute<I>>>,
+}
+
+#[cfg(test)]
+impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt> Drop
+    for RoutesWorker<I>
+{
+    fn drop(&mut self) {
+        assert!(self.stashed_routes.is_empty(), "the stashed routes must be eventually reconciled");
+    }
 }
 
 fn get_table_u8_and_nla_from_key(
@@ -314,7 +326,11 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             unmanaged_route_set_proxy,
             route_table_provider,
         );
-        (Self { fidl_route_map }, route_table_map, route_event_stream)
+        (
+            Self { fidl_route_map, stashed_routes: HashMap::new() },
+            route_table_map,
+            route_event_stream,
+        )
     }
 
     /// Handles events observed by the route watchers by adding/removing routes
@@ -332,12 +348,73 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         route_clients: &ClientTable<NetlinkRoute, S>,
         event: fnet_routes_ext::Event<I>,
     ) -> Option<TableNeedsCleanup> {
-        handle_route_watcher_event::<I, S>(
+        let res = handle_route_watcher_event::<I, S>(
             route_table_map,
             &mut self.fidl_route_map,
             route_clients,
             event,
-        )
+        );
+        match res {
+            RouteEventOutcome::Noop => None,
+            RouteEventOutcome::Cleanup(cleanup) => Some(cleanup),
+            RouteEventOutcome::UpdateStash(event) => {
+                match event {
+                    AddOrRemoveRoute::Added(r) => {
+                        assert!(
+                            self.stashed_routes.entry(r.table_id).or_default().insert(r),
+                            "route {:?} already stashed",
+                            r,
+                        )
+                    }
+                    AddOrRemoveRoute::Removed(r) => {
+                        assert!(
+                            self.stashed_routes
+                                .get_mut(&r.table_id)
+                                .expect("table not found")
+                                .remove(&r),
+                            "route {:?} not stashed",
+                            r,
+                        )
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    /// Processes stashed routes for the given netlink table.
+    ///
+    /// Panics if the given netlink table id is non-existent.
+    pub(crate) fn process_stashed_routes<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
+        &mut self,
+        route_table_map: &mut RouteTableMap<I>,
+        route_clients: &ClientTable<NetlinkRoute, S>,
+        netlink_table_id: NetlinkRouteTableIndex,
+    ) {
+        let fidl_table_id = route_table_map
+            .get_mut(&netlink_table_id)
+            .expect("invalid netlink table id")
+            .fidl_table_id();
+
+        if let Some(stashed_routes) = self.stashed_routes.remove(&fidl_table_id) {
+            log_info!(
+                "processing {} stashed route events for table {}",
+                stashed_routes.len(),
+                fidl_table_id
+            );
+            for route in stashed_routes {
+                assert_eq!(
+                    handle_route_watcher_event::<I, S>(
+                        route_table_map,
+                        &mut self.fidl_route_map,
+                        route_clients,
+                        fnet_routes_ext::Event::Added(route),
+                    ),
+                    RouteEventOutcome::Noop,
+                    "adding routes should not have clean ups"
+                );
+            }
+        }
     }
 
     fn get_interface_control(
@@ -794,6 +871,21 @@ fn routes_conflict<I: Ip>(
     destinations_match && specified_metrics_match && tables_match
 }
 
+/// Like a [`fnet_routes_ext::Event`], but only the `Added` and `Removed` variants.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum AddOrRemoveRoute<I: Ip> {
+    Added(fnet_routes_ext::InstalledRoute<I>),
+    Removed(fnet_routes_ext::InstalledRoute<I>),
+}
+
+/// Outcome for handing a route watcher event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RouteEventOutcome<I: Ip> {
+    Noop,
+    Cleanup(TableNeedsCleanup),
+    UpdateStash(AddOrRemoveRoute<I>),
+}
+
 fn handle_route_watcher_event<
     I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt + fnet_routes_ext::FidlRouteIpExt,
     S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
@@ -802,9 +894,32 @@ fn handle_route_watcher_event<
     fidl_route_map: &mut FidlRouteMap<I>,
     route_clients: &ClientTable<NetlinkRoute, S>,
     event: fnet_routes_ext::Event<I>,
-) -> Option<TableNeedsCleanup> {
+) -> RouteEventOutcome<I> {
+    let (table_id, event) = match event {
+        fnet_routes_ext::Event::Added(e) => (e.table_id, AddOrRemoveRoute::Added(e)),
+        fnet_routes_ext::Event::Removed(e) => (e.table_id, AddOrRemoveRoute::Removed(e)),
+        e @ fnet_routes_ext::Event::Existing(_)
+        | e @ fnet_routes_ext::Event::Idle
+        | e @ fnet_routes_ext::Event::Unknown => {
+            panic!("Netstack reported an unexpected route event: {e:?}");
+        }
+    };
+
+    let netlink_id = match route_table_map.get_netlink_id(&table_id) {
+        None => {
+            // This is a FIDL table ID that the netlink worker didn't know about, and is
+            // not the main table ID.
+            log_info!(
+                "Observed a route event via the routes watcher that is installed in a \
+                non-main FIDL table currently not managed by netlink: {event:?}."
+            );
+            return RouteEventOutcome::UpdateStash(event);
+        }
+        Some(table) => table,
+    };
+
     let (message_for_clients, table_no_routes) = match event {
-        fnet_routes_ext::Event::Added(added_installed_route) => {
+        AddOrRemoveRoute::Added(added_installed_route) => {
             let fnet_routes_ext::InstalledRoute { route, table_id, effective_properties } =
                 added_installed_route;
 
@@ -818,29 +933,16 @@ fn handle_route_watcher_event<
                 }
             }
 
-            match route_table_map.get_netlink_id(&table_id) {
-                None => {
-                    // This is a FIDL table ID that the netlink worker didn't know about, and is
-                    // not the main table ID.
-                    crate::logging::log_warn!(
-                        "Observed an added route via the routes watcher that is installed in a \
-                        non-main FIDL table not managed by netlink: {added_installed_route:?}"
-                    );
-                    // Because we'll never be able to map this FIDL table ID to a netlink table
-                    // index, we have no choice but to avoid notifying netlink clients about this.
-                    (None, None)
-                }
-                Some(table) => (
-                    NetlinkRouteMessage::optionally_from(added_installed_route, table).map(
-                        |route_message| {
-                            route_message.into_rtnl_new_route(UNSPECIFIED_SEQUENCE_NUMBER, false)
-                        },
-                    ),
-                    None,
+            (
+                NetlinkRouteMessage::optionally_from(added_installed_route, netlink_id).map(
+                    |route_message| {
+                        route_message.into_rtnl_new_route(UNSPECIFIED_SEQUENCE_NUMBER, false)
+                    },
                 ),
-            }
+                RouteEventOutcome::Noop,
+            )
         }
-        fnet_routes_ext::Event::Removed(removed_installed_route) => {
+        AddOrRemoveRoute::Removed(removed_installed_route) => {
             let fnet_routes_ext::InstalledRoute { route, table_id, effective_properties: _ } =
                 removed_installed_route;
 
@@ -855,38 +957,14 @@ fn handle_route_watcher_event<
                 RouteRemoveResult::RemovedAndTableNewlyEmpty(_properties) => true,
             };
 
-            let (notify_message, table_index) = match route_table_map.get_netlink_id(&table_id) {
-                None => {
-                    // This is a FIDL table ID that the netlink worker didn't know about, and is
-                    // not the main table ID.
-                    crate::logging::log_warn!(
-                        "Observed a removed route via the routes watcher that is installed in a \
-                        non-main FIDL table not managed by netlink: {removed_installed_route:?}"
-                    );
-                    // Because we'll never be able to map this FIDL table ID to a netlink table
-                    // index, we have no choice but to avoid notifying netlink clients about this.
-                    (None, None)
-                }
-                Some(table) => (
-                    NetlinkRouteMessage::optionally_from(removed_installed_route, table)
-                        .map(|route_message| route_message.into_rtnl_del_route()),
-                    Some(table),
-                ),
-            };
-
-            let table_cleanup = match (need_clean_up_empty_table, table_index) {
-                (true, Some(table_index)) => Some(TableNeedsCleanup(table_id, table_index)),
-                _ => None,
-            };
-
-            (notify_message, table_cleanup)
-        }
-        // We don't expect to observe any existing events, because the route watchers were drained
-        // of existing events prior to starting the event loop.
-        e @ fnet_routes_ext::Event::Existing(_)
-        | e @ fnet_routes_ext::Event::Idle
-        | e @ fnet_routes_ext::Event::Unknown => {
-            panic!("Netstack reported an unexpected route event: {e:?}");
+            (
+                NetlinkRouteMessage::optionally_from(removed_installed_route, netlink_id)
+                    .map(|route_message| route_message.into_rtnl_del_route()),
+                match need_clean_up_empty_table {
+                    true => RouteEventOutcome::Cleanup(TableNeedsCleanup(table_id, netlink_id)),
+                    false => RouteEventOutcome::Noop,
+                },
+            )
         }
     };
     if let Some(message_for_clients) = message_for_clients {
@@ -1332,12 +1410,11 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+    use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+    use fidl_fuchsia_net_routes as fnet_routes;
+    use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
     use fidl_fuchsia_net_routes_ext::Responder as _;
     use fidl_fuchsia_net_routes_ext::admin::{RouteSetRequest, RouteTableRequest};
-    use {
-        fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-        fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    };
 
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
@@ -1576,7 +1653,7 @@ mod tests {
                 &route_clients,
                 add_event1,
             ),
-            None
+            RouteEventOutcome::Noop,
         );
         assert_eq!(
             fidl_route_map.iter_messages(&route_table, netlink_id).collect::<HashSet<_>>(),
@@ -1608,7 +1685,7 @@ mod tests {
                 &route_clients,
                 add_event2,
             ),
-            None
+            RouteEventOutcome::Noop
         );
         assert_eq!(
             fidl_route_map.iter_messages(&route_table, netlink_id).collect::<HashSet<_>>(),
@@ -1632,7 +1709,7 @@ mod tests {
                 &route_clients,
                 remove_event,
             ),
-            None
+            RouteEventOutcome::Noop
         );
         assert_eq!(
             fidl_route_map.iter_messages(&route_table, netlink_id).collect::<HashSet<_>>(),
@@ -1700,7 +1777,7 @@ mod tests {
                 &route_clients,
                 add_event,
             ),
-            None
+            RouteEventOutcome::UpdateStash(AddOrRemoveRoute::Added(installed_route))
         );
 
         // Process Remove message.
@@ -1711,7 +1788,7 @@ mod tests {
                 &route_clients,
                 remove_event,
             ),
-            None
+            RouteEventOutcome::UpdateStash(AddOrRemoveRoute::Removed(installed_route))
         );
     }
 
@@ -1781,7 +1858,7 @@ mod tests {
                     &route_clients,
                     fnet_routes_ext::Event::Added(installed_route),
                 ),
-                None
+                RouteEventOutcome::Noop
             );
         }
     }
@@ -1934,7 +2011,7 @@ mod tests {
                 &route_clients,
                 add_events1[0],
             ),
-            None
+            RouteEventOutcome::Noop
         );
 
         // Shouldn't be counted yet, as we haven't seen the route added to its own table yet.
@@ -1954,7 +2031,7 @@ mod tests {
                 &route_clients,
                 add_events1[1],
             ),
-            None
+            RouteEventOutcome::Noop
         );
 
         // Now the route should have been added.
@@ -1987,7 +2064,7 @@ mod tests {
                 &route_clients,
                 add_event2,
             ),
-            None
+            RouteEventOutcome::Noop
         );
 
         // Should also contain the route from before.
@@ -2023,7 +2100,10 @@ mod tests {
                 &route_clients,
                 remove_event,
             ),
-            Some(TableNeedsCleanup(OTHER_FIDL_TABLE_ID, MANAGED_ROUTE_TABLE_INDEX))
+            RouteEventOutcome::Cleanup(TableNeedsCleanup(
+                OTHER_FIDL_TABLE_ID,
+                MANAGED_ROUTE_TABLE_INDEX
+            ))
         );
         assert_eq!(
             &fidl_route_map
@@ -5186,5 +5266,96 @@ mod tests {
             assert!(route_table_request.is_none());
         };
         join_handle.await;
+    }
+
+    #[ip_test(I)]
+    #[fuchsia::test]
+    async fn process_stashed_routes<
+        I: Ip + fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
+    >() {
+        let (subnet, next_hop) =
+            I::map_ip((), |()| (V4_SUB1, V4_NEXTHOP1), |()| (V6_SUB1, V6_NEXTHOP1));
+        let table_id = OTHER_FIDL_TABLE_ID;
+        let installed_route =
+            create_installed_route(subnet, Some(next_hop), DEV1.into(), METRIC1, table_id);
+        let to_be_removed_route =
+            create_installed_route(subnet, Some(next_hop), DEV2.into(), METRIC2, table_id);
+
+        let (route_table_proxy, _route_table_server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableMarker>();
+        let (unmanaged_route_set_proxy, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        let (route_table_provider, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableProviderMarker>();
+        let mut route_table = RouteTableMap::new(
+            route_table_proxy.clone(),
+            MAIN_FIDL_TABLE_ID,
+            unmanaged_route_set_proxy,
+            route_table_provider,
+        );
+        let route_clients: ClientTable<NetlinkRoute, FakeSender<_>> = ClientTable::default();
+
+        let mut worker = RoutesWorker {
+            fidl_route_map: FidlRouteMap::<I>::default(),
+            stashed_routes: HashMap::new(),
+        };
+
+        // 1. Add routes, but the table is unknown to netlink.
+        assert_eq!(
+            worker.handle_route_watcher_event(
+                &mut route_table,
+                &route_clients,
+                fnet_routes_ext::Event::Added(installed_route.clone()),
+            ),
+            None
+        );
+        assert_eq!(
+            worker.handle_route_watcher_event(
+                &mut route_table,
+                &route_clients,
+                fnet_routes_ext::Event::Added(to_be_removed_route.clone()),
+            ),
+            None
+        );
+
+        // Verify they are stashed.
+        assert!(worker.stashed_routes.contains_key(&table_id));
+        assert!(worker.stashed_routes[&table_id].contains(&installed_route));
+        assert!(worker.stashed_routes[&table_id].contains(&to_be_removed_route));
+        assert_eq!(
+            // The routes should NOT be in the FIDL map yet.
+            worker.fidl_route_map.iter_messages(&route_table, MAIN_ROUTE_TABLE_INDEX).count(),
+            0
+        );
+
+        assert_eq!(
+            worker.handle_route_watcher_event(
+                &mut route_table,
+                &route_clients,
+                fnet_routes_ext::Event::Removed(to_be_removed_route.clone()),
+            ),
+            None
+        );
+        assert!(!worker.stashed_routes[&table_id].contains(&to_be_removed_route));
+
+        // 2. Add the table mapping.
+        let netlink_table_id = NetlinkRouteTableIndex::new(123);
+        let (route_set_proxy, _) = fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        let table = RouteTable::Unmanaged(UnmanagedTable {
+            route_table_proxy: route_table_proxy.clone(),
+            route_set_proxy,
+            fidl_table_id: table_id,
+            rule_set_authenticated: false,
+        });
+        route_table.insert(netlink_table_id, table);
+
+        // 3. Process stashed routes.
+        worker.process_stashed_routes(&mut route_table, &route_clients, netlink_table_id);
+
+        // Verify only one route is unstashed and added to fidl_route_map.
+        assert!(!worker.stashed_routes.contains_key(&table_id));
+        // Verify it is in the FIDL map.
+        // We need to iterate messages for the new table.
+        assert_eq!(worker.fidl_route_map.iter_messages(&route_table, netlink_table_id).count(), 1);
     }
 }

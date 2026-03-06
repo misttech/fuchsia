@@ -16,9 +16,8 @@ use fuchsia_async::{self as fasync, TimeoutExt};
 use futures::channel::{mpsc, oneshot};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, StreamExt as _};
 use linux_uapi::{
-    NLM_F_DUMP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
-    rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
-    rtnetlink_groups_RTNLGRP_ND_USEROPT,
+    rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rtnetlink_groups_RTNLGRP_IPV4_ROUTE,
+    rtnetlink_groups_RTNLGRP_IPV6_ROUTE, rtnetlink_groups_RTNLGRP_ND_USEROPT,
 };
 use net_declare::{fidl_mac, net_ip_v6, std_ip};
 use net_types::Witness;
@@ -43,27 +42,31 @@ use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use netlink_packet_utils::DecodeError;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_common::{
-    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_CHECK_INTERVAL, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp as packet_formats_ndp;
 use smallvec::smallvec;
 use test_case::{test_case, test_matrix};
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::FromExt as _;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::FidlRuleIpExt;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-    fidl_fuchsia_net_sockets as fnet_sockets, fidl_fuchsia_posix_socket as fposix_socket,
-};
+use fidl_fuchsia_net_sockets as fnet_sockets;
+use fidl_fuchsia_posix_socket as fposix_socket;
 
 fn connect_to_netlink_protocols_in_realm(
     realm: &TestRealm<'_>,
@@ -1474,6 +1477,36 @@ async fn netlink_uses_local_route_table(name: &str) {
 
     let (netlink, join_handle) = start_test_netlink(&realm).await;
 
+    const ACCEPT_RA_RT_TABLE: i32 = -1000;
+    // `write_accept_ra_rt_table` is sync blocking, so we have to do it in
+    // another thread. The below code emulates this function being called from
+    // a starnix kernel thread.
+    let netlink = fasync::unblock(move || {
+        netlink
+            .write_accept_ra_rt_table(netlink::SysctlInterfaceSelector::Default, ACCEPT_RA_RT_TABLE)
+            .expect("failed to update accept_ra_rt_table");
+        netlink
+    })
+    .await;
+
+    let mut client = add_route_client(&netlink);
+
+    assert!(
+        client
+            .client
+            .add_membership(ModernGroup(rtnetlink_groups_RTNLGRP_IPV4_ROUTE))
+            .expect("should join V4 group")
+            .is_noop()
+    );
+
+    assert!(
+        client
+            .client
+            .add_membership(ModernGroup(rtnetlink_groups_RTNLGRP_IPV6_ROUTE))
+            .expect("should join V6 group")
+            .is_noop()
+    );
+
     let network = sandbox.create_network("network").await.expect("create network");
     let ep = realm
         .join_network_with_if_config(
@@ -1492,26 +1525,8 @@ async fn netlink_uses_local_route_table(name: &str) {
         .expect("failed to create the interface");
     let interface_id = ep.id();
 
-    const ACCEPT_RA_RT_TABLE: i32 = -1000;
-
-    // `write_accept_ra_rt_table` is sync blocking, so we have to do it in
-    // another thread. The below code emulates this function being called from
-    // a starnix kernel thread.
-    let netlink = fasync::unblock(move || {
-        netlink
-            .write_accept_ra_rt_table(
-                netlink::SysctlInterfaceSelector::Id(NonZeroU64::new(interface_id).unwrap()),
-                ACCEPT_RA_RT_TABLE,
-            )
-            .expect("failed to update accept_ra_rt_table");
-        netlink
-    })
-    .await;
-
     let expected_table_id =
         u32::try_from(ep.id()).unwrap() + u32::try_from(-ACCEPT_RA_RT_TABLE).unwrap();
-
-    let mut client = add_route_client(&netlink);
 
     let expected_route = move |af, dest: std::net::IpAddr, prefix_len: u8| {
         let mut route_message = RouteMessage::default();
@@ -1543,17 +1558,18 @@ async fn netlink_uses_local_route_table(name: &str) {
         expected_route(AddressFamily::Inet6, std_ip!("ff00::"), 8),
     ]);
 
-    let mut route_message = RouteMessage::default();
-    route_message.header.address_family = AddressFamily::Unspec;
-    route_message.header.table = rt_class_t_RT_TABLE_UNSPEC as u8;
-    let dump_routes = RouteNetlinkMessage::GetRoute(route_message);
-    let mut message: NetlinkMessage<RouteNetlinkMessage> = dump_routes.into();
-    message.header.flags = NLM_F_DUMP as u16;
-    message.finalize();
-    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
-
     while !expected_routes.is_empty() {
-        let next_msg = client.receiver.next().await.expect("should not be disconnected");
+        let next_msg = client
+            .receiver
+            .next()
+            .on_timeout(ASYNC_EVENT_CHECK_INTERVAL, || {
+                panic!(
+                    "timed out waiting for route messages, still unseen routes: {:?}",
+                    expected_routes
+                );
+            })
+            .await
+            .expect("should not be disconnected");
         let route_msg = match next_msg.message.payload {
             NetlinkPayload::InnerMessage(message) => message,
             _ => continue,
