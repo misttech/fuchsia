@@ -160,6 +160,7 @@
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
+                "RouteNetlinkSocketTestWithInterface.CreateAndProbeNeighbor",
 
                 // TODO(https://fxbug.dev/437162553)
                 "SocketFault/SocketFault.Read/1",

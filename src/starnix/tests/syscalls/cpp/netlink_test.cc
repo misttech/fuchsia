@@ -6,6 +6,7 @@
 #include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/ethernet.h>
 #include <net/if.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -308,16 +309,11 @@ TEST(RouteNetlinkSocket, AddDropMulticastGroup) {
   ASSERT_EQ(errno, EAGAIN);
 }
 
-struct RouteNetlinkSocketNewAddrParam {
-  uint8_t family;
-  const char* addr;
-  uint8_t prefix;
-  bool expect_subnet_route;
-};
-
-class RouteNetlinkSocketNewAddr : public testing::TestWithParam<RouteNetlinkSocketNewAddrParam> {
+class RouteNetlinkSocketTestWithInterface : public NetlinkRouteTest {
  public:
   void SetUp() override {
+    NetlinkRouteTest::SetUp();
+
     // TODO(https://fxbug.dev/317285180) don't skip on baseline
     if (!test_helper::HasSysAdmin()) {
       GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
@@ -330,7 +326,9 @@ class RouteNetlinkSocketNewAddr : public testing::TestWithParam<RouteNetlinkSock
     }
     tun_ = fbl::unique_fd(open(dev_tun, O_RDWR));
     ifreq ifr{};
-    ifr.ifr_flags = IFF_NO_PI | IFF_TUN;
+    // Use IFF_TAP because these tests exercise features that are only available
+    // on Ethernet-like interfaces.
+    ifr.ifr_flags = IFF_NO_PI | IFF_TAP;
 
     strncpy(ifr.ifr_name, kTestIfName, IFNAMSIZ);
 
@@ -356,21 +354,19 @@ class RouteNetlinkSocketNewAddr : public testing::TestWithParam<RouteNetlinkSock
   fbl::unique_fd tun_;
 };
 
+struct RouteNetlinkSocketNewAddrParam {
+  uint8_t family;
+  const char* addr;
+  uint8_t prefix;
+  bool expect_subnet_route;
+};
+
+class RouteNetlinkSocketNewAddr
+    : public RouteNetlinkSocketTestWithInterface,
+      public testing::WithParamInterface<RouteNetlinkSocketNewAddrParam> {};
+
 TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
-  // TODO(https://fxbug.dev/317285180) don't skip on baseline
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
-  }
-
-  fbl::unique_fd nlsock(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
-  ASSERT_TRUE(nlsock) << strerror(errno);
-
   const auto [family, addr, prefix, expect_subnet_route] = GetParam();
-
-  struct sockaddr_nl nladdr = {};
-  nladdr.nl_family = AF_NETLINK;
-  struct sockaddr* sa = reinterpret_cast<struct sockaddr*>(&nladdr);
-  ASSERT_EQ(bind(nlsock.get(), sa, sizeof(nladdr)), 0) << strerror(errno);
 
   {
     test_helper::NetlinkEncoder encoder(RTM_NEWADDR, NLM_F_REQUEST | NLM_F_ACK);
@@ -391,17 +387,10 @@ TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
     encoder.BeginNla(IFA_LOCAL);
     encoder.WriteSpan(addr);
     encoder.EndNla();
-    iovec iov = {};
-    encoder.Finalize(iov);
-    struct msghdr header = {};
-    header.msg_iov = &iov;
-    header.msg_iovlen = 1;
-
-    ASSERT_EQ(sendmsg(nlsock.get(), &header, 0), static_cast<ssize_t>(iov.iov_len))
-        << strerror(errno);
+    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
   }
   char buf[4096] = {};
-  ssize_t len = recv(nlsock.get(), buf, sizeof(buf), 0);
+  ssize_t len = recv(nl_sock_.get(), buf, sizeof(buf), 0);
   ASSERT_GT(len, 0) << strerror(errno);
 
   nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(buf);
@@ -417,19 +406,13 @@ TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
         .rtm_family = family,
     };
     encoder.Write(rtm);
-    iovec iov = {};
-    encoder.Finalize(iov);
-    struct msghdr msg = {};
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-
-    ASSERT_EQ(sendmsg(nlsock.get(), &msg, 0), static_cast<ssize_t>(iov.iov_len)) << strerror(errno);
+    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
   }
   // Use a timeout instead of MSG_DONTWAIT to avoid timing issues with delays.
   struct timeval timeout = {.tv_sec = 0, .tv_usec = 100'000};
-  ASSERT_EQ(setsockopt(nlsock.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
+  ASSERT_EQ(setsockopt(nl_sock_.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
   while (true) {
-    ssize_t len = recv(nlsock.get(), buf, sizeof(buf), 0);
+    ssize_t len = recv(nl_sock_.get(), buf, sizeof(buf), 0);
     if (len == 0) {
       break;
     }
@@ -634,6 +617,96 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<RouteNetlinkSocketGetNeigh::ParamType>& info) {
       return info.param.test_case_name;
     });
+
+TEST_F(RouteNetlinkSocketTestWithInterface, CreateAndProbeNeighbor) {
+  int ifindex = if_nametoindex(kTestIfName);
+  ASSERT_GT(ifindex, 0);
+
+  const char* kNeighborAddrStr = "192.168.0.10";
+  in_addr neighbor_addr;
+  ASSERT_EQ(inet_pton(AF_INET, kNeighborAddrStr, &neighbor_addr), 1);
+
+  uint8_t lladdr[ETH_ALEN] = {0x02, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E};
+
+  auto receive_ack = [this](uint32_t seq) {
+    char recv_buf[4096];
+    ssize_t len = recv(nl_sock_.get(), &recv_buf, sizeof(recv_buf), 0);
+    ASSERT_GT(len, 0) << strerror(errno);
+
+    nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(recv_buf);
+    ASSERT_TRUE(NLMSG_OK(nlmsg, static_cast<uint32_t>(len)));
+    EXPECT_EQ(nlmsg->nlmsg_type, NLMSG_ERROR);
+    EXPECT_EQ(nlmsg->nlmsg_seq, seq);
+    nlmsgerr* err_data = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlmsg));
+    EXPECT_EQ(err_data->error, 0);
+  };
+
+  auto get_and_check_state = [this](int ifindex, const in_addr& addr,
+                                    uint16_t allowable_states_mask) {
+    test_helper::NetlinkEncoder encoder(RTM_GETNEIGH, NLM_F_REQUEST);
+    uint32_t seq = encoder.sequence();
+    encoder.Write(ndmsg{
+        .ndm_family = AF_INET,
+        .ndm_ifindex = ifindex,
+    });
+    encoder.AddRtAttr(NDA_DST, addr);
+    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+
+    char recv_buf[4096];
+    ssize_t len = recv(nl_sock_.get(), &recv_buf, sizeof(recv_buf), 0);
+    ASSERT_GT(len, 0) << strerror(errno);
+
+    nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(recv_buf);
+    ASSERT_TRUE(NLMSG_OK(nlmsg, static_cast<uint32_t>(len)));
+
+    ASSERT_EQ(nlmsg->nlmsg_type, RTM_NEWNEIGH);
+    EXPECT_EQ(nlmsg->nlmsg_seq, seq);
+
+    ndmsg* ndm = reinterpret_cast<ndmsg*>(NLMSG_DATA(nlmsg));
+    EXPECT_EQ(ndm->ndm_state, ndm->ndm_state & allowable_states_mask);
+  };
+
+  // Create a static neighbor entry and check that it's in the PERMANENT state.
+
+  {
+    test_helper::NetlinkEncoder encoder(RTM_NEWNEIGH,
+                                        NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK);
+    uint32_t seq = encoder.sequence();
+    encoder.Write(ndmsg{
+        .ndm_family = AF_INET,
+        .ndm_ifindex = ifindex,
+        .ndm_state = NUD_PERMANENT,
+    });
+    encoder.AddRtAttr(NDA_DST, neighbor_addr);
+    encoder.AddRtAttr(NDA_LLADDR, lladdr);
+    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(receive_ack(seq));
+  }
+
+  ASSERT_NO_FATAL_FAILURE(get_and_check_state(ifindex, neighbor_addr, NUD_PERMANENT));
+
+  // Manually probe the neighbor entry and check that it's in the PROBE or
+  // FAILED state. The latter can theoretically arise if the test is descheduled
+  // for too long between the probe request and state check.
+
+  {
+    test_helper::NetlinkEncoder encoder(RTM_NEWNEIGH, NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK);
+    uint32_t seq = encoder.sequence();
+    encoder.Write(ndmsg{
+        .ndm_family = AF_INET,
+        .ndm_ifindex = ifindex,
+        .ndm_state = NUD_PROBE,
+    });
+    encoder.AddRtAttr(NDA_DST, neighbor_addr);
+    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(receive_ack(seq));
+  }
+
+  ASSERT_NO_FATAL_FAILURE(get_and_check_state(ifindex, neighbor_addr, NUD_PROBE | NUD_FAILED));
+
+  // No need to clean up the neighbor; the interface is reset after test
+  // completion.
+}
 
 TEST(NetlinkSocket, RecvMsg) {
   // TODO(https://fxbug.dev/317285180) don't skip on baseline
