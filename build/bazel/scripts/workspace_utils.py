@@ -324,7 +324,9 @@ def record_fuchsia_workspace(
       - Bazel output base is at ${top_dir}/output_base
       - Bazel output user root is at ${top_dir}/output_user_root
       - The workspace goes into ${top_dir}/workspace/
-      - Logs are written to ${top_dir}/logs/
+
+    The log directory is now dynamically set per fx-build invocation and
+    per bazel invocation in wrapper.bazel.sh.
 
     Args:
         generated: A GeneratedWorkspaceFiles instance modified by this function.
@@ -341,8 +343,6 @@ def record_fuchsia_workspace(
     host_tag = build_utils.get_host_tag()
 
     templates_dir = fuchsia_dir / "build" / "bazel" / "templates"
-
-    logs_dir = top_dir / "logs"
 
     ninja_binary = (
         fuchsia_dir / "prebuilt" / "third_party" / "ninja" / host_tag / "ninja"
@@ -370,7 +370,7 @@ def record_fuchsia_workspace(
   Ninja binary:           {ninja_binary}
   Bazel source:           {bazel_bin}
   Top dir:                {top_dir}
-  Logs directory:         {logs_dir}
+  Logs directory:         <per-invocation: out/_build_logs/OUTDIR_BASENAME/build.$date.*/bazel_logs/>
   Bazel workspace:        {workspace_dir}
   Bazel output_base:      {output_base_dir}
   Bazel output user root: {output_user_root}
@@ -438,13 +438,9 @@ def record_fuchsia_workspace(
     )
 
     # Generate the content of .bazelrc
-    logs_dir = top_dir / "logs"
-    logs_dir_from_workspace = os.path.relpath(logs_dir, top_dir / "workspace")
     bazelrc_content = expand_template_file(
         generated,
         "template.bazelrc",
-        workspace_log_file=f"{logs_dir_from_workspace}/workspace_events.log",
-        execution_log_file=f"{logs_dir_from_workspace}/exec_log.pb.zstd",
     )
 
     bazelrc_generator = BazelrcFromGnConfigGenerator()
@@ -469,7 +465,6 @@ def record_fuchsia_workspace(
         # LINT.ThenChange(//build/bazel/wrapper.bazel.sh)
         "template.bazel.sh.config",
         bazel_bin=config_path_value(bazel_bin),
-        bazel_log_dir=config_path_value(logs_dir),
         bazel_output_base=config_path_value(output_base_dir),
         bazel_output_user_root=config_path_value(output_user_root),
         bazel_workspace_dir=config_path_value(workspace_dir),

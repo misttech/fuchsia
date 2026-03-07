@@ -24,7 +24,6 @@ function die {
 # Read the configuration file. This should define the following variables:
 #
 # _BAZEL_BIN: Path to Bazel launcher script.
-# _BAZEL_LOG_DIR: Path to directory where some workspace logs will be written.
 # _BAZEL_OUTPUT_BASE: Bazel output base directory path.
 # _BAZEL_OUTPUT_USER_ROOT: Bazel output user root directory path.
 # _BAZEL_WORKSPACE: Bazel workspace directory path.
@@ -48,7 +47,6 @@ source "${_SCRIPT_ARGS_FILE}"
 # These directories are created on demand.
 [[ -n "${_BAZEL_OUTPUT_BASE}" ]] || die "Missing _BAZEL_OUTPUT_BASE config variable"
 [[ -n "${_BAZEL_OUTPUT_USER_ROOT}" ]] || die "Missing _BAZEL_OUTPUT_USER_ROOT config variable"
-[[ -n "${_BAZEL_LOG_DIR}" ]] || die "Missing _BAZEL_LOG_DIR config variable"
 
 [[ -n "${_BAZEL_BIN}" ]] || die "Missing _BAZEL_BIN config variable"
 [[ -f "${_BAZEL_BIN}" ]] || die "_BAZEL_BIN should be a file: ${_BAZEL_BIN}"
@@ -85,27 +83,6 @@ readonly PREBUILT_PYTHON3="${_PREBUILT_PYTHON_DIR}/bin/python3"
 # and ensures this can be used on containers where GCC or Clang are not
 # installed (Bazel would complain otherwise with an error).
 export BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-
-# Implement log rotation (up to 3 old files)
-# $1: log file name (e.g. "path/to/workspace-events.log")
-logrotate3 () {
-  local i
-  local prev_log="$1.3"
-  local cur_log
-  for i in "2" "1"; do
-    rm -f "${prev_log}"
-    cur_log="$1.$i"
-    [[ -f "${cur_log}" ]] && mv "${cur_log}" "${prev_log}"
-    prev_log="${cur_log}"
-  done
-  cur_log="$1"
-  [[ -f "${cur_log}" ]] && mv "${cur_log}" "${prev_log}"
-}
-
-# Rotate the workspace events log. Note that this file is created
-# through an option set in the .bazelrc file, not the command-line below.
-mkdir -p "${_BAZEL_LOG_DIR}"
-logrotate3 "${_BAZEL_LOG_DIR}/workspace-events.log"
 
 # Determines the command used in this invocation, and separate arguments
 # that follow a -- from the rest, so we can inject extra arguments
@@ -170,6 +147,10 @@ case "${_BAZEL_COMMAND}" in
       ;;
 esac
 
+# We generate our own invocation id, to make it easier to propagate its value
+# to sub-build invocations.
+readonly RESULTSTORE_invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
+
 # This is for ResultStore.
 # TODO: depend on GN arg bazel_upload_build_events = {"sponge", "resultstore"}
 readonly RESULTSTORE_URL="http://go/fxbtx"
@@ -177,7 +158,9 @@ readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESUL
 
 # A list of extra Bazel arguments that must appear after the
 # command.
-_BAZEL_EXTRA_ARGS=()
+_BAZEL_EXTRA_ARGS=(
+  --invocation_id="$RESULTSTORE_invocation_id"
+)
 
 # The following step is sensitive to special environment variables:
 #   * per-invocation build metadata
@@ -195,15 +178,41 @@ trap "rm -f ${_INVOCATION_BAZELRC}" EXIT
   --sub_builds_link="$RESULTSTORE_SUB_BUILDS_LINK" \
   > "${_INVOCATION_BAZELRC}"
 
-# Save a copy of the invocation.bazelrc to the build log dir.
-# Bazel invocations occur in the same workspace, so invocations
-# are distinguished by timestamp.
-[[ -z "$FX_BUILD_LOGDIR" ]] || {
-  readonly logdir="$FX_BUILD_LOGDIR/bazel_logs"
-  mkdir -p "$logdir"
-  readonly date="$(date +%Y%m%d-%H%M%S)"
-  cp "${_INVOCATION_BAZELRC}" "$logdir/invocation-$date.bazelrc"
-}
+# Save per-invocation logs.
+# Log directories are generated dynamically per fx-build invocation,
+# organized by bazel invocations.
+readonly _BAZEL_INVOCATION_DATE="$(date +%Y%m%d-%H%M%S)"
+readonly _BAZEL_INVOCATION_LOG_DIR_NAME="invocation-${_BAZEL_INVOCATION_DATE}--${RESULTSTORE_invocation_id}"
+
+if [[ -n "$FX_BUILD_LOGDIR" ]]; then
+  readonly _BAZEL_INVOCATION_LOG_PARENT="$FX_BUILD_LOGDIR/bazel_logs"
+else
+  # This can happen if this script is run outside of `fx build`.
+  readonly _BAZEL_INVOCATION_LOG_PARENT="${_NINJA_BUILD_DIR}/bazel_logs"
+  echo >&2 "WARNING: FX_BUILD_LOGDIR is not set. Using fallback log directory: ${_BAZEL_INVOCATION_LOG_PARENT}"
+fi
+readonly _BAZEL_INVOCATION_LOG_DIR="${_BAZEL_INVOCATION_LOG_PARENT}/${_BAZEL_INVOCATION_LOG_DIR_NAME}"
+mkdir -p "${_BAZEL_INVOCATION_LOG_DIR}"
+
+# Override log locations for this specific invocation.
+# Bazel doesn't have a single log-dir control for writing all logs,
+# so we must direct each one individually.
+cat >> "${_INVOCATION_BAZELRC}" <<EOF
+# Logs for this specific invocation.
+common --experimental_workspace_rules_log_file=${_BAZEL_INVOCATION_LOG_DIR}/workspace_events.log
+common:exec_log --execution_log_compact_file=${_BAZEL_INVOCATION_LOG_DIR}/exec_log.pb.zstd
+EOF
+
+# Save a copy of the final invocation.bazelrc for debugging.
+cp "${_INVOCATION_BAZELRC}" "${_BAZEL_INVOCATION_LOG_DIR}/invocation.bazelrc"
+
+# Maintain a 'recent' symlink to the latest log directory.
+# Use a relative path for the symlink target so it works in archives.
+ln -snf "${_BAZEL_INVOCATION_LOG_DIR_NAME}" "${_BAZEL_INVOCATION_LOG_PARENT}/recent"
+
+# For convenience, link from the top_dir to the most recent "bazel_logs" dir.
+# Note that _BAZEL_WORKSPACE is top_dir/workspace.
+ln -snf "${_BAZEL_INVOCATION_LOG_PARENT}" "${_BAZEL_WORKSPACE}/../bazel_logs"
 
 
 # Non-remote configuration permits use of a disk-cache, below.
@@ -232,11 +241,6 @@ use_gcert_auth=()
   # (and fail if it doesn't exist).
   unset GOOGLE_APPLICATION_CREDENTIALS
 }
-
-# We generate our own invocation id, to make it easier to propagate its value
-# to sub-build invocations.
-readonly RESULTSTORE_invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
-_BAZEL_EXTRA_ARGS+=( --invocation_id="$RESULTSTORE_invocation_id" )
 
 _BAZEL_PRE_COMMAND_ARGS+=(
 
@@ -318,7 +322,6 @@ _bazel_command+=(
 )
 
 # Save the final invocation to a log file.
-logrotate3 "${_BAZEL_LOG_DIR}/bazel_invocation"
-echo "${_bazel_command[*]}" >> "${_BAZEL_LOG_DIR}/bazel_invocation"
+echo "${_bazel_command[*]}" >> "${_BAZEL_INVOCATION_LOG_DIR}/bazel_invocation"
 
 cd "${_BAZEL_WORKSPACE}" && "${_bazel_command[@]}"
