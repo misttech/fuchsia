@@ -45,6 +45,19 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
         ok(status)
     }
 
+    /// Unbinds from a previously bound port.
+    ///
+    /// Wraps [zx_interrupt_bind](https://fuchsia.dev/reference/syscalls/interrupt_bind) with
+    /// ZX_INTERRUPT_UNBIND set.
+    pub fn unbind_port(&self, port: &Port) -> Result<(), Status> {
+        let options = sys::ZX_INTERRUPT_UNBIND;
+        // SAFETY: This is a basic FFI call.
+        // Per the documentation, when unbinding, key is ignored.
+        let status =
+            unsafe { sys::zx_interrupt_bind(self.raw_handle(), port.raw_handle(), 0, options) };
+        ok(status)
+    }
+
     /// Synchronously wait for the interrupt to be triggered.
     ///
     /// Wraps [zx_interrupt_wait](https://fuchsia.dev/reference/syscalls/interrupt_wait).
@@ -62,6 +75,15 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
     pub fn ack(&self) -> Result<(), Status> {
         // SAFETY: This is a basic FFI call.
         let status = unsafe { sys::zx_interrupt_ack(self.raw_handle()) };
+        ok(status)
+    }
+
+    /// Destroy the interrupt.
+    ///
+    /// Wraps [zx_interrupt_destroy](https://fuchsia.dev/reference/syscalls/interrupt_destroy).
+    pub fn destroy(self) -> Result<(), Status> {
+        // SAFETY: This is a basic FFI call.
+        let status = unsafe { sys::zx_interrupt_destroy(self.raw_handle()) };
         ok(status)
     }
 
@@ -149,6 +171,16 @@ mod tests {
         let key = 1;
         let result = interrupt.bind_port(&port, key);
         assert_eq!(result, Ok(()));
+
+        // Can't bind twice.
+        let result = interrupt.bind_port(&port, key);
+        assert_eq!(result, Err(Status::ALREADY_BOUND));
+
+        // ...Unless we unbind first.
+        let result = interrupt.unbind_port(&port);
+        assert_eq!(result, Ok(()));
+        let result = interrupt.bind_port(&port, key);
+        assert_eq!(result, Ok(()));
     }
 
     #[test]
@@ -190,5 +222,12 @@ mod tests {
         assert_eq!(result, Ok(()));
         let instant = interrupt.wait().expect("wait failed");
         assert_eq!(instant.into_nanos(), 10);
+    }
+
+    #[test]
+    fn destroy() {
+        let interrupt =
+            Interrupt::<VirtualInterruptKind, MonotonicTimeline>::create_virtual().unwrap();
+        assert_eq!(interrupt.destroy(), Ok(()));
     }
 }
