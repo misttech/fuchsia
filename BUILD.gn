@@ -2269,6 +2269,11 @@ generated_file("bazel_build_action_targets") {
 #     - Required: Path to @gn_targets directory for gn_label, relative to Ninja build directory.
 #     - Type: string
 #
+#   gn_targets_manifest
+#     - Required: Path to a manifest of file to add the to the @gn_targets directory when building
+#                 this target
+#     - Type: string
+#
 #   stamp_path
 #     - Required: Path to a "stamp file" that is to be touched when 'bazel_target' has been built.
 #     - Type: string

@@ -956,6 +956,8 @@ template("bazel_action") {
               # more explicit data about the GN inputs needed by the bazel action.
               gn_targets_dir =
                   rebase_path(_gn_targets_repository_path, root_build_dir)
+              gn_targets_manifest =
+                  rebase_path(_gn_targets_repository_manifest, root_build_dir)
             },
           ]
           # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/scripts/bazel_action_utils.py:bazel_target_infos)

@@ -839,6 +839,20 @@ class GnBuildArgs(object):
         )
 
 
+class GnInputsEntriesMap(dict[str, str]):
+    pass
+
+
+class BazelTargetGNInputsEntriesMap(dict[str, GnInputsEntriesMap]):
+    pass
+
+
+class BazelPackageAndTargetToGnInputsEntriesMap(
+    dict[str, BazelTargetGNInputsEntriesMap]
+):
+    pass
+
+
 def record_gn_targets_dir(
     generated: GeneratedWorkspaceFiles,
     build_dir: Path,
@@ -858,14 +872,39 @@ def record_gn_targets_dir(
     Raises:
         ValueError in case of missing or malformed input.
     """
-    # Ensure build_dir is absolute. Most symlink targets must be absolute for Bazel
-    # to work properly.
-    build_dir = build_dir.resolve()
-
     if not inputs_manifest_path.exists():
         raise ValueError(
             f"Missing inputs manifest file: {inputs_manifest_path}"
         )
+
+    # Build a { bazel_package -> { bazel_name -> entry } } map.
+    manifest_entries_package_map = BazelPackageAndTargetToGnInputsEntriesMap()
+    for entry in json.loads(generated.read_text_file(inputs_manifest_path)):
+        bazel_package = entry["bazel_package"]
+        bazel_name = entry["bazel_name"]
+        name_map = manifest_entries_package_map.setdefault(
+            bazel_package, BazelTargetGNInputsEntriesMap()
+        )
+        name_map[bazel_name] = entry
+
+    record_gn_targets_dir_from_entries(
+        generated,
+        build_dir,
+        manifest_entries_package_map,
+        all_licenses_spdx_path,
+    )
+
+
+def record_gn_targets_dir_from_entries(
+    generated: GeneratedWorkspaceFiles,
+    build_dir: Path,
+    manifest_entries_package_map: BazelPackageAndTargetToGnInputsEntriesMap,
+    all_licenses_spdx_path: Path,
+) -> None:
+    # Ensure build_dir is absolute. Most symlink targets must be absolute for Bazel
+    # to work properly.
+    build_dir = build_dir.resolve()
+
     if not all_licenses_spdx_path.exists():
         raise ValueError(
             f"Missing licensing information file: {all_licenses_spdx_path}"
@@ -911,18 +950,10 @@ def record_gn_targets_dir(
 
     all_files = []
 
-    # Build a { bazel_package -> { gn_target_name -> entry } } map.
-    package_map: dict[str, dict[str, str]] = {}
-    for entry in json.loads(generated.read_text_file(inputs_manifest_path)):
-        bazel_package = entry["bazel_package"]
-        bazel_name = entry["bazel_name"]
-        name_map = package_map.setdefault(bazel_package, {})
-        name_map[bazel_name] = entry
-
     # Create the ///{gn_dir}/BUILD.bazel file for each GN directory.
     # Every target defined in {gn_dir}/BUILD.gn that is part of the manifest
     # will have its own filegroup() entry with the corresponding target name.
-    for bazel_package, name_map in package_map.items():
+    for bazel_package, name_map in manifest_entries_package_map.items():
         content = """# AUTO-GENERATED - DO NOT EDIT
 
 package(

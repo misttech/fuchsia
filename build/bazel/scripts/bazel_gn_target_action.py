@@ -21,11 +21,8 @@ import build_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from bazel_action_utils import (
     BazelGlobalArguments,
+    BazelTargetInfo,
     BazelTargetInfosMap,
-    DirectoryOutput,
-    FileOutput,
-    FinalSymlinkOutput,
-    PackageOutput,
     update_gn_targets_symlink,
 )
 from build_utils import FilePath
@@ -352,15 +349,6 @@ def main() -> int:
         args.build_dir
     )
 
-    # Merge all the expected outputs together
-    file_outputs: list[FileOutput] = []
-    directory_outputs: list[DirectoryOutput] = []
-    package_outputs: list[PackageOutput] = []
-    final_symlink_outputs: list[FinalSymlinkOutput] = []
-
-    # This is a set of the symlinks that need to be created/refreshed for the gn targets
-    gn_targets_dirs: set[Path] = set()
-
     # These are the per-action stamp files that need to be touched to make sure that only
     # one bazel_action() target in GN creates a gn_target.
     stamp_paths: set[Path] = set()
@@ -369,17 +357,13 @@ def main() -> int:
     # of these.
     bazel_platform_config: str | None = None
 
+    bazel_targets: list[BazelTargetInfo] = []
     for target in args.bazel_targets:
         target_info = bazel_target_infos.get_info(
             target, args.bazel_platform_label
         )
         if target_info:
-            file_outputs.extend(target_info.copy_outputs)
-            directory_outputs.extend(target_info.directory_outputs)
-            package_outputs.extend(target_info.package_outputs)
-            final_symlink_outputs.extend(target_info.final_symlink_outputs)
-
-            gn_targets_dirs.add(Path(target_info.gn_targets_dir))
+            bazel_targets.append(target_info)
             stamp_paths.add(Path(target_info.stamp_path))
 
             if bazel_platform_config:
@@ -400,13 +384,22 @@ def main() -> int:
             "No bazel platform config was found for the Bazel targets."
         )
 
+    # Get the merged outputs and needed gn_targets_dirs for the actions:
+    bazel_outputs, _ = bazel_action_impl.merge_target_info_outputs(
+        bazel_targets
+    )
+
+    gn_targets_dirs = set(
+        [target_info.gn_targets_dir for target_info in bazel_targets]
+    )
+
     # Ensure that all of the target infos we found are using the same gn_target_dir, because we
     # can only have one of those.
     if len(gn_targets_dirs) > 1:
         return parser.error(
             "Found multiple gn targets directories for the bazel action."
         )
-    gn_targets_dir = list(gn_targets_dirs)[0]
+    gn_targets_dir = Path(list(gn_targets_dirs)[0])
 
     try:
         bazel_paths = build_utils.BazelPaths.new(
@@ -435,16 +428,6 @@ def main() -> int:
     )
     update_gn_targets_symlink(
         bazel_paths, gn_targets_dir, check_license_timestamp=True
-    )
-    time_profile.stop()
-
-    bazel_launcher = build_utils.BazelLauncher(
-        bazel_paths.launcher,
-        log_err=lambda msg: (
-            print(f"BAZEL_ACTION_ERROR: {msg}", file=sys.stderr)
-            if _DEBUG
-            else None
-        ),
     )
 
     time_profile.start("query_cache", "loading Bazel query cache")
@@ -475,12 +458,7 @@ def main() -> int:
             platform_config=bazel_platform_config,
             platform_label=args.bazel_platform_label,
             targets=args.bazel_targets,
-            outputs=bazel_action_impl.BazelActionOutputs(
-                file_outputs,
-                directory_outputs,
-                package_outputs,
-                final_symlink_outputs,
-            ),
+            outputs=bazel_outputs,
             extra_outputs=bazel_action_impl.BazelExtraOutputs(
                 build_event_json_file=args.bazel_build_events_log_json,
                 command_file=args.command_file,

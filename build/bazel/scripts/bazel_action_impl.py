@@ -984,6 +984,46 @@ Then ensure that the GN target depends on them transitively.
     return 1
 
 
+def merge_target_info_outputs(
+    target_infos: T.Sequence[bazel_action_utils.BazelTargetInfo],
+) -> tuple[BazelActionOutputs, list[Path]]:
+    """Merge all the outputs and needed input gn targets for the given list of BazelTargetInfos.
+
+    Args:
+      Sequence of BazelTargetInfo objects
+
+    Returns:
+      BazelActionOutputs that merges all target_info's outputs together
+      List of manifests to GN targets needed by the BazelTargetInfos
+    """
+    # Merge all the expected outputs together
+    file_outputs: list[bazel_action_utils.FileOutput] = []
+    directory_outputs: list[bazel_action_utils.DirectoryOutput] = []
+    package_outputs: list[bazel_action_utils.PackageOutput] = []
+    final_symlink_outputs: list[bazel_action_utils.FinalSymlinkOutput] = []
+
+    # This is the set of gn input targets manifests
+    gn_target_manifests: set[Path] = set()
+
+    for target_info in target_infos:
+        file_outputs.extend(target_info.copy_outputs)
+        directory_outputs.extend(target_info.directory_outputs)
+        package_outputs.extend(target_info.package_outputs)
+        final_symlink_outputs.extend(target_info.final_symlink_outputs)
+
+        gn_target_manifests.add(Path(target_info.gn_targets_manifest))
+
+    return (
+        BazelActionOutputs(
+            file_outputs,
+            directory_outputs,
+            package_outputs,
+            final_symlink_outputs,
+        ),
+        list(gn_target_manifests),
+    )
+
+
 def run_starlark_cquery(
     query_cache: build_utils.BazelQueryCache,
     bazel_launcher: build_utils.BazelLauncher,

@@ -43,6 +43,9 @@ class DirectoryOutput:
     bazel_path: str
     ninja_path: str
     tracked_files: list[str] = dataclasses.field(default_factory=list)
+    tracked_file_ninja_paths: list[str] = dataclasses.field(
+        default_factory=list
+    )
     copy_debug_symbols: bool = False
 
 
@@ -71,6 +74,7 @@ class BazelTargetInfo(object):
     bazel_platform_label: str
     bazel_platform_config: str
     gn_targets_dir: str
+    gn_targets_manifest: str
     stamp_path: str
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
@@ -101,6 +105,7 @@ class BazelTargetInfosMap(object):
             bazel_platform_label = entry["bazel_platform_label"]
             bazel_platform_config = entry["bazel_platform_config"]
             gn_targets_dir = entry["gn_targets_dir"]
+            gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
@@ -109,6 +114,7 @@ class BazelTargetInfosMap(object):
                     bazel_platform_label=bazel_platform_label,
                     bazel_platform_config=bazel_platform_config,
                     gn_targets_dir=gn_targets_dir,
+                    gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,
                 ),
             )
@@ -129,6 +135,10 @@ class BazelTargetInfosMap(object):
                         bazel_path=entry["bazel_dir"],
                         ninja_path=entry["ninja_dir"],
                         tracked_files=entry["tracked_files"],
+                        tracked_file_ninja_paths=[
+                            os.path.join(entry["ninja_dir"], p)
+                            for p in entry["tracked_files"]
+                        ],
                         copy_debug_symbols=entry["copy_debug_symbols"],
                     )
                 )
@@ -152,6 +162,40 @@ class BazelTargetInfosMap(object):
                     f"Unknown output entry type in bazel_target_info.json: {entry_type}"
                 )
 
+        # Create a map of output to target info for the target used to create the output
+        self._targets_by_ninja_output_paths: dict[str, BazelTargetInfo] = {}
+        for target_info in self._targets.values():
+            for copy_output in target_info.copy_outputs:
+                _check_add_ninja_path_to_map(
+                    self._targets_by_ninja_output_paths,
+                    copy_output.ninja_path,
+                    target_info,
+                )
+            for directory_output in target_info.directory_outputs:
+                for tracked_file in directory_output.tracked_files:
+                    _check_add_ninja_path_to_map(
+                        self._targets_by_ninja_output_paths,
+                        os.path.join(directory_output.ninja_path, tracked_file),
+                        target_info,
+                    )
+            for package_output in target_info.package_outputs:
+                _check_add_ninja_path_to_map(
+                    self._targets_by_ninja_output_paths,
+                    package_output.archive_path,
+                    target_info,
+                )
+            for symlink in target_info.final_symlink_outputs:
+                _check_add_ninja_path_to_map(
+                    self._targets_by_ninja_output_paths,
+                    symlink.ninja_path,
+                    target_info,
+                )
+            _check_add_ninja_path_to_map(
+                self._targets_by_ninja_output_paths,
+                target_info.stamp_path,
+                target_info,
+            )
+
         # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/bazel_action.gni:bazel_target_infos)
 
     @staticmethod
@@ -174,6 +218,27 @@ class BazelTargetInfosMap(object):
     ) -> BazelTargetInfo | None:
         """Retrieve BazelTargetInfo matching a given Bazel target label."""
         return self._targets.get((target, platform))
+
+    def get_target(
+        self,
+        ninja_output_path: str,
+    ) -> BazelTargetInfo | None:
+        """Retrieve the Bazel target that matches the given ninja output path."""
+        return self._targets_by_ninja_output_paths.get(ninja_output_path)
+
+
+def _check_add_ninja_path_to_map(
+    infos_map: dict[str, BazelTargetInfo],
+    ninja_path: str,
+    target: BazelTargetInfo,
+) -> None:
+    """Add the target as the creator of the given ninja path, validating that it's the only one."""
+    if ninja_path in infos_map:
+        existing = infos_map[ninja_path]
+        raise ValueError(
+            f"Multiple Bazel targets create the same ninja path: {ninja_path}\n  {existing.bazel_target}\n  {target.bazel_target}"
+        )
+    infos_map[ninja_path] = target
 
 
 @dataclasses.dataclass
