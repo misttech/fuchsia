@@ -6,6 +6,12 @@ use crate::security::{Credential, get_authenticator};
 use anyhow::{Context, Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_device_service as fidl_device_service;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
@@ -13,6 +19,7 @@ use futures::lock::Mutex as MutexAsync;
 use futures::{FutureExt, TryFutureExt, TryStreamExt, select};
 use ieee80211::{Bssid, MacAddr};
 use log::{error, info, warn};
+use state_recorder as power_observability_state_recorder;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::pin::pin;
@@ -21,13 +28,6 @@ use strum_macros::{Display, EnumIter, EnumString};
 use wlan_common::bss::BssDescription;
 use wlan_common::scan::{Compatibility, CompatibilityExt as _};
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
-use {
-    fidl_fuchsia_wlan_common as fidl_common,
-    fidl_fuchsia_wlan_device_service as fidl_device_service,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
-    state_recorder as power_observability_state_recorder,
-};
 
 // A long amount of time that a scan should be able to finish within. If a scan takes longer than
 // this is indicates something is wrong.
@@ -180,6 +180,7 @@ impl IfaceManager for DeviceMonitorIfaceManager {
     }
 
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error> {
+        fuchsia_trace::duration!("wlan", "create_client_iface");
         // TODO(b/298030838): Remove unmanaged iface support when wlanix is the sole config path.
         let existing_iface_ids = self.monitor_svc.list_ifaces().await?;
         let mut unmanaged_iface_id = None;

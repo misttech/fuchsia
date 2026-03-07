@@ -6,14 +6,22 @@ use crate::security::Credential;
 use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_wlan_device_service as fidl_device_service;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
     WifiLegacyHalResetTxPowerScenarioResponder, WifiLegacyHalSelectTxPowerScenarioRequest,
     WifiLegacyHalSelectTxPowerScenarioResponder, WifiLegacyHalStatus,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
+use fuchsia_trace_provider as trace_provider;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
@@ -24,12 +32,6 @@ use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
-use {
-    fidl_fuchsia_power_system as fsystem, fidl_fuchsia_wlan_device_service as fidl_device_service,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
-    fuchsia_async as fasync,
-};
 
 mod bss_scorer;
 mod default_drop;
@@ -2534,6 +2536,7 @@ async fn serve_phy_events(
 
 #[fasync::run_singlethreaded]
 async fn main() {
+    trace_provider::trace_provider_create_with_fdio();
     diagnostics_log::initialize(
         diagnostics_log::PublishOptions::default()
             .tags(&["wlan", "wlanix"])
@@ -2607,6 +2610,8 @@ mod tests {
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_wlanix::Nl80211Message;
     use futures::Future;
     use futures::channel::mpsc;
@@ -2616,9 +2621,6 @@ mod tests {
     use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
-    use {
-        fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    };
 
     const CHIP_ID: u32 = 1;
     const FAKE_IFACE_NAME: &str = "fake-iface-name";

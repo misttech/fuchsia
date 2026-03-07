@@ -75,6 +75,18 @@ antlion_host_test("apf_test") {
   ]
 }
 
+# TODO(https://fxbug.dev/490145504): Plumb this test through to a builder with performance capture enabled.
+antlion_host_test("create_client_iface_benchmark_test") {
+  main_source =
+      "//src/connectivity/wlan/tests/wlanix/CreateClientIfaceBenchmarkTest.py"
+  libraries = [
+    "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
+    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+    "//src/performance/lib/trace_processing:trace_processing",
+  ]
+}
+
 # This is a helper group so developers can easily add all tests to their build. It is not run by
 # infra. You should not directly add tests here, but rather to one of the other groups below so it
 # runs in infra.
@@ -105,5 +117,8 @@ group("tests_for_general_cq") {
 
 group("tests_for_fyi") {
   testonly = true
-  public_deps = [ ":apf_test" ]
+  public_deps = [
+    ":apf_test",
+    ":create_client_iface_benchmark_test",
+  ]
 }

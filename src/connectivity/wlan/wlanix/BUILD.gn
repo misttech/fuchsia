@@ -46,6 +46,8 @@ rustc_binary("wlanix_bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-provider",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_core",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
