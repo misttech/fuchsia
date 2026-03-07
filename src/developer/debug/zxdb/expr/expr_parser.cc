@@ -678,9 +678,9 @@ ExprParser::ParseNameResult ExprParser::ParseName(bool expand_types) {
     case kOtherName:
     case kAnything:
     case kType:
+    case kNamespace:
       return result;  // Success cases.
     case kBegin:
-      FX_NOTREACHED();
       SetError(ExprToken(), "Unexpected end of input.");
       return ParseNameResult();
     case kColonColon:
@@ -688,9 +688,6 @@ ExprParser::ParseNameResult ExprParser::ParseName(bool expand_types) {
       return ParseNameResult();
     case kTemplate:
       SetError(*prev_token, "Expected template args after template name.");
-      return ParseNameResult();
-    case kNamespace:
-      SetError(*prev_token, "Expected expression after namespace name.");
       return ParseNameResult();
   }
 
@@ -1138,51 +1135,30 @@ fxl::RefPtr<ExprNode> ExprParser::BinaryOpInfix(fxl::RefPtr<ExprNode> left,
 
 fxl::RefPtr<ExprNode> ExprParser::DotOrArrowInfix(fxl::RefPtr<ExprNode> left,
                                                   const ExprToken& token) {
-  // These are left-associative so use the same precedence as the token. Allow empty expressions
-  // during parse so we can give a slightly better error message below.
-  fxl::RefPtr<ExprNode> right = ParseExpression(kPrecedenceCallAccess, EmptyExpression::kAllow);
-
-  auto literal = right ? right->AsLiteral() : nullptr;
-
   // Rust supports tuple structs, which can be addressed like "foo.0"
-  if (language_ == ExprLanguage::kRust && literal && token.type() == ExprTokenType::kDot) {
-    auto literal_token = literal->token();
+  if (language_ == ExprLanguage::kRust && !at_end() &&
+      cur_token().type() == ExprTokenType::kInteger) {
+    auto value = cur_token().value();
 
-    if (literal_token.type() == ExprTokenType::kInteger) {
-      auto value = literal_token.value();
-
-      if (value.find_first_not_of("0123456789") == std::string::npos &&
-          (value.length() <= 1 || value[0] != '0')) {
-        right = fxl::MakeRefCounted<IdentifierExprNode>(value);
-      }
+    if (value.find_first_not_of("0123456789") == std::string::npos &&
+        (value.length() <= 1 || value[0] != '0')) {
+      Consume();
+      ParsedIdentifier ident(ParsedIdentifierComponent{value});
+      return fxl::MakeRefCounted<MemberAccessExprNode>(std::move(left), token, std::move(ident));
     }
   }
 
-  if (!right) {
-    SetError(token, fxl::StringPrintf("Failed to parse right hand side of \"%s\".",
-                                      token.value().c_str()));
+  ParseNameResult result = ParseName(false);
+  if (has_error())
     return nullptr;
-  } else if (!right->AsIdentifier() && !right->AsType()) {
-    // Types are allowed in addition to identifiers here. FindName will prefer type names to
-    // identifiers, but of course using a type as the right hand side of a dot or arrow operator
-    // doesn't make sense (accessing a type declared in some other scope should be done with "::").
-    // So we try to convert the typename into an identifier so that an actual identifier isn't
-    // shadowed by a type that has the same name.
+
+  if (result.ident.empty()) {
     SetError(token, fxl::StringPrintf("Expected identifier for right-hand-side of \"%s\".",
                                       token.value().c_str()));
     return nullptr;
   }
 
-  // A type was found by the naming lookup performed by parsing the right hand side, this should be
-  // turned into an identifier.
-  if (right->AsType()) {
-    right = fxl::MakeRefCounted<IdentifierExprNode>(right->AsType()->type()->GetAssignedName());
-  }
-
-  // Use the name from the right-hand-side identifier, we don't need a full expression for that. If
-  // we add function calls it will be necessary.
-  return fxl::MakeRefCounted<MemberAccessExprNode>(std::move(left), token,
-                                                   right->AsIdentifier()->ident());
+  return fxl::MakeRefCounted<MemberAccessExprNode>(std::move(left), token, std::move(result.ident));
 }
 
 fxl::RefPtr<ExprNode> ExprParser::LeftParenPrefix(const ExprToken& token) {
