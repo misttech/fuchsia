@@ -2044,6 +2044,120 @@ async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
     Ok(())
 }
 
+#[cfg(all(target_os = "linux", not(test)))]
+async fn check_inotify_watches<W: Write>(ledger: &mut DoctorLedger<W>) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let watch_node = ledger.add_node("System Inotify Watches", LedgerMode::Automatic)?;
+    let mut total_watches = 0;
+
+    let max_watches = match std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches") {
+        Ok(content) => match content.trim().parse::<usize>() {
+            Ok(v) => v,
+            Err(_) => {
+                let node =
+                    ledger.add_node("Could not parse max_user_watches", LedgerMode::Verbose)?;
+                ledger.set_outcome(node, LedgerOutcome::Failure)?;
+                ledger.close(watch_node)?;
+                return Ok(());
+            }
+        },
+        Err(e) => {
+            let node = ledger.add_node(
+                &format!("Could not read max_user_watches: {}", e),
+                LedgerMode::Verbose,
+            )?;
+            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            ledger.close(watch_node)?;
+            return Ok(());
+        }
+    };
+
+    let uid = match std::fs::metadata("/proc/self") {
+        Ok(m) => m.uid(),
+        Err(e) => {
+            let node = ledger.add_node(&format!("Could not get uid: {}", e), LedgerMode::Verbose)?;
+            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            ledger.close(watch_node)?;
+            return Ok(());
+        }
+    };
+
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let fname = entry.file_name();
+            let fname_str = fname.to_string_lossy();
+            if !fname_str.chars().all(char::is_numeric) {
+                continue;
+            }
+
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.uid() != uid {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
+            let fd_path = path.join("fd");
+            if let Ok(fd_entries) = std::fs::read_dir(fd_path) {
+                for fd_entry in fd_entries.flatten() {
+                    let fd_path = fd_entry.path();
+                    if let Ok(target) = std::fs::read_link(&fd_path) {
+                        if target.to_string_lossy() == "anon_inode:inotify" {
+                            let fd_num = fd_entry.file_name();
+                            let fdinfo_path = path.join("fdinfo").join(fd_num);
+                            if let Ok(content) = std::fs::read_to_string(fdinfo_path) {
+                                total_watches += content
+                                    .lines()
+                                    .filter(|l| l.starts_with("inotify wd:"))
+                                    .count();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if max_watches > 0 {
+        let percent = (total_watches * 100) / max_watches;
+        let remaining = max_watches.saturating_sub(total_watches);
+        if percent >= 80 && remaining < 10000 {
+            let node = ledger.add_node(
+                &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
+                LedgerMode::Automatic,
+            )?;
+            ledger.set_outcome(node, LedgerOutcome::Warning)?;
+            let suggestion = ledger.add_node(
+                &format!(
+                    "Consider increasing max_user_watches: `sudo sysctl fs.inotify.max_user_watches={}`",
+                    max_watches + 1048576
+                ),
+                LedgerMode::Automatic,
+            )?;
+            ledger.set_outcome(suggestion, LedgerOutcome::Warning)?;
+        } else {
+            let node = ledger.add_node(
+                &format!("User is consuming {} / {} inotify watches", total_watches, max_watches),
+                LedgerMode::Verbose,
+            )?;
+            ledger.set_outcome(node, LedgerOutcome::Success)?;
+        }
+    }
+
+    ledger.close(watch_node)?;
+    Ok(())
+}
+
+#[cfg(any(not(target_os = "linux"), test))]
+async fn check_inotify_watches<W: Write>(_ledger: &mut DoctorLedger<W>) -> Result<()> {
+    Ok(())
+}
+
 async fn doctor_summary<W: Write>(
     step_handler: &mut impl DoctorStepHandler,
     direct_mode: bool,
@@ -2071,6 +2185,7 @@ async fn doctor_summary<W: Write>(
     let main_node_depth = check_ffx_info(ledger, &version_info).await?;
     check_env_context(ledger, env_context).await?;
     check_emulators(ledger, env_context).await?;
+    check_inotify_watches(ledger).await?;
 
     // Even in direct mode, we might as well at least report the status of the daemon.
     let daemon_proxy = check_daemon_status(
