@@ -155,8 +155,7 @@ pub fn rseq_register_thread() -> Result<(), zx::Status> {
         zx::sys::zx_thread_set_rseq(vmo.raw_handle(), 0, mem::size_of::<zx_rseq_t>() as u64)
     };
 
-    // zx_thread_set_rseq isn't implemented yet.
-    assert_eq!(status, zx::sys::ZX_ERR_NOT_SUPPORTED);
+    zx::Status::ok(status)?;
 
     // Currently, we use an entire page per thread for the `zx_rseq_t` structure.
     // This is wasteful, especially for processes that have many threads. In the future, we should
@@ -188,8 +187,7 @@ pub fn rseq_unregister_thread() -> Result<(), zx::Status> {
     assert!(!abi.is_null());
 
     let status = unsafe { zx::sys::zx_thread_set_rseq(0, 0, 0) };
-    // zx_thread_set_rseq isn't implemented yet.
-    assert_eq!(status, zx::sys::ZX_ERR_NOT_SUPPORTED);
+    zx::Status::ok(status)?;
 
     let addr = abi as usize;
     // SAFETY: this mapping was created by us, no other references to it exist.

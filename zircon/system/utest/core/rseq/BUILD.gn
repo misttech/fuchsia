@@ -4,8 +4,13 @@
 
 source_set("rseq") {
   testonly = true
-  sources = [ "rseq.cc" ]
+  sources = [
+    "rseq-$current_cpu.S",
+    "rseq.cc",
+  ]
   deps = [
+    "//sdk/lib/fit",
+    "//zircon/kernel/lib/arch",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
     "//zircon/system/utest/core:needs-next",

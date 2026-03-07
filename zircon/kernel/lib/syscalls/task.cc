@@ -8,6 +8,7 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/ktrace.h>
+#include <lib/page-map.h>
 #include <lib/syscalls/forward.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/userabi/vdso.h>
@@ -218,8 +219,64 @@ zx_status_t sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
   return ZX_OK;
 }
 
-zx_status_t sys_thread_set_rseq(zx_handle_t vmo, uint64_t offset, uint64_t size) {
-  return ZX_ERR_NOT_SUPPORTED;
+zx_status_t sys_thread_set_rseq(zx_handle_t vmo_handle, uint64_t offset, uint64_t size) {
+  LTRACEF("vmo handle %x, offset %" PRIu64 ", size %" PRIu64 "\n", vmo_handle, offset, size);
+
+  auto up = ProcessDispatcher::GetCurrent();
+  Thread* const current_thread = Thread::Current::Get();
+
+  // Is this an "unregister" operation?
+  if (vmo_handle == ZX_HANDLE_INVALID) {
+    if (offset != 0 || size != 0) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+
+    current_thread->set_rseq_accessor({});
+    return ZX_OK;
+  }
+
+  // It's a register operation.
+  //
+  // Validate arguments.
+  if (size != sizeof(zx_rseq_t)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (offset % alignof(zx_rseq_t) != 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // Get the VMO dispatcher.
+  fbl::RefPtr<VmObjectDispatcher> vmo_dispatcher;
+  zx_status_t status = up->handle_table().GetDispatcherWithRights(
+      *up, vmo_handle, ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_DUPLICATE, &vmo_dispatcher);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // Get the VMO.
+  fbl::RefPtr<VmObject> vmo = vmo_dispatcher->vmo();
+  if (vmo->is_user_pager_backed()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  fbl::RefPtr<VmObjectPaged> vmo_paged = DownCastVmObject<VmObjectPaged>(ktl::move(vmo));
+  if (!vmo_paged) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // Create the accessor.
+  zx::result<page_map::Accessor<zx_rseq_t>> accessor =
+      page_map::PageMap::Get().MakeAccessor<zx_rseq_t>(ktl::move(vmo_paged), offset);
+  if (accessor.is_error()) {
+    return accessor.error_value();
+  }
+
+  current_thread->set_rseq_accessor(ktl::move(*accessor));
+
+  // We just changed the rseq configuration for this thread.  Check if the thread is currently
+  // executing within a restartable sequence and make sure the current CPU gets written out.
+  current_thread->SignalCheckRestartableSequenceIfNeeded();
+
+  return ZX_OK;
 }
 
 // zx_status_t zx_thread_legacy_yield
