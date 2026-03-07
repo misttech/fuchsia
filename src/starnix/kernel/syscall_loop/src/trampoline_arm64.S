@@ -221,10 +221,9 @@ FUNCTION(restricted_return_loop_aarch32)
   // Restore shadow call stack
   ldr x18, [sp, #40]
 
-  // Save extended processor state
-  // TODO(https://fxbug.dev/407084069): Use aarch32 specific routine here.
+  // Save extended processor state for aarch32
   ldr x0, [sp, #8]
-  bl save_extended_pstate
+  bl save_extended_aarch32_pstate
 
   // Load the address of the mapped restricted mode register state to x27
   ldr x27, [sp]
@@ -304,10 +303,9 @@ FUNCTION(restricted_return_loop_aarch32)
   // Did the callback tell us to exit?
   cbz x0, .restricted_enter_loop_ret
 
-  // Restore extended processor state
-  // TODO(https://fxbug.dev/407084069): Use aarch32 specific restoration here.
+  // Restore extended processor state for aarch32
   ldr x0, [sp, #8]
-  bl restore_extended_pstate
+  bl restore_extended_aarch32_pstate
 
   // Go back to the loop
   b .restricted_enter_loop_top

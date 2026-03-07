@@ -41,17 +41,21 @@ impl ArchExtendedPstateStorage {
             ArchExtendedPstateStorage::State32(state) => state.reset(),
         }
     }
-}
 
-impl Default for ArchExtendedPstateStorage {
-    fn default() -> Self {
-        Self::State64(Default::default())
+    fn with_arch(arch_width: ArchWidth) -> Self {
+        #[cfg(target_arch = "aarch64")]
+        if arch_width == ArchWidth::Arch32 {
+            return ArchExtendedPstateStorage::State32(Box::new(
+                extended_pstate::ExtendedAarch32PstateState::default(),
+            ));
+        }
+        let _ = arch_width;
+        ArchExtendedPstateStorage::State64(Box::new(ExtendedPstateState::default()))
     }
 }
 
 /// The thread related information of a `CurrentTask`. The information should never be used outside
 /// of the thread owning the `CurrentTask`.
-#[derive(Default)]
 pub struct ThreadState<T: RegisterStorage> {
     /// A copy of the registers associated with the Zircon thread. Up-to-date values can be read
     /// from `self.handle.read_state_general_regs()`. To write these values back to the thread, call
@@ -70,11 +74,23 @@ pub struct ThreadState<T: RegisterStorage> {
     pub syscall_restart_func: Option<Box<SyscallRestartFunc>>,
 }
 
+impl<T: RegisterStorage + Default> Default for ThreadState<T> {
+    // TODO(https://fxbug.dev/407084069): Implementing default doesn't make much
+    // sense - we should only initialize thread state when we know the target
+    // architecture and we should initialize for that target specifically.
+    fn default() -> Self {
+        let registers = RegisterState::<T>::default();
+        let extended_pstate = ArchExtendedPstateStorage::with_arch(ArchWidth::Arch64);
+
+        Self { registers, extended_pstate, restart_code: None, syscall_restart_func: None }
+    }
+}
+
 impl<T: RegisterStorage> ThreadState<T> {
     pub fn arch_width(&self) -> ArchWidth {
         #[cfg(target_arch = "aarch64")]
         {
-            return if self.is_arch32() { ArchWidth::Arch32 } else { ArchWidth::Arch64 };
+            return if self.registers.is_arch32() { ArchWidth::Arch32 } else { ArchWidth::Arch64 };
         }
         #[cfg(not(target_arch = "aarch64"))]
         ArchWidth::Arch64
@@ -87,7 +103,7 @@ impl<T: RegisterStorage> ThreadState<T> {
     {
         ThreadState::<R> {
             registers: self.registers.clone().into(),
-            extended_pstate: Default::default(),
+            extended_pstate: self.extended_pstate.clone(),
             restart_code: self.restart_code,
             syscall_restart_func: None,
         }
@@ -106,8 +122,15 @@ impl<T: RegisterStorage> ThreadState<T> {
     }
 
     pub fn replace_registers<O: RegisterStorage>(&mut self, other: &ThreadState<O>) {
+        let self_arch = self.arch_width();
+        let other_arch = other.arch_width();
         self.registers.load(*other.registers);
-        self.extended_pstate = other.extended_pstate.clone();
+        // If we're switching between 32 and 64 bit mode, re-initialize the extended processor state.
+        self.extended_pstate = if self_arch == other_arch {
+            other.extended_pstate.clone()
+        } else {
+            ArchExtendedPstateStorage::with_arch(other_arch)
+        };
     }
 
     pub fn get_user_register(&mut self, offset: usize) -> Result<usize, Errno> {
@@ -117,7 +140,14 @@ impl<T: RegisterStorage> ThreadState<T> {
     }
 
     pub fn set_user_register(&mut self, offset: usize, value: usize) -> Result<(), Errno> {
-        self.registers.apply_user_register(offset, &mut |register| *register = value as u64)
+        let self_arch = self.arch_width();
+        let result =
+            self.registers.apply_user_register(offset, &mut |register| *register = value as u64);
+        // If setting the CPSR register to switch between 32 and 64 bit mode, re-initialize the extended processor state.
+        if self_arch != self.arch_width() {
+            self.extended_pstate = ArchExtendedPstateStorage::with_arch(self.arch_width());
+        }
+        result
     }
 }
 
@@ -135,15 +165,9 @@ impl From<ThreadState<HeapRegs>> for ThreadState<RegisterStorageEnum> {
 impl<T: RegisterStorage> ArchSpecific for ThreadState<T> {
     fn is_arch32(&self) -> bool {
         #[cfg(target_arch = "aarch64")]
-        {
-            use zx;
-            (self.registers.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK != 0
-        }
+        return self.registers.is_arch32();
         #[cfg(not(target_arch = "aarch64"))]
-        {
-            let _ = &self.registers;
-            false
-        }
+        false
     }
 }
 
