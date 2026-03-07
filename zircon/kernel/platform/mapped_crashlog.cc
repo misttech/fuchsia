@@ -179,11 +179,7 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
   written += fprintf(tgt, "RUNTIME (ms)\n%ld\n", rlog.runtime / ZX_MSEC(1));
 
   // After this, we are basically just free form text.
-  if (str_hw_reason != nullptr) {
-    written += fprintf(tgt, "HW REBOOT REASON (%s)\n", str_hw_reason);
-  } else {
-    written += fprintf(tgt, "HW REBOOT REASON (0x%08x)\n", static_cast<uint32_t>(hw_reason));
-  }
+  written += fprintf(tgt, "HW REBOOT REASON (%s)\n", str_hw_reason);
 
   if (rlog.payload_valid == false) {
     written += fprintf(tgt,
