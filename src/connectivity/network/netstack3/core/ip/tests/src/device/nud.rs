@@ -11,7 +11,9 @@ use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use net_declare::net_ip_v6;
 use net_types::ethernet::Mac;
-use net_types::ip::{AddrSubnet, Ip, IpAddress as _, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
+use net_types::ip::{
+    AddrSubnet, Ip, IpAddress as _, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
+};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
 use packet_formats::arp::{ArpOp, ArpPacketBuilder};
@@ -35,7 +37,7 @@ use test_case::test_case;
 use netstack3_base::testutil::{
     FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext, set_logger_for_test,
 };
-use netstack3_base::{DeviceIdContext, FrameDestination, InstantContext as _};
+use netstack3_base::{CtxPair, DeviceIdContext, FrameDestination, InstantContext as _};
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, RecvEthernetFrameMeta,
     WeakDeviceId,
@@ -45,6 +47,7 @@ use netstack3_core::testutil::{
     FakeCtxBuilder, FakeCtxNetworkSpec, new_simple_fake_network,
 };
 use netstack3_core::{CoreTxMetadata, IpExt, UnlockedCoreCtx};
+use netstack3_device::ARP_OVERRIDE_LOCK_TIME;
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_hashmap::HashMap;
 use netstack3_ip::device::{
@@ -338,6 +341,21 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
         .add_ip_addr_subnet(&device_id, AddrSubnet::new(*local_ip, subnet.prefix()).unwrap())
         .unwrap();
 
+    let send_neighbor_confirmation = |ctx: &mut CtxPair<_, _>, solicited, mac| {
+        ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta { device_id: eth_device_id.clone() },
+            incoming_neighbor_confirmation::<I>(mac, solicited),
+        );
+    };
+
+    let assert_state = |ctx: &mut _, expected_state: DynamicNeighborState<_, _>| {
+        assert_neighbors(
+            ctx,
+            &eth_device_id,
+            HashMap::from([(remote_ip, NeighborState::Dynamic(expected_state))]),
+        );
+    };
+
     // Trigger a neighbor probe to be sent, and receive a confirmation in response
     // so that the neighbor cache entry is in the REACHABLE state.
     let (mut core_ctx, bindings_ctx) = ctx.contexts();
@@ -350,21 +368,14 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
         CoreTxMetadata::default(),
     )
     .unwrap();
-    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-        RecvEthernetFrameMeta { device_id: eth_device_id.clone() },
-        incoming_neighbor_confirmation::<I>(*remote_mac, /* solicited */ true),
-    );
+    send_neighbor_confirmation(&mut ctx, /* solicited */ true, *remote_mac);
     let now = ctx.bindings_ctx.now();
-    assert_neighbors(
+    assert_state(
         &mut ctx,
-        &eth_device_id,
-        HashMap::from([(
-            remote_ip,
-            NeighborState::Dynamic(DynamicNeighborState::Reachable(Reachable {
-                link_address: *remote_mac,
-                last_confirmed_at: now,
-            })),
-        )]),
+        DynamicNeighborState::Reachable(Reachable {
+            link_address: *remote_mac,
+            last_confirmed_at: now,
+        }),
     );
 
     // Now receive a neighbor confirmation that updates the neighbor's link-layer
@@ -373,15 +384,28 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
     // the NA for the address to be updated. For ARP, where there is no equivalent
     // signal, we consider all replies to be "override".)
     let new_remote_mac = {
-        let mut bytes = remote_mac.bytes();
-        let last = bytes.last_mut().unwrap();
-        *last = !*last;
-        Mac::new(bytes)
+        let mut mac = *remote_mac;
+        mac.as_mut()[0] ^= 0xFF;
+        mac
     };
-    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-        RecvEthernetFrameMeta { device_id: eth_device_id.clone() },
-        incoming_neighbor_confirmation::<I>(new_remote_mac, solicited),
-    );
+
+    // New ARP responses are expected to be rejected for 1 second after the
+    // previous one.
+    if solicited && I::VERSION == IpVersion::V4 {
+        send_neighbor_confirmation(&mut ctx, true, new_remote_mac);
+        assert_state(
+            &mut ctx,
+            DynamicNeighborState::Reachable(Reachable {
+                link_address: *remote_mac,
+                last_confirmed_at: now,
+            }),
+        );
+
+        // Wait for 2 seconds. New ARP responses should be accepted after that.
+        ctx.bindings_ctx.sleep(ARP_OVERRIDE_LOCK_TIME);
+    }
+
+    send_neighbor_confirmation(&mut ctx, solicited, new_remote_mac);
     let expected_state = if solicited {
         let now = ctx.bindings_ctx.now();
         DynamicNeighborState::Reachable(Reachable {
@@ -391,11 +415,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
     } else {
         DynamicNeighborState::Stale(Stale { link_address: new_remote_mac })
     };
-    assert_neighbors(
-        &mut ctx,
-        &eth_device_id,
-        HashMap::from([(remote_ip, NeighborState::Dynamic(expected_state))]),
-    );
+    assert_state(&mut ctx, expected_state);
 }
 
 const LOCAL_IP: Ipv6Addr = net_ip_v6!("fe80::1");

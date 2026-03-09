@@ -764,6 +764,11 @@ impl FakeBindingsCtx {
             ctx.rng = FakeCryptoRng::new_xorshift(seed);
         })
     }
+
+    /// Moves the fake clock forward by `duration`. Doesn't trigger any timers.
+    pub fn sleep(&self, duration: Duration) {
+        self.with_inner_mut(|ctx| ctx.timers.instant.sleep(duration));
+    }
 }
 
 impl MatcherBindingsTypes for FakeBindingsCtx {

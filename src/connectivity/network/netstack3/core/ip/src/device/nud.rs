@@ -11,6 +11,7 @@ use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;
 use core::num::{NonZeroU16, NonZeroU32};
+use core::time::Duration;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
@@ -1444,6 +1445,28 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     }
                 })
             }
+
+            // Ignore duplicate neighbor confirmations that arrive less than
+            // `override_lock_time()` from the previous one. This matches Linux
+            // behavior. See https://fxbug.dev/490161899 .
+            DynamicNeighborState::Reachable(Reachable {
+                link_address: current,
+                last_confirmed_at,
+            }) if !core_ctx.override_lock_time().is_zero()
+                && solicited_flag
+                && bindings_ctx.now().saturating_duration_since(*last_confirmed_at)
+                    < core_ctx.override_lock_time() =>
+            {
+                log::warn!(
+                    "Ignoring duplicate neighbor confirmation for {:?}. Current address {:?}.
+                    New address {:?}",
+                    neighbor,
+                    current,
+                    link_address
+                );
+                None
+            }
+
             DynamicNeighborState::Reachable(Reachable {
                 link_address: current,
                 last_confirmed_at: _,
@@ -2151,6 +2174,10 @@ pub trait NudConfigContext<I: Ip> {
     fn base_reachable_time(&mut self) -> NonZeroDuration {
         self.with_nud_user_config(|NudUserConfig { base_reachable_time, .. }| *base_reachable_time)
     }
+
+    /// Amount of time from the moment a host becomes reachable before the
+    /// entry can overridden.
+    fn override_lock_time(&mut self) -> Duration;
 }
 
 /// The execution context for NUD for a link device that allows sending IP
@@ -3111,6 +3138,10 @@ mod tests {
         fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
             cb(&self.nud_config)
         }
+
+        fn override_lock_time(&mut self) -> Duration {
+            Duration::ZERO
+        }
     }
 
     impl<I: Ip> NudSenderContext<I, FakeLinkDevice, FakeBindingsCtxImpl<I>> for FakeInnerCtxImpl<I> {
@@ -3136,6 +3167,10 @@ mod tests {
 
         fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
             <FakeConfigContext as NudConfigContext<I>>::with_nud_user_config(&mut self.state, cb)
+        }
+
+        fn override_lock_time(&mut self) -> Duration {
+            <FakeConfigContext as NudConfigContext<I>>::override_lock_time(&mut self.state)
         }
     }
 

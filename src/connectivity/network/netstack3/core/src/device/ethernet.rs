@@ -5,6 +5,8 @@
 //! Implementations of traits defined in foreign modules for the types defined
 //! in the ethernet module.
 
+use core::time::Duration;
+
 use alloc::vec::Vec;
 use lock_order::lock::LockLevelFor;
 use lock_order::relation::LockBefore;
@@ -280,6 +282,10 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::Ipv6DeviceLear
         let mut state = integration::device_state(core_ctx, device_id);
         let x = state.read_lock::<crate::lock_ordering::NudConfig<Ipv6>>();
         cb(&*x)
+    }
+
+    fn override_lock_time(&mut self) -> Duration {
+        Duration::ZERO
     }
 }
 

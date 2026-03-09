@@ -110,8 +110,8 @@ pub mod queue {
 
 pub use internal::api::{DeviceAnyApi, DeviceApi};
 pub use internal::arp::{
-    ArpConfigContext, ArpContext, ArpCounters, ArpIpLayerContext, ArpNudCtx, ArpSenderContext,
-    ArpState, send_arp_request,
+    ARP_OVERRIDE_LOCK_TIME, ArpConfigContext, ArpContext, ArpCounters, ArpIpLayerContext,
+    ArpNudCtx, ArpSenderContext, ArpState, send_arp_request,
 };
 pub use internal::base::{
     DeviceClassMatcher, DeviceCollectionContext, DeviceCounters, DeviceIdAndNameMatcher,

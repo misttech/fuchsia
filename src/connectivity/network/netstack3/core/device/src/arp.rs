@@ -4,6 +4,8 @@
 
 //! The Address Resolution Protocol (ARP).
 
+use core::time::Duration;
+
 use alloc::fmt::Debug;
 
 use log::{debug, trace, warn};
@@ -310,6 +312,9 @@ where
     }
 }
 
+/// How long entries are locked before they can be overridden.
+pub const ARP_OVERRIDE_LOCK_TIME: Duration = Duration::from_secs(1);
+
 impl<CC: ArpConfigContext> NudConfigContext<Ipv4> for ArpNudCtx<CC> {
     fn retransmit_timeout(&mut self) -> NonZeroDuration {
         let Self(core_ctx) = self;
@@ -319,6 +324,10 @@ impl<CC: ArpConfigContext> NudConfigContext<Ipv4> for ArpNudCtx<CC> {
     fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {
         let Self(core_ctx) = self;
         core_ctx.with_nud_user_config(cb)
+    }
+
+    fn override_lock_time(&mut self) -> Duration {
+        ARP_OVERRIDE_LOCK_TIME
     }
 }
 
@@ -1516,5 +1525,142 @@ mod tests {
         } else {
             assert_eq!(&core_ctx.state.dispatched_arp_packets[..], []);
         }
+    }
+
+    #[test]
+    fn test_ignore_duplicate_response_within_lock_time() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
+
+        // Trigger link resolution.
+        assert_neighbor_unknown(
+            &mut core_ctx,
+            FakeLinkDeviceId,
+            SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+        );
+        assert_eq!(
+            NudHandler::send_ip_packet_to_neighbor(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                &FakeLinkDeviceId,
+                SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+                Buf::new([1], ..),
+                FakeTxMetadata::default(),
+            ),
+            Ok(())
+        );
+
+        let send_arp_response = |core_ctx: &mut _, bindings_ctx: &mut _, mac| {
+            send_arp_packet(
+                core_ctx,
+                bindings_ctx,
+                ArpOp::Response,
+                TEST_REMOTE_IPV4,
+                TEST_LOCAL_IPV4,
+                mac,
+                TEST_LOCAL_MAC,
+                FrameDestination::Individual { local: true },
+            );
+        };
+        let verify_addr = |core_ctx: &mut _, mac| {
+            assert_dynamic_neighbor_with_addr(
+                core_ctx,
+                FakeLinkDeviceId,
+                SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+                mac,
+            );
+        };
+
+        // Receive an ARP response.
+        send_arp_response(&mut core_ctx, &mut bindings_ctx, TEST_REMOTE_MAC);
+
+        // Verify state is REACHABLE with TEST_REMOTE_MAC.
+        verify_addr(&mut core_ctx, TEST_REMOTE_MAC);
+
+        // Receive another ARP response with a different MAC address shortly
+        // after the first one. This should be ignored because it's within the
+        // override lock time (FakeArpConfigCtx::override_lock_time returns 1s).
+        const SPOOFED_MAC: Mac = Mac::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]);
+        bindings_ctx.timers.instant.sleep(Duration::from_millis(100));
+        send_arp_response(&mut core_ctx, &mut bindings_ctx, SPOOFED_MAC);
+
+        // Verify state is REACHABLE with the old MAC (TEST_REMOTE_MAC).
+        verify_addr(&mut core_ctx, TEST_REMOTE_MAC);
+
+        // Receive the "spoofed" ARP response again after 1 second. Now it
+        // should be accepted.
+        bindings_ctx.timers.instant.sleep(ARP_OVERRIDE_LOCK_TIME);
+        send_arp_response(&mut core_ctx, &mut bindings_ctx, SPOOFED_MAC);
+
+        // Verify state updated to REACHABLE with SPOOFED_MAC.
+        verify_addr(&mut core_ctx, SPOOFED_MAC);
+    }
+
+    #[test]
+    fn test_gratuitous_arp_response_within_lock_time() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
+
+        // Trigger link resolution.
+        assert_neighbor_unknown(
+            &mut core_ctx,
+            FakeLinkDeviceId,
+            SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+        );
+        assert_eq!(
+            NudHandler::send_ip_packet_to_neighbor(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                &FakeLinkDeviceId,
+                SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+                Buf::new([1], ..),
+                FakeTxMetadata::default(),
+            ),
+            Ok(())
+        );
+
+        // Receive an ARP response.
+        send_arp_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ArpOp::Response,
+            TEST_REMOTE_IPV4,
+            TEST_LOCAL_IPV4,
+            TEST_REMOTE_MAC,
+            TEST_LOCAL_MAC,
+            FrameDestination::Individual { local: true },
+        );
+
+        // Verify state is REACHABLE with TEST_REMOTE_MAC.
+        assert_dynamic_neighbor_state(
+            &mut core_ctx,
+            FakeLinkDeviceId,
+            SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+            DynamicNeighborState::Reachable(Reachable {
+                link_address: TEST_REMOTE_MAC,
+                last_confirmed_at: bindings_ctx.now(),
+            }),
+        );
+
+        // Receive gratuitous ARP response with a different MAC address shortly
+        // after the direct ARP response.
+        const NEW_MAC: Mac = Mac::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]);
+        bindings_ctx.timers.instant.sleep(Duration::from_millis(100));
+        send_arp_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ArpOp::Response,
+            TEST_REMOTE_IPV4,
+            TEST_REMOTE_IPV4,
+            NEW_MAC,
+            NEW_MAC,
+            FrameDestination::Individual { local: false },
+        );
+
+        // Verify state is STALE with NEW_MAC.
+        assert_dynamic_neighbor_state(
+            &mut core_ctx,
+            FakeLinkDeviceId,
+            SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
+            DynamicNeighborState::Stale(Stale { link_address: NEW_MAC }),
+        );
     }
 }
