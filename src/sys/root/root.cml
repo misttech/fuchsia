@@ -78,6 +78,7 @@
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
+                "fuchsia.starnix.fastrpc.ExpectReady",
                 "fuchsia.starnix.mcu.ExpectReady",
                 "fuchsia.storage.SdmmcCommandQueueingEnabled",
                 "fuchsia.ui.EnableButtonBatonPassing",

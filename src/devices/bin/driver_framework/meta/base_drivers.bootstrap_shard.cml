@@ -16,6 +16,7 @@
             config: [
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
+                "fuchsia.starnix.fastrpc.ExpectReady",
                 "fuchsia.starnix.mcu.ExpectReady",
                 "fuchsia.ui.EnableButtonBatonPassing",
                 "fuchsia.ui.EnableMouseBatonPassing",
