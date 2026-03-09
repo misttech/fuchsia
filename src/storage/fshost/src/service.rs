@@ -16,13 +16,17 @@ use device_watcher::recursive_wait_and_open;
 use fidl::endpoints::{ClientEnd, Proxy, RequestStream, ServerEnd};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
+use fidl_fuchsia_fshost as fshost;
+use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fidl_fuchsia_storage_block::VolumeManagerMarker;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::partition::{PartitionMatcher, find_partition, partition_matches_with_proxy};
 use fs_management::{F2fs, Fvm, Fxfs, Minfs, filesystem};
+use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_fs::file::write;
@@ -34,10 +38,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use vfs::service;
 use zx::{self as zx, MonotonicDuration};
-use {
-    fidl_fuchsia_fshost as fshost, fidl_fuchsia_fxfs as ffxfs,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
-};
 
 pub enum FshostShutdownResponder {
     Lifecycle(
@@ -995,23 +995,23 @@ async fn get_blob_image_handle(
     let serving_fxfs =
         fxfs.serve_multi_volume().await.context("serving fxfs").map_err(FilesystemCorrupt)?;
 
-    let pending = if serving_fxfs
+    if serving_fxfs
         .has_volume(BLOB_IMAGE_VOLUME_LABEL)
         .await
         .context("checking for blob image volume")?
     {
         serving_fxfs
-            .open_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default())
+            .remove_volume(BLOB_IMAGE_VOLUME_LABEL)
             .await
-            .context("mounting existing blob image volume")
+            .context("deleting existing blob image volume")
             .map_err(FilesystemCorrupt)?
-    } else {
-        serving_fxfs
-            .create_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default(), Default::default())
-            .await
-            .context("creating blob image volume")
-            .map_err(FilesystemCorrupt)?
-    };
+    }
+
+    let pending = serving_fxfs
+        .create_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default(), Default::default())
+        .await
+        .context("creating blob image volume")
+        .map_err(FilesystemCorrupt)?;
 
     let image_file = fuchsia_fs::directory::open_file(
         pending.root(),
