@@ -2,83 +2,102 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use derivative::Derivative;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Platform configuration options for the input area.
-#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema, Derivative)]
+#[derivative(Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct TimekeeperConfig {
     /// The time to wait until retrying to sample the pull time source,
     /// expressed in seconds.
+    #[derivative(Default(value = "300"))]
     pub back_off_time_between_pull_samples_sec: i64,
     /// The time to wait before sampling the time source for the first time,
     /// expressed in seconds.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub first_sampling_delay_sec: i64,
     /// If set, the device's real time clock is only ever read from, but
     /// not written to.
+    #[derivative(Default(value = "\"https://clients3.google.com/generate_204\".into()"))]
     pub time_source_endpoint_url: String,
     /// If set, Timekeeper will serve test-only protocols from the library
     /// `fuchsia.time.test`.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub serve_test_protocols: bool,
     /// If set, the UTC clock will be started if we attempt to read the RTC,
     /// but the reading of the RTC is known invalid.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub utc_start_at_startup_when_invalid_rtc: bool,
     /// If set, Timekeeper will serve `fuchsia.time.alarms` and will connect
     /// to the appropriate hardware device to do so.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub serve_fuchsia_time_alarms: bool,
     /// If set, the hardware has a counter that is always on and operates even
     /// if the rest of the hardware system is in a low power state.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub always_on_counter: bool,
     /// If set, assembly should configure and route persistent storage to
     /// Timekeeper.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub use_persistent_storage: bool,
     /// If set, Timekeeper should serve the FIDL protocol that allows external
     /// time adjustment, `fuchsia.time.external/Adjust`.
     ///
     /// This is a security sensitive protocol, and very few assemblies are
     /// expected to have it turned on.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub serve_fuchsia_time_external_adjust: bool,
     /// Maximum absolute difference between proposed UTC reference and actual UTC
     /// reference, expressed in seconds, when the proposed UTC reference is
     /// in the "past" with respect of actual UTC reference.
     ///
     /// This is always expressed as a non-negative value.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub utc_max_allowed_delta_past_sec: u64,
     /// Maximum absolute difference between proposed UTC reference and actual UTC
     /// reference, expressed in seconds, when the proposed UTC reference is
     /// in the "future" with respect of actual UTC reference.
     ///
     /// This is always expressed as a non-negative value.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub utc_max_allowed_delta_future_sec: u64,
     /// If set, timekeeper will use the capabilities related to power management.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub power_topology_integration_enabled: bool,
     /// If set, Timekeeper will use connectivity information to gauge whether
     /// to sample external time sources or not.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub use_connectivity: bool,
     /// If we receive a UTC reference timestamp that is less than this amount of time away from
     /// backstop, we reject it.
+    #[derivative(Default(value = "20"))]
     pub min_utc_reference_to_backstop_diff_minutes: u64,
+    /// The policy for how to handle RTC readings that are in the past with respect
+    /// to the current boot clock.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub rtc_allow_setting_past_utc: RtcInitializationPolicy,
 }
 
-impl Default for TimekeeperConfig {
-    fn default() -> Self {
-        // Values applied here are taken from static configuration defaults.
-        Self {
-            back_off_time_between_pull_samples_sec: 300,
-            first_sampling_delay_sec: 0,
-            time_source_endpoint_url: "https://clients3.google.com/generate_204".into(),
-            serve_test_protocols: false,
-            utc_start_at_startup_when_invalid_rtc: false,
-            serve_fuchsia_time_alarms: false,
-            always_on_counter: false,
-            use_persistent_storage: false,
-            serve_fuchsia_time_external_adjust: false,
-            utc_max_allowed_delta_past_sec: 0,
-            utc_max_allowed_delta_future_sec: 0,
-            power_topology_integration_enabled: false,
-            use_connectivity: false,
-            min_utc_reference_to_backstop_diff_minutes: 20,
+/// The policy for how to handle RTC readings that are in the past with respect
+/// to the current boot clock.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RtcInitializationPolicy {
+    /// No change to existing behavior.
+    #[default]
+    Default,
+    /// Apply the RTC reading even if it is in the past.
+    ApplyMaybeStale,
+}
+
+impl From<RtcInitializationPolicy> for String {
+    fn from(policy: RtcInitializationPolicy) -> Self {
+        match policy {
+            RtcInitializationPolicy::Default => "default".to_string(),
+            RtcInitializationPolicy::ApplyMaybeStale => "apply_maybe_stale".to_string(),
         }
     }
 }

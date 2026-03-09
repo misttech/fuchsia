@@ -29,6 +29,12 @@ use crate::time_source::{TimeSource, TimeSourceLauncher};
 use crate::time_source_manager::TimeSourceManager;
 use anyhow::{Context as _, Result};
 use chrono::prelude::*;
+use fidl_fuchsia_net_reachability as ffnr;
+use fidl_fuchsia_time as ftime;
+use fidl_fuchsia_time_alarms as fta;
+use fidl_fuchsia_time_external as ffte;
+use fidl_fuchsia_time_test as fftt;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health;
 use fuchsia_inspect::health::Reporter;
@@ -37,17 +43,13 @@ use futures::channel::mpsc;
 use futures::future::{self, OptionFuture};
 use futures::stream::StreamExt as _;
 use log::{debug, error, info, warn};
+use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use time_adjust::Command;
 use time_metrics_registry::TimeMetricDimensionExperiment;
 use zx::BootTimeline;
-use {
-    fidl_fuchsia_net_reachability as ffnr, fidl_fuchsia_time as ftime,
-    fidl_fuchsia_time_alarms as fta, fidl_fuchsia_time_external as ffte,
-    fidl_fuchsia_time_test as fftt, fuchsia_async as fasync,
-};
 
 type UtcTransform = time_util::Transform<BootTimeline, UtcTimeline>;
 
@@ -67,6 +69,18 @@ pub enum Rpcs {
 #[derive(Debug)]
 pub struct Config {
     source_config: timekeeper_config::Config,
+}
+
+/// The policy for how to handle RTC readings that are in the past with respect
+/// to the current boot clock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RtcInitializationPolicy {
+    /// No change to existing behavior.
+    #[default]
+    Default,
+    /// Apply the RTC reading even if it is in the past.
+    ApplyMaybeStale,
 }
 
 const MILLION: u64 = 1_000_000;
@@ -96,6 +110,17 @@ impl Config {
 
     fn get_max_frequency_error(&self) -> f64 {
         self.source_config.max_frequency_error_ppm as f64 / MILLION as f64
+    }
+
+    fn get_rtc_initialization_policy(&self) -> RtcInitializationPolicy {
+        serde_json::from_value(self.source_config.rtc_allow_setting_past_utc.clone().into())
+            .unwrap_or_else(|err| {
+                warn!(
+                    "Failed to parse rtc_allow_setting_past_utc value: {}. Error: {}. Using Default.",
+                    self.source_config.rtc_allow_setting_past_utc, err
+                );
+                RtcInitializationPolicy::Default
+            })
     }
 
     fn get_disable_delays(&self) -> bool {
@@ -321,7 +346,11 @@ async fn main() -> Result<()> {
                 err
             })
             .ok();
-        let read_only_rtc = rtc::new_read_only_rtc(persistent_state.clone(), hrtimer_proxy);
+        let read_only_rtc = rtc::new_read_only_rtc(
+            persistent_state.clone(),
+            hrtimer_proxy,
+            config.get_rtc_initialization_policy(),
+        );
         scope.spawn_local(async move {
             maintain_utc(
                 primary_track,
@@ -893,6 +922,7 @@ mod tests {
             serve_test_protocols: false,
             use_connectivity: false,
             min_utc_reference_to_backstop_diff_minutes: 0,
+            rtc_allow_setting_past_utc: "default".to_string(),
         };
         Arc::new(Config::from(adjust_fn(config)))
     }

@@ -45,5 +45,6 @@
     utc_max_allowed_delta_past_sec: 200000,
     utc_max_allowed_delta_future_sec: 200000,
     use_connectivity: false,
-    min_utc_reference_to_backstop_diff_minutes: 60,
+    min_utc_reference_to_backstop_diff_minutes: 0,
+    rtc_allow_setting_past_utc: "default",
 }

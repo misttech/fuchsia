@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::RtcInitializationPolicy;
 use anyhow::{Error, Result, anyhow};
 use async_trait::async_trait;
 use chrono::LocalResult;
@@ -81,6 +82,7 @@ where
     // Overridable for tests.
     writer_fn: F,
     clock_fn: C,
+    rtc_initialization_policy: RtcInitializationPolicy,
 }
 
 /// Create a new `ReadOnlyRtcImpl`, using the provided `state` for UTC reference
@@ -88,10 +90,11 @@ where
 pub fn new_read_only_rtc(
     state: Rc<RefCell<State>>,
     proxy: Option<ffhh::DeviceProxy>,
+    rtc_initialization_policy: RtcInitializationPolicy,
 ) -> ReadOnlyRtcImpl<impl Fn(&State) -> Result<()>, impl Fn() -> zx::BootInstant> {
     let func = |s: &State| State::write(s);
     let now_fn = || fasync::BootInstant::now().into();
-    new_read_only_rtc_with_dependencies(state, proxy, func, now_fn)
+    new_read_only_rtc_with_dependencies(state, proxy, func, now_fn, rtc_initialization_policy)
 }
 
 // A factory method with an option to inject state. Intended to be called
@@ -101,12 +104,13 @@ fn new_read_only_rtc_with_dependencies<F, C>(
     proxy: Option<ffhh::DeviceProxy>,
     writer_fn: F,
     clock_fn: C,
+    rtc_initialization_policy: RtcInitializationPolicy,
 ) -> ReadOnlyRtcImpl<F, C>
 where
     F: Fn(&State) -> Result<()>,
     C: Fn() -> zx::BootInstant,
 {
-    ReadOnlyRtcImpl { state, proxy, writer_fn, clock_fn }
+    ReadOnlyRtcImpl { state, proxy, writer_fn, clock_fn, rtc_initialization_policy }
 }
 
 #[async_trait(?Send)]
@@ -122,20 +126,39 @@ where
         let (boot_reference, utc_reference) = self.state.borrow().get_rtc_reference();
         let diff = boot_now - boot_reference;
         if diff < zx::BootDuration::ZERO {
-            // ReadOnlyRtc relies on the boot clock for RTC updates. This allows us to have
-            // correct time estimates during suspend.  However, on reboot, we typically
-            // restart the boot clock, leading to a negative offset adjustment, which is wrong.
-            // To avoid incorrect UTC adjustments, we disallow negative offsets.
-            log::warn!(concat!(
-                "negative RTC diff detected. References:",
-                "\n\tpersisted: {:?}",
-                "\n\tnow:       {:?}",
-                "\n\tutc:       {:?}"
-            ), &boot_reference, &boot_now, &utc_reference);
-            Err(anyhow!(
-                "negative offset adjustment for RTC is not allowed: {}",
-                format_duration(diff)
-            ))
+            match self.rtc_initialization_policy {
+                RtcInitializationPolicy::ApplyMaybeStale => {
+                    log::warn!(
+                        concat!(
+                            "negative RTC diff detected, but config allows applying past UTC. ",
+                            "References:\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
+                        ),
+                        &boot_reference,
+                        &boot_now,
+                        &utc_reference
+                    );
+                    Ok(utc_reference)
+                }
+                RtcInitializationPolicy::Default => {
+                    // ReadOnlyRtc relies on the boot clock for RTC updates. This allows us to have
+                    // correct time estimates during suspend.  However, on reboot, we typically
+                    // restart the boot clock, leading to a negative offset adjustment, which is wrong.
+                    // To avoid incorrect UTC adjustments, we disallow negative offsets.
+                    log::warn!(
+                        concat!(
+                            "negative RTC diff detected. References:",
+                            "\n\tpersisted: {:?}\n\tnow:       {:?}\n\tutc:       {:?}"
+                        ),
+                        &boot_reference,
+                        &boot_now,
+                        &utc_reference
+                    );
+                    Err(anyhow!(
+                        "negative offset adjustment for RTC is not allowed: {}",
+                        format_duration(diff)
+                    ))
+                }
+            }
         } else {
             let utc_now = utc_reference + UtcDuration::from_nanos(diff.into_nanos());
             Ok(utc_now)
@@ -592,6 +615,7 @@ mod test {
                 |s| State::write_internal(&p_clone, s),
                 // Fake "now".
                 || fake_boot_now.borrow().clone(),
+                RtcInitializationPolicy::Default,
             );
             let utc_reference = UtcInstant::from_nanos(42000);
             rtc.set(utc_reference).await.unwrap();
@@ -623,6 +647,7 @@ mod test {
                 /* proxy= */ None,
                 |s| State::write_internal(&p, s),
                 || fake_boot_now.borrow().clone(),
+                RtcInitializationPolicy::Default,
             );
 
             // Some time passed since we last wrote the above file.
@@ -635,6 +660,27 @@ mod test {
             // be rejected.
             (*fake_boot_now.borrow_mut()) -= zx::BootDuration::from_nanos(500);
             assert_matches!(rtc.get().await, Err(_));
+        }
+
+        {
+            // Now try with ApplyMaybeStale.
+            let p_clone = p.clone();
+            let state = Rc::new(RefCell::new(State::read_and_update_internal(p_clone).unwrap()));
+            let rtc = new_read_only_rtc_with_dependencies(
+                state,
+                /* proxy= */ None,
+                |s| State::write_internal(&p, s),
+                || fake_boot_now.borrow().clone(),
+                RtcInitializationPolicy::ApplyMaybeStale,
+            );
+
+            // Time travel is allowed in fake-land.
+            // If we rewind beyond the reference, but we have ApplyMaybeStale, then
+            // we should get the last known UTC reference.
+            (*fake_boot_now.borrow_mut()) -= zx::BootDuration::from_nanos(500);
+            let utc = rtc.get().await.unwrap();
+            // The last set UTC reference was 42000.
+            assert_eq!(utc, UtcInstant::from_nanos(42000));
         }
     }
 
@@ -666,6 +712,7 @@ mod test {
             |s| State::write_internal(&p, s),
             // Fake "now".
             || fake_boot_now.borrow().clone(),
+            RtcInitializationPolicy::Default,
         );
 
         assert_eq!(
