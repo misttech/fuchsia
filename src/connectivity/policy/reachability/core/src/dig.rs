@@ -5,10 +5,11 @@
 use crate::FIDL_TIMEOUT_ID;
 use anyhow::anyhow;
 use async_trait::async_trait;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_name as fnet_name;
 use futures::TryFutureExt;
 use log::warn;
 use named_timer::NamedTimeoutExt;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name};
 
 const DNS_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(90);
 
@@ -72,7 +73,7 @@ impl<F: Fn() -> anyhow::Result<fnet_name::LookupProxy> + std::marker::Sync> Dig 
         match r {
             Ok(ips) => Some(ips),
             Err(e) => {
-                warn!("error while digging {domain}: {e:?}");
+                warn!("error while digging {domain}: {e}");
                 None
             }
         }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
@@ -37,10 +37,10 @@ where
             .map_err(anyhow::Error::new)
             .on_timeout(deadline, || Err(anyhow!("timed out")))
             .await
-            .with_context(|| format!("failed to send ping (seq={})", seq))?;
+            .with_context(|| format!("failed to send (seq={})", seq))?;
         if match stream.try_next().map(Some).on_timeout(deadline, || None).await {
             None => Ok(false),
-            Some(Err(e)) => Err(anyhow!("failed to receive ping: {}", e)),
+            Some(Err(e)) => Err(anyhow!("failed to receive: {}", e)),
             Some(Ok(None)) => Err(anyhow!("ping reply stream ended unexpectedly")),
             Some(Ok(Some(got))) if got >= SEQ_MIN && got <= seq => Ok(true),
             Some(Ok(Some(got))) => Err(anyhow!(
@@ -84,11 +84,11 @@ impl Ping for Pinger {
                     if io_error.raw_os_error() == Some(libc::ENETUNREACH)
                         || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
                     {
-                        info!("error while pinging {}: {:?}", addr, e);
+                        info!("err pinging {}: {}", addr, e);
                         return false;
                     }
                 }
-                warn!("error while pinging {}: {:?}", addr, e);
+                warn!("err pinging {}: {}", addr, e);
                 false
             }
         }

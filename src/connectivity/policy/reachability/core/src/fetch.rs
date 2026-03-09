@@ -131,8 +131,8 @@ impl Fetch for Fetcher {
                 let addr = addr.as_socket_addr();
                 log!(
                     level,
-                    "error while fetching {host}{path} from {addr} \
-                     through {interface_name}: {e:?}"
+                    "err fetching {host}{path} from {addr} \
+                     through {interface_name}: {e}"
                 );
 
                 None
