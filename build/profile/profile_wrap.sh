@@ -101,9 +101,11 @@ function shell_subprocesses() {
 # Find the subprocess of this shell for 'vmstat' and 'ifconfig'.
 # Can't use '$!' because that points to the last command in the pipe chain.
 function subprocess_pid() {
-  tool_basename="$1"
-  # ps displays only the first 15 characters of the executable.
-  shell_subprocesses | grep -w "${tool_basename:0:15}" | awk '{print $1;}'
+  local tool_basename="$1"
+  # ps displays only the first 15 characters of the executable on some systems.
+  # On others it may display the full name. Match both.
+  local truncated="${tool_basename:0:15}"
+  shell_subprocesses | grep -w -E "(${tool_basename}|${truncated})" | awk '{print $1;}'
 }
 
 function run_self_test() {
@@ -178,7 +180,7 @@ then
   # Terminating the 'ifconfig_loop.sh' process should cascade to its
   # subprocess and the rest of the pipe.
   readonly ifconfig_pid="$(subprocess_pid "$ifconfig_base")"
-  if [[ -n "ifconfig_pid" ]]
+  if [[ -n "$ifconfig_pid" ]]
   then shutdown_pids+=( "$ifconfig_pid" )
   else pids_not_found=1
   fi

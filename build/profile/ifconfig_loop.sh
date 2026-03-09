@@ -48,6 +48,10 @@ ifconfig_args=("$@")
 # Run until interrupted.
 while true
 do
+  # Exit if orphaned (parent process died).
+  if [[ "$PPID" == 1 ]]; then
+    exit 0
+  fi
   date="$(date "+%Y-%m-%d %H:%M:%S")"
   echo "TIME: $date"
   ifconfig "${ifconfig_args[@]}"
