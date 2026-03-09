@@ -1,14 +1,13 @@
 Name: Scudo, GWP-ASan
-URL: https://llvm.org/docs/ScudoHardenedAllocator.html
-URL: https://llvm.org/docs/GwpAsan.html
+URL: https://github.com/llvm/llvm-project
+Revision: a816f922fa73828b24008a8cdd0a28448eed68ef
 License: Apache License, Version 2.0, with LLVM Exceptions
 License File: src/LICENSE.txt
-Upstream Git: https://github.com/llvm/llvm-project
-Description:
-
+Description: Toolkit for compilers, optimizers. Revision found via GitOrigin-RevId from commits.
 Scudo is a user-mode memory allocator which aims at providing additional
 mitigations against heap based vulnerabilities, while maintaining good
 performance.
 
 GWP-ASan is a statistical-sampling based bug-finding memory allocator.
 It is integrated directly into the Scudo memory allocator.
+Original URL: https://llvm.org/docs/ScudoHardenedAllocator.html

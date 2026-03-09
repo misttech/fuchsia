@@ -1,7 +1,10 @@
 Name: spirv-tools
+URL: https://github.com/KhronosGroup/SPIRV-Tools
+Revision: 4d2f0b40bfe290dea6c6904dafdf7fd8328ba346
 License: Apache 2.0
 License File: src/LICENSE
-Upstream Git: https://github.com/KhronosGroup/SPIRV-Tools
-Description:
-
-The SPIR-V Tools project provides an API and commands for processing SPIR-V modules.
+Description: The SPIR-V Tools project provides an API and commands for processing SPIR-V modules.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
+Local Modifications: git diff $(git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304) JIRI_HEAD --name-status
+M	BUILD.gn
+M	source/val/validate_cfg.cpp

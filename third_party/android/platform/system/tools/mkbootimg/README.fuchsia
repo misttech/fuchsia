@@ -1,9 +1,11 @@
 Name: mkbootimg
-URL: https://www.android.com/
+URL: https://android.googlesource.com/platform/system/tools/mkbootimg/
+Revision: 4e8225a58e22e806fc3f7e188107541eca2ac784
 License: Apache 2.0
 License File: src/NOTICE
-Upstream Git: https://android.googlesource.com/platform/system/tools/mkbootimg/
 Security Critical: no
-Description:
-
-Android boot image tools and libraries
+Description: Android boot image tools and libraries
+Revision is from `git merge-base JIRI_HEAD origin/upstream/android16-qpr1-release`.
+Original URL: https://www.android.com/
+Local Modifications: git diff $(git merge-base JIRI_HEAD origin/upstream/android16-qpr1-release) JIRI_HEAD --name-status
+A	LICENSE

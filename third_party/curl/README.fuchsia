@@ -1,15 +1,14 @@
 Name: curl
-URL: https://curl.haxx.se/
+URL: https://github.com/curl/curl
+Version: 8.18.0
+Revision: 2eebc58c4b8d68c98c8344381a9f6df4cca838fd
 License: MIT/X derivate
 License File: src/COPYING
-Upstream Git: https://github.com/curl/curl
 CPEPrefix: cpe:/a:haxx:curl
-Version: 8.18.0
-Description:
-
-Curl is a command-line tool for transferring data specified with URL
+Description: Curl is a command-line tool for transferring data specified with URL
 syntax.
-
+Revision is from `git merge-base JIRI_HEAD curl-8_18_0`.
+Original URL: https://curl.haxx.se/
 How to upgrade the version of curl:
 
   * `git tag` to look for the latest version.
@@ -35,3 +34,4 @@ If you see missing symbols for `hugehelp`, you might need to regenerate `src/too
   * `fx gen` and `fx build` should resolve any missing symbols for `hugehelp`.
   * Commit the changes.
   * WARNING: `make clean` will delete `src/tool_hugehelp.c`.
+

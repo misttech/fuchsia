@@ -1,8 +1,8 @@
 Name: spirv-cross
+URL: https://github.com/KhronosGroup/SPIRV-Cross
+Revision: ebe2aa0cd80f5eb5cd8a605da604cacf72205f3b
 License: Apache 2.0
 License File: src/LICENSE
-Upstream Git: https://github.com/KhronosGroup/SPIRV-Cross
-Description:
-
-SPIRV-Cross is a tool designed for parsing and converting SPIR-V to other
+Description: SPIRV-Cross is a tool designed for parsing and converting SPIR-V to other
 shader languages.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.

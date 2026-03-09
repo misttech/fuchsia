@@ -1,7 +1,7 @@
 Name: spirv-headers
+URL: https://github.com/KhronosGroup/SPIRV-Headers
+Revision: 3f17b2af6784bfa2c5aa5dbb8e0e74a607dd8b3b
 License: Apache 2.0
 License File: src/LICENSE
-Upstream Git: https://github.com/KhronosGroup/SPIRV-Headers
-Description:
-
-This repository contains machine-readable files for the SPIR-V Registry.
+Description: This repository contains machine-readable files for the SPIR-V Registry.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.

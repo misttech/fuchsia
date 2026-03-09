@@ -1,6 +1,19 @@
 Name: pyjson5
 URL: https://github.com/dpranke/pyjson5
+Revision: 2154e31bbae71b6a8ae69e5e5a3350528825f0fc
+Version: v0.9.14
 License: Apache License 2.0
 License File: src/LICENSE
-Upstream Git: https://github.com/dpranke/pyjson5
 Description: A Python implementation of the JSON5 data format.
+Revision is from `git merge-base JIRI_HEAD v0.9.14`.
+Local Modifications: git diff $(git merge-base JIRI_HEAD v0.9.14) JIRI_HEAD --name-status
+A	.github/workflows/ci.yml
+M	README.md
+M	benchmarks/ios-simulator.json
+M	benchmarks/run.py
+M	json5/json5.g
+M	json5/lib.py
+M	json5/parser.py
+M	json5/version.py
+M	setup.py
+M	tests/lib_test.py

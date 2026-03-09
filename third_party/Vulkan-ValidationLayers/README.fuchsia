@@ -1,8 +1,19 @@
 Name: Vulkan-ValidationLayers
+URL: https://github.com/KhronosGroup/Vulkan-ValidationLayers
+Revision: f95d8a2e7d95999a25f3ab4b0264848e32d88e04
 License: Apache 2.0
 License File: src/LICENSE.txt
-Upstream Git: https://github.com/KhronosGroup/Vulkan-ValidationLayers
-Description:
-
-Provides the Khronos official Vulkan validation layers.
-
+Description: Provides the Khronos official Vulkan validation layers.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
+Local Modifications: git diff $(git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304) JIRI_HEAD --name-status
+M	BUILD.gn
+M	layers/core_checks/cc_external_object.cpp
+A	layers/generated/spirv_grammar_helper.cpp
+A	layers/gpu_validation/gpu_settings.h
+M	layers/state_tracker/state_tracker.cpp
+M	layers/state_tracker/state_tracker.h
+M	layers/sync/sync_validation.cpp
+A	layers/vulkan/generated/vk_dispatch_table_helper_workaround.cpp
+M	scripts/gn/commit_id.py
+M	scripts/gn/generate_vulkan_layers_json.py
+M	tests/unit/gpu_av.cpp

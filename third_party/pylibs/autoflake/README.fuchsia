@@ -1,10 +1,9 @@
 Name: autoflake
+URL: https://github.com/PyCQA/autoflake
+Revision: 0544741e2b4a22b472d9d93e37d4ea9153820bb1
 License: MIT License
 License File: src/LICENSE
-Upstream Git: https://github.com/PyCQA/autoflake
 Description: Removes unused imports and unused variables as reported by pyflakes.
-
-Changes made to Work with Fuchsia:
-
-Created a wrapper script to add pyflakes and its dependency autoflake to the
+Revision is from `git merge-base JIRI_HEAD origin/upstream/main`.
+Local Modifications: Created a wrapper script to add pyflakes and its dependency autoflake to the
 python path, making it easy to run autoflake.

@@ -1,8 +1,7 @@
 Name: Vulkan-Utility-Libraries
+URL: https://github.com/KhronosGroup/Vulkan-Utility-Libraries
+Revision: 5a88b6042edb8f03eefc8de73bd73a899989373f
 License: Apache 2.0
 License File: src/LICENSES/Apache-2.0.txt
-Upstream Git: https://github.com/KhronosGroup/Vulkan-Utility-Libraries
-Description:
-
-Shared code across various Vulkan repositories.
-
+Description: Shared code across various Vulkan repositories.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.

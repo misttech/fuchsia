@@ -1,10 +1,29 @@
 Name: Vulkan-Loader
+URL: https://github.com/KhronosGroup/Vulkan-Loader
+Revision: 6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7
 License: Apache 2.0
 License File: src/LICENSE.txt
-Upstream Git: https://github.com/KhronosGroup/Vulkan-Loader
-Description:
-
-The Khronos official Vulkan ICD desktop loader.
-
-
-
+Description: The Khronos official Vulkan ICD desktop loader.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
+Local Modifications: git diff $(git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304) JIRI_HEAD --name-status
+M	BUILD.gn
+M	BUILD.md
+A	loader/README_fuchsia.md
+M	loader/cJSON.c
+D	loader/dlopen_fuchsia.c
+A	loader/dlopen_fuchsia.cc
+M	loader/dlopen_fuchsia.h
+M	loader/loader.c
+M	loader/loader.h
+A	loader/loader_extensions_fuchsia.cc
+A	loader/loader_fuchsia.h
+A	loader/loader_fuchsia_service.cc
+A	loader/loader_fuchsia_service.h
+M	loader/loader_json.c
+M	loader/loader_json.h
+M	loader/log.h
+M	loader/settings.c
+M	loader/unknown_ext_chain_gas_aarch.S
+M	loader/vk_loader_platform.h
+M	scripts/loader_extension_generator.py
+A	vulkan.ifs

@@ -1,7 +1,7 @@
 Name: Google Test
+URL: https://github.com/google/googletest
+Revision: 52eb8108c5bdec04579160ae17225d66034bd723
 License: BSD
 License File: LICENSE
-Upstream Git: https://github.com/google/googletest
-Description:
-
-Google's C++ test framework.
+Description: Google's C++ test framework.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/v1.17.x`.

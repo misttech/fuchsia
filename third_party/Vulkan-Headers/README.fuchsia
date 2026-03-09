@@ -1,9 +1,12 @@
 Name: Vulkan-Headers
+URL: https://github.com/KhronosGroup/Vulkan-Headers
+Revision: d4a196d8c84e032d27f999adcea3075517c1c97f
 License: Apache 2.0
 License File: src/LICENSES/Apache-2.0.txt
 License File: src/LICENSES/MIT.txt
-Upstream Git: https://github.com/KhronosGroup/Vulkan-Headers
-Description:
-
-Vulkan header files and API registry.
-
+Description: Vulkan header files and API registry.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
+Local Modifications: git diff $(git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304) JIRI_HEAD --name-status
+M	BUILD.gn
+M	registry/vk.xml
+A	scripts/rebuild.sh

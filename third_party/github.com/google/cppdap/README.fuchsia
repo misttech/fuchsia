@@ -1,13 +1,11 @@
 Name: cppdap
 URL: https://github.com/google/cppdap
 Version: 1fd23dd
+Revision: c69444ed76f7468b232ac4f989cb8f2bdc100185
 License: Apache 2.0
 License File: LICENSE
-
-Description:
-C++ based Debug adapter library that implements Debug adapter protocol
+Description: C++ based Debug adapter library that implements Debug adapter protocol
 (https://microsoft.github.io/debug-adapter-protocol/).
 This protocol is used by IDE's to integrate with debuggers.
-
-Usage:
-Development use, for adding debug adapter support to zxdb.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/main`.
+Usage: Development use, for adding debug adapter support to zxdb.

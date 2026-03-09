@@ -1,9 +1,9 @@
 Name: volk
+URL: https://github.com/zeux/volk
+Revision: 0b17a763ba5643e32da1b2152f8140461b3b7345
 License: MIT
 License File: src/LICENSE.md
-Upstream Git: https://github.com/zeux/volk
-Description:
-
-volk is a meta-loader for Vulkan. It allows users to dynamically load
+Description: volk is a meta-loader for Vulkan. It allows users to dynamically load
 entrypoints required to use Vulkan without linking to the dynamic library or
 statically linking Vulkan loader.
+Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
