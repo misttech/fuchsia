@@ -4,6 +4,8 @@
 
 #include "src/lib/pkg_url/url_resolver.h"
 
+#include <lib/stdcompat/string_view.h>
+
 #include "src/lib/fxl/strings/ascii.h"
 
 namespace component {
@@ -15,7 +17,7 @@ constexpr size_t kFileUriPrefixLength = sizeof(kFileUriPrefix) - 1;
 }  // namespace
 
 std::string CanonicalizeURL(const std::string& url) {
-  if (!url.empty() && url.find(':') == std::string::npos)
+  if (!url.empty() && !cpp23::contains(url, ':'))
     return kFileUriPrefix + url;
   return url;
 }
