@@ -32,8 +32,9 @@ std::string ReachabilityWatcher::error_get_string(ErrorVariant variant) {
 
 ReachabilityWatcher::ReachabilityWatcher(
     fuchsia::net::interfaces::WatcherPtr watcher,
-    fit::function<void(fpromise::result<bool, ReachabilityWatcher::ErrorVariant>)> callback)
-    : watcher_(std::move(watcher)), callback_(std::move(callback)) {
+    fit::function<void(fpromise::result<bool, ReachabilityWatcher::ErrorVariant>)> callback,
+    std::optional<zx::duration> delay)
+    : watcher_(std::move(watcher)), callback_(std::move(callback)), delay_(delay) {
   watcher_.set_error_handler([this](const zx_status_t status) {
     callback_(fpromise::error(ReachabilityWatcher::Error::kChannelClosed));
   });
@@ -53,7 +54,18 @@ void ReachabilityWatcher::HandleEvent(fuchsia::net::interfaces::Event event) {
                                [](const auto& it) { return it.second.IsGloballyRoutable(); });
   if (!reachable_.has_value() || (reachable_.value() != reachable)) {
     reachable_ = reachable;
-    callback_(fpromise::ok(reachable));
+    // Only attempt to use the delay when the interface becomes
+    // newly reachable.
+    if (reachable && delay_.has_value() && delay_.value() > zx::sec(0)) {
+      timer_.emplace([this]() { callback_(fpromise::ok(true)); });
+      timer_->PostDelayed(watcher_.dispatcher(), delay_.value());
+    } else {
+      if (timer_.has_value()) {
+        timer_->Cancel();
+        timer_.reset();
+      }
+      callback_(fpromise::ok(reachable));
+    }
   }
 }
 

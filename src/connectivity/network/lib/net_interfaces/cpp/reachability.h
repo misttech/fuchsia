@@ -6,8 +6,10 @@
 #define SRC_CONNECTIVITY_NETWORK_LIB_NET_INTERFACES_CPP_REACHABILITY_H_
 
 #include <fuchsia/net/interfaces/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/result.h>
+#include <lib/zx/time.h>
 
 #include <string>
 
@@ -31,7 +33,8 @@ class ReachabilityWatcher final {
   using ErrorVariant = std::variant<PropertiesMap::UpdateErrorVariant, Error>;
 
   ReachabilityWatcher(fuchsia::net::interfaces::WatcherPtr watcher,
-                      ::fit::function<void(fpromise::result<bool, ErrorVariant>)> callback);
+                      ::fit::function<void(fpromise::result<bool, ErrorVariant>)> callback,
+                      std::optional<zx::duration> delay = std::nullopt);
 
   static std::string error_get_string(ErrorVariant variant);
 
@@ -43,6 +46,9 @@ class ReachabilityWatcher final {
 
   net::interfaces::PropertiesMap interface_properties_;
   std::optional<bool> reachable_;
+
+  std::optional<zx::duration> delay_;
+  std::optional<async::TaskClosure> timer_;
 
   // Helper type for visitor in |reachability_watcher_error_get_string|.
   template <class... Ts>

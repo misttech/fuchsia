@@ -23,7 +23,8 @@ NetworkWatcher::NetworkWatcher(async_dispatcher_t* dispatcher,
   state->GetWatcher(fuchsia::net::interfaces::WatcherOptions(), watcher.NewRequest(dispatcher));
 
   watcher_ = std::make_unique<net::interfaces::ReachabilityWatcher>(
-      std::move(watcher), [this](auto reachable) {
+      std::move(watcher),
+      [this](auto reachable) {
         if (reachable.is_error()) {
           FX_LOGS(ERROR) << "Network reachability watcher encountered unrecoverable error: "
                          << net::interfaces::ReachabilityWatcher::error_get_string(
@@ -34,7 +35,10 @@ NetworkWatcher::NetworkWatcher(async_dispatcher_t* dispatcher,
         for (const auto& on_reachable : callbacks_) {
           on_reachable(reachable_.value());
         }
-      });
+      },
+      // TODO(https://fxbug.dev/445454306): Remove delay once Reachable state can be
+      // replaced by a better signal.
+      zx::sec(10));
 }
 
 void NetworkWatcher::Register(fit::function<void(bool)> on_reachable) {
