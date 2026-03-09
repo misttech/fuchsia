@@ -278,11 +278,6 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/pciutils/pciids
 	name = third_party/github.com/pciutils/pciids
 	ignore = all
-[submodule "third_party/protobuf"]
-	path = third_party/protobuf
-	url = https://fuchsia.googlesource.com/third_party/protobuf
-	name = third_party/protobuf
-	ignore = all
 [submodule "third_party/pytoml"]
 	path = third_party/pytoml
 	url = https://fuchsia.googlesource.com/third_party/pytoml
@@ -732,4 +727,9 @@
 	path = third_party/pylibs/pyserial/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/pyserial/pyserial
 	name = third_party/pylibs/pyserial
+	ignore = all
+[submodule "third_party/protobuf/src"]
+	path = third_party/protobuf/src
+	url = https://fuchsia.googlesource.com/third_party/protobuf
+	name = third_party/protobuf
 	ignore = all
