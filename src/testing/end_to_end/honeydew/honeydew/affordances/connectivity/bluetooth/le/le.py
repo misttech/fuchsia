@@ -4,9 +4,11 @@
 """Abstract base class for Bluetooth LE Profile affordance."""
 
 import abc
-from typing import Any
+import typing
 
 import fidl_fuchsia_bluetooth as f_bt
+import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
+import fidl_fuchsia_bluetooth_le as f_ble_controller
 
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
@@ -35,7 +37,7 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """
 
     @abc.abstractmethod
-    async def connect(self, identifier: Any) -> None:
+    async def connect(self, identifier: f_bt.PeerId) -> None:
         """Initiate connection from the central device to peripheral.
 
         Args:
@@ -46,7 +48,9 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """
 
     @abc.abstractmethod
-    async def connect_to_service(self, handle: int) -> None:
+    async def connect_to_service(
+        self, handle: f_gatt_controller.ServiceHandle
+    ) -> None:
         """Connect to available Gatt services on the central device.
 
         Args:
@@ -59,7 +63,7 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
     @abc.abstractmethod
     async def discover_characteristics(
         self,
-    ) -> dict[int, dict[str, int | list[int] | None]]:
+    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:
@@ -67,7 +71,9 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """
 
     @abc.abstractmethod
-    async def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+    async def list_gatt_services(
+        self,
+    ) -> list[f_gatt_controller.ServiceInfo]:
         """List the Gatt Services found on the connected peripheral.
 
         Raises:
@@ -75,7 +81,7 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """
 
     @abc.abstractmethod
-    async def init_le_sys(self) -> None:
+    def init_le_sys(self) -> None:
         """Initializes ble stack.
 
         Note: This method is called automatically:
@@ -98,7 +104,9 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """
 
     @abc.abstractmethod
-    async def read_characteristic(self, handle: int) -> None:
+    async def read_characteristic(
+        self, handle: f_gatt_controller.Handle
+    ) -> f_gatt_controller.RemoteServiceReadCharacteristicResponse:
         """Read characteristic of the Gatt service.
 
         Args:
@@ -124,7 +132,7 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """Stop advertising the peripheral."""
 
     @abc.abstractmethod
-    async def scan(self) -> dict[str, Any]:
+    async def scan(self) -> list[f_ble_controller.Peer]:
         """Perform an LE scan on central device.
 
         Returns:
@@ -155,7 +163,7 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
         """
 
     @abc.abstractmethod
-    def connect(self, identifier: Any) -> None:
+    def connect(self, identifier: f_bt.PeerId) -> None:
         """Initiate connection from the central device to peripheral.
 
         Args:
@@ -166,7 +174,9 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
         """
 
     @abc.abstractmethod
-    def connect_to_service(self, handle: int) -> None:
+    def connect_to_service(
+        self, handle: f_gatt_controller.ServiceHandle
+    ) -> None:
         """Connect to available Gatt services on the central device.
 
         Args:
@@ -179,7 +189,7 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
     @abc.abstractmethod
     def discover_characteristics(
         self,
-    ) -> dict[int, dict[str, int | list[int] | None]]:
+    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:
@@ -187,7 +197,9 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
         """
 
     @abc.abstractmethod
-    def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+    def list_gatt_services(
+        self,
+    ) -> list[f_gatt_controller.ServiceInfo]:
         """List the Gatt Services found on the connected peripheral.
 
         Raises:
@@ -218,7 +230,9 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
         """
 
     @abc.abstractmethod
-    def read_characteristic(self, handle: int) -> None:
+    def read_characteristic(
+        self, handle: f_gatt_controller.Handle
+    ) -> f_gatt_controller.RemoteServiceReadCharacteristicResponse:
         """Read characteristic of the Gatt service.
 
         Args:
@@ -244,7 +258,7 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
         """Stop advertising the peripheral."""
 
     @abc.abstractmethod
-    def scan(self) -> dict[str, Any]:
+    def scan(self) -> list[f_ble_controller.Peer]:
         """Perform an LE scan on central device.
 
         Returns:

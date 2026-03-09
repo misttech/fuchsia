@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
+import fidl_fuchsia_bluetooth as f_bt
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable
@@ -129,7 +130,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.connect_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = "0"
+            dummy_identifier = f_bt.PeerId(value=0)
             await self.bluetooth_common_sl4f_obj.connect_device(
                 identifier=dummy_identifier,
                 connection_type=parameterized_dict["transport"],
@@ -140,7 +141,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.forget_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = "0"
+            dummy_identifier = f_bt.PeerId(value=0)
             await self.bluetooth_common_sl4f_obj.forget_device(dummy_identifier)
         self.sl4f_obj.run.assert_called()
 
@@ -221,7 +222,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.pair_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = "0"
+            dummy_identifier = f_bt.PeerId(value=0)
             await self.bluetooth_common_sl4f_obj.pair_device(
                 identifier=dummy_identifier,
                 connection_type=parameterized_dict["transport"],

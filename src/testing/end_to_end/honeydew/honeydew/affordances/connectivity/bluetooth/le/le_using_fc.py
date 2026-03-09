@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -6,8 +5,8 @@
 
 import asyncio
 import logging
+import typing
 import uuid
-from typing import Any
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
@@ -56,6 +55,7 @@ class AdvertisedPeripheralImpl(f_ble_controller.AdvertisedPeripheralServer):
     def on_connected(
         self, request: f_ble_controller.AdvertisedPeripheralOnConnectedRequest
     ) -> None:
+        assert request.peer.id_ is not None
         _LOGGER.info(
             "Advertised Peripheral Connected with peer: %s",
             request.peer.id_.value,
@@ -85,26 +85,29 @@ class AsyncLEUsingFc(
             fuchsia_controller=fuchsia_controller,
             reboot_affordance=reboot_affordance,
         )
-        self.service_info: dict[int, dict[str, Any]]
+        self.service_info: dict[int, f_gatt_controller.ServiceInfo] = dict()
+        self.known_le_devices: dict[int, f_ble_controller.Peer] = dict()
         self._peripheral_advertisement_server: asyncio.Task[None] | None = None
         self._device_name: str = device_name
         self._name: str = device_name
-        self._connection_client: fc.Channel | None = None
-        self._gatt_client: fc.Channel | None = None
-        self._remote_service_client: fc.Channel | None = None
+        self._connection_client: f_ble_controller.ConnectionClient | None = None
+        self._gatt_client: f_gatt_controller.ClientClient | None = None
+        self._remote_service_client: f_gatt_controller.RemoteServiceClient | None = (
+            None
+        )
         self._peripheral_connection: fc.Channel | None = None
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
         self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
             reboot_affordance
         )
         self._peripheral_controller_proxy: (
-            f_ble_controller.Peripheral.Client | None
+            f_ble_controller.PeripheralClient | None
         ) = None
         self._central_controller_proxy: (
-            f_ble_controller.Central.Client | None
+            f_ble_controller.CentralClient | None
         ) = None
 
-        self._gatt_server_proxy: f_gatt_controller.Server.Client | None = None
+        self._gatt_server_proxy: f_gatt_controller.ServerClient | None = None
         self._le_session_initialized = False
         self._reboot_affordance.register_for_on_device_boot(fn=self.init_le_sys)
         self.verify_supported()
@@ -170,65 +173,49 @@ class AsyncLEUsingFc(
             )
         )
         self._le_session_initialized = True
-        self.known_le_devices: dict[str, Any] = dict()
-        self.service_info: dict[int, dict[str, Any]] = dict()
+        self.known_le_devices.clear()
+        self.service_info.clear()
         self._uuid = f_bt.Uuid(value=self._generate_random_bluetooth_uuid())
 
     async def stop_advertise(self) -> None:
         """Stop advertising the peripheral."""
         self._peripheral_advertisement_server = None
 
-    async def scan(self) -> dict[str, bool | int | str]:
+    async def scan(self) -> list[f_ble_controller.Peer]:
         """Perform an LE scan on central device.
 
         Returns:
-            A dict of all known LE remote devices.
-        """
-        try:
-            return await asyncio.wait_for(
-                self._scan(),
-                ASYNC_OP_TIMEOUT,
-            )
-        except TimeoutError:
-            _LOGGER.info(
-                "No updates on % from watcher.watch(), returning cached peers.",
-                self._device_name,
-            )
-            return self.known_le_devices
-
-    async def _scan(self) -> dict[str, Any]:
-        """Async LE scan function on central device.
-        TaskGroup creates first task that scans for peripheral devices, then a second task that waits
-        and watches the scan task for new information. Once, the watcher completes, close the channel
-        to the watcher, and await the first task.
-
-        Returns:
-            A dict of all known LE remote devices.
+            A list of all known LE remote devices.
         """
         (central_client, central_server) = Channel.create()
         watcher = f_ble_controller.ScanResultWatcherClient(central_client)
         filter_options = f_ble_controller.Filter()
         scan_options = f_ble_controller.ScanOptions(filters=[filter_options])
         assert self._central_controller_proxy is not None
-        async with asyncio.TaskGroup() as tg:
-            task1 = tg.create_task(
-                self._central_controller_proxy.scan(
-                    options=scan_options, result_watcher=central_server.take()
-                )
+        try:
+            async with asyncio.timeout(ASYNC_OP_TIMEOUT):
+                async with asyncio.TaskGroup() as tg:
+                    task1 = tg.create_task(
+                        self._central_controller_proxy.scan(
+                            options=scan_options,
+                            result_watcher=central_server.take(),
+                        )
+                    )
+                    res = await watcher.watch()
+                    central_client.close()
+                    await task1
+        except TimeoutError:
+            _LOGGER.info(
+                "No updates on % from watcher.watch(), returning cached peers.",
+                self._device_name,
             )
-            res = await watcher.watch()
-            central_client.close()
-            await task1
+            return list(self.known_le_devices.values())
         for peer in res.updated:
-            self.known_le_devices[peer.id_.value] = {
-                "name": peer.name,
-                "id": peer.id_,
-                "bonded": peer.bonded,
-                "connectable": peer.connectable,
-            }
-        return self.known_le_devices
+            assert peer.id_ is not None
+            self.known_le_devices[peer.id_.value] = peer
+        return list(self.known_le_devices.values())
 
-    async def connect(self, identifier: int) -> None:
+    async def connect(self, identifier: f_bt.PeerId) -> None:
         """Initiate connection from the central device to peripheral.
 
         Args:
@@ -237,7 +224,6 @@ class AsyncLEUsingFc(
         Raises:
             BluetoothError: If the peripheral is not initialized.
         """
-        peer_id = f_bt.PeerId(value=identifier)
         (conn_client, conn_server) = Channel.create()
         self._connection_client = f_ble_controller.ConnectionClient(
             conn_client.take()
@@ -248,7 +234,7 @@ class AsyncLEUsingFc(
         try:
             assert self._central_controller_proxy is not None
             self._central_controller_proxy.connect(
-                id_=peer_id,
+                id_=identifier,
                 options=connection_options,
                 handle=conn_server.take(),
             )
@@ -299,7 +285,7 @@ class AsyncLEUsingFc(
             asyncio.get_running_loop().create_task(advertised_server.serve())
         )
         assert self._peripheral_controller_proxy is not None
-        self._peripheral_controller_proxy.advertise(
+        await self._peripheral_controller_proxy.advertise(
             parameters=params, advertised_peripheral=client.take()
         )
 
@@ -311,10 +297,9 @@ class AsyncLEUsingFc(
                 f"device: {self._device_name}"
             )
         try:
-            await asyncio.wait_for(
-                self._peripheral_advertisement_server, ASYNC_OP_TIMEOUT
-            )
-        except Exception as e:
+            async with asyncio.timeout(ASYNC_OP_TIMEOUT):
+                await self._peripheral_advertisement_server
+        except TimeoutError as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete Peripheral connection calls on {self._device_name}."
             ) from e
@@ -356,17 +341,19 @@ class AsyncLEUsingFc(
                 self._connection_client is not None
             )  # the central connection handle should request Gatt client
             (client, server) = Channel.create()
-            client = f_gatt_controller.ClientClient(client)
+            gatt_client = f_gatt_controller.ClientClient(client.take())
             self._connection_client.request_gatt_client(
                 client=server.take()
             )  # bind server end of gatt2 client
-            self._gatt_client = client
+            self._gatt_client = gatt_client
         except Exception as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete Request Gatt client FIDL call on {self._device_name}."
             ) from e
 
-    async def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+    async def list_gatt_services(
+        self,
+    ) -> list[f_gatt_controller.ServiceInfo]:
         """List the Gatt Services found on the connected peripheral.
 
         Returns:
@@ -379,26 +366,23 @@ class AsyncLEUsingFc(
             assert (
                 self._gatt_client is not None
             )  # the gatt client should not be none
-            res = await asyncio.wait_for(
-                self._gatt_client.watch_services(uuids=[]), 10
-            )
+            async with asyncio.timeout(ASYNC_OP_TIMEOUT):
+                res = await self._gatt_client.watch_services(uuids=[])
         except TimeoutError:
             _LOGGER.info(
                 "No updates on {self._device_name} from watch_services(), returning cache."
             )
-            return self.service_info
+            return list(self.service_info.values())
         for service in res.updated:
-            self.service_info[service.handle.value] = {
-                "kind": service.kind,
-                "type": service.type_,
-                "characteristics": service.characteristics,
-                "includes": service.includes,
-            }
-        for service in res.removed:
-            del self.service_info[service]
-        return self.service_info
+            assert service.handle is not None
+            self.service_info[service.handle.value] = service
+        for handle in res.removed:
+            del self.service_info[handle.value]
+        return list(self.service_info.values())
 
-    async def connect_to_service(self, handle: int) -> None:
+    async def connect_to_service(
+        self, handle: f_gatt_controller.ServiceHandle
+    ) -> None:
         """Connect to an available GATT service on the peripheral device.
 
         Args:
@@ -409,13 +393,12 @@ class AsyncLEUsingFc(
         """
         try:
             assert self._gatt_client is not None
-            service_handle = f_gatt_controller.ServiceHandle(value=handle)
             (client, server) = Channel.create()
             self._gatt_client.connect_to_service(
-                handle=service_handle, service=server.take()
+                handle=handle, service=server.take()
             )
-            client = f_gatt_controller.RemoteServiceClient(client)
-            self._remote_service_client = client
+            remote_client = f_gatt_controller.RemoteServiceClient(client.take())
+            self._remote_service_client = remote_client
         except Exception as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete connect_to_service FIDL call on {self._device_name}."
@@ -423,7 +406,7 @@ class AsyncLEUsingFc(
 
     async def discover_characteristics(
         self,
-    ) -> dict[int, dict[str, int | list[int] | None]]:
+    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:
@@ -431,27 +414,18 @@ class AsyncLEUsingFc(
         """
         try:
             assert self._remote_service_client is not None
-            res = await asyncio.wait_for(
-                self._remote_service_client.discover_characteristics(), 10
-            )
+            async with asyncio.timeout(ASYNC_OP_TIMEOUT):
+                return (
+                    await self._remote_service_client.discover_characteristics()
+                ).characteristics
         except Exception as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete discover_characteristics FIDL call on {self._device_name}."
             ) from e
-        remote_response = {}
-        for characteristic in res.characteristics:
-            remote_response[characteristic.handle.value] = {
-                "handle": characteristic.handle.value,
-                "type": characteristic.type_.value,
-                "properties": characteristic.properties,
-                "permissions": characteristic.permissions,
-                "descriptors": characteristic.descriptors,
-            }
-        return remote_response
 
     async def read_characteristic(
-        self, handle: int
-    ) -> dict[str, int | list[int] | None | bool]:
+        self, handle: f_gatt_controller.Handle
+    ) -> f_gatt_controller.RemoteServiceReadCharacteristicResponse:
         """Read characteristic of the Gatt service.
 
         Args:
@@ -467,27 +441,19 @@ class AsyncLEUsingFc(
             assert (
                 self._remote_service_client is not None
             )  # we must have a connected client to make a remote service
-            service_handle = f_gatt_controller.ServiceHandle(value=handle)
             read_options = f_gatt_controller.ReadOptions(
                 short_read=f_gatt_controller.ShortReadOptions()
             )
-            res = await asyncio.wait_for(
-                self._remote_service_client.read_characteristic(
-                    handle=service_handle, options=read_options
-                ),
-                10,
-            )
+            async with asyncio.timeout(ASYNC_OP_TIMEOUT):
+                return (
+                    await self._remote_service_client.read_characteristic(
+                        handle=handle, options=read_options
+                    )
+                ).unwrap()
         except Exception as e:
             raise bt_errors.BluetoothError(
                 f"Failed to complete read_characteristics FIDL call on {self._device_name}."
             ) from e
-        characteristic = res.response.value
-        char_response = {
-            "handle": characteristic.handle.value,
-            "value": characteristic.value,
-            "truncated": characteristic.maybe_truncated,
-        }
-        return char_response
 
 
 class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
@@ -543,17 +509,17 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             self._inner.stop_advertise()
         )
 
-    def scan(self) -> dict[str, bool | int | str]:
+    def scan(self) -> list[f_ble_controller.Peer]:
         """Perform an LE scan on central device.
 
         Returns:
-            A dict of all known LE remote devices.
+            A list of all known LE remote devices.
         """
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.scan()
         )
 
-    def connect(self, identifier: int) -> None:
+    def connect(self, identifier: f_bt.PeerId) -> None:
         """Initiate connection from the central device to peripheral.
 
         Args:
@@ -608,7 +574,9 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             self._inner.request_gatt_client()
         )
 
-    def list_gatt_services(self) -> dict[int, dict[str, Any]]:
+    def list_gatt_services(
+        self,
+    ) -> list[f_gatt_controller.ServiceInfo]:
         """List the Gatt Services found on the connected peripheral.
 
         Returns:
@@ -621,7 +589,9 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             self._inner.list_gatt_services()
         )
 
-    def connect_to_service(self, handle: int) -> None:
+    def connect_to_service(
+        self, handle: f_gatt_controller.ServiceHandle
+    ) -> None:
         """Connect to an available GATT service on the peripheral device.
 
         Args:
@@ -636,7 +606,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
 
     def discover_characteristics(
         self,
-    ) -> dict[int, dict[str, int | list[int] | None]]:
+    ) -> typing.Sequence[f_gatt_controller.Characteristic]:
         """Discover characteristics of a connected Gatt Service.
 
         Returns:
@@ -647,8 +617,8 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         )
 
     def read_characteristic(
-        self, handle: int
-    ) -> dict[str, int | list[int] | None | bool]:
+        self, handle: f_gatt_controller.Handle
+    ) -> f_gatt_controller.RemoteServiceReadCharacteristicResponse:
         """Read characteristic of the Gatt service.
 
         Args:

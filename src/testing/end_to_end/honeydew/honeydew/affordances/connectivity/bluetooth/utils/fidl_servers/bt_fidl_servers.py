@@ -1,10 +1,10 @@
-# mypy: ignore-errors
 # Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Bluetooth FIDL Server Implementations for Fuchsia Controller affordances"""
 
 import logging
+from typing import Any
 
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
@@ -34,6 +34,7 @@ class PairingDelegateImpl(f_btsys_controller.PairingDelegateServer):
         Returns:
             response: pairing response to Bluetooth stack.
         """
+        assert pairing_start_request.peer.id_ is not None
         _LOGGER.info(
             "On Pairing Request method called with peer: %s",
             pairing_start_request.peer.id_.value,
@@ -62,7 +63,7 @@ class PairingDelegateImpl(f_btsys_controller.PairingDelegateServer):
         )
         raise StopServer
 
-    def on_remote_keypress(self, *args, **kwargs) -> None:
+    def on_remote_keypress(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(
             "Honeydew PairingDelegateImpl does not implement PairingDelegate.OnRemoteKeypress"
         )
@@ -74,8 +75,8 @@ class GattLocalServerImpl(f_gatt_controller.LocalServiceServer):
     """
 
     def read_value(
-        self, read_value_request: f_gatt_controller.LocalServiceReadValueRequest
-    ) -> list[int]:
+        self, request: f_gatt_controller.LocalServiceReadValueRequest
+    ) -> f_gatt_controller.LocalServiceReadValueResponse:
         """Read value implementation for Local Server implementation
 
         Args:
@@ -86,6 +87,6 @@ class GattLocalServerImpl(f_gatt_controller.LocalServiceServer):
         """
         _LOGGER.info(
             "Reading value request from peer: %s",
-            read_value_request.peer_id,
+            request.peer_id.value,
         )
-        return [1, 2, 3]
+        return f_gatt_controller.LocalServiceReadValueResponse(value=[1, 2, 3])

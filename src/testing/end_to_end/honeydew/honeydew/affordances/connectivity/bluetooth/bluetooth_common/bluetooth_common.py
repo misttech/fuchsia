@@ -7,6 +7,8 @@ will depend on."""
 import abc
 from typing import Any
 
+import fidl_fuchsia_bluetooth as f_bt
+
 from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )
@@ -45,7 +47,7 @@ class BluetoothCommon(abc.ABC):
     @abc.abstractmethod
     def connect_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -62,7 +64,7 @@ class BluetoothCommon(abc.ABC):
 
     @abc.abstractmethod
     def forget_device(
-        self, identifier: str, timeout_sec: float | None = None
+        self, identifier: f_bt.PeerId, timeout_sec: float | None = None
     ) -> None:
         """Forget device to target remote device via Bluetooth.
 
@@ -119,7 +121,7 @@ class BluetoothCommon(abc.ABC):
     @abc.abstractmethod
     def pair_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -202,7 +204,7 @@ class AsyncBluetoothCommon(abc.ABC):
     @abc.abstractmethod
     async def connect_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -219,7 +221,7 @@ class AsyncBluetoothCommon(abc.ABC):
 
     @abc.abstractmethod
     async def forget_device(
-        self, identifier: str, timeout_sec: float | None = None
+        self, identifier: f_bt.PeerId, timeout_sec: float | None = None
     ) -> None:
         """Forget device to target remote device via Bluetooth.
 
@@ -278,7 +280,7 @@ class AsyncBluetoothCommon(abc.ABC):
     @abc.abstractmethod
     async def pair_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:

@@ -6,6 +6,7 @@
 """Unit tests for honeydew.affordances.fuchsia_controller.bluetooth.profiles.bluetooth_le.py"""
 
 import asyncio
+import typing
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -26,14 +27,14 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 
-_SAMPLE_LE_KNOWN_DEVICES_OUTPUT: dict[str, Any] = {
-    "16085008211800713200": {
-        "bonded": True,
-        "connectable": True,
-        "id": 16085008211800713200,
-        "name": "fuchsia-f80f-f96b-6f59",
-    }
-}
+_SAMPLE_LE_KNOWN_DEVICES_OUTPUT: list[f_ble_controller.Peer] = [
+    f_ble_controller.Peer(
+        id_=f_bt.PeerId(value=16085008211800713200),
+        bonded=True,
+        connectable=True,
+        name="fuchsia-f80f-f96b-6f59",
+    )
+]
 
 _SAMPLE_CLIENT_WATCH_SERVICES_RESPONSE = (
     f_gatt_controller.ClientWatchServicesResponse(
@@ -50,14 +51,15 @@ _SAMPLE_CLIENT_WATCH_SERVICES_RESPONSE = (
     )
 )
 
-_SAMPLE_GATT_SERVICES_OUTPUT: dict[int, dict[str, Any]] = {
-    164: {
-        "kind": 1,
-        "type": f_bt.Uuid(value=[1]),
-        "characteristics": None,
-        "includes": None,
-    }
-}
+_SAMPLE_GATT_SERVICES_OUTPUT: list[f_gatt_controller.ServiceInfo] = [
+    f_gatt_controller.ServiceInfo(
+        handle=f_gatt_controller.ServiceHandle(value=164),
+        kind=1,
+        type_=f_bt.Uuid(value=[1]),
+        characteristics=None,
+        includes=None,
+    )
+]
 
 _SAMPLE_DISCOVER_CHARACTERISTIC_RESPONSE = (
     f_gatt_controller.RemoteServiceDiscoverCharacteristicsResponse(
@@ -73,23 +75,25 @@ _SAMPLE_DISCOVER_CHARACTERISTIC_RESPONSE = (
     )
 )
 
-_SAMPLE_DISCOVER_CHARACTERISTIC_OUTPUT: dict[
-    int, dict[str, int | list[int] | None]
-] = {
-    22: {
-        "handle": 22,
-        "type": [1],
-        "properties": 2,
-        "permissions": None,
-        "descriptors": None,
-    }
-}
+_SAMPLE_DISCOVER_CHARACTERISTIC_OUTPUT: typing.Sequence[
+    f_gatt_controller.Characteristic
+] = [
+    f_gatt_controller.Characteristic(
+        handle=f_gatt_controller.Handle(value=22),
+        type_=f_bt.Uuid(value=[1]),
+        properties=2,
+        permissions=None,
+        descriptors=None,
+    )
+]
 
-_SAMPLE_READ_CHARACTERISTIC_OUTPUT: dict[str, int | list[int] | None | bool] = {
-    "handle": 22,
-    "value": [1],
-    "truncated": False,
-}
+_SAMPLE_READ_CHARACTERISTIC_OUTPUT: f_gatt_controller.RemoteServiceReadCharacteristicResponse = f_gatt_controller.RemoteServiceReadCharacteristicResponse(
+    value=f_gatt_controller.ReadValue(
+        handle=f_gatt_controller.Handle(value=22),
+        value=[1],
+        maybe_truncated=False,
+    )
+)
 
 _SAMPLE_READ_CHARACTERISTIC_RESPONSE = (
     f_gatt_controller.RemoteServiceReadCharacteristicResponse(
@@ -193,23 +197,23 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_scan(self) -> None:
         """test for BluetoothLE.scan() method."""
         with mock.patch.object(
-            self.bluetooth_le_obj,
-            "_scan",
-            autospec=True,
+            type(self.bluetooth_le_obj),
+            "scan",
+            new_callable=mock.AsyncMock,
             return_value=_SAMPLE_LE_KNOWN_DEVICES_OUTPUT,
-        ):
+        ) as mock_scan:
             data = await self.bluetooth_le_obj.scan()
+            mock_scan.assert_called_once()
             self.assertEqual(data, _SAMPLE_LE_KNOWN_DEVICES_OUTPUT)
 
     async def test_connect(self) -> None:
         """test for BluetoothLE.connect() method."""
         self.bluetooth_le_obj._central_controller_proxy = mock.MagicMock()
-        mock_identifier = 0
+        mock_identifier = f_bt.PeerId(value=0)
         await self.bluetooth_le_obj.connect(identifier=mock_identifier)
-        mock_peer_id = f_bt.PeerId(value=mock_identifier)
         mock_options = f_ble_controller.ConnectionOptions(bondable_mode=True)
         self.bluetooth_le_obj._central_controller_proxy.connect.assert_called_with(
-            id_=mock_peer_id, options=mock_options, handle=mock.ANY
+            id_=mock_identifier, options=mock_options, handle=mock.ANY
         )
 
     async def test_advertise(self) -> None:
@@ -231,7 +235,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.bluetooth_le_obj._peripheral_advertisement_server = (
             mock.MagicMock()
         )
-        self.bluetooth_le_obj._peripheral_controller_proxy = mock.MagicMock()
+        self.bluetooth_le_obj._peripheral_controller_proxy = mock.AsyncMock()
         with mock.patch("asyncio.get_running_loop"):
             await self.bluetooth_le_obj.advertise(
                 appearance=mock_appearance, name=mock_name
@@ -294,11 +298,11 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_connect_to_service(self) -> None:
         """Test for BluetoothLE.connect_to_service()."""
-        mock_handle = 1
+        mock_handle = f_gatt_controller.ServiceHandle(value=1)
         self.bluetooth_le_obj._gatt_client = mock.MagicMock()
         await self.bluetooth_le_obj.connect_to_service(handle=mock_handle)
         self.bluetooth_le_obj._gatt_client.connect_to_service.assert_called_with(
-            handle=f_gatt_controller.ServiceHandle(value=mock_handle),
+            handle=mock_handle,
             service=mock.ANY,
         )
         assert self.bluetooth_le_obj._remote_service_client is not None
@@ -315,7 +319,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_read_characteristics(self) -> None:
         """Test for BluetoothLE.read_characteristics()."""
         self.bluetooth_le_obj._remote_service_client = mock.AsyncMock()
-        mock_handle = 1
+        mock_handle = f_gatt_controller.Handle(value=1)
         mock_read_options = f_gatt_controller.ReadOptions(
             short_read=f_gatt_controller.ShortReadOptions()
         )
@@ -330,7 +334,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(data, _SAMPLE_READ_CHARACTERISTIC_OUTPUT)
         self.bluetooth_le_obj._remote_service_client.read_characteristic.assert_called_with(
-            handle=f_gatt_controller.ServiceHandle(value=mock_handle),
+            handle=mock_handle,
             options=mock_read_options,
         )
 

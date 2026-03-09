@@ -6,6 +6,8 @@
 import abc
 from typing import Any
 
+import fidl_fuchsia_bluetooth as f_bt
+
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
     bluetooth_common,
@@ -20,7 +22,7 @@ class AsyncAvrcp(bluetooth_common.AsyncBluetoothCommon):
 
     # List all the public methods
     @abc.abstractmethod
-    async def init_avrcp(self, target_id: str) -> None:
+    async def init_avrcp(self, target_id: f_bt.PeerId) -> None:
         """Initialize AVRCP service from the sink device."""
 
     @abc.abstractmethod
@@ -47,7 +49,7 @@ class Avrcp(affordance.Affordance, bluetooth_common.BluetoothCommon):
 
     # List all the public methods
     @abc.abstractmethod
-    def init_avrcp(self, target_id: str) -> None:
+    def init_avrcp(self, target_id: f_bt.PeerId) -> None:
         """Initialize AVRCP service from the sink device."""
 
     @abc.abstractmethod

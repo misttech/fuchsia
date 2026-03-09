@@ -6,6 +6,7 @@
 from enum import StrEnum
 from typing import Any
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_async_extension
 
 from honeydew import affordances_capable
@@ -44,7 +45,7 @@ class AsyncAvrcpUsingSl4f(
         self.verify_supported()
 
     # List all the public methods
-    async def init_avrcp(self, target_id: str) -> None:
+    async def init_avrcp(self, target_id: f_bt.PeerId) -> None:
         """Initialize AVRCP service from the sink device.
 
         Args:
@@ -54,7 +55,8 @@ class AsyncAvrcpUsingSl4f(
             Sl4fError: On failure.
         """
         self.__sl4f.run(
-            method=Sl4fMethods.INIT_AVRCP, params={"target_id": target_id}
+            method=Sl4fMethods.INIT_AVRCP,
+            params={"target_id": str(target_id.value)},
         )
 
     def verify_supported(self) -> None:
@@ -129,7 +131,7 @@ class AvrcpUsingSl4f(
         )
 
     # List all the public methods
-    def init_avrcp(self, target_id: str) -> None:
+    def init_avrcp(self, target_id: f_bt.PeerId) -> None:
         """Initialize AVRCP service from the sink device.
 
         Args:

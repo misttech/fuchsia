@@ -6,6 +6,7 @@
 from enum import StrEnum
 from typing import Any
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_async_extension
 
 from honeydew import affordances_capable
@@ -89,7 +90,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
 
     def connect_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -110,7 +111,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
         )
 
     def forget_device(
-        self, identifier: str, timeout_sec: float | None = None
+        self, identifier: f_bt.PeerId, timeout_sec: float | None = None
     ) -> None:
         """Forget device to target remote device via Bluetooth.
 
@@ -182,7 +183,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
 
     def pair_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -314,7 +315,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
 
     async def connect_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -332,7 +333,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
             self._sl4f.run(
                 method=Sl4fMethods.CONNECT_DEVICE,
                 params={
-                    "identifier": identifier,
+                    "identifier": str(identifier.value),
                     "transport": connection_type.value,
                 },
             )
@@ -342,7 +343,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
             ) from e
 
     async def forget_device(
-        self, identifier: str, timeout_sec: float | None = None
+        self, identifier: f_bt.PeerId, timeout_sec: float | None = None
     ) -> None:
         """Forget device to target remote device via Bluetooth.
 
@@ -356,7 +357,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
         try:
             self._sl4f.run(
                 method=Sl4fMethods.FORGET_DEVICE,
-                params={"identifier": identifier},
+                params={"identifier": str(identifier.value)},
             )
         except sl4f_errors.Sl4fError as e:
             raise bluetooth_errors.BluetoothError(
@@ -441,7 +442,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
 
     async def pair_device(
         self,
-        identifier: str,
+        identifier: f_bt.PeerId,
         connection_type: bluetooth_types.BluetoothConnectionType,
         timeout_sec: float | None = None,
     ) -> None:
@@ -459,7 +460,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
             self._sl4f.run(
                 method=Sl4fMethods.PAIR_DEVICE,
                 params={
-                    "identifier": identifier,
+                    "identifier": str(identifier.value),
                     "transport": connection_type.value,
                 },
             )

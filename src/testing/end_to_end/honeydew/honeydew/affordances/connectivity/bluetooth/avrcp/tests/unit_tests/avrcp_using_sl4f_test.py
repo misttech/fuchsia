@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
+import fidl_fuchsia_bluetooth as f_bt
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable
@@ -62,7 +63,7 @@ class BluetoothAvrcpAsyncSL4FTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_avrcp_init(self) -> None:
         """Test for Bluetooth.avrcp_init() method."""
-        await self.bluetooth_obj.init_avrcp(target_id="0")
+        await self.bluetooth_obj.init_avrcp(target_id=f_bt.PeerId(value=0))
 
         self.sl4f_obj.run.assert_called()
 
