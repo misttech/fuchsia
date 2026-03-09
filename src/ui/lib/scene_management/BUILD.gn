@@ -6,12 +6,10 @@ import("//build/components.gni")
 import("//build/icu/icu_rustc_library.gni")
 import("//build/rust/rustc_library.gni")
 
-icu_rustc_library("scene_management") {
-  name = "scene_management"
-  with_unit_tests = true
+_scene_management = {
   edition = "2024"
 
-  icu_deps = [ "//src/ui/lib/input_pipeline" ]
+  icu_deps = []
   deps = [
     "//sdk/fidl/fuchsia.accessibility.scene:fuchsia.accessibility.scene_rust",
     "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
@@ -44,6 +42,25 @@ icu_rustc_library("scene_management") {
     "src/pointerinjector_config.rs",
     "src/scene_manager.rs",
   ]
+}
+
+icu_rustc_library("scene_management") {
+  forward_variables_from(_scene_management, "*")
+  with_unit_tests = true
+
+  icu_deps = [ "//src/ui/lib/input_pipeline" ]
+}
+
+icu_rustc_library("dso") {
+  forward_variables_from(_scene_management, "*")
+  name = "scene_management_dso"
+  with_unit_tests = false  # :scene_management provides unit tests
+
+  if (!defined(features)) {
+    features = []
+  }
+  features += [ "dso" ]
+  icu_deps = [ "//src/ui/lib/input_pipeline:dso" ]
 }
 
 rustc_library("scene_management_mocks") {

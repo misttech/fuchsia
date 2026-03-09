@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::scene_management::SceneManagerTrait;
 use fidl_fuchsia_accessibility::{
     ColorCorrectionMode, ColorTransformConfiguration, ColorTransformHandlerRequest,
     ColorTransformHandlerRequestStream,
@@ -10,13 +11,13 @@ use fidl_fuchsia_ui_brightness::{
     ColorAdjustmentHandlerRequest, ColorAdjustmentHandlerRequestStream, ColorAdjustmentRequest,
     ColorAdjustmentRequestStream,
 };
+use fidl_fuchsia_ui_display_color as fidl_color;
 use fidl_fuchsia_ui_policy::{DisplayBacklightRequest, DisplayBacklightRequestStream};
+use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use futures::stream::TryStreamExt;
 use log::{error, info, warn};
-use scene_management::SceneManagerTrait;
 use std::sync::Arc;
-use {fidl_fuchsia_ui_display_color as fidl_color, fuchsia_async as fasync};
 
 const ZERO_OFFSET: [f32; 3] = [0., 0., 0.];
 

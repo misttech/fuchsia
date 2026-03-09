@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
-use crate::{input_device, keyboard_binding, metrics};
+use crate::{Incoming, input_device, keyboard_binding, metrics};
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3::{self as fidl_ui_input3, LockState, Modifiers};
-use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::health::Reporter;
 
 use keymaps::{LockStateChecker, ModifierChecker};
@@ -130,10 +129,12 @@ impl UnhandledInputHandler for ImeHandler {
 impl ImeHandler {
     /// Creates a new [`ImeHandler`] by connecting out to the key event injector.
     pub async fn new(
+        incoming: &Incoming,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
-        let key_event_injector = connect_to_protocol::<fidl_ui_input3::KeyEventInjectorMarker>()?;
+        let key_event_injector =
+            incoming.connect_protocol::<fidl_ui_input3::KeyEventInjectorProxy>()?;
 
         Self::new_handler(key_event_injector, input_handlers_node, metrics_logger).await
     }
@@ -231,13 +232,12 @@ mod tests {
     use crate::keyboard_binding::{self, KeyboardEvent};
     use crate::testing_utilities;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_input as fidl_input;
+    use fidl_fuchsia_ui_input3 as fidl_ui_input3;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::convert::TryFrom as _;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_input as fidl_input, fidl_fuchsia_ui_input3 as fidl_ui_input3,
-        fuchsia_async as fasync,
-    };
 
     fn handle_events(
         ime_handler: Rc<ImeHandler>,

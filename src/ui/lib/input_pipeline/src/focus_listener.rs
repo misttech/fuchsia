@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::metrics;
+use crate::{Incoming, metrics};
 use anyhow::{Context, Error};
+use fidl_fuchsia_ui_focus as focus;
+use fidl_fuchsia_ui_keyboard_focus as kbd_focus;
 use focus_chain_provider::FocusChainProviderPublisher;
-use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt;
 use metrics_registry::*;
-use {fidl_fuchsia_ui_focus as focus, fidl_fuchsia_ui_keyboard_focus as kbd_focus};
 
 /// FocusListener listens to focus change and notify to related input modules.
 pub struct FocusListener {
@@ -53,16 +53,17 @@ impl FocusListener {
     /// # Errors
     /// If unable to connect to the text_manager protocol.
     pub fn new(
+        incoming: &Incoming,
         focus_chain_publisher: FocusChainProviderPublisher,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
-        let text_manager = connect_to_protocol::<kbd_focus::ControllerMarker>()?;
+        let text_manager = incoming.connect_protocol::<kbd_focus::ControllerProxy>()?;
 
         let (focus_chain_listener_client_end, focus_chain_listener) =
             fidl::endpoints::create_request_stream::<focus::FocusChainListenerMarker>();
 
         let focus_chain_listener_registry: focus::FocusChainListenerRegistryProxy =
-            connect_to_protocol::<focus::FocusChainListenerRegistryMarker>()?;
+            incoming.connect_protocol::<focus::FocusChainListenerRegistryProxy>()?;
         focus_chain_listener_registry
             .register(focus_chain_listener_client_end)
             .context("Failed to register focus chain listener.")?;
@@ -138,10 +139,11 @@ impl FocusListener {
 mod tests {
     use super::*;
     use fidl_fuchsia_ui_focus_ext::FocusChainExt;
+    use fidl_fuchsia_ui_views as fidl_ui_views;
     use fidl_fuchsia_ui_views_ext::ViewRefExt;
+    use fuchsia_scenic as scenic;
     use futures::join;
     use pretty_assertions::assert_eq;
-    use {fidl_fuchsia_ui_views as fidl_ui_views, fuchsia_scenic as scenic};
 
     /// Listens for a ViewRef from a view focus change request on `request_stream`.
     ///

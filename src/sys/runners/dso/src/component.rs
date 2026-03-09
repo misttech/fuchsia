@@ -11,6 +11,11 @@ use elf_runner::ElfComponentLaunchInfo;
 use elf_runner::config::ElfProgramConfig;
 use fdf::OnDispatcher;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_process as fprocess;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -22,14 +27,9 @@ use runner::{StartInfo, component as runner_component};
 use std::ffi::CString;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
-use std::{ptr, thread};
+use std::{mem, ptr, thread};
 use vfs::ExecutionScope;
 use zx::HandleBased;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
-    fidl_fuchsia_process as fprocess, fidl_fuchsia_process_lifecycle as flifecycle,
-    fuchsia_async as fasync,
-};
 
 pub(super) type TerminateCallback = Box<dyn FnOnce(&str) + Send>;
 
@@ -37,11 +37,12 @@ pub(super) async fn start(
     start_info: frunner::ComponentStartInfo,
     controller_server: ServerEnd<frunner::ComponentControllerMarker>,
     env: &fdf_env::Environment,
+    thread_role: &str,
     scope: &fasync::ScopeHandle,
     terminate_cb: TerminateCallback,
 ) -> Result<(), StartError> {
     let LaunchInfo { controller, exit_fut } =
-        match Component::launch(start_info, &env, terminate_cb).await {
+        match Component::launch(start_info, &env, thread_role, terminate_cb).await {
             Ok(c) => c,
             Err(e) => {
                 _ = controller_server.close_with_epitaph((&e).into());
@@ -83,6 +84,7 @@ impl Component {
     async fn launch(
         start_info: frunner::ComponentStartInfo,
         env: &fdf_env::Environment,
+        thread_role: &str,
         terminate_routine: TerminateCallback,
     ) -> Result<LaunchInfo, StartError> {
         let dso_path = runner::get_program_string(&start_info, "binary")
@@ -123,21 +125,47 @@ impl Component {
         let dispatcher;
         let shutdown_done_rx;
         if is_async {
-            let mut fdf_dispatcher =
-                fdf::DispatcherBuilder::new().name(dso_name).shutdown_observer(move |_| {
+            let sched_role = sched_role.ok_or_else(|| {
+                warn!(url:%, is_async:%; "Component missing scheduler role");
+                StartError::InvalidArgs
+            })?;
+            if sched_role != thread_role {
+                warn!(url:%, sched_role:%, is_async:%; "Component using unsupported scheduler role");
+                return Err(StartError::InvalidArgs);
+            }
+
+            // Thread pool may or may not exist yet so configure it now
+            env.set_thread_limit(thread_role, 1).expect("set thread limit");
+            let role_opts = env.get_scheduler_role_opts(thread_role);
+            env.set_scheduler_role_opts(
+                thread_role,
+                role_opts | fdf_env::Environment::SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS,
+            )
+            .expect("set scheduler role opts");
+
+            let fdf_dispatcher = fdf::DispatcherBuilder::new()
+                .scheduler_role(sched_role)
+                .name(dso_name)
+                .no_thread_migration()
+                .shutdown_observer(move |_| {
                     info!(name:%; "dispatcher shutdown");
                 });
-            if let Some(sched_role) = sched_role {
-                fdf_dispatcher = fdf_dispatcher.scheduler_role(sched_role);
-                info!(dso_name:%, sched_role:%; "Applied scheduler role");
-            }
             let driver = Arc::into_raw(driver);
             let runtime_handle = env.new_driver(driver);
+            runtime_handle.add_allowed_scheduler_role(sched_role);
             // SAFETY: This is safe because `driver` was obtained from [`Arc::into_raw`] above.
             let driver = unsafe { Arc::from_raw(driver) };
-            let fdf_dispatcher = runtime_handle
-                .new_dispatcher(fdf_dispatcher)
-                .map_err(|err| StartError::CreateDispatcher { name: dso_name.into(), err })?;
+            let fdf_dispatcher = runtime_handle.new_dispatcher(fdf_dispatcher);
+            let fdf_dispatcher = match fdf_dispatcher {
+                Ok(d) => d,
+                Err(err) => {
+                    // Otherwise drop(runtime_handle) will panic because the dispatcher was
+                    // not shutdown. Since this is the case where `new_dispatcher` failed
+                    // there's nothing to shutdown
+                    mem::forget(runtime_handle);
+                    return Err(StartError::CreateDispatcher { name: dso_name.into(), err });
+                }
+            };
             let (tx, rx) = oneshot::channel();
             control = InnerControl::Async(Some(AsyncControl {
                 runtime_handle: Some(runtime_handle),
@@ -501,10 +529,11 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::endpoints::{self, ClientEnd};
+    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_io as fio;
     use futures::poll;
     use futures::task::Poll;
     use test_case::test_case;
-    use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
     #[derive(Debug)]
     struct ComponentInfo {
@@ -560,6 +589,10 @@ mod tests {
                         key: "async".into(),
                         value: Some(Box::new(fdata::DictionaryValue::Str(is_async.into()))),
                     },
+                    fdata::DictionaryEntry {
+                        key: "scheduler_role".into(),
+                        value: Some(Box::new(fdata::DictionaryValue::Str("test_role".into()))),
+                    },
                 ]),
                 ..Default::default()
             }),
@@ -574,7 +607,7 @@ mod tests {
             ..Default::default()
         };
         let (termination_routine, termination_rx) = terminate_cb();
-        start(start_info, controller_server, env, &scope, termination_routine).await?;
+        start(start_info, controller_server, env, "test_role", &scope, termination_routine).await?;
         Ok(ComponentInfo {
             controller: controller.into_proxy(),
             termination_rx: Some(termination_rx),

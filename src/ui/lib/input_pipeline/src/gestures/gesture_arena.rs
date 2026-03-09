@@ -7,7 +7,7 @@ use super::{
 };
 use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::utils::Size;
-use crate::{input_device, metrics, mouse_binding, touch_binding};
+use crate::{MonotonicInstant, input_device, metrics, mouse_binding, touch_binding};
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use core::cell::RefCell;
@@ -467,7 +467,7 @@ fn log_common(inspect_node: &InspectNode, driver_timestamp: zx::MonotonicInstant
     inspect_node.record_int(
         "entry_latency_micros",
         // Use lower precision for latency, to minimize space.
-        (fuchsia_async::MonotonicInstant::now().into_zx() - driver_timestamp).into_micros(),
+        (MonotonicInstant::now().into_zx() - driver_timestamp).into_micros(),
     );
 }
 
@@ -3581,10 +3581,11 @@ mod tests {
             Position, Size, input_device, keyboard_binding, metrics, mouse_binding, touch_binding,
         };
         use assert_matches::assert_matches;
+        use fidl_fuchsia_input_report as fidl_input_report;
+        use fuchsia_async as fasync;
         use maplit::hashset;
         use std::rc::Rc;
         use test_case::test_case;
-        use {fidl_fuchsia_input_report as fidl_input_report, fuchsia_async as fasync};
 
         struct EmptyContenderFactory {}
 

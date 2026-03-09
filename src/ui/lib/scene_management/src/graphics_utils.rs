@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::display_metrics::DisplayMetrics;
-use input_pipeline::{Position, Size};
+use crate::lib::{Position, Size};
 
 /// [`ScreenCoordinates`] represents a point on the screen. It can be created from pixels, pips, or
 /// millimeters and the coordinate vales can be retrieved in any of those units.

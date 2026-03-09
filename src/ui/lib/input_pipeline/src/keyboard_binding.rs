@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::metrics;
+use crate::{Dispatcher, metrics};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
+use fidl_fuchsia_ui_input3 as fidl_ui_input3;
 use fidl_fuchsia_ui_input3::KeyEventType;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
-use {fidl_fuchsia_ui_input3 as fidl_ui_input3, fuchsia_async as fasync};
 
 /// A [`KeyboardEvent`] represents an input event from a keyboard device.
 ///
@@ -561,7 +561,7 @@ impl KeyboardBinding {
             metrics_logger: metrics::MetricsLogger,
             tracing_id: fuchsia_trace::Id,
         ) {
-            fasync::Task::local(async move {
+            Dispatcher::spawn_local(async move {
                 fuchsia_trace::duration!("input", "key_event_thread");
                 fuchsia_trace::flow_end!("input", "key_event_thread", tracing_id);
 
@@ -572,9 +572,9 @@ impl KeyboardBinding {
                     fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
                     let event = input_device::InputEvent {
-                        device_event: input_device::InputDeviceEvent::Keyboard(
-                            KeyboardEvent::new(key, event_type),
-                        ),
+                        device_event: input_device::InputDeviceEvent::Keyboard(KeyboardEvent::new(
+                            key, event_type,
+                        )),
                         device_descriptor: device_descriptor.clone(),
                         event_time,
                         handled: Handled::No,
@@ -590,7 +590,9 @@ impl KeyboardBinding {
                                     &event_type,
                                     error));
                         }
-                        _ => { let _ = inspect_sender.unbounded_send(event).expect("Failed to count generated KeyboardEvent in Input Pipeline Inspect tree."); },
+                        _ => {
+                            let _ = inspect_sender.unbounded_send(event).expect("Failed to count generated KeyboardEvent in Input Pipeline Inspect tree.");
+                        }
                     }
                     // If key events happen to have been reported at the same time,
                     // we pull them apart artificially. A 1ns increment will likely
@@ -598,8 +600,7 @@ impl KeyboardBinding {
                     // does not introduce confusion.
                     event_time = event_time + zx::MonotonicDuration::from_nanos(1);
                 }
-            })
-            .detach();
+            }).detach();
         }
 
         // Filter out the keys which were present in the previous keyboard report to avoid sending

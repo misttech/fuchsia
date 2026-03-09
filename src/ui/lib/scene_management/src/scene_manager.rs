@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::lib::{Position, Size};
 use crate::pointerinjector_config::{
     InjectorViewportChangeFn, InjectorViewportHangingGet, InjectorViewportPublisher,
     InjectorViewportSpec, InjectorViewportSubscriber,
@@ -10,29 +11,31 @@ use crate::{DisplayMetrics, ViewingDistance};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::server as hanging_get;
-use fidl::endpoints::{create_proxy, Proxy};
+use fidl::endpoints::{Proxy, create_proxy};
+use fidl_fuchsia_accessibility_scene as a11y_scene;
+use fidl_fuchsia_math as math;
+use fidl_fuchsia_ui_app as ui_app;
 use fidl_fuchsia_ui_composition::{self as ui_comp, ContentId, TransformId};
+use fidl_fuchsia_ui_display_singleton as singleton_display;
 use fidl_fuchsia_ui_pointerinjector_configuration::{
     SetupRequest as PointerInjectorConfigurationSetupRequest,
     SetupRequestStream as PointerInjectorConfigurationSetupRequestStream,
 };
+use fidl_fuchsia_ui_views as ui_views;
 use flatland_frame_scheduling_lib::*;
+use fuchsia_async as fasync;
+use fuchsia_scenic as scenic;
 use fuchsia_sync::Mutex;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use fuchsia_trace as trace;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot;
 use futures::prelude::*;
-use input_pipeline::Size;
 use log::{error, info, warn};
+use math as fmath;
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::process;
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_accessibility_scene as a11y_scene, fidl_fuchsia_math as math,
-    fidl_fuchsia_ui_app as ui_app, fidl_fuchsia_ui_display_singleton as singleton_display,
-    fidl_fuchsia_ui_views as ui_views, fuchsia_async as fasync, fuchsia_scenic as scenic,
-    fuchsia_trace as trace, math as fmath,
-};
 
 /// Presentation messages.
 pub enum PresentationMessage {
@@ -331,7 +334,7 @@ pub trait SceneManagerTrait: Send {
     /// If a custom cursor has not been set using `set_cursor_image` or `set_cursor_shape` a default
     /// cursor will be created and added to the scene.  The implementation of the `SceneManager` trait
     /// is responsible for translating the raw input position into "pips".
-    fn set_cursor_position(&mut self, position_physical_px: input_pipeline::Position);
+    fn set_cursor_position(&mut self, position_physical_px: Position);
 
     /// Sets the visibility of the cursor in the current scene. The cursor is visible by default.
     ///
@@ -344,7 +347,7 @@ pub trait SceneManagerTrait: Send {
 
     /// Input pipeline handlers such as TouchInjectorHandler require the display size in order to be
     /// instantiated.  This method exposes that information.
-    fn get_pointerinjection_display_size(&self) -> input_pipeline::Size;
+    fn get_pointerinjection_display_size(&self) -> crate::lib::Size;
 
     // Support the hanging get implementation of
     // fuchsia.ui.pointerinjector.configurator.Setup.WatchViewport().
@@ -414,7 +417,7 @@ impl SceneManagerTrait for SceneManager {
     /// If a custom cursor has not been set using `set_cursor_image` or `set_cursor_shape` a default
     /// cursor will be created and added to the scene.  The implementation of the `SceneManager` trait
     /// is responsible for translating the raw input position into "pips".
-    fn set_cursor_position(&mut self, position_physical_px: input_pipeline::Position) {
+    fn set_cursor_position(&mut self, position_physical_px: Position) {
         if let Some(cursor_transform_id) = self.cursor_transform_id {
             let position_logical = position_physical_px / self.device_pixel_ratio;
             let x =

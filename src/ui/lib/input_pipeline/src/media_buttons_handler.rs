@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::dispatcher::TaskHandle;
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
-use crate::{consumer_controls_binding, input_device, metrics};
+use crate::{Dispatcher, consumer_controls_binding, input_device, metrics};
 use async_trait::async_trait;
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_policy as fidl_ui_policy;
 use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -15,10 +19,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use zx::AsHandleRef;
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
-};
 
 /// A [`MediaButtonsHandler`] tracks MediaButtonListeners and sends media button events to them.
 pub struct MediaButtonsHandler {
@@ -235,7 +235,8 @@ impl MediaButtonsHandler {
             };
 
             let metrics_logger_clone = self.metrics_logger.clone();
-            tracker.track(metrics_logger_clone, fasync::Task::local(fut));
+            let task = Dispatcher::spawn_local(fut);
+            tracker.track(metrics_logger_clone, task);
         }
     }
 
@@ -264,10 +265,8 @@ impl MediaButtonsHandler {
                 }
             };
             let metrics_logger_clone = self.metrics_logger.clone();
-            self.inner
-                .borrow()
-                .send_event_task_tracker
-                .track(metrics_logger_clone, fasync::Task::local(fut));
+            let task = Dispatcher::spawn_local(fut);
+            self.inner.borrow().send_event_task_tracker.track(metrics_logger_clone, task);
         }
     }
 }
@@ -276,23 +275,23 @@ impl MediaButtonsHandler {
 /// en masse.
 #[derive(Debug)]
 pub struct LocalTaskTracker {
-    sender: mpsc::UnboundedSender<fasync::Task<()>>,
-    _receiver_task: fasync::Task<()>,
+    sender: mpsc::UnboundedSender<TaskHandle<()>>,
+    _receiver_task: TaskHandle<()>,
 }
 
 impl LocalTaskTracker {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded();
-        let receiver_task = fasync::Task::local(async move {
+        let receiver_task = Dispatcher::spawn_local(async move {
             // Drop the tasks as they are completed.
-            receiver.for_each_concurrent(None, |task: fasync::Task<()>| task).await
+            receiver.for_each_concurrent(None, |task: TaskHandle<()>| task).await
         });
 
         Self { sender, _receiver_task: receiver_task }
     }
 
     /// Submits a new task to track.
-    pub fn track(&self, metrics_logger: metrics::MetricsLogger, task: fasync::Task<()>) {
+    pub fn track(&self, metrics_logger: metrics::MetricsLogger, task: TaskHandle<()>) {
         match self.sender.unbounded_send(task) {
             Ok(_) => {}
             // `Full` should never happen because this is unbounded.
@@ -316,11 +315,12 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fuchsia_async as fasync;
     use futures::TryStreamExt;
     use futures::channel::oneshot;
     use pretty_assertions::assert_eq;
     use std::task::Poll;
-    use {fidl_fuchsia_input_report as fidl_input_report, fuchsia_async as fasync};
 
     fn spawn_device_listener_registry_server(
         handler: Rc<MediaButtonsHandler>,
@@ -378,7 +378,7 @@ mod tests {
     /// Makes a `Task` that waits for a `oneshot`'s value to be set, and then forwards that value to
     /// a reference-counted container that can be observed outside the task.
     fn make_signalable_task<T: Default + 'static>()
-    -> (oneshot::Sender<T>, fasync::Task<()>, Rc<RefCell<T>>) {
+    -> (oneshot::Sender<T>, TaskHandle<()>, Rc<RefCell<T>>) {
         let (sender, receiver) = oneshot::channel();
         let task_completed = Rc::new(RefCell::new(<T as Default>::default()));
         let task_completed_ = task_completed.clone();
@@ -387,7 +387,7 @@ mod tests {
                 *task_completed_.borrow_mut() = value;
             }
         });
-        (sender, task, task_completed)
+        (sender, task.into(), task_completed)
     }
 
     /// Tests that a media button listener can be registered and is sent the latest event upon

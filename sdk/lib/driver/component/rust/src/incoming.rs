@@ -72,6 +72,12 @@ impl Incoming {
     }
 }
 
+impl From<Vec<cm_types::NamespaceEntry>> for Incoming {
+    fn from(other: Vec<cm_types::NamespaceEntry>) -> Self {
+        Self(other.into_iter().map(Into::into).collect())
+    }
+}
+
 /// A builder for connecting to an aggregated service instance in the driver's incoming namespace.
 /// By default, it will connect to the default instance, named `default`. You can override this
 /// by calling [`Self::instance`].

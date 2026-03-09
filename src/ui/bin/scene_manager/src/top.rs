@@ -3,14 +3,18 @@
 // found in the LICENSE file.
 
 use crate::color_transform_manager::ColorTransformManager;
-use ::input_pipeline::input_device::InputDeviceType;
+use crate::lib::input_device::InputDeviceType;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
-use ::input_pipeline::interaction_state_handler::{
+use crate::lib::interaction_state_handler::{
     handle_interaction_notifier_request_stream, init_interaction_hanging_get,
 };
-use ::input_pipeline::light_sensor::Configuration as LightSensorConfiguration;
+use crate::lib::light_sensor::Configuration as LightSensorConfiguration;
+use crate::lib::{Dispatcher, Incoming};
+use crate::scene_management::{SceneManager, SceneManagerTrait, ViewingDistance};
 use anyhow::{Context, Error};
-use fidl_fuchsia_accessibility::{ColorTransformHandlerMarker, ColorTransformMarker};
+use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_accessibility::{ColorTransformHandlerMarker, ColorTransformProxy};
+use fidl_fuchsia_accessibility_scene as a11y_view;
 use fidl_fuchsia_element::{
     GraphicalPresenterRequest, GraphicalPresenterRequestStream, PresentViewError, ViewSpec,
 };
@@ -26,36 +30,26 @@ use fidl_fuchsia_session_scene::{
 use fidl_fuchsia_ui_brightness::{
     ColorAdjustmentHandlerRequestStream, ColorAdjustmentRequestStream,
 };
+use fidl_fuchsia_ui_composition as flatland;
+use fidl_fuchsia_ui_composition_internal as fcomp;
+use fidl_fuchsia_ui_display_color as color;
+use fidl_fuchsia_ui_display_singleton as singleton_display;
 use fidl_fuchsia_ui_focus::FocusChainProviderRequestStream;
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryRequestStream as MediaButtonsListenerRegistryRequestStream,
     DisplayBacklightRequestStream,
 };
-use fuchsia_component::client::connect_to_protocol;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect::stats::InspectorExt;
+use fuchsia_inspect::{Inspector, InspectorConfig};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
-use scene_management::{SceneManager, SceneManagerTrait, ViewingDistance};
 use scene_manager_structured_config::Config;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_accessibility_scene as a11y_view, fidl_fuchsia_ui_composition as flatland,
-    fidl_fuchsia_ui_composition_internal as fcomp, fidl_fuchsia_ui_display_color as color,
-    fidl_fuchsia_ui_display_singleton as singleton_display, fuchsia_async as fasync,
-    fuchsia_inspect as inspect,
-};
-
-#[cfg(fuchsia_api_level_at_least = "HEAD")]
-mod color_transform_manager;
-mod factory_reset_countdown_server;
-mod factory_reset_device_server;
-mod input_device_registry_server;
-mod input_pipeline;
-mod light_sensor_server;
-mod media_buttons_listener_registry_server;
 
 enum ExposedServices {
     ColorAdjustment(ColorAdjustmentRequestStream),
@@ -73,11 +67,14 @@ enum ExposedServices {
 }
 
 const LIGHT_SENSOR_CONFIGURATION: &'static str = "/sensor-config/config.json";
-const ROLE_NAME: &str = "fuchsia.ui.scene_manager";
 
-#[fuchsia::main(logging_tags = [ "scene_manager" ], thread_role = ROLE_NAME)]
-async fn main() -> Result<(), Error> {
-    if let Err(e) = fuchsia_scheduler::set_role_for_root_vmar(ROLE_NAME) {
+pub async fn start(
+    incoming: Incoming,
+    outgoing_dir: fidl::endpoints::ServerEnd<fidl_fuchsia_io::DirectoryMarker>,
+    config: zx::Vmo,
+    role_name: &str,
+) -> Result<(), Error> {
+    if let Err(e) = fuchsia_scheduler::set_role_for_root_vmar(role_name) {
         warn!(e:%; "failed to set vmar role");
     }
 
@@ -89,13 +86,18 @@ async fn main() -> Result<(), Error> {
     //   size is about 260 KB.
     // * Use a slightly larger value here to allow some headroom. E.g. perhaps
     //   some events have a third finger.
-    let inspector = inspect::component::init_inspector_with_size(300 * 1024);
-    let _inspect_server_task =
-        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
+    let inspector = Inspector::new(InspectorConfig::default().size(300 * 1024));
+    let inspect_sink_client = incoming
+        .connect_protocol::<ClientEnd<fidl_fuchsia_inspect::InspectSinkMarker>>()
+        .expect("fuchsia.inspect.InspectSink");
+    let _inspect_server_task = inspect_runtime::publish(
+        &inspector,
+        inspect_runtime::PublishOptions::default().on_inspect_sink_client(inspect_sink_client),
+    );
 
     // Report data on the size of the inspect VMO, and the number of allocation
     // failures encountered. (Allocation failures can lead to missing data.)
-    inspect::component::serve_inspect_stats();
+    inspector.record_lazy_stats();
 
     // Initialize tracing.
     //
@@ -104,7 +106,10 @@ async fn main() -> Result<(), Error> {
     //
     // Initializing at the process-level more closely models how a trace
     // provider (e.g. scene_manager) interacts with the trace manager.
-    fuchsia_trace_provider::trace_provider_create_with_fdio();
+    let registry = incoming
+        .connect_protocol::<ClientEnd<fidl_fuchsia_tracing_provider::RegistryMarker>>()
+        .expect("fuchsia.tracing.provider.Registry");
+    fuchsia_trace_provider::trace_provider_create_with_service(registry.into_channel().into_raw());
 
     // Do not reorder the services below.
     fs.dir("svc")
@@ -138,31 +143,31 @@ async fn main() -> Result<(), Error> {
     let (light_sensor_server, light_sensor_request_stream_receiver) =
         if light_sensor_configuration.is_some() {
             let (light_sensor_server, light_sensor_request_stream_receiver) =
-                light_sensor_server::make_server_and_receiver();
+                crate::light_sensor_server::make_server_and_receiver();
             (Some(light_sensor_server), Some(light_sensor_request_stream_receiver))
         } else {
             (None, None)
         };
 
     let (input_device_registry_server, input_device_registry_request_stream_receiver) =
-        input_device_registry_server::make_server_and_receiver();
+        crate::input_device_registry_server::make_server_and_receiver();
 
     let (
         media_buttons_listener_registry_server,
         media_buttons_listener_registry_request_stream_receiver,
-    ) = media_buttons_listener_registry_server::make_server_and_receiver();
+    ) = crate::media_buttons_listener_registry_server::make_server_and_receiver();
 
     let (factory_reset_countdown_server, factory_reset_countdown_request_stream_receiver) =
-        factory_reset_countdown_server::make_server_and_receiver();
+        crate::factory_reset_countdown_server::make_server_and_receiver();
 
     let (factory_reset_device_server, factory_reset_device_request_stream_receiver) =
-        factory_reset_device_server::make_server_and_receiver();
+        crate::factory_reset_device_server::make_server_and_receiver();
 
     // This call should normally never fail. The ICU data loader must be kept alive to ensure
     // Unicode data is kept in memory.
     let icu_data_loader = icu_data::Loader::new().unwrap();
 
-    let ownership_proxy = connect_to_protocol::<fcomp::DisplayOwnershipMarker>()?;
+    let ownership_proxy = incoming.connect_protocol::<fcomp::DisplayOwnershipProxy>()?;
     let display_ownership =
         ownership_proxy.get_event().await.expect("Failed to get display ownership.");
     info!("Instantiating SceneManager");
@@ -183,7 +188,7 @@ async fn main() -> Result<(), Error> {
         enable_touch_baton_passing,
         enable_merge_touch_events,
         ..
-    } = Config::take_from_startup_handle();
+    } = Config::from_vmo(&config).expect("bad config vmo");
 
     let display_pixel_density = match display_pixel_density.trim().parse::<f32>() {
         Ok(density) => {
@@ -213,13 +218,13 @@ async fn main() -> Result<(), Error> {
         }
     };
 
-    let flatland_display = connect_to_protocol::<flatland::FlatlandDisplayMarker>()?;
-    let singleton_display_info = connect_to_protocol::<singleton_display::InfoMarker>()?;
-    let root_flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
-    let pointerinjector_flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
-    let scene_flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
+    let flatland_display = incoming.connect_protocol::<flatland::FlatlandDisplayProxy>()?;
+    let singleton_display_info = incoming.connect_protocol::<singleton_display::InfoProxy>()?;
+    let root_flatland = incoming.connect_protocol::<flatland::FlatlandProxy>()?;
+    let pointerinjector_flatland = incoming.connect_protocol::<flatland::FlatlandProxy>()?;
+    let scene_flatland = incoming.connect_protocol::<flatland::FlatlandProxy>()?;
     let a11y_view_provider = if attach_a11y_view {
-        Some(connect_to_protocol::<a11y_view::ProviderMarker>()?)
+        Some(incoming.connect_protocol::<a11y_view::ProviderProxy>()?)
     } else {
         None
     };
@@ -250,7 +255,8 @@ async fn main() -> Result<(), Error> {
 
     // Start input pipeline.
     let has_light_sensor_configuration = light_sensor_configuration.is_some();
-    if let Ok(input_pipeline) = input_pipeline::handle_input(
+    if let Ok(input_pipeline) = crate::input_pipeline::handle_input(
+        &incoming,
         scene_manager.clone(),
         input_device_registry_request_stream_receiver,
         light_sensor_request_stream_receiver,
@@ -278,13 +284,14 @@ async fn main() -> Result<(), Error> {
         {
             fs.dir("svc").add_fidl_service(ExposedServices::LightSensor);
         }
-        fasync::Task::local(input_pipeline.handle_input_events()).detach();
+        Dispatcher::spawn_local(input_pipeline.handle_input_events()).detach();
     };
 
     let color_transform_manager =
-        create_color_transform_manager(attach_a11y_view, Arc::clone(&scene_manager)).await?;
+        create_color_transform_manager(&incoming, attach_a11y_view, Arc::clone(&scene_manager))
+            .await?;
 
-    fs.take_and_serve_directory_handle()?;
+    fs.serve_connection(outgoing_dir).context("serve outgoing dir")?;
 
     // Concurrency note: spawn a local task in the match branch if the protocol must serve more
     // than a single client at a time.
@@ -436,6 +443,7 @@ async fn main() -> Result<(), Error> {
 }
 
 pub async fn create_color_transform_manager(
+    incoming: &Incoming,
     attach_a11y_view: bool,
     scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
 ) -> Result<Option<Arc<Mutex<ColorTransformManager>>>, Error> {
@@ -444,13 +452,13 @@ pub async fn create_color_transform_manager(
         return Ok(None);
     }
 
-    let color_converter = connect_to_protocol::<color::ConverterMarker>()?;
+    let color_converter = incoming.connect_protocol::<color::ConverterProxy>()?;
     let color_transform_manager =
         ColorTransformManager::new(color_converter, Arc::clone(&scene_manager));
 
     let (color_transform_handler_client, color_transform_handler_server) =
         fidl::endpoints::create_request_stream::<ColorTransformHandlerMarker>();
-    match connect_to_protocol::<ColorTransformMarker>() {
+    match incoming.connect_protocol::<ColorTransformProxy>() {
         Err(e) => {
             error!("Failed to connect to fuchsia.accessibility.color_transform: {:?}", e);
             Err(e.into())
@@ -654,7 +662,9 @@ mod tests {
     async fn test_create_color_transform_manager_attach_a11y_view_false() -> Result<(), Error> {
         let scene_manager: Arc<Mutex<dyn SceneManagerTrait>> =
             Arc::new(Mutex::new(MockSceneManager::new()));
-        let result = create_color_transform_manager(false, scene_manager).await?;
+        let result =
+            create_color_transform_manager(&crate::lib::Incoming::new(), false, scene_manager)
+                .await?;
         assert!(result.is_none());
         Ok(())
     }

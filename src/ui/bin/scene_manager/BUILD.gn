@@ -7,17 +7,12 @@ import("//build/fidl/fidl.gni")
 import("//build/icu/icu_fuchsia_component.gni")
 import("//build/icu/icu_fuchsia_package.gni")
 import("//build/icu/icu_rustc_binary.gni")
+import("//src/lib/dso/fuchsia_dso.gni")
 
-icu_rustc_binary("scene_manager_bin") {
-  output_name = "scene_manager"
-  with_unit_tests = true
+_scene_manager = {
   edition = "2024"
 
-  icu_deps = [
-    "//src/lib/icu_data/rust/icu_data",
-    "//src/ui/lib/input_pipeline",
-    "//src/ui/lib/scene_management",
-  ]
+  icu_deps = [ "//src/lib/icu_data/rust/icu_data" ]
 
   deps = [
     ":scene_manager_structured_config",
@@ -27,11 +22,14 @@ icu_rustc_binary("scene_manager_bin") {
     "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.input.interaction:fuchsia.input.interaction_rust",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.lightsensor:fuchsia.lightsensor_rust",
     "//sdk/fidl/fuchsia.recovery.policy:fuchsia.recovery.policy_rust",
     "//sdk/fidl/fuchsia.recovery.ui:fuchsia.recovery.ui_rust",
     "//sdk/fidl/fuchsia.session.scene:fuchsia.session.scene_rust",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
+    "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_rust",
     "//sdk/fidl/fuchsia.ui.brightness:fuchsia.ui.brightness_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_rust",
@@ -69,20 +67,54 @@ icu_rustc_binary("scene_manager_bin") {
     "src/input_device_registry_server.rs",
     "src/input_pipeline.rs",
     "src/light_sensor_server.rs",
-    "src/main.rs",
     "src/media_buttons_listener_registry_server.rs",
+    "src/top.rs",
   ]
+}
+
+icu_rustc_binary("bin") {
+  forward_variables_from(_scene_manager, "*")
+  output_name = "scene_manager"
+  with_unit_tests = true
+
+  sources += [ "src/entry.rs" ]
+  source_root = "src/entry.rs"
+  deps += [ "//src/lib/fuchsia-runtime" ]
+  icu_deps += [
+    "//src/ui/lib/input_pipeline",
+    "//src/ui/lib/scene_management",
+  ]
+}
+
+fuchsia_rust_dso("dso") {
+  forward_variables_from(_scene_manager, "*")
+  output_name = "scene_manager"
+  with_unit_tests = false  # :bin provides unit tests
+
+  sources += [ "src/entry_dso.rs" ]
+  source_root = "src/entry_dso.rs"
+  deps += icu_deps
+  deps += [
+    "//sdk/lib/driver/component/rust",
+    "//src/lib/dso/rust",
+    "//src/ui/lib/input_pipeline:dso",
+    "//src/ui/lib/scene_management:dso",
+  ]
+  if (!defined(features)) {
+    features = []
+  }
+  features += [ "dso" ]
 }
 
 fuchsia_component_manifest("manifest") {
   component_name = "scene_manager"
-  manifest = "meta/scene_manager.cml"
+  manifest = "meta/scene_manager.bin.cml"
 }
 
 icu_fuchsia_component("scene_manager_component") {
   cm_label = ":manifest"
   icu_deps = [
-    ":scene_manager_bin",
+    ":bin",
     "//src/lib/icu:icudtl",
   ]
 }
@@ -102,7 +134,7 @@ icu_fuchsia_package("scene_manager") {
 }
 
 fuchsia_unittest_package("scene_manager_tests") {
-  deps = [ ":scene_manager_bin_test" ]
+  deps = [ ":bin_test" ]
   test_type = "system"
 }
 
@@ -133,4 +165,15 @@ fuchsia_structured_config_values2("config_for_test") {
     enable_touch_baton_passing = false
     enable_merge_touch_events = false
   }
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":scene_manager_tests",
+
+    # TODO(https://fxbug.dev/489140485): Remove once we have a builder for
+    # that uses this
+    ":dso",
+  ]
 }

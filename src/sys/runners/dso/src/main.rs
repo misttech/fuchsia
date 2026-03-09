@@ -11,11 +11,12 @@
 #![cfg_attr(test, allow(unused_crate_dependencies))]
 
 use crate::component::TerminateCallback;
+use fidl_fuchsia_component_runner as frunner;
+use fuchsia_async as fasync;
 use futures::prelude::*;
 use log::{error, warn};
 use std::process;
 use std::rc::Rc;
-use {fidl_fuchsia_component_runner as frunner, fuchsia_async as fasync};
 
 mod component;
 mod error;
@@ -23,8 +24,7 @@ mod loader;
 mod util;
 
 pub(crate) fn init() -> Rc<fdf_env::Environment> {
-    let env = Rc::new(fdf_env::Environment::start(0).expect("start fdf environment"));
-    env
+    Rc::new(fdf_env::Environment::start(0).expect("start fdf environment"))
 }
 
 #[fuchsia::main]
@@ -34,9 +34,6 @@ async fn main() {
     }
 
     let env = init();
-
-    // TODO(https://fxbug.dev/403545512): Govern the number of threads in the environment with a
-    // constant, adding more than one thread if appropriate.
     let mut fs = fuchsia_component::server::ServiceFs::new();
 
     let scope = fasync::Scope::new();
@@ -61,6 +58,8 @@ async fn handle_component_runner(
     env: &fdf_env::Environment,
     scope: &fasync::ScopeHandle,
 ) {
+    const THREAD_ROLE: &str = "fuchsia.ui.common_dispatcher";
+
     while let Some(Ok(request)) = stream.next().await {
         match request {
             frunner::ComponentRunnerRequest::Start {
@@ -80,7 +79,8 @@ async fn handle_component_runner(
                 });
 
                 if let Err(err) =
-                    component::start(start_info, controller, env, scope, terminate_cb).await
+                    component::start(start_info, controller, env, THREAD_ROLE, scope, terminate_cb)
+                        .await
                 {
                     warn!(err:%, url:%; "failed to start component");
                 }

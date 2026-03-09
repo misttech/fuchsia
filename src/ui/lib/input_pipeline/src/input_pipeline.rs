@@ -6,9 +6,13 @@ use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
 use crate::input_device::InputPipelineFeatureFlags;
 use crate::input_handler::Handler;
-use crate::{input_device, input_handler, metrics};
+use crate::{Dispatcher, Incoming, input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
+use fidl::endpoints;
+use fidl_fuchsia_io as fio;
 use focus_chain_provider::FocusChainProviderPublisher;
+use fuchsia_async as fasync;
+use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
@@ -23,7 +27,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Use a self incremental u32 unique id for device_id.
 ///
@@ -165,18 +168,20 @@ impl InputPipelineAssembly {
 
     pub fn add_focus_listener(
         mut self,
+        incoming: &Incoming,
         focus_chain_publisher: FocusChainProviderPublisher,
     ) -> Self {
         let metrics_logger_clone = self.metrics_logger.clone();
+        let incoming2 = incoming.clone();
         let focus_listener_fut = Box::pin(async move {
-            if let Ok(mut focus_listener) =
-                FocusListener::new(focus_chain_publisher, metrics_logger_clone).map_err(|e| {
-                    log::warn!(
-                        "could not create focus listener, focus will not be dispatched: {:?}",
-                        e
-                    )
-                })
-            {
+            if let Ok(mut focus_listener) = FocusListener::new(
+                &incoming2,
+                focus_chain_publisher,
+                metrics_logger_clone,
+            )
+            .map_err(|e| {
+                log::warn!("could not create focus listener, focus will not be dispatched: {:?}", e)
+            }) {
                 // This will await indefinitely and process focus messages in a loop, unless there
                 // is a problem.
                 let _result = focus_listener
@@ -332,6 +337,7 @@ impl InputPipeline {
     /// - `assembly`: The input handlers that the [`InputPipeline`] sends InputEvents to.
     /// - `inspect_node`: The root node for InputPipeline's Inspect tree
     pub fn new(
+        incoming: &Incoming,
         input_device_types: Vec<input_device::InputDeviceType>,
         assembly: InputPipelineAssembly,
         inspect_node: fuchsia_inspect::Node,
@@ -345,13 +351,16 @@ impl InputPipeline {
         let input_device_bindings = input_pipeline.input_device_bindings.clone();
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
         let feature_flags = input_pipeline.feature_flags.clone();
+        let incoming = incoming.clone();
         fasync::Task::local(async move {
             // Watches the input device directory for new input devices. Creates new InputDeviceBindings
             // that send InputEvents to `input_event_receiver`.
             match async {
-                let dir_proxy = fuchsia_fs::directory::open_in_namespace(
+                let (dir_proxy, server) = endpoints::create_proxy::<fio::DirectoryMarker>();
+                incoming.as_ref_directory().open(
                     input_device::INPUT_REPORT_PATH,
-                    fuchsia_fs::PERM_READABLE,
+                    fio::PERM_READABLE,
+                    server.into()
                 )
                 .with_context(|| format!("failed to open {}", input_device::INPUT_REPORT_PATH))?;
                 let device_watcher =
@@ -385,8 +394,7 @@ impl InputPipeline {
                         ));
                 }
             }
-        })
-        .detach();
+        }).detach();
 
         Ok(input_pipeline)
     }
@@ -587,7 +595,7 @@ impl InputPipeline {
         handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
         metrics_logger: metrics::MetricsLogger,
     ) {
-        fasync::Task::local(async move {
+        Dispatcher::spawn_local(async move {
             for handler in &handlers {
                 handler.clone().set_handler_healthy();
             }
@@ -668,8 +676,7 @@ impl InputPipeline {
                 handler.clone().set_handler_unhealthy("Pipeline loop terminated");
             }
             panic!("Runner task is not supposed to terminate.")
-        })
-        .detach();
+        }).detach();
     }
 }
 
@@ -1286,6 +1293,7 @@ mod tests {
         let assembly = InputPipelineAssembly::new(metrics::MetricsLogger::default())
             .add_handler(fake_input_handler);
         let _test_input_pipeline = InputPipeline::new(
+            &Incoming::new(),
             device_types,
             assembly,
             test_node,

@@ -1,19 +1,19 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #![cfg(fuchsia_api_level_at_least = "HEAD")]
+
+use crate::dispatcher::TaskHandle;
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
-use crate::{input_device, metrics};
+use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher, Subscriber};
 use fidl_fuchsia_input_interaction::{
     NotifierRequest, NotifierRequestStream, NotifierWatchStateResponder, State,
 };
-use fidl_fuchsia_power_system::{ActivityGovernorMarker, ActivityGovernorProxy};
-use fuchsia_async::{Task, Timer};
-use fuchsia_component::client::connect_to_protocol;
-
+use fidl_fuchsia_power_system::ActivityGovernorProxy;
 use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use metrics_registry::InputPipelineErrorMetricDimensionEvent;
@@ -88,7 +88,7 @@ pub struct InteractionStateHandler {
     idle_threshold_ms: zx::MonotonicDuration,
 
     // The task holding the timer-based idle transition after last user input.
-    idle_transition_task: Cell<Option<Task<()>>>,
+    idle_transition_task: Cell<Option<TaskHandle<()>>>,
 
     // The event time of the last user input interaction.
     last_event_time: RefCell<zx::MonotonicInstant>,
@@ -117,6 +117,7 @@ impl InteractionStateHandler {
     /// Creates a new [`InteractionStateHandler`] that listens for user input
     /// input interactions and notifies clients of interaction state changes.
     pub async fn new(
+        incoming: &Incoming,
         idle_threshold_ms: zx::MonotonicDuration,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
@@ -136,7 +137,8 @@ impl InteractionStateHandler {
 
         let lease_holder = match suspend_enabled {
             true => {
-                let activity_governor = connect_to_protocol::<ActivityGovernorMarker>()
+                let activity_governor = incoming
+                    .connect_protocol::<ActivityGovernorProxy>()
                     .expect("connect to fuchsia.power.system.ActivityGovernor");
                 match LeaseHolder::new(activity_governor).await {
                     Ok(holder) => Some(Rc::new(RefCell::new(holder))),
@@ -245,9 +247,9 @@ impl InteractionStateHandler {
         timeout: zx::MonotonicInstant,
         state_publisher: InteractionStatePublisher,
         lease_holder: Option<Rc<RefCell<LeaseHolder>>>,
-    ) -> Task<()> {
-        Task::local(async move {
-            Timer::new(timeout).await;
+    ) -> TaskHandle<()> {
+        Dispatcher::spawn_local(async move {
+            Dispatcher::after_deadline(timeout.into()).await;
             lease_holder.and_then(|holder| Some(holder.borrow_mut().drop_lease()));
             state_publisher.set(State::Idle);
         })
@@ -367,10 +369,9 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     // Note: We use the global executor to get the current time instead
                     // of the kernel so that we do not unnecessarily clamp
                     // test-injected times.
-                    let event_time = unhandled_input_event.event_time.clamp(
-                        zx::MonotonicInstant::ZERO,
-                        fuchsia_async::MonotonicInstant::now().into_zx(),
-                    );
+                    let event_time = unhandled_input_event
+                        .event_time
+                        .clamp(zx::MonotonicInstant::ZERO, MonotonicInstant::now().into_zx());
 
                     self.inspect_status.count_received_event(&event_time);
                     self.transition_to_idle_after_new_time(event_time).await;
@@ -389,10 +390,9 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     // Note: We use the global executor to get the current time instead
                     // of the kernel so that we do not unnecessarily clamp
                     // test-injected times.
-                    let event_time = unhandled_input_event.event_time.clamp(
-                        zx::MonotonicInstant::ZERO,
-                        fuchsia_async::MonotonicInstant::now().into_zx(),
-                    );
+                    let event_time = unhandled_input_event
+                        .event_time
+                        .clamp(zx::MonotonicInstant::ZERO, MonotonicInstant::now().into_zx());
 
                     self.inspect_status.count_received_event(&event_time);
                     self.transition_to_idle_after_new_time(event_time).await;
@@ -411,10 +411,9 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     // Note: We use the global executor to get the current time instead
                     // of the kernel so that we do not unnecessarily clamp
                     // test-injected times.
-                    let event_time = unhandled_input_event.event_time.clamp(
-                        zx::MonotonicInstant::ZERO,
-                        fuchsia_async::MonotonicInstant::now().into_zx(),
-                    );
+                    let event_time = unhandled_input_event
+                        .event_time
+                        .clamp(zx::MonotonicInstant::ZERO, MonotonicInstant::now().into_zx());
 
                     self.inspect_status.count_received_event(&event_time);
                     self.transition_to_idle_after_new_time(event_time).await;
@@ -451,7 +450,7 @@ mod tests {
     use fidl_fuchsia_input_interaction::{NotifierMarker, NotifierProxy};
     use fidl_fuchsia_power_system::{ActivityGovernorMarker, ActivityGovernorRequest};
     use fidl_fuchsia_ui_input::PointerEventPhase;
-    use fuchsia_async::TestExecutor;
+    use fuchsia_async::{Task, TestExecutor};
     use futures::pin_mut;
     use maplit::hashmap;
     use std::collections::HashSet;

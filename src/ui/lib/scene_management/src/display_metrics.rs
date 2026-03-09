@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::lib::Size;
 use fuchsia_scenic::DisplayRotation;
-use input_pipeline::Size;
 use num_traits::float::FloatConst;
 
 /// Predefined viewing distances with values in millimeters.

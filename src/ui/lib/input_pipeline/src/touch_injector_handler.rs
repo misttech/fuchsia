@@ -3,15 +3,20 @@
 // found in the LICENSE file.
 
 #![warn(clippy::await_holding_refcell_ref)]
+use crate::dispatcher::TaskHandle;
 use crate::input_handler::{BatchInputHandler, Handler, InputHandlerStatus};
 use crate::utils::{Position, Size};
-use crate::{input_device, metrics, touch_binding};
+use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics, touch_binding};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::{Proxy, create_proxy};
 use fidl::{AsHandleRef, HandleBased};
-use fuchsia_component::client::connect_to_protocol;
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
+use fidl_fuchsia_ui_policy as fidl_ui_policy;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -19,12 +24,6 @@ use metrics_registry::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_pointerinjector as pointerinjector,
-    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
-    fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
-};
 
 /// An input handler that parses touch events and forwards them to Scenic through the
 /// fidl_fuchsia_pointerinjector protocols.
@@ -159,12 +158,15 @@ impl TouchInjectorHandler {
     /// # Errors
     /// If unable to connect to pointerinjector protocols.
     pub async fn new(
+        incoming: &Incoming,
         display_size: Size,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
-        let configuration_proxy = connect_to_protocol::<pointerinjector_config::SetupMarker>()?;
-        let injector_registry_proxy = connect_to_protocol::<pointerinjector::RegistryMarker>()?;
+        let configuration_proxy =
+            incoming.connect_protocol::<pointerinjector_config::SetupProxy>()?;
+        let injector_registry_proxy =
+            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
 
         Self::new_handler(
             configuration_proxy,
@@ -191,12 +193,14 @@ impl TouchInjectorHandler {
     /// If unable to get injection view refs from `configuration_proxy`.
     /// If unable to connect to pointerinjector Registry protocol.
     pub async fn new_with_config_proxy(
+        incoming: &Incoming,
         configuration_proxy: pointerinjector_config::SetupProxy,
         display_size: Size,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
-        let injector_registry_proxy = connect_to_protocol::<pointerinjector::RegistryMarker>()?;
+        let injector_registry_proxy =
+            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
         Self::new_handler(
             configuration_proxy,
             injector_registry_proxy,
@@ -561,7 +565,7 @@ impl TouchInjectorHandler {
                         self.mutable_state.borrow_mut().injectors.values().cloned().collect();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
-                            timestamp: Some(fuchsia_async::MonotonicInstant::now().into_nanos()),
+                            timestamp: Some(MonotonicInstant::now().into_nanos()),
                             data: Some(pointerinjector::Data::Viewport(new_viewport.clone())),
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
@@ -666,7 +670,7 @@ impl TouchInjectorHandler {
             };
 
             let metrics_logger_clone = self.metrics_logger.clone();
-            tracker.track(metrics_logger_clone, fasync::Task::local(fut));
+            tracker.track(metrics_logger_clone, Dispatcher::spawn_local(fut));
         }
     }
 
@@ -698,7 +702,7 @@ impl TouchInjectorHandler {
             self.mutable_state
                 .borrow()
                 .send_event_task_tracker
-                .track(metrics_logger_clone, fasync::Task::local(fut));
+                .track(metrics_logger_clone, Dispatcher::spawn_local(fut));
         }
     }
 }
@@ -707,23 +711,23 @@ impl TouchInjectorHandler {
 /// en masse.
 #[derive(Debug)]
 pub struct LocalTaskTracker {
-    sender: mpsc::UnboundedSender<fasync::Task<()>>,
-    _receiver_task: fasync::Task<()>,
+    sender: mpsc::UnboundedSender<TaskHandle<()>>,
+    _receiver_task: TaskHandle<()>,
 }
 
 impl LocalTaskTracker {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded();
-        let receiver_task = fasync::Task::local(async move {
+        let receiver_task = Dispatcher::spawn_local(async move {
             // Drop the tasks as they are completed.
-            receiver.for_each_concurrent(None, |task: fasync::Task<()>| task).await
+            receiver.for_each_concurrent(None, |task: TaskHandle<()>| task).await
         });
 
         Self { sender, _receiver_task: receiver_task }
     }
 
     /// Submits a new task to track.
-    pub fn track(&self, metrics_logger: metrics::MetricsLogger, task: fasync::Task<()>) {
+    pub fn track(&self, metrics_logger: metrics::MetricsLogger, task: TaskHandle<()>) {
         match self.sender.unbounded_send(task) {
             Ok(_) => {}
             // `Full` should never happen because this is unbounded.
@@ -749,16 +753,16 @@ mod tests {
         get_touch_screen_device_descriptor,
     };
     use assert_matches::assert_matches;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fidl_fuchsia_ui_input as fidl_ui_input;
+    use fidl_fuchsia_ui_policy as fidl_ui_policy;
+    use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::convert::TryFrom as _;
     use std::ops::Add;
-    use {
-        fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-        fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
-    };
 
     const TOUCH_ID: u32 = 1;
     const DISPLAY_WIDTH: f32 = 100.0;

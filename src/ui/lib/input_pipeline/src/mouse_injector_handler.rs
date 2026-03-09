@@ -6,13 +6,14 @@
 
 use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::utils::{CursorMessage, Position, Size};
-use crate::{input_device, metrics, mouse_binding};
+use crate::{Incoming, MonotonicInstant, input_device, metrics, mouse_binding};
 use anyhow::{Context, Error, Result, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_input_report::Range;
-use fuchsia_component::client::connect_to_protocol;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
 use fuchsia_inspect::health::Reporter;
 use futures::SinkExt;
 use futures::channel::mpsc::Sender;
@@ -21,10 +22,6 @@ use metrics_registry::*;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_ui_pointerinjector as pointerinjector,
-    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
-};
 
 /// Each mm of physical movement by the mouse translates to the cursor moving
 /// on the display by 10 logical pixels.
@@ -187,13 +184,16 @@ impl MouseInjectorHandler {
     /// # Errors
     /// If unable to connect to pointerinjector protocols.
     pub async fn new(
+        incoming: &Incoming,
         display_size: Size,
         cursor_message_sender: Sender<CursorMessage>,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
-        let configuration_proxy = connect_to_protocol::<pointerinjector_config::SetupMarker>()?;
-        let injector_registry_proxy = connect_to_protocol::<pointerinjector::RegistryMarker>()?;
+        let configuration_proxy =
+            incoming.connect_protocol::<pointerinjector_config::SetupProxy>()?;
+        let injector_registry_proxy =
+            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
 
         Self::new_handler(
             configuration_proxy,
@@ -222,13 +222,15 @@ impl MouseInjectorHandler {
     /// If unable to get injection view refs from `configuration_proxy`.
     /// If unable to connect to pointerinjector Registry protocol.
     pub async fn new_with_config_proxy(
+        incoming: &Incoming,
         configuration_proxy: pointerinjector_config::SetupProxy,
         display_size: Size,
         cursor_message_sender: Sender<CursorMessage>,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
-        let injector_registry_proxy = connect_to_protocol::<pointerinjector::RegistryMarker>()?;
+        let injector_registry_proxy =
+            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
         Self::new_handler(
             configuration_proxy,
             injector_registry_proxy,
@@ -568,7 +570,7 @@ impl MouseInjectorHandler {
                     let injectors = self.inner().injectors.values().cloned().collect::<Vec<_>>();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
-                            timestamp: Some(fuchsia_async::MonotonicInstant::now().into_nanos()),
+                            timestamp: Some(MonotonicInstant::now().into_nanos()),
                             data: Some(pointerinjector::Data::Viewport(new_viewport.clone())),
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
@@ -613,15 +615,14 @@ mod tests {
         create_mouse_pointer_sample_event_with_wheel_physical_pixel,
     };
     use assert_matches::assert_matches;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::ops::Add;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_input_report as fidl_input_report,
-        fidl_fuchsia_ui_pointerinjector as pointerinjector, fuchsia_async as fasync,
-    };
 
     const DISPLAY_WIDTH_IN_PHYSICAL_PX: f32 = 100.0;
     const DISPLAY_HEIGHT_IN_PHYSICAL_PX: f32 = 100.0;
@@ -2260,7 +2261,9 @@ mod tests {
         let (sender, _) = futures::channel::mpsc::channel::<CursorMessage>(1);
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
+        let incoming = Incoming::new();
         let mouse_handler_fut = MouseInjectorHandler::new_with_config_proxy(
+            &incoming,
             configuration_proxy,
             Size { width: DISPLAY_WIDTH_IN_PHYSICAL_PX, height: DISPLAY_HEIGHT_IN_PHYSICAL_PX },
             sender,

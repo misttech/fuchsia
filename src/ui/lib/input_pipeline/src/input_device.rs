@@ -3,26 +3,24 @@
 // found in the LICENSE file.
 
 use crate::{
-    consumer_controls_binding, keyboard_binding, light_sensor_binding, metrics, mouse_binding,
-    touch_binding,
+    Dispatcher, Incoming, consumer_controls_binding, keyboard_binding, light_sensor_binding,
+    metrics, mouse_binding, touch_binding,
 };
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_input_report::{InputDeviceMarker, InputReport};
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_input_report::InputReport;
+use fidl_fuchsia_io as fio;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
     ExponentialHistogramParams, HistogramProperty as _, NumericProperty, Property,
 };
+use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
 use std::path::PathBuf;
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync, fuchsia_trace as ftrace,
-};
 
 pub use input_device_constants::InputDeviceType;
 
@@ -378,7 +376,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
             &InputPipelineFeatureFlags,
         ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>),
 {
-    fasync::Task::local(async move {
+    Dispatcher::spawn_local(async move {
         let mut previous_report: Option<InputReport> = None;
         let (report_reader, server_end) = fidl::endpoints::create_proxy();
         let result = device_proxy.get_input_reports_reader(server_end);
@@ -556,11 +554,9 @@ pub fn get_device_from_dir_entry_path(
         return Err(format_err!("Failed to get entry path as a string."));
     }
 
-    let (input_device, server) = fidl::endpoints::create_proxy::<InputDeviceMarker>();
-    fdio::service_connect_at(
-        dir_proxy.as_channel().as_ref(),
+    let input_device = Incoming::connect_protocol_at::<fidl_input_report::InputDeviceProxy>(
+        dir_proxy,
         input_device_path.unwrap(),
-        server.into_channel(),
     )
     .expect("Failed to connect to InputDevice.");
     Ok(input_device)
@@ -699,6 +695,7 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
     use fidl_test_util::spawn_stream_handler;
+    use fuchsia_async as fasync;
 
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;

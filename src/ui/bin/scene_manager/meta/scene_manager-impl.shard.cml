@@ -8,10 +8,6 @@
 // //src/ui/lib/input_pipeline/meta/client.shard.cml or similar.
 {
     include: [ "//src/ui/lib/input_pipeline/meta/client.shard.cml" ],
-    program: {
-        runner: "elf",
-        binary: "bin/scene_manager",
-    },
     capabilities: [
         {
             protocol: [
