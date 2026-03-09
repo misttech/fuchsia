@@ -409,27 +409,11 @@ impl RouteRequest {
 
         let mut dictionary_entries = None;
         let res = match router {
-            Capability::ConnectorRouter(router) => router
-                .route(None, true, instance.clone().as_weak().into())
-                .await
-                .and_then(|resp| match resp {
-                    RouterResponse::Debug(data) => Ok(data),
-                    _ => {
-                        warn!("[route_validator] Route did not return debug info");
-                        Err(RouterError::Internal)
-                    }
-                }),
+            Capability::ConnectorRouter(router) => {
+                Self::route_capability(Capability::ConnectorRouter(router), instance).await
+            }
             Capability::DictionaryRouter(router) => {
-                let res = router
-                    .route(None, true, instance.clone().as_weak().into())
-                    .await
-                    .and_then(|resp| match resp {
-                        RouterResponse::Debug(data) => Ok(data),
-                        _ => {
-                            warn!("[route_validator] Route did not return debug info");
-                            Err(RouterError::Internal)
-                        }
-                    });
+                let res = Self::route_capability(Capability::DictionaryRouter(router.clone()), instance).await;
                 let dict = router
                     .route(None, false, instance.clone().as_weak().into())
                     .await
@@ -441,66 +425,129 @@ impl RouteRequest {
                             Err(RouterError::Internal)
                         }
                     })?;
-                dictionary_entries = dict.map(|dict| {
-                    dict.keys()
-                        .map(|s| fsys::DictionaryEntry {
-                            name: Some(s.into()),
-                            ..Default::default()
-                        })
-                        .collect()
-                });
+                if let Some(dict) = dict {
+                    let mut futs = vec![];
+                    for (key, capability) in dict.enumerate() {
+                        let key_str = key.to_string();
+                        let instance = instance.clone();
+                        futs.push(async move {
+                            let mut name = key_str;
+                            if let Ok(capability) = capability {
+                                if let Ok(source) = Self::route_capability_source(capability, &instance).await {
+                                    let outcome_mark = match source {
+                                        CapabilitySource::Void(_) => "[~]",
+                                        _ => "[✓]",
+                                    };
+                                    let source_moniker = source.source_moniker();
+                                    name = format!("{}  Source: {}  {}", name, source_moniker, outcome_mark);
+                                }
+                            }
+                            fsys::DictionaryEntry {
+                                name: Some(name),
+                                ..Default::default()
+                            }
+                        });
+                    }
+                    dictionary_entries = Some(join_all(futs).await);
+                }
                 res
             }
-            Capability::DirConnectorRouter(router) => router
-                .route(None, true, instance.clone().as_weak().into())
-                .await
-                .and_then(|resp| match resp {
-                    RouterResponse::Debug(data) => Ok(data),
-                    _ => {
-                        warn!("[route_validator] Route did not return debug info");
-                        Err(RouterError::Internal)
-                    }
-                }),
-            Capability::DataRouter(router) => router
-                .route(None, true, instance.clone().as_weak().into())
-                .await
-                .and_then(|resp| match resp {
-                    RouterResponse::Debug(data) => Ok(data),
-                    _ => {
-                        warn!("[route_validator] Route did not return debug info");
-                        Err(RouterError::Internal)
-                    }
-                }),
+            Capability::DirConnectorRouter(router) => {
+                Self::route_capability(Capability::DirConnectorRouter(router), instance).await
+            }
+            Capability::DataRouter(router) => {
+                Self::route_capability(Capability::DataRouter(router), instance).await
+            }
             _ => {
                 warn!("[route_validator] Sandbox capability was not a Router type");
                 Err(RouterError::Internal)
             }
         };
-        res.map(|data| {
-            let capability_source = CapabilitySource::try_from(data)
-                .expect("failed to convert Data to capability source");
-            let outcome = match &capability_source {
-                CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
-                _ => fsys::RouteOutcome::Success,
-            };
-            let service_instances = match &capability_source {
-                CapabilitySource::AnonymizedAggregate(anonymized_aggregate_source) => Some(
-                    anonymized_aggregate_source
-                        .instances
-                        .clone()
-                        .into_iter()
-                        .map(NativeIntoFidl::native_into_fidl)
-                        .collect(),
-                ),
-                _ => None,
-            };
-            RouteData {
-                outcome,
-                source: capability_source.source_moniker(),
-                service_instances,
-                dictionary_entries,
+        res.and_then(|data| {
+            match CapabilitySource::try_from(data) {
+                Ok(capability_source) => {
+                    let outcome = match &capability_source {
+                        CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
+                        _ => fsys::RouteOutcome::Success,
+                    };
+                    let service_instances = match &capability_source {
+                        CapabilitySource::AnonymizedAggregate(anonymized_aggregate_source) => Some(
+                            anonymized_aggregate_source
+                                .instances
+                                .clone()
+                                .into_iter()
+                                .map(NativeIntoFidl::native_into_fidl)
+                                .collect(),
+                        ),
+                        _ => None,
+                    };
+                    Ok(RouteData {
+                        outcome,
+                        source: capability_source.source_moniker(),
+                        service_instances,
+                        dictionary_entries,
+                    })
+                }
+                Err(e) => {
+                    warn!("[route_validator] failed to convert Data to CapabilitySource: {:?}", e);
+                    Ok(RouteData {
+                        outcome: fsys::RouteOutcome::Failed,
+                        source: ExtendedMoniker::parse_str(".").unwrap(),
+                        service_instances: None,
+                        dictionary_entries,
+                    })
+                }
             }
         })
+    }
+
+    async fn route_capability(
+        capability: Capability,
+        instance: &Arc<ComponentInstance>,
+    ) -> Result<sandbox::Data, RouterError> {
+        match capability {
+            Capability::ConnectorRouter(router) => {
+                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
+                    match resp {
+                        RouterResponse::Debug(data) => Ok(data),
+                        _ => Err(RouterError::Internal),
+                    }
+                })
+            }
+            Capability::DictionaryRouter(router) => {
+                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
+                    match resp {
+                        RouterResponse::Debug(data) => Ok(data),
+                        _ => Err(RouterError::Internal),
+                    }
+                })
+            }
+            Capability::DirConnectorRouter(router) => {
+                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
+                    match resp {
+                        RouterResponse::Debug(data) => Ok(data),
+                        _ => Err(RouterError::Internal),
+                    }
+                })
+            }
+            Capability::DataRouter(router) => {
+                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
+                    match resp {
+                        RouterResponse::Debug(data) => Ok(data),
+                        _ => Err(RouterError::Internal),
+                    }
+                })
+            }
+            _ => Err(RouterError::Internal),
+        }
+    }
+
+    async fn route_capability_source(
+        capability: Capability,
+        instance: &Arc<ComponentInstance>,
+    ) -> Result<CapabilitySource, RouterError> {
+        let data = Self::route_capability(capability, instance).await?;
+        CapabilitySource::try_from(data).map_err(|_| RouterError::Internal)
     }
 
     pub fn from_expose_decls(exposes: Vec<&ExposeDecl>) -> Result<Self, RoutingError> {
@@ -788,7 +835,7 @@ mod tests {
                 ..
             } if s == "dict" && m == "my_child" &&
                 d == [fsys::DictionaryEntry {
-                    name: Some("foo.bar".into()),
+                    name: Some("foo.bar  Source: my_child  [✓]".into()),
                     ..Default::default()
                 }]
         );
