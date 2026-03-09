@@ -25,6 +25,7 @@ fuchsia_product_bundle(
     name = "product_bundle_eng.x64",
     default_virtual_device = ":workbench_emu",
     main = ":assembly_eng.x64",
+    ota_manifest_key_file = "//src/sys/pkg/bin/system-updater/keys:manifest_dev_key.pem",
     product_bundle_name = "workbench_eng.x64",
     product_bundle_version = build_info_version,
     recovery = "//products/zedboot:x64",
@@ -40,6 +41,7 @@ fuchsia_product_bundle(
     name = "product_bundle_eng.arm64",
     default_virtual_device = ":workbench_emu.arm64",
     main = ":assembly_eng.arm64",
+    ota_manifest_key_file = "//src/sys/pkg/bin/system-updater/keys:manifest_dev_key.pem",
     product_bundle_name = "workbench_eng.arm64",
     product_bundle_version = build_info_version,
     recovery = "//products/zedboot:arm64",
@@ -54,6 +56,7 @@ fuchsia_product_bundle(
 fuchsia_product_bundle(
     name = "product_bundle_eng.vim3",
     main = ":assembly_eng.vim3",
+    ota_manifest_key_file = "//src/sys/pkg/bin/system-updater/keys:manifest_dev_key.pem",
     product_bundle_name = "workbench_eng.vim3",
     product_bundle_version = build_info_version,
     recovery = "//products/zedboot:vim3_recovery",
