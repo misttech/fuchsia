@@ -24,9 +24,9 @@ func main() {
 		"NaturalMessagingHeader", "NaturalMessagingSource",
 		"TypeConversionsHeader", "TypeConversionsSource",
 		"HLCPPConversion",
-		"driver/WireHeader",
+		"driver/WireHeader", "driver/WireTestBase",
 		"driver/WireMessagingHeader", "driver/WireMessagingSource",
 		"driver/NaturalMessagingHeader", "driver/NaturalMessagingSource",
-		"driver/UnifiedHeader",
+		"driver/UnifiedHeader", "driver/TestBase",
 	})
 }

@@ -15,10 +15,12 @@ go_library(
     embedsrcs = [
         "driver/file_natural_messaging_header.tmpl",
         "driver/file_natural_messaging_source.tmpl",
+        "driver/file_test_base.tmpl",
         "driver/file_unified_header.tmpl",
         "driver/file_wire_header.tmpl",
         "driver/file_wire_messaging_header.tmpl",
         "driver/file_wire_messaging_source.tmpl",
+        "driver/file_wire_test_base.tmpl",
         "driver/fragment_method_client_impl_async_buffer.tmpl",
         "driver/fragment_method_client_impl_oneway.tmpl",
         "driver/fragment_method_client_impl_oneway_buffer.tmpl",

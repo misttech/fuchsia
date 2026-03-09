@@ -132,6 +132,10 @@ def fidl_cpp_family(
             ],
             "//conditions:default": [],
         })
+        generated_testing_header_files = [
+            "test_base.h",
+            "wire_test_base.h",
+        ]
         additional_deps = [
             "//sdk/lib/fidl/cpp:cpp_base",
             "//sdk/lib/fidl/cpp:natural_ostream",
@@ -161,15 +165,14 @@ def fidl_cpp_family(
                 ],
                 "//conditions:default": [],
             })
+            generated_testing_header_files += [
+                "driver/test_base.h",
+                "driver/wire_test_base.h",
+            ]
             additional_deps += [
                 "//sdk/lib/fidl_driver",
                 "//sdk/lib/fidl_driver:fidl_driver_natural",
             ]
-
-        generated_testing_header_files = [
-            "test_base.h",
-            "wire_test_base.h",
-        ]
 
         # TODO(https://fxbug.dev/454977301): Output "hlcpp_conversion.h" when `enable_hlcpp` is true.
 

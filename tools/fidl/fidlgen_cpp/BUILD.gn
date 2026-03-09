@@ -112,6 +112,10 @@ if (is_host) {
             candidate = "$_gen_dir/$_include_path/driver/wire.h"
           },
           {
+            golden = "goldens/${info.name}_driver_wire_test_base.h.golden"
+            candidate = "$_gen_dir/$_include_path/driver/wire_test_base.h"
+          },
+          {
             golden = "goldens/${info.name}_driver_wire_messaging.h.golden"
             candidate = "$_gen_dir/$_include_path/driver/wire_messaging.h"
           },
@@ -126,6 +130,10 @@ if (is_host) {
           {
             golden = "goldens/${info.name}_driver_natural_messaging.cc.golden"
             candidate = "$_gen_dir/$_include_path/driver/natural_messaging.cc"
+          },
+          {
+            golden = "goldens/${info.name}_driver_test_base.h.golden"
+            candidate = "$_gen_dir/$_include_path/driver/test_base.h"
           },
           {
             golden = "goldens/${info.name}_driver_fidl.h.golden"
