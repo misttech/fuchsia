@@ -197,122 +197,12 @@ impl BootupTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{MockDriverHost, MockNodeManager};
     use driver_manager_bind::{BindManagerBridge, BindSpecResult};
     use driver_manager_node::{Node, NodeManager};
-    use driver_manager_types::BindResultTracker;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::Ordering;
 
-    use {
-        fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_host as fdh,
-        fidl_fuchsia_driver_index as fdi, fidl_fuchsia_ldsvc as fldsvc,
-    };
-
-    struct MockDriverHost {
-        stack_trace_count: AtomicUsize,
-    }
-
-    #[async_trait::async_trait]
-    impl DriverHost for MockDriverHost {
-        async fn start(
-            &self,
-            _args: driver_manager_driver_host::DriverStartArgs,
-            _driver: fidl::endpoints::ServerEnd<fdh::DriverMarker>,
-        ) -> Result<(), zx::Status> {
-            Ok(())
-        }
-        async fn start_with_dynamic_linker(
-            &self,
-            _load_args: driver_manager_driver_host::DriverLoadArgs,
-            _start_args: driver_manager_driver_host::DriverStartArgs,
-            _driver: fidl::endpoints::ServerEnd<fdh::DriverMarker>,
-        ) -> Result<(), zx::Status> {
-            Ok(())
-        }
-        fn install_loader(
-            &self,
-            _loader: fidl::endpoints::ClientEnd<fldsvc::LoaderMarker>,
-        ) -> Result<(), zx::Status> {
-            Ok(())
-        }
-        fn is_dynamic_linking_enabled(&self) -> bool {
-            false
-        }
-        async fn get_process_koid(&self) -> Result<zx::Koid, zx::Status> {
-            Ok(zx::Koid::from_raw(0))
-        }
-        async fn get_process_info_internal(
-            &self,
-        ) -> Result<driver_manager_driver_host::ProcessInfo, zx::Status> {
-            Err(zx::Status::NOT_SUPPORTED)
-        }
-        async fn get_crash_info(
-            &self,
-            _thread_koid: zx::Koid,
-        ) -> Result<fdh::DriverCrashInfo, zx::Status> {
-            Err(zx::Status::NOT_SUPPORTED)
-        }
-        fn trigger_stack_trace(&self) {
-            self.stack_trace_count.fetch_add(1, Ordering::SeqCst);
-        }
-        fn name_for_colocation(&self) -> &str {
-            ""
-        }
-    }
-
-    struct MockNodeManager;
-    #[async_trait::async_trait(?Send)]
-    impl NodeManager for MockNodeManager {
-        fn clone_box(&self) -> Box<dyn NodeManager> {
-            Box::new(MockNodeManager)
-        }
-        fn bind(&self, _node: &Rc<Node>, _tracker: Rc<RefCell<BindResultTracker>>) {}
-        fn bind_to_url(
-            &self,
-            _node: &Rc<Node>,
-            _url: &str,
-            _tracker: Rc<RefCell<BindResultTracker>>,
-        ) {
-        }
-        fn start_driver(
-            &self,
-            _node: &Rc<Node>,
-            _url: &str,
-            _package_type: fdf::DriverPackageType,
-        ) -> Result<(), zx::Status> {
-            Ok(())
-        }
-        fn get_driver_host(&self, _name: &str) -> Option<Rc<dyn DriverHost>> {
-            None
-        }
-        async fn create_driver_host(
-            &self,
-            _use_next_vdso: bool,
-            _name: String,
-        ) -> Result<Rc<dyn DriverHost>, zx::Status> {
-            Err(zx::Status::NOT_SUPPORTED)
-        }
-        async fn create_driver_host_dynamic_linker(
-            &self,
-            _name: String,
-        ) -> Result<Rc<dyn DriverHost>, zx::Status> {
-            Err(zx::Status::NOT_SUPPORTED)
-        }
-        fn is_test_shutdown_delay_enabled(&self) -> bool {
-            false
-        }
-        fn get_shutdown_test_rng(&self) -> Weak<RefCell<rand::rngs::StdRng>> {
-            Weak::new()
-        }
-        async fn wait_for_bootup(&self) {}
-        fn get_dictionary_util(
-            &self,
-        ) -> Result<Rc<driver_manager_utils::DictionaryUtil>, zx::Status> {
-            Err(zx::Status::NOT_SUPPORTED)
-        }
-        fn memory_attributor(&self) -> Option<Rc<dyn driver_manager_node::MemoryAttributor>> {
-            None
-        }
-    }
+    use {fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi};
 
     struct MockBindManagerBridge;
     #[async_trait::async_trait(?Send)]
@@ -351,7 +241,7 @@ mod tests {
 
         let node_manager = Box::new(MockNodeManager);
         let node = Node::new("test_node", Weak::new(), node_manager);
-        let host = Rc::new(MockDriverHost { stack_trace_count: AtomicUsize::new(0) });
+        let host = Rc::new(MockDriverHost::new());
         node.set_host(host.clone());
 
         tracker.notify_new_start_request(
@@ -399,7 +289,7 @@ mod tests {
         let node1 = Node::new("node1", Weak::new(), node_manager.clone_box());
         let node2 = Node::new("node2", Weak::new(), node_manager.clone_box());
 
-        let host = Rc::new(MockDriverHost { stack_trace_count: AtomicUsize::new(0) });
+        let host = Rc::new(MockDriverHost::new());
         node1.set_host(host.clone());
         node2.set_host(host.clone());
 

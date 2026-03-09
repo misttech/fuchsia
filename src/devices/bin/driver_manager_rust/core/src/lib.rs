@@ -17,6 +17,8 @@ mod driver_runner;
 mod memory_attribution;
 mod offer_injection;
 mod runner;
+#[cfg(test)]
+pub(crate) mod testing;
 mod trait_impls;
 
 pub use driver_runner::*;

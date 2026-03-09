@@ -17,6 +17,7 @@ rustc_library("driver_manager_core") {
     "src/memory_attribution.rs",
     "src/offer_injection.rs",
     "src/runner.rs",
+    "src/testing.rs",
     "src/trait_impls.rs",
   ]
   deps = [
