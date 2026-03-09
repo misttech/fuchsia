@@ -504,6 +504,7 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         fuchsia_controller: fc_transport.FuchsiaController,
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
+        super().__init__(device_name, fuchsia_controller, reboot_affordance)
         self._inner = AsyncLEUsingFc(
             device_name=device_name,
             fuchsia_controller=fuchsia_controller,

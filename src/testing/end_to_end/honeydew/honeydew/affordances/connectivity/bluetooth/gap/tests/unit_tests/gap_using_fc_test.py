@@ -14,6 +14,32 @@ from honeydew.transports.fuchsia_controller import (
 )
 
 
+class BluetoothGapAsyncFCTests(unittest.IsolatedAsyncioTestCase):
+    """Unittests for Bluetooth GAP over FC (Async)."""
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.reboot_affordance_obj = mock.MagicMock(
+            spec=affordances_capable.AsyncRebootCapableDevice
+        )
+        self.fc_transport_obj = mock.MagicMock(
+            spec=fc_transport.FuchsiaController
+        )
+
+        self.bluetooth_gap_obj = gap_using_fc.AsyncGapUsingFc(
+            device_name="fuchsia-emulator",
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+        )
+
+    def test_gap_using_fc(self) -> None:
+        """Test case for gap_using_fc.py"""
+        self.assertIsInstance(
+            self.bluetooth_gap_obj, gap_using_fc.AsyncGapUsingFc
+        )
+        self.assertIsInstance(self.bluetooth_gap_obj, gap.AsyncGap)
+
+
 class BluetoothGapFCTests(unittest.TestCase):
     """Unittests for Bluetooth GAP over FC."""
 
@@ -40,6 +66,12 @@ class BluetoothGapFCTests(unittest.TestCase):
         """Test case for gap_using_fc.py"""
         self.assertIsInstance(self.bluetooth_gap_obj, gap_using_fc.GapUsingFc)
         self.assertIsInstance(self.bluetooth_gap_obj, gap.Gap)
+
+    def test_as_async(self) -> None:
+        """Test for GapUsingFc.as_async()."""
+        self.assertIsInstance(
+            self.bluetooth_gap_obj.as_async(), gap_using_fc.AsyncGapUsingFc
+        )
 
 
 if __name__ == "__main__":

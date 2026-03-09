@@ -98,9 +98,7 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
         Raises:
             BluetoothStateError: On failure.
         """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.__inner.sys_init()
-        )
+        self.__inner.sys_init()
 
     def verify_supported(self) -> None:
         """Check if Bluetooth is supported on the DUT.

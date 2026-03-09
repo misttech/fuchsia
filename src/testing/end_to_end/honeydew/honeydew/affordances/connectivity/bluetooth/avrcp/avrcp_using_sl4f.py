@@ -121,6 +121,7 @@ class AvrcpUsingSl4f(
         sl4f: sl4f_transport.SL4F,
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
+        super().__init__(device_name, sl4f, reboot_affordance)
         self._inner = AsyncAvrcpUsingSl4f(
             device_name=device_name,
             sl4f=sl4f,
