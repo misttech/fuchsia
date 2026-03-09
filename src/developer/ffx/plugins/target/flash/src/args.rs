@@ -86,7 +86,7 @@ pub struct FlashCommand {
     pub skip_verify: bool,
 
     #[argh(option, description = "flash timeout rate in mb/second.")]
-    #[ffx_config_default(key = "fastboot.flash.min_timeout_rate", default = "2")]
+    #[ffx_config_default(key = "fastboot.flash.timeout_rate", default = "2")]
     pub timeout_rate: Option<u64>,
 
     #[argh(
