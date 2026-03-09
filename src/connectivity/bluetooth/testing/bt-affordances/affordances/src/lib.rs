@@ -190,7 +190,7 @@ impl WorkThread {
                     result_sender.send(proxies.disconnect_peer(&peer_id).await).unwrap();
                 }
                 Request::Pair(peer_id, options, result_sender) => {
-                    result_sender.send(proxies.pair(&peer_id, &options).await).unwrap()
+                    result_sender.send(proxies.pair(&peer_id, &options).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match proxies.connect_l2cap(&peer_id, psm).await {
