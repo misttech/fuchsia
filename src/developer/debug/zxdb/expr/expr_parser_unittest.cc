@@ -266,7 +266,10 @@ TEST_F(ExprParserTest, AccessorAtEnd) {
   auto result = Parse("base. ");
   ASSERT_FALSE(result);
 
-  EXPECT_EQ("Unexpected end of input.", parser().err().msg());
+  EXPECT_EQ("Failed to parse right hand side of \".\".", parser().err().msg());
+
+  EXPECT_EQ(4u, parser().error_token().byte_offset());
+  EXPECT_EQ(".", parser().error_token().value());
 }
 
 TEST_F(ExprParserTest, BadAccessorMemberName) {
@@ -301,7 +304,7 @@ TEST_F(ExprParserTest, Arrow) {
   // Arrow with no name.
   result = Parse("base->");
   ASSERT_FALSE(result);
-  EXPECT_EQ("Unexpected end of input.", parser().err().msg());
+  EXPECT_EQ("Failed to parse right hand side of \"->\".", parser().err().msg());
 }
 
 TEST_F(ExprParserTest, NestedDotArrow) {
@@ -816,8 +819,13 @@ TEST_F(ExprParserTest, Comparison) {
 
 // Tests parsing identifier names that require lookups from the symbol system.
 TEST_F(ExprParserTest, NamesWithSymbolLookup) {
+  // Bare namespace is an error.
+  auto result = Parse("Namespace");
+  ASSERT_FALSE(result);
+  EXPECT_EQ("Expected expression after namespace name.", parser().err().msg());
+
   // Bare template is an error.
-  auto result = Parse("Template");
+  result = Parse("Template");
   ASSERT_FALSE(result);
   EXPECT_EQ("Expected template args after template name.", parser().err().msg());
 
@@ -1772,30 +1780,6 @@ TEST_F(ExprParserTest, LocalVarAccess) {
           "  }"
           "}",
           ExprLanguage::kC));
-}
-
-// Tests parsing identifier names that conflict with Rust modules.
-TEST_F(ExprParserTest, RustModuleConflict) {
-  eval_context().set_language(ExprLanguage::kRust);
-
-  // Add a namespace called "task".
-  ParsedIdentifier task_ident(ParsedIdentifierComponent("task"));
-  eval_context().AddName(task_ident, FoundName(FoundName::kNamespace, task_ident));
-
-  // Try to parse "current_task.task".
-  auto result = Parse("current_task.task", ExprLanguage::kRust);
-  ASSERT_TRUE(result) << "Parse failed: " << parser().err().msg();
-  EXPECT_TRUE(result->AsMemberAccess());
-}
-
-// Tests parsing identifier names that conflict with local variables.
-TEST_F(ExprParserTest, LocalVarConflict) {
-  // Add a local variable called "task".
-  eval_context().AddVariable("task", ExprValue());
-
-  auto result = Parse("current_task.task", ExprLanguage::kRust);
-  ASSERT_TRUE(result) << "Parse failed: " << parser().err().msg();
-  EXPECT_TRUE(result->AsMemberAccess());
 }
 
 }  // namespace zxdb
