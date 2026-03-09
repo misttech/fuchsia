@@ -22,7 +22,7 @@ use crate::vfs::socket::{
     SocketShutdownFlags, SocketType,
 };
 use crate::vfs::{
-    Anon, DirEntryHandle, DowncastedFile, FileHandle, FileObject, FileSystem, FileSystemHandle,
+    DirEntryHandle, DowncastedFile, FileHandle, FileObject, FileSystem, FileSystemHandle,
     FileSystemOps, FsNode, FsStr, FsString, Mount, NamespaceNode, OutputBuffer, ValueOrSize,
     XattrOp,
 };
@@ -503,7 +503,7 @@ pub fn fs_node_init_with_dentry_no_xattr(
     if let Some(state) = &current_task.kernel().security_state.state {
         // Sockets are currently implemented using `Anon` nodes, and may be kernel-private, in
         // which case delegate to the anonymous node initializer to apply a placeholder label.
-        if Anon::is_private(&dir_entry.node) {
+        if dir_entry.node.is_private() {
             return selinux_hooks::fs_node::fs_node_init_anon(
                 &state.server,
                 current_task,

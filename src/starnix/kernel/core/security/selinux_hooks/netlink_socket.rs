@@ -8,7 +8,6 @@ use crate::security::selinux_hooks::{
     fs_node_effective_sid_and_class, socket,
 };
 use crate::task::CurrentTask;
-use crate::vfs::Anon;
 use crate::vfs::socket::{NetlinkFamily, Socket, SocketDomain};
 use linux_uapi::{
     AUDIT_ADD_RULE, AUDIT_DEL_RULE, AUDIT_FIRST_USER_MSG, AUDIT_FIRST_USER_MSG2, AUDIT_GET,
@@ -159,7 +158,7 @@ pub(in crate::security) fn check_netlink_send_access(
 
     if security_server.is_policycap_enabled(PolicyCap::NetlinkXperm) {
         // Permissions are allowed for kernel sockets.
-        if Anon::is_private(&socket_node) {
+        if socket_node.is_private() {
             return Ok(());
         }
 

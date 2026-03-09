@@ -11,7 +11,7 @@ use crate::vfs::socket::{
     NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer, SocketProtocol,
     SocketShutdownFlags, SocketType, socket_fs,
 };
-use crate::vfs::{Anon, DowncastedFile, FsNode};
+use crate::vfs::{DowncastedFile, FsNode};
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
@@ -32,7 +32,7 @@ pub(super) fn has_socket_permission(
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     // Permissions are allowed for kernel sockets.
-    if Anon::is_private(socket_node) {
+    if socket_node.is_private() {
         return Ok(());
     }
 

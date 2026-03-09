@@ -39,6 +39,10 @@ impl FsNodeOps for Anon {
     fn internal_name(&self, _node: &FsNode) -> Option<FsString> {
         self.name.map(|name| format!("anon_inode:{}", name).into())
     }
+
+    fn is_private(&self) -> bool {
+        self.is_private
+    }
 }
 
 impl Anon {
@@ -132,13 +136,6 @@ impl Anon {
         security::fs_node_init_anon(current_task, &node, name)
             .expect("Private anon_inode creation cannot fail");
         FileObject::new_anonymous(locked, current_task, ops, node, flags)
-    }
-
-    /// Returns true if the `fs_node` is `Anon` and private to the `Kernel`/`FileSystem`, in which
-    /// case it should not have access checks applied by the LSM layer.
-    /// This may become part of `FsNodeOps` in future, if other private node use-cases are found.
-    pub fn is_private(fs_node: &FsNode) -> bool {
-        fs_node.downcast_ops::<Anon>().map(|anon| anon.is_private).unwrap_or(false)
     }
 }
 

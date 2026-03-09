@@ -14,7 +14,7 @@ use super::{
 };
 use crate::task::CurrentTask;
 use crate::vfs::{
-    Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
+    DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
 };
 use fuchsia_rcu::RcuReadScope;
 use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
@@ -58,7 +58,7 @@ pub(in crate::security) fn fs_node_notify_security_context(
     fs_node: &FsNode,
     security_context: &FsStr,
 ) -> Result<(), Errno> {
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
 
@@ -95,7 +95,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     }
 
     // Private nodes are currently only supported via `fs_node_init_anon()`.
-    assert!(!Anon::is_private(&dir_entry.node));
+    debug_assert!(!&dir_entry.node.is_private());
 
     // If the parent has a from-task label then propagate it to the new node,  rather than applying
     // the filesystem's labeling scheme. This allows nodes in per-process and per-task directories
@@ -421,7 +421,7 @@ pub(in crate::security) fn fs_node_init_on_create(
     name: &FsStr,
 ) -> Result<Option<FsNodeSecurityXattr>, Errno> {
     // Private nodes are currently only supported via `fs_node_init_anon()`.
-    assert!(!Anon::is_private(new_node));
+    debug_assert!(!new_node.is_private());
 
     // By definition this is a new `FsNode` so should not have already been labeled
     // (unless we're working in the context of overlayfs and affected by
@@ -481,7 +481,7 @@ pub fn dentry_create_files_as(
     new_node_name: &FsStr,
     new_creds: &mut Credentials,
 ) -> Result<(), Errno> {
-    assert!(!Anon::is_private(parent));
+    debug_assert!(!parent.is_private());
 
     // Determine the security class of the new node, and the SID with which it would be labeled.
     let fs = parent.fs();
@@ -523,7 +523,7 @@ pub(in crate::security) fn fs_node_init_anon(
         (FileClass::AnonFsNode.into(), node_type)
     };
 
-    let is_private_node = Anon::is_private(new_node);
+    let is_private_node = new_node.is_private();
     // TODO: https://fxbug.dev/405062002 - Fold this into the `fs_node_init_with_dentry*()` logic?
     let sid = if is_private_node {
         // TODO: https://fxbug.dev/404773987 - Introduce a new `FsNode` labeling state for this?
@@ -571,7 +571,7 @@ fn may_create(
     new_file_mode: FileMode, // Only used to determine the file class.
     name: &FsStr,
 ) -> Result<(), Errno> {
-    assert!(!Anon::is_private(parent));
+    debug_assert!(!parent.is_private());
 
     let permission_check = security_server.as_permission_check();
 
@@ -654,8 +654,8 @@ fn may_link(
     parent: &FsNode,
     existing_node: &FsNode,
 ) -> Result<(), Errno> {
-    assert!(!Anon::is_private(parent));
-    assert!(!Anon::is_private(existing_node));
+    debug_assert!(!parent.is_private());
+    debug_assert!(!existing_node.is_private());
 
     let audit_context = current_task.into();
 
@@ -709,8 +709,8 @@ fn may_unlink_or_rmdir(
     name: &FsStr,
     operation: UnlinkKind,
 ) -> Result<(), Errno> {
-    assert!(!Anon::is_private(parent));
-    assert!(!Anon::is_private(fs_node));
+    debug_assert!(!parent.is_private());
+    debug_assert!(!fs_node.is_private());
 
     let audit_context = &[current_task.into(), Auditable::Name(name)];
 
@@ -864,9 +864,9 @@ pub(in crate::security) fn check_fs_node_rename_access(
     old_basename: &FsStr,
     new_basename: &FsStr,
 ) -> Result<(), Errno> {
-    assert!(!Anon::is_private(old_parent));
-    assert!(!Anon::is_private(moving_node));
-    assert!(!Anon::is_private(new_parent));
+    debug_assert!(!old_parent.is_private());
+    debug_assert!(!moving_node.is_private());
+    debug_assert!(!new_parent.is_private());
 
     let permission_check = security_server.as_permission_check();
     let current_sid = current_task_state(current_task).current_sid;
@@ -1099,7 +1099,7 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
     value: &FsStr,
     _op: XattrOp,
 ) -> Result<(), Errno> {
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
 
@@ -1239,7 +1239,7 @@ pub(in crate::security) fn check_fs_node_removexattr_access(
 /// If `fs_node` is in a filesystem without xattr support, returns the xattr name for the security
 /// label (i.e. "security.selinux"). Otherwise returns None.
 pub(in crate::security) fn fs_node_listsecurity(fs_node: &FsNode) -> Option<FsString> {
-    if fs_node.fs().security_state.state.supports_xattr() && !Anon::is_private(fs_node) {
+    if fs_node.fs().security_state.state.supports_xattr() && !fs_node.is_private() {
         None
     } else {
         Some(XATTR_NAME_SELINUX.to_bytes().into())
@@ -1261,7 +1261,7 @@ where
 {
     // If the node is private or the xattr is not "security.selinux" then immediately fall back
     // to `get_xattr()`.
-    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) || Anon::is_private(fs_node) {
+    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) || fs_node.is_private() {
         return fs_node.ops().get_xattr(
             locked.cast_locked::<FileOpsCore>(),
             fs_node,
@@ -1312,7 +1312,7 @@ pub(in crate::security) fn fs_node_setsecurity<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) || Anon::is_private(fs_node) {
+    if name != FsStr::new(XATTR_NAME_SELINUX.to_bytes()) || fs_node.is_private() {
         return fs_node.ops().set_xattr(
             locked.cast_locked::<FileOpsCore>(),
             fs_node,

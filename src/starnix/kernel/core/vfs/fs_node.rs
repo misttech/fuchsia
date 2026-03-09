@@ -910,6 +910,11 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     fn node_key(&self, node: &FsNode) -> ino_t {
         node.ino
     }
+
+    /// Whether this node is private to the kernel/filesystem.
+    fn is_private(&self) -> bool {
+        false
+    }
 }
 
 impl<T> From<T> for Box<dyn FsNodeOps>
@@ -1218,6 +1223,12 @@ impl FsNodeOps for SpecialNode {
 }
 
 impl FsNode {
+    /// Returns true if the `fs_node` is private to the `Kernel`/`FileSystem`, in which
+    /// case both MAC and DAC checks should be skipped.
+    pub fn is_private(&self) -> bool {
+        self.ops().is_private()
+    }
+
     /// Create a node without inserting it into the FileSystem node cache.
     ///
     /// This is usually not what you want!

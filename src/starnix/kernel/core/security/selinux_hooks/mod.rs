@@ -21,7 +21,7 @@ pub(super) mod testing;
 use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{
-    Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
+    DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
 };
 use audit::{Auditable, audit_decision, audit_todo_decision};
 use indexmap::IndexSet;
@@ -150,7 +150,7 @@ fn has_file_ioctl_permission(
     // Validate that the `subject` has the `ioctl` permission on the underlying node,
     // as well as the specified ioctl extended permission.
     let fs_node = file.node().as_ref().as_ref();
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
     let FsNodeSidAndClass { sid: target_sid, class: target_class } =
@@ -232,7 +232,7 @@ fn has_fs_node_permissions_dontaudit(
         "security.selinux.has_fs_node_permissions_dontaudit"
     );
 
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
 
@@ -260,7 +260,7 @@ fn has_fs_node_permissions(
 ) -> Result<(), Errno> {
     trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
 
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
 
@@ -295,7 +295,7 @@ fn todo_has_fs_node_permissions(
 ) -> Result<(), Errno> {
     trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.todo_has_fs_node_permissions");
 
-    if Anon::is_private(fs_node) {
+    if fs_node.is_private() {
         return Ok(());
     }
 
