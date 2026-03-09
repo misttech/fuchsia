@@ -47,6 +47,13 @@ class AsmHeader {
   // Same but for integer values.
   AsmHeader& Macro(std::string_view name, uint64_t value);
 
+  // Enumeration values can be treated as integers too.
+  template <typename T>
+    requires(std::is_enum_v<T>)
+  AsmHeader& Macro(std::string_view name, T value) {
+    return Macro(name, static_cast<uint64_t>(value));
+  }
+
   // Emit a macro for each field in the register, plus a macro for the mask
   // of reserved-zero bits and a macro for the mask of unknown bits.
   // T is required to inherit from a `RegisterBase` with `EnableAsmGeneration`.

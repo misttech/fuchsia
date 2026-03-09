@@ -26,6 +26,9 @@ int main(int argc, char** argv) {
       .Register<arch::ArmSctlrEl1>("SCTLR_EL1_")
       .Register<arch::ArmSctlrEl2>("SCTLR_EL2_")
       .Register<arch::ArmSpsrEl2>("SPSR_EL2_")
+      .Register<arch::ArmEsrEl1>("ESR_EL1_")
+      .Macro("ESR_EC_SVC32", arch::ArmEsrEl1::ExceptionClass::kSvc32)
+      .Macro("ESR_EC_SVC64", arch::ArmEsrEl1::ExceptionClass::kSvc64)
       // Disables all interrupts.
       .Macro("SPSR_EL2_DAIF", "SPSR_EL2_D | SPSR_EL2_A | SPSR_EL2_I | SPSR_EL2_F")
       // 0b101 signifies returning to EL1 with SP_EL1.

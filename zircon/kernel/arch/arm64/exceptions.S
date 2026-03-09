@@ -10,6 +10,7 @@
 #include <arch/arm64/mp.h>
 #include <arch/regs.h>
 #include <lib/arch/arm64/exception-asm.h>
+#include <lib/arch/arm64/system-asm.h>
 #include <lib/arch/asm.h>
 #include <lib/syscalls/zx-syscall-numbers.h>
 #include <lib/userabi/vdso-arm64.h>
@@ -449,9 +450,9 @@
     // x10 contains ELR_EL1.
     // TODO(mcgrathr): make syscall wrappers get args from iframe instead
     mrs x9, esr_el1
-    lsr x11, x9, #26              // Shift ESR right 26 bits to get EC.
-    cmp x11, #0x15                // Check for 64-bit syscall...
-    beq arm64_syscall_dispatcher  // ...and jump to syscall handler.
+    ubfx x11, x9, #ESR_EL1_EC_SHIFT, #ESR_EL1_EC_WIDTH
+    cmp x11, #ESR_EC_SVC64          // Check for 64-bit syscall...
+    beq arm64_syscall_dispatcher    // ...and jump to syscall handler.
 
     // We've just run out of space to fit in the 0x80 bytes of the sync
     // exception vector.  Branch to another block of code later in the file
@@ -469,9 +470,9 @@
 
     // Collect the Exception Syndrome Register that explains what this is.
     mrs x9, esr_el1
-    lsr x11, x9, #26              // Shift ESR right 26 bits to get EC.
-    cmp x11, #0x11                // Check for 32-bit syscall...
-    beq arm32_syscall_dispatcher  // ...and jump to syscall handler.
+    ubfx x11, x9, #ESR_EL1_EC_SHIFT, #ESR_EL1_EC_WIDTH
+    cmp x11, #ESR_EC_SVC32          // Check for 32-bit syscall...
+    beq arm32_syscall_dispatcher    // ...and jump to syscall handler.
 
     // We've just run out of space to fit in the 0x80 bytes of the sync
     // exception vector.  Branch to another block of code later in the file
