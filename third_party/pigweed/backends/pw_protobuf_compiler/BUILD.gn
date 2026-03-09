@@ -9,8 +9,8 @@ import("$dir_pw_build/python_dist.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 
 # Fuchsia in-tree protobuf source paths.
-_protobuf_path = "//third_party/protobuf/src"
-_protobuf_python_path = "//third_party/protobuf/python"
+_protobuf_path = "//third_party/protobuf/src/src"
+_protobuf_python_path = "//third_party/protobuf/src/python"
 
 # Protos to compile to *_pb2.py for inclusion in the protoc_python_package.
 _common_proto_files = [
@@ -103,9 +103,9 @@ pw_python_action("compile_common_python_protos") {
   _proto_files = _common_proto_files
 
   _protoc_src_dir =
-      get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir") + "/src"
+      get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir") + "/src/src"
   _protoc_python_dir =
-      get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir") + "/python"
+      get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir") + "/src/python"
 
   _out_dir = "$target_out_dir/$target_name"
 

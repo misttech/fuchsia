@@ -120,6 +120,7 @@ default_args = {
   # Use protoc from the Fuchsia build for Pigweed
   pw_protobuf_compiler_PROTOC_TARGET = "//third_party/protobuf:protoc"
   pw_protobuf_compiler_PROTOC_BINARY = "host_x64/protoc"
+  dir_pw_third_party_protobuf = "//third_party/protobuf/src"
 
   # Use the in-tree protobuf Python package when running protoc.
   pw_protobuf_compiler_PROTOC_PYTHON_DEPS = [

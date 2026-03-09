@@ -671,6 +671,15 @@
                     "Python wheel file, a zip archive which is extracted by a Jiri hook into ",
                     "prebuilt/third_party/protobuf-py3, which has all licensing information."
                 ]
+            },
+            {
+                "notes": [
+                    "Temporarily disabled to allow for third_party repository moves.",
+                    "See https://fxbug.dev/474359768 for more info."
+                ],
+                "paths": [
+                    "third_party/protobuf"
+                ]
             }
         ]
     }

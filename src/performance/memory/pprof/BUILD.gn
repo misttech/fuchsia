@@ -10,7 +10,7 @@ import("//tools/protobuf/rust_proto_library.gni")
 rust_proto_library("pprof_proto") {
   sources = [ "//third_party/perfetto/protos/third_party/pprof/profile.proto" ]
   packages = [ "perfetto.third_party.perftools.profiles" ]
-  include_dirs = [ "//third_party/protobuf/src" ]
+  include_dirs = [ "//third_party/protobuf/src/src" ]
 }
 
 rustc_library("pprof") {

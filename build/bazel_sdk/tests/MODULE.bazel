@@ -24,7 +24,7 @@ local_path_override(
 
 local_path_override(
     module_name = "protobuf",
-    path = "{}/third_party/protobuf".format(_FUCHSIA_SOURCE_ROOT),
+    path = "{}/third_party/protobuf/src".format(_FUCHSIA_SOURCE_ROOT),
 )
 
 bazel_dep(name = "abseil-cpp", version = "head")
