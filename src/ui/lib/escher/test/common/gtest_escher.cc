@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 
+#include <lib/stdcompat/string_view.h>
+
 #include <vulkan/vulkan.h>
 
 #include "src/ui/lib/escher/escher_process_init.h"
@@ -139,7 +141,7 @@ bool GlobalEscherUsesSwiftShader() {
   vk::PhysicalDevice physical_device =
       EscherEnvironment::GetGlobalTestEnvironment()->GetVulkanDevice()->vk_physical_device();
   std::string physical_device_name = physical_device.getProperties().deviceName;
-  return physical_device_name.find("SwiftShader") != std::string::npos;
+  return cpp23::contains(physical_device_name, "SwiftShader");
 }
 
 void EscherEnvironment::RegisterGlobalTestEnvironment() {

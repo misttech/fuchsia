@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.ui.test.input/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/channel.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
@@ -23,7 +24,7 @@ class WebApp : public integration_tests::WebAppBase {
 
   void RunLoopForTouchReponse() {
     FX_LOGS(INFO) << "Wait for input_ready";
-    RunLoopUntil([&] { return nav_listener_.title_.find("input_ready") != std::string::npos; });
+    RunLoopUntil([&] { return cpp23::contains(nav_listener_.title_, "input_ready"); });
 
     auto test_app_status_listener_connect =
         component::Connect<fuchsia_ui_test_input::TestAppStatusListener>();

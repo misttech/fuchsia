@@ -6,7 +6,10 @@ import("//build/components.gni")
 
 group("web-virtual-keyboard-client") {
   testonly = true
-  deps = [ ":package" ]
+  deps = [
+    ":package",
+    "//sdk/lib/stdcompat",
+  ]
 }
 
 executable("bin") {

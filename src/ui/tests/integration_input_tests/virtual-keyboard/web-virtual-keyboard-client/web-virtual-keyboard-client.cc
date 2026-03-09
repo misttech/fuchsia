@@ -6,6 +6,7 @@
 #include <fidl/test.virtualkeyboard/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/channel.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
@@ -32,7 +33,7 @@ class WebApp : public integration_tests::WebAppBase {
 
   void Run() {
     FX_LOGS(INFO) << "Wait for input_ready";
-    RunLoopUntil([&] { return nav_listener_.title_.find("input_ready") != std::string::npos; });
+    RunLoopUntil([&] { return cpp23::contains(nav_listener_.title_, "input_ready"); });
 
     FX_LOGS(INFO) << "Requesting input position";
     auto [input_position_port_client_end, input_position_port_server_end] =

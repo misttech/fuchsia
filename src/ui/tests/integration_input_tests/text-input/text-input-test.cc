@@ -34,6 +34,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fidl/cpp/channel.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
 #include <lib/syslog/cpp/macros.h>
@@ -95,7 +96,7 @@ class KeyboardInputState {
 
   // Same as above, except we are looking for a substring.
   bool ResponseContains(const std::string& substring) {
-    bool match = response_.has_value() && response_.value().find(substring) != std::string::npos;
+    bool match = response_.has_value() && cpp23::contains(response_.value(), substring);
     if (match) {
       response_ = std::nullopt;
     }

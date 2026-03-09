@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/flatland/scene_dumper.h"
 
+#include <lib/stdcompat/string_view.h>
 #include <lib/ui/scenic/cpp/view_ref_pair.h>
 #include <lib/zx/eventpair.h>
 
@@ -204,8 +205,8 @@ void ExpectInstanceDump(flatland::TransformHandle::InstanceId instance_id, const
   ASSERT_LT(line_number, line_dump.size());
   if (name.empty()) {
     // There shouldn't be an opening or closing bracket for the name.
-    EXPECT_EQ(line_dump[line_number].find('('), std::string::npos);
-    EXPECT_EQ(line_dump[line_number].find(')'), std::string::npos);
+    EXPECT_FALSE(cpp23::contains(line_dump[line_number], '('));
+    EXPECT_FALSE(cpp23::contains(line_dump[line_number], ')'));
   } else {
     auto instance_str = std::string(" (") + name + std::string(")");
     ExpectNameLineNumberAndGetIndex(instance_str, line_number, line_dump);
@@ -216,14 +217,14 @@ void ExpectInstanceDump(flatland::TransformHandle::InstanceId instance_id, const
 void ExpectHitRegionDumpCount(const std::vector<std::string>& line_dump, int expected_count) {
   size_t hit_region_line = 0;
   for (size_t i = 0; i < line_dump.size(); ++i) {
-    if (line_dump[i].find(kHitRegionsDumpLineIdentifierToken) != std::string::npos) {
+    if (cpp23::contains(line_dump[i], kHitRegionsDumpLineIdentifierToken)) {
       hit_region_line = i;
       break;
     }
   }
   int count = 0;
   for (size_t i = hit_region_line + 1; i < line_dump.size(); ++i) {
-    if (line_dump[i].find(kHitRegionDumpLineIdentifierToken) != std::string::npos) {
+    if (cpp23::contains(line_dump[i], kHitRegionDumpLineIdentifierToken)) {
       count++;
     }
   }
@@ -235,7 +236,7 @@ void ExpectHitRegionDump(const std::vector<std::string>& line_dump,
                          const types::RectangleF& hit_region) {
   size_t hit_region_line = 0;
   for (size_t i = 0; i < line_dump.size(); ++i) {
-    if (line_dump[i].find(kHitRegionsDumpLineIdentifierToken) != std::string::npos) {
+    if (cpp23::contains(line_dump[i], kHitRegionsDumpLineIdentifierToken)) {
       hit_region_line = i;
       break;
     }
@@ -246,7 +247,7 @@ void ExpectHitRegionDump(const std::vector<std::string>& line_dump,
     expected_transform_line << "transform: (" << transform.GetInstanceId() << ":"
                             << transform.GetTransformId() << ")";
     const std::string& transform_line = line_dump[hit_region_line + 1];
-    EXPECT_NE(transform_line.find(expected_transform_line.str()), std::string::npos)
+    EXPECT_TRUE(cpp23::contains(transform_line, expected_transform_line.str()))
         << "Failed to find \"" << expected_transform_line.str() << "\" in:\n"
         << transform_line;
   }
@@ -257,7 +258,7 @@ void ExpectHitRegionDump(const std::vector<std::string>& line_dump,
                          << ", width=" << hit_region.width() << ", height=" << hit_region.height()
                          << "}";
     const std::string& region_line = line_dump[hit_region_line + 2];
-    EXPECT_NE(region_line.find(expected_region_line.str()), std::string::npos)
+    EXPECT_TRUE(cpp23::contains(region_line, expected_region_line.str()))
         << "Failed to find \"" << expected_region_line.str() << "\" in:\n"
         << region_line;
   }
@@ -268,7 +269,7 @@ void ExpectHitRegionDump(const std::vector<std::string>& line_dump,
 // |beginning_at| to find subsequent images.
 size_t FindImageDumpLineNumber(const std::vector<std::string>& line_dump, size_t beginning_at = 0) {
   for (size_t i = beginning_at; i < line_dump.size(); i++) {
-    if (line_dump[i].find(kImageDumpLineIdentifierToken) != std::string::npos) {
+    if (cpp23::contains(line_dump[i], kImageDumpLineIdentifierToken)) {
       return i;
     }
   }
@@ -280,7 +281,7 @@ size_t FindImageDumpLineNumber(const std::vector<std::string>& line_dump, size_t
 void ExpectImageDumpCount(const std::vector<std::string>& line_dump, int expected_count) {
   int count = 0;
   for (auto& line : line_dump) {
-    if (line.find(kImageDumpLineIdentifierToken) != std::string::npos) {
+    if (cpp23::contains(line, kImageDumpLineIdentifierToken)) {
       count++;
     }
   }
@@ -294,12 +295,9 @@ size_t ExpectImageDump(ImageMetadata image, flatland::TransformHandle node, Imag
                        const std::vector<std::string>& line_dump, size_t beginning_at = 0) {
   auto line_number = FindImageDumpLineNumber(line_dump, beginning_at);
   EXPECT_LE(line_number, (size_t)-1);
-  auto index = line_dump[line_number++].find(ImageStr(image));
-  EXPECT_NE(index, std::string::npos);
-  index = line_dump[line_number++].find(NodeStr(node));
-  EXPECT_NE(index, std::string::npos);
-  index = line_dump[line_number++].find(RectStr(rect));
-  EXPECT_NE(index, std::string::npos);
+  EXPECT_TRUE(cpp23::contains(line_dump[line_number++], ImageStr(image)));
+  EXPECT_TRUE(cpp23::contains(line_dump[line_number++], NodeStr(node)));
+  EXPECT_TRUE(cpp23::contains(line_dump[line_number++], RectStr(rect)));
   return line_number;
 }
 

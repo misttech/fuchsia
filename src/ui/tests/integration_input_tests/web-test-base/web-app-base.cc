@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.element/cpp/fidl.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <src/ui/testing/util/fidl_cpp_helpers.h>
@@ -59,10 +60,10 @@ void NavListener::OnNavigationStateChanged(OnNavigationStateChangedRequest& req,
   if (nav_state.title().has_value()) {
     title_ = nav_state.title().value();
     FX_LOGS(INFO) << "nav_state.title = " << title_;
-    if (title_.find("about:blank") != std::string::npos) {
+    if (cpp23::contains(title_, "about:blank")) {
       loaded_about_blank_ = true;
     }
-    if (title_.find("window_resized") != std::string::npos) {
+    if (cpp23::contains(title_, "window_resized")) {
       window_resized_ = true;
     }
   }

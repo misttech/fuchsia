@@ -14,7 +14,10 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
     testonly = true
 
     sources = [ "no_op_mac_unittest.cc" ]
-    deps = [ "//third_party/googletest:gtest" ]
+    deps = [
+      "//sdk/lib/stdcompat",
+      "//third_party/googletest:gtest",
+    ]
   }
 
   test("escher_unittests") {

@@ -9,7 +9,10 @@ import("//build/testing/cc_test_executable.gni")
 
 group("text-input") {
   testonly = true
-  deps = [ ":tests" ]
+  deps = [
+    ":tests",
+    "//sdk/lib/stdcompat",
+  ]
 }
 
 group("tests") {

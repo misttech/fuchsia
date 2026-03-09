@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <arpa/inet.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstddef>
@@ -68,13 +69,13 @@ class HttpServer {
       buf.resize(ret);
 
       std::string file;
-      if (buf.find(kStaticHtml) != std::string::npos) {
+      if (cpp23::contains(buf, kStaticHtml)) {
         file = fxl::StringPrintf("/pkg/data/%s", kStaticHtml);
-      } else if (buf.find(kDynamicHtml) != std::string::npos) {
+      } else if (cpp23::contains(buf, kDynamicHtml)) {
         file = fxl::StringPrintf("/pkg/data/%s", kDynamicHtml);
-      } else if (buf.find(kFourColorsVideo) != std::string::npos) {
+      } else if (cpp23::contains(buf, kFourColorsVideo)) {
         file = fxl::StringPrintf("/pkg/data/%s", kFourColorsVideo);
-      } else if (buf.find(kVideoHtml) != std::string::npos) {
+      } else if (cpp23::contains(buf, kVideoHtml)) {
         file = fxl::StringPrintf("/pkg/data/%s", kVideoHtml);
       } else {
         FX_NOTIMPLEMENTED();

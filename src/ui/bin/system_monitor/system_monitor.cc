@@ -7,6 +7,7 @@
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -65,7 +66,7 @@ std::vector<std::string> SystemMonitor::ParseBatch(
 
 std::string SystemMonitor::GetTargetFromDiagnostics(std::vector<std::string> recent_diagnostics) {
   for (auto& content : recent_diagnostics) {
-    if (content.find(kTarget) != std::string::npos) {
+    if (cpp23::contains(content, kTarget)) {
       return content;
     }
   }
