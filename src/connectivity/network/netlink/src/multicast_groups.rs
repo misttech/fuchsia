@@ -52,7 +52,7 @@ impl Into<usize> for ModernGroup {
 
 /// An error indicating that a modern group has no mapping to a legacy
 /// group.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NoMappingFromModernToLegacyGroupError;
 
 impl TryFrom<ModernGroup> for SingleLegacyGroup {
@@ -61,11 +61,10 @@ impl TryFrom<ModernGroup> for SingleLegacyGroup {
     fn try_from(
         ModernGroup(group): ModernGroup,
     ) -> Result<SingleLegacyGroup, NoMappingFromModernToLegacyGroupError> {
-        let group = 1 << group;
-        if group == 0 {
-            Err(NoMappingFromModernToLegacyGroupError)
-        } else {
+        if let Some(group) = 1u32.checked_shl(group) {
             Ok(SingleLegacyGroup(group))
+        } else {
+            Err(NoMappingFromModernToLegacyGroupError)
         }
     }
 }
@@ -271,6 +270,16 @@ mod tests {
         assert_eq!(
             <u32 as TryInto<SingleLegacyGroup>>::try_into(0x00010100),
             Err(MultipleBitsSetError {})
+        );
+    }
+
+    #[test]
+    fn test_modern_to_legacy_groups() {
+        assert_eq!(ModernGroup(0).try_into(), Ok(SingleLegacyGroup(0b00000001)));
+        assert_eq!(ModernGroup(4).try_into(), Ok(SingleLegacyGroup(0b00010000)));
+        assert_eq!(
+            ModernGroup(100).try_into(),
+            Err::<SingleLegacyGroup, _>(NoMappingFromModernToLegacyGroupError)
         );
     }
 
