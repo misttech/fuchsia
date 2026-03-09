@@ -17,11 +17,6 @@ declare_args() {
   # useful for identifying the stacks that acquired a lock in a deadlock cycle.
   starnix_enable_rust_backtrace = false
 
-  # Whether or not to build Linux-based syscall tests, e.g. tests which are intended to run in
-  # an isolated Linux VM. This flag should often be used in conjunction with virtualization enabled,
-  # instructions can be found at fuchsia.dev/fuchsia-src/development/virtualization/get_started
-  starnix_linux_syscall_tests = false
-
   # We want to use a newer sysroot than is available by default in $host_toolchain.
   starnix_host_linux_toolchain = "//build/toolchain:linux_$host_cpu"
 }
