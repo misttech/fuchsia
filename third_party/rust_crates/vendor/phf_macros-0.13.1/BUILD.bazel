@@ -73,7 +73,7 @@ rust_proc_macro(
     deps = [
         "//third_party/rust_crates/vendor/phf_generator-0.13.1:phf_generator",
         "//third_party/rust_crates/vendor/phf_shared-0.13.1:phf_shared",
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
         "//third_party/rust_crates/vendor/syn-2.0.117:syn",
     ],

@@ -518,7 +518,7 @@ _NORMAL_DEPENDENCIES = {
             "parking_lot": Label("//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot"),
             "parking_lot_core": Label("//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core"),
             "petgraph": Label("//third_party/rust_crates/vendor/petgraph-0.6.2:petgraph"),
-            "proc-macro2": Label("//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2"),
+            "proc-macro2": Label("//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2"),
             "pulldown-cmark": Label("//third_party/rust_crates/vendor/pulldown-cmark-0.9.3:pulldown_cmark"),
             "quote": Label("//third_party/rust_crates/vendor/quote-1.0.45:quote"),
             "rustfix": Label("//third_party/rust_crates/vendor/rustfix-0.9.3:rustfix"),

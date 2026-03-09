@@ -1849,14 +1849,14 @@ alias(
 )
 
 alias(
-    name = "proc-macro2-1.0.97",
-    actual = "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+    name = "proc-macro2-1.0.106",
+    actual = "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
     tags = ["manual"],
 )
 
 alias(
     name = "proc-macro2",
-    actual = "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+    actual = "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
     tags = ["manual"],
 )
 

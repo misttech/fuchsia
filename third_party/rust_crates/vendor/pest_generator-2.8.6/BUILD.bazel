@@ -79,7 +79,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/pest-2.8.6:pest",
         "//third_party/rust_crates/vendor/pest_meta-2.8.6:pest_meta",
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
         "//third_party/rust_crates/vendor/syn-2.0.117:syn",
     ],
