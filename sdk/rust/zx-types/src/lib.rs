@@ -529,6 +529,9 @@ multiconst!(zx_signals_t, [
     // Vmo
     ZX_VMO_ZERO_CHILDREN        = ZX_OBJECT_SIGNAL_3;
 
+    // Virtual Interrupt
+    ZX_VIRTUAL_INTERRUPT_UNTRIGGERED = ZX_OBJECT_SIGNAL_4;
+
     // Counter
     ZX_COUNTER_SIGNALED          = ZX_OBJECT_SIGNAL_3;
     ZX_COUNTER_POSITIVE          = ZX_OBJECT_SIGNAL_4;

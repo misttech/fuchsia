@@ -131,5 +131,8 @@ bitflags! {
 
         // Vmo
         const VMO_ZERO_CHILDREN = ZX_VMO_ZERO_CHILDREN;
+
+        // Virtual Interrupt
+        const VIRTUAL_INTERRUPT_UNTRIGGERED = ZX_VIRTUAL_INTERRUPT_UNTRIGGERED;
     }
 }
