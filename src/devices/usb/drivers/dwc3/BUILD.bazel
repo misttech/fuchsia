@@ -149,6 +149,7 @@ fuchsia_cc_test(
         "@fuchsia_sdk//pkg/driver_fake_reset_cpp",
         "@fuchsia_sdk//pkg/driver_fake_vreg_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
+        "@fuchsia_sdk//pkg/sync_cpp",
         "@internal_sdk//pkg/fake-mmio-reg",
     ],
 )

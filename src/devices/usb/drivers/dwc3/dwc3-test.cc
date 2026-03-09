@@ -13,6 +13,7 @@
 #include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-reset/cpp/fake-reset.h>
 #include <lib/driver/fake-vreg/cpp/fake-vreg.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <optional>
 
@@ -57,6 +58,8 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
     watch_connection_status_changed_called_ = set;
   }
 
+  libsync::Completion* completion() { return &completion_; }
+
  private:
   void ConnectStatusChanged(ConnectStatusChangedRequest& request,
                             ConnectStatusChangedCompleter::Sync& completer) override {
@@ -83,6 +86,7 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
 
     ASSERT_FALSE(completer_.has_value());
     completer_.emplace(completer.ToAsync());
+    completion_.Signal();
   }
 
   void handle_unknown_method(
@@ -96,6 +100,7 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
 
   bool watch_connection_status_changed_called_ = false;
   std::optional<WatchConnectStatusChangedCompleter::Async> completer_;
+  libsync::Completion completion_;  // Signled when the above completer_ is saved.
 };
 
 class FakePath final : public fidl::Server<fhi::Path> {
@@ -246,6 +251,7 @@ class TestFixture : public testing::Test {
   void TearDown() override {
     dut_.runtime().RunUntilIdle();
     if (manage_lifetime) {
+      EXPECT_EQ(ZX_OK, WaitForPhy());
       EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
     }
   }
@@ -288,6 +294,19 @@ class TestFixture : public testing::Test {
   bool stuck_reset_test_{false};
 
   fdf_testing::BackgroundDriverTest<Config> dut_;
+
+  // There's an inherent race in the way this test is set up between the three threads: the
+  // foreground testing thread, the background driver thread, and the environment thread the fakes
+  // are running on. Driving the driver's dispatcher to an idle state and then tearing down the test
+  // will race with the environment's dispatcher execution of the Watch handler. If the environment
+  // dispatcher is torn down before the side effects of the Watch handler execute, ~FakeUsbPhy()
+  // will sometimes fail. To resolve this race, the foreground testing thread needs to be
+  // synchronized against the environment thread and wait for the fakes to catch up.
+  zx_status_t WaitForPhy() {
+    libsync::Completion* comp{nullptr};
+    dut_.RunInEnvironmentTypeContext([&](Environment& env) { comp = env.usb_phy().completion(); });
+    return comp->Wait(zx::min(1));
+  }
 };
 
 using ManagedTestFixture = TestFixture<true>;
@@ -316,6 +335,7 @@ TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   });
 
   dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
 
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
@@ -349,6 +369,7 @@ TEST_F(UnmanagedTestFixture, Dfv2HwVersion2) {
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
 
   dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
 
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
