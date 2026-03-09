@@ -203,8 +203,10 @@ void TraceProviderImpl::Stop(StopCompleter::Sync& completer) { Session::StopEngi
 void TraceProviderImpl::Terminate(TerminateCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (session_) {
-    std::unique_ptr<Session> session = std::move(session_);
-    session->TerminateEngine([cb = completer.ToAsync()]() mutable { cb.Reply(); });
+    session_->TerminateEngine([cb = completer.ToAsync(), this]() mutable {
+      cb.Reply();
+      session_.reset();
+    });
   } else {
     completer.Reply();
   }

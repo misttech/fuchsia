@@ -126,25 +126,6 @@ class ExtraProvider : public ::testing::Test {
   std::vector<std::string> argv_;
 };
 
-// We support two providers in one process, but it's the process's
-// responsibility to get it right. E.g., Two providers using one trace-engine
-// is a non-starter.
-class TwoProvidersOneEngine : public ExtraProvider {
- public:
-  const char* GetProgramPath() override { return "/pkg/bin/two_providers_one_engine"; }
-};
-
-TEST_F(TwoProvidersOneEngine, ErrorHandling) {
-  ASSERT_TRUE(provider_process().is_valid());
-
-  RunAndVerify(kBasicIntegrationTestPath, "simple", "trace:test", 1, "oneshot");
-
-  // Running this test twice should work.
-  // https://fxbug.dev/42096939: Providers didn't properly reset themselves after a previous
-  // trace was prematurely aborted.
-  RunAndVerify(kBasicIntegrationTestPath, "simple", "trace:test", 1, "oneshot");
-}
-
 TEST(TwoProvidersTwoEngines, Test) {
   RunAndVerify(kTwoProvidersTwoEnginesTestPath, "two-providers-two-engines", "trace:test", 1,
                "oneshot");

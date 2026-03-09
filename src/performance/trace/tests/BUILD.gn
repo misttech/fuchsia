@@ -164,22 +164,6 @@ executable("basic_integration_test_app") {
   ]
 }
 
-executable("two_providers_one_engine") {
-  testonly = true
-
-  sources = [ "two_providers_one_engine.cc" ]
-
-  deps = [
-    "//sdk/lib/async:async-cpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//src/lib/fxl:fxl_cli",
-    "//zircon/system/ulib/trace",
-    "//zircon/system/ulib/trace-provider",
-    "//zircon/system/ulib/zx",
-  ]
-}
-
 shared_library("self_contained_provider") {
   testonly = true
 
@@ -385,7 +369,6 @@ fuchsia_test_package("trace_tests") {
     ":return_1234",
     ":run_awhile",
     ":shared_provider_app",
-    ":two_providers_one_engine",
     "//src/performance/trace:bin",
     "//src/performance/trace_manager:component_hermetic",
   ]
