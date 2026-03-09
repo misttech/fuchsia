@@ -6,14 +6,14 @@
 
 use anyhow::Result;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_device_fs as fdf_devfs;
+use fidl_fuchsia_driver_framework as fdf_fidl;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_device_fs as fdf_devfs, fidl_fuchsia_driver_framework as fdf_fidl,
-    fuchsia_async as fasync, zx,
-};
+use zx;
 
 /// This represents a node in the NodeManage.
 pub type NodeId = usize;
@@ -41,20 +41,24 @@ impl TestNode {
                     request
                 {
                     let name = args.name.as_ref().unwrap();
-                    let _ = context.upgrade().expect("manager").new_node(
-                        name,
-                        Some(node_id),
-                        args.properties2,
-                        Some(controller),
-                        node,
-                        args.devfs_args,
-                    );
+                    if let Some(manager) = context.upgrade() {
+                        let _ = manager.new_node(
+                            name,
+                            Some(node_id),
+                            args.properties2,
+                            Some(controller),
+                            node,
+                            args.devfs_args,
+                        );
+                    }
 
                     let _ = responder.send(Ok(()));
                 }
             }
 
-            context.upgrade().expect("manager").remove_node(&node_id);
+            if let Some(manager) = context.upgrade() {
+                manager.remove_node(&node_id);
+            }
         });
     }
 
@@ -66,7 +70,9 @@ impl TestNode {
             while let Some(request) = stream.try_next().await.unwrap() {
                 match request {
                     fdf_fidl::NodeControllerRequest::Remove { control_handle: _ } => {
-                        context.upgrade().expect("manager").remove_node(&node_id);
+                        if let Some(manager) = context.upgrade() {
+                            manager.remove_node(&node_id);
+                        }
                     }
                     fdf_fidl::NodeControllerRequest::RequestBind { payload: _, responder } => {
                         let _ = responder.send(Ok(()));
