@@ -431,6 +431,89 @@ TEST_F(PrintInputReport, PrintTouchGetInputReport) {
   printer.AssertSawAllStrings();
 }
 
+TEST_F(PrintInputReport, PrintTouchInputDescriptorWithButtons) {
+  auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
+  auto touch = descriptor->mutable_touch()->mutable_input();
+  touch->set_touch_type(fuchsia::input::report::TouchType::TOUCHSCREEN);
+  touch->set_max_contacts(1);
+  touch->set_buttons({fuchsia::input::report::TouchButton::PALM,
+                      fuchsia::input::report::TouchButton::SWIPE_UP,
+                      fuchsia::input::report::TouchButton::SWIPE_LEFT,
+                      fuchsia::input::report::TouchButton::SWIPE_RIGHT,
+                      fuchsia::input::report::TouchButton::SWIPE_DOWN});
+
+  fake_device_->SetDescriptor(std::move(descriptor));
+
+  FakePrinter printer;
+  printer.SetExpectedStrings(std::vector<std::string>{
+      "Descriptor from file: test\n",
+      "Touch Descriptor:\n",
+      "  Input Report:\n",
+      "    Touch Type: TOUCHSCREEN\n",
+      "    Max Contacts: 1\n",
+      "    Button: PALM\n",
+      "    Button: SWIPE_UP\n",
+      "    Button: SWIPE_LEFT\n",
+      "    Button: SWIPE_RIGHT\n",
+      "    Button: SWIPE_DOWN\n",
+  });
+
+  print_input_report::PrintInputDescriptor(std::string("test"), &printer, std::move(*client_));
+  loop_->RunUntilIdle();
+  printer.AssertSawAllStrings();
+}
+
+TEST_F(PrintInputReport, PrintTouchInputReportWithButtons) {
+  fuchsia::input::report::InputReport report;
+  report.mutable_touch()->set_pressed_buttons({fuchsia::input::report::TouchButton::SWIPE_UP,
+                                               fuchsia::input::report::TouchButton::SWIPE_LEFT});
+
+  std::vector<fuchsia::input::report::InputReport> reports;
+  reports.push_back(std::move(report));
+  fake_device_->SetReports(std::move(reports));
+
+  FakePrinter printer;
+  printer.SetExpectedStrings(std::vector<std::string>{
+      "Report from file: test\n",
+      "Button SWIPE_UP pressed\n",
+      "Button SWIPE_LEFT pressed\n",
+      "\n",
+  });
+
+  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
+  ASSERT_EQ(res.status_value(), ZX_OK);
+  auto reader = std::move(res.value());
+
+  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  loop_->RunUntilIdle();
+  printer.AssertSawAllStrings();
+}
+
+TEST_F(PrintInputReport, PrintTouchInputReportWithUnknownButtons) {
+  fuchsia::input::report::InputReport report;
+  report.mutable_touch()->set_pressed_buttons(
+      {static_cast<fuchsia::input::report::TouchButton>(99)});
+
+  std::vector<fuchsia::input::report::InputReport> reports;
+  reports.push_back(std::move(report));
+  fake_device_->SetReports(std::move(reports));
+
+  FakePrinter printer;
+  printer.SetExpectedStrings(std::vector<std::string>{
+      "Report from file: test\n",
+      "Button ERROR pressed\n",
+      "\n",
+  });
+
+  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
+  ASSERT_EQ(res.status_value(), ZX_OK);
+  auto reader = std::move(res.value());
+
+  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  loop_->RunUntilIdle();
+  printer.AssertSawAllStrings();
+}
+
 TEST_F(PrintInputReport, PrintKeyboardDescriptor) {
   auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
   descriptor->mutable_keyboard()->mutable_input()->set_keys3(

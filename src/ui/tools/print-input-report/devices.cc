@@ -250,6 +250,11 @@ void PrintTouchDesc(Printer* printer,
     if (input.has_max_contacts()) {
       printer->Print("Max Contacts: %ld\n", input.max_contacts());
     }
+    if (input.has_buttons()) {
+      for (size_t i = 0; i < input.buttons().size(); i++) {
+        printer->Print("Button: %s\n", Printer::TouchButtonToString(input.buttons()[i]));
+      }
+    }
     if (input.has_contacts()) {
       for (size_t i = 0; i < input.contacts().size(); i++) {
         const fuchsia_input_report::wire::ContactInputDescriptor& contact = input.contacts()[i];
@@ -545,6 +550,12 @@ void PrintTouchInputReport(Printer* printer,
       }
 
       printer->DecreaseIndent();
+    }
+  }
+  if (touch_report.has_pressed_buttons()) {
+    for (size_t i = 0; i < touch_report.pressed_buttons().size(); i++) {
+      printer->Print("Button %s pressed\n",
+                     Printer::TouchButtonToString(touch_report.pressed_buttons()[i]));
     }
   }
 }

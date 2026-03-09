@@ -103,6 +103,15 @@ const char* const kConsumerControlButtonStrings[] = {
     "ERROR",    "VOLUME_UP", "VOLUME_DOWN",    "PAUSE",    "FACTORY_RESET",
     "MIC_MUTE", "REBOOT",    "CAMERA_DISABLE", "FUNCTION", "POWER"};
 
+static_assert(fidl::ToUnderlying(fuchsia_input_report::wire::TouchButton::kPalm) == 1);
+static_assert(fidl::ToUnderlying(fuchsia_input_report::wire::TouchButton::kSwipeUp) == 2);
+static_assert(fidl::ToUnderlying(fuchsia_input_report::wire::TouchButton::kSwipeLeft) == 3);
+static_assert(fidl::ToUnderlying(fuchsia_input_report::wire::TouchButton::kSwipeRight) == 4);
+static_assert(fidl::ToUnderlying(fuchsia_input_report::wire::TouchButton::kSwipeDown) == 5);
+// These strings must be ordered based on the enums in fuchsia.input.report/touch.fidl.
+const char* const kTouchButtonStrings[] = {"ERROR",      "PALM",        "SWIPE_UP",
+                                           "SWIPE_LEFT", "SWIPE_RIGHT", "SWIPE_DOWN"};
+
 class Printer {
  public:
   Printer() = default;
@@ -110,7 +119,7 @@ class Printer {
   // Find the string related to the unit. If we are given a value that we do not
   // recognize, the string "NONE" will be returned and printed.
   static const char* UnitTypeToString(fuchsia_input_report::wire::Unit unit) {
-    uint32_t unit_index = static_cast<uint32_t>(unit.type);
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(unit.type));
     if (unit_index >= std::size(kUnitStrings)) {
       return kUnitStrings[0];
     }
@@ -120,7 +129,7 @@ class Printer {
   // Find the string related to the sensor type. If we are given a value that we do not
   // recognize, the string "ERROR" will be returned and printed.
   static const char* SensorTypeToString(fuchsia_input_report::wire::SensorType type) {
-    uint32_t unit_index = static_cast<uint32_t>(type);
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(type));
     if (unit_index >= std::size(kSensorTypeStrings)) {
       return kSensorTypeStrings[0];
     }
@@ -128,7 +137,7 @@ class Printer {
   }
 
   static const char* TouchTypeToString(fuchsia_input_report::wire::TouchType type) {
-    uint32_t unit_index = static_cast<uint32_t>(type);
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(type));
     if (unit_index >= std::size(kTouchTypeStrings)) {
       return kTouchTypeStrings[0];
     }
@@ -136,7 +145,7 @@ class Printer {
   }
 
   static const char* LedTypeToString(fuchsia_input_report::wire::LedType type) {
-    uint32_t unit_index = static_cast<uint32_t>(type);
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(type));
     if (unit_index >= std::size(kLedTypeStrings)) {
       return kLedTypeStrings[0];
     }
@@ -145,11 +154,19 @@ class Printer {
 
   static const char* ConsumerControlButtonToString(
       fuchsia_input_report::wire::ConsumerControlButton type) {
-    uint32_t unit_index = static_cast<uint32_t>(type);
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(type));
     if (unit_index >= std::size(kConsumerControlButtonStrings)) {
       return kConsumerControlButtonStrings[0];
     }
     return kConsumerControlButtonStrings[unit_index];
+  }
+
+  static const char* TouchButtonToString(fuchsia_input_report::wire::TouchButton type) {
+    uint32_t unit_index = static_cast<uint32_t>(fidl::ToUnderlying(type));
+    if (unit_index >= std::size(kTouchButtonStrings)) {
+      return kTouchButtonStrings[0];
+    }
+    return kTouchButtonStrings[unit_index];
   }
 
   void PrintAxis(fuchsia_input_report::wire::Axis axis) {
