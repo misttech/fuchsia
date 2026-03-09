@@ -1888,6 +1888,8 @@ pub fn on_arp_packet<CC, BC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
+    frame_src: impl Debug,
+    sender_hwaddr: impl Debug,
     sender_addr: Ipv4Addr,
     target_addr: Ipv4Addr,
     is_arp_probe: bool,
@@ -1919,14 +1921,11 @@ where
             //   interface addresses, then this is a conflicting ARP packet,
             //   indicating some other host also thinks it is validly using this
             //   address.
-            Some(IpAddressState::Assigned) => {
-                info!("DAD received conflicting ARP packet for assigned addr=({sender_addr})");
-            }
-            Some(IpAddressState::Tentative) => {
-                debug!("DAD received conflicting ARP packet for tentative addr=({sender_addr})");
-            }
-            Some(IpAddressState::Unavailable) => {
-                debug!("DAD received conflicting ARP packet for unavailable addr=({sender_addr})");
+            Some(state) => {
+                info!(
+                    "DAD received conflicting ARP packet (sender) for {sender_addr} \
+                    (state={state:?}). arp_sha={sender_hwaddr:?}, frame_src={frame_src:?}"
+                );
             }
         }
     }
@@ -1950,15 +1949,14 @@ where
         );
         let assigned = match target_addr_state {
             None => false,
-            // Unlike the sender_addr, it's not concerning to receive an ARP
-            // packet whose target_addr is assigned to us.
+            // Unlike the sender_addr, it's not concerning to receive an
+            // ARP packet whose target_addr is assigned to us.
             Some(IpAddressState::Assigned) => true,
-            Some(IpAddressState::Tentative) => {
-                debug!("DAD received conflicting ARP packet for tentative addr=({target_addr})");
-                false
-            }
-            Some(IpAddressState::Unavailable) => {
-                debug!("DAD received conflicting ARP packet for unavailable addr=({target_addr})");
+            Some(state @ (IpAddressState::Tentative | IpAddressState::Unavailable)) => {
+                info!(
+                    "DAD received conflicting ARP packet (target) for {target_addr} \
+                    (state={state:?}). arp_sha={sender_hwaddr:?}, frame_src={frame_src:?}"
+                );
                 false
             }
         };

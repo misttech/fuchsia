@@ -188,12 +188,18 @@ pub trait ArpIpLayerContext<D: ArpDevice, BC>: DeviceIdContext<D> {
     /// The IP layer may use this packet to update internal state, such as
     /// facilitating Address Conflict Detection (RFC 5227).
     ///
+    /// `frame_src` is the link address in the L2 Frame that carried this ARP
+    /// packet, while `sender_hwaddr` is the sender_hardware_addr field from the
+    /// ARP header.
+    ///
     /// Returns whether the `target_addr` is assigned on the device. This is
     /// used by ARP to send responses to the packet (if applicable).
     fn on_arp_packet(
         &mut self,
         bindings_ctx: &mut BC,
         device: &Self::DeviceId,
+        frame_src: D::Address,
+        sender_hwaddr: D::Address,
         sender_addr: Ipv4Addr,
         target_addr: Ipv4Addr,
         is_arp_probe: bool,
@@ -340,6 +346,7 @@ pub(crate) trait ArpPacketHandler<D: ArpDevice, BC>: DeviceIdContext<D> {
         &mut self,
         bindings_ctx: &mut BC,
         device_id: Self::DeviceId,
+        frame_src: D::Address,
         frame_dst: FrameDestination,
         buffer: B,
     );
@@ -356,10 +363,11 @@ impl<
         &mut self,
         bindings_ctx: &mut BC,
         device_id: Self::DeviceId,
+        frame_src: D::Address,
         frame_dst: FrameDestination,
         buffer: B,
     ) {
-        handle_packet(self, bindings_ctx, device_id, frame_dst, buffer)
+        handle_packet(self, bindings_ctx, device_id, frame_src, frame_dst, buffer)
     }
 }
 
@@ -372,6 +380,7 @@ fn handle_packet<
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device_id: CC::DeviceId,
+    frame_src: D::Address,
     frame_dst: FrameDestination,
     mut buffer: B,
 ) {
@@ -439,8 +448,15 @@ fn handle_packet<
 
     // As Per RFC 5227, section 2.1.1 dispatch any received ARP packet
     // (Request *or* Reply) to the DAD engine.
-    let targets_interface =
-        core_ctx.on_arp_packet(bindings_ctx, &device_id, sender_addr, target_addr, is_arp_probe);
+    let targets_interface = core_ctx.on_arp_packet(
+        bindings_ctx,
+        &device_id,
+        frame_src,
+        sender_hw_addr,
+        sender_addr,
+        target_addr,
+        is_arp_probe,
+    );
 
     enum PacketKind {
         Gratuitous,
@@ -793,6 +809,7 @@ mod tests {
                 core_ctx,
                 bindings_ctx,
                 device_id,
+                TEST_REMOTE_MAC,
                 FrameDestination::Individual { local: true },
                 data,
             )
@@ -882,6 +899,8 @@ mod tests {
             &mut self,
             _bindings_ctx: &mut FakeBindingsCtxImpl,
             _device_id: &FakeLinkDeviceId,
+            _frame_src: Mac,
+            _sender_hwaddr: Mac,
             sender_addr: Ipv4Addr,
             target_addr: Ipv4Addr,
             is_arp_probe: bool,
@@ -966,7 +985,14 @@ mod tests {
         assert_eq!(hw, ArpHardwareType::Ethernet);
         assert_eq!(proto, ArpNetworkType::Ipv4);
 
-        handle_packet::<_, _, _, _>(core_ctx, bindings_ctx, FakeLinkDeviceId, frame_dst, buf);
+        handle_packet::<_, _, _, _>(
+            core_ctx,
+            bindings_ctx,
+            FakeLinkDeviceId,
+            sender_mac,
+            frame_dst,
+            buf,
+        );
     }
 
     // Validate that buf is an ARP packet with the specific op, local_ipv4,

@@ -542,6 +542,7 @@ where
             return;
         };
 
+        let src = ethernet.src_mac();
         let dst = ethernet.dst_mac();
 
         let frame_dst = core_ctx.with_static_ethernet_device_state(&device_id, |static_state| {
@@ -570,6 +571,7 @@ where
                             core_ctx,
                             bindings_ctx,
                             device_id,
+                            src,
                             frame_dst,
                             buffer,
                         )

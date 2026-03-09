@@ -1018,6 +1018,7 @@ fn notify_on_dad_failure_ipv4(case: Ipv4DadFailureTestCase, expect_conflict: boo
 
     // Install a device.
     let local_mac = Ipv4::TEST_ADDRS.local_mac;
+    let remote_mac = Ipv4::TEST_ADDRS.local_mac;
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
@@ -1100,6 +1101,8 @@ fn notify_on_dad_failure_ipv4(case: Ipv4DadFailureTestCase, expect_conflict: boo
             &mut core_ctx,
             bindings_ctx,
             &device_id,
+            remote_mac,
+            remote_mac,
             sender_addr,
             target_addr,
             is_probe,
