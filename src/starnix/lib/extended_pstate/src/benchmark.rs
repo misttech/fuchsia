@@ -75,6 +75,7 @@ fn main() {
     #[cfg(target_arch = "aarch64")]
     {
         bench = bench.with_function("SaveAndRestore/Aarch64", |b| {
+            use extended_pstate::ExtendedPstatePointer;
             let mut state = ExtendedPstateState::default();
             let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
             let ptr_ptr = &raw mut pstate_ptr as usize;
@@ -86,7 +87,7 @@ fn main() {
         });
         bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
             use extended_pstate::{
-                ExtendedAarch32PstateState, restore_extended_aarch32_pstate,
+                ExtendedAarch32PstateState, ExtendedPstatePointer, restore_extended_aarch32_pstate,
                 save_extended_aarch32_pstate,
             };
             let mut state = ExtendedAarch32PstateState::default();
