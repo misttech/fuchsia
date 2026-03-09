@@ -381,6 +381,14 @@ impl Type {
         }
     }
 
+    /// Return true if `self` has all bytes initialized.
+    fn is_initialized(&self) -> bool {
+        match self {
+            Self::ScalarValue(data) => data.is_fully_initialized(),
+            _ => true,
+        }
+    }
+
     /// Return true if `self` is a subtype of `super_type`.
     pub fn is_subtype(&self, super_type: &Type) -> bool {
         match (self, super_type) {
@@ -1166,8 +1174,8 @@ impl Stack {
 
         let index = offset.array_index();
         let loaded_type = self.get(index).clone();
-        if width == DataWidth::U64 {
-            Ok(loaded_type)
+        let result = if width == DataWidth::U64 {
+            loaded_type
         } else {
             match loaded_type {
                 Type::ScalarValue(data) => {
@@ -1184,16 +1192,20 @@ impl Stack {
                         sub_index,
                         width.bytes(),
                     );
-                    Ok(Type::ScalarValue(ScalarValueData::new(
+                    Type::ScalarValue(ScalarValueData::new(
                         value,
                         unknown_mask,
                         unwritten_mask,
                         urange,
-                    )))
+                    ))
                 }
-                _ => Err(format!("incorrect load of {} bytes", width.bytes())),
+                _ => return Err(format!("incorrect load of {} bytes", width.bytes())),
             }
+        };
+        if !result.is_initialized() {
+            return Err("reading unwritten value from the stack".to_string());
         }
+        Ok(result)
     }
 }
 

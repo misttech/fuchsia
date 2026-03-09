@@ -136,7 +136,6 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
 
                 // TODO(https://fxbug.dev/485971506): Fix seccomp bpf in Fuchsia
-                "SeccompTest.BpfMemUninitialized",
                 "SeccompTest.BpfAbsOutOfBounds",
                 "SeccompTest.BpfUninitX",
             ],
