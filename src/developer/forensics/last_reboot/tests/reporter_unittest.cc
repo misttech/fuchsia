@@ -142,6 +142,7 @@ TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
 
@@ -171,6 +172,7 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
       feedback::FinalShutdownReason::kRootJobTermination);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072\n"
       "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: foo (1)",
       /*dlog=*/std::nullopt, uptime, runtime, "foo");
@@ -198,7 +200,8 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
   auto final_shutdown_info =
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
-      std::move(final_shutdown_info), "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
+      std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(
@@ -225,8 +228,8 @@ TEST_F(GenericReporterTest, Succeed_NoRuntime) {
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
-      "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002", /*dlog=*/std::nullopt, uptime,
-      std::nullopt, std::nullopt);
+      "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002",
+      /*dlog=*/std::nullopt, uptime, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -266,7 +269,8 @@ TEST_F(GenericReporterTest, Succeed_RedactsData) {
   auto final_shutdown_info =
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
-      std::move(final_shutdown_info), "ZIRCON REBOOT REASON (KERNEL PANIC)\n",
+      std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n",
       /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   SetUpCrashReporterServer(
@@ -295,6 +299,7 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
       feedback::FinalShutdownReason::kGenericGraceful);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
 
@@ -341,6 +346,7 @@ TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterAlwaysReturnsError>());
@@ -361,6 +367,7 @@ TEST_F(GenericReporterTest, Succeed_DoesNothingIfAlreadyReportedOn) {
       std::make_unique<feedback::FinalShutdownInfo>(feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       std::move(final_shutdown_info),
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
       /*dlog=*/std::nullopt, zx::msec(74715002), zx::msec(73415072), std::nullopt);
 
@@ -379,6 +386,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(std::vector<UngracefulShutdownTestParam>({
         {
             "KernelPanic",
+            "HW REBOOT REASON (WARM BOOT)\n\n"
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (KERNEL PANIC)",
             "fuchsia-kernel-panic",
@@ -388,6 +396,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "OOM",
+            "HW REBOOT REASON (WARM BOOT)\n\n"
             "ZIRCON REBOOT REASON (OOM)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (OOM)",
             "fuchsia-oom",
@@ -397,6 +406,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "Spontaneous",
+            "HW REBOOT REASON (WARM BOOT)\n\n"
             "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (SPONTANEOUS)",
             "fuchsia-spontaneous-reboot",
@@ -406,6 +416,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "SoftwareWatchdogTimeout",
+            "HW REBOOT REASON (WARM BOOT)\n\n"
             "ZIRCON REBOOT REASON (SW WATCHDOG)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (SOFTWARE WATCHDOG TIMEOUT)",
             "fuchsia-sw-watchdog-timeout",
@@ -415,7 +426,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "HardwareWatchdogTimeout",
-            "ZIRCON REBOOT REASON (HW WATCHDOG)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
+            "HW REBOOT REASON (HW WATCHDOG)\n\nZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (HARDWARE WATCHDOG TIMEOUT)",
             "fuchsia-hw-watchdog-timeout",
             zx::msec(65487494),
@@ -424,7 +435,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "BrownoutPower",
-            "ZIRCON REBOOT REASON (BROWNOUT)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
+            "HW REBOOT REASON (BROWNOUT)\n\nZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920",
             "FINAL REBOOT REASON (BROWNOUT)",
             "fuchsia-brownout",
             zx::msec(65487494),
@@ -500,6 +511,7 @@ TEST_P(GracefulReporterTest, Succeed) {
   const auto param = GetParam();
 
   WriteZirconRebootLogContents(
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920");
   WriteGracefulShutdownInfoContents(param.graceful_shutdown_info);
 
@@ -517,6 +529,7 @@ TEST_P(GracefulReporterTest, Succeed) {
 
 TEST_P(GracefulReporterTest, Succeed_FDR) {
   WriteZirconRebootLogContents(
+      "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920");
   SetAsFdr();
 
@@ -657,9 +670,10 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(GracefulWithCrashReporterTest, Succeed) {
   const auto param = GetParam();
 
-  const std::string zircon_reboot_log =
-      fxl::StringPrintf("ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n%lu\nRUNTIME (ms)\n%lu",
-                        param.output_uptime.to_msecs(), param.output_runtime.to_secs());
+  const std::string zircon_reboot_log = fxl::StringPrintf(
+      "HW REBOOT REASON (WARM BOOT)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n%lu\nRUNTIME (ms)\n%lu",
+      param.output_uptime.to_msecs(), param.output_runtime.to_secs());
   WriteZirconRebootLogContents(zircon_reboot_log);
 
   if (!param.graceful_shutdown_info_contents.empty()) {
@@ -691,9 +705,10 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
 TEST_P(GracefulWithCrashReporterTest, SucceedForLegacyFile) {
   const GracefulShutdownWithCrashTestParam& param = GetParam();
 
-  const std::string zircon_reboot_log =
-      fxl::StringPrintf("ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n%lu\nRUNTIME (ms)\n%lu",
-                        param.output_uptime.to_msecs(), param.output_runtime.to_secs());
+  const std::string zircon_reboot_log = fxl::StringPrintf(
+      "HW REBOOT REASON (WARM BOOT)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n%lu\nRUNTIME (ms)\n%lu",
+      param.output_uptime.to_msecs(), param.output_runtime.to_secs());
   WriteZirconRebootLogContents(zircon_reboot_log);
 
   if (!param.graceful_shutdown_reasons.empty()) {

@@ -13,22 +13,27 @@
 
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
+#include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
 
 enum class FinalShutdownReason : std::uint8_t {
-  // Should map to ZirconRebootReason without kNotSet and kNoCrash.
+  // Should map to any kNotParseable from HwShutdownReason or ZirconShutdownReason.
+  kNotParseable,
+
+  // Should map to HwShutdownReason without kNotSet and kNoParseable.
   kCold,
   kBrownout,
   kHwWatchdog,
+
+  // Should map to ZirconShutdownReason without kNotSet, kNoCrash and kNotParseable.
   kSpontaneousReboot,
   kKernelPanic,
   kOom,
   kSwWatchdog,
   kRootJobTermination,
-  kZirconNotParseable,
 
   // Should map to GracefulShutdownReason without kNotSet, kNotSupported and kNotParseable.
   kGenericGraceful,
@@ -58,7 +63,7 @@ enum class FinalShutdownReason : std::uint8_t {
 class FinalShutdownInfo {
  public:
   static std::unique_ptr<FinalShutdownInfo> MakeFinalShutdownInfo(
-      const ZirconShutdownReason zircon_reason,
+      const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
       std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr);
 
   // For testing purposes.

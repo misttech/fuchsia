@@ -11,13 +11,10 @@ namespace forensics::feedback {
 
 enum class ZirconShutdownReason : std::uint8_t {
   kNotSet,
-  kCold,
   kNoCrash,
   kKernelPanic,
   kOOM,
-  kHwWatchdog,
   kSwWatchdog,
-  kBrownout,
   kUnknown,
   kRootJobTermination,
   kNotParseable,

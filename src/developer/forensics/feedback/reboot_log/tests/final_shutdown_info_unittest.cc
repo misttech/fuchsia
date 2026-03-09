@@ -10,15 +10,16 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
 namespace forensics::feedback {
 namespace {
 
-TEST(FinalShutdownInfoTest, ZirconNotParseable) {
+TEST(FinalShutdownInfoTest, NotParseable) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kZirconNotParseable);
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kNotParseable);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kUnknown);
@@ -259,7 +260,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulNoReportTe
 TEST_P(FinalShutdownInfoGracefulNoReportTest, CheckProperties) {
   const GracefulNoReportTestParams& params = GetParam();
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
-      ZirconShutdownReason::kNoCrash,
+      HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kNotParseable, params.reasons},
       /*not_a_fdr=*/true);
 
@@ -387,7 +388,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
 TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
   const GracefulTestParams& params = GetParam();
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
-      ZirconShutdownReason::kNoCrash,
+      HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kReboot, params.reasons},
       /*not_a_fdr=*/true);
 
@@ -405,10 +406,10 @@ TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
 }
 
 TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      FinalShutdownInfo::MakeFinalShutdownInfo(ZirconShutdownReason::kNoCrash,
-                                               /*graceful_shutdown_info=*/std::nullopt,
-                                               /*not_a_fdr=*/false);
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
+      /*graceful_shutdown_info=*/std::nullopt,
+      /*not_a_fdr=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),

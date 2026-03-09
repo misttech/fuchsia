@@ -91,14 +91,27 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
       break;
   }
 
-  // If we failed to recover any crashlog, simply report the size as 0.
   if (log_recovery_result_ != ZX_OK) {
     if (ShouldPrintCrashlogStatus()) {
-      printf("Crashlog: Failed to recover crashlog.  Result %d, HW Reboot Reason %s\n",
+      printf("Crashlog: Failed to recover crashlog.  Result %d, HW Reboot Reason \"%s\"\n",
              log_recovery_result_, str_hw_reason);
     }
+  }
 
+  // If we failed to recover any crashlog and there is no HW reboot reason,
+  // simply report the size as 0.
+  if (log_recovery_result_ != ZX_OK && hw_reason == ZBI_HW_REBOOT_REASON_UNDEFINED) {
     return 0;
+  }
+
+  // From then on, we always return something, starting with the HW reboot reason.
+  size_t written = fprintf(tgt, "HW REBOOT REASON (%s)\n\n", str_hw_reason);
+
+  if (log_recovery_result_ != ZX_OK) {
+    written += fprintf(tgt,
+                       "WARNING - Could not recover crashlog from RAM. "
+                       "Only HW reboot reason is available.\n");
+    return written;
   }
 
   // OK, we have a log.  Currently, the log is expected to be nothing but text,
@@ -108,8 +121,7 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
   // 1) The uptime estimate
   // 2) The runtime estimate
   // 3) The "software" reboot reason.
-  // 4) The "hardware" reboot reason (only if given to us by the bootloader).
-  // 5) The payload damage indicator (only if there was potential damage to the
+  // 4) The payload damage indicator (only if there was potential damage to the
   //    payload)
   //
   // The first few lines of text need to be structured so that they can be
@@ -120,17 +132,7 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
   const char* str_reason;
   switch (rlog.reason) {
     case ZirconCrashReason::Unknown:
-      // If we rebooted spontaneously, check to see if we have some more details
-      // provided by way of the bootloader and the HW reboot reason register.
-      switch (hw_reason) {
-        case ZBI_HW_REBOOT_REASON_BROWNOUT:
-        case ZBI_HW_REBOOT_REASON_WATCHDOG:
-          str_reason = str_hw_reason;
-          break;
-        default:
-          str_reason = "UNKNOWN";
-          break;
-      }
+      str_reason = "UNKNOWN";
       break;
     case ZirconCrashReason::Oom:
       str_reason = "OOM";
@@ -168,8 +170,7 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
     }
   }
 
-  // First line must give the reboot reason, and be followed by two newlines.
-  size_t written = 0;
+  // Second line must give the Zircon reboot reason, and be followed by two newlines.
   written += fprintf(tgt, "ZIRCON REBOOT REASON (%s)\n\n", str_reason);
 
   // Uptime estimate comes next with a newline between the tag and the actual number
@@ -177,9 +178,6 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
 
   // Runtime estimate comes next with a newline between the tag and the actual number.
   written += fprintf(tgt, "RUNTIME (ms)\n%ld\n", rlog.runtime / ZX_MSEC(1));
-
-  // After this, we are basically just free form text.
-  written += fprintf(tgt, "HW REBOOT REASON (%s)\n", str_hw_reason);
 
   if (rlog.payload_valid == false) {
     written += fprintf(tgt,

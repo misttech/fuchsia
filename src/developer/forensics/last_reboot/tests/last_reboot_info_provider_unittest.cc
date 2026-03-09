@@ -110,7 +110,7 @@ TEST(LastRebootInfoProviderTest, Succeed_DoesNotHaveRuntime) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotParseable) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kZirconNotParseable);
+  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kNotParseable);
 
   EXPECT_FALSE(last_reboot.has_graceful());
   EXPECT_FALSE(last_reboot.has_reason());

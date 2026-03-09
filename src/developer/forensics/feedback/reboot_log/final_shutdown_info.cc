@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 
@@ -47,7 +48,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
     case FinalShutdownReason::kRootJobTermination:
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
     case FinalShutdownReason::kRetrySystemUpdate:
@@ -83,7 +84,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kSpontaneousReboot:
     case FinalShutdownReason::kRootJobTermination:
       return false;
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return std::nullopt;
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
@@ -134,7 +135,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return false;
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return std::nullopt;
     case FinalShutdownReason::kSystemUpdate:
     case FinalShutdownReason::kNetstackMigration:
@@ -164,7 +165,7 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "SPONTANEOUS";
     case FinalShutdownReason::kRootJobTermination:
       return "ROOT JOB TERMINATION";
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return "NOT PARSEABLE";
     case FinalShutdownReason::kGenericGraceful:
       return "GENERIC GRACEFUL";
@@ -223,7 +224,7 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS;
     case FinalShutdownReason::kRootJobTermination:
       return fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION;
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
       return std::nullopt;
@@ -280,7 +281,7 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kBriefPowerLoss;
     case FinalShutdownReason::kRootJobTermination:
       return cobalt::LastRebootReason::kRootJobTermination;
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return cobalt::LastRebootReason::kUnknown;
     case FinalShutdownReason::kGenericGraceful:
       return cobalt::LastRebootReason::kGenericGraceful;
@@ -323,7 +324,7 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
 
 std::string FinalShutdownInfo::ToCrashProgramName() const {
   switch (reason_) {
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return "reboot-log";
     case FinalShutdownReason::kKernelPanic:
       return "kernel";
@@ -365,7 +366,7 @@ std::string FinalShutdownInfo::ToCrashSignature(
     const SpontaneousRebootReason spontaneous_reboot_reason,
     const std::optional<std::string>& critical_process) const {
   switch (reason_) {
-    case FinalShutdownReason::kZirconNotParseable:
+    case FinalShutdownReason::kNotParseable:
       return "fuchsia-reboot-log-not-parseable";
     case FinalShutdownReason::kSpontaneousReboot:
       return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason);
@@ -489,39 +490,35 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
 
 // static
 std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
-    const ZirconShutdownReason zircon_reason,
+    const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
     std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr) {
+  switch (hw_reason) {
+    case HwShutdownReason::kNotParseable:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kNotParseable);
+    case HwShutdownReason::kWatchdog:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kHwWatchdog);
+    case HwShutdownReason::kBrownout:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kBrownout);
+    case HwShutdownReason::kNotSet:
+    case HwShutdownReason::kUndefined:
+    case HwShutdownReason::kCold:
+    case HwShutdownReason::kWarm:
+      break;
+  }
+
   switch (zircon_reason) {
     case ZirconShutdownReason::kKernelPanic:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kKernelPanic);
     case ZirconShutdownReason::kOOM:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kOom);
-    case ZirconShutdownReason::kHwWatchdog:
-      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kHwWatchdog);
     case ZirconShutdownReason::kSwWatchdog:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSwWatchdog);
-    case ZirconShutdownReason::kBrownout:
-      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kBrownout);
     case ZirconShutdownReason::kUnknown:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSpontaneousReboot);
     case ZirconShutdownReason::kNotParseable:
-      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kZirconNotParseable);
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kNotParseable);
     case ZirconShutdownReason::kRootJobTermination:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kRootJobTermination);
-    case ZirconShutdownReason::kCold:
-      // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
-      // reasons more informative than just "cold."
-      if (graceful_shutdown_info.has_value() &&
-          graceful_shutdown_info->action == GracefulShutdownAction::kPoweroff) {
-        return std::make_unique<FinalShutdownInfo>(
-            ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
-            graceful_shutdown_info->action);
-      }
-      // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
-      return std::make_unique<FinalShutdownInfo>(
-          FinalShutdownReason::kCold, graceful_shutdown_info.has_value()
-                                          ? std::make_optional(graceful_shutdown_info->action)
-                                          : std::nullopt);
     case ZirconShutdownReason::kNoCrash: {
       if (!not_a_fdr) {
         return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kFdr);
@@ -534,9 +531,26 @@ std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kGenericGraceful);
     }
     case ZirconShutdownReason::kNotSet:
-      FX_LOGS(FATAL) << "|zircon_reason| must be set";
-      return nullptr;
+      break;
   }
+
+  // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
+  // reasons more informative than just "cold."
+  if (graceful_shutdown_info.has_value() &&
+      graceful_shutdown_info->action == GracefulShutdownAction::kPoweroff) {
+    return std::make_unique<FinalShutdownInfo>(
+        ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
+        graceful_shutdown_info->action);
+  }
+
+  // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
+
+  // While we now distinguish HwShutdownReason being cold, warm, undefined and not set,
+  // for now we still report all of them as cold boots.
+  return std::make_unique<FinalShutdownInfo>(
+      FinalShutdownReason::kCold, graceful_shutdown_info.has_value()
+                                      ? std::make_optional(graceful_shutdown_info->action)
+                                      : std::nullopt);
 }
 
 }  // namespace forensics::feedback

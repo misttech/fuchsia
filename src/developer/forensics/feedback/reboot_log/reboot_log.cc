@@ -11,6 +11,7 @@
 
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
+#include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/lib/files/file.h"
@@ -37,6 +38,23 @@ zx::duration ExtractTime(const std::string_view line) {
   return zx::msec(std::stoll(line_copy));
 }
 
+HwShutdownReason ExtractHwShutdownReason(const std::string_view line) {
+  if (line == "HW REBOOT REASON (COLD BOOT)") {
+    return HwShutdownReason::kCold;
+  } else if (line == "HW REBOOT REASON (WARM BOOT)") {
+    return HwShutdownReason::kWarm;
+  } else if (line == "HW REBOOT REASON (BROWNOUT)") {
+    return HwShutdownReason::kBrownout;
+  } else if (line == "HW REBOOT REASON (HW WATCHDOG)") {
+    return HwShutdownReason::kWatchdog;
+  } else if (line == "HW REBOOT REASON (UNKNOWN)") {
+    return HwShutdownReason::kUndefined;
+  }
+
+  FX_LOGS(ERROR) << "Failed to extract a hardware reboot reason from Zircon reboot log";
+  return HwShutdownReason::kNotParseable;
+}
+
 ZirconShutdownReason ExtractZirconShutdownReason(const std::string_view line) {
   if (line == "ZIRCON REBOOT REASON (NO CRASH)") {
     return ZirconShutdownReason::kNoCrash;
@@ -46,39 +64,43 @@ ZirconShutdownReason ExtractZirconShutdownReason(const std::string_view line) {
     return ZirconShutdownReason::kOOM;
   } else if (line == "ZIRCON REBOOT REASON (SW WATCHDOG)") {
     return ZirconShutdownReason::kSwWatchdog;
-  } else if (line == "ZIRCON REBOOT REASON (HW WATCHDOG)") {
-    return ZirconShutdownReason::kHwWatchdog;
-  } else if (line == "ZIRCON REBOOT REASON (BROWNOUT)") {
-    return ZirconShutdownReason::kBrownout;
   } else if (line == "ZIRCON REBOOT REASON (UNKNOWN)") {
     return ZirconShutdownReason::kUnknown;
   } else if (line == "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)") {
     return ZirconShutdownReason::kRootJobTermination;
   }
 
-  FX_LOGS(ERROR) << "Failed to extract a reboot reason from Zircon reboot log";
   return ZirconShutdownReason::kNotParseable;
 }
 
-ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
-                                             std::optional<std::string>* content,
-                                             std::optional<zx::duration>* uptime,
-                                             std::optional<zx::duration>* runtime,
-                                             std::optional<std::string>* crashed_process) {
+void ExtractZirconRebootInfo(const std::string& path, HwShutdownReason* out_hw_reason,
+                             ZirconShutdownReason* out_zircon_reason,
+                             std::optional<std::string>* content,
+                             std::optional<zx::duration>* uptime,
+                             std::optional<zx::duration>* runtime,
+                             std::optional<std::string>* crashed_process) {
+  *out_hw_reason = HwShutdownReason::kNotSet;
+  *out_zircon_reason = ZirconShutdownReason::kNotSet;
+
   if (!files::IsFile(path)) {
-    *content = "ZIRCON REBOOT REASON (COLD)";
-    return ZirconShutdownReason::kCold;
+    *out_hw_reason = HwShutdownReason::kCold;
+    *content = "HW REBOOT REASON (COLD BOOT)";
+    return;
   }
 
   std::string file_content;
   if (!files::ReadFileToString(path, &file_content)) {
     FX_LOGS(ERROR) << "Failed to read Zircon reboot log from " << path;
-    return ZirconShutdownReason::kNotParseable;
+    *out_hw_reason = HwShutdownReason::kNotParseable;
+    *out_zircon_reason = ZirconShutdownReason::kNotParseable;
+    return;
   }
 
   if (file_content.empty()) {
     FX_LOGS(ERROR) << "Found empty Zircon reboot log at " << path;
-    return ZirconShutdownReason::kNotParseable;
+    *out_hw_reason = HwShutdownReason::kNotParseable;
+    *out_zircon_reason = ZirconShutdownReason::kNotParseable;
+    return;
   }
 
   *content = file_content;
@@ -90,35 +112,48 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
 
   if (lines.size() == 0) {
     FX_LOGS(ERROR) << "Zircon reboot log has no content";
-    return ZirconShutdownReason::kNotParseable;
+    *out_hw_reason = HwShutdownReason::kNotParseable;
+    *out_zircon_reason = ZirconShutdownReason::kNotParseable;
+    return;
   }
 
   // We expect the format to be:
   //
+  // HW REBOOT REASON (<SOME REASON>)
   // ZIRCON REBOOT REASON (<SOME REASON>)
   // UPTIME (ms)
   // <SOME UPTIME>
   // RUNTIME (ms)
   // <SOME RUNTIME>
-  const auto reason = ExtractZirconShutdownReason(lines[0]);
-  if (reason == ZirconShutdownReason::kNotParseable) {
-    return reason;
+
+  *out_hw_reason = ExtractHwShutdownReason(lines[0]);
+  if (*out_hw_reason == HwShutdownReason::kNotParseable) {
+    return;
   }
 
-  if (lines.size() < 3) {
-    FX_LOGS(ERROR) << "Zircon reboot log is missing uptime information";
-  } else if (lines[1] != "UPTIME (ms)") {
-    FX_LOGS(ERROR) << "'UPTIME (ms)' not present, found '" << lines[1] << "'";
-  } else {
-    *uptime = ExtractTime(lines[2]);
+  if (lines.size() < 2) {
+    return;
   }
 
-  if (lines.size() < 5) {
-    FX_LOGS(ERROR) << "Zircon reboot log is missing runtime information";
-  } else if (lines[3] != "RUNTIME (ms)") {
-    FX_LOGS(ERROR) << "'RUNTIME (ms)' not present, found '" << lines[3] << "'";
+  *out_zircon_reason = ExtractZirconShutdownReason(lines[1]);
+  if (*out_zircon_reason == ZirconShutdownReason::kNotParseable) {
+    return;
+  }
+
+  if (lines.size() < 4) {
+    return;
+  } else if (lines[2] != "UPTIME (ms)") {
+    FX_LOGS(ERROR) << "'UPTIME (ms)' not present, found '" << lines[2] << "'";
   } else {
-    *runtime = ExtractTime(lines[4]);
+    *uptime = ExtractTime(lines[3]);
+  }
+
+  if (lines.size() < 6) {
+    return;
+  } else if (lines[4] != "RUNTIME (ms)") {
+    FX_LOGS(ERROR) << "'RUNTIME (ms)' not present, found '" << lines[4] << "'";
+  } else {
+    *runtime = ExtractTime(lines[5]);
   }
 
   // We expect the critical process to look like:
@@ -145,8 +180,6 @@ ZirconShutdownReason ExtractZirconRebootInfo(const std::string& path,
     *crashed_process = line;
     break;
   }
-
-  return reason;
 }
 
 // Prints |reboot_log| with the DLOG removed. Returns the removed DLOG, if present.
@@ -275,15 +308,16 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   std::optional<zx::duration> last_boot_uptime;
   std::optional<zx::duration> last_boot_runtime;
   std::optional<std::string> critical_process;
-  const auto zircon_reason =
-      ExtractZirconRebootInfo(zircon_reboot_log_path, &zircon_reboot_log, &last_boot_uptime,
-                              &last_boot_runtime, &critical_process);
+  HwShutdownReason hw_reason = HwShutdownReason::kNotSet;
+  ZirconShutdownReason zircon_reason = ZirconShutdownReason::kNotSet;
+  ExtractZirconRebootInfo(zircon_reboot_log_path, &hw_reason, &zircon_reason, &zircon_reboot_log,
+                          &last_boot_uptime, &last_boot_runtime, &critical_process);
 
   const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      FinalShutdownInfo::MakeFinalShutdownInfo(zircon_reason, graceful_info, not_a_fdr);
+      FinalShutdownInfo::MakeFinalShutdownInfo(hw_reason, zircon_reason, graceful_info, not_a_fdr);
   const auto reboot_log =
       MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString());
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
