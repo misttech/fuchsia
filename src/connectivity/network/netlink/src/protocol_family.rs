@@ -896,6 +896,9 @@ pub mod route {
                     }
                     client.send_unicast(netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
                 }
+                DelLink(_) => {
+                    client.send_unicast(netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
+                }
                 GetAddress(ref message) if is_dump => {
                     let ip_version_filter = match message.header.family() {
                         AddressFamily::Unspec => None,
@@ -1542,7 +1545,6 @@ pub mod route {
                 // TODO(https://issues.fuchsia.dev/278565021): Implement
                 // GetAddress.
                 GetAddress(_)
-                | DelLink(_)
                 | NewLinkProp(_)
                 | DelLinkProp(_)
                 | NewNeighbourTable(_)
@@ -1764,6 +1766,8 @@ mod test {
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
+    use fidl_fuchsia_net as fnet;
+    use fuchsia_async as fasync;
     use futures::SinkExt;
     use futures::channel::mpsc;
     use futures::future::FutureExt as _;
@@ -1781,7 +1785,6 @@ mod test {
     };
     use net_types::{SpecifiedAddr, Witness as _};
     use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
-    use {fidl_fuchsia_net as fnet, fuchsia_async as fasync};
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};
@@ -2296,6 +2299,26 @@ mod test {
                 NetlinkMessage::new(
                     header,
                     NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewLink(link_message)),
+                ),
+                None,
+            )
+            .await,
+            expected_sent_messages(Some(ExpectedResponse::Error(Errno::ENOTSUP)), header)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_del_link() {
+        let header = header_with_flags(0);
+        let mut link_message = LinkMessage::default();
+        link_message.header.index = 1;
+        link_message.attributes = vec![LinkAttribute::IfName("interface".to_string())];
+
+        pretty_assertions::assert_eq!(
+            test_request(
+                NetlinkMessage::new(
+                    header,
+                    NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelLink(link_message)),
                 ),
                 None,
             )
