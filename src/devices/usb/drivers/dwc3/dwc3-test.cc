@@ -53,6 +53,10 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
     });
   }
 
+  void set_watch_connection_status_changed_called(bool set) {
+    watch_connection_status_changed_called_ = set;
+  }
+
  private:
   void ConnectStatusChanged(ConnectStatusChangedRequest& request,
                             ConnectStatusChangedCompleter::Sync& completer) override {
@@ -187,6 +191,7 @@ class Environment : public fdf_testing::Environment {
 
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
 
+  FakeUsbPhy& usb_phy() { return usb_phy_; }
   const fdf_fake::FakeClock& clock() const { return clock_; }
   fdf_fake::FakeReset& reset() { return reset_; }
   const fdf_fake::FakeVreg& vreg() const { return vreg_; }
@@ -239,6 +244,7 @@ class TestFixture : public testing::Test {
   }
 
   void TearDown() override {
+    dut_.runtime().RunUntilIdle();
     if (manage_lifetime) {
       EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
     }
@@ -281,7 +287,7 @@ class TestFixture : public testing::Test {
   uint32_t dctl_val_ = DCTL::Get().FromValue(0).set_LPM_NYET_thres(0xF).reg_value();
   bool stuck_reset_test_{false};
 
-  fdf_testing::ForegroundDriverTest<Config> dut_;
+  fdf_testing::BackgroundDriverTest<Config> dut_;
 };
 
 using ManagedTestFixture = TestFixture<true>;
@@ -292,12 +298,26 @@ TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
 }
 
-TEST_F(ManagedTestFixture, ResourcesManagedInStart) {
+TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().set_watch_connection_status_changed_called(true); });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
   dut_.RunInEnvironmentTypeContext([](Environment& env) {
     EXPECT_TRUE(env.vreg().enabled());
     EXPECT_FALSE(env.reset().take_toggled());
     EXPECT_TRUE(env.clock().enabled());
   });
+
+  dut_.runtime().RunUntilIdle();
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
@@ -327,6 +347,8 @@ TEST_F(UnmanagedTestFixture, Dfv2HwVersion2) {
 
   dut_.RunInNodeContext(
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+
+  dut_.runtime().RunUntilIdle();
 
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
