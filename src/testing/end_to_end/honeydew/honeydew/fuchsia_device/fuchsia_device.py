@@ -40,6 +40,7 @@ from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
 from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.hello_world import hello_world
 from honeydew.affordances.location import location, location_using_fc
+from honeydew.affordances.media import media
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
 )
@@ -396,6 +397,15 @@ class FuchsiaDevice(
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
         )
+
+    @properties.Affordance
+    def media(self) -> media.Media:
+        """Returns a media affordance object.
+
+        Returns:
+            media.Media object
+        """
+        return self._inner.media
 
     @properties.Affordance
     def hello_world(self) -> hello_world.HelloWorld:
