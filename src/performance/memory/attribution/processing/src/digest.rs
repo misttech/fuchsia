@@ -4,6 +4,8 @@
 
 use crate::{ProcessedAttributionData, ZXName};
 use anyhow::Result;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use regex::bytes::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -11,7 +13,6 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
 #[cfg(target_os = "fuchsia")]
 use {crate::CATEGORY_MEMORY_CAPTURE, fuchsia_trace::duration};
-use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as fplugin};
 
 const UNDIGESTED: &str = "Undigested";
 const ORPHANED: &str = "Orphaned";
@@ -23,6 +24,7 @@ const PAGER_OLDEST: &str = "[Addl]PagerOldest";
 const DISCARDABLE_LOCKED: &str = "[Addl]DiscardableLocked";
 const DISCARDABLE_UNLOCKED: &str = "[Addl]DiscardableUnlocked";
 const ZRAM_COMPRESSED_BYTES: &str = "[Addl]ZramCompressedBytes";
+const POPULATED_ANONYMOUS_BYTES: &str = "[Addl]PopulatedAnonymousBytes";
 
 /// Represents a specification for aggregating memory usage in meaningful groups.
 ///
@@ -149,6 +151,7 @@ impl Digest {
         };
 
         let no_principals = vec![];
+        let mut populated_reclaimable_bytes = 0;
         let mut undigested_vmos: HashMap<u64, UndigestedVmo<'_>> = attribution_data
             .resources
             .iter()
@@ -157,6 +160,14 @@ impl Digest {
                     attribution_data.resource_names.get(r.resource.name_index).and_then(|name| {
                         let populated_size = vmo.scaled_populated_bytes?;
                         let committed_size = vmo.scaled_committed_bytes?;
+                        if vmo.flags.map_or(false, |flags| {
+                            flags
+                                & (zx_types::ZX_INFO_VMO_PAGER_BACKED
+                                    | zx_types::ZX_INFO_VMO_DISCARDABLE)
+                                != 0
+                        }) {
+                            populated_reclaimable_bytes += populated_size;
+                        }
                         Some((
                             *koid,
                             UndigestedVmo {
@@ -367,6 +378,27 @@ impl Digest {
                 let size = kmem_stats_compression.compressed_storage_bytes.unwrap_or(0);
                 Bucket {
                     name: ZRAM_COMPRESSED_BYTES.to_string(),
+                    populated_size: size,
+                    committed_size: size,
+                    vmos: None,
+                }
+            },
+            // This bucket accounts for all populated anonymous memory (non-reclaimable).
+            {
+                let size = (|| {
+                    Some(
+                        kmem_stats.total_bytes?
+                            + kmem_stats_compression
+                                .uncompressed_storage_bytes?
+                                .saturating_sub(kmem_stats.free_bytes?)
+                                .saturating_sub(kmem_stats.zram_bytes?)
+                                .saturating_sub(populated_reclaimable_bytes),
+                    )
+                })()
+                .unwrap_or(0);
+
+                Bucket {
+                    name: POPULATED_ANONYMOUS_BYTES.to_string(),
                     populated_size: size,
                     committed_size: size,
                     vmos: None,
@@ -586,6 +618,12 @@ mod tests {
                 committed_size: 21,
                 vmos: None,
             },
+            Bucket {
+                name: POPULATED_ANONYMOUS_BYTES.to_string(),
+                populated_size: 6,
+                committed_size: 6,
+                vmos: None,
+            },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -681,6 +719,12 @@ mod tests {
                 name: ZRAM_COMPRESSED_BYTES.to_string(),
                 populated_size: 21,
                 committed_size: 21,
+                vmos: None,
+            },
+            Bucket {
+                name: POPULATED_ANONYMOUS_BYTES.to_string(),
+                populated_size: 6,
+                committed_size: 6,
                 vmos: None,
             },
         ];
@@ -784,6 +828,12 @@ mod tests {
                 committed_size: 21,
                 vmos: None,
             },
+            Bucket {
+                name: POPULATED_ANONYMOUS_BYTES.to_string(),
+                populated_size: 6,
+                committed_size: 6,
+                vmos: None,
+            },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -882,6 +932,12 @@ mod tests {
                 committed_size: 21,
                 vmos: None,
             },
+            Bucket {
+                name: POPULATED_ANONYMOUS_BYTES.to_string(),
+                populated_size: 6,
+                committed_size: 6,
+                vmos: None,
+            },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -978,6 +1034,12 @@ mod tests {
                 name: ZRAM_COMPRESSED_BYTES.to_string(),
                 populated_size: 21,
                 committed_size: 21,
+                vmos: None,
+            },
+            Bucket {
+                name: POPULATED_ANONYMOUS_BYTES.to_string(),
+                populated_size: 6,
+                committed_size: 6,
                 vmos: None,
             },
         ];

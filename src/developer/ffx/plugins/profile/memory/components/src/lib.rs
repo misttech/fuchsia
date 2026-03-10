@@ -981,6 +981,12 @@ mod tests {
                         populated_size: 16,
                         committed_size: 16,
                         vmos: None,
+                    },
+                    digest::Bucket {
+                        name: "[Addl]PopulatedAnonymousBytes".to_string(),
+                        populated_size: 2,
+                        committed_size: 2,
+                        vmos: None,
                     }
                 ]
             })

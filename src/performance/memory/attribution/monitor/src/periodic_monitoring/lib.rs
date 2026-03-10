@@ -14,7 +14,8 @@ use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
-use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_metrics as fmetrics;
 
 /// Periodically collect and report memory attribution data.
 ///
@@ -370,6 +371,7 @@ mod tests {
                             18u64,   // [Addl]DiscardableLocked
                             19u64,   // [Addl]DiscardableUnlocked
                             21u64,   // [Addl]ZramCompressedBytes
+                            6u64,    // [Addl]PopulatedAnonymousBytes
                         ],
                         bucket_sizes_populated: vec![
                             2048u64, // Undigested: matches the single unmatched VMO
@@ -384,6 +386,7 @@ mod tests {
                             18u64,   // [Addl]DiscardableLocked
                             19u64,   // [Addl]DiscardableUnlocked
                             21u64,   // [Addl]ZramCompressedBytes
+                            6u64,    // [Addl]PopulatedAnonymousBytes
                         ],
 
                         stalls: {
@@ -407,6 +410,7 @@ mod tests {
                             18u64,   // [Addl]DiscardableLocked
                             19u64,   // [Addl]DiscardableUnlocked
                             21u64,   // [Addl]ZramCompressedBytes
+                            6u64,    // [Addl]PopulatedAnonymousBytes
                         ],
                         bucket_sizes_populated: vec![
                             2048u64, // Undigested: matches the single unmatched VMO
@@ -421,6 +425,7 @@ mod tests {
                             18u64,   // [Addl]DiscardableLocked
                             19u64,   // [Addl]DiscardableUnlocked
                             21u64,   // [Addl]ZramCompressedBytes
+                            6u64,    // [Addl]PopulatedAnonymousBytes
                         ],
                         stalls: {
                             some_ms: 10u64,

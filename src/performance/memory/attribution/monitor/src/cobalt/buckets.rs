@@ -7,9 +7,10 @@ use anyhow::Result;
 use attribution_processing::digest::{BucketDefinition, Digest};
 use cobalt_client::traits::{AsEventCode, AsEventCodes};
 use cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot as TimeSinceBoot;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_metrics as fmetrics;
 use memory_metrics_registry::cobalt_registry;
 use std::collections::HashMap;
-use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
 
 /// Sorted list mapping durations to the largest event that is lower.
 const UPTIME_LEVEL_INDEX: &[(zx::BootDuration, TimeSinceBoot)] = &[
@@ -159,6 +160,11 @@ pub fn prepare_bucket_codes(bucket_definitions: &[BucketDefinition]) -> HashMap<
         (
             "[Addl]ZramCompressedBytes".to_string(),
             cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_ZramCompressedBytes
+                .as_event_code(),
+        ),
+        (
+            "[Addl]PopulatedAnonymousBytes".to_string(),
+            cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PopulatedAnonymousBytes
                 .as_event_code(),
         ),
     ]);
@@ -521,6 +527,11 @@ mod tests {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
                                 event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_ZramCompressedBytes.as_event_code()],
                                 payload: fmetrics::MetricEventPayload::IntegerValue(21)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PopulatedAnonymousBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(6)
                             }
                         ]
                     )
