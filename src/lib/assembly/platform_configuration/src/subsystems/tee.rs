@@ -192,7 +192,7 @@ fn create_tee_manager(
     cml_file.write_all(serde_json::to_string_pretty(&cml)?.as_bytes())?;
     let components = vec![CompiledComponentDefinition {
         component_name: "tee_manager".into(),
-        shards: vec![cml_path],
+        shards: vec![cml_path.into()],
         cmc_features: vec![],
     }];
     let destination =
@@ -377,7 +377,7 @@ fn create_tee_clients(
     cml_file.write_all(serde_json::to_string_pretty(&cml)?.as_bytes())?;
     let components = vec![CompiledComponentDefinition {
         component_name: "tee-clients".into(),
-        shards: vec![cml_path],
+        shards: vec![cml_path.into()],
         cmc_features: vec![],
     }];
 

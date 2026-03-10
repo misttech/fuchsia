@@ -56,7 +56,7 @@ impl ProductConfig {
 mod tests {
     use super::*;
     use crate::assembly_input_bundle::{AssemblyInputBundle, PartialKernelConfig};
-    use crate::common::{DriverDetails, PackageDetails, PackagedDriverDetails};
+    use crate::common::{DriverDetails, PackageDetails, PackageSet, PackagedDriverDetails};
     use crate::platform_settings::media_config::{
         AudioConfig, AudioDeviceRegistryConfig, PlatformMediaConfig,
     };
@@ -66,6 +66,7 @@ mod tests {
         StarnixImages, StarnixImagesOrPackage,
     };
     use assembly_constants::FileEntry;
+    use assembly_file_relative_path::FileRelativePathBuf;
     use assembly_package_utils::PackageInternalPathBuf;
     use assembly_util as util;
     use camino::Utf8PathBuf;
@@ -240,14 +241,15 @@ mod tests {
             )]
             .into()
         );
-        let expected_drivers: Vec<DriverDetails> = serde_json::from_value(serde_json::json!([
-            {
-                "package": "path/to/base/driver/package_manifest.json",
-                "components": [ "meta/path/to/component.cml" ]
-            }
-        ]))
-        .unwrap();
-        assert_eq!(config.product.base_drivers, expected_drivers);
+        assert_eq!(
+            config.product.base_drivers,
+            vec![DriverDetails {
+                package: FileRelativePathBuf::FileRelative(
+                    "path/to/base/driver/package_manifest.json".into()
+                ),
+                components: vec!["meta/path/to/component.cml".into()]
+            }]
+        );
         assert_eq!(
             config.product.starnix_containers,
             vec![StarnixContainerConfig {
@@ -372,18 +374,19 @@ mod tests {
         "#;
         let bundle =
             util::from_reader::<_, AssemblyInputBundle>(&mut std::io::Cursor::new(json5)).unwrap();
-        let expected_packages: Vec<PackageDetails> = serde_json::from_value(serde_json::json!([
-            {
-                "package": "package5",
-                "set": "base"
-            },
-            {
-                "package": "package6",
-                "set": "cache"
-            }
-        ]))
-        .unwrap();
-        assert_eq!(bundle.packages, expected_packages);
+        assert_eq!(
+            bundle.packages,
+            vec!(
+                PackageDetails {
+                    package: FileRelativePathBuf::FileRelative(Utf8PathBuf::from("package5")),
+                    set: PackageSet::Base,
+                },
+                PackageDetails {
+                    package: FileRelativePathBuf::FileRelative(Utf8PathBuf::from("package6")),
+                    set: PackageSet::Cache,
+                },
+            )
+        );
         let expected_kernel = PartialKernelConfig {
             path: Some(Utf8PathBuf::from("path/to/kernel")),
             args: vec!["arg1".to_string(), "arg2".to_string()],
@@ -404,15 +407,17 @@ mod tests {
                 destination: "config.json".to_string()
             })
         );
-        let expected_driver: PackagedDriverDetails = serde_json::from_value(serde_json::json!(
-            {
-                "package": "path/to/driver",
-                "set": "base",
-                "components": ["path/to/1234", "path/to/5678"]
+        assert_eq!(
+            bundle.drivers[0],
+            PackagedDriverDetails {
+                package: FileRelativePathBuf::FileRelative(Utf8PathBuf::from("path/to/driver")),
+                set: PackageSet::Base,
+                components: vec!(
+                    Utf8PathBuf::from("path/to/1234"),
+                    Utf8PathBuf::from("path/to/5678")
+                )
             }
-        ))
-        .unwrap();
-        assert_eq!(bundle.drivers[0], expected_driver);
+        );
         assert_eq!(
             bundle.shell_commands.get("package1").unwrap(),
             &BTreeSet::from([
@@ -420,7 +425,10 @@ mod tests {
                 PackageInternalPathBuf::from("path/to/binary2"),
             ])
         );
-        assert_eq!(bundle.memory_buckets, vec![Utf8PathBuf::from("path/to/buckets.json")]);
+        assert_eq!(
+            bundle.memory_buckets,
+            vec![FileRelativePathBuf::FileRelative("path/to/buckets.json".into())]
+        );
     }
 
     #[test]

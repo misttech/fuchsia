@@ -25,9 +25,9 @@ use assembly_constants::{
     BootfsDestination, BootfsPackageDestination, FileEntry, PackageDestination,
     PackageSetDestination,
 };
-use assembly_container::AssemblyContainer;
 use assembly_domain_config::DomainConfigPackage;
 use assembly_driver_manifest::{DriverManifestBuilder, DriverPackageType};
+use assembly_file_relative_path::SupportsFileRelativePaths;
 use assembly_images_config::{FilesystemImageMode, ImagesConfig};
 use assembly_memory_buckets::MemoryBuckets;
 use assembly_named_file_map::NamedFileMap;
@@ -245,15 +245,12 @@ impl ImageAssemblyConfigBuilder {
     /// If any of the items it's trying to add are duplicates (either of itself
     /// or others, this will return an error.)
     pub fn add_bundle(&mut self, bundle_path: impl AsRef<Utf8Path>) -> Result<()> {
-        // Strip filename from bundle path if it's the config file.
-        let mut bundle_dir = bundle_path.as_ref();
-        if bundle_dir.file_name() == Some(AssemblyInputBundle::get_config_filename()) {
-            bundle_dir = bundle_dir.parent().unwrap();
-        }
+        let bundle: AssemblyInputBundle = util::read_config(bundle_path.as_ref())?;
+        let bundle = bundle.resolve_paths_from_file(&bundle_path)?;
 
-        let bundle = AssemblyInputBundle::from_dir(bundle_dir)?;
-
-        let bundle_path = Utf8PathBuf::from(bundle_dir);
+        // Strip filename from bundle path.
+        let bundle_path =
+            bundle_path.as_ref().parent().map(Utf8PathBuf::from).unwrap_or_else(|| "".into());
 
         // Now add the parsed bundle
         self.add_parsed_bundle(bundle_path, bundle)
@@ -374,6 +371,8 @@ impl ImageAssemblyConfigBuilder {
             self.add_compiled_package(&compiled_package, bundle_path)?;
         }
 
+        let memory_buckets: Vec<Utf8PathBuf> =
+            memory_buckets.into_iter().map(|b| b.to_utf8_pathbuf()).collect();
         self.add_memory_buckets(&memory_buckets)?;
 
         assembly_util::set_option_once_or(
@@ -1553,6 +1552,7 @@ mod tests {
     use assembly_config_schema::developer_overrides::KernelOptions;
     use assembly_constants::CompiledPackageDestination;
     use assembly_constants::TestCompiledPackageDestination::ForTest;
+    use assembly_file_relative_path::FileRelativePathBuf;
     use assembly_named_file_map::SourceMerklePair;
     use assembly_package_utils::PackageManifestPathBuf;
     use assembly_platform_configuration::ComponentConfigs;
@@ -1633,8 +1633,9 @@ mod tests {
         serde_json::to_writer(&test_file, &manifest).unwrap();
         test_file.flush().unwrap();
 
-        let write_empty_bundle_pkg =
-            |name: &str| write_empty_pkg(bundle_path, name, None).to_string().into();
+        let write_empty_bundle_pkg = |name: &str| {
+            FileRelativePathBuf::FileRelative(write_empty_pkg(bundle_path, name, None).clone())
+        };
         AssemblyInputBundle {
             allowed_in: Default::default(),
             scrutiny_required: Default::default(),
@@ -1688,7 +1689,7 @@ mod tests {
         driver_package_manifest_file.flush()?;
 
         Ok(DriverDetails {
-            package: driver_package_manifest_file_path.into(),
+            package: FileRelativePathBuf::FileRelative(driver_package_manifest_file_path),
             components: vec![Utf8PathBuf::from("meta/foobar.cm")],
         })
     }
@@ -1713,7 +1714,9 @@ mod tests {
             packages: package_names
                 .iter()
                 .map(|package_name| PackageDetails {
-                    package: write_empty_pkg(&outdir, package_name, None).to_string().into(),
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(&outdir, package_name, None).into(),
+                    ),
                     set: PackageSet::Base,
                 })
                 .collect(),
@@ -2239,41 +2242,55 @@ mod tests {
         std::fs::create_dir_all(&component2_dir).unwrap();
         std::fs::write(component1_dir.join("component1.cm"), "component fake contents").unwrap();
         std::fs::write(component2_dir.join("component2.cm"), "component fake contents").unwrap();
-        let bundle2_path = vars.outdir.join("bundle2");
+        let bundle2_path = vars.bundle_path.parent().unwrap().join("bundle2");
 
         // Create 2 assembly bundle and add a config_data entry to it.
         let mut bundle1 = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
-        bundle1.packages_to_compile.push(CompiledPackageDefinition {
-            name: CompiledPackageDestination::Test(ForTest),
-            components: vec![
-                CompiledComponentDefinition {
-                    component_name: "component1".into(),
-                    shards: vec![vars.outdir.join("compiled_packages/for_test/component1/cml1")],
-                    cmc_features: vec![],
-                },
-                CompiledComponentDefinition {
-                    component_name: "component2".into(),
-                    shards: vec![vars.outdir.join("compiled_packages/for_test/component2/cml2")],
-                    cmc_features: vec![],
-                },
-            ],
-            contents: Default::default(),
-            includes: Default::default(),
-            bootfs_package: Default::default(),
-        });
-
-        let bundle2 = AssemblyInputBundle {
-            packages_to_compile: vec![CompiledPackageDefinition {
+        bundle1.packages_to_compile.push(
+            CompiledPackageDefinition {
                 name: CompiledPackageDestination::Test(ForTest),
-                components: vec![CompiledComponentDefinition {
-                    component_name: "component2".into(),
-                    shards: vec![bundle2_path.join("compiled_packages/for_test/component2/shard1")],
-                    cmc_features: vec![],
-                }],
+                components: vec![
+                    CompiledComponentDefinition {
+                        component_name: "component1".into(),
+                        shards: vec![FileRelativePathBuf::FileRelative(
+                            "compiled_packages/for_test/component1/cml1".into(),
+                        )],
+                        cmc_features: vec![],
+                    },
+                    CompiledComponentDefinition {
+                        component_name: "component2".into(),
+                        shards: vec![FileRelativePathBuf::FileRelative(
+                            "compiled_packages/for_test/component2/cml2".into(),
+                        )],
+                        cmc_features: vec![],
+                    },
+                ],
                 contents: Default::default(),
                 includes: Default::default(),
                 bootfs_package: Default::default(),
-            }],
+            }
+            .resolve_paths_from_file(&vars.bundle_path)
+            .unwrap(),
+        );
+
+        let bundle2 = AssemblyInputBundle {
+            packages_to_compile: vec![
+                CompiledPackageDefinition {
+                    name: CompiledPackageDestination::Test(ForTest),
+                    components: vec![CompiledComponentDefinition {
+                        component_name: "component2".into(),
+                        shards: vec![FileRelativePathBuf::FileRelative(
+                            "compiled_packages/for_test/component2/shard1".into(),
+                        )],
+                        cmc_features: vec![],
+                    }],
+                    contents: Default::default(),
+                    includes: Default::default(),
+                    bootfs_package: Default::default(),
+                }
+                .resolve_paths_from_dir(&bundle2_path)
+                .unwrap(),
+            ],
             ..Default::default()
         };
 
@@ -2440,11 +2457,15 @@ mod tests {
         let aib = AssemblyInputBundle {
             packages: vec![
                 PackageDetails {
-                    package: write_empty_pkg(dir_path1, "base_package2", None).to_string().into(),
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(dir_path1, "base_package2", None).into(),
+                    ),
                     set: PackageSet::Base,
                 },
                 PackageDetails {
-                    package: write_empty_pkg(dir_path2, "base_package2", None).to_string().into(),
+                    package: FileRelativePathBuf::FileRelative(
+                        write_empty_pkg(dir_path2, "base_package2", None).into(),
+                    ),
                     set: PackageSet::Base,
                 },
             ],
@@ -2480,7 +2501,9 @@ mod tests {
         let tools = FakeToolProvider::default();
         let aib = AssemblyInputBundle {
             packages: vec![PackageDetails {
-                package: write_empty_pkg(dir_path1, "base_package2", None).to_string().into(),
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path1, "base_package2", None).into(),
+                ),
                 set: PackageSet::Base,
             }],
             ..Default::default()
@@ -2488,7 +2511,9 @@ mod tests {
 
         let aib2 = AssemblyInputBundle {
             packages: vec![PackageDetails {
-                package: write_empty_pkg(dir_path2, "base_package2", None).to_string().into(),
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path2, "base_package2", None).into(),
+                ),
                 set: PackageSet::Base,
             }],
             ..Default::default()
@@ -2525,7 +2550,9 @@ mod tests {
         let dir_path2 = Utf8Path::from_path(tmp_path2.path()).unwrap();
         let aib = AssemblyInputBundle {
             packages: vec![PackageDetails {
-                package: write_empty_pkg(dir_path1, "foo", None).to_string().into(),
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path1, "foo", None).into(),
+                ),
                 set: PackageSet::Base,
             }],
             ..Default::default()
@@ -2533,7 +2560,9 @@ mod tests {
 
         let aib2 = AssemblyInputBundle {
             packages: vec![PackageDetails {
-                package: write_empty_pkg(dir_path2, "foo", None).to_string().into(),
+                package: FileRelativePathBuf::FileRelative(
+                    write_empty_pkg(dir_path2, "foo", None).into(),
+                ),
                 set: PackageSet::Cache,
             }],
             ..Default::default()

@@ -4,6 +4,7 @@
 
 use anyhow::{Result, anyhow, bail};
 use assembly_container::{WalkPaths, WalkPathsFn};
+use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use camino::Utf8PathBuf;
 use fshost_assembly_config::BlockDeviceConfig;
 use serde::{Deserialize, Serialize};
@@ -13,11 +14,14 @@ use std::collections::BTreeMap;
 /// The options include those derived from the partition table and what the bootloader expects.
 /// A board developer can specify options for many different filesystems, and let the product
 /// choose which filesystem to actually create.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, WalkPaths)]
+#[derive(
+    Serialize, Deserialize, Debug, Default, Clone, PartialEq, SupportsFileRelativePaths, WalkPaths,
+)]
 #[serde(deny_unknown_fields)]
 pub struct BoardFilesystemConfig {
     /// Required board configuration for a zbi. All assemblies must produce a ZBI.
     #[serde(default)]
+    #[file_relative_paths]
     #[walk_paths]
     pub zbi: Zbi,
 
@@ -25,6 +29,7 @@ pub struct BoardFilesystemConfig {
     /// is necessary, therefore this is an optional board-level argument. fxfs and fvm below are
     /// chosen by the product, therefore those variables are always available for all boards.
     #[serde(default)]
+    #[file_relative_paths]
     #[walk_paths]
     pub vbmeta: Option<VBMeta>,
 
@@ -132,7 +137,9 @@ impl From<GptMode> for String {
 }
 
 /// Parameters describing how to generate the ZBI.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, WalkPaths)]
+#[derive(
+    Serialize, Deserialize, Debug, Default, Clone, PartialEq, SupportsFileRelativePaths, WalkPaths,
+)]
 #[serde(deny_unknown_fields)]
 pub struct Zbi {
     /// The compression format for the ZBI.
@@ -142,6 +149,7 @@ pub struct Zbi {
     /// An optional script to post-process the ZBI.
     /// This is often used to prepare the ZBI for flashing/updating.
     #[serde(default)]
+    #[file_relative_paths]
     #[walk_paths]
     pub postprocessing_script: Option<PostProcessingScript>,
 }
@@ -206,7 +214,7 @@ impl From<ZbiCompression> for String {
 }
 
 /// A script to process the ZBI after it is constructed.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, SupportsFileRelativePaths)]
 #[serde(deny_unknown_fields)]
 pub struct PostProcessingScript {
     /// TODO(lijiaming) This is going to be deprecated once we move all the users to use the board_script_path.
@@ -216,14 +224,15 @@ pub struct PostProcessingScript {
     ///   -o <output path>
     ///   -B <build directory, relative to script's source directory>
     #[serde(default)]
-    pub path: Option<Utf8PathBuf>,
+    pub path: Option<FileRelativePathBuf>,
 
     /// The path to the script, relative to board configuration.
     /// This script _must_ take the following arguments:
     ///   -z <path to ZBI>
     ///   -o <output path>
     #[serde(default)]
-    pub board_script_path: Option<Utf8PathBuf>,
+    #[file_relative_paths]
+    pub board_script_path: Option<FileRelativePathBuf>,
 
     /// Additional arguments to pass to the script after the above arguments.
     #[serde(default)]
@@ -235,7 +244,8 @@ pub struct PostProcessingScript {
     /// This is a map of the path that is expected by `board_script_path` to
     /// the path in the container, and must include the `board_script_path`.
     #[serde(default)]
-    pub inputs: BTreeMap<Utf8PathBuf, Utf8PathBuf>,
+    #[file_relative_paths]
+    pub inputs: BTreeMap<Utf8PathBuf, FileRelativePathBuf>,
 }
 
 // We need to implement a custom WalkPaths to ensure `inputs` sits in the same
@@ -272,7 +282,7 @@ impl WalkPaths for PostProcessingScript {
 }
 
 /// The parameters describing how to create a VBMeta image.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, WalkPaths)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, SupportsFileRelativePaths, WalkPaths)]
 #[serde(deny_unknown_fields)]
 pub struct VBMeta {
     /// The style of VBMeta image to assemble.
@@ -280,16 +290,17 @@ pub struct VBMeta {
     pub style: VBMetaStyle,
 
     /// Path on host to the key for signing VBMeta.
-
+    #[file_relative_paths]
     #[walk_paths]
-    pub key: Utf8PathBuf,
+    pub key: FileRelativePathBuf,
 
     /// Optional path on host to the key metadata to add to the VBMeta, when
     /// applicable.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[file_relative_paths]
     #[walk_paths]
-    pub key_metadata: Option<Utf8PathBuf>,
+    pub key_metadata: Option<FileRelativePathBuf>,
 
     /// Optional descriptors to add to the VBMeta image.
     #[serde(default)]
@@ -597,13 +608,13 @@ mod tests {
     fn test_postprocessing_script_walk() {
         let mut script = PostProcessingScript {
             path: None,
-            board_script_path: Some(Utf8PathBuf::from(
+            board_script_path: Some(FileRelativePathBuf::Resolved(
                 Utf8PathBuf::from_str("input/script.sh").unwrap(),
             )),
             args: vec![],
             inputs: [(
                 Utf8PathBuf::from_str("nested/resource").unwrap(),
-                Utf8PathBuf::from(Utf8PathBuf::from_str("input/resource.txt").unwrap()),
+                FileRelativePathBuf::Resolved(Utf8PathBuf::from_str("input/resource.txt").unwrap()),
             )]
             .into(),
         };

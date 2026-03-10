@@ -5,15 +5,17 @@
 use crate::common::{PackageDetails, PackageName, PackagedDriverDetails};
 use crate::{BuildType, FeatureSetLevel};
 use assembly_constants::{CompiledPackageDestination, FileEntry};
-use assembly_container::{AssemblyContainer, WalkPaths, assembly_container};
+use assembly_container::WalkPaths;
+use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use assembly_package_utils::PackageInternalPathBuf;
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A bundle of inputs to be used in the assembly of a product.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, WalkPaths)]
-#[assembly_container(assembly_config.json)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths, WalkPaths,
+)]
 #[serde(default, deny_unknown_fields)]
 pub struct AssemblyInputBundle {
     /// The feature set level and build type combinations that this AIB is allowed
@@ -70,6 +72,7 @@ pub struct AssemblyInputBundle {
     pub shell_commands: ShellCommands,
 
     /// Packages to create dynamically as part of the Assembly process.
+    #[file_relative_paths]
     #[walk_paths]
     pub packages_to_compile: Vec<CompiledPackageDefinition>,
 
@@ -77,8 +80,9 @@ pub struct AssemblyInputBundle {
     pub bootfs_files_package: Option<Utf8PathBuf>,
 
     /// A list of memory buckets to pass to memory monitor.
+    #[file_relative_paths]
     #[walk_paths]
-    pub memory_buckets: Vec<Utf8PathBuf>,
+    pub memory_buckets: Vec<FileRelativePathBuf>,
 }
 
 impl AssemblyInputBundle {
@@ -162,13 +166,14 @@ pub type ShellCommands = BTreeMap<PackageName, BTreeSet<PackageInternalPathBuf>>
 /// Contents of a compiled package. The contents provided by all
 /// selected AIBs are merged by `name` into a single package
 /// at assembly time.
-#[derive(Debug, Deserialize, Serialize, PartialEq, WalkPaths)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths, WalkPaths)]
 #[serde(deny_unknown_fields)]
 pub struct CompiledPackageDefinition {
     /// Name of the package to compile.
     pub name: CompiledPackageDestination,
 
     /// Components to compile and add to the package.
+    #[file_relative_paths]
     #[walk_paths]
     #[serde(default)]
     pub components: Vec<CompiledComponentDefinition>,
@@ -190,16 +195,16 @@ pub struct CompiledPackageDefinition {
 /// Contents of a compiled component. The contents provided by all
 /// selected AIBs are merged by `name` into a single package
 /// at assembly time.
-#[derive(Debug, Deserialize, Serialize, PartialEq, WalkPaths)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths, WalkPaths)]
 #[serde(deny_unknown_fields)]
 pub struct CompiledComponentDefinition {
     /// The name of the component to compile.
     pub component_name: String,
 
     /// CML file shards to include in the compiled component manifest.
-
+    #[file_relative_paths]
     #[walk_paths]
-    pub shards: Vec<Utf8PathBuf>,
+    pub shards: Vec<FileRelativePathBuf>,
 
     /// List of CMC features to use during component compilation.
     pub cmc_features: Vec<String>,
