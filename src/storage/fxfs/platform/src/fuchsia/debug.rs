@@ -516,10 +516,7 @@ impl Directory for ObjectDirectory {
                     data: ObjectKeyData::Attribute(0, AttributeKey::Attribute),
                 } => {
                     sink = match sink.append(
-                        &vfs::directory::entry::EntryInfo::new(
-                            *object_id,
-                            fio::DirentType::Directory,
-                        ),
+                        &vfs::directory::entry::EntryInfo::new(*object_id, fio::DirentType::File),
                         &object_id.to_string(),
                     ) {
                         AppendResult::Ok(sink) => sink,
