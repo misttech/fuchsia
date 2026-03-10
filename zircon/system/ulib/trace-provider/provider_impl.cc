@@ -247,7 +247,12 @@ void TraceProviderImpl::NotifyBufferSaved(
 }
 
 void TraceProviderImpl::Flush(FlushCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/374301602): Implement Flush.
+  zx_status_t status = trace_engine_flush_buffer();
+  if (status == ZX_ERR_BAD_STATE) {
+    // This happens when tracing has stopped. Ignore it.
+  } else if (status != ZX_OK) {
+    fprintf(stderr, "Session: FlushBuffer failed: status=%d\n", status);
+  }
 }
 
 void TraceProviderImpl::handle_unknown_method(
