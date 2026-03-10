@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 /// Converts a cargo platform-specific dependency target into GN imperative control flow.
 ///
@@ -32,6 +32,7 @@ pub fn target_to_gn_conditional(target: &str) -> Result<String> {
         // depend on, so we use a simple exact match list that can be updated as needed.
         let (target_arch, target_os) = match target {
             "aarch64-apple-darwin" => ("aarch64", "macos"),
+            "aarch64-linux-android" => ("aarch64", "android"),
             "riscv32i-unknown-none-elf" => ("riscv32i", "unknown"),
             "riscv32imc-unknown-none-elf" => ("riscv32imc", "unknown"),
             "thumbv6m-none-eabi" => ("thumbv6m", "unknown"),
@@ -41,7 +42,7 @@ pub fn target_to_gn_conditional(target: &str) -> Result<String> {
                 return Err(anyhow!(
                     "Unknown target: {}. Please add this to 'tools/cargo-gnaw/src/cfg.rs'.",
                     target
-                ))
+                ));
             }
         };
         cfg_to_gn_conditional(&format!(
