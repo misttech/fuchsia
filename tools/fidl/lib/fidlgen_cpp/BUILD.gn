@@ -64,7 +64,6 @@ if (is_host) {
       "union.go",
       "zircon_names.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen_cpp"
     deps = [ "//tools/fidl/lib/fidlgen" ]
   }
 }

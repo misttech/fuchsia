@@ -40,5 +40,4 @@ go_library("isatty") {
     "isatty_linux.go",
     "isatty_stub.go",
   ]
-  importpath = "go.fuchsia.dev/fuchsia/tools/lib/isatty"
 }

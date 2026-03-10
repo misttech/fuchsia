@@ -39,7 +39,6 @@ if (is_host) {
       "doc.go",
       "readerwriters.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/build/ninjago/readerwriters"
     visibility = [ "*" ]
   }
 }

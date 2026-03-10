@@ -36,7 +36,6 @@ if (is_host) {
 if (is_host) {
   go_library("rbetrace") {
     sources = [ "rbetrace.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/build/ninjago/rbetrace"
     visibility = [ "*" ]
     deps = [ "//tools/build/ninjago/chrometrace" ]
   }

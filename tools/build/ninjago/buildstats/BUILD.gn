@@ -60,7 +60,6 @@ if (is_host) {
 if (is_host) {
   go_library("buildstats_lib") {
     sources = [ "main.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/build/ninjago/buildstats"
     visibility = [ "*" ]
     deps = [
       "//tools/build/ninjago/chrometrace",

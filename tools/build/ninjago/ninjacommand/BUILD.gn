@@ -36,7 +36,6 @@ if (is_host) {
 if (is_host) {
   go_library("ninjacommand") {
     sources = [ "ninjacommand.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/build/ninjago/ninjacommand"
     visibility = [ "*" ]
     deps = [
       "//third_party/golibs:github.com/google/shlex",

@@ -36,7 +36,6 @@ if (is_host) {
 if (is_host) {
   go_library("clangtrace") {
     sources = [ "clangtrace.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/build/ninjago/clangtrace"
     visibility = [ "*" ]
     deps = [ "//tools/build/ninjago/chrometrace" ]
   }

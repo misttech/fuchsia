@@ -36,7 +36,6 @@ if (is_host) {
 if (is_host) {
   go_library("coding_tables") {
     sources = [ "ir.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_hlcpp/coding_tables"
     deps = [
       "//third_party/golibs:golang.org/x/exp/slices",
       "//tools/fidl/lib/fidlgen",

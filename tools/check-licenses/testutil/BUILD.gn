@@ -37,7 +37,6 @@ if (is_host) {
   go_library("testutil") {
     testonly = true
     sources = [ "util.go" ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
     visibility = [ "//tools/check-licenses/*" ]
   }
 }

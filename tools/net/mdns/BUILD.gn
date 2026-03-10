@@ -35,7 +35,6 @@ if (is_host) {
 
 go_library("mdns") {
   sources = [ "mdns.go" ]
-  importpath = "go.fuchsia.dev/fuchsia/tools/net/mdns"
   deps = [
     "//third_party/golibs:golang.org/x/net/ipv4",
     "//third_party/golibs:golang.org/x/net/ipv6",

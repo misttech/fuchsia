@@ -42,7 +42,6 @@ if (is_host) {
       "init.go",
       "target.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/util"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",

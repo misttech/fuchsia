@@ -35,7 +35,6 @@ if (is_host) {
 
 go_library("color") {
   sources = [ "color.go" ]
-  importpath = "go.fuchsia.dev/fuchsia/tools/lib/color"
   deps = [ "//tools/lib/isatty" ]
 }
 go_test("color_tests") {

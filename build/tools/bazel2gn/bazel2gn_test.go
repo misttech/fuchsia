@@ -62,7 +62,6 @@ go_library(
 	srcs = [
 		"bazel2gn.go",
 	],
-	importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn",
 	deps = [
 		"//third_party/golibs:go.starlark.net/syntax",
 	],
@@ -96,7 +95,6 @@ go_test(
 	sources = [
 		"bazel2gn.go",
 	]
-	importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
 	deps = [
 		"//third_party/golibs:go.starlark.net/syntax",
 	]

@@ -63,7 +63,6 @@ if (is_host) {
       "symboltable.go",
       "wraparoundtype.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/summarize"
     visibility = [
       "//sdk/ctf/plasa/*",
       "//tools/fidl/*",

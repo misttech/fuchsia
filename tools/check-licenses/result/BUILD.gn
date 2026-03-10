@@ -45,7 +45,6 @@ if (is_host) {
       "template.go",
       "world.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/result"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/licenseclassifier/v2",

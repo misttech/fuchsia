@@ -107,7 +107,6 @@ if (is_host) {
       "natural_table.tmpl",
       "natural_union.tmpl",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_cpp/codegen"
     deps = [ "//tools/fidl/lib/fidlgen_cpp" ]
   }
 }

@@ -109,7 +109,6 @@ if (is_host) {
       "types.go",
       "write_file_if_changed.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen"
   }
 }
 if (is_host) {

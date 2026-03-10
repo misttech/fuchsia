@@ -97,6 +97,17 @@ var attrsToOmitByRules = map[string]map[string]bool{
 		// it in very few places. However, in Bazel, cgo defaults to false, and
 		// require users to explicitly set when C sources are included.
 		"cgo": true,
+
+		// go_library.gni doesn't allow overwriting `importpath`, and forces it to be the same as the
+		// directory path from FUCHSIA_DIR. This limits our ability to define multiple go_libraries in
+		// the same BUILD file. go_library.gni gets around this with `source_dir`, which does not
+		// exist in Bazel. So we omit syncing this attribute and let GN infer it, which handles nested
+		// directories correctly. In GN we omit `importpath` for almost all non-third-party go_libraries
+		// anyways.
+		//
+		// This is safe to do because incorrectly configured importpath would cause Go compilation to
+		// fail, so we will be alerted when importpaths are wrong in Bazel.
+		"importpath": true,
 	},
 	"genrule": {
 		// bazel2gn ignores the `tools` attribute of genrule, and tries to parse it out of the `cmd`

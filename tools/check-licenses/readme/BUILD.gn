@@ -43,7 +43,6 @@ if (is_host) {
       "readme.go",
       "rust_crate.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/BurntSushi/toml",

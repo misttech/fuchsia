@@ -42,7 +42,6 @@ if (is_host) {
       "select.go",
       "transformers.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
     deps = [ "//third_party/golibs:go.starlark.net/syntax" ]
   }
 }

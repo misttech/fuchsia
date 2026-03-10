@@ -44,7 +44,6 @@ if (is_host) {
       "project.go",
       "spdx.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/project"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",

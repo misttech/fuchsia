@@ -43,7 +43,6 @@ if (is_host) {
       "google.go",
       "one_delimiter.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/file/notice"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [ "//tools/lib/logger" ]
   }

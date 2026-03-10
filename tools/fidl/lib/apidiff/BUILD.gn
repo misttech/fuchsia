@@ -57,7 +57,6 @@ if (is_host) {
       "report.go",
       "report_test.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/apidiff"
     visibility = [ "//tools/fidl/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",

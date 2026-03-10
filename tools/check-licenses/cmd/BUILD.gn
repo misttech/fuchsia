@@ -43,7 +43,6 @@ if (is_host) {
       "main.go",
       "metrics.go",
     ]
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/cmd"
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//tools/check-licenses/directory",
