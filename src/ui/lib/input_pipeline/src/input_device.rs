@@ -85,6 +85,9 @@ pub struct InputDeviceStatus {
     /// in milliseconds, because values less than 1 msec aren't especially
     /// interesting.
     driver_to_binding_latency_ms: fuchsia_inspect::IntExponentialHistogramProperty,
+
+    /// The number of times a wake lease was leaked by this device.
+    wake_lease_leak_count: fuchsia_inspect::UintProperty,
 }
 
 impl InputDeviceStatus {
@@ -108,6 +111,7 @@ impl InputDeviceStatus {
             "driver_to_binding_latency_ms",
             LATENCY_HISTOGRAM_PROPERTIES,
         );
+        let wake_lease_leak_count = device_node.create_uint("wake_lease_leak_count", 0);
 
         Self {
             now,
@@ -119,6 +123,7 @@ impl InputDeviceStatus {
             last_generated_timestamp_ns,
             health_node,
             driver_to_binding_latency_ms,
+            wake_lease_leak_count,
         }
     }
 
@@ -150,6 +155,10 @@ impl InputDeviceStatus {
             self.last_generated_timestamp_ns
                 .set(last_event.event_time.into_nanos().try_into().unwrap());
         }
+    }
+
+    pub fn count_wake_lease_leak(&self) {
+        self.wake_lease_leak_count.add(1);
     }
 }
 
@@ -407,11 +416,35 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                     previous_report = prev_report;
 
                     if let Some(previous_report) = previous_report.as_ref() {
-                        debug_assert!(
-                            previous_report.wake_lease.is_none(),
-                            "previous_report must not have a wake lease but does: {:?}",
-                            previous_report
-                        );
+                        if previous_report.wake_lease.is_some() {
+                            inspect_status.count_wake_lease_leak();
+
+                            let error_code = match device_descriptor {
+                                InputDeviceDescriptor::TouchScreen(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::TouchscreenPreviousReportHasWakeLease)
+                                }
+                                InputDeviceDescriptor::Touchpad(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::TouchpadPreviousReportHasWakeLease)
+                                }
+                                InputDeviceDescriptor::Mouse(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::MousePreviousReportHasWakeLease)
+                                }
+                                InputDeviceDescriptor::Keyboard(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::KeyboardPreviousReportHasWakeLease)
+                                }
+                                InputDeviceDescriptor::ConsumerControls(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::ButtonPreviousReportHasWakeLease)
+                                }
+                                InputDeviceDescriptor::LightSensor(_) => {
+                                    Some(InputPipelineMetricDimensionEvent::LightSensorPreviousReportHasWakeLease)
+                                }
+                                #[cfg(test)]
+                                InputDeviceDescriptor::Fake => None,
+                            };
+                            if let Some(error_code) = error_code {
+                                metrics_logger.log_error(error_code, std::format!("previous_report must not have a wake lease but does: {:?}", previous_report));
+                            }
+                        }
                     }
 
                     // If a report generates multiple events asynchronously, we send them over a mpsc channel
@@ -736,6 +769,7 @@ mod tests {
                             start_timestamp_nanos: AnyProperty
                         },
                         driver_to_binding_latency_ms: diagnostics_assertions::HistogramAssertion::exponential(super::LATENCY_HISTOGRAM_PROPERTIES),
+                        wake_lease_leak_count: 0u64,
                     }
                 }
             }
