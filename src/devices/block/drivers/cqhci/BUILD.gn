@@ -10,25 +10,51 @@ fuchsia_rust_driver("driver") {
   output_name = "cqhci"
   edition = "2024"
   sources = [
+    "src/command_queue.rs",
     "src/dma_buffer.rs",
     "src/lib.rs",
+    "src/partition.rs",
+    "src/tests.rs",
     "src/transfer_manager.rs",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+    "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_rust_next",
+    "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_rust_next",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_rust_next",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/lib/driver/runtime/rust",
+    "//sdk/lib/driver/runtime/rust/fidl",
+    "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/devices/block/drivers/cqhci/spec",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
+    "//src/lib/trace/rust:trace",
+    "//src/storage/lib/block_server",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:bit-vec",
+    "//third_party/rust_crates:event-listener",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:num",
     "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [
+    "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust_next",
     "//sdk/lib/driver/fake-bti/rust",
+    "//sdk/lib/driver/runtime/rust/env",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-runtime",
+    "//src/storage/lib/block_client/rust",
   ]
 }
 

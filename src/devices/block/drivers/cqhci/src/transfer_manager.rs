@@ -5,7 +5,6 @@
 use crate::dma_buffer::{
     ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer as _, WriteOnlySlice,
 };
-use fuchsia_sync::Mutex;
 use log::warn;
 use sdmmc_spec::{
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry, CommandQueueTDLEntry,
@@ -14,6 +13,7 @@ use sdmmc_spec::{
 use std::num::NonZeroU16;
 use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use zx::sys::zx_paddr_t;
 
 type ContiguousPages = Range<zx_paddr_t>;
@@ -146,16 +146,6 @@ impl<'a> Iterator for ContiguousPagesIter<'a> {
     }
 }
 
-struct TransferManagerInner {
-    tdl_allocation_bitmap: u32,
-}
-
-impl TransferManagerInner {
-    fn new() -> Self {
-        Self { tdl_allocation_bitmap: 0 }
-    }
-}
-
 /// An RAII guard for a transfer slot in the TDL.
 pub struct TransferSlot {
     manager: Arc<TransferManager>,
@@ -164,8 +154,7 @@ pub struct TransferSlot {
 
 impl Drop for TransferSlot {
     fn drop(&mut self) {
-        let mut inner = self.manager.inner.lock();
-        inner.tdl_allocation_bitmap &= !(1u32 << self.tdl_slot);
+        self.manager.state.fetch_and(!(1u32 << self.tdl_slot), Ordering::Release);
     }
 }
 
@@ -176,8 +165,9 @@ pub struct DcmdSlot<'a> {
 
 impl Drop for DcmdSlot<'_> {
     fn drop(&mut self) {
-        let mut inner = self.manager.inner.lock();
-        inner.tdl_allocation_bitmap &= !(1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
+        self.manager
+            .state
+            .fetch_and(!(1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT), Ordering::Release);
     }
 }
 
@@ -189,7 +179,7 @@ pub struct TransferManager {
     extra_descriptors_buffer: DiscontiguousDmaBuffer,
     bti: zx::Bti,
     max_transfer_blocks: u32,
-    inner: Mutex<TransferManagerInner>,
+    state: AtomicU32,
 }
 
 impl std::fmt::Debug for TransferManager {
@@ -228,7 +218,7 @@ impl TransferManager {
             extra_descriptors_buffer,
             bti,
             max_transfer_blocks,
-            inner: Mutex::new(TransferManagerInner::new()),
+            state: AtomicU32::new(0),
         }
     }
 
@@ -248,14 +238,17 @@ impl TransferManager {
         }
     }
 
+    pub fn tdl_address(&self) -> u64 {
+        self.tdl_buffer.phys_address() as u64
+    }
+
     /// Acquires the DCMD slot in the TDL, if available.
     pub fn acquire_dcmd_slot(&self) -> Option<DcmdSlot<'_>> {
-        let mut inner = self.inner.lock();
-        let dcmd_bit = 1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT;
-        if (inner.tdl_allocation_bitmap & dcmd_bit) != 0 {
+        let state =
+            self.state.fetch_or(1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, Ordering::Acquire);
+        if state & (1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT) != 0 {
             None
         } else {
-            inner.tdl_allocation_bitmap |= dcmd_bit;
             Some(DcmdSlot { manager: self })
         }
     }
@@ -274,14 +267,22 @@ impl TransferManager {
 
     /// Acquires a slot in the TDL for a transfer, if available.
     pub fn acquire_transfer_slot(self: &Arc<Self>) -> Option<TransferSlot> {
-        let mut inner = self.inner.lock();
-        let tdl_slot = (inner.tdl_allocation_bitmap | (1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT))
-            .trailing_ones() as u8;
-        if tdl_slot < CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
-            inner.tdl_allocation_bitmap |= 1u32 << tdl_slot;
-            Some(TransferSlot { manager: self.clone(), tdl_slot })
-        } else {
-            None
+        let mut state = self.state.load(Ordering::Relaxed);
+        loop {
+            let tdl_slot = state.trailing_ones() as u8;
+            if tdl_slot < CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
+                match self.state.compare_exchange_weak(
+                    state,
+                    state | (1u32 << tdl_slot),
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return Some(TransferSlot { manager: self.clone(), tdl_slot }),
+                    Err(observed) => state = observed,
+                }
+            } else {
+                return None;
+            }
         }
     }
 
@@ -296,7 +297,7 @@ impl TransferManager {
     ///    b) If there are multiple ranges, allocate and prepare a contiguous block of descriptors
     ///       outside the TDL, and points the TDL entry to this scatter/gather range.
     ///
-    /// The returned `Transfer` MUST be explicitly completed by calling [`Transfer::complete`].
+    /// The returned `Transfer` MUST be explicitly unpinned by calling [`Transfer::unpin`].
     pub fn prepare_transfer(
         self: &Arc<Self>,
         slot: TransferSlot,
@@ -321,6 +322,8 @@ impl TransferManager {
         let length = block_count.get() as u64 * MMC_BLOCK_SIZE;
         let mut transfer = Transfer {
             slot,
+            vmo: vmo.clone(),
+            vmo_offset,
             offset: block_offset * MMC_BLOCK_SIZE,
             length,
             pmt: None,
@@ -398,14 +401,32 @@ impl TransferManager {
             )
             .unwrap() // Unwrap OK, we already checked `block_count` is valid in the caller
         } else {
-            self.extra_descriptors_buffer.write(
-                offset,
-                max_descriptors,
-                |mut slice: WriteOnlySlice<'_, CommandQueueTransferDescriptor>| {
-                    let mut i = 0;
-                    let mut region = first_region;
-                    while let Some(next) = contig_regions.next() {
-                        debug_assert!(i < max_descriptors);
+            // SAFETY: We have exclusive access to the slot, and each slot has a separate page
+            // reserved for extra descriptors.
+            unsafe {
+                self.extra_descriptors_buffer.write(
+                    offset,
+                    max_descriptors,
+                    |mut slice: WriteOnlySlice<'_, CommandQueueTransferDescriptor>| {
+                        let mut i = 0;
+                        let mut region = first_region;
+                        while let Some(next) = contig_regions.next() {
+                            debug_assert!(i < max_descriptors);
+                            // Unwrap is OK since ContiguousPagesIter ensured that the ranges are
+                            // not too big.
+                            let length =
+                                TransferBytes::try_from(region.end - region.start).unwrap();
+                            slice.set(
+                                i,
+                                CommandQueueTransferDescriptor::transfer(
+                                    region.start as u64,
+                                    length,
+                                    false,
+                                ),
+                            );
+                            i += 1;
+                            region = next;
+                        }
                         // Unwrap is OK since ContiguousPagesIter ensured that the ranges are not
                         // too big.
                         let length = TransferBytes::try_from(region.end - region.start).unwrap();
@@ -414,22 +435,13 @@ impl TransferManager {
                             CommandQueueTransferDescriptor::transfer(
                                 region.start as u64,
                                 length,
-                                false,
+                                true,
                             ),
                         );
-                        i += 1;
-                        region = next;
-                    }
-                    // Unwrap is OK since ContiguousPagesIter ensured that the ranges are not too
-                    // big.
-                    let length = TransferBytes::try_from(region.end - region.start).unwrap();
-                    slice.set(
-                        i,
-                        CommandQueueTransferDescriptor::transfer(region.start as u64, length, true),
-                    );
-                    num_descriptors = i + 1;
-                },
-            )?;
+                        num_descriptors = i + 1;
+                    },
+                )?;
+            }
             let phys_address = self.extra_descriptors_buffer.phys_address_for(offset);
             transfer.buffers = TransferBuffers::ScatterGatherList(phys_address, num_descriptors);
             CommandQueueTDLEntry::scatter_gather_buffers(
@@ -449,16 +461,21 @@ impl TransferManager {
         tdl_slot: u8,
         tdl_entry: T,
     ) -> Result<(), zx::Status> {
-        self.tdl_buffer.write(
-            tdl_slot as usize * std::mem::size_of::<T>(),
-            1,
-            |mut slice: WriteOnlySlice<'_, T>| {
-                slice.set(0, tdl_entry);
-            },
-        )
+        // SAFETY: We have exclusive access to the slot.
+        unsafe {
+            self.tdl_buffer.write(
+                tdl_slot as usize * std::mem::size_of::<T>(),
+                1,
+                |mut slice: WriteOnlySlice<'_, T>| {
+                    slice.set(0, tdl_entry);
+                },
+            )
+        }
     }
 }
 
+// Used for testing.
+#[allow(dead_code)]
 #[derive(Debug)]
 enum TransferBuffers {
     None,
@@ -470,6 +487,8 @@ enum TransferBuffers {
 
 pub struct Transfer {
     slot: TransferSlot,
+    vmo: Arc<zx::Vmo>,
+    vmo_offset: u64,
     offset: u64,
     length: u64,
     pmt: Option<zx::Pmt>,
@@ -478,10 +497,16 @@ pub struct Transfer {
 }
 
 impl Transfer {
-    /// Completes the Transfer, unpinning memory pointed to by the Transfer.
+    /// Unpins memory pointed to by the Transfer.
     ///
-    /// This MUST be called after the Transfer completes (successfully or not).
-    pub fn complete(mut self) {
+    /// This MUST be called after the Transfer completes (successfully or not), or else pinned pages
+    /// will be leaked.
+    ///
+    /// # SAFETY
+    ///
+    /// This MUST be called when the hardware will no longer access the memory pointed to by the
+    /// Transfer (either before it was submitted, or after it completes).
+    pub unsafe fn unpin(mut self) {
         if let Some(pmt) = self.pmt.take() {
             // SAFETY:  The transfer is complete, so the hardware will no longer access the pinned
             // memory.
@@ -493,6 +518,48 @@ impl Transfer {
 
     pub fn tdl_slot(&self) -> u8 {
         self.slot.tdl_slot
+    }
+
+    #[allow(dead_code)]
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    #[allow(dead_code)]
+    pub fn length(&self) -> u64 {
+        self.length
+    }
+
+    #[allow(dead_code)]
+    pub fn direction(&self) -> Direction {
+        self.data_direction
+    }
+
+    #[allow(dead_code)]
+    pub fn vmo(&self) -> &zx::Vmo {
+        &self.vmo
+    }
+
+    #[allow(dead_code)]
+    pub fn vmo_offset(&self) -> u64 {
+        self.vmo_offset
+    }
+
+    pub fn opcode(&self) -> &'static str {
+        self.data_direction.as_str()
+    }
+
+    /// Invalidate the cache for the VMO region used by this transfer.
+    ///
+    /// This must be called before the results of a read transfer are used.
+    pub fn cache_invalidate(&self) {
+        if self.data_direction == Direction::Read {
+            if let Err(status) =
+                self.vmo.op_range(zx::VmoOp::CACHE_CLEAN_INVALIDATE, self.vmo_offset, self.length)
+            {
+                warn!(status:?; "Failed to invalidate cache");
+            }
+        }
     }
 }
 
@@ -510,7 +577,7 @@ impl std::fmt::Debug for Transfer {
 
 impl Drop for Transfer {
     fn drop(&mut self) {
-        assert!(self.pmt.is_none(), "Transfer::complete was not called");
+        assert!(self.pmt.is_none(), "Transfer::unpin was not called");
     }
 }
 
@@ -628,7 +695,7 @@ mod tests {
         assert!(manager.acquire_transfer_slot().is_none());
 
         // Drop one, ensure we can make progress
-        transfers.pop().unwrap().complete();
+        unsafe { transfers.pop().unwrap().unpin() };
 
         // Should succeed now
         let transfer = manager
@@ -641,10 +708,10 @@ mod tests {
                 Direction::Read,
             )
             .expect("prepare_transfer failed");
-        transfer.complete();
+        unsafe { transfer.unpin() };
 
         for transfer in transfers {
-            transfer.complete();
+            unsafe { transfer.unpin() };
         }
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
@@ -681,7 +748,7 @@ mod tests {
         };
         assert_eq!(*paddr, 4096);
         assert_eq!(*paddr, 4096);
-        transfer.complete();
+        unsafe { transfer.unpin() };
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
 
@@ -761,9 +828,9 @@ mod tests {
                     EXTRA_DESCRIPTORS_BASE as u64 + zx::system_get_page_size() as u64,
                 ),
             );
-            transfer2.complete();
+            unsafe { transfer2.unpin() };
         }
-        transfer.complete();
+        unsafe { transfer.unpin() };
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
 
@@ -816,7 +883,7 @@ mod tests {
         };
         assert_eq!(addr, EXTRA_DESCRIPTORS_BASE);
         assert_eq!(len, num_descriptors);
-        transfer.complete();
+        unsafe { transfer.unpin() };
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
 
@@ -872,7 +939,7 @@ mod tests {
         };
         assert_eq!(addr, EXTRA_DESCRIPTORS_BASE);
         assert_eq!(len, 3);
-        transfer.complete();
+        unsafe { transfer.unpin() };
         unsafe { Arc::try_unwrap(manager).unwrap().unpin_buffers() };
     }
 
@@ -960,8 +1027,8 @@ mod tests {
             ],
         );
 
-        transfer1.complete();
-        transfer2.complete();
+        unsafe { transfer1.unpin() };
+        unsafe { transfer2.unpin() };
         unsafe {
             Arc::try_unwrap(manager).expect("TransferManager still referenced").unpin_buffers()
         };

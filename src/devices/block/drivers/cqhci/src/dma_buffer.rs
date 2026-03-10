@@ -47,7 +47,12 @@ pub trait DmaBuffer {
     /// Once the callback returns, the writes will be committed by calling
     /// `zx_cache_flush(ZX_CACHE_FLUSH_DATA)`, which will ensure the writes are visible to external
     /// devices.
-    fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe because it takes a shared reference.  The caller is responsible for ensuring
+    /// that the memory region being written to is uniquely accessed by the caller.
+    unsafe fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
         &self,
         offset: usize,
         count: usize,
@@ -58,7 +63,7 @@ pub trait DmaBuffer {
 /// An implementation of [`DmaBuffer`] backed by a discontiguous memory region.
 pub struct DiscontiguousDmaBuffer {
     vmar: zx::Vmar,
-    vmo: zx::Vmo,
+    _vmo: zx::Vmo,
     // The virtual address of the memory mapping.
     address: usize,
     pmt: Option<zx::Pmt>,
@@ -82,7 +87,7 @@ impl DiscontiguousDmaBuffer {
         )?;
         let address =
             vmar.map(0, &vmo, 0, size, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)?;
-        Ok(Self { vmar, vmo, address, pmt: Some(pmt), phys_addresses, size })
+        Ok(Self { vmar, _vmo: vmo, address, pmt: Some(pmt), phys_addresses, size })
     }
 
     /// Returns the physical address for the page which contains `vmo_offset`.
@@ -90,8 +95,9 @@ impl DiscontiguousDmaBuffer {
         self.phys_addresses[vmo_offset / zx::system_get_page_size() as usize]
     }
 
+    #[cfg(test)]
     pub fn vmo(&self) -> &zx::Vmo {
-        &self.vmo
+        &self._vmo
     }
 }
 
@@ -110,7 +116,7 @@ impl DmaBuffer for DiscontiguousDmaBuffer {
         self.size
     }
 
-    fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
+    unsafe fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
         &self,
         offset: usize,
         count: usize,
@@ -126,7 +132,8 @@ impl DmaBuffer for DiscontiguousDmaBuffer {
         let ptr = (self.address + offset) as *mut u8;
         let buf = std::ptr::slice_from_raw_parts_mut(ptr, size);
         // SAFETY:  We checked that `buf` does not exceed the end of the memory region pointed to by
-        // `self.address`.
+        // `self.address`.  We also know that we have a unique reference to the memory region
+        // pointed to by `self.address`, since `self` is &mut.
         let bytes = unsafe { &mut *buf };
         let slice: &mut [T] = zerocopy::FromBytes::mut_from_bytes(bytes).unwrap();
         (callback)(WriteOnlySlice(slice));
@@ -170,7 +177,7 @@ impl ContiguousDmaBuffer {
             vmar.map(0, &vmo, 0, size, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)?;
         Ok(Self(DiscontiguousDmaBuffer {
             vmar,
-            vmo,
+            _vmo: vmo,
             address,
             pmt: Some(pmt),
             phys_addresses: vec![phys_address],
@@ -182,6 +189,7 @@ impl ContiguousDmaBuffer {
         self.0.phys_addresses[0]
     }
 
+    #[cfg(test)]
     pub fn vmo(&self) -> &zx::Vmo {
         self.0.vmo()
     }
@@ -196,13 +204,14 @@ impl DmaBuffer for ContiguousDmaBuffer {
         self.0.size()
     }
 
-    fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
+    unsafe fn write<T: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::Immutable + Copy>(
         &self,
         offset: usize,
         count: usize,
         callback: impl FnOnce(WriteOnlySlice<'_, T>),
     ) -> Result<(), zx::Status> {
-        self.0.write(offset, count, callback)
+        // SAFETY: Same rules apply.
+        unsafe { self.0.write(offset, count, callback) }
     }
 }
 
@@ -227,20 +236,24 @@ mod tests {
         assert_eq!(dma.size(), 0x8000);
 
         type U32 = zerocopy::byteorder::little_endian::U32;
-        dma.write::<U32>(16, 2, |mut slice| {
-            slice.set(0, U32::from(0x11223344));
-            slice.set(1, U32::from(0xAABBCCDD));
-        })
-        .expect("write failed");
+        unsafe {
+            dma.write::<U32>(16, 2, |mut slice| {
+                slice.set(0, U32::from(0x11223344));
+                slice.set(1, U32::from(0xAABBCCDD));
+            })
+            .expect("write failed");
+        }
 
         let data: Vec<U32> = dma.vmo().read_to_vec::<U32>(16, 2).expect("read failed");
         assert_eq!(data[0], U32::from(0x11223344));
         assert_eq!(data[1], U32::from(0xAABBCCDD));
 
-        dma.write::<U32>(18, 1, |mut slice| {
-            slice.set(0, U32::from(0x55667788));
-        })
-        .expect("write failed");
+        unsafe {
+            dma.write::<U32>(18, 1, |mut slice| {
+                slice.set(0, U32::from(0x55667788));
+            })
+            .expect("write failed");
+        }
 
         let data: Vec<U32> = dma.vmo().read_to_vec::<U32>(16, 2).expect("read failed");
         assert_eq!(data[0], U32::from(0x77883344));

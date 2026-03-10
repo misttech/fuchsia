@@ -11,6 +11,8 @@ pub const MMC_BLOCK_SIZE: u64 = 512;
 
 // EXT_CSD fields (JESD84-B51A, 7.4)
 
+pub const EXT_CSD_SIZE: usize = 512;
+
 pub const EXT_CSD_BARRIER_EN: usize = 31;
 pub const EXT_CSD_BARRIER_ENABLED: u8 = 1;
 
@@ -61,6 +63,7 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     /// Response for CMD13 SEND_STATUS (JESD84-B51A, 6.10.4)
     pub struct MmcSendStatusResponse: u32 {
+        const STATUS_ERR = 1 << 19;
         const CURRENT_STATE_STDBY = 0x3 << 9;
         const CURRENT_STATE_TRAN = 0x4 << 9;
         const CURRENT_STATE_DATA = 0x5 << 9;
@@ -138,11 +141,6 @@ pub enum DcmdResponseType {
     R1 = 0b10,
     /// Like R1, but with an optional busy signal transmitted on the DATA line.
     R1B = 0b11,
-}
-
-impl DcmdResponseType {
-    pub const R4: Self = Self::R1;
-    pub const R5: Self = Self::R1;
 }
 
 // Necessary for bitfield
@@ -423,8 +421,9 @@ bitflags! {
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CqhciCqCtlRegister: u32 {
-        const CLEAR_ALL_TASKS = 1 << 8;
         const HALT = 1;
+        const HALT_ON_EMPTY_QUEUE = 1 << 1;
+        const CLEAR_ALL_TASKS = 1 << 8;
     }
 }
 
@@ -440,8 +439,19 @@ bitfield! {
     #[derive(Clone, Copy)]
     pub struct CqhciCqSendStatusConfiguration2Register(u32);
     impl Debug;
-    impl New;
     pub u16, rca, set_rca: 15, 0;
+}
+
+impl CqhciCqSendStatusConfiguration2Register {
+    pub fn from_rca(rca: u16) -> Self {
+        let mut this = Self(0);
+        this.set_rca(rca);
+        this
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
 }
 
 // TODO(https://fxbug.dev/42176727): Add crypto errors.
@@ -456,7 +466,7 @@ bitfield! {
     pub bool, general_crypto_error, set_general_crypto_error: 4;
     pub bool, invalid_crypto_config_error, set_invalid_crypto_config_error: 5;
     pub bool, device_exception_event, set_device_exception_event: 6;
-    pub bool, host_controller_fatal_error, set_host_controller_fatal_error: 7;
+    pub bool, host_controller_fatal_error, _: 7;
 }
 
 impl CqhciCqInterruptStatusRegister {
@@ -466,6 +476,12 @@ impl CqhciCqInterruptStatusRegister {
             || self.invalid_crypto_config_error()
             || self.device_exception_event()
             || self.host_controller_fatal_error()
+    }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
     }
 }
 
@@ -490,6 +506,12 @@ impl CqhciCqInterruptStatusEnableRegister {
     pub fn enabled() -> Self {
         Self(0xff)
     }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
 }
 
 bitfield! {
@@ -513,6 +535,12 @@ impl CqhciCqInterruptSignalEnableRegister {
     pub fn enabled() -> Self {
         Self(0xff)
     }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
 }
 
 bitfield! {
@@ -534,6 +562,9 @@ impl CqhciCqInterruptCoalescingRegister {
         this.set_ic_enable(false);
         this
     }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
 }
 
 bitfield! {
@@ -546,4 +577,271 @@ bitfield! {
     pub u8, data_transfer_error_command_index, _: 21, 16;
     pub u8, data_transfer_error_task_id, _: 28, 24;
     pub bool, data_transfer_error_fields_valid, _: 31;
+}
+
+// SDHCI registers (SD Host Controller Simplified Specification V4.20)
+// The CQHCI driver can interact with a limited subset of the SDHCI interface to control interrupts.
+
+pub const SDHCI_IS_OFFSET: usize = 0x30;
+pub const SDHCI_ISTE_OFFSET: usize = 0x34;
+pub const SDHCI_ISGE_OFFSET: usize = 0x38;
+
+bitfield! {
+    #[derive(Clone, Copy)]
+    pub struct SdhciInterruptStatusRegister(u32);
+    impl Debug;
+    pub bool, tuning_error, set_tuning_error: 26;
+    pub bool, adma_error, set_adma_error: 25;
+    pub bool, auto_cmd_error, set_auto_cmd_error: 24;
+    pub bool, current_limit_error, set_current_limit_error: 23;
+    pub bool, data_end_bit_error, set_data_end_bit_error: 22;
+    pub bool, data_crc_error, set_data_crc_error: 21;
+    pub bool, data_timeout_error, set_data_timeout_error: 20;
+    pub bool, command_index_error, set_command_index_error: 19;
+    pub bool, command_end_bit_error, set_command_end_bit_error: 18;
+    pub bool, command_crc_error, set_command_crc_error: 17;
+    pub bool, command_timeout_error, set_command_timeout_error: 16;
+    pub bool, error, set_error: 15;
+    /// NB: This is technically reserved in the SDHCI spec.  The CQHCI spec describes this bit.
+    pub bool, cqhci_interrupt, set_cqhci_interrupt: 14;
+    pub bool, card_interrupt, set_card_interrupt: 8;
+    pub bool, buffer_read_ready, set_buffer_read_ready: 5;
+    pub bool, buffer_write_ready, set_buffer_write_ready: 4;
+    pub bool, transfer_complete, set_transfer_complete: 1;
+    pub bool, command_complete, set_command_complete: 0;
+}
+
+impl SdhciInterruptStatusRegister {
+    pub fn take_cqhci_interrupt(&mut self) -> Self {
+        let mut cqhci = Self(0);
+        if self.cqhci_interrupt() {
+            cqhci.set_cqhci_interrupt(true);
+            self.set_cqhci_interrupt(false);
+        }
+        cqhci
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.raw() == 0
+    }
+
+    pub fn is_error(&self) -> bool {
+        self.tuning_error()
+            || self.adma_error()
+            || self.auto_cmd_error()
+            || self.current_limit_error()
+            || self.data_end_bit_error()
+            || self.data_crc_error()
+            || self.data_timeout_error()
+            || self.command_index_error()
+            || self.command_end_bit_error()
+            || self.command_crc_error()
+            || self.command_timeout_error()
+            || self.error()
+    }
+    pub fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+bitfield! {
+    #[derive(Clone, Copy)]
+    pub struct SdhciInterruptStatusEnableRegister(u32);
+    impl Debug;
+    pub bool, tuning_error, set_tuning_error: 26;
+    pub bool, adma_error, set_adma_error: 25;
+    pub bool, auto_cmd_error, set_auto_cmd_error: 24;
+    pub bool, current_limit_error, set_current_limit_error: 23;
+    pub bool, data_end_bit_error, set_data_end_bit_error: 22;
+    pub bool, data_crc_error, set_data_crc_error: 21;
+    pub bool, data_timeout_error, set_data_timeout_error: 20;
+    pub bool, command_index_error, set_command_index_error: 19;
+    pub bool, command_end_bit_error, set_command_end_bit_error: 18;
+    pub bool, command_crc_error, set_command_crc_error: 17;
+    pub bool, command_timeout_error, set_command_timeout_error: 16;
+    pub bool, error, set_error: 15;
+    pub bool, cqhci_interrupt, set_cqhci_interrupt: 14;
+    pub bool, card_interrupt, set_card_interrupt: 8;
+    pub bool, buffer_read_ready, set_buffer_read_ready: 5;
+    pub bool, buffer_write_ready, set_buffer_write_ready: 4;
+    pub bool, transfer_complete, set_transfer_complete: 1;
+    pub bool, command_complete, set_command_complete: 0;
+}
+
+impl SdhciInterruptStatusEnableRegister {
+    pub fn disabled() -> Self {
+        Self(0)
+    }
+    /// Enables the default set of interrupts needed for CQHCI (errors and the cqhci interrupt).
+    pub fn enabled() -> Self {
+        let mut this = Self::disabled();
+        this.enable_errors();
+        this.set_cqhci_interrupt(true);
+        this
+    }
+    /// Enables only error interrupts.
+    pub fn errors_enabled() -> Self {
+        let mut this = Self::disabled();
+        this.enable_errors();
+        this
+    }
+    pub fn enable_errors(&mut self) {
+        self.set_tuning_error(true);
+        self.set_adma_error(true);
+        self.set_auto_cmd_error(true);
+        self.set_current_limit_error(true);
+        self.set_data_end_bit_error(true);
+        self.set_data_crc_error(true);
+        self.set_data_timeout_error(true);
+        self.set_command_index_error(true);
+        self.set_command_end_bit_error(true);
+        self.set_command_crc_error(true);
+        self.set_command_timeout_error(true);
+        self.set_error(true)
+    }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+bitfield! {
+    #[derive(Clone, Copy)]
+    pub struct SdhciInterruptSignalEnableRegister(u32);
+    impl Debug;
+    pub bool, tuning_error, set_tuning_error: 26;
+    pub bool, adma_error, set_adma_error: 25;
+    pub bool, auto_cmd_error, set_auto_cmd_error: 24;
+    pub bool, current_limit_error, set_current_limit_error: 23;
+    pub bool, data_end_bit_error, set_data_end_bit_error: 22;
+    pub bool, data_crc_error, set_data_crc_error: 21;
+    pub bool, data_timeout_error, set_data_timeout_error: 20;
+    pub bool, command_index_error, set_command_index_error: 19;
+    pub bool, command_end_bit_error, set_command_end_bit_error: 18;
+    pub bool, command_crc_error, set_command_crc_error: 17;
+    pub bool, command_timeout_error, set_command_timeout_error: 16;
+    pub bool, error, set_error: 15;
+    pub bool, cqhci_interrupt, set_cqhci_interrupt: 14;
+    pub bool, card_interrupt, set_card_interrupt: 8;
+    pub bool, buffer_read_ready, set_buffer_read_ready: 5;
+    pub bool, buffer_write_ready, set_buffer_write_ready: 4;
+    pub bool, transfer_complete, set_transfer_complete: 1;
+    pub bool, command_complete, set_command_complete: 0;
+}
+
+impl SdhciInterruptSignalEnableRegister {
+    pub fn disabled() -> Self {
+        Self(0)
+    }
+    /// Enables the default set of interrupts needed for CQHCI (errors and the cqhci interrupt).
+    pub fn enabled() -> Self {
+        let mut this = Self::disabled();
+        this.enable_errors();
+        this.set_cqhci_interrupt(true);
+        this
+    }
+    /// Enables only error interrupts.
+    pub fn errors_enabled() -> Self {
+        let mut this = Self::disabled();
+        this.enable_errors();
+        this
+    }
+    pub fn enable_errors(&mut self) {
+        self.set_tuning_error(true);
+        self.set_adma_error(true);
+        self.set_auto_cmd_error(true);
+        self.set_current_limit_error(true);
+        self.set_data_end_bit_error(true);
+        self.set_data_crc_error(true);
+        self.set_data_timeout_error(true);
+        self.set_command_index_error(true);
+        self.set_command_end_bit_error(true);
+        self.set_command_crc_error(true);
+        self.set_command_timeout_error(true);
+        self.set_error(true)
+    }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+/// A snapshot of all crypto registers, for debugging purposes.
+pub struct CqhciCryptoRegisterSnapshot {
+    pub crnqp: u32,
+    pub crnqdun: u32,
+    pub crnqis: u32,
+    pub crnqie: u32,
+    pub crcap: u32,
+}
+
+/// A snapshot of all registers, for debugging purposes.
+pub struct CqhciRegisterSnapshot {
+    pub ver: u32,
+    pub caps: u32,
+    pub cfg: u32,
+    pub ctl: u32,
+    pub is: u32,
+    pub iste: u32,
+    pub isge: u32,
+    pub tdlba: u32,
+    pub tdlbau: u32,
+    pub dbr: u32,
+    pub tcn: u32,
+    pub dqs: u32,
+    pub dpt: u32,
+    pub tdpe: u32,
+    pub ssc1: u32,
+    pub ssc2: u32,
+    pub rmem: u32,
+    pub terri: u32,
+    pub cri: u32,
+    pub cra: u32,
+    pub hccap: u32,
+    pub hccfg: u32,
+    pub crypto: Option<CqhciCryptoRegisterSnapshot>,
+}
+
+impl std::fmt::Debug for CqhciRegisterSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "CQHCI Registers: ")?;
+        writeln!(
+            f,
+            "   ver {:08x}  caps {:08x}   cfg {:08x}   ctl {:08x}",
+            self.ver, self.caps, self.cfg, self.ctl
+        )?;
+        writeln!(
+            f,
+            "    is {:08x}  iste {:08x}  isge {:08x} tdlba {:08x}",
+            self.is, self.iste, self.isge, self.tdlba
+        )?;
+        writeln!(
+            f,
+            "tdlbau {:08x}   dbr {:08x}   tcn {:08x}   dqs {:08x}",
+            self.tdlbau, self.dbr, self.tcn, self.dqs
+        )?;
+        writeln!(
+            f,
+            "   dpt {:08x}  tdpe {:08x}  ssc1 {:08x}  ssc2 {:08x}",
+            self.dpt, self.tdpe, self.ssc1, self.ssc2
+        )?;
+        writeln!(
+            f,
+            "  rmem {:08x} terri {:08x}   cri {:08x}   cra {:08x}",
+            self.rmem, self.terri, self.cri, self.cra
+        )?;
+        write!(f, " hccap {:08x} hccfg {:08x}", self.hccap, self.hccfg)?;
+        if let Some(crypto) = &self.crypto {
+            writeln!(f)?;
+            writeln!(f, "CQHCI Crypto Registers: ")?;
+            writeln!(
+                f,
+                " crnqp {:08x}crnqdun {:08x}crnqis {:08x}crnqie {:08x}",
+                crypto.crnqp, crypto.crnqdun, crypto.crnqis, crypto.crnqie
+            )?;
+            write!(f, " crcap {:08x}", crypto.crcap)?;
+        }
+        Ok(())
+    }
 }

@@ -17,4 +17,6 @@ fidl("fuchsia.hardware.sdmmc") {
     "//zircon/vdso/zx",
   ]
   contains_drivers = true
+  enable_rust_next = true
+  enable_rust_drivers = true
 }

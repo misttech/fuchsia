@@ -1,0 +1,108 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.hardware.cqhci;
+
+using fuchsia.hardware.rpmb;
+using fuchsia.hardware.sdmmc;
+using zx;
+
+/// The maximum value for a transfer size, identifying that there
+/// effectively exists no maximum for a single operation.
+const MAX_TRANSFER_UNBOUNDED uint32 = 0xFFFFFFFF;
+
+/// This limit is arbitrary and can be increased if necessary.
+const SDMMC_MAX_NUM_PARTITIONS uint64 = 4;
+
+// See the eMMC specification section 7.4.69 for these constants.
+type EmmcPartitionId = strict enum : uint8 {
+    USER_DATA_PARTITION = 0x0;
+    BOOT_PARTITION_1 = 0x1;
+    BOOT_PARTITION_2 = 0x2;
+};
+
+type EmmcPartition = struct {
+    id EmmcPartitionId;
+    block_count uint64;
+    block_size uint32;
+};
+
+type CqhciHostInfo = struct {
+    sdmmc_host_info fuchsia.hardware.sdmmc.SdmmcHostInfo;
+    partitions vector<EmmcPartition>:SDMMC_MAX_NUM_PARTITIONS;
+    /// Relative card address.
+    rca uint16;
+    ext_csd vector<uint8>:512;
+};
+
+@discoverable
+@transport("Driver")
+closed protocol Cqhci {
+    /// Get host info.
+    strict HostInfo() -> (struct {
+        info CqhciHostInfo;
+    }) error zx.Status;
+
+    /// Initializes the CQHCI driver, providing it with all necessary resources.
+    ///
+    /// This call is expected to be made once.  The server should reject any additional calls
+    /// until the peer end of `virtual_interrupt_lifeline` closes.
+    ///
+    /// # Interrupt Delegation
+    ///
+    /// While the CQHCI driver is running, it takes over the physical IRQ object from its underlying
+    /// driver, and directly handles any CQHCI-specific interrupts.  Interrupts which it cannot
+    /// service (e.g. SDHCI interrupts) are forwarded to the underlying driver via
+    /// `virtual_interrupt`.  The server should service interrupts exactly as it normally would.
+    /// The CQHCI driver will wait for the virtual IRQ to be acked before acking the physical IRQ.
+    ///
+    /// # Arguments
+    ///
+    /// * `virtual_interrupt` - A virtual interrupt to monitor instead of the physical IRQ.
+    ///   The CQHCI driver will use this to forward interrupts which it cannot directly service.
+    /// * `virtual_interrupt_lifeline` - A lifeline for the virtual interrupt.  The CQHCI
+    ///   driver will destroy the peer end upon shutdown, which should be handled by the server as a
+    ///   signal to stop monitoring the virtual interrupt and return to monitoring the physical
+    ///   interrupt.
+    /// * `rpmb_server_end` - A server end to connect to the RPMB service instance provided by
+    ///   the underlying device.  The CQHCI driver proxies requests to this service instance,
+    ///   ensuring the CQE is disabled for the duration of the request.
+    ///
+    /// # Returns
+    ///
+    /// * `cqhci_mmio` and `cqhci_mmio_offset` - An MMIO for the CQHCI register block.
+    ///   MMIO size minus offset must be at least 512 bytes as per the CQHCI specification.
+    /// * `sdhci_mmio` and `sdhci_mmio_offset` - An MMIO for the SDHCI register block.
+    ///   MMIO size minus offset must be at least 512 bytes as per the SDHCI specification.
+    /// * `bti` - The BTI to use for pinning pages for DMA.
+    /// * `interrupt` - The physical interrupt to monitor.
+    strict Initialize(resource struct {
+        virtual_interrupt zx.Handle:INTERRUPT;
+        virtual_interrupt_lifeline zx.Handle:EVENTPAIR;
+        rpmb_server_end server_end:fuchsia.hardware.rpmb.Rpmb;
+    }) -> (resource struct {
+        cqhci_mmio zx.Handle:VMO;
+        cqhci_mmio_offset zx.Off;
+        sdhci_mmio zx.Handle:VMO;
+        sdhci_mmio_offset zx.Off;
+        bti zx.Handle:BTI;
+        interrupt zx.Handle:INTERRUPT;
+    }) error zx.Status;
+
+    /// Enables the Command Queueing Engine.  [`Cqhci.Initialize`] must have previously been
+    /// called.
+    ///
+    /// After this is called, the server must not directly interact with the hardware.
+    strict EnableCqhci() -> () error zx.Status;
+
+    /// Disables the Command Queueing Engine.  [`Cqhci.EnableCqhci`] must have previously been
+    /// called.
+    ///
+    /// After this is called, the server may resume interaction with the hardware.
+    strict DisableCqhci() -> () error zx.Status;
+};
+
+service Service {
+    cqhci client_end:Cqhci;
+};
