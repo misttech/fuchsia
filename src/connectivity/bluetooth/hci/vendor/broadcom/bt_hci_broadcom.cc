@@ -100,6 +100,10 @@ constexpr zx::duration kFirmwareDownloadDelay = zx::msec(50);
 // firmware load.
 constexpr zx::duration kBaudRateSwitchDelay = zx::msec(200);
 
+constexpr uint8_t kCrashVendorSubeventCode = 0x1B;
+constexpr char kCrashProgramName[] = "bt-hci-broadcom";
+constexpr char kCrashSignature[] = "bt-hci-broadcom-core-dump";
+
 }  // namespace
 
 const std::unordered_map<uint16_t, std::string> BtHciBroadcom::kFirmwareMap = {
@@ -366,7 +370,12 @@ void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
 }
 
 void BtHciBroadcom::GetCrashParameters(GetCrashParametersCompleter::Sync& completer) {
-  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  fidl::Arena arena;
+  auto builder = fhbt::wire::VendorCrashParameters::Builder(arena);
+  builder.vendor_subevent_code(kCrashVendorSubeventCode);
+  builder.program_name(kCrashProgramName);
+  builder.crash_signature(kCrashSignature);
+  completer.ReplySuccess(builder.Build());
 }
 
 void BtHciBroadcom::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,

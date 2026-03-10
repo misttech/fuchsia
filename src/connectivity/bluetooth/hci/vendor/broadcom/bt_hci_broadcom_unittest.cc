@@ -528,6 +528,22 @@ TEST_F(BtHciBroadcomInitializedTest, OpenSnoop) {
   ASSERT_FALSE(result->is_error());
 }
 
+TEST_F(BtHciBroadcomInitializedTest, GetCrashParameters) {
+  auto result = vendor_client()->GetCrashParameters();
+  ASSERT_TRUE(result.ok());
+  ASSERT_FALSE(result->is_error());
+
+  auto params = result->value();
+  ASSERT_TRUE(params->has_vendor_subevent_code());
+  EXPECT_EQ(params->vendor_subevent_code(), 0x1B);
+
+  ASSERT_TRUE(params->has_program_name());
+  EXPECT_EQ(params->program_name().get(), std::string_view("bt-hci-broadcom"));
+
+  ASSERT_TRUE(params->has_crash_signature());
+  EXPECT_EQ(params->crash_signature().get(), std::string_view("bt-hci-broadcom-core-dump"));
+}
+
 TEST_F(BtHciBroadcomInitializedTest, HciTransportOpenTwice) {
   // Should be able to open two copies of HciTransport.
   auto result = vendor_client()->OpenHciTransport();
