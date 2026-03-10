@@ -300,6 +300,11 @@
             to: "#testing",
         },
         {
+            service: "fuchsia.hardware.haptics.Service",
+            from: "parent",
+            to: "#testing",
+        },
+        {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
             directory: "dev-class",
