@@ -7,10 +7,8 @@ use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::developer_overrides::DeveloperOverrides;
 use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
-use assembly_file_relative_path::SupportsFileRelativePaths;
 use assembly_platform_artifacts::PlatformArtifacts;
 use assembly_tool::PlatformToolProvider;
-use assembly_util::read_config;
 use camino::Utf8PathBuf;
 use fuchsia_pkg::PackageManifest;
 use image_assembly_config_builder::ProductAssembly;
@@ -57,10 +55,8 @@ Resulting product is not supported and may misbehave!
     let board_config =
         BoardConfig::from_dir(&board_config).context("Reading board configuration")?;
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
-        let developer_overrides = read_config::<DeveloperOverrides>(&overrides_path)
-            .context("Reading developer overrides")?
-            .resolve_paths_from_file(&overrides_path)
-            .context("Resolving paths in developer overrides")?;
+        let developer_overrides = DeveloperOverrides::from_config_path(&overrides_path)
+            .context("Reading developer overrides")?;
 
         let developer_overrides = developer_overrides.merge_developer_provided_files().context(
             "Merging developer-provided file paths into developer-provided configuration.",

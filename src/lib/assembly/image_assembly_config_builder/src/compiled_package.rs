@@ -113,13 +113,13 @@ impl CompiledPackageBuilder {
             let component_properties = self.components.entry(component_name.clone()).or_default();
 
             for shard_path in shards {
-                let filename = shard_path.as_utf8_pathbuf().file_name().ok_or_else(|| {
+                let filename = shard_path.file_name().ok_or_else(|| {
                     anyhow!("The component shard path does not have a filename: {}", shard_path)
                 })?;
                 component_properties.shards
                 .try_insert_unique(MapEntry(
                     filename.to_string(),
-                    shard_path.as_utf8_pathbuf().clone(),
+                    shard_path.clone(),
                 ))
                 .map_err(|shard| {
                     anyhow!(

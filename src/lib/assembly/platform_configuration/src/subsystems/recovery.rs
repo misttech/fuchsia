@@ -200,7 +200,7 @@ fn configure_bootfs_recovery(
         .with_context(|| format!("Writing cml file: {}", &cml_path))?;
     let components = vec![CompiledComponentDefinition {
         component_name: "bootstrap".into(),
-        shards: vec![cml_path.into()],
+        shards: vec![cml_path],
         cmc_features: vec![],
     }];
     let destination = CompiledPackageDestination::Boot(BootfsCompiledPackageDestination::Bootstrap);

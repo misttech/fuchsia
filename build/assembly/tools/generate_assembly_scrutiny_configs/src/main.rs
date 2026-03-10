@@ -10,7 +10,7 @@ use assembly_constants::{
     AddToImage, BlobfsCompiledPackageDestination, BootfsCompiledPackageDestination,
     BootfsDestination, BootfsPackageDestination, KernelArg, PackageDestination,
 };
-use assembly_file_relative_path::SupportsFileRelativePaths;
+use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;
 use camino::Utf8PathBuf;
 use fuchsia_pkg::PackageManifest;
@@ -186,8 +186,10 @@ fn main() -> Result<()> {
         .expect("Parsing platform artifacts");
     for aib_name in &platform_artifacts.assembly_input_bundles {
         let aib_path = platform_artifacts.get_bundle(aib_name);
-        let aib: AssemblyInputBundle = assembly_util::read_config(&aib_path).unwrap();
-        let aib = aib.resolve_paths_from_file(&aib_path).unwrap();
+        let aib_dir = aib_path
+            .parent()
+            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", &aib_path))?;
+        let aib = AssemblyInputBundle::from_dir(aib_dir).unwrap();
 
         // Experimental AIBs are not included in the scrutiny goldens.
         if aib.experimental {

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow, bail};
-use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
+use assembly_container::{AssemblyContainer, WalkPaths, assembly_container};
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -33,7 +34,8 @@ pub struct ForensicsOptions {
 
 /// Developer Overrides struct that is similar to the ProductConfig struct,
 /// but has extra fields added that allow it to convey extra fields.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, WalkPaths)]
+#[assembly_container(assembly_config.json)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeveloperOverrides {
     /// The label of the target used to define the overrides.
@@ -70,11 +72,11 @@ pub struct DeveloperOverrides {
     pub board: serde_json::Value,
 
     /// Packages to add to the build.
-    #[file_relative_paths]
+    #[walk_paths]
     pub packages: Vec<PackageDetails>,
 
     /// Compiled components to add to the build
-    #[file_relative_paths]
+    #[walk_paths]
     pub packages_to_compile: Vec<CompiledPackageDefinition>,
 
     /// Map of the names of packages that contain shell commands to the list of
@@ -87,12 +89,12 @@ pub struct DeveloperOverrides {
     /// path to the file that contains the developer overrides, and it's
     /// otherwise not known that they they are file paths, as these fields are
     /// all serde_json::Value type.
-    #[file_relative_paths]
+    #[walk_paths]
     pub developer_provided_files: Vec<DeveloperProvidedFilesNode>,
 
     /// Bootfs files to add via developer overrides
-    #[file_relative_paths]
-    pub bootfs_files_package: Option<FileRelativePathBuf>,
+    #[walk_paths]
+    pub bootfs_files_package: Option<Utf8PathBuf>,
 }
 
 /// Special flags for assembly that can only be used in the context of developer
@@ -143,15 +145,15 @@ pub struct KernelOptions {
 ///     }
 ///   }
 ///
-#[derive(Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, WalkPaths)]
 #[serde(deny_unknown_fields)]
 pub struct DeveloperProvidedFilesNode {
     /// The path to a json object, in "foo.bar" notation.
     pub node_path: String,
 
     /// A map of field-names to file paths.
-    #[file_relative_paths]
-    pub fields: BTreeMap<String, FileRelativePathBuf>,
+    #[walk_paths]
+    pub fields: BTreeMap<String, Utf8PathBuf>,
 }
 
 // LINT.ThenChange(//build/assembly/scripts/developer_overrides.py)
@@ -219,7 +221,7 @@ fn merge_file_paths<'a>(
     value: &mut serde_json::Value,
     remaining_node_path: &[&'a str],
     mut previous_node_path: Vec<&'a str>,
-    fields: BTreeMap<String, FileRelativePathBuf>,
+    fields: BTreeMap<String, Utf8PathBuf>,
 ) -> Result<()> {
     let node_map = value
         .as_object_mut()
