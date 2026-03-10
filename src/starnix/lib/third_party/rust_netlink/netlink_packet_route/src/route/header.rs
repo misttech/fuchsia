@@ -4,7 +4,7 @@ use super::super::AddressFamily;
 use super::RouteError;
 use super::flags::RouteFlags;
 use netlink_packet_utils::DecodeError;
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
 const ROUTE_HEADER_LEN: usize = 12;
@@ -22,8 +22,8 @@ buffer!(RouteMessageBuffer(ROUTE_HEADER_LEN) {
     payload: (slice, ROUTE_HEADER_LEN..),
 });
 
-impl<'a, T: AsRef<[u8]> + ?Sized> RouteMessageBuffer<&'a T> {
-    pub fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, NlaError>> {
+impl<T: AsRef<[u8]> + ?Sized> HasNlas for RouteMessageBuffer<&T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(self.payload())
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::AddressFamily;
 use crate::address::{AddressAttribute, AddressError, AddressHeaderFlags, AddressScope};
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlaParseMode, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 use zerocopy::byteorder::native_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
@@ -75,8 +75,10 @@ impl AddressMessageBuffer {
             }
         })
     }
+}
 
-    pub fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
+impl HasNlas for AddressMessageBuffer {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(&self.payload)
     }
 }
@@ -138,10 +140,6 @@ impl<'a> Parseable<AddressMessageBuffer> for AddressMessage {
 impl<'a> Parseable<AddressMessageBuffer> for Vec<AddressAttribute> {
     type Error = AddressError;
     fn parse(buf: &AddressMessageBuffer) -> Result<Self, AddressError> {
-        let mut attributes = vec![];
-        for nla_buf in buf.attributes() {
-            attributes.push(AddressAttribute::parse(&nla_buf?)?);
-        }
-        Ok(attributes)
+        buf.parse_attributes(NlaParseMode::default(), AddressAttribute::parse)
     }
 }

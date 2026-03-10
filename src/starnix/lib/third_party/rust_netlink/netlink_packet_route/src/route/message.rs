@@ -4,6 +4,7 @@ use super::super::AddressFamily;
 use super::attribute::RTA_ENCAP_TYPE;
 use super::error::RouteError;
 use super::{RouteAttribute, RouteHeader, RouteLwEnCapType, RouteMessageBuffer, RouteType};
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -47,7 +48,6 @@ impl<'a, T: AsRef<[u8]> + 'a>
         buf: &RouteMessageBuffer<&'a T>,
         (address_family, route_type): (AddressFamily, RouteType),
     ) -> Result<Self, RouteError> {
-        let mut attributes = vec![];
         let mut encap_type = RouteLwEnCapType::None;
         // The RTA_ENCAP_TYPE is provided __after__ RTA_ENCAP, we should find
         // RTA_ENCAP_TYPE first.
@@ -65,12 +65,8 @@ impl<'a, T: AsRef<[u8]> + 'a>
                 }
             }
         }
-        for nla_buf in buf.attributes() {
-            attributes.push(RouteAttribute::parse_with_param(
-                &nla_buf?,
-                (address_family, route_type, encap_type),
-            )?);
-        }
-        Ok(attributes)
+        buf.parse_attributes(NlaParseMode::default(), |b| {
+            RouteAttribute::parse_with_param(b, (address_family, route_type, encap_type))
+        })
     }
 }

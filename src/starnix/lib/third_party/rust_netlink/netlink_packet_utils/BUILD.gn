@@ -16,6 +16,8 @@ rustc_library("netlink_packet_utils") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  test_deps = [ "//third_party/rust_crates:assert_matches" ]
+
   sources = [
     "src/errors.rs",
     "src/lib.rs",

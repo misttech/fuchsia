@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use super::{RuleAttribute, RuleError, RuleHeader, RuleMessageBuffer};
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -34,10 +35,6 @@ impl<'a, T: AsRef<[u8]> + 'a> Parseable<RuleMessageBuffer<&'a T>> for RuleMessag
 impl<'a, T: AsRef<[u8]> + 'a> Parseable<RuleMessageBuffer<&'a T>> for Vec<RuleAttribute> {
     type Error = RuleError;
     fn parse(buf: &RuleMessageBuffer<&'a T>) -> Result<Self, RuleError> {
-        let mut attributes = vec![];
-        for nla_buf in buf.attributes() {
-            attributes.push(RuleAttribute::parse(&nla_buf?)?);
-        }
-        Ok(attributes)
+        buf.parse_attributes(NlaParseMode::default(), RuleAttribute::parse)
     }
 }

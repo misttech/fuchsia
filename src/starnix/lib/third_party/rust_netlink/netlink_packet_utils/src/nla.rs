@@ -21,7 +21,7 @@ pub const NLA_ALIGNTO: usize = 4;
 /// NlA(RTA) header size. (unsigned short rta_len) + (unsigned short rta_type)
 pub const NLA_HEADER_SIZE: usize = 4;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum NlaError {
     #[error("buffer has length {buffer_len}, but an NLA header is {} bytes", TYPE.end)]
     BufferTooSmall { buffer_len: usize },
@@ -87,7 +87,7 @@ impl<T: AsRef<[u8]>> NlaBuffer<T> {
     }
 
     /// Return a reference to the underlying buffer
-    pub fn inner(&mut self) -> &T {
+    pub fn inner(&self) -> &T {
         &self.buffer
     }
 
@@ -325,9 +325,57 @@ impl<'buffer, T: AsRef<[u8]> + ?Sized + 'buffer> Iterator for NlasIterator<&'buf
     }
 }
 
+/// Describes how to handle errors when parsing attributes.
+pub enum NlaParseMode {
+    /// Any attribute parsing errors result in a failure of the entire message
+    /// parsing operation. Corresponds to the `NETLINK_GET_STRICT_CHK` option.
+    Strict,
+    /// Attribute parsing errors do not impact the success of message parsing.
+    /// Attributes that failed to parse are ignored.
+    Relaxed,
+}
+
+impl Default for NlaParseMode {
+    fn default() -> Self {
+        NlaParseMode::Strict
+    }
+}
+
+/// A type that can iterate over and parse Netlink attributes.
+pub trait HasNlas {
+    /// Returns an iterator over the Netlink attribute buffers in `self`, or
+    /// errors where the attribute length is invalid.
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>>;
+
+    /// Parses the Netlink attributes from `self`, using `parse_fn` to parse
+    /// each attribute from an attribute buffer.
+    fn parse_attributes<'a, A, E>(
+        &'a self,
+        mode: NlaParseMode,
+        parse_fn: impl Fn(&NlaBuffer<&'a [u8]>) -> Result<A, E>,
+    ) -> Result<Vec<A>, E>
+    where
+        E: From<NlaError>,
+    {
+        self.attributes()
+            .filter_map(|nla_buf| {
+                match nla_buf.map_err(|e| e.into()).map(|b| parse_fn(&b)).flatten() {
+                    Ok(attr) => Some(Ok(attr)),
+                    Err(e) => match mode {
+                        NlaParseMode::Strict => Some(Err(e)),
+                        NlaParseMode::Relaxed => None,
+                    },
+                }
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use assert_matches::assert_matches;
 
     #[test]
     fn network_byteorder() {
@@ -371,5 +419,125 @@ mod tests {
     #[should_panic]
     fn test_align_overflow() {
         assert_eq!(nla_align!(get_len() - 3), usize::MAX);
+    }
+
+    struct TestHasNlas(Vec<Result<Vec<u8>, NlaError>>);
+
+    impl HasNlas for TestHasNlas {
+        fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
+            let Self(buffers) = self;
+            buffers.iter().map(|res| match res {
+                Ok(bytes) => Ok(NlaBuffer::new_unchecked(bytes.as_slice())),
+                Err(e) => Err(e.clone()),
+            })
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestAttr(Vec<u8>);
+
+    fn parse_test_attr(buf: &NlaBuffer<&[u8]>) -> Result<TestAttr, NlaError> {
+        Ok(TestAttr(buf.inner().to_vec()))
+    }
+
+    #[test]
+    fn parse_attributes_strict_fail_first() {
+        let nlas =
+            TestHasNlas(vec![Err(NlaError::InvalidLength { nla_len: 0 }), Ok(vec![1, 2, 3])]);
+
+        assert_matches!(
+            nlas.parse_attributes(NlaParseMode::Strict, parse_test_attr),
+            Err(NlaError::InvalidLength { .. })
+        );
+    }
+
+    #[test]
+    fn parse_attributes_strict_fail_middle() {
+        let nlas = TestHasNlas(vec![
+            Ok(vec![1, 2, 3]),
+            Err(NlaError::InvalidLength { nla_len: 0 }),
+            Ok(vec![4, 5, 6]),
+        ]);
+
+        assert_matches!(
+            nlas.parse_attributes(NlaParseMode::Strict, parse_test_attr),
+            Err(NlaError::InvalidLength { .. })
+        );
+    }
+
+    #[test]
+    fn parse_attributes_strict_fail_last() {
+        let nlas =
+            TestHasNlas(vec![Ok(vec![1, 2, 3]), Err(NlaError::InvalidLength { nla_len: 0 })]);
+
+        assert_matches!(
+            nlas.parse_attributes(NlaParseMode::Strict, parse_test_attr),
+            Err(NlaError::InvalidLength { .. })
+        );
+    }
+
+    #[test]
+    fn parse_attributes_strict_inner_fn_fails() {
+        let nlas = TestHasNlas(vec![Ok(vec![1, 2, 3]), Ok(vec![]), Ok(vec![4, 5, 6])]);
+
+        let res = nlas.parse_attributes(NlaParseMode::Strict, |buf| {
+            if buf.inner().is_empty() {
+                return Err(NlaError::BufferTooSmall { buffer_len: 0 });
+            }
+            Ok(TestAttr(buf.inner().to_vec()))
+        });
+        assert_matches!(res, Err(NlaError::BufferTooSmall { .. }));
+    }
+
+    #[test]
+    fn parse_attributes_relaxed_fail_first() {
+        let nlas =
+            TestHasNlas(vec![Err(NlaError::InvalidLength { nla_len: 0 }), Ok(vec![1, 2, 3])]);
+
+        assert_eq!(
+            nlas.parse_attributes(NlaParseMode::Relaxed, parse_test_attr).unwrap(),
+            vec![TestAttr(vec![1, 2, 3])]
+        );
+    }
+
+    #[test]
+    fn parse_attributes_relaxed_fail_middle() {
+        let nlas = TestHasNlas(vec![
+            Ok(vec![1, 2, 3]),
+            Err(NlaError::InvalidLength { nla_len: 0 }),
+            Ok(vec![4, 5, 6]),
+        ]);
+
+        assert_eq!(
+            nlas.parse_attributes(NlaParseMode::Relaxed, parse_test_attr).unwrap(),
+            vec![TestAttr(vec![1, 2, 3]), TestAttr(vec![4, 5, 6])]
+        );
+    }
+
+    #[test]
+    fn parse_attributes_relaxed_fail_last() {
+        let nlas =
+            TestHasNlas(vec![Ok(vec![1, 2, 3]), Err(NlaError::InvalidLength { nla_len: 0 })]);
+
+        assert_eq!(
+            nlas.parse_attributes(NlaParseMode::Relaxed, parse_test_attr).unwrap(),
+            vec![TestAttr(vec![1, 2, 3])]
+        );
+    }
+
+    #[test]
+    fn parse_attributes_relaxed_inner_fn_fails() {
+        let nlas = TestHasNlas(vec![Ok(vec![1, 2, 3]), Ok(vec![]), Ok(vec![4, 5, 6])]);
+
+        assert_eq!(
+            nlas.parse_attributes(NlaParseMode::Relaxed, |buf| {
+                if buf.inner().is_empty() {
+                    return Err(NlaError::BufferTooSmall { buffer_len: 0 });
+                }
+                Ok(TestAttr(buf.inner().to_vec()))
+            })
+            .unwrap(),
+            vec![TestAttr(vec![1, 2, 3]), TestAttr(vec![4, 5, 6])]
+        );
     }
 }
