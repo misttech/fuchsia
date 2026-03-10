@@ -11,7 +11,7 @@ mod node_manager;
 mod serve;
 mod shutdown;
 mod start;
-mod types;
+pub mod types;
 
 pub use node::*;
 pub use node_manager::*;

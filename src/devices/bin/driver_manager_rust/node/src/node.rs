@@ -630,6 +630,14 @@ impl Node {
         self.core.borrow_mut().add_child(child);
     }
 
+    pub fn add_child_to_children_for_testing(&self, child: Rc<Node>) {
+        self.add_child_to_children(child);
+    }
+
+    pub fn set_state_for_testing(&self, state: NodeState) {
+        self.set_state(state);
+    }
+
     pub fn driver_host(&self) -> Option<Rc<dyn DriverHost>> {
         self.driver_host.borrow().host()
     }

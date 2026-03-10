@@ -431,6 +431,46 @@ impl DriverRunner {
         fs.dir("svc").add_fidl_service(move |stream: fcrash::CrashIntrospectRequestStream| {
             this.serve_crash_introspect(stream);
         });
+
+        let this = self.clone();
+        fs.dir("svc").add_fidl_service(move |stream: fdt::DebugRequestStream| {
+            this.serve_debug(stream);
+        });
+    }
+
+    pub fn serve_debug(self: &Rc<Self>, mut stream: fdt::DebugRequestStream) {
+        let this = self.clone();
+        self.scope.spawn_local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fdt::DebugRequest::LogStackTrace { node_token, responder } => {
+                        let result = this.log_stack_trace(node_token).await;
+                        let _ = match result {
+                            Ok(()) => responder.send(Ok(())),
+                            Err(status) => responder.send(Err(status.into_raw())),
+                        };
+                    }
+                    fdt::DebugRequest::_UnknownMethod { ordinal, .. } => {
+                        warn!("Unknown Debug request: {}", ordinal);
+                    }
+                }
+            }
+        });
+    }
+
+    async fn log_stack_trace(&self, node_token: zx::Event) -> Result<(), zx::Status> {
+        let token_koid = node_token.basic_info()?.koid;
+        let node = self.find_node_by_token_koid(token_koid).await;
+        if let Some(node) = node {
+            if let Some(host) = node.driver_host() {
+                host.trigger_stack_trace();
+                Ok(())
+            } else {
+                Err(zx::Status::NOT_FOUND)
+            }
+        } else {
+            Err(zx::Status::NOT_FOUND)
+        }
     }
 
     pub fn serve_composite_node_manager(
@@ -855,5 +895,75 @@ impl DriverRunner {
             self.inspect_node_recursive(&child, &mut child_inspect_node, roots, unique_nodes);
             roots.push(child_inspect_node);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{MockDriverHost, MockNodeManager};
+    use futures::channel::mpsc;
+    use std::sync::atomic::Ordering;
+
+    use fidl_fuchsia_driver_index as fdi;
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_log_stack_trace() {
+        let (realm, _) = fidl::endpoints::create_proxy::<fcomponent::RealmMarker>();
+        let (introspector, _) = fidl::endpoints::create_proxy::<fcomponent::IntrospectorMarker>();
+        let (driver_index, _) = fidl::endpoints::create_proxy::<fdi::DriverIndexMarker>();
+        let (capability_store, _) =
+            fidl::endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
+        let (loader_service_factory, _) = mpsc::unbounded();
+
+        let driver_runner = DriverRunner::new(
+            realm,
+            introspector,
+            DictionaryUtil::new(capability_store),
+            driver_index,
+            loader_service_factory,
+            false,
+            OfferInjector::new(crate::offer_injection::PowerOffersConfig {
+                power_inject_offer: false,
+                power_suspend_enabled: false,
+            }),
+            Devfs::new(mpsc::unbounded().0),
+        );
+
+        let node_manager = Box::new(MockNodeManager);
+        let node = Node::new("test_node", Rc::downgrade(&driver_runner.root_node), node_manager);
+        let host = Rc::new(MockDriverHost::new());
+        node.set_host(host.clone());
+
+        // We need the node to have a token and be found by find_node_by_token_koid.
+        // Node::token_koid() returns Some(koid) if it's in DriverComponent state.
+        let token = zx::Event::create();
+        let token_remote = token.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let koid = token.koid().unwrap();
+
+        node.set_state_for_testing(driver_manager_node::types::NodeState::DriverComponent(
+            driver_manager_node::types::DriverComponent::new(
+                "url".to_string(),
+                token_remote,
+                koid,
+                None,
+                None,
+                None,
+                driver_manager_node::types::DriverState::Running,
+            ),
+        ));
+
+        // Add the node to the driver runner's root node as a child.
+        driver_runner.root_node.add_child_to_children_for_testing(node);
+
+        // Call LogStackTrace with the token.
+        let result = driver_runner.log_stack_trace(token).await;
+        assert!(result.is_ok());
+        assert_eq!(host.stack_trace_count.load(Ordering::SeqCst), 1);
+
+        // Call with a random token should return NOT_FOUND.
+        let random_token = zx::Event::create();
+        let result = driver_runner.log_stack_trace(random_token).await;
+        assert_eq!(result, Err(zx::Status::NOT_FOUND));
     }
 }
