@@ -127,13 +127,15 @@ fn cbpf_to_ebpf(
     let mut to_be_patched: HashMap<usize, Vec<usize>> = HashMap::new();
 
     let mut ebpf_code: Vec<EbpfInstruction> = vec![];
-    ebpf_code.reserve(bpf_code.len() * 2 + 2);
+    ebpf_code.reserve(bpf_code.len() * 2 + 3);
 
     // Save the arguments to registers that won't get clobbered by `BPF_LD`.
     ebpf_code.push(EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, REG_CONTEXT, REG_ARG1, 0, 0));
 
     // Reset A to 0. This is necessary in case one of the load operation exits prematurely.
     ebpf_code.push(EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, REG_A, 0, 0, 0));
+    // Reset X to 0. Linux does it and some programs might not validate otherwise.
+    ebpf_code.push(EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, REG_X, 0, 0, 0));
 
     for (i, bpf_instruction) in bpf_code.iter().enumerate() {
         // Update instructions processed previously that jump to the current one.
@@ -490,6 +492,7 @@ mod tests {
             Ok(vec![
                 EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 6, 1, 0, 0),
                 EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 9, 0, 0, 0),
                 EbpfInstruction::new(BPF_JMP | BPF_JA, 0, 0, 0, 0),
                 EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
             ]),
@@ -541,6 +544,7 @@ mod tests {
             Ok(vec![
                 EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 6, 1, 0, 0),
                 EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 9, 0, 0, 0),
                 EbpfInstruction::new(BPF_JMP32 | BPF_JEQ, 0, 0, 1, 0),
                 EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
                 EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
@@ -559,6 +563,7 @@ mod tests {
             Ok(vec![
                 EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 6, 1, 0, 0),
                 EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 9, 0, 0, 0),
                 EbpfInstruction::new(BPF_JMP | BPF_JA, 0, 0, 0, 0),
                 EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_IMM, 0, 0, 0, 1),
                 EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
@@ -579,6 +584,7 @@ mod tests {
             Ok(vec![
                 EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 6, 1, 0, 0),
                 EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, 9, 0, 0, 0),
                 EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 0, 10, -64, 0),
                 EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 9, 10, -4, 0),
                 EbpfInstruction::new(BPF_STX | BPF_MEM | BPF_W, 10, 0, -64, 0),

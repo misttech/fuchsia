@@ -864,7 +864,7 @@ TEST(SeccompTest, BpfSeccompDataOutOfBounds) {
   });
 }
 
-TEST(SeccompTest, BpfUninitX) {
+TEST(SeccompTest, BpfXStartsInitialized) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   helper.ExpectSignal(SIGSYS);
