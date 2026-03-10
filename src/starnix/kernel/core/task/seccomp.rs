@@ -106,7 +106,7 @@ impl SeccompFilter {
             // 32-bit aligned and inside the struct seccomp_data passed in.
             if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST)
                 && (bpf_addressing_mode(insn) == BPF_ABS)
-                && (insn.k & 0x3 != 0 || std::mem::size_of::<seccomp_data>() < insn.k as usize)
+                && (insn.k & 0x3 != 0 || insn.k as usize >= std::mem::size_of::<seccomp_data>())
             {
                 return error!(EINVAL);
             }

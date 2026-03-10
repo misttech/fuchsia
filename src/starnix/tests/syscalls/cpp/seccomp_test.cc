@@ -838,7 +838,7 @@ TEST(SeccompTest, BpfMemUninitialized) {
   });
 }
 
-TEST(SeccompTest, BpfAbsOutOfBounds) {
+TEST(SeccompTest, BpfSeccompDataOutOfBounds) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   helper.RunInForkedProcess([] {
