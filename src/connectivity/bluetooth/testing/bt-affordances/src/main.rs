@@ -41,13 +41,39 @@ async fn handle_peer_request(
                             }
                         }
                     }
+                    PeerControllerRequest::ConnectPeer { id, responder } => {
+                        match worker.connect_peer(id).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("ConnectPeer encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
+                    PeerControllerRequest::DisconnectPeer { id, responder } => {
+                        match worker.disconnect_peer(id).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("DisconnectPeer encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
                     PeerControllerRequest::ForgetPeer { id, responder } => {
                         match worker.forget_peer(id).await {
                             Ok(_) => {
                                 responder.send(Ok(()))?;
                             }
                             Err(err) => {
-                                error!("Forget encountered error: {err}");
+                                error!("ForgetPeer encountered error: {err}");
                                 responder.send(Err(
                                     fidl_fuchsia_bluetooth_affordances::Error::Internal,
                                 ))?;

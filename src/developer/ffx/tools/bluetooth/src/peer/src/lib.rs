@@ -4,12 +4,11 @@
 
 use ::async_trait::async_trait;
 use ::ffx_bluetooth_peer_args::{PeerCommand, PeerSubCommand};
-use ::fho::{AvailabilityFlag, Error, FfxMain, FfxTool, Result};
+use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use ffx_bluetooth_common::PeerIdOrAddr;
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fidl_fuchsia_bluetooth::PeerId as FidlPeerId;
 use fidl_fuchsia_bluetooth_affordances::PeerControllerProxy;
-use fidl_fuchsia_bluetooth_sys::AccessProxy;
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use prettytable::{Row, Table, cell, format, row};
 use std::cmp::Ordering;
@@ -22,8 +21,6 @@ pub struct PeerTool {
     cmd: PeerCommand,
     #[with(toolbox())]
     peer_controller: PeerControllerProxy,
-    #[with(toolbox())]
-    access_proxy: AccessProxy,
 }
 
 fho::embedded_plugin!(PeerTool);
@@ -58,7 +55,7 @@ impl FfxMain for PeerTool {
                     )));
                 };
 
-                connect(&self.access_proxy, peer_id).await?;
+                self.connect_peer(peer_id).await?;
                 writer.line(format!("Successfully connected to peer {peer_id}"))?;
             }
             // ffx bluetooth peer disconnect
@@ -70,7 +67,7 @@ impl FfxMain for PeerTool {
                     )));
                 };
 
-                disconnect(&self.access_proxy, peer_id).await?;
+                self.disconnect_peer(peer_id).await?;
                 writer.line(format!("Successfully disconnected from peer {peer_id}"))?;
             }
             // ffx bluetooth peer forget
@@ -105,6 +102,34 @@ impl PeerTool {
             .iter()
             .map(|peer| Peer::try_from(peer.clone()).expect("Failed to convert between Peer types"))
             .collect())
+    }
+
+    async fn connect_peer(&self, id: PeerId) -> Result<()> {
+        let fidl_peer_id: FidlPeerId = id.into();
+        Ok(self
+            .peer_controller
+            .connect_peer(&fidl_peer_id)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                ))
+            })?)
+    }
+
+    async fn disconnect_peer(&self, id: PeerId) -> Result<()> {
+        let fidl_peer_id: FidlPeerId = id.into();
+        Ok(self
+            .peer_controller
+            .disconnect_peer(&fidl_peer_id)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                ))
+            })?)
     }
 
     async fn forget_peer(&self, id: PeerId) -> Result<()> {
@@ -157,26 +182,6 @@ fn get_peer_list(peers: &Vec<Peer>, filter: &String, full_details: bool) -> Stri
 /// Get the string representation of a peer
 fn get_peer(peers: &Vec<Peer>, peer_id: &PeerId) -> Option<String> {
     peers.iter().find(|peer| peer.id.eq(peer_id)).map(|peer| peer.to_string())
-}
-
-/// Disconnects an active BR/EDR or LE connection by input peer ID.
-pub async fn disconnect(access: &AccessProxy, id: PeerId) -> Result<(), Error> {
-    let fidl_peer_id: FidlPeerId = id.into();
-    let _ = access.disconnect(&fidl_peer_id).await.map_err(|e| {
-        let user_err = anyhow::anyhow!(format!("Disconnect error: {:?}", e));
-        fho::Error::User(user_err)
-    })?;
-    Ok(())
-}
-
-/// Connects over BR/EDR or LE to an input peer ID.
-async fn connect(access: &AccessProxy, id: PeerId) -> Result<(), fho::Error> {
-    let fidl_peer_id: FidlPeerId = id.into();
-    let _ = access.connect(&fidl_peer_id).await.map_err(|e| {
-        let user_err = anyhow::anyhow!(format!("Connect error: {:?}", e));
-        fho::Error::User(user_err)
-    })?;
-    Ok(())
 }
 
 fn match_peer<'a>(pattern: &'a str, peer: &Peer) -> bool {

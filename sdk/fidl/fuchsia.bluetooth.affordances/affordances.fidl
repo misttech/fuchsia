@@ -23,6 +23,22 @@ open protocol PeerController {
         peers vector<sys.Peer>:MAX;
     }) error Error;
 
+    /// Connect to a peer.
+    ///
+    /// + request `id` ID of the peer to connect to.
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible ConnectPeer(struct {
+        id bt.PeerId;
+    }) -> () error Error;
+
+    /// Disconnect all logical links (BR/EDR & LE) to a peer.
+    ///
+    /// + request `id` ID of the peer to disconnect from.
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible DisconnectPeer(struct {
+        id bt.PeerId;
+    }) -> () error Error;
+
     /// Forget a peer and all its bonding information.
     ///
     /// + request `id` ID of the peer to forget.
