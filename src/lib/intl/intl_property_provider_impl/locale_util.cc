@@ -4,6 +4,7 @@
 
 #include "locale_util.h"
 
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <iterator>
@@ -30,13 +31,13 @@ fpromise::result<std::string, zx_status_t> GetHourCycleValue(const icu::Locale& 
   auto pattern_unicode = pattern_generator->getBestPattern("j", error_code);
   std::string pattern;
   pattern_unicode.toUTF8String(pattern);
-  if (pattern.find('h') != std::string::npos) {
+  if (cpp23::contains(pattern, 'h')) {
     return fpromise::ok("h12");
-  } else if (pattern.find('H') != std::string::npos) {
+  } else if (cpp23::contains(pattern, 'H')) {
     return fpromise::ok("h23");
-  } else if (pattern.find('k') != std::string::npos) {
+  } else if (cpp23::contains(pattern, 'k')) {
     return fpromise::ok("h24");
-  } else if (pattern.find('K') != std::string::npos) {
+  } else if (cpp23::contains(pattern, 'K')) {
     return fpromise::ok("h11");
   } else {
     FX_LOGS(WARNING) << "Failed to get hour cycle for pattern: \"" << pattern << "\"";

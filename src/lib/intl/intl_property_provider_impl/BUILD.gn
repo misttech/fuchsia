@@ -106,6 +106,7 @@ icu_source_set("locale_util") {
   icu_deps = [ ":icu_headers" ]
 
   deps = [
+    "//sdk/lib/stdcompat",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fostr/fidl/fuchsia.intl",
     "//src/lib/fxl",
