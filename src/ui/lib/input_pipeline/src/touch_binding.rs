@@ -14,13 +14,12 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use zx;
 
 use fidl::HandleBased;
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use maplit::hashmap;
 use metrics_registry::*;
 use std::collections::{HashMap, HashSet};
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_pointerinjector as pointerinjector,
-};
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///
@@ -725,6 +724,11 @@ fn process_single_touch_screen_report(
 ) -> (Option<InputReport>, Option<InputEvent>) {
     fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
+    // Extract the wake_lease early to prevent it from leaking. If this is moved
+    // below an early return, the lease could accidentally be stored inside
+    // `previous_report`, which would prevent the system from suspending.
+    let wake_lease = report.wake_lease.take();
+
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
     let touch_report: &fidl_fuchsia_input_report::TouchInputReport = match &report.touch {
         Some(touch) => touch,
@@ -808,7 +812,7 @@ fn process_single_touch_screen_report(
         current_buttons,
         device_descriptor,
         trace_id,
-        report.wake_lease.take(),
+        wake_lease,
     );
 
     (Some(report), Some(event))

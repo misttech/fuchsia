@@ -289,6 +289,11 @@ impl ConsumerControlsBinding {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
 
+        // Extract the wake_lease early to prevent it from leaking. If this is moved
+        // below an early return, the lease could accidentally be stored inside
+        // `previous_report`, which would prevent the system from suspending.
+        let wake_lease = report.wake_lease.take();
+
         inspect_status.count_received_report(&report);
         // Input devices can have multiple types so ensure `report` is a ConsumerControlInputReport.
         let pressed_buttons: Vec<ConsumerControlButton> = match report.consumer_control {
@@ -303,7 +308,6 @@ impl ConsumerControlsBinding {
             }
         };
 
-        let wake_lease = report.wake_lease.take();
         let trace_id = fuchsia_trace::Id::random();
         fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 

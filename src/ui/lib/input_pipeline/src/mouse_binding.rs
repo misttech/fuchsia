@@ -8,6 +8,7 @@ use crate::{metrics, mouse_model_database};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl::HandleBased;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
@@ -15,7 +16,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use std::collections::HashSet;
-use {fidl_fuchsia_input_report as fidl_input_report, zx};
+use zx;
 
 pub type MouseButton = u8;
 
@@ -479,6 +480,11 @@ impl MouseBinding {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
 
+        // Extract the wake_lease early to prevent it from leaking. If this is moved
+        // below an early return, the lease could accidentally be stored inside
+        // `previous_report`, which would prevent the system from suspending.
+        let wake_lease = report.wake_lease.take();
+
         inspect_status.count_received_report(&report);
         // Input devices can have multiple types so ensure `report` is a MouseInputReport.
         let mouse_report: &fidl_input_report::MouseInputReport = match &report.mouse {
@@ -492,7 +498,6 @@ impl MouseBinding {
         let previous_buttons: HashSet<MouseButton> =
             buttons_from_optional_report(&previous_report.as_ref());
         let current_buttons: HashSet<MouseButton> = buttons_from_report(&report);
-        let wake_lease = report.wake_lease.take();
 
         // Send a Down event with:
         // * affected_buttons: the buttons that were pressed since the previous report,

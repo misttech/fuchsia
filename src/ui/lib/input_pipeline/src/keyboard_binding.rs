@@ -465,6 +465,12 @@ impl KeyboardBinding {
         let tracing_id = fuchsia_trace::Id::random();
         fuchsia_trace::flow_begin!("input", "key_event_thread", tracing_id);
 
+        // Extract the wake_lease early to prevent it from leaking. If this is moved
+        // below an early return, the lease could accidentally be stored inside
+        // `previous_report`, which would prevent the system from suspending.
+        // Keyboard events cannot handle wake leases, so we drop them here.
+        drop(report.wake_lease.take());
+
         inspect_status.count_received_report(&report);
         // Input devices can have multiple types so ensure `report` is a KeyboardInputReport.
         match &report.keyboard {
@@ -474,9 +480,6 @@ impl KeyboardBinding {
             }
             _ => (),
         };
-
-        // Keyboard events cannot handle wake leases, so we drop them here.
-        drop(report.wake_lease.take());
 
         let new_keys = match KeyboardBinding::parse_pressed_keys(&report) {
             Some(keys) => keys,
