@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::bedrock::request_metadata::Metadata;
+use crate::capability_source::CapabilitySource;
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
@@ -278,8 +279,7 @@ impl DictExt for Dict {
 
                                 // Replace the entry in current_dict.
                                 current_dict.remove(current_name).unwrap();
-                                current_dict
-                                    .insert(current_name.into(), new_router.into())?;
+                                current_dict.insert(current_name.into(), new_router.into())?;
 
                                 return Ok(());
                             }
@@ -466,6 +466,27 @@ impl DictExt for Dict {
                                 return Ok(Some(GenericRouterResponse::Debug(d)));
                             }
                         }
+                    }
+                    _other if debug => {
+                        // This is a debug route, and we've found a non-router capability. We must
+                        // return debug information for the debug route, and the only reason there
+                        // would be a non-router capability in a dictionary would be if a user
+                        // created one, so we can safely report that this was a remotely created
+                        // capability.
+                        let remoted_at_moniker = match moniker {
+                            ExtendedMoniker::ComponentInstance(m) => m.clone(),
+                            // Component manager always generates routers, so we should never find
+                            // a non-router capability at the point where this moniker would be for
+                            // component manager.
+                            ExtendedMoniker::ComponentManager => {
+                                panic!("component manager generated a non-router capability")
+                            }
+                        };
+                        return Ok(Some(GenericRouterResponse::Debug(
+                            CapabilitySource::RemotedAt(remoted_at_moniker)
+                                .try_into()
+                                .expect("failed to serialize capability source"),
+                        )));
                     }
                     other => other,
                 };
