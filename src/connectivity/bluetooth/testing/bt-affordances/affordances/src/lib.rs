@@ -746,10 +746,10 @@ impl Proxies {
         if !removed.is_empty() {
             peer_cache.retain(|peer| !removed.contains(&peer.id.unwrap()));
         }
-        updated.iter().for_each(|updated_peer| {
-            let _ = peer_cache.extract_if(.., |peer| peer.id.unwrap() == updated_peer.id.unwrap());
-        });
-        peer_cache.extend(updated);
+        for updated_peer in updated {
+            peer_cache.retain(|peer| peer.id.unwrap() != updated_peer.id.unwrap());
+            peer_cache.push(updated_peer);
+        }
     }
 
     async fn refresh_peer_cache(
@@ -1250,5 +1250,50 @@ impl Proxies {
         }));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_update_peer_cache_handles_duplicates_in_input() {
+        let peer_cache = Arc::new(Mutex::new(Vec::new()));
+
+        let mut peer1 = Peer::default();
+        peer1.id = Some(PeerId { value: 1 });
+        peer1.name = Some("Peer 1".to_string());
+
+        let mut peer2 = Peer::default();
+        peer2.id = Some(PeerId { value: 1 });
+        peer2.name = Some("Peer 2".to_string());
+
+        // List of updated peers includes two entries with the same ID.
+        Proxies::update_peer_cache(peer_cache.clone(), vec![peer1, peer2.clone()], vec![]);
+
+        let cache = peer_cache.lock();
+
+        // The cache should only keep the final entry.
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache[0].name.as_deref(), Some("Peer 2"));
+    }
+
+    #[fuchsia::test]
+    fn test_update_peer_cache_replaces_existing_entry() {
+        let mut peer = Peer::default();
+        peer.id = Some(PeerId { value: 1 });
+        peer.name = Some("Peer".to_string());
+        let peer_cache = Arc::new(Mutex::new(vec![peer.clone()]));
+
+        // Update the peer currently inside the cache with a new name.
+        peer.name = Some("Updated peer".to_string());
+        Proxies::update_peer_cache(peer_cache.clone(), vec![peer], vec![]);
+
+        let cache = peer_cache.lock();
+
+        // The cache should only have one entry with the updated name.
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache[0].name.as_deref(), Some("Updated peer"));
     }
 }
