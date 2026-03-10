@@ -15,13 +15,16 @@ import argparse
 import dataclasses
 import datetime
 import json
+import logging
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Dict, Iterable, Iterator, Optional, Sequence
 
 import trace_tools
 
 _SCRIPT_BASENAME = Path(__file__).name
+
+_LOGGER = logging.getLogger(_SCRIPT_BASENAME)
 
 
 @dataclasses.dataclass
@@ -136,65 +139,117 @@ class VmstatEntry:
         yield event("cpu.kvm_guest", "percent", self.cpu.kvm_guest)
 
 
-def _parse_data_row(line: str, max_fields: int) -> VmstatEntry:
-    d = line.split(maxsplit=max_fields)
-    timestamp_text = " ".join(d[18:])
+def _parse_data_row(
+    line: str, field_map: Dict[str, int]
+) -> Optional[VmstatEntry]:
+    if not line:
+        return None
+
+    columns = line.split()
+
+    def get_int(name: str, default: int = 0) -> int:
+        idx = field_map.get(name)
+        if idx is not None and idx < len(columns):
+            val = columns[idx]
+            try:
+                return int(val)
+            except ValueError:
+                _LOGGER.error(
+                    f"Failed to parse integer for field '{name}' from value '{val}' in line: {line}"
+                )
+                return default
+        return default
+
+    # Timestamp handling.
+    # vmstat -t output usually appends the timestamp at the end.
+    # The header has "UTC" or "timestamp" as the last field name.
+    # In the data row, this might span multiple words (Date and Time).
+    ts_idx = field_map.get("UTC") or field_map.get("timestamp")
+    if ts_idx is not None and ts_idx < len(columns):
+        timestamp_text = " ".join(columns[ts_idx:])
+        try:
+            timestamp = datetime.datetime.strptime(
+                timestamp_text, "%Y-%m-%d %H:%M:%S"
+            )
+        except ValueError:
+            _LOGGER.error(
+                f"Failed to parse timestamp '{timestamp_text}' in line: {line}"
+            )
+            # Maybe different format or missing?
+            timestamp = datetime.datetime.min
+    else:
+        timestamp = datetime.datetime.min
+
     return VmstatEntry(
         processes=ProcessCounts(
-            running=int(d[0]),  # "r"
-            blocked=int(d[1]),  # "b"
+            running=get_int("r"),
+            blocked=get_int("b"),
         ),
         memory=MemoryUsage(
-            swap=int(d[2]),  # "swpd"
-            free=int(d[3]),  # "free"
-            buffers=int(d[4]),  # "buff"
-            cache=int(d[5]),  # "cache"
+            swap=get_int("swpd"),
+            free=get_int("free"),
+            buffers=get_int("buff"),
+            cache=get_int("cache"),
         ),
         swap=SwapRates(
-            bytes_in_per_second=int(d[6]),  # "si"
-            bytes_out_per_second=int(d[7]),  # "so"
+            bytes_in_per_second=get_int("si"),
+            bytes_out_per_second=get_int("so"),
         ),
         block_io=BlockIORates(
-            received_per_second=int(d[8]),  # "bi"
-            sent_per_second=int(d[9]),  # "bo"
+            received_per_second=get_int("bi"),
+            sent_per_second=get_int("bo"),
         ),
         system=SystemEventRates(
-            interrupts_per_second=int(d[10]),  # "in"
-            context_switches_per_second=int(d[11]),  # "cs"
+            interrupts_per_second=get_int("in"),
+            context_switches_per_second=get_int("cs"),
         ),
         cpu=CPUUsage(
-            user=int(d[12]),  # "us"
-            system=int(d[13]),  # "sy"
-            idle=int(d[14]),  # "id"
-            wait_io=int(d[15]),  # "wa"
-            stolen=int(d[16]),  # "st"
-            kvm_guest=int(d[17]),  # "gu"
+            user=get_int("us"),
+            system=get_int("sy"),
+            idle=get_int("id"),
+            wait_io=get_int("wa"),
+            stolen=get_int("st"),
+            kvm_guest=get_int("gu"),
         ),
-        timestamp=datetime.datetime.strptime(
-            timestamp_text, "%Y-%m-%d %H:%M:%S"
-        ),  # "UTC"
+        timestamp=timestamp,
     )
 
 
 def _parse_vmstat_output(lines: Iterable[str]) -> Iterator[VmstatEntry]:
-    num_fields = 18
+    # Expect that vmstat always prints a header row before any rows of
+    # data.  Reuse the field_map until the next header row, because
+    # vmstat only prints a header row periodically.
+    field_map: Optional[Dict[str, int]] = None
     for line in lines:
         stripped_line = line.strip()
         if not stripped_line:
             continue
         if stripped_line.startswith("#"):  # comment
             continue
-        if stripped_line.startswith("procs"):  # header categories
+
+        fields = stripped_line.split()
+        if not fields:
             continue
-        if stripped_line.startswith(
-            "r  b"
-        ):  # header fields, starting with running/blocked processes
+
+        if fields[0] in ("procs", "--procs--"):  # header categories
+            continue
+
+        if fields[:2] == ["r", "b"]:
+            # header fields, starting with running/blocked processes
             # treat consecutive whitespace as single separator
-            fields = stripped_line.split()
-            num_fields = len(fields)
+            field_map = {name: i for i, name in enumerate(fields)}
             continue
-        # else is a line of trace data
-        yield _parse_data_row(stripped_line, num_fields)
+
+        # In case there was some text appearing before the first header row,
+        # ignore until we establish a row header.
+        if field_map is None:
+            _LOGGER.warning(f"Skipping line before header was found: {line}")
+            continue
+
+        # else is a line of trace data, and we have a field map established.
+        entry = _parse_data_row(stripped_line, field_map)
+        if entry:
+            yield entry
 
 
 def print_chrome_trace_json(
@@ -222,6 +277,11 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Metadata in the form: KEY1:VALUE1,KEY2:VALUE2,...",
     )
     parser.add_argument(
+        "--parser-log",
+        type=Path,
+        help="Path to a file where parser errors will be logged.",
+    )
+    parser.add_argument(
         # positional argument
         "input",
         type=Path,
@@ -235,6 +295,15 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 
 def main(argv: Sequence[str]) -> int:
     args = _MAIN_ARG_PARSER.parse_args(argv)
+
+    if args.parser_log:
+        logging.basicConfig(
+            filename=args.parser_log,
+            filemode="w",
+            format="%(asctime)s %(levelname)s: %(message)s",
+            level=logging.INFO,
+        )
+
     if args.input == Path("-"):
         vmstat_lines = sys.stdin  # is Iterable[str]
     else:

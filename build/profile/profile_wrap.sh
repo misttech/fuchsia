@@ -47,7 +47,8 @@ readonly ifconfig_base="$(basename "$ifconfig_loop")"
 
 # extract script options first
 # vmstat: always include the timestamp (-t), expected by vmstat_trace.py.
-vmstat_args=(-t)
+# -w (wide) is used to avoid column breakage and ensure consistent fields.
+vmstat_args=(-t -w)
 ifconfig_args=()
 interval=1  # seconds
 prev_opt=
@@ -148,13 +149,14 @@ trace_preamble_args=()
 
 if [[ -n "$vmstat_logfile" ]]
 then
-  rm -f "$vmstat_logfile" "$vmstat_logfile.json"
+  readonly vmstat_parser_logfile="${vmstat_logfile}.err"
+  rm -f "$vmstat_logfile" "$vmstat_logfile.json" "$vmstat_parser_logfile"
   touch "$vmstat_logfile"
 
   # Launch vmstat in the background, along with any output scanners.
   "$vmstat" "${vmstat_args[@]}" "$interval" | \
     tee "$vmstat_logfile" | \
-    "$vmstat_trace_tool" "${trace_preamble_args[@]}" - \
+    "$vmstat_trace_tool" "${trace_preamble_args[@]}" --parser-log "$vmstat_parser_logfile" - \
     > "$vmstat_logfile.json" &
 
   # Terminating the 'vmstat' process should cascade to the other downstream
