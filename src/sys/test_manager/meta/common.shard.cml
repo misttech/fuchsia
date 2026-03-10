@@ -49,6 +49,10 @@
             url: "gtest-runner#meta/gtest-runner.cm",
         },
         {
+            name: "gtest_create_raw_processes_runner",
+            url: "gtest-create-raw-processes-runner#meta/gtest-create-raw-processes-runner.cm",
+        },
+        {
             name: "gunit_runner",
             url: "gunit-runner#meta/gunit-runner.cm",
         },
@@ -239,6 +243,7 @@
                 "#elf_test_runner",
                 "#fuzz_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_runner",
@@ -328,6 +333,7 @@
                 "#fuzz_starnix_test_runner",
                 "#fuzz_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#netemul_test_runner",
@@ -349,6 +355,7 @@
                 "#fuzz_starnix_test_runner",
                 "#fuzz_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",
@@ -406,6 +413,7 @@
             from: "self",
             as: "data",
             to: [
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",

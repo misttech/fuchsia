@@ -72,6 +72,10 @@
                     from: "#gtest_runner",
                 },
                 {
+                    runner: "gtest_create_raw_processes_runner",
+                    from: "#gtest_create_raw_processes_runner",
+                },
+                {
                     runner: "gunit_runner",
                     from: "#gunit_runner",
                 },

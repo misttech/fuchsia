@@ -28,6 +28,10 @@
             url: "fuchsia-pkg://fuchsia.com/gtest-runner#meta/gtest-runner.cm",
         },
         {
+            name: "gtest_create_raw_processes_runner",
+            url: "fuchsia-pkg://fuchsia.com/gtest-create-raw-processes-runner#meta/gtest-create-raw-processes-runner.cm",
+        },
+        {
             name: "zxtest_runner",
             url: "fuchsia-pkg://fuchsia.com/zxtest-runner#meta/zxtest-runner.cm",
         },
@@ -62,6 +66,7 @@
                 "#elf_test_create_raw_processes_runner",
                 "#elf_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",
@@ -79,6 +84,7 @@
                 "#elf_test_create_raw_processes_runner",
                 "#elf_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",
@@ -95,6 +101,7 @@
                 // Give Introspector to test runners that need it to support the component:start trace category.
                 "#elf_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_runner",
@@ -110,6 +117,7 @@
                 "#elf_test_create_raw_processes_runner",
                 "#elf_test_runner",
                 "#go_test_runner",
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",
@@ -123,6 +131,7 @@
             from: "self",
             as: "data",
             to: [
+                "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
                 "#rust_test_create_raw_processes_runner",

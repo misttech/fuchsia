@@ -207,6 +207,7 @@ size_checker_input = {
         "fuzz-test-runner",
         "go-test-runner",
         "gtest-runner",
+        "gtest-create-raw-processes-runner",
         "gunit-runner",
         "inspect-test-runner",
         "legacy-test-runner",

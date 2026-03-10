@@ -102,6 +102,13 @@ fuchsia_component("gtest-runner-component") {
   deps = [ ":gtest_bin" ]
 }
 
+fuchsia_component("gtest-create-raw-processes-runner-component") {
+  testonly = true
+  manifest = "meta/gtest_create_raw_processes_runner.cml"
+  component_name = "gtest-create-raw-processes-runner"
+  deps = [ ":gtest_bin" ]
+}
+
 fuchsia_component("zxtest-runner-component") {
   testonly = true
   manifest = "meta/zxtest_runner.cml"
@@ -118,6 +125,17 @@ fuchsia_package("gtest-runner") {
     "//src/sys/test_manager:*",
   ]
   deps = [ ":gtest-runner-component" ]
+}
+
+fuchsia_package("gtest-create-raw-processes-runner") {
+  testonly = true
+  visibility = [
+    ":*",
+    "//bundles/assembly/*",
+    "//sdk/ctf/*",
+    "//src/sys/test_manager:*",
+  ]
+  deps = [ ":gtest-create-raw-processes-runner-component" ]
 }
 
 fuchsia_package("zxtest-runner") {
