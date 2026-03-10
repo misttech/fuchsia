@@ -365,6 +365,10 @@ void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   completer.ReplySuccess(std::move(*client_end));
 }
 
+void BtHciBroadcom::GetCrashParameters(GetCrashParametersCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void BtHciBroadcom::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
                                           fidl::UnknownMethodCompleter::Sync& completer) {
   FDF_LOG(ERROR, "Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");

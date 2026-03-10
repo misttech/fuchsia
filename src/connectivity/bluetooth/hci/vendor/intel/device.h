@@ -44,6 +44,7 @@ class Device : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardware_
   void OpenHci(OpenHciCompleter::Sync &completer) override;
   void OpenHciTransport(OpenHciTransportCompleter::Sync &completer) override;
   void OpenSnoop(OpenSnoopCompleter::Sync &completer) override;
+  void GetCrashParameters(GetCrashParametersCompleter::Sync &completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor> metadata,
       fidl::UnknownMethodCompleter::Sync &completer) override;

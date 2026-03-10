@@ -1445,6 +1445,15 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.hardware.bluetooth/Vendor.GetCrashParameters",
+        "strictness": "flexible",
+        "ordinal": "798931632629458279",
+        "direction": "two_way",
+        "response": "fuchsia.hardware.bluetooth/VendorCrashParameters",
+        "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.hardware.bluetooth/Vendor.GetFeatures",
         "strictness": "flexible",
         "ordinal": "1165992594604149009",
@@ -1526,6 +1535,28 @@
         "kind": "union",
         "name": "fuchsia.hardware.bluetooth/VendorCommand",
         "strictness": "flexible"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.crash_signature",
+        "ordinal": "3",
+        "type": "string:128"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.program_name",
+        "ordinal": "2",
+        "type": "string:1024"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.vendor_subevent_code",
+        "ordinal": "1",
+        "type": "uint8"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters"
     },
     {
         "kind": "table/member",

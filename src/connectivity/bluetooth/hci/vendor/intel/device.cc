@@ -246,6 +246,10 @@ void Device::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   completer.ReplySuccess(std::move(*client_end));
 }
 
+void Device::GetCrashParameters(GetCrashParametersCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void Device::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
                                    fidl::UnknownMethodCompleter::Sync& completer) {
   errorf("Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
