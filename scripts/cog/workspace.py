@@ -427,18 +427,82 @@ class Workspace:
             else None
         )
 
+    def get_fuchsia_repo_commit_hash(self) -> str:
+        """Determines the fuchsia repo commit hash from CitC."""
+        fuchsia_repo_states = (
+            self._run(
+                ["git", "citc", "api.get-repo-states", "fuchsia"],
+                cwd=self.workspace_dir / self.repo_name,
+                capture_output=True,
+            )
+            .strip()
+            .split("\n")
+        )
+        for state in fuchsia_repo_states:
+            parts = state.split(":", 1)
+            if len(parts) == 2:
+                key = parts[0].strip().strip("'\"")
+                if key == "base_commit_hash":
+                    return parts[1].strip().strip("'\"")
+
+        logger.log_error("Failed to get fuchsia repo commit hash.")
+        raise RepoSetupError("Failed to get fuchsia repo commit hash.")
+
+    def is_up_to_date(self, current_fuchsia_commit_hash: str) -> bool:
+        """Checks if the workspace is up-to-date with the fuchsia commit hash."""
+        if not self.cartfs_directory:
+            return False
+
+        fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
+        if not fuchsia_hash_file.exists():
+            return False
+
+        try:
+            former_fuchsia_hash = fuchsia_hash_file.read_text().strip()
+            return former_fuchsia_hash == current_fuchsia_commit_hash
+        except Exception:
+            return False
+
     def initialize_cartfs_directory(self) -> None:
         """Initializes the cartfs directory for this workspace."""
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
         self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
+
+        logger.log_info("Getting fuchsia repo commit hash...")
+        current_fuchsia_hash = self.get_fuchsia_repo_commit_hash()
+        logger.log_info(
+            f"Current fuchsia repo commit hash: {current_fuchsia_hash}"
+        )
+
+        if self.is_up_to_date(current_fuchsia_hash):
+            logger.log_info(
+                "Workspace is already up-to-date. Skipping clone/fetch steps."
+            )
+        else:
+            self._sync_fuchsia_repo(current_fuchsia_hash)
+
+        self._create_symlinks()
+
+    def _sync_fuchsia_repo(self, current_fuchsia_hash: str) -> None:
+        """Synchronizes the fuchsia repository and prebuilts.
+
+        This involves bootstrapping jiri, creating the integration repository,
+        fetching prebuilts, and saving the fuchsia hash.
+        """
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
-        integration_hash = self._create_integration_repository()
+        integration_hash = self._create_integration_repository(
+            current_fuchsia_hash
+        )
         self._fetch_prebuilts(integration_hash)
-        self._create_symlinks()
+
+        # Save the fuchsia hash so we can short-circuit next time
+        if self.cartfs_directory:
+            fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
+            fuchsia_hash_file.write_text(current_fuchsia_hash)
 
     def _create_symlink(self, target: Path, link_name: Path) -> None:
         """Creates a symlink from link_name to target.
@@ -555,7 +619,9 @@ class Workspace:
         # Record integration repo commit hash in the fuchsia repo.
         integration_hash_file.write_text(current_integration_hash)
 
-    def _create_integration_repository(self) -> str:
+    def _create_integration_repository(
+        self, fuchsia_repo_commit_hash: str
+    ) -> str:
         """Creates the integration repository."""
         logger.log_info("Setup the integration repository.")
         logger.emit_status("Creating integration repo...")
@@ -579,27 +645,6 @@ class Workspace:
                 ],
                 cwd=self.cartfs_directory,
             )
-
-        # Determine the fuchsia repo commit hash.
-        fuchsia_repo_states = (
-            self._run(
-                ["git", "citc", "api.get-repo-states", "fuchsia"],
-                cwd=self.workspace_dir / self.repo_name,
-                capture_output=True,
-            )
-            .strip()
-            .split("\n")
-        )
-        fuchsia_repo_commit_hash = None
-        for state in fuchsia_repo_states:
-            if "base_commit_hash" in state:
-                fuchsia_repo_commit_hash = (
-                    state.split(":")[1].strip().replace('"', "")
-                )
-                break
-        if not fuchsia_repo_commit_hash:
-            logger.log_error("Failed to get fuchsia repo commit hash.")
-            raise RepoSetupError("Failed to get fuchsia repo commit hash.")
 
         logger.log_info(f"fuchsia_repo_commit_hash: {fuchsia_repo_commit_hash}")
 

@@ -746,6 +746,60 @@ class TestWorkspace(unittest.TestCase):
             result = ws._find_previous_instance()
             self.assertIsNone(result)
 
+    def test_initialize_cartfs_directory_up_to_date(self) -> None:
+        """Test that initialization skips sync when up-to-date but still creates symlinks."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+
+            with (
+                patch.object(
+                    ws, "get_fuchsia_repo_commit_hash", return_value="hash123"
+                ),
+                patch.object(ws, "is_up_to_date", return_value=True),
+                patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
+                patch.object(ws, "_create_symlinks") as mock_symlinks,
+            ):
+                ws.initialize_cartfs_directory()
+
+                mock_sync.assert_not_called()
+                mock_symlinks.assert_called_once()
+
+    def test_initialize_cartfs_directory_not_up_to_date(self) -> None:
+        """Test that initialization performs sync when not up-to-date."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+
+            with (
+                patch.object(
+                    ws, "get_fuchsia_repo_commit_hash", return_value="hash123"
+                ),
+                patch.object(ws, "is_up_to_date", return_value=False),
+                patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
+                patch.object(ws, "_create_symlinks") as mock_symlinks,
+            ):
+                ws.initialize_cartfs_directory()
+
+                mock_sync.assert_called_once_with("hash123")
+                mock_symlinks.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
