@@ -24,6 +24,10 @@ zx::result<fuchsia_hardware_platform_device::wire::Mmio> FakePDev::GetMmioById(
     mmio_info->vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
     builder.vmo(std::move(dup));
   } else {
+    // If the user has provided an `fdf::MmioBuffer` directly, we provide its
+    // raw address in `offset`; the driver may access the `fdf::MmioBuffer`
+    // by using the `fdf::PDev::GetMmio()` helper or explicitly calling
+    // `fdf::internal::PDevMakeMmioBufferWeak()`.
     auto& mmio_buffer = std::get<fdf::MmioBuffer>(mmio->second);
     builder.offset(reinterpret_cast<size_t>(&mmio_buffer));
   }

@@ -51,6 +51,10 @@ class FakePDev final : public fidl::WireServer<fuchsia_hardware_platform_device:
     bool use_fake_irq = false;
 
     // Key is the index of the mmio.
+    //
+    // Drivers must use the `fdf::PDev::GetMmio()` helper or explicitly call
+    // `fdf::internal::PDevMakeMmioBufferWeak()` to construct the
+    // `fdf::MmioBuffer`.
     std::map<uint32_t, Mmio> mmios;
 
     // Maps the name of an mmio to the index of the mmio. The key is the name of the mmio and the
