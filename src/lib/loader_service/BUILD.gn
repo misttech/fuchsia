@@ -23,6 +23,7 @@ source_set("loader_service") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
+    "//sdk/lib/stdcompat",
     "//sdk/lib/syslog/cpp",
     "//src/lib/files",
   ]

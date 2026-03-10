@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/io.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
 
@@ -102,7 +103,7 @@ void LoaderConnection::Config(ConfigRequestView request, ConfigCompleter::Sync& 
   };
 
   // Config strings must not contain path separators.
-  if (config_str.find('/') != std::string::npos) {
+  if (cpp23::contains(config_str, '/')) {
     reply(ZX_ERR_INVALID_ARGS);
     return;
   }
