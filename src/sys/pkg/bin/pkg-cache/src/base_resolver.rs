@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {
-    fidl_fuchsia_component_decl as fcomponent_decl,
-    fidl_fuchsia_component_resolution as fcomponent_resolution, fidl_fuchsia_pkg as fpkg,
-};
+use fidl_fuchsia_component_decl as fcomponent_decl;
+use fidl_fuchsia_component_resolution as fcomponent_resolution;
+use fidl_fuchsia_pkg as fpkg;
 
 pub mod component;
-pub mod context_authenticator;
 pub mod package;
 
 #[derive(thiserror::Error, Debug)]

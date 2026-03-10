@@ -3,26 +3,24 @@
 // found in the LICENSE file.
 
 use super::ResolverError;
-use super::context_authenticator::ContextAuthenticator;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_component_decl as fcomponent_decl;
+use fidl_fuchsia_component_resolution as fcomponent_resolution;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use version_history::AbiRevision;
-use {
-    fidl_fuchsia_component_decl as fcomponent_decl,
-    fidl_fuchsia_component_resolution as fcomponent_resolution, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg as fpkg,
-};
 
 pub(crate) async fn serve_request_stream(
     mut stream: fcomponent_resolution::ResolverRequestStream,
     base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: Option<Arc<UpgradablePackages>>,
@@ -97,7 +95,7 @@ pub(crate) async fn serve_request_stream(
 async fn resolve(
     url: &str,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -125,7 +123,7 @@ async fn resolve_with_context(
     url: &str,
     context: fcomponent_resolution::Context,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -217,7 +215,7 @@ mod tests {
             resolve(
                 "relative#meta/missing",
                 &HashMap::new(),
-                ContextAuthenticator::new(),
+                context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 package_directory::ExecutionScope::new(),
                 &None,

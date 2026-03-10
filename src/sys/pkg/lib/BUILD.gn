@@ -9,6 +9,7 @@ group("lib") {
     "blobfs",
     "bounded-node",
     "channel-config",
+    "context-authenticator",
     "eager-package-config",
     "epoch",
     "event-queue",
@@ -83,7 +84,7 @@ group("tests") {
 if (is_fuchsia) {
   group("hermetic_tests") {
     testonly = true
-    public_deps = []
+    public_deps = [ "context-authenticator:tests" ]
   }
 
   group("non_hermetic_tests") {

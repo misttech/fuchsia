@@ -3,23 +3,23 @@
 // found in the LICENSE file.
 
 use super::ResolverError;
-use super::context_authenticator::ContextAuthenticator;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::error;
 use std::collections::HashMap;
 use std::sync::Arc;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg};
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
 pub(crate) async fn serve_request_stream(
     mut stream: fpkg::PackageResolverRequestStream,
     base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: Option<Arc<UpgradablePackages>>,
@@ -103,7 +103,7 @@ async fn resolve_with_context(
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -126,7 +126,7 @@ pub(super) async fn resolve_with_context_impl(
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -157,7 +157,7 @@ async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -178,7 +178,7 @@ pub(super) async fn resolve_impl(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -262,7 +262,7 @@ async fn resolve_subpackage(
     package_url: &fuchsia_url::RelativePackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    authenticator: ContextAuthenticator,
+    authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, ResolverError> {
@@ -302,7 +302,7 @@ mod tests {
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                     [0; 32].into()
                 )]),
-                ContextAuthenticator::new(),
+                context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 vfs::execution_scope::ExecutionScope::new(),
                 &None,
@@ -328,7 +328,7 @@ mod tests {
                 "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                 *pkg.hash(),
             )]),
-            ContextAuthenticator::new(),
+            context_authenticator::ContextAuthenticator::new(),
             &open_packages,
             vfs::execution_scope::ExecutionScope::new(),
             &None,
@@ -357,7 +357,7 @@ mod tests {
                 "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                 *pkg.hash(),
             )]),
-            ContextAuthenticator::new(),
+            context_authenticator::ContextAuthenticator::new(),
             &open_packages,
             vfs::execution_scope::ExecutionScope::new(),
             &None,
@@ -381,7 +381,7 @@ mod tests {
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                     [0u8; 32].into()
                 )]),
-                ContextAuthenticator::new(),
+                context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 vfs::execution_scope::ExecutionScope::new(),
                 &None,

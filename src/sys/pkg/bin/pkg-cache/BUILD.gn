@@ -51,6 +51,7 @@ rustc_binary("bin") {
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/lib/mem_util",
     "//src/sys/pkg/lib/blobfs",
+    "//src/sys/pkg/lib/context-authenticator",
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
@@ -59,11 +60,8 @@ rustc_binary("bin") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:hmac",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:sha2",
     "//third_party/rust_crates:thiserror",
   ]
 
@@ -85,7 +83,6 @@ rustc_binary("bin") {
     "src/base_packages.rs",
     "src/base_resolver.rs",
     "src/base_resolver/component.rs",
-    "src/base_resolver/context_authenticator.rs",
     "src/base_resolver/package.rs",
     "src/cache_service.rs",
     "src/cache_service/missing_blobs.rs",

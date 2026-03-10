@@ -10,15 +10,19 @@
 use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
 use anyhow::{Context as _, Error, anyhow, format_err};
+use cobalt_sw_delivery_registry as metrics;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ConnectedProtocol;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
 use fidl_fuchsia_update::CommitStatusProviderMarker;
+use fuchsia_async as fasync;
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_inspect as finspect;
 use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::join;
 use futures::prelude::*;
@@ -28,10 +32,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::remote::remote_dir;
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    fuchsia_inspect as finspect,
-};
 
 mod base_packages;
 mod base_resolver;
@@ -132,7 +132,7 @@ async fn main_inner() -> Result<(), Error> {
         .await
         .context("error opening blobfs")?;
 
-    let authenticator = base_resolver::context_authenticator::ContextAuthenticator::new();
+    let authenticator = context_authenticator::ContextAuthenticator::new();
 
     let (executability_restrictions, base_packages, cache_packages) = if use_system_image {
         let system_image = system_image::SystemImage::new(blobfs.clone(), &system_image_hash)

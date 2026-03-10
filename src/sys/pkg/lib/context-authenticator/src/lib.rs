@@ -8,7 +8,7 @@ use hmac::Mac as _;
 /// Creates and authenticates `fidl_fuchsia_pkg::ResolutionContext`s using an HMAC.
 /// The contexts contain the hash of the superpackage.
 #[derive(Clone, Debug)]
-pub(crate) struct ContextAuthenticator {
+pub struct ContextAuthenticator {
     hmac: hmac::Hmac<sha2::Sha256>,
 }
 
@@ -19,7 +19,7 @@ const TAG_LEN: usize = 32;
 
 impl ContextAuthenticator {
     /// Create a ContextAuthenticator initialized with a random secret key.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let mut secret = [0; SECRET_LEN];
         let () = rand::fill(&mut secret[..]);
         Self::from_secret(secret)
@@ -31,7 +31,7 @@ impl ContextAuthenticator {
 
     /// Create a `fidl_fuchsia_pkg::ResolutionContext`, tagged by this `ContextAuthenticator`'s
     /// secret key, capable of being authenticated by `self.authenticate(context)`.
-    pub(crate) fn create(mut self, hash: &fuchsia_hash::Hash) -> fpkg::ResolutionContext {
+    pub fn create(mut self, hash: &fuchsia_hash::Hash) -> fpkg::ResolutionContext {
         let () = self.hmac.update(hash.as_bytes());
         let mut bytes = self.hmac.finalize().into_bytes().to_vec();
         bytes.extend_from_slice(hash.as_bytes());
@@ -40,7 +40,7 @@ impl ContextAuthenticator {
 
     /// Authenticate a `fidl_fuchsia_pkg::ResolutionContext` and return the wrapped
     /// `fuchsia_hash::Hash`.
-    pub(crate) fn authenticate(
+    pub fn authenticate(
         mut self,
         context: fpkg::ResolutionContext,
     ) -> Result<fuchsia_hash::Hash, ContextAuthenticatorError> {
@@ -60,8 +60,14 @@ impl ContextAuthenticator {
     }
 }
 
+impl Default for ContextAuthenticator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
-pub(crate) enum ContextAuthenticatorError {
+pub enum ContextAuthenticatorError {
     #[error("expected context length {} found {}", TAG_LEN + fuchsia_hash::HASH_SIZE, .0)]
     InvalidLength(usize),
 
