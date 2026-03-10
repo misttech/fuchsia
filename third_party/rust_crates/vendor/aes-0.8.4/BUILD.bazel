@@ -78,19 +78,19 @@ rust_library(
         "//third_party/rust_crates/vendor/cipher-0.4.4:cipher",
     ] + select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/vendor/cpufeatures-0.2.1:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
+            "//third_party/rust_crates/vendor/cpufeatures-0.2.17:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
         ],
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/cpufeatures-0.2.1:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
+            "//third_party/rust_crates/vendor/cpufeatures-0.2.17:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
         ],
         "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/vendor/cpufeatures-0.2.1:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
+            "//third_party/rust_crates/vendor/cpufeatures-0.2.17:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/cpufeatures-0.2.1:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
+            "//third_party/rust_crates/vendor/cpufeatures-0.2.17:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/cpufeatures-0.2.1:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
+            "//third_party/rust_crates/vendor/cpufeatures-0.2.17:cpufeatures",  # cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "x86"))
         ],
         "//conditions:default": [],
     }),

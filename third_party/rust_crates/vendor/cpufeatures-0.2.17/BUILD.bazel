@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "cpufeatures",
     package_url = "https://github.com/RustCrypto/utils",
-    package_version = "0.2.1",
+    package_version = "0.2.17",
 )
 
 license(
@@ -72,10 +72,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.1",
+    version = "0.2.17",
     deps = select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/vendor/libc-0.2.182:libc",  # aarch64-apple-darwin
+            "//third_party/rust_crates/vendor/libc-0.2.182:libc",  # cfg(all(target_arch = "aarch64", target_vendor = "apple"))
         ],
         "//conditions:default": [],
     }),
