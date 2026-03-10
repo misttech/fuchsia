@@ -33,9 +33,6 @@ pub enum ParseError {
     #[error("invalid name")]
     InvalidName(#[source] PackagePathSegmentError),
 
-    #[error("URL path must start with '/'")]
-    PathMustHaveLeadingSlash,
-
     #[error("missing name")]
     MissingName,
 

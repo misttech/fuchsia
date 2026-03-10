@@ -6,7 +6,6 @@ use crate::common::{ConfigurationBuilder, ConfigurationContext};
 use anyhow::Context;
 use assembly_config_schema::BuildType;
 use assembly_constants::FileEntry;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl::{Pinned, Unpinned};
 use handlebars::Handlebars;
@@ -64,13 +63,8 @@ pub fn render_bootfs_cml_template(
     eager_startup: bool,
     template_contents: &str,
 ) -> anyhow::Result<String> {
-    // Gather the data to render the cml template.
-    let url = BootUrl::parse(product_component_url)
-        .with_context(|| format!("Parsing bootfs component_url: {product_component_url}"))?;
-
     let data = BTreeMap::from([
         ("COMPONENT_URL", product_component_url),
-        ("PACKAGE_PATH", url.path()),
         ("STARTUP", if eager_startup { "eager" } else { "lazy" }),
     ]);
 
@@ -168,7 +162,6 @@ mod tests {
                     "directory": "config-data",
                     "from": "parent",
                     "to": "#something",
-                    "subdir": "{{PACKAGE_PATH}}",
                 },
             ],
         });
@@ -196,7 +189,6 @@ mod tests {
                         "directory": "config-data",
                         "from": "parent",
                         "to": "#something",
-                        "subdir": "/my-package/path",
                     },
                 ],
             })
@@ -225,7 +217,6 @@ mod tests {
                         "directory": "config-data",
                         "from": "parent",
                         "to": "#something",
-                        "subdir": "/my-package/path",
                     },
                 ],
             })

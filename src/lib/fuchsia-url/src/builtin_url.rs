@@ -40,7 +40,7 @@ impl BuiltinUrl {
             return Err(ParseError::CannotContainHash);
         }
 
-        if path.as_ref() != "/" {
+        if path.is_some() {
             return Err(ParseError::PathMustBeRoot);
         }
 

@@ -70,7 +70,7 @@ pub enum Scheme {
 struct UrlParts {
     scheme: Option<Scheme>,
     host: Option<Host>,
-    path: Path,
+    path: Option<Path>,
     hash: Option<Hash>,
     resource: Option<Resource>,
 }
@@ -115,8 +115,55 @@ impl UrlParts {
             .map(|s| Host::parse(s.to_string()))
             .transpose()?;
 
-        let path = String::from(if url.path().is_empty() { "/" } else { url.path() });
-        let path = Path::try_from(path)?;
+        // When parsing URLs, there are three kinds of scheme that affect the parsed host and path:
+        //   * File: file
+        //   * SpecialNotFile: http, https, ws, wss, ftp
+        //   * NotSpecial: <anything else>
+        // https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/rust_crates/vendor/url-2.3.1/src/parser.rs;l=152-168;drc=5d413711388939e4a532a0ab8bfb331e6044ee02
+        //
+        // | input         | host | path   | cannot-be-a-base | stringified   |
+        // |---------------+------+--------+------------------+---------------|
+        // | file:text     |      | /text  | false            | file:///text  |
+        // | file:/text    |      | /text  | false            | file:///text  |
+        // | file://text   | text | /      | false            | file://text/  |
+        // | file://text/  | text | /      | false            | file://text/  |
+        // | file://text// | text | /      | false            | file://text/  |
+        // | file:///text  |      | /text  | false            | file:///text  |
+        // | file:///text/ |      | /text/ | false            | file:///text/ |
+        // |               |      |        |                  |               |
+        // | http:text     | text | /      | false            | http://text/  |
+        // | http:/text    | text | /      | false            | http://text/  |
+        // | http://text   | text | /      | false            | http://text/  |
+        // | http://text/  | text | /      | false            | http://text/  |
+        // | http://text// | text | //     | false            | http://text// |
+        // | http:///text  | text | /      | false            | http://text/  |
+        // | http:///text/ | text | /      | false            | http://text/  |
+        // |               |      |        |                  |               |
+        // | else:text     |      | text   | true             | else:text     |
+        // | else:/text    |      | /text  | false            | else:/text    |
+        // | else://text   | text |        | false            | else://text   |
+        // | else://text/  | text | /      | false            | else://text/  |
+        // | else://text// | text | //     | false            | else://text// |
+        // | else:///text  |      | /text  | false            | else:///text  |
+        // | else:///text/ |      | /text/ | false            | else:///text/ |
+        //
+        // Fuchsia uses URLs to encode:
+        //   * scheme: which resolver should CM use
+        //   * host: which package store should the resolver use
+        //   * path: which package from the package store
+        //   * hash: exactly specify the package instead of using the store's path -> hash mapping
+        //   * resource: which file in the package
+        //
+        // Because the path is used to identify a package (some named thing in a collection) and
+        // we have control over how the things are allowed to be named, we simplify the situation
+        // by ignoring the leading slash (i.e. if the path is just a slash we treat the path as
+        // absent and if the path starts with a slash we trim the slash) and requiring that packages
+        // do not start with a slash.
+        let path = if url.path().is_empty() || url.path() == "/" {
+            None
+        } else {
+            Some(url.path().strip_prefix("/").unwrap_or_else(|| url.path()).parse()?)
+        };
 
         let hash = parse_query_pairs(url.query_pairs())?;
 
@@ -172,11 +219,10 @@ fn parse_query_pairs(pairs: url::form_urlencoded::Parse<'_>) -> Result<Option<Ha
     Ok(query_hash)
 }
 
-// Validates that `path` is "/name[/variant]" and returns the name and optional variant if so.
+// Validates that `path` is "name[/variant]" and returns the name and optional variant if so.
 fn parse_path_to_name_and_variant(
     path: &str,
 ) -> Result<(PackageName, Option<PackageVariant>), ParseError> {
-    let path = path.strip_prefix('/').ok_or(ParseError::PathMustHaveLeadingSlash)?;
     if path.is_empty() {
         return Err(ParseError::MissingName);
     }
@@ -295,28 +341,28 @@ mod test_parse_path_to_name_and_variant {
     }
 
     test_err! {
-        err_no_leading_slash => {
-            path = "just-name",
-            err = ParseError::PathMustHaveLeadingSlash,
-        }
         err_no_name => {
             path = "/",
-            err = ParseError::MissingName,
+            err = ParseError::InvalidName(_),
+        }
+        err_leading_slash => {
+            path = "/name",
+            err = ParseError::InvalidName(_),
         }
         err_empty_variant => {
-            path = "/name/",
+            path = "name/",
             err = ParseError::InvalidVariant(_),
         }
         err_trailing_slash => {
-            path = "/name/variant/",
+            path = "name/variant/",
             err = ParseError::ExtraPathSegments,
         }
         err_extra_segment => {
-            path = "/name/variant/extra",
+            path = "name/variant/extra",
             err = ParseError::ExtraPathSegments,
         }
         err_invalid_segment => {
-            path = "/name/#",
+            path = "name/#",
             err = ParseError::InvalidVariant(_),
         }
     }
@@ -325,11 +371,11 @@ mod test_parse_path_to_name_and_variant {
     fn success() {
         assert_eq!(
             ("name".parse().unwrap(), None),
-            parse_path_to_name_and_variant("/name").unwrap()
+            parse_path_to_name_and_variant("name").unwrap()
         );
         assert_eq!(
             ("name".parse().unwrap(), Some("variant".parse().unwrap())),
-            parse_path_to_name_and_variant("/name/variant").unwrap()
+            parse_path_to_name_and_variant("name/variant").unwrap()
         );
     }
 }
@@ -467,7 +513,7 @@ mod test_url_parts {
                         UrlParts {
                             scheme: $scheme,
                             host: $host,
-                            path: $path.parse().unwrap(),
+                            path: $path.map(|s| s.parse::<Path>().unwrap()),
                             hash: $hash,
                             resource: $resource,
                         }
@@ -482,7 +528,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = None,
         }
@@ -490,7 +536,7 @@ mod test_url_parts {
             url =  "fuchsia-boot://",
             scheme = Some(Scheme::FuchsiaBoot),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = None,
         }
@@ -498,7 +544,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://example.org",
             scheme = Some(Scheme::FuchsiaPkg),
             host = Some(Host::parse("example.org".into()).unwrap()),
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = None,
         }
@@ -506,7 +552,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg:///name",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/name",
+            path = Some("name"),
             hash = None,
             resource = None,
         }
@@ -514,7 +560,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg:///name/variant/other",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/name/variant/other",
+            path = Some("name/variant/other"),
             hash = None,
             resource = None,
         }
@@ -522,7 +568,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://?hash=0000000000000000000000000000000000000000000000000000000000000000",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),
@@ -532,7 +578,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://#resource",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = Some("resource".parse().unwrap()),
         }
@@ -540,7 +586,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://#resource/again/third",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = Some("resource/again/third".parse().unwrap()),
         }
@@ -548,7 +594,7 @@ mod test_url_parts {
             url =  "fuchsia-pkg://#reso%09urce",
             scheme = Some(Scheme::FuchsiaPkg),
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = Some("reso\turce".parse().unwrap()),
         }
@@ -558,7 +604,7 @@ mod test_url_parts {
             #resource",
             scheme = Some(Scheme::FuchsiaPkg),
             host = Some(Host::parse("example.org".into()).unwrap()),
-            path = "/name",
+            path = Some("name"),
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),
@@ -568,7 +614,7 @@ mod test_url_parts {
             url =  "name",
             scheme = None,
             host = None,
-            path = "/name",
+            path = Some("name"),
             hash = None,
             resource = None,
         }
@@ -576,7 +622,7 @@ mod test_url_parts {
             url =  "/name",
             scheme = None,
             host = None,
-            path = "/name",
+            path = Some("name"),
             hash = None,
             resource = None,
         }
@@ -584,7 +630,7 @@ mod test_url_parts {
             url =  "name/variant/other",
             scheme = None,
             host = None,
-            path = "/name/variant/other",
+            path = Some("name/variant/other"),
             hash = None,
             resource = None,
         }
@@ -592,7 +638,7 @@ mod test_url_parts {
             url =  "/name/variant/other",
             scheme = None,
             host = None,
-            path = "/name/variant/other",
+            path = Some("name/variant/other"),
             hash = None,
             resource = None,
         }
@@ -600,7 +646,7 @@ mod test_url_parts {
             url =  "?hash=0000000000000000000000000000000000000000000000000000000000000000",
             scheme = None,
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),
@@ -610,7 +656,7 @@ mod test_url_parts {
             url =  "#resource",
             scheme = None,
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = Some("resource".parse().unwrap()),
         }
@@ -618,7 +664,7 @@ mod test_url_parts {
             url =  "#resource/again/third",
             scheme = None,
             host = None,
-            path = "/",
+            path = Option::<&str>::None,
             hash = None,
             resource = Some("resource/again/third".parse().unwrap()),
         }
@@ -628,7 +674,7 @@ mod test_url_parts {
             #resource",
             scheme = None,
             host = None,
-            path = "/name",
+            path = Some("name"),
             hash = Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()
             ),

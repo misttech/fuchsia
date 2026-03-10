@@ -5,12 +5,13 @@
 use crate::update::{BuildInfo, SystemInfo, paver};
 use anyhow::{Context as _, anyhow};
 use epoch::EpochFile;
+use fidl_fuchsia_mem as fmem;
 use fidl_fuchsia_paver::{Asset, BootManagerProxy, DataSinkProxy};
+use fuchsia_inspect as inspect;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use update_package::{SystemVersion, UpdatePackage};
-use {fidl_fuchsia_mem as fmem, fuchsia_inspect as inspect};
 
 /// The version of the OS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -222,7 +223,7 @@ async fn get_system_image_hash_from_update_package(
     let packages = update_package.packages().await?;
     let system_image = packages
         .into_iter()
-        .find(|url| url.path() == "/system_image/0")
+        .find(|url| url.path() == "system_image/0")
         .ok_or_else(|| anyhow!("system image not found"))?;
     Ok(system_image.hash().to_string())
 }

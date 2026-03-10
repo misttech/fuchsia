@@ -56,11 +56,11 @@ impl FuchsiaPkgUnpinnedAbsolutePackageUrl {
         self.variant.as_ref()
     }
 
-    /// The path ("/name[/variant]").
+    /// The path ("name[/variant]").
     pub fn path(&self) -> String {
         match &self.variant {
-            Some(variant) => format!("/{}/{}", self.name, variant),
-            None => format!("/{}", self.name),
+            Some(variant) => format!("{}/{}", self.name, variant),
+            None => self.name.to_string(),
         }
     }
 
@@ -139,10 +139,9 @@ mod tests {
     #[test]
     fn new_with_path_err() {
         for (path, err) in [
-            ("", ParseError::PathMustHaveLeadingSlash),
-            ("/", ParseError::MissingName),
-            ("//", ParseError::InvalidName(PackagePathSegmentError::Empty)),
-            ("/name/variant/other", ParseError::ExtraPathSegments),
+            ("", ParseError::MissingName),
+            ("/", ParseError::InvalidName(PackagePathSegmentError::Empty)),
+            ("name/variant/other", ParseError::ExtraPathSegments),
         ] {
             assert_matches!(
                 FuchsiaPkgUnpinnedAbsolutePackageUrl::new_with_path(
@@ -158,14 +157,14 @@ mod tests {
     #[test]
     fn new_with_path_ok() {
         let repo = "fuchsia-pkg://example.org".parse::<RepositoryUrl>().unwrap();
-        let url = FuchsiaPkgUnpinnedAbsolutePackageUrl::new_with_path(repo.clone(), "/name".into())
+        let url = FuchsiaPkgUnpinnedAbsolutePackageUrl::new_with_path(repo.clone(), "name".into())
             .unwrap();
         assert_eq!(url.name().as_ref(), "name");
         assert_eq!(url.variant(), None);
 
         let url = FuchsiaPkgUnpinnedAbsolutePackageUrl::new_with_path(
             repo.clone(),
-            "/name/variant".into(),
+            "name/variant".into(),
         )
         .unwrap();
         assert_eq!(url.name().as_ref(), "name");
@@ -217,13 +216,13 @@ mod tests {
     #[test]
     fn parse_ok() {
         for (url, host, name, variant, path) in [
-            ("fuchsia-pkg://example.org/name", "example.org", "name", None, "/name"),
+            ("fuchsia-pkg://example.org/name", "example.org", "name", None, "name"),
             (
                 "fuchsia-pkg://example.org/name/variant",
                 "example.org",
                 "name",
                 Some("variant"),
-                "/name/variant",
+                "name/variant",
             ),
         ] {
             let json_url = format!("\"{url}\"");

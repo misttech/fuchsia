@@ -12,7 +12,7 @@ pub const SCHEME: &str = "fuchsia-boot";
 /// fuchsia-boot:///path/to#path/to/resource
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BootUrl {
-    path: crate::Path,
+    path: Option<crate::Path>,
     resource: Option<crate::Resource>,
 }
 
@@ -39,8 +39,8 @@ impl BootUrl {
         Ok(Self { path, resource })
     }
 
-    pub fn path(&self) -> &crate::Path {
-        &self.path
+    pub fn path(&self) -> Option<&crate::Path> {
+        self.path.as_ref()
     }
 
     pub fn resource(&self) -> Option<&crate::Resource> {
@@ -51,13 +51,8 @@ impl BootUrl {
         BootUrl { path: self.path.clone(), resource: None }
     }
 
-    pub fn new_path(path: String) -> Result<Self, ParseError> {
-        let path = crate::Path::try_from(path)?;
-        Ok(Self { path, resource: None })
-    }
-
-    pub fn new_resource(path: String, resource: String) -> Result<BootUrl, ParseError> {
-        let path = crate::Path::try_from(path)?;
+    pub fn new_resource(path: Option<&str>, resource: String) -> Result<BootUrl, ParseError> {
+        let path = path.map(|p| p.parse()).transpose()?;
         let resource =
             crate::Resource::try_from(resource).map_err(ParseError::InvalidResourcePath)?;
         Ok(Self { path, resource: Some(resource) })
@@ -67,15 +62,17 @@ impl BootUrl {
 impl TryFrom<&FuchsiaPkgAbsoluteComponentUrl> for BootUrl {
     type Error = ParseError;
     fn try_from(component_url: &FuchsiaPkgAbsoluteComponentUrl) -> Result<Self, ParseError> {
-        let path = format!("/{}", component_url.package_url().name());
         let resource = component_url.resource().to_string();
-        Self::new_resource(path, resource)
+        Self::new_resource(Some(component_url.package_url().name().as_ref()), resource)
     }
 }
 
 impl std::fmt::Display for BootUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}://{}", SCHEME, self.path)?;
+        write!(f, "{SCHEME}:///")?;
+        if let Some(path) = &self.path {
+            let () = path.fmt(f)?;
+        }
         if let Some(ref resource) = self.resource {
             write!(f, "#{}", resource.percent_encode())?;
         }
@@ -89,7 +86,7 @@ mod tests {
     use crate::FuchsiaPkgAbsoluteComponentUrl;
     use crate::errors::PackagePathSegmentError;
     use crate::resource::ResourcePathError;
-    use std::str::FromStr;
+    use std::str::FromStr as _;
 
     macro_rules! test_parse_ok {
         (
@@ -108,7 +105,7 @@ mod tests {
                     assert_eq!(
                         BootUrl::parse(&pkg_url),
                         Ok(BootUrl {
-                            path: $pkg_path.parse().unwrap(),
+                            path: $pkg_path.map(|s| s.parse::<crate::Path>().unwrap()),
                             resource: $pkg_resource.map(|r| crate::Resource::from_str(r).unwrap()),
                         })
                     );
@@ -164,62 +161,62 @@ mod tests {
     test_parse_ok! {
         test_parse_absolute_path => {
             url = "fuchsia-boot:///package",
-            path = "/package",
+            path = Some("package"),
             resource = None::<&str>,
         }
         test_parse_multiple_path_segments => {
             url = "fuchsia-boot:///package/foo",
-            path = "/package/foo",
+            path = Some("package/foo"),
             resource = None::<&str>,
         }
         test_parse_more_path_segments => {
             url = "fuchsia-boot:///package/foo/bar/baz",
-            path = "/package/foo/bar/baz",
+            path = Some("package/foo/bar/baz"),
             resource = None::<&str>,
         }
         test_parse_root => {
             url = "fuchsia-boot:///",
-            path = "/",
+            path = Option::<&str>::None,
             resource = None::<&str>,
         }
         test_parse_empty_root => {
             url = "fuchsia-boot://",
-            path = "/",
+            path = Option::<&str>::None,
             resource = None::<&str>,
         }
         test_parse_resource => {
             url = "fuchsia-boot:///package#resource",
-            path = "/package",
+            path = Some("package"),
             resource = Some("resource"),
         }
         test_parse_resource_with_path_segments => {
             url = "fuchsia-boot:///package/foo#resource",
-            path = "/package/foo",
+            path = Some("package/foo"),
             resource = Some("resource"),
         }
         test_parse_empty_resource => {
             url = "fuchsia-boot:///package#",
-            path = "/package",
+            path = Some("package"),
             resource = None::<&str>,
         }
         test_parse_root_empty_resource => {
             url = "fuchsia-boot:///#",
-            path = "/",
+            path = Option::<&str>::None,
             resource = None::<&str>,
         }
         test_parse_root_resource => {
             url = "fuchsia-boot:///#resource",
-            path = "/",
+            path = Option::<&str>::None,
             resource = Some("resource"),
         }
         test_parse_empty_root_empty_resource => {
             url = "fuchsia-boot://#",
-            path = "/",
+            path = Option::<&str>::None,
             resource = None::<&str>,
         }
         test_parse_empty_root_present_resource => {
             url = "fuchsia-boot://#meta/root.cm",
-            path = "/",
+            path = Option::<&str>::None,
             resource = Some("meta/root.cm"),
         }
         test_parse_large_path_segments => {
@@ -229,7 +226,7 @@ mod tests {
                 "b".repeat(255),
                 "c".repeat(255),
             ),
-            path = format!("/{}/{}/{}", "a".repeat(255), "b".repeat(255), "c".repeat(255)),
+            path = Some(&format!("{}/{}/{}", "a".repeat(255), "b".repeat(255), "c".repeat(255))),
             resource = None::<&str>,
         }
     }
@@ -343,29 +340,20 @@ mod tests {
     }
 
     test_format! {
-        test_format_path_url => {
-            parsed = BootUrl::new_path("/path/to".to_string()).unwrap(),
-            formatted = "fuchsia-boot:///path/to",
-        }
         test_format_resource_url => {
-            parsed = BootUrl::new_resource("/path/to".to_string(), "path/to/resource".to_string()).unwrap(),
+            parsed = BootUrl::new_resource(Some("path/to"), "path/to/resource".into()).unwrap(),
             formatted = "fuchsia-boot:///path/to#path/to/resource",
         }
-    }
-
-    #[test]
-    fn test_new_path() {
-        let url = BootUrl::new_path("/path/to".to_string()).unwrap();
-        assert_eq!("/path/to", url.path().as_ref());
-        assert_eq!(None, url.resource());
-        assert_eq!(url, url.root_url());
-        assert_eq!("fuchsia-boot:///path/to", format!("{}", url.root_url()));
+        test_format_pathless_resource_url => {
+            parsed = BootUrl::new_resource(None, "path/to/resource".into()).unwrap(),
+            formatted = "fuchsia-boot:///#path/to/resource",
+        }
     }
 
     #[test]
     fn test_new_resource() {
-        let url = BootUrl::new_resource("/path/to".to_string(), "foo/bar".to_string()).unwrap();
-        assert_eq!("/path/to", url.path().as_ref());
+        let url = BootUrl::new_resource("path/to".into(), "foo/bar".into()).unwrap();
+        assert_eq!("path/to", url.path().unwrap().as_ref());
         assert_eq!(Some("foo/bar"), url.resource().as_ref().map(|r| r.as_ref()));
         let mut url_no_resource = url.clone();
         url_no_resource.resource = None;
@@ -387,7 +375,7 @@ mod tests {
         assert_eq!(
             boot_url,
             BootUrl {
-                path: "/package_name".parse().unwrap(),
+                path: Some("package_name".parse().unwrap()),
                 resource: Some("path/to/resource.txt".parse().unwrap())
             }
         );

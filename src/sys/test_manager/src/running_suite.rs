@@ -19,8 +19,16 @@ use crate::{diagnostics, facet, resolver};
 use anyhow::{Context, Error, anyhow, format_err};
 use cm_rust::push_box;
 use fidl::endpoints::{ClientEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_resolution::ResolverProxy;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::PackageResolverProxy;
+use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_test as ftest;
+use fidl_fuchsia_test_manager as ftest_manager;
+use fidl_fuchsia_tracing_provider as ftracing_provider;
 use ftest::Invocation;
 use ftest_manager::{CaseStatus, LaunchError, SuiteStatus};
 use fuchsia_async::{self as fasync, TimeoutExt};
@@ -42,12 +50,6 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use thiserror::Error;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fidl_fuchsia_test as ftest, fidl_fuchsia_test_manager as ftest_manager,
-    fidl_fuchsia_tracing_provider as ftracing_provider,
-};
 
 const DEBUG_DATA_REALM_NAME: &'static str = "debug-data";
 const ARCHIVIST_REALM_NAME: &'static str = "archivist";
@@ -98,7 +100,9 @@ impl RunningSuite {
         let test_package = match AbsoluteComponentUrl::parse(test_url) {
             Ok(component_url) => component_url.package_url().name().to_string(),
             Err(_) => match fuchsia_url::boot_url::BootUrl::parse(test_url) {
-                Ok(boot_url) => boot_url.path().to_string(),
+                Ok(boot_url) => {
+                    boot_url.path().ok_or(LaunchTestError::InvalidResolverData)?.to_string()
+                }
                 Err(_) => {
                     return Err(LaunchTestError::InvalidResolverData);
                 }

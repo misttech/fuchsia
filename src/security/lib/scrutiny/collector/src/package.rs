@@ -290,7 +290,7 @@ impl PackageDataCollector {
         file_data: &Vec<u8>,
     ) -> Result<()> {
         info!(file_name:%; "Extracting bootfs manifest");
-        let url = BootUrl::new_resource("/".to_string(), file_name.to_string())?;
+        let url = BootUrl::new_resource(None, file_name.to_string())?;
         let url = Url::parse(&url.to_string())
             .with_context(|| format!("Failed to convert boot URL to standard URL: {}", url))?;
         let component_url = cm_types::Url::new(&url.to_string())
@@ -335,7 +335,7 @@ impl PackageDataCollector {
                     match cm {
                         ComponentManifest::Version2(bytes) => {
                             let url =
-                                BootUrl::new_resource(format!("/{name}"), path_str.to_string())?;
+                                BootUrl::new_resource(Some(name.as_ref()), path_str.to_string())?;
                             let url = Url::parse(&url.to_string()).with_context(|| {
                                 format!("Failed to convert boot URL to standard URL: {}", url)
                             })?;

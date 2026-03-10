@@ -30,6 +30,9 @@ impl RelativePackageUrl {
         if resource.is_some() {
             return Err(ParseError::CannotContainResource);
         }
+        let Some(path) = path else {
+            return Err(ParseError::MissingName);
+        };
         let (name, variant) = crate::parse_path_to_name_and_variant(path.as_ref())?;
         if variant.is_some() {
             return Err(ParseError::RelativePathCannotSpecifyVariant);

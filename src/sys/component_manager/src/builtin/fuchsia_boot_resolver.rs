@@ -7,6 +7,10 @@ use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use directed_graph::DirectedGraph;
 use fidl::endpoints::{ClientEnd, Proxy};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::boot_url::BootUrl;
 use futures::TryStreamExt;
 use routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
@@ -15,10 +19,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use system_image::{Bootfs, PathHashMapping};
 use version_history::AbiRevision;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg,
-};
 
 pub const SCHEME: &str = "fuchsia-boot";
 
@@ -101,27 +101,23 @@ impl FuchsiaBootResolver {
         // abi revision
         let abi_revision = version_history_data::HISTORY.get_abi_revision_for_platform_components();
 
-        self.construct_component(path_proxy, boot_url, Some(abi_revision)).await
+        self.construct_component(path_proxy, &boot_url, Some(abi_revision)).await
     }
 
     async fn resolve_packaged_component(
         &self,
-        boot_url: BootUrl,
+        boot_url: &BootUrl,
+        path: &fuchsia_url::Path,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        // Package path is 'canonicalized' to ensure that it is relative, since absolute paths will
-        // be (inconsistently) rejected by fuchsia.io methods.
-        let canonicalized_package_path = fuchsia_fs::canonicalize_path(boot_url.path());
         match &self.boot_package_resolver {
             Some(boot_package_resolver) => {
                 let (proxy, server) = fidl::endpoints::create_proxy();
                 let () = boot_package_resolver
                     .resolve_name(
-                        fuchsia_url::PackageName::from_str(canonicalized_package_path).map_err(
-                            |e| {
-                                log::warn!(boot_url:?, source:? = e; "invalid url");
-                                fresolution::ResolverError::InvalidArgs
-                            },
-                        )?,
+                        fuchsia_url::PackageName::from_str(path).map_err(|e| {
+                            log::warn!(boot_url:?, source:? = e; "invalid url");
+                            fresolution::ResolverError::InvalidArgs
+                        })?,
                         server,
                     )
                     .await
@@ -139,7 +135,7 @@ impl FuchsiaBootResolver {
             _ => {
                 log::warn!(
                     "Encountered a packaged bootfs component, but bootfs has no package index: {:?}",
-                    canonicalized_package_path
+                    path
                 );
                 return Err(fresolution::ResolverError::PackageNotFound);
             }
@@ -149,7 +145,7 @@ impl FuchsiaBootResolver {
     async fn construct_component(
         &self,
         proxy: fio::DirectoryProxy,
-        boot_url: BootUrl,
+        boot_url: &BootUrl,
         abi_revision: Option<AbiRevision>,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         let manifest = boot_url.resource().ok_or(fresolution::ResolverError::InvalidArgs)?;
@@ -209,16 +205,12 @@ impl FuchsiaBootResolver {
         // Parse URL.
         let url =
             BootUrl::parse(component_url).map_err(|_| fresolution::ResolverError::InvalidArgs)?;
-        // Package path is 'canonicalized' to ensure that it is relative, since absolute paths will
-        // be (inconsistently) rejected by fuchsia.io methods.
-        let canonicalized_path = fuchsia_fs::canonicalize_path(url.path());
-
-        match canonicalized_path {
-            "." => {
+        match url.path() {
+            None => {
                 return self.resolve_unpackaged_component(url).await;
             }
-            _ => {
-                return self.resolve_packaged_component(url).await;
+            Some(path) => {
+                return self.resolve_packaged_component(&url, path).await;
             }
         }
     }
@@ -320,8 +312,14 @@ impl FuchsiaBootPackageResolver {
             log::warn!(url:?; "package urls must not have a resource");
             return Err(fpkg::ResolveError::InvalidUrl);
         }
+        let path = if let Some(path) = url.path() {
+            path
+        } else {
+            log::warn!(url:?; "bootfs package urls without a path");
+            return Err(fpkg::ResolveError::InvalidUrl);
+        };
         self.resolve_name(
-            fuchsia_url::PackageName::from_str(fuchsia_fs::canonicalize_path(url.path())).map_err(
+            fuchsia_url::PackageName::from_str(path).map_err(
                 |e| {
                     log::warn!(url:?, source:?=e; "bootfs package urls must have a single segment name");
                     fpkg::ResolveError::InvalidUrl
@@ -479,6 +477,8 @@ mod tests {
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
     use fidl::endpoints::create_proxy;
     use fidl::persist;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
     use fuchsia_async::Task;
     use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
@@ -488,7 +488,6 @@ mod tests {
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
     use vfs::{ToObjectRequest, pseudo_directory};
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata};
 
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {
         let fs_scope = ExecutionScope::new();

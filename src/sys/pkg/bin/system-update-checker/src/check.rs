@@ -6,15 +6,16 @@ use crate::DEFAULT_UPDATE_PACKAGE_URL;
 use crate::errors::{self, Error};
 use crate::update_manager::TargetChannelUpdater;
 use anyhow::{Context as _, anyhow};
+use fidl_fuchsia_mem as fmem;
 use fidl_fuchsia_paver::{
     self as fpaver, Asset, BootManagerMarker, DataSinkMarker, PaverMarker, PaverProxy,
 };
 use fidl_fuchsia_pkg::{self as fpkg, PackageResolverMarker, PackageResolverProxyInterface};
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_hash::Hash;
 use log::{error, info, warn};
 use std::io;
-use {fidl_fuchsia_mem as fmem, fidl_fuchsia_pkg_garbagecollector as fpkg_gc};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum SystemUpdateStatus {
@@ -205,7 +206,7 @@ async fn latest_system_image_merkle(
         update_package.packages().await.map_err(errors::UpdatePackage::ExtractPackagesManifest)?;
     let system_image = packages
         .into_iter()
-        .find(|url| url.path() == "/system_image/0")
+        .find(|url| url.path() == "system_image/0")
         .ok_or(errors::UpdatePackage::MissingSystemImage)?;
     Ok(system_image.hash())
 }
@@ -269,11 +270,13 @@ pub mod test_check_for_system_update_impl {
     use super::*;
     use crate::update_manager::tests::FakeTargetChannelUpdater;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_paver::Configuration;
     use fidl_fuchsia_pkg::{
         PackageResolverGetHashResult, PackageResolverResolveResult,
         PackageResolverResolveWithContextResult, PackageUrl,
     };
+    use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::{TryFutureExt, TryStreamExt, future};
     use maplit::hashmap;
@@ -281,7 +284,6 @@ pub mod test_check_for_system_update_impl {
     use std::collections::hash_map::HashMap;
     use std::fs;
     use std::sync::{Arc, LazyLock};
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const ACTIVE_SYSTEM_IMAGE_MERKLE: &str =
         "0000000000000000000000000000000000000000000000000000000000000000";

@@ -28,7 +28,7 @@ impl RepositoryUrl {
         let UrlParts { scheme, host, path, hash, resource } = UrlParts::parse(url)?;
         let scheme = scheme.ok_or(ParseError::MissingScheme)?;
         let host = host.ok_or(ParseError::MissingHost)?;
-        if path.as_ref() != "/" {
+        if path.is_some() {
             return Err(ParseError::ExtraPathSegments);
         }
         if hash.is_some() {

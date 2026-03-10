@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// A forward slash followed by zero or more validated path segments separated by forward slashes.
+/// One or more valid path segments separated by forward slashes.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Path(String);
 
@@ -41,20 +41,13 @@ impl std::ops::Deref for Path {
     }
 }
 
-// Succeeds if `path` is a forward slash followed by zero or more valid path segments separated by
-// forward slashes.
+// Succeeds if `path` is one or more valid path segments separated by forward slashes.
 fn validate_path(path: &str) -> Result<(), crate::ParseError> {
-    if let Some(suffix) = path.strip_prefix('/') {
-        if !suffix.is_empty() {
-            for s in suffix.split('/') {
-                let () = crate::parse::validate_package_path_segment(s)
-                    .map_err(crate::ParseError::InvalidPathSegment)?;
-            }
-        }
-        Ok(())
-    } else {
-        Err(crate::ParseError::PathMustHaveLeadingSlash)
+    for s in path.split('/') {
+        let () = crate::parse::validate_package_path_segment(s)
+            .map_err(crate::ParseError::InvalidPathSegment)?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -84,27 +77,31 @@ mod test {
     }
 
     test_err! {
-        err_no_leading_slash => {
-            path = "just-name",
-            err = crate::ParseError::PathMustHaveLeadingSlash,
+        err_empty_path => {
+            path = "",
+            err = crate::ParseError::InvalidPathSegment(_),
+        }
+        err_leading_slash => {
+            path = "/leading-slash",
+            err = crate::ParseError::InvalidPathSegment(_),
         }
         err_trailing_slash => {
-            path = "/name/",
+            path = "name/",
             err = crate::ParseError::InvalidPathSegment(_),
         }
         err_empty_segment => {
-            path = "/name//trailing",
+            path = "name//trailing",
             err = crate::ParseError::InvalidPathSegment(_),
         }
         err_invalid_segment => {
-            path = "/name/#/trailing",
+            path = "name/#/trailing",
             err = crate::ParseError::InvalidPathSegment(_),
         }
     }
 
     #[test]
     fn success() {
-        for path in ["/", "/name", "/name/other", "/name/other/more"] {
+        for path in ["name", "name/other", "name/other/more"] {
             let () = validate_path(path).unwrap();
         }
     }

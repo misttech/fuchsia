@@ -15,15 +15,18 @@ use crate::rewrite_manager::RewriteManager;
 use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
 use async_trait::async_trait;
+use cobalt_sw_delivery_registry as metrics;
 use fidl::endpoints::ServerEnd;
 use fidl::marker::SourceBreaking;
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{self as fpkg, PackageResolverRequest, PackageResolverRequestStream};
 use fidl_fuchsia_pkg_ext::{self as pkg, BlobId};
 use fidl_fuchsia_pkg_resolution::{self as fpkg_resolution};
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
+use fuchsia_trace as ftrace;
 use fuchsia_url::ParseError;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::future::Future;
@@ -33,7 +36,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use system_image::CachePackages;
 use zx::Status;
-use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fuchsia_trace as ftrace};
 
 mod inspect;
 pub use inspect::ResolverService as ResolverServiceInspectState;
@@ -989,13 +991,13 @@ mod tests {
         let cache_packages = CachePackages::from_entries(vec![
             PinnedAbsolutePackageUrl::new_with_path(
                 "fuchsia-pkg://fuchsia.com".parse().unwrap(),
-                "/potato",
+                "potato",
                 hash,
             )
             .unwrap(),
             PinnedAbsolutePackageUrl::new_with_path(
                 "fuchsia-pkg://other.com".parse().unwrap(),
-                "/potato",
+                "potato",
                 hash,
             )
             .unwrap(),

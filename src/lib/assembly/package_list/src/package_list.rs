@@ -175,7 +175,7 @@ impl WritablePackageList for PackageUrlList {
         let url = PinnedAbsolutePackageUrl::new_with_path(
             RepositoryUrl::parse_host(repository.as_ref().to_string())
                 .context("Failed to create repository url")?,
-            &format!("/{}", path),
+            &path.to_string(),
             merkle,
         )
         .map_err(|e| anyhow!("Failed to create package url: {}", e))?;
@@ -247,7 +247,7 @@ impl WritablePackageList for PackageSetMap {
         let url = PinnedAbsolutePackageUrl::new_with_path(
             RepositoryUrl::parse_host(repository.as_ref().to_string())
                 .context("Failed to create repository url")?,
-            &format!("/{}", path),
+            &path.to_string(),
             merkle,
         )
         .map_err(|e| anyhow!("Failed to create package url: {}", e))?;

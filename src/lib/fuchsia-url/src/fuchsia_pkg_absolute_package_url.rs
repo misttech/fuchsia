@@ -33,6 +33,9 @@ impl FuchsiaPkgAbsolutePackageUrl {
         if resource.is_some() {
             return Err(ParseError::CannotContainResource);
         }
+        let Some(path) = path else {
+            return Err(ParseError::MissingName);
+        };
         Self::new_with_path(repo, path.as_ref(), hash)
     }
 

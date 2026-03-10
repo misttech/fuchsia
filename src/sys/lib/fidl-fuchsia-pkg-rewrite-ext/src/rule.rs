@@ -107,17 +107,25 @@ impl Rule {
             return None;
         }
 
+        // TODO(https://fxbug.dev/491207539) Migrate rules to no leading slash.
+        // FuchsiaPkg URL type paths used to always start with a slash, so the path prefix match and
+        // replacement for Rule were designed to always start with a slash. The FuchsiaPkg URL type
+        // paths were changed to never start with a slash, but we don't want to change the Rules
+        // because they are persisted across versions, so we strip the leading slash from the prefix
+        // match and replacement when applying the Rule. The slice indexing will never panic because
+        // `new_impl` guarantees the presence of a leading slash, meaning the length will always be
+        // at least one.
         let full_path = uri.path();
         let new_path = if self.path_prefix_match.ends_with('/') {
-            let rest = full_path.strip_prefix(&self.path_prefix_match)?;
+            let rest = full_path.strip_prefix(&self.path_prefix_match[1..])?;
 
-            format!("{}{}", self.path_prefix_replacement, rest)
+            format!("{}{}", &self.path_prefix_replacement[1..], rest)
         } else {
-            if full_path != self.path_prefix_match {
+            if full_path != &self.path_prefix_match[1..] {
                 return None;
             }
 
-            self.path_prefix_replacement.clone()
+            self.path_prefix_replacement[1..].to_owned()
         };
 
         Some(AbsolutePackageUrl::new_with_path(
@@ -401,7 +409,12 @@ mod rule_tests {
             path = "" => "rolldice",
             error = RuleParseError::InvalidPath,
         }
-        test_err_relative_path => {
+        test_err_relative_match => {
+            host = "example.com" => "example.com",
+            path = "rolldice" => "/rolldice",
+            error = RuleParseError::InvalidPath,
+        }
+        test_err_relative_replacement => {
             host = "example.com" => "example.com",
             path = "/rolldice" => "rolldice",
             error = RuleParseError::InvalidPath,

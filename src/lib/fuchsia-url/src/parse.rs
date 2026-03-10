@@ -54,15 +54,9 @@ impl TryFrom<String> for PackageName {
 
 impl TryFrom<&crate::Path> for PackageName {
     type Error = crate::ParseError;
-    fn try_from(value: &crate::Path) -> Result<Self, Self::Error> {
-        // This split should never fail, `Path` should always have a leading slash.
-        value
-            .as_ref()
-            .split_at_checked(1)
-            .ok_or(Self::Error::PathMustHaveLeadingSlash)?
-            .1
-            .parse()
-            .map_err(Self::Error::InvalidName)
+    fn try_from(path: &crate::Path) -> Result<Self, Self::Error> {
+        // A PackageName is a Path with a single segment.
+        path.parse().map_err(Self::Error::InvalidName)
     }
 }
 
@@ -287,13 +281,13 @@ mod test_package_name {
 
     #[test]
     fn try_from_path_ref_success() {
-        let path: crate::Path = "/valid-name".parse().unwrap();
+        let path: crate::Path = "valid-name".parse().unwrap();
         assert_eq!(PackageName::try_from(&path).unwrap().as_ref(), "valid-name");
     }
 
     #[test]
     fn try_from_path_ref_error() {
-        let path: crate::Path = "/invalid/name".parse().unwrap();
+        let path: crate::Path = "in/valid/name".parse().unwrap();
         assert_matches!(
             PackageName::try_from(&path),
             Err(crate::ParseError::InvalidName(PackagePathSegmentError::InvalidCharacter {

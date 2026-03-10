@@ -40,6 +40,9 @@ impl FuchsiaPkgAbsoluteComponentUrl {
             scheme.ok_or(ParseError::MissingScheme)?,
             host.ok_or(ParseError::MissingHost)?,
         )?;
+        let Some(path) = path else {
+            return Err(ParseError::MissingName)?;
+        };
         let package = FuchsiaPkgAbsolutePackageUrl::new_with_path(repo, path.as_ref(), hash)?;
         let resource = resource.ok_or(ParseError::MissingResource)?;
         Ok(Self { package, resource })

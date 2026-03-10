@@ -201,12 +201,12 @@ mod tests {
             (
                 "fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000",
                 None,
-                "/name",
+                "name",
             ),
             (
                 "fuchsia-pkg://example.org/name/variant?hash=0000000000000000000000000000000000000000000000000000000000000000",
                 Some("variant"),
-                "/name/variant",
+                "name/variant",
             ),
         ] {
             let json_url = format!("\"{url}\"");
