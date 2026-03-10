@@ -6,6 +6,7 @@
 
 import dataclasses
 import signal
+import sys
 import tempfile
 import time
 import unittest
@@ -86,6 +87,7 @@ class PowerSamplerTest(unittest.TestCase):
             self.assertEqual(
                 mock_popen.call_args.args[0],
                 [
+                    sys.executable,
                     _MEASUREPOWER_PATH,
                     "-format",
                     "csv",
@@ -151,6 +153,27 @@ class PowerSamplerTest(unittest.TestCase):
                 powerserver.create_power_sampler(
                     self.default_config, fallback_to_stub=False
                 )
+
+    @mock.patch("power.powerserver.resources.path")
+    @mock.patch("os.stat")
+    @mock.patch("os.chmod")
+    def test_with_hermetic_monsoon_power_sampler(
+        self,
+        mock_chmod: mock.MagicMock,
+        mock_stat: mock.MagicMock,
+        mock_path: mock.MagicMock,
+    ) -> None:
+        """Verifies the sampler correctly loads bundled resources."""
+        # Mock the context manager returned by resources.path
+        mock_path.return_value.__enter__.return_value = Path("/fake/path.pyz")
+        with powerserver.with_hermetic_monsoon_power_sampler(
+            str(self.output_dir_path), _METRIC_NAME, "12345"
+        ) as s:
+            assert isinstance(s, powerserver._RealPowerSampler)
+            # Check that the serial number was passed through
+            self.assertEqual(s._monsoon_serial, "12345")
+            # Verify the path was correctly rebased/stringified
+            self.assertEqual(s._config.measurepower_path, "/fake/path.pyz")
 
     def test_create_power_sampler_with_measurepower_env_var(self) -> None:
         with mock.patch("os.environ.get", return_value="path/to/power"):
