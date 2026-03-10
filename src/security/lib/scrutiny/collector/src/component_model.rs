@@ -14,7 +14,6 @@ use config_encoder::ConfigFields;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_internal as component_internal;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use log::{error, info, warn};
 use moniker::Moniker;
@@ -32,8 +31,14 @@ use std::sync::Arc;
 // The default root component URL used to identify the root instance of the component model
 // unless the RuntimeConfig specifies a different root URL.
 pub static DEFAULT_ROOT_URL: std::sync::LazyLock<Url> = std::sync::LazyLock::new(|| {
-    Url::new(&BootUrl::new_resource(Some("root"), ROOT_RESOURCE.to_string()).unwrap().to_string())
-        .unwrap()
+    Url::new(
+        &fuchsia_url::boot::AbsoluteComponentUrl::new(
+            Some("root".parse().expect("valid url path")),
+            ROOT_RESOURCE.parse().expect("valid url resource"),
+        )
+        .to_string(),
+    )
+    .unwrap()
 });
 
 // The path to the runtime config in bootfs.

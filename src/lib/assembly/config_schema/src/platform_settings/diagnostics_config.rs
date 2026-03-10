@@ -4,8 +4,6 @@
 
 use assembly_container::WalkPaths;
 use camino::Utf8PathBuf;
-use fuchsia_url::boot_url::BootUrl;
-use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 use schemars::JsonSchema;
 use serde::de::Error;
@@ -291,8 +289,8 @@ impl<'de> Deserialize<'de> for UrlOrMoniker {
         D: Deserializer<'de>,
     {
         let variant = String::deserialize(de)?.to_lowercase();
-        if AbsoluteComponentUrl::from_str(&variant).is_ok()
-            || BootUrl::parse(variant.as_str()).is_ok()
+        if fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl::from_str(&variant).is_ok()
+            || fuchsia_url::boot::AbsoluteComponentUrl::parse(variant.as_str()).is_ok()
         {
             Ok(UrlOrMoniker::Url(variant))
         } else if Moniker::from_str(&variant).is_ok() {

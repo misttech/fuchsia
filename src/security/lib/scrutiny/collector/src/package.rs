@@ -15,7 +15,6 @@ use directed_graph::DirectedGraph;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_merkle::Hash;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::fuchsia_pkg::{AbsoluteComponentUrl, AbsolutePackageUrl};
 use fuchsia_url::{PackageName, PackageVariant};
 use log::{info, warn};
@@ -290,7 +289,12 @@ impl PackageDataCollector {
         file_data: &Vec<u8>,
     ) -> Result<()> {
         info!(file_name:%; "Extracting bootfs manifest");
-        let url = BootUrl::new_resource(None, file_name.to_string())?;
+        let url = fuchsia_url::boot::AbsoluteComponentUrl::new(
+            None,
+            file_name.parse().with_context(|| {
+                format!("file_name is an invalid resource path {:?}", file_name)
+            })?,
+        );
         let url = Url::parse(&url.to_string())
             .with_context(|| format!("Failed to convert boot URL to standard URL: {}", url))?;
         let component_url = cm_types::Url::new(&url.to_string())
@@ -334,8 +338,16 @@ impl PackageDataCollector {
                     })?;
                     match cm {
                         ComponentManifest::Version2(bytes) => {
-                            let url =
-                                BootUrl::new_resource(Some(name.as_ref()), path_str.to_string())?;
+                            let url = fuchsia_url::boot::AbsoluteComponentUrl::new(
+                                Some(name.clone().into()),
+                                path_str.parse().with_context(|| {
+                                    format!(
+                                        "A component manifest path, '{:?}', in the {} {} package \
+                                         listed in the ZBI's bootfs package index is invalid",
+                                        path_str, name, merkle
+                                    )
+                                })?,
+                            );
                             let url = Url::parse(&url.to_string()).with_context(|| {
                                 format!("Failed to convert boot URL to standard URL: {}", url)
                             })?;

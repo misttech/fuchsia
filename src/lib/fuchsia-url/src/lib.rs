@@ -4,7 +4,7 @@
 
 pub use fuchsia_hash::{HASH_SIZE, Hash};
 
-pub mod boot_url;
+pub mod boot;
 pub mod builtin_url;
 pub mod errors;
 mod fuchsia_pkg_absolute_component_url;
@@ -13,6 +13,7 @@ mod fuchsia_pkg_component_url;
 mod fuchsia_pkg_package_url;
 mod fuchsia_pkg_pinned_absolute_package_url;
 mod fuchsia_pkg_unpinned_absolute_package_url;
+pub(crate) mod generic;
 mod host;
 mod parse;
 mod path;
@@ -38,8 +39,10 @@ pub mod fuchsia_pkg {
         FuchsiaPkgUnpinnedAbsolutePackageUrl as UnpinnedAbsolutePackageUrl,
     };
 }
+pub use crate::generic::{NoneHash, NoneHost};
 pub use crate::parse::{MAX_PACKAGE_PATH_SEGMENT_BYTES, PackageName, PackageVariant};
 pub use crate::path::Path;
+pub(crate) use crate::path::parse_path_to_name_and_variant;
 pub use crate::relative_component_url::RelativeComponentUrl;
 pub use crate::relative_package_url::RelativePackageUrl;
 pub use crate::repository_url::RepositoryUrl;
@@ -66,6 +69,17 @@ pub enum Scheme {
     FuchsiaBoot,
 }
 
+impl std::fmt::Display for Scheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Builtin => builtin_url::SCHEME,
+            Self::FuchsiaPkg => repository_url::SCHEME,
+            Self::FuchsiaBoot => boot::SCHEME_STR,
+        }
+        .fmt(f)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct UrlParts {
     scheme: Option<Scheme>,
@@ -90,7 +104,7 @@ impl UrlParts {
             Some(match url.scheme() {
                 builtin_url::SCHEME => Scheme::Builtin,
                 repository_url::SCHEME => Scheme::FuchsiaPkg,
-                boot_url::SCHEME => Scheme::FuchsiaBoot,
+                boot::SCHEME_STR => Scheme::FuchsiaBoot,
                 _ => return Err(ParseError::InvalidScheme),
             }),
             url,
@@ -219,29 +233,36 @@ fn parse_query_pairs(pairs: url::form_urlencoded::Parse<'_>) -> Result<Option<Ha
     Ok(query_hash)
 }
 
-// Validates that `path` is "name[/variant]" and returns the name and optional variant if so.
-fn parse_path_to_name_and_variant(
-    path: &str,
-) -> Result<(PackageName, Option<PackageVariant>), ParseError> {
-    if path.is_empty() {
-        return Err(ParseError::MissingName);
-    }
-    let mut iter = path.split('/').fuse();
-    let name = if let Some(s) = iter.next() {
-        s.parse().map_err(ParseError::InvalidName)?
-    } else {
-        return Err(ParseError::MissingName);
-    };
-    let variant = if let Some(s) = iter.next() {
-        Some(s.parse().map_err(ParseError::InvalidVariant)?)
-    } else {
-        None
-    };
-    if let Some(_) = iter.next() {
-        return Err(ParseError::ExtraPathSegments);
-    }
-    Ok((name, variant))
-}
+/// A URL locating a Fuchsia component. Can be either absolute or relative.
+/// See [`AbsoluteComponentUrl`] and [`RelativeComponentUrl`] for more details.
+pub type ComponentUrl =
+    generic::ComponentUrl<Scheme, generic::OptionHost, Option<Path>, Option<Hash>>;
+
+/// A URL locating a Fuchsia component.
+/// Has the form "<scheme>://[host][/<path>][?hash=<hash>]#<resource>" where:
+///   * "scheme" is a [`Scheme`]
+///   * "host" is an optional [`Host`]
+///   * "path" is an optional [`Path`]
+///   * "hash" is an optional package [`Hash`]
+///   * "resource" is a [`Resource`]
+pub type AbsoluteComponentUrl =
+    generic::AbsoluteComponentUrl<Scheme, generic::OptionHost, Option<Path>, Option<Hash>>;
+
+/// A URL locating a Fuchsia package. Can be either absolute or relative.
+/// See [`AbsolutePackageUrl`] and [`RelativePackageUrl`] for more details.
+pub type PackageUrl = generic::PackageUrl<Scheme, generic::OptionHost, Option<Path>, Option<Hash>>;
+
+/// A URL locating a Fuchsia package.
+/// Has the form "<scheme>://[host][/<path>][?hash=<hash>]" where:
+///   * "scheme" is a [`Scheme`](crate::Scheme)
+///   * "host" is an optional [`Host`](crate::Host)
+///   * "path" is an optional [`Path`](crate::Path)
+///   * "hash" is an optional package [`Hash`](fuchsia_hash::Hash)
+pub type AbsolutePackageUrl =
+    generic::AbsolutePackageUrl<Scheme, generic::OptionHost, Option<Path>, Option<Hash>>;
+
+// Supertrait for sealing traits in this crate.
+trait Sealer {}
 
 #[cfg(test)]
 mod test_validate_inverse_relative_url {
@@ -311,72 +332,6 @@ mod test_validate_inverse_relative_url {
         for path in ["name", "other3-name", "name#resource", "name#reso%09urce"] {
             let () = validate_inverse_relative_url(path).unwrap();
         }
-    }
-}
-
-#[cfg(test)]
-mod test_parse_path_to_name_and_variant {
-    use super::*;
-    use assert_matches::assert_matches;
-
-    macro_rules! test_err {
-        (
-            $(
-                $test_name:ident => {
-                    path = $path:expr,
-                    err = $err:pat,
-                }
-            )+
-        ) => {
-            $(
-                #[test]
-                fn $test_name() {
-                    assert_matches!(
-                        parse_path_to_name_and_variant($path),
-                        Err($err)
-                    );
-                }
-            )+
-        }
-    }
-
-    test_err! {
-        err_no_name => {
-            path = "/",
-            err = ParseError::InvalidName(_),
-        }
-        err_leading_slash => {
-            path = "/name",
-            err = ParseError::InvalidName(_),
-        }
-        err_empty_variant => {
-            path = "name/",
-            err = ParseError::InvalidVariant(_),
-        }
-        err_trailing_slash => {
-            path = "name/variant/",
-            err = ParseError::ExtraPathSegments,
-        }
-        err_extra_segment => {
-            path = "name/variant/extra",
-            err = ParseError::ExtraPathSegments,
-        }
-        err_invalid_segment => {
-            path = "name/#",
-            err = ParseError::InvalidVariant(_),
-        }
-    }
-
-    #[test]
-    fn success() {
-        assert_eq!(
-            ("name".parse().unwrap(), None),
-            parse_path_to_name_and_variant("name").unwrap()
-        );
-        assert_eq!(
-            ("name".parse().unwrap(), Some("variant".parse().unwrap())),
-            parse_path_to_name_and_variant("name/variant").unwrap()
-        );
     }
 }
 
@@ -680,5 +635,36 @@ mod test_url_parts {
             ),
             resource = Some("resource".parse().unwrap()),
         }
+    }
+}
+
+#[cfg(test)]
+mod test_url_type_aliases {
+    use super::*;
+
+    #[test]
+    fn component_url_round_trip() {
+        let abs_empty = "fuchsia-boot://#my-resource";
+        assert_eq!(ComponentUrl::parse(abs_empty).unwrap().to_string(), abs_empty);
+
+        let abs_present = "fuchsia-boot://my-host/my/path\
+            ?hash=0000000000000000000000000000000000000000000000000000000000000000#my-resource";
+        assert_eq!(ComponentUrl::parse(abs_present).unwrap().to_string(), abs_present);
+
+        let rel = "my-path#my-resource";
+        assert_eq!(ComponentUrl::parse(rel).unwrap().to_string(), rel);
+    }
+
+    #[test]
+    fn package_url_round_trip() {
+        let abs_empty = "fuchsia-boot://";
+        assert_eq!(PackageUrl::parse(abs_empty).unwrap().to_string(), abs_empty);
+
+        let abs_present = "fuchsia-boot://my-host/my/path\
+            ?hash=0000000000000000000000000000000000000000000000000000000000000000";
+        assert_eq!(PackageUrl::parse(abs_present).unwrap().to_string(), abs_present);
+
+        let rel = "my-path";
+        assert_eq!(PackageUrl::parse(rel).unwrap().to_string(), rel);
     }
 }

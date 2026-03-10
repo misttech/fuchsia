@@ -37,7 +37,6 @@ use fuchsia_component_test::error::Error as RealmBuilderError;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
-use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::channel::{mpsc, oneshot};
 use futures::future::join_all;
 use futures::prelude::*;
@@ -97,17 +96,18 @@ impl RunningSuite {
     ) -> Result<Self, LaunchTestError> {
         info!(test_url, diagnostics:?, collection = facets.collection; "Starting test suite.");
 
-        let test_package = match AbsoluteComponentUrl::parse(test_url) {
-            Ok(component_url) => component_url.package_url().name().to_string(),
-            Err(_) => match fuchsia_url::boot_url::BootUrl::parse(test_url) {
-                Ok(boot_url) => {
-                    boot_url.path().ok_or(LaunchTestError::InvalidResolverData)?.to_string()
-                }
-                Err(_) => {
-                    return Err(LaunchTestError::InvalidResolverData);
-                }
-            },
-        };
+        let test_package = fuchsia_url::AbsoluteComponentUrl::parse(test_url)
+            .map_err(|e| {
+                warn!(url:?=test_url; "invalid component url: {:#}", anyhow!(e));
+                LaunchTestError::InvalidResolverData
+            })?
+            .path()
+            .as_ref()
+            .ok_or_else(|| {
+                warn!(url:?=test_url; "component url missing path");
+                LaunchTestError::InvalidResolverData
+            })?
+            .to_string();
         above_root_capabilities_for_test
             .validate(facets.collection)
             .map_err(LaunchTestError::ValidateTestRealm)?;

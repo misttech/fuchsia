@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::resolve::get_binary_and_loader_from_pkg_dir;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_process::{ResolverRequest, ResolverRequestStream};
 use fuchsia_component::client::connect_to_protocol_at_path;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::prelude::*;
 use log::warn;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg};
 
 pub async fn serve(mut stream: ResolverRequestStream) {
     let boot_resolver = connect_to_protocol_at_path::<fpkg::PackageResolverMarker>(
@@ -46,19 +46,18 @@ async fn resolve(
     zx::Status,
 > {
     // Parse the URL
-    let boot_url = BootUrl::parse(url);
+    let boot_url = fuchsia_url::boot::AbsoluteComponentUrl::parse(url);
     let pkg_url = AbsoluteComponentUrl::parse(url);
     let (resolver, pkg_url, bin_path) = match (boot_url, pkg_url) {
         (Ok(url), _) => {
             // Break it into a package URL and binary path
-            let pkg_url = url.root_url().to_string();
-            let bin_path = url.resource().unwrap().to_string();
+            let pkg_url = url.to_package_url().to_string();
+            let bin_path = url.resource().to_string();
             (boot_resolver, pkg_url, bin_path)
         }
         (_, Ok(url)) => {
             // Break it into a package URL and binary path
-            let pkg_url = url.package_url();
-            let pkg_url = pkg_url.to_string();
+            let pkg_url = url.package_url().to_string();
             let bin_path = url.resource().to_string();
             (pkg_resolver, pkg_url, bin_path)
         }

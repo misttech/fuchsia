@@ -16,10 +16,10 @@ use fidl_fuchsia_diagnostics::{
 };
 use fidl_fuchsia_diagnostics_types::Severity as FidlSeverity;
 use flyweights::FlyStr;
+use fuchsia_async as fasync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::WithInspect;
 use fuchsia_sync::Mutex;
-use fuchsia_url::boot_url::BootUrl;
-use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::prelude::*;
 use log::{LevelFilter, debug, error};
 use moniker::{ExtendedMoniker, Moniker};
@@ -28,7 +28,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
-use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 // LINT.IfChange
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
@@ -72,7 +71,9 @@ pub enum UrlOrMoniker {
 impl FromStr for UrlOrMoniker {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if AbsoluteComponentUrl::from_str(s).is_ok() || BootUrl::parse(s).is_ok() {
+        if fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl::from_str(s).is_ok()
+            || fuchsia_url::boot::AbsoluteComponentUrl::parse(s).is_ok()
+        {
             Ok(UrlOrMoniker::Url(s.into()))
         } else if s.starts_with("/") {
             if let Ok(moniker) = Moniker::from_str(s) {

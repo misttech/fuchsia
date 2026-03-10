@@ -9,8 +9,6 @@ use assembly_config_schema::product_settings::TrustedAppType::{BinderRPC, Global
 use assembly_constants::{BootfsPackageDestination, PackageSetDestination};
 use assembly_images_config::FilesystemImageMode;
 use fuchsia_tee_manager_config::TAConfig;
-use fuchsia_url::boot_url::BootUrl;
-use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 
 pub(crate) struct TrustedAppsSubsystem;
 impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)>
@@ -38,11 +36,17 @@ impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)
         // Add the configs for all the TAs.
         for c in trusted_apps.iter() {
             let url = if *image_mode == FilesystemImageMode::NoImage {
-                let url = AbsoluteComponentUrl::parse(&c.component_url)
+                let url = fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl::parse(&c.component_url)
                     .with_context(|| format!("Parsing: {}", &c.component_url))?;
-                let url = BootUrl::try_from(&url)
-                    .with_context(|| format!("Convert to a boot url: {}", &url))?;
-                url.to_string()
+                fuchsia_url::boot::AbsoluteComponentUrl::new(
+                    Some(
+                        fuchsia_url::Path::try_from(url.path()).with_context(|| {
+                            format!("Convert to a boot url path: {}", url.path())
+                        })?,
+                    ),
+                    url.into_package_and_resource().1,
+                )
+                .to_string()
             } else {
                 c.component_url.clone()
             };

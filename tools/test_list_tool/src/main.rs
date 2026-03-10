@@ -11,7 +11,6 @@ use diagnostics_log_types::Severity;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
-use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use maplit::btreeset;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -405,27 +404,18 @@ Refer to https://fuchsia.dev/fuchsia-src/development/testing/components/test_run
 }
 
 fn validate_and_get_test_cml(
-    package_url: String,
+    component_url: &str,
     meta_far_path: &Utf8PathBuf,
 ) -> Result<Component, Error> {
-    let pkg_url = AbsoluteComponentUrl::parse(&package_url);
-    let cm_path = match pkg_url {
-        Ok(pkg_url) => Ok(pkg_url.resource().to_string()),
-        Err(fuchsia_url::ParseError::MissingHost) => {
-            match fuchsia_url::boot_url::BootUrl::parse(&package_url) {
-                Ok(boot_url) => Ok(boot_url.resource().expect("a resource").to_string()),
-                Err(e) => Err(e),
-            }
-        }
-        Err(e) => Err(e),
-    }?;
-
+    let cm_path = fuchsia_url::AbsoluteComponentUrl::parse(&component_url)?.resource().to_string();
     let decl = match cm_decl_from_meta_far(&meta_far_path, &cm_path) {
         Ok(decl) => decl,
-        Err(e) => return Err(format_err!("Error retrieving manifest for {}: {}", package_url, e)),
+        Err(e) => {
+            return Err(format_err!("Error retrieving manifest for {}: {}", component_url, e));
+        }
     };
     if let Err(e) = validate_test_decl(&decl) {
-        return Err(format_err!("Error validating manifest for {}: {}", package_url, e));
+        return Err(format_err!("Error validating manifest for {}: {}", component_url, e));
     }
     Ok(decl)
 }
@@ -482,7 +472,7 @@ fn run_tool() -> Result<(), Error> {
                 let meta_far_path = res.unwrap();
                 inputs.push(meta_far_path.clone());
 
-                let decl = validate_and_get_test_cml(pkg_url.clone(), &meta_far_path)?;
+                let decl = validate_and_get_test_cml(&pkg_url, &meta_far_path)?;
 
                 // Find additional tags. Note that this can override existing tags (e.g. to set the test type based on realm)
                 if let Err(e) = update_tags_from_facets(

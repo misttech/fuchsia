@@ -72,7 +72,8 @@ impl FuchsiaPkgAbsoluteComponentUrl {
         &self.package
     }
 
-    pub(crate) fn into_package_and_resource(self) -> (FuchsiaPkgAbsolutePackageUrl, Resource) {
+    /// Split this component URL into a package URL and a resource.
+    pub fn into_package_and_resource(self) -> (FuchsiaPkgAbsolutePackageUrl, Resource) {
         let Self { package, resource } = self;
         (package, resource)
     }

@@ -11,11 +11,10 @@ use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_resolution as fresolution;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
-use fuchsia_url::boot_url::BootUrl;
+use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl};
 use futures::TryStreamExt;
 use routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use system_image::{Bootfs, PathHashMapping};
 use version_history::AbiRevision;
@@ -83,7 +82,7 @@ impl FuchsiaBootResolver {
 
     async fn resolve_unpackaged_component(
         &self,
-        boot_url: BootUrl,
+        boot_url: AbsoluteComponentUrl,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         // When a component is unpacked, the root of its namespace is the root
         // of the /boot directory.
@@ -106,7 +105,7 @@ impl FuchsiaBootResolver {
 
     async fn resolve_packaged_component(
         &self,
-        boot_url: &BootUrl,
+        boot_url: &AbsoluteComponentUrl,
         path: &fuchsia_url::Path,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         match &self.boot_package_resolver {
@@ -114,7 +113,7 @@ impl FuchsiaBootResolver {
                 let (proxy, server) = fidl::endpoints::create_proxy();
                 let () = boot_package_resolver
                     .resolve_name(
-                        fuchsia_url::PackageName::from_str(path).map_err(|e| {
+                        fuchsia_url::PackageName::try_from(path).map_err(|e| {
                             log::warn!(boot_url:?, source:? = e; "invalid url");
                             fresolution::ResolverError::InvalidArgs
                         })?,
@@ -145,10 +144,10 @@ impl FuchsiaBootResolver {
     async fn construct_component(
         &self,
         proxy: fio::DirectoryProxy,
-        boot_url: &BootUrl,
+        boot_url: &AbsoluteComponentUrl,
         abi_revision: Option<AbiRevision>,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        let manifest = boot_url.resource().ok_or(fresolution::ResolverError::InvalidArgs)?;
+        let manifest = boot_url.resource();
 
         // Read the component manifest (.cm file) from the package-root.
         let data = mem_util::open_file_data(&proxy, &manifest)
@@ -183,12 +182,11 @@ impl FuchsiaBootResolver {
             None
         };
         Ok(fresolution::Component {
-            url: Some(boot_url.to_string().into()),
+            url: Some(boot_url.to_string()),
             resolution_context: None,
             decl: Some(data),
             package: Some(fresolution::Package {
-                // This call just strips the boot_url of the resource.
-                url: Some(boot_url.root_url().to_string()),
+                url: Some(boot_url.to_package_url().to_string()),
                 directory: Some(ClientEnd::new(proxy.into_channel().unwrap().into_zx_channel())),
                 ..Default::default()
             }),
@@ -202,9 +200,8 @@ impl FuchsiaBootResolver {
         &self,
         component_url: &str,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        // Parse URL.
-        let url =
-            BootUrl::parse(component_url).map_err(|_| fresolution::ResolverError::InvalidArgs)?;
+        let url = AbsoluteComponentUrl::parse(component_url)
+            .map_err(|_| fresolution::ResolverError::InvalidArgs)?;
         match url.path() {
             None => {
                 return self.resolve_unpackaged_component(url).await;
@@ -304,30 +301,23 @@ impl FuchsiaBootPackageResolver {
         url: &str,
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     ) -> Result<(), fpkg::ResolveError> {
-        let url = BootUrl::parse(url).map_err(|e| {
+        let url = AbsolutePackageUrl::parse(url).map_err(|e| {
             log::warn!(url:?; "invalid boot url: {:#}", anyhow!(e));
             fpkg::ResolveError::InvalidUrl
         })?;
-        if url.resource().is_some() {
-            log::warn!(url:?; "package urls must not have a resource");
-            return Err(fpkg::ResolveError::InvalidUrl);
-        }
-        let path = if let Some(path) = url.path() {
-            path
-        } else {
-            log::warn!(url:?; "bootfs package urls without a path");
-            return Err(fpkg::ResolveError::InvalidUrl);
-        };
-        self.resolve_name(
-            fuchsia_url::PackageName::from_str(path).map_err(
-                |e| {
-                    log::warn!(url:?, source:?=e; "bootfs package urls must have a single segment name");
-                    fpkg::ResolveError::InvalidUrl
-                },
-            )?,
-            dir,
-        )
-        .await
+        let path = url.path().as_ref().ok_or_else(|| {
+            log::warn!(url:?; "bootfs package url without a path");
+            fpkg::ResolveError::InvalidUrl
+        })?;
+        let name = fuchsia_url::PackageName::try_from(path).map_err(|e| {
+            log::warn!(
+                url:?;
+                "bootfs package urls must have a single segment name: {:#}",
+                anyhow!(e)
+            );
+            fpkg::ResolveError::InvalidUrl
+        })?;
+        self.resolve_name(name, dir).await
     }
 
     async fn resolve_name(
@@ -546,7 +536,7 @@ mod tests {
         assert_eq!(decl.program, expected_program);
 
         let ResolvedPackage { url: package_url, directory: package_dir, .. } = package.unwrap();
-        assert_eq!(package_url, "fuchsia-boot:///");
+        assert_eq!(package_url, "fuchsia-boot://");
 
         let dir_proxy = package_dir.into_proxy();
         let path = "meta/hello-world-rust.cm";
