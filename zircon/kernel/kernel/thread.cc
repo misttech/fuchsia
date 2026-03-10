@@ -522,7 +522,7 @@ void Thread::Resume() {
     }
 
     // Clear the suspend signal in case there is a pending suspend
-    signals_.fetch_and(~THREAD_SIGNAL_SUSPEND, ktl::memory_order_relaxed);
+    clear_signals(THREAD_SIGNAL_SUSPEND);
     if (state() == THREAD_INITIAL || state() == THREAD_SUSPENDED) {
       // Wake up the new thread, putting it in a run queue on a cpu.
       Scheduler::Unblock(this);
@@ -560,10 +560,10 @@ zx_status_t Thread::SuspendOrKillInternal(SuspendOrKillOp op) {
       suspend_op ? ZX_ERR_INTERNAL_INTR_RETRY : ZX_ERR_INTERNAL_INTR_KILLED;
   auto set_signals = fit::defer([this, suspend_op]() {
     if (suspend_op) {
-      signals_.fetch_or(THREAD_SIGNAL_SUSPEND, ktl::memory_order_relaxed);
+      this->set_signals(THREAD_SIGNAL_SUSPEND);
       kcounter_add(thread_suspend_count, 1);
     } else {
-      signals_.fetch_or(THREAD_SIGNAL_KILL, ktl::memory_order_relaxed);
+      this->set_signals(THREAD_SIGNAL_KILL);
     }
   });
 
@@ -715,7 +715,7 @@ zx_status_t Thread::RestrictedKick() {
       return ZX_ERR_BAD_STATE;
     }
 
-    signals_.fetch_or(THREAD_SIGNAL_RESTRICTED_KICK, ktl::memory_order_relaxed);
+    set_signals(THREAD_SIGNAL_RESTRICTED_KICK);
 
     if (state() == THREAD_RUNNING && !kicking_myself) {
       // thread is running (on another cpu)
@@ -751,7 +751,7 @@ void Thread::Current::SignalPolicyException(uint32_t policy_exception_code,
   Thread* t = Thread::Current::Get();
   SingleChainLockGuard guard{IrqSaveOption, t->get_lock(),
                              CLT_TAG("Thread::Current::SignalPolicyException")};
-  t->signals_.fetch_or(THREAD_SIGNAL_POLICY_EXCEPTION, ktl::memory_order_relaxed);
+  t->set_signals(THREAD_SIGNAL_POLICY_EXCEPTION);
   t->extra_policy_exception_code_ = policy_exception_code;
   t->extra_policy_exception_data_ = policy_exception_data;
 }
@@ -1305,7 +1305,7 @@ void Thread::Current::DoSuspend() {
         current_thread->get_lock().AssertHeld();
         current_thread->set_suspended();
       });
-      current_thread->signals_.fetch_and(~THREAD_SIGNAL_SUSPEND, ktl::memory_order_relaxed);
+      current_thread->clear_signals(THREAD_SIGNAL_SUSPEND);
 
       // directly invoke the context switch, since we've already manipulated
       // this thread's state. Note that our thread's lock will be dropped and
@@ -1341,7 +1341,7 @@ void Thread::SignalSampleStack(Timer* timer, zx_time_t, void* per_cpu_state) {
   // thread actually needs to be sampled.
   Thread* current_thread = Thread::Current::Get();
   current_thread->canary_.Assert();
-  current_thread->signals_.fetch_or(THREAD_SIGNAL_SAMPLE_STACK, ktl::memory_order_relaxed);
+  current_thread->set_signals(THREAD_SIGNAL_SAMPLE_STACK);
 
   // We set the timer here as opposed to when we handle the THREAD_SIGNAL_SAMPLE_STACK as a thread
   // could be suspended or killed before the sample signal is handled.
@@ -1355,7 +1355,7 @@ void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
   // Make sure the sample signal wasn't cleared while we were running the
   // callback.
   if (current_thread->signals() & THREAD_SIGNAL_SAMPLE_STACK) {
-    current_thread->signals_.fetch_and(~THREAD_SIGNAL_SAMPLE_STACK, ktl::memory_order_relaxed);
+    current_thread->clear_signals(THREAD_SIGNAL_SAMPLE_STACK);
 
     if (current_thread->user_thread() == nullptr) {
       // There's no user thread to sample, just move on.
@@ -1470,8 +1470,7 @@ void Thread::Current::ProcessPendingSignals(GeneralRegsSource source, void* greg
       DEBUG_ASSERT(has_user_thread);
       // TODO(https://fxbug.dev/42077109): Consider wrapping this up in a method
       // (e.g. Thread::Current::ClearSignals) and think hard about whether relaxed is sufficient.
-      current_thread->signals_.fetch_and(~THREAD_SIGNAL_POLICY_EXCEPTION,
-                                         ktl::memory_order_relaxed);
+      current_thread->clear_signals(THREAD_SIGNAL_POLICY_EXCEPTION);
 
       uint32_t policy_exception_code;
       uint32_t policy_exception_data;
@@ -1552,7 +1551,7 @@ void Thread::Current::ProcessPendingSignals(GeneralRegsSource source, void* greg
     // THREAD_SIGNAL_RESTRICTED_KICK
     //
     if (signals & THREAD_SIGNAL_RESTRICTED_KICK) {
-      current_thread->signals_.fetch_and(~THREAD_SIGNAL_RESTRICTED_KICK, ktl::memory_order_relaxed);
+      current_thread->clear_signals(THREAD_SIGNAL_RESTRICTED_KICK);
       if (arch_get_restricted_flag()) {
         exit_to_normal_mode = true;
       } else {
@@ -1566,7 +1565,7 @@ void Thread::Current::ProcessPendingSignals(GeneralRegsSource source, void* greg
     //
     if (signals & THREAD_SIGNAL_CHECK_RSEQ) {
       DEBUG_ASSERT(has_user_thread);
-      current_thread->signals_.fetch_and(~THREAD_SIGNAL_CHECK_RSEQ, ktl::memory_order_relaxed);
+      current_thread->clear_signals(THREAD_SIGNAL_CHECK_RSEQ);
       current_thread->CheckRestartableSequence(source, gregs);
     }
 

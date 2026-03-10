@@ -1341,7 +1341,7 @@ struct Thread : public ChainLockable {
     if (likely(!rseq_accessor_.IsValid())) {
       return;
     }
-    signals_.fetch_or(THREAD_SIGNAL_CHECK_RSEQ, ktl::memory_order_relaxed);
+    set_signals(THREAD_SIGNAL_CHECK_RSEQ);
   }
 
   void set_rseq_accessor(page_map::Accessor<zx_rseq_t> accessor) {
@@ -1576,7 +1576,11 @@ struct Thread : public ChainLockable {
   // Access to the entire flags_ value, for diagnostics.
   unsigned int flags() const { return flags_; }
 
-  unsigned int signals() const { return signals_.load(ktl::memory_order_relaxed); }
+  // Only these three methods directly access the signals_ member.
+  // TODO(https://fxbug.dev/42077109): Write down memory order requirements for accessing signals_.
+  uint32_t signals() const { return signals_.load(ktl::memory_order_relaxed); }
+  void set_signals(uint32_t bits) { signals_.fetch_or(bits, ktl::memory_order_relaxed); }
+  void clear_signals(uint32_t bits) { signals_.fetch_and(~bits, ktl::memory_order_relaxed); }
 
   bool has_migrate_fn() const TA_REQ_SHARED(get_lock()) { return migrate_fn_ != nullptr; }
   bool migrate_pending() const TA_REQ_SHARED(get_lock()) { return migrate_pending_; }
@@ -1817,8 +1821,7 @@ struct Thread : public ChainLockable {
   // together near the front to improve cache locality.
   __NO_UNIQUE_ADDRESS mutable fbl::NullLock scheduler_variable_lock_;
   unsigned int flags_{};
-  // TODO(https://fxbug.dev/42077109): Write down memory order requirements for accessing signals_.
-  ktl::atomic<unsigned int> signals_{};
+  ktl::atomic<uint32_t> signals_;
   SchedulerState scheduler_state_ TA_GUARDED(get_lock());
   SchedulerQueueState scheduler_queue_state_ TA_GUARDED(scheduler_variable_lock_);
   WaitQueueCollection::ThreadState wait_queue_state_ TA_GUARDED(get_lock());
