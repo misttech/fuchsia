@@ -154,7 +154,7 @@ ktl::span<ktl::byte> ElfImage::GetBytesToPatch(const code_patching::Directive& p
   ktl::span<ktl::byte> file = image_.image();
   ZX_ASSERT_MSG(patch.range_start >= image_.base() && file.size() >= patch.range_size &&
                     file.size() - patch.range_size >= patch.range_start - image_.base(),
-                "Patch ID %#" PRIx32 " range [%#" PRIx64 ", %#" PRIx64
+                "Patch ID %#" PRIx32 " range [%#" PRIx32 ", %#" PRIx32
                 ") is outside file bounds [%#" PRIxPTR ", %#" PRIxPTR ")",
                 patch.id, patch.range_start, patch.range_start + patch.range_size, image_.base(),
                 image_.base() + file.size());
@@ -314,7 +314,7 @@ void ElfImage::PrintPatch(const code_patching::Directive& patch,
   for (ktl::string_view str : strings) {
     stdout->Write(str);
   }
-  printf(": [%#" PRIx64 ", %#" PRIx64 ")\n", patch.range_start,
+  printf(": [%#" PRIx32 ", %#" PRIx32 ")\n", patch.range_start,
          patch.range_start + patch.range_size);
 }
 

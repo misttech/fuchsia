@@ -187,7 +187,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
   printf("Patches found:\n");
   printf("| %-4s | %-8s | %-8s | %-4s |\n", "ID", "Start", "End", "Size");
   for (const auto& patch : patches) {
-    printf("| %-4u | %#-8lx | %#-8lx | %-4u |\n", patch.id, patch.range_start,
+    printf("| %-4u | %#-8x | %#-8x | %-4u |\n", patch.id, patch.range_start,
            patch.range_start + patch.range_size, patch.range_size);
   }
 

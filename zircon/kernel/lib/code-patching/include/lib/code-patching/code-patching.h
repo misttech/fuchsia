@@ -13,7 +13,6 @@
 #include <lib/zbitl/items/bootfs.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <string.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 
@@ -30,7 +29,7 @@ namespace code_patching {
 // A patch directive, giving the 'what' of an instruction range and the 'how'
 // and 'when' of a patch case identifier.
 struct Directive {
-  uint64_t range_start;
+  uint32_t range_start;
   uint32_t range_size;
 
   // A patch case identifier, corresponding to particular hard-coded details on
