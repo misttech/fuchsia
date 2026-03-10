@@ -40,15 +40,44 @@ executable("streaming_test_bin") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 fuchsia_test_component("streaming_test_component") {
   component_name = "streaming_test"
   manifest = "meta/streaming_test.cml"
   deps = [ ":streaming_test_bin" ]
 }
 
+executable("all_in_one_test_bin") {
+  testonly = true
+  output_name = "all_in_one_test"
+
+  sources = [ "all_in_one_test.cc" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_cpp",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/component/incoming/cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//zircon/system/ulib/trace-provider",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+# A test that implements a provider and controller in the same component so that it should be able
+# to read its own data.
+fuchsia_test_component("all_in_one_test_component") {
+  component_name = "all_in_one_test"
+  manifest = "meta/all_in_one.cml"
+  deps = [ ":all_in_one_test_bin" ]
+}
+
 fuchsia_test_package("trace_manager_integration_tests") {
   package_name = "trace_manager_integration_tests"
-  test_components = [ ":streaming_test_component" ]
+  test_components = [
+    ":streaming_test_component",
+    ":all_in_one_test_component",
+  ]
   deps = [
     ":test_provider",
     "//src/performance/trace:bin",

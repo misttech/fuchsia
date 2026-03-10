@@ -788,6 +788,22 @@ void TraceSession::RemoveDeadV2Provider(ProviderConnection* connection) {
   OnV2ProviderTerminated(connection);
 }
 
+void TraceSession::FlushProviders() {
+  if (!(state_ == State::kStarted || state_ == State::kStarting)) {
+    return;
+  }
+  for (auto& tracee : tracees_) {
+    std::visit(overloaded{[](const std::unique_ptr<Tracee>& tracee) {},
+                          [](const std::unique_ptr<TraceeV2>& tracee) {
+                            if (zx::result res = tracee->RequestFlush(); res.is_error()) {
+                              FX_PLOGS(ERROR, res.status_value()) << std::format(
+                                  "Failed to flush provider: {}", *tracee->connection());
+                            }
+                          }},
+               tracee);
+  }
+}
+
 bool TraceSession::WriteProviderData(Tracee* tracee) {
   FX_DCHECK(!tracee->results_written());
 

@@ -290,6 +290,18 @@ open protocol Session {
     flexible -> OnSessionStateChange(struct {
         state SessionState;
     });
+
+    /// Requests to flush of all tracing buffers into the provided socket.
+    ///
+    /// Normally streaming mode only sends data once it has enough data to
+    /// require a buffer swap and data flush. This produces fewer, but larger
+    /// and bursty data transfers.
+    ///
+    /// Some clients may want more regular smaller data transfers. These clients
+    /// may instead manually invoke FlushBuffers whenever they are ready for
+    /// data.
+    @available(added=HEAD)
+    flexible FlushBuffers() -> () error FlushError;
 };
 
 // Individual providers can be tuned with this.
@@ -371,6 +383,17 @@ type StartError = flexible enum {
 /// Error codes from Stop operations.
 type StopError = flexible enum {
     /// Trace controller is unavailable. Nothing to stop.
+    NOT_INITIALIZED = 1;
+    /// Tracing has not started or is currently stoppped.
+    NOT_STARTED = 2;
+    /// Tracing aborted due to error.
+    ABORTED = 3;
+};
+
+/// Error codes from Flush operations.
+@available(added=HEAD)
+type FlushError = flexible enum {
+    /// Trace controller is unavailable. Nothing to flush.
     NOT_INITIALIZED = 1;
     /// Tracing has not started or is currently stoppped.
     NOT_STARTED = 2;
