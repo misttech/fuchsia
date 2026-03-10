@@ -5,11 +5,14 @@
 Benchmark test that creates and destroys a wlanix client interface repeatedly
 to measure the time required for interface creation.
 """
+import json
 import logging
 import os
 import statistics
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import perf_publish.publish as publish
+import test_data
 from fuchsia_controller_py import Channel
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
@@ -116,6 +119,30 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
                 )
 
         if durations_ms:
+            # Publish fuchsiaperf data extracted from our trace file.
+            fuchsiaperf_data = [
+                {
+                    "test_suite": "fuchsia.wlan.wlanix",
+                    "label": "CreateClientIface",
+                    "values": durations_ms,
+                    "unit": "ms",
+                },
+            ]
+            test_perf_file = os.path.join(
+                self.log_path, "test.fuchsiaperf.json"
+            )
+            with open(test_perf_file, "w") as f:
+                json.dump(fuchsiaperf_data, f)
+
+            print("Publishing fuchsiaperf data to fuchsia-perf")
+            publish.publish_fuchsiaperf(
+                [test_perf_file],
+                "fuchsia.wlan.wlanix.txt",
+                test_data_module=test_data,
+                runtime_deps_dir=".",
+            )
+
+            # Log summary statistics for our current run.
             avg_duration = statistics.mean(durations_ms)
             min_duration = min(durations_ms)
             max_duration = max(durations_ms)

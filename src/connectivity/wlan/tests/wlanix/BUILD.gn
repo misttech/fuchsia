@@ -84,7 +84,12 @@ antlion_host_test("create_client_iface_benchmark_test") {
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
     "//src/performance/lib/trace_processing:trace_processing",
+    "//src/performance/lib/perf_publish",
   ]
+  data_sources = [
+    "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.wlan.wlanix.txt",
+  ]
+  data_package_name = "test_data"
 }
 
 # This is a helper group so developers can easily add all tests to their build. It is not run by
