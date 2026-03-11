@@ -6,14 +6,15 @@ use ::gcs::client::Client;
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{Datelike, Local, Timelike};
+use fdomain_client::fidl::Proxy as _;
+use fdomain_fuchsia_feedback::{
+    Annotation, DataProviderProxy, GetAnnotationsParameters, GetSnapshotParameters,
+};
+use fdomain_fuchsia_io as fio;
 use ffx_config::EnvironmentContext;
 use ffx_snapshot_args::SnapshotCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
-use fidl_fuchsia_feedback::{
-    Annotation, DataProviderProxy, GetAnnotationsParameters, GetSnapshotParameters,
-};
-use fidl_fuchsia_io as fio;
 use futures::stream::{FuturesOrdered, StreamExt};
 use gcs::error::GcsError;
 use pbms::{AuthFlowChoice, handle_new_access_token};
@@ -24,7 +25,7 @@ use std::fs;
 use std::io::{Write, stderr, stdin, stdout};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 const SNAPSHOT_GCS_BUCKET: &'static str = "snapshot.bucket";
 const SNAPSHOT_WEB_VIEWER_BASE: &'static str = "snapshot.web_viewer";
@@ -120,6 +121,7 @@ pub async fn read_data(file: &fio::FileProxy) -> Result<Vec<u8>> {
         .await
         .map_err(|e| bug!("Failed get_attributes wire call: {e}"))?
         .map_err(|e| bug!("Failed get_attributes of file: {e}"))?;
+
     let content_size =
         immutable_attributes.content_size.ok_or(bug!("Failed to get content size of file"))?;
 
@@ -239,7 +241,8 @@ pub async fn snapshot_impl(
     };
 
     // Make file proxy and channel for snapshot
-    let (file_proxy, file_server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+    let client = data_provider_proxy.domain();
+    let (file_proxy, file_server_end) = client.create_proxy::<fio::FileMarker>();
 
     // Build parameters
     let params = GetSnapshotParameters {
@@ -335,13 +338,12 @@ fn default_output_dir() -> PathBuf {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_feedback::{Annotations, DataProviderRequest, Snapshot};
     use ffx_writer::{Format, TestBuffers};
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_feedback::{Annotations, DataProviderRequest, Snapshot};
     use futures::TryStreamExt;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
-    fn serve_fake_file(server: ServerEnd<fio::FileMarker>) {
+    fn serve_fake_file(server: fdomain_client::fidl::ServerEnd<fio::FileMarker>) {
         fuchsia_async::Task::local(async move {
             let data: [u8; 3] = [1, 2, 3];
             let mut stream = server.into_stream();
@@ -403,11 +405,14 @@ mod test {
         };
     }
 
-    fn setup_fake_data_provider_server(annotations: Annotations) -> DataProviderProxy {
-        fake_proxy(move |req| match req {
+    fn setup_fake_data_provider_server(
+        client: std::sync::Arc<fdomain_client::Client>,
+        annotations: Annotations,
+    ) -> DataProviderProxy {
+        fake_proxy(client, move |req| match req {
             DataProviderRequest::GetSnapshot { params, responder } => {
                 let channel = params.response_channel.unwrap();
-                let server_end = ServerEnd::<fio::FileMarker>::new(channel);
+                let server_end = fdomain_client::fidl::ServerEnd::<fio::FileMarker>::new(channel);
 
                 serve_fake_file(server_end);
 
@@ -423,8 +428,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snaphot() {
+        let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
-        let data_provider_proxy = setup_fake_data_provider_server(annotations);
+        let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
 
         let cmd = SnapshotCommand { output_file: None, dump_annotations: false, upload: false };
         let result = snapshot_impl(data_provider_proxy, cmd, EnvironmentContext::default()).await;
@@ -435,8 +441,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snaphot_machine() {
+        let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
-        let data_provider_proxy = setup_fake_data_provider_server(annotations);
+        let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
         let tempdir = default_output_dir();
         fs::create_dir_all(&tempdir).expect("temp dir");
         let tool = SnapshotTool {
@@ -465,13 +472,14 @@ mod test {
 
     #[fuchsia::test]
     async fn test_annotations() -> Result<()> {
+        let client = fdomain_local::local_client_empty();
         let annotation_vec: Vec<Annotation> = vec![
             annotation!("build.board", "x64"),
             annotation!("hardware.board.name", "default-board"),
             annotation!("build.is_debug", "false"),
         ];
         let annotations = Annotations { annotations2: Some(annotation_vec), ..Default::default() };
-        let data_provider_proxy = setup_fake_data_provider_server(annotations);
+        let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
 
         let output = dump_annotations(data_provider_proxy).await?;
         assert_eq!(

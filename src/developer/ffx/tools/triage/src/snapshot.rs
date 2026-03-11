@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use fdomain_fuchsia_feedback::DataProviderProxy;
 use ffx_config::EnvironmentContext;
 use ffx_snapshot::snapshot_impl;
 use ffx_snapshot_args::SnapshotCommand;
-use fidl_fuchsia_feedback::DataProviderProxy;
 use std::fs::File;
 use std::io::copy;
 use std::path::{Path, PathBuf};

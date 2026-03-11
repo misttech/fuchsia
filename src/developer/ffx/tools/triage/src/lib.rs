@@ -4,17 +4,17 @@
 
 use anyhow::{Context, Result, anyhow};
 use errors::FfxError;
+use fdomain_fuchsia_feedback::DataProviderProxy;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_feedback::DataProviderProxy;
 use fuchsia_triage::{
     ActionResultFormatter, ActionTagDirective, TriageOutput, analyze, analyze_structured,
 };
 use std::env;
 use std::io::Write;
 use std::path::PathBuf;
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 use tempfile::tempdir;
 use triage_app_lib::file_io::{config_from_files, diagnostics_from_directory};
 
@@ -142,13 +142,13 @@ fn flatten_error(e: anyhow::Error) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fdomain_fuchsia_feedback::{DataProviderRequest, Snapshot};
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_feedback::{DataProviderRequest, Snapshot};
     use std::collections::HashMap;
     use std::fs;
     use std::path::Path;
     use std::sync::LazyLock;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     macro_rules! test_file {
         (config $filename:expr) => {
@@ -192,7 +192,8 @@ mod tests {
     });
 
     fn setup_fake_data_provider_server() -> DataProviderProxy {
-        fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        fake_proxy(client, move |req| match req {
             DataProviderRequest::GetSnapshot { params, responder } => {
                 let _channel = params.response_channel.unwrap();
 
