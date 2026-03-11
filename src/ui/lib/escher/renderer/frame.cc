@@ -101,13 +101,14 @@ void Frame::SubmitPartialFrame(const SemaphorePtr& frame_done) {
   IssueCommandBuffer();
 }
 
-void Frame::EndFrame(const SemaphorePtr& frame_done, FrameRetiredCallback frame_retired_callback) {
+void Frame::EndFrame(const SemaphorePtr& frame_done, FrameRetiredCallback frame_retired_callback,
+                     bool skip_escher_cleanup) {
   std::vector semaphores = {frame_done};
-  EndFrame(semaphores, std::move(frame_retired_callback));
+  EndFrame(semaphores, std::move(frame_retired_callback), skip_escher_cleanup);
 }
 
 void Frame::EndFrame(const std::vector<SemaphorePtr>& semaphores,
-                     FrameRetiredCallback frame_retired_callback) {
+                     FrameRetiredCallback frame_retired_callback, bool skip_escher_cleanup) {
   FX_DCHECK(command_buffer_);
 
   ++submission_count_;
@@ -156,7 +157,9 @@ void Frame::EndFrame(const std::vector<SemaphorePtr>& semaphores,
   // all work has been submitted to the GPU.
   block_allocator_.Reset();
 
-  escher()->Cleanup();
+  if (!skip_escher_cleanup) {
+    escher()->Cleanup();
+  }
 }
 
 void Frame::KeepAlive(ResourcePtr resource) { keep_alive_.push_back(std::move(resource)); }

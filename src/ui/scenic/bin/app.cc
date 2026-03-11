@@ -338,15 +338,6 @@ void App::InitializeServices(escher::EscherUniquePtr escher,
     }
 
     escher_ = std::move(escher);
-    escher_cleanup_ = std::make_shared<utils::CleanupUntilDone>(kEscherCleanupRetryInterval,
-                                                                [escher = escher_->GetWeakPtr()]() {
-                                                                  if (!escher) {
-                                                                    // Escher is destroyed, so there
-                                                                    // is no cleanup to be done.
-                                                                    return true;
-                                                                  }
-                                                                  return escher->Cleanup();
-                                                                });
   }
 
   InitializeGraphics(display);
@@ -714,16 +705,17 @@ void App::InitializeHeartbeat(display::Display& display) {
       /*on_cpu_work_done*/
       [this] {
         TRACE_DURATION("gfx", "App on_cpu_work_done");
-        flatland_manager_->SendHintsToStartRendering();
-        screen_capture2_manager_->RenderPendingScreenCaptures();
         view_tree_snapshotter_->UpdateSnapshot();
-        // Always defer the first cleanup attempt, because the first try is almost guaranteed to
-        // fail, and checking the status of a `VkFence` is fairly expensive.
-        if (escher_cleanup_)
-          escher_cleanup_->Cleanup(/*ok_to_run_immediately=*/false);
-
         // Clears scene state, so must happen after ViewTree update, etc.
         flatland_engine_->CleanUpFrame();
+
+        async::PostTask(async_get_default_dispatcher(), [this] {
+          flatland_manager_->SendHintsToStartRendering();
+          screen_capture2_manager_->RenderPendingScreenCaptures();
+          if (escher_) {
+            escher_->Cleanup();
+          }
+        });
       },
       /*on_frame_presented*/
       [this](auto latched_times, auto present_times) {

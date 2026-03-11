@@ -995,7 +995,7 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
   }
 
   // Submit the commands and wait for them to finish.
-  frame->EndFrame(semaphores, nullptr);
+  frame->EndFrame(semaphores, nullptr, /*skip_escher_cleanup=*/true);
 }
 
 void VkRenderer::SetColorConversionValues(const fidl::Array<float, 9>& coefficients,

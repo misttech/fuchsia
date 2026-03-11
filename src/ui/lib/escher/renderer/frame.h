@@ -45,14 +45,15 @@ class Frame : public Resource {
   // Submit the frame's final CommandBuffer.  When it is finished, |frame_done| will be signaled and
   // |frame_retired_callback| will be invoked; the latter occurs when the command-buffer is cleaned
   // up in Escher::Cleanup(), perhaps more than a millisecond later.
-  void EndFrame(const SemaphorePtr& frame_done, FrameRetiredCallback frame_retired_callback);
+  void EndFrame(const SemaphorePtr& frame_done, FrameRetiredCallback frame_retired_callback,
+                bool skip_escher_cleanup = false);
 
   // Submit the frame's final CommandBuffer.  When it is finished, all of the semaphores in the
   // vector |semaphores| will signaled and |frame_retired_callback| will be invoked; the latter
   // occurs when the the command-buffer is cleaned up in Escher::Cleanup(), perhaps more than a
   // millisecond later.
   void EndFrame(const std::vector<SemaphorePtr>& semaphores,
-                FrameRetiredCallback frame_retired_callback);
+                FrameRetiredCallback frame_retired_callback, bool skip_escher_cleanup = false);
 
   // See |CommandBuffer::DisableLazyPipelineCreation()|.  Disables lazy pipeline creation on the
   // frame's current and subsequent CommandBuffers.
@@ -153,9 +154,9 @@ class Frame : public Resource {
 
   BlockAllocator block_allocator_;
 
-  // TODO(https://fxbug.dev/42118778): investigate whether this memory is host-coherent, and whether it should be
-  // (it seems like it isn't and should be).  Document the usage guarantees/requirements in
-  // AllocateUniform(), above.
+  // TODO(https://fxbug.dev/42118778): investigate whether this memory is host-coherent, and whether
+  // it should be (it seems like it isn't and should be).  Document the usage
+  // guarantees/requirements in AllocateUniform(), above.
   UniformBlockAllocator uniform_block_allocator_;
 
   uint32_t submission_count_ = 0;
