@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use component_debug::cli::explore_cmd;
+use component_debug_fdomain::cli::explore_cmd;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query;
+use fdomain_fuchsia_dash::LauncherProxy;
+use ffx_component::rcs::connect_to_realm_query_f;
 use ffx_component_explore_args::ExploreComponentCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_dash::LauncherProxy;
 use socket_to_stdio::Stdout;
-use target_holders::{RemoteControlProxyHolder, moniker};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct ExploreTool {
@@ -30,7 +30,7 @@ impl FfxMain for ExploreTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = connect_to_realm_query(&self.rcs).await?;
+        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
         let stdout = if self.cmd.command.is_some() { Stdout::buffered() } else { Stdout::raw()? };
 
         // All errors from component_debug library are user-visible.

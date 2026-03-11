@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use component_debug::explore::DashNamespaceLayout;
+use component_debug_fdomain::explore::DashNamespaceLayout;
 use ffx_core::ffx_command;
 
 #[ffx_command()]

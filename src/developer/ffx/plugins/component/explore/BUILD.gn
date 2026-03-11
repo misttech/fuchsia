@@ -9,13 +9,13 @@ ffx_plugin("ffx_component_explore") {
   version = "0.1.0"
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust",
+    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust_fdomain",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/component/common:ffx_component",
-    "//src/sys/lib/component_debug",
+    "//src/sys/lib/component_debug:component_debug_fdomain",
     "//src/sys/lib/socket-to-stdio",
     "//third_party/rust_crates:async-trait",
   ]
@@ -23,7 +23,7 @@ ffx_plugin("ffx_component_explore") {
   args_sources = [ "src/args.rs" ]
   args_deps = [
     "//src/developer/ffx/core:lib",
-    "//src/sys/lib/component_debug",
+    "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:argh",
   ]
 
