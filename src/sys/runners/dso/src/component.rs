@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::error::StartError;
-use crate::loader::{Hooks, Library, Loader};
+use crate::loader::{CArray, Hooks, Library, Loader};
 use crate::util;
 use async_trait::async_trait;
 use derivative::Derivative;
@@ -171,6 +171,7 @@ impl Component {
                 runtime_handle: Some(runtime_handle),
                 _driver: driver,
                 shutdown_done_tx: Some(tx),
+                resources: None,
             }));
             dispatcher = Some(fdf_dispatcher);
             shutdown_done_rx = Some(rx);
@@ -249,7 +250,7 @@ impl Component {
         let exit_wait;
         match &mut control {
             InnerControl::Async(None) => unreachable!("missing async control"),
-            InnerControl::Async(Some(_)) => {
+            InnerControl::Async(Some(control)) => {
                 let dso_name = dso_name.to_string();
                 let dispatcher =
                     dispatcher.expect("missing dispatcher for async component").release();
@@ -257,26 +258,45 @@ impl Component {
                 let (exit_code_tx, exit_code_rx) = oneshot::channel();
                 let shutdown_done_rx = shutdown_done_rx.expect("missing shutdown_done_rx");
 
+                let mut names: Vec<_> = names_alloc.iter().map(|n| n.as_ptr()).collect();
+                let argv_alloc: Vec<_> =
+                    argv.into_iter().map(|s| CString::new(s).unwrap()).collect();
+                let mut argv: Vec<_> = argv_alloc.iter().map(|s| s.as_ptr()).collect();
+                argv.insert(0, c_dso_name.as_ptr());
+                let envp_alloc: Vec<_> =
+                    environ.into_iter().map(|s| CString::new(s).unwrap()).collect();
+                let mut envp: Vec<_> = envp_alloc.iter().map(|s| s.as_ptr()).collect();
+                envp.push(ptr::null_mut());
+
+                let handle_arr = CArray::new(&mut handle);
+                let handle_info_arr = CArray::new(&mut handle_info);
+                let names_arr = CArray::new(&mut names);
+                let argv_arr = CArray::new(&mut argv);
+                let envp_arr = CArray::new(&mut envp);
+
+                // Because the program is still running after dso_start_async returns, it may
+                // (and probably will) later make references to the inputs. Therefore the
+                // component's execution context holds onto them until the component is shutdown.
+                control.resources = Some(AsyncProgramResources {
+                    _handle: handle,
+                    _handle_info: handle_info,
+                    _names: names,
+                    _names_alloc: names_alloc,
+                    _argv: argv,
+                    _argv_alloc: argv_alloc,
+                    _envp: envp,
+                    _envp_alloc: envp_alloc,
+                });
+
                 dispatcher.spawn(async move {
-                    let mut names: Vec<_> = names_alloc.iter().map(|n| n.as_ptr()).collect();
-                    let argv_alloc: Vec<_> =
-                        argv.into_iter().map(|s| CString::new(s).unwrap()).collect();
-                    let mut argv: Vec<_> = argv_alloc.iter().map(|s| s.as_ptr()).collect();
-                    argv.insert(0, c_dso_name.as_ptr());
-
-                    let envp_alloc: Vec<_> =
-                        environ.into_iter().map(|s| CString::new(s).unwrap()).collect();
-                    let mut envp: Vec<_> = envp_alloc.iter().map(|s| s.as_ptr()).collect();
-                    envp.push(ptr::null_mut());
-
                     // SAFETY: Inputs are not freed until the dispatcher is shutdown.
                     let code = unsafe {
                         hooks.dso_start_async(
-                            &mut handle,
-                            &mut handle_info,
-                            &mut names,
-                            &mut argv,
-                            &mut envp,
+                            handle_arr,
+                            handle_info_arr,
+                            names_arr,
+                            argv_arr,
+                            envp_arr,
                             dispatcher2,
                         )
                     };
@@ -285,23 +305,6 @@ impl Component {
                         _ = exit_code_tx.send(code);
                     } else {
                         drop(exit_code_tx);
-                        // Don't deallocate argv, envp, etc. so the program can continue using them
-                        // TODO(https://fxbug.dev/485919515): Deallocate them once the program
-                        // terminates
-                        for name in names_alloc {
-                            _ = CString::into_raw(name);
-                        }
-                        for arg in argv_alloc {
-                            _ = CString::into_raw(arg);
-                        }
-                        for env in envp_alloc {
-                            _ = CString::into_raw(env);
-                        }
-                        _ = handle.leak();
-                        _ = handle_info.leak();
-                        _ = names.leak();
-                        _ = argv.leak();
-                        _ = envp.leak();
                     }
                 }).unwrap();
 
@@ -451,15 +454,32 @@ struct AsyncControl {
     runtime_handle: Option<fdf_env::Driver<()>>,
     _driver: Arc<()>,
     shutdown_done_tx: Option<oneshot::Sender<()>>,
+    resources: Option<AsyncProgramResources>,
+}
+
+// SAFETY: [`AsyncProgramResources`] is only freed once the async component's dispatcher is shutdown.
+unsafe impl Send for AsyncProgramResources {}
+
+#[derive(Debug)]
+struct AsyncProgramResources {
+    _handle: Vec<zx::sys::zx_handle_t>,
+    _handle_info: Vec<u32>,
+    _names: Vec<*const ::libc::c_char>,
+    _names_alloc: Vec<CString>,
+    _argv: Vec<*const ::libc::c_char>,
+    _argv_alloc: Vec<CString>,
+    _envp: Vec<*const ::libc::c_char>,
+    _envp_alloc: Vec<CString>,
 }
 
 impl Drop for AsyncControl {
     fn drop(&mut self) {
         // We may end up here without maybe_shutdown_dispatcher if an error preempted the component
         // from starting.
-        let Self { runtime_handle, _driver, shutdown_done_tx: _ } = self;
+        let Self { runtime_handle, _driver, shutdown_done_tx: _, resources } = self;
         // Must be done before dropping `_driver`, otherwise it will panic.
         runtime_handle.take().map(|r| r.shutdown(|_| {}));
+        drop(resources.take());
     }
 }
 
@@ -618,7 +638,18 @@ mod tests {
     }
 
     fn lib_so(name: &str) -> String {
-        format!("lib/{name}")
+        #[cfg(feature = "variant_coverage")]
+        return format!("lib/coverage-rust/{name}");
+        #[cfg(feature = "variant_asan")]
+        return format!("lib/asan-ubsan/{name}");
+        #[cfg(feature = "variant_hwasan")]
+        return format!("lib/hwasan-ubsan/{name}");
+        #[cfg(not(any(
+            feature = "variant_asan",
+            feature = "variant_hwasan",
+            feature = "variant_coverage"
+        )))]
+        return format!("lib/{name}");
     }
 
     unsafe extern "C" {

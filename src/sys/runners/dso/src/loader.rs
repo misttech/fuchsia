@@ -4,6 +4,9 @@
 
 use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ServerEnd};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_ldsvc as fldsvc;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use log::{error, warn};
@@ -12,7 +15,6 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::LazyLock;
 use std::{mem, thread};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_ldsvc as fldsvc, fuchsia_async as fasync};
 
 unsafe extern "C" {
     /// SAFETY: documented at sdk/lib/c/include/zircon/dlfcn.h
@@ -244,6 +246,19 @@ unsafe impl Send for Hooks {}
 /// SAFETY: These hooks are valid on every thread after they are loaded.
 unsafe impl Sync for Hooks {}
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct CArray<T>(*mut T, usize);
+
+impl<T: Sized> CArray<T> {
+    pub(super) fn new(arr: &mut [T]) -> Self {
+        Self(arr.as_mut_ptr(), arr.len())
+    }
+}
+
+// SAFETY: [`CArray`]s are never referenced past the point [`ProgramResources`] is released, after
+// the async component's dispatcher is shutdown.
+unsafe impl<T> Send for CArray<T> {}
+
 impl Hooks {
     /// Returns error if the expected symbol was not found, with the name of the symbol.
     pub(super) fn new_from_library(
@@ -293,28 +308,25 @@ impl Hooks {
     /// and `envp` must be kept alive until `dispatcher` is shutdown.
     pub(super) unsafe fn dso_start_async(
         &self,
-        handle: &mut [zx::sys::zx_handle_t],
-        handle_info: &mut [u32],
-        names: &mut [*const ::libc::c_char],
-        argv: &mut [*const ::libc::c_char],
-        envp: &mut [*const ::libc::c_char],
+        handle: CArray<zx::sys::zx_handle_t>,
+        handle_info: CArray<u32>,
+        names: CArray<*const ::libc::c_char>,
+        argv: CArray<*const ::libc::c_char>,
+        envp: CArray<*const ::libc::c_char>,
         mut dispatcher: fdf::DispatcherRef<'static>,
     ) -> ::core::ffi::c_int {
-        let handle_count = handle.len() as u32;
-        let name_count = names.len() as u32;
-        let argc = argv.len() as ::libc::c_int;
         match self {
             Self::Sync(_) => unreachable!(),
             Self::Async(e) => unsafe {
                 (e)(dso_async_input {
-                    handle_count,
-                    handle: handle.as_mut_ptr(),
-                    handle_info: handle_info.as_mut_ptr(),
-                    name_count,
-                    names: names.as_mut_ptr(),
-                    argc,
-                    argv: argv.as_mut_ptr(),
-                    envp: envp.as_mut_ptr(),
+                    handle: handle.0,
+                    handle_count: handle.1 as u32,
+                    handle_info: handle_info.0,
+                    name_count: names.1 as u32,
+                    names: names.0,
+                    argv: argv.0,
+                    argc: argv.1 as i32,
+                    envp: envp.0,
                     dispatcher: dispatcher.as_raw(),
                 })
             },

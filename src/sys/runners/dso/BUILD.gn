@@ -11,6 +11,11 @@ rustc_binary("bin") {
   with_unit_tests = true
   edition = "2024"
 
+  features = []
+  if (is_coverage) {
+    features += [ "variant_coverage" ]
+  }
+
   sources = [
     "src/component.rs",
     "src/error.rs",
@@ -154,7 +159,5 @@ group("tests") {
 
   # TODO(https://fxbug.dev/403545512): Enable in asan once the leaks are fixed
   # and fix the test paths so the test can pass in coverage
-  if (!is_asan && !is_coverage) {
-    deps = [ ":dso_runner_tests" ]
-  }
+  deps = [ ":dso_runner_tests" ]
 }
