@@ -36,6 +36,7 @@ import debugger
 import environment
 import event
 import execution
+import find_affected
 import log
 import package_repository
 import selection
@@ -597,6 +598,10 @@ class AsyncMain:
                 f"Your output directory already exists and is not empty.\nUse --timestamp-artifacts to create new subdirectories for each run, and use `fx test --prev artifact-path` to get the path from the previous run.",
             )
             return 1
+
+        if flags.show_affected_tests:
+            await find_affected.show_affected_tests(exec_env, flags, recorder)
+            return 0
 
         # Load the list of tests to execute.
         try:

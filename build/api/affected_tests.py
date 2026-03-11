@@ -5,24 +5,28 @@
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 from ninja_artifacts import NinjaRunner
 
 
-def create_test_artifacts_mapping(build_dir: Path) -> dict[str, set[str]]:
-    """Generate a mapping from test labels to Ninja artifacts.
+def create_test_artifacts_mapping(
+    build_dir: Path,
+) -> dict[str, tuple[str, set[str]]]:
+    """Generate a mapping from test labels to their OS and Ninja artifacts.
 
     Args:
         build_dir: Ninja build directory.
     Returns:
-        A { target_label -> artifact_list } dictionary, mapping GN or Bazel
-        target labels to a set of Ninja artifact paths, relative to the Ninja
+        A { target_label -> (os, artifact_list) } dictionary, mapping GN or Bazel
+        target labels to a tuple. The first element is the OS of the test (e.g. 'fuchsia' or 'linux').
+        The second element is a set of Ninja artifact paths, relative to the Ninja
         build directory, that each test target should produce or use at
         runtime.
     """
-    result: dict[str, set[str]] = {}
+    result: dict[str, tuple[str, set[str]]] = {}
 
     tests_json_path = build_dir / "tests.json"
     with tests_json_path.open("rt") as f:
@@ -31,6 +35,7 @@ def create_test_artifacts_mapping(build_dir: Path) -> dict[str, set[str]]:
     for entry in tests_json:
         test = entry["test"]
         target_label = test["label"]
+        test_os = test["os"]
 
         artifacts = set()
 
@@ -84,16 +89,24 @@ def create_test_artifacts_mapping(build_dir: Path) -> dict[str, set[str]]:
         # It is common to get duplicates because runtime_deps and package_manifest_deps
         # are the result of GN metadata collection, which does simple concatenation of
         # lists instead of unions of sets.
-        result[target_label] = artifacts
+        result[target_label] = (test_os, artifacts)
 
     return result
+
+
+@dataclass(frozen=True)
+class TestTarget:
+    """Represents a test target and its operating system."""
+
+    label: str
+    os_name: str
 
 
 def find_tests_affected_by_changed_files(
     changed_files: list[str],
     fuchsia_dir: Path,
     ninja_runner: NinjaRunner,
-) -> set[str]:
+) -> set[TestTarget]:
     """Return the set of test labels that are affected by a set of changed files.
 
     Given a set of paths to changed files (for example after applying a
@@ -107,7 +120,7 @@ def find_tests_affected_by_changed_files(
         fuchsia_dir: Path to Fuchsia source directory.
         ninja_runner: A NinjaRunner instance.
     Returns:
-        A set of test target labels.
+        A set of tuples, each containing a test target label and its OS name.
     """
     changed_sources: set[str] = set()
     for file in changed_files:
@@ -153,7 +166,7 @@ def find_tests_affected_by_changed_files(
     affected_artifacts = set(tool_output.splitlines())
 
     return {
-        test_label
-        for test_label, artifacts in test_artifacts.items()
+        TestTarget(label=test_label, os_name=test_os)
+        for test_label, (test_os, artifacts) in test_artifacts.items()
         if bool(set(artifacts) & affected_artifacts)
     }

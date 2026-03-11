@@ -985,6 +985,7 @@ default $:default
                         "label": "//src:host_test(//toolchain:host)",
                         "path": "obj/src/host_test",
                         "runtime_deps": "obj/src/host_test.runtime_deps.json",
+                        "os": "linux",
                     }
                 },
                 # A device test package that depends on //src:program2 at runtime.
@@ -996,6 +997,7 @@ default $:default
                         "package_manifests": [
                             "obj/packages/foo/package_manifest.json",
                         ],
+                        "os": "fuchsia",
                     }
                 },
                 # A device test package that depends on //package:foo at runtime,
@@ -1008,6 +1010,7 @@ default $:default
                             "obj/packages/bar/package_manifest.json",
                         ],
                         "package_manifest_deps": "obj/packages/bar.package_manifest_deps.json",
+                        "os": "fuchsia",
                     }
                 },
             ],
@@ -1048,7 +1051,7 @@ default $:default
                 "--files-list",
                 self.write_list_file(["src/other.h"]),
             ],
-            "\n",
+            "",
         )
 
         # Modifying the host test source should affect it.
@@ -1058,7 +1061,7 @@ default $:default
                 "--files-list",
                 self.write_list_file(["src/host_test.cc"]),
             ],
-            "//src:host_test(//toolchain:host)\n",
+            "//src:host_test(//toolchain:host),host\n",
         )
 
         # Modifying the //src/main.cc source file should affect the host test.
@@ -1068,7 +1071,7 @@ default $:default
                 "--files-list",
                 self.write_list_file(["src/main.cc"]),
             ],
-            "//src:host_test(//toolchain:host)\n",
+            "//src:host_test(//toolchain:host),host\n",
         )
 
         # Modifying the //src/libc.cc source file should affect the host test and
@@ -1079,9 +1082,9 @@ default $:default
                 "--files-list",
                 self.write_list_file(["src/lib.cc"]),
             ],
-            "//packages:bar(//toolchain:device)\n"
-            + "//packages:foo(//toolchain:device)\n"
-            + "//src:host_test(//toolchain:host)\n",
+            "//packages:bar(//toolchain:device),device\n"
+            + "//packages:foo(//toolchain:device),device\n"
+            + "//src:host_test(//toolchain:host),host\n",
         )
 
         # Modifying the bar component manifest only affects the bar test package.
@@ -1091,7 +1094,7 @@ default $:default
                 "--files-list",
                 self.write_list_file(["packages/bar/component.cml"]),
             ],
-            "//packages:bar(//toolchain:device)\n",
+            "//packages:bar(//toolchain:device),device\n",
         )
 
         # Modifying the foo component manifest should affect the foo test package
@@ -1103,8 +1106,8 @@ default $:default
                 "--files-list",
                 self.write_list_file(["packages/foo/component.cml"]),
             ],
-            "//packages:bar(//toolchain:device)\n"
-            "//packages:foo(//toolchain:device)\n",
+            "//packages:bar(//toolchain:device),device\n"
+            "//packages:foo(//toolchain:device),device\n",
         )
 
         # Modifying //src:program2 source file should also affect the foo test package
@@ -1115,8 +1118,8 @@ default $:default
                 "--files-list",
                 self.write_list_file(["src/main2.cc"]),
             ],
-            "//packages:bar(//toolchain:device)\n"
-            "//packages:foo(//toolchain:device)\n",
+            "//packages:bar(//toolchain:device),device\n"
+            "//packages:foo(//toolchain:device),device\n",
         )
 
         # Modifying the test runner script affects both test packages.
@@ -1126,8 +1129,8 @@ default $:default
                 "--files-list",
                 self.write_list_file(["tools/test_runner.sh"]),
             ],
-            "//packages:bar(//toolchain:device)\n"
-            "//packages:foo(//toolchain:device)\n",
+            "//packages:bar(//toolchain:device),device\n"
+            "//packages:foo(//toolchain:device),device\n",
         )
 
 

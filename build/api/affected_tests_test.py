@@ -133,8 +133,9 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
         mapping = affected_tests.create_test_artifacts_mapping(self.build_dir)
         self.assertEqual(len(mapping), 1)
 
-        label, artifacts = mapping.popitem()
+        label, (test_os, artifacts) = mapping.popitem()
         self.assertEqual(label, self.HOST_TEST_LABEL)
+        self.assertEqual(test_os, "linux")
         self.assertSetEqual(artifacts, self.HOST_TEST_EXPECTED_SET)
 
     def test_single_device_test(self) -> None:
@@ -152,8 +153,9 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
 
         self.assertEqual(len(mapping), 1)
 
-        target_label, artifacts = mapping.popitem()
+        target_label, (test_os, artifacts) = mapping.popitem()
         self.assertEqual(target_label, self.DEVICE_TEST_LABEL)
+        self.assertEqual(test_os, "fuchsia")
         self.assertSetEqual(artifacts, self.DEVICE_TEST_EXPECTED_SET)
 
     def test_multiple_tests(self) -> None:
@@ -177,12 +179,14 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
 
         self.assertEqual(len(mapping), 2)
 
-        target_label, artifacts = mapping.popitem()
+        target_label, (test_os, artifacts) = mapping.popitem()
         self.assertEqual(target_label, self.DEVICE_TEST_LABEL)
+        self.assertEqual(test_os, "fuchsia")
         self.assertSetEqual(artifacts, self.DEVICE_TEST_EXPECTED_SET)
 
-        target_label, artifacts = mapping.popitem()
+        target_label, (test_os, artifacts) = mapping.popitem()
         self.assertEqual(target_label, self.HOST_TEST_LABEL)
+        self.assertEqual(test_os, "linux")
         self.assertSetEqual(artifacts, self.HOST_TEST_EXPECTED_SET)
 
 
@@ -201,7 +205,11 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
 
         tests_json = [
             {
-                "test": {"label": "//gn:target1", "path": "obj/gn/target1"},
+                "test": {
+                    "label": "//gn:target1",
+                    "path": "obj/gn/target1",
+                    "os": "fuchsia",
+                },
             },
             {
                 "test": {
@@ -209,6 +217,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                     "package_manifests": [
                         "obj/bazel/target2.bazel_outputs/package_manifest.json",
                     ],
+                    "os": "linux",
                 },
             },
         ]
@@ -237,7 +246,9 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 "\n".join(["obj/gn/target1", "obj/gn/target1.o"]),
             ),
         )
-        self.assertSetEqual(targets, {"//gn:target1"})
+        self.assertSetEqual(
+            targets, {affected_tests.TestTarget("//gn:target1", "fuchsia")}
+        )
 
         targets = affected_tests.find_tests_affected_by_changed_files(
             ["bazel/source.txt"],
@@ -252,7 +263,9 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 ),
             ),
         )
-        self.assertSetEqual(targets, {"@//bazel:target2"})
+        self.assertSetEqual(
+            targets, {affected_tests.TestTarget("@//bazel:target2", "linux")}
+        )
 
         targets = affected_tests.find_tests_affected_by_changed_files(
             ["bazel/source.txt", "gn/source.txt"],
@@ -269,7 +282,13 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 ),
             ),
         )
-        self.assertSetEqual(targets, {"//gn:target1", "@//bazel:target2"})
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.TestTarget("//gn:target1", "fuchsia"),
+                affected_tests.TestTarget("@//bazel:target2", "linux"),
+            },
+        )
 
 
 if __name__ == "__main__":

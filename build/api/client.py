@@ -1051,10 +1051,12 @@ of test labels.
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
-        test_labels = affected_tests.find_tests_affected_by_changed_files(
+        test_targets = affected_tests.find_tests_affected_by_changed_files(
             changed_files, args.fuchsia_dir, ninja_runner
         )
-        print("\n".join(sorted(test_labels)))
+        for target in sorted(test_targets, key=lambda x: x.label):
+            env = "device" if target.os_name == "fuchsia" else "host"
+            print(f"{target.label},{env}")
         return 0
 
 
