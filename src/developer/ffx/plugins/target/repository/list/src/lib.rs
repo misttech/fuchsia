@@ -3,19 +3,20 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_pkg::RepositoryKeyConfig::Ed25519Key;
+use fdomain_fuchsia_pkg::{RepositoryConfig, RepositoryManagerProxy};
+use fdomain_fuchsia_pkg_rewrite::EngineProxy;
 use ffx_target_repository_list_args::ListCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Error, FfxMain, FfxTool, Result, bug};
-use fidl_fuchsia_pkg::RepositoryKeyConfig::Ed25519Key;
-use fidl_fuchsia_pkg::{RepositoryConfig, RepositoryManagerProxy};
 use fidl_fuchsia_pkg_ext::RepositoryStorageType;
-use fidl_fuchsia_pkg_rewrite::EngineProxy;
 use fidl_fuchsia_pkg_rewrite_ext::Rule;
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(FfxTool)]
 pub struct ListTool {
@@ -75,10 +76,10 @@ impl From<RepositoryConfig> for RepositoryInfo {
             root_version: value.root_version,
             root_threshold: value.root_threshold,
             storage_type: match value.storage_type {
-                Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral) => {
+                Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral) => {
                     Some(RepositoryStorageType::Ephemeral)
                 }
-                Some(fidl_fuchsia_pkg::RepositoryStorageType::Persistent) => {
+                Some(fdomain_fuchsia_pkg::RepositoryStorageType::Persistent) => {
                     Some(RepositoryStorageType::Persistent)
                 }
                 None => None,
@@ -127,7 +128,9 @@ impl FfxMain for ListTool {
 
 impl ListTool {
     async fn list_from_device(&self) -> fho::Result<Vec<RepositoryInfo>> {
-        let (repo_iterator, repo_iterator_server) = fidl::endpoints::create_proxy();
+        let client = self.repo_proxy.domain();
+        let (repo_iterator, repo_iterator_server) =
+            client.create_proxy::<fdomain_fuchsia_pkg::RepositoryIteratorMarker>();
         self.repo_proxy.list(repo_iterator_server).map_err(|e| bug!(e))?;
         let mut ret: Vec<RepositoryInfo> = vec![];
         loop {
@@ -135,10 +138,11 @@ impl ListTool {
             if repos.is_empty() {
                 break;
             }
-            ret.extend(repos.into_iter().map(|r| r.try_into().unwrap()))
+            ret.extend(repos.into_iter().map(|r| r.into()))
         }
 
-        let (rule_iterator, rule_iterator_server) = fidl::endpoints::create_proxy();
+        let (rule_iterator, rule_iterator_server) =
+            client.create_proxy::<fdomain_fuchsia_pkg_rewrite::RuleIteratorMarker>();
         self.engine_proxy.list(rule_iterator_server).map_err(|e| bug!("{e}"))?;
 
         let mut rewrite_rules: Vec<Rule> = vec![];
@@ -197,11 +201,11 @@ impl ListTool {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_pkg::{RepositoryIteratorRequest, RepositoryManagerRequest};
+    use fdomain_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_pkg::RepositoryManagerRequest;
-    use fidl_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
     use futures::TryStreamExt;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     macro_rules! rule {
         ($host_match:expr => $host_replacement:expr,
@@ -211,8 +215,11 @@ mod test {
         };
     }
 
-    async fn setup_fake_repo_proxy(repos: Vec<RepositoryConfig>) -> RepositoryManagerProxy {
-        let repos = fake_proxy(move |req| match req {
+    async fn setup_fake_repo_proxy(
+        client: std::sync::Arc<fdomain_client::Client>,
+        repos: Vec<RepositoryConfig>,
+    ) -> RepositoryManagerProxy {
+        fake_proxy(client, move |req| match req {
             RepositoryManagerRequest::Add { repo: _, responder } => {
                 responder.send(Ok(())).unwrap();
             }
@@ -222,7 +229,7 @@ mod test {
                     let mut sent = false;
                     let mut stream = iterator.into_stream();
                     while let Some(req) = stream.try_next().await.unwrap() {
-                        let fidl_fuchsia_pkg::RepositoryIteratorRequest::Next { responder } = req;
+                        let RepositoryIteratorRequest::Next { responder } = req;
                         if !sent {
                             sent = true;
                             responder.send(&repos).unwrap();
@@ -234,12 +241,14 @@ mod test {
                 .detach();
             }
             other => panic!("Unexpected request: {:?}", other),
-        });
-        repos
+        })
     }
 
-    async fn setup_fake_engine_proxy(rules: Vec<fidl_fuchsia_pkg_rewrite::Rule>) -> EngineProxy {
-        let engine = fake_proxy(move |req| match req {
+    async fn setup_fake_engine_proxy(
+        client: std::sync::Arc<fdomain_client::Client>,
+        rules: Vec<fdomain_fuchsia_pkg_rewrite::Rule>,
+    ) -> EngineProxy {
+        fake_proxy(client, move |req| match req {
             EngineRequest::StartEditTransaction { transaction, control_handle: _ } => {
                 fuchsia_async::Task::local(async move {
                     let mut tx_stream = transaction.into_stream();
@@ -283,31 +292,37 @@ mod test {
                 .detach();
             }
             other => panic!("Unexpected request: {:?}", other),
-        });
-        engine
+        })
     }
 
     #[fuchsia::test]
     async fn list_table() {
+        let client = fdomain_local::local_client_empty();
         let test_buffers = TestBuffers::default();
         let writer = <ListTool as fho::FfxMain>::Writer::new_test(None, &test_buffers);
         let tool = ListTool {
             _cmd: ListCommand {},
-            repo_proxy: setup_fake_repo_proxy(vec![
-                RepositoryConfig {
-                    repo_url: Some("fuchsia-pkg://bob".into()),
-                    ..Default::default()
-                },
-                RepositoryConfig {
-                    repo_url: Some("fuchsia-pkg://smith".into()),
-                    ..Default::default()
-                },
-            ])
+            repo_proxy: setup_fake_repo_proxy(
+                client.clone(),
+                vec![
+                    RepositoryConfig {
+                        repo_url: Some("fuchsia-pkg://bob".into()),
+                        ..Default::default()
+                    },
+                    RepositoryConfig {
+                        repo_url: Some("fuchsia-pkg://smith".into()),
+                        ..Default::default()
+                    },
+                ],
+            )
             .await,
-            engine_proxy: setup_fake_engine_proxy(vec![
-                rule!( "target1-alias1" => "bob", "/" => "/").into(),
-                rule!( "target1-alias2" => "bob", "/" => "/").into(),
-            ])
+            engine_proxy: setup_fake_engine_proxy(
+                client,
+                vec![
+                    rule!( "target1-alias1" => "bob", "/" => "/").into(),
+                    rule!( "target1-alias2" => "bob", "/" => "/").into(),
+                ],
+            )
             .await,
         };
         tool.main(writer).await.expect("main ok");
@@ -323,27 +338,34 @@ mod test {
 
     #[fuchsia::test]
     async fn list_json() {
+        let client = fdomain_local::local_client_empty();
         let test_buffers = TestBuffers::default();
         let writer =
             <ListTool as fho::FfxMain>::Writer::new_test(Some(Format::Json), &test_buffers);
         let tool = ListTool {
             _cmd: ListCommand {},
-            repo_proxy: setup_fake_repo_proxy(vec![
-                RepositoryConfig {
-                    repo_url: Some("fuchsia-pkg://bob".into()),
-                    ..Default::default()
-                },
-                RepositoryConfig {
-                    repo_url: Some("fuchsia-pkg://smith".into()),
-                    storage_type: Some(RepositoryStorageType::Ephemeral.into()),
-                    ..Default::default()
-                },
-            ])
+            repo_proxy: setup_fake_repo_proxy(
+                client.clone(),
+                vec![
+                    RepositoryConfig {
+                        repo_url: Some("fuchsia-pkg://bob".into()),
+                        ..Default::default()
+                    },
+                    RepositoryConfig {
+                        repo_url: Some("fuchsia-pkg://smith".into()),
+                        storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+                        ..Default::default()
+                    },
+                ],
+            )
             .await,
-            engine_proxy: setup_fake_engine_proxy(vec![
-                rule!( "target1-alias1" => "bob", "/" => "/").into(),
-                rule!( "target1-alias2" => "bob", "/" => "/").into(),
-            ])
+            engine_proxy: setup_fake_engine_proxy(
+                client,
+                vec![
+                    rule!( "target1-alias1" => "bob", "/" => "/").into(),
+                    rule!( "target1-alias2" => "bob", "/" => "/").into(),
+                ],
+            )
             .await,
         };
         tool.main(writer).await.expect("main ok");
@@ -357,12 +379,13 @@ mod test {
 
     #[fuchsia::test]
     async fn list_empty() {
+        let client = fdomain_local::local_client_empty();
         let test_buffers = TestBuffers::default();
         let writer = <ListTool as fho::FfxMain>::Writer::new_test(None, &test_buffers);
         let tool = ListTool {
             _cmd: ListCommand {},
-            repo_proxy: setup_fake_repo_proxy(vec![]).await,
-            engine_proxy: setup_fake_engine_proxy(vec![]).await,
+            repo_proxy: setup_fake_repo_proxy(client.clone(), vec![]).await,
+            engine_proxy: setup_fake_engine_proxy(client, vec![]).await,
         };
         tool.main(writer).await.expect("main ok");
         static EXPECT: &str = "";
@@ -371,13 +394,14 @@ mod test {
 
     #[fuchsia::test]
     async fn list_json_empty() {
+        let client = fdomain_local::local_client_empty();
         let test_buffers = TestBuffers::default();
         let writer =
             <ListTool as fho::FfxMain>::Writer::new_test(Some(Format::Json), &test_buffers);
         let tool = ListTool {
             _cmd: ListCommand {},
-            repo_proxy: setup_fake_repo_proxy(vec![]).await,
-            engine_proxy: setup_fake_engine_proxy(vec![]).await,
+            repo_proxy: setup_fake_repo_proxy(client.clone(), vec![]).await,
+            engine_proxy: setup_fake_engine_proxy(client, vec![]).await,
         };
         tool.main(writer).await.expect("main ok");
 
