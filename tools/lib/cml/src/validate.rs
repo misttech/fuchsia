@@ -16,12 +16,13 @@ use crate::types::offer::{
     ContextOffer, Offer, OfferFromRef, OfferToAllCapability, OfferToRef, TargetAvailability,
     offer_to_all_would_duplicate, offer_to_all_would_duplicate_context,
 };
+use crate::types::program::{ContextProgram, Program};
 use crate::types::right::Rights;
 use crate::types::r#use::{ContextUse, Use, UseFromRef};
 use crate::{
     AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType,
     ContextCapabilityClause, ContextSpanned, DependencyType, DictionaryRef, Error, EventScope,
-    FromClause, FromClauseContext, OneOrMany, Program, RootDictionaryRef, SourceAvailability,
+    FromClause, FromClauseContext, OneOrMany, RootDictionaryRef, SourceAvailability,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -114,7 +115,7 @@ type ConflictInfo<'a> = (CapabilityId<'a>, Arc<PathBuf>);
 struct ValidationContextV2<'a> {
     document: &'a DocumentContext,
     features: &'a FeatureSet,
-    _capability_requirements: &'a CapabilityRequirements<'a>,
+    capability_requirements: &'a CapabilityRequirements<'a>,
     all_children: HashSet<Name>,
     all_collections: HashSet<Name>,
     all_resolvers: HashSet<Name>,
@@ -132,7 +133,7 @@ impl<'a> ValidationContextV2<'a> {
     fn new(
         document: &'a DocumentContext,
         features: &'a FeatureSet,
-        _capability_requirements: &'a CapabilityRequirements<'a>,
+        capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
         let all_children = document.all_children_names();
         let all_collections = document.all_collection_names();
@@ -203,7 +204,7 @@ impl<'a> ValidationContextV2<'a> {
         ValidationContextV2 {
             document,
             features,
-            _capability_requirements,
+            capability_requirements,
             all_children,
             all_collections,
             all_resolvers,
@@ -243,6 +244,18 @@ impl<'a> ValidationContextV2<'a> {
             for use_ in uses.iter() {
                 self.validate_use(&use_, &mut used_ids)?;
             }
+        }
+
+        let uses_runner = self
+            .document
+            .r#use
+            .as_ref()
+            .map_or(false, |uses| uses.iter().any(|u| u.value.runner.is_some()));
+
+        if uses_runner {
+            self.validate_runner_not_specified(self.document.program.as_ref())?;
+        } else {
+            self.validate_runner_specified(self.document.program.as_ref())?;
         }
 
         if let Some(exposes) = self.document.expose.as_ref() {
@@ -325,6 +338,10 @@ impl<'a> ValidationContextV2<'a> {
                 self.validate_environment(&environment)?;
             }
         }
+
+        self.validate_required_offer_decls()?;
+
+        self.validate_required_use_decls()?;
 
         self.validate_facets()?;
 
@@ -935,6 +952,104 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
+    fn validate_required_offer_decls(&self) -> Result<(), Error> {
+        let children = self.document.children.as_ref().map(|c| c.as_slice()).unwrap_or(&[]);
+        let collections = self.document.collections.as_ref().map(|c| c.as_slice()).unwrap_or(&[]);
+        let offers = self.document.offer.as_ref().map(|o| o.as_slice()).unwrap_or(&[]);
+
+        for required_offer in self.capability_requirements.must_offer {
+            for child in children {
+                if !offers.iter().any(|offer| {
+                    Self::has_required_offer(&offer.value, &child.value.name.value, required_offer)
+                }) {
+                    let capability_type = required_offer.offer_type();
+                    return Err(Error::validate_context(
+                        format!(
+                            r#"{capability_type} "{}" is not offered to child component "{}" but it is a required offer"#,
+                            required_offer.name(),
+                            child.value.name.value
+                        ),
+                        Some(child.origin.clone()),
+                    ));
+                }
+            }
+
+            for collection in collections {
+                if !offers.iter().any(|offer| {
+                    Self::has_required_offer(
+                        &offer.value,
+                        &collection.value.name.value,
+                        required_offer,
+                    )
+                }) {
+                    let capability_type = required_offer.offer_type();
+                    return Err(Error::validate_context(
+                        format!(
+                            r#"{capability_type} "{}" is not offered to collection "{}" but it is a required offer"#,
+                            required_offer.name(),
+                            collection.value.name.value
+                        ),
+                        Some(collection.origin.clone()),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn has_required_offer(
+        offer: &ContextOffer,
+        target_name: &BorrowedName,
+        required_offer: &OfferToAllCapability<'_>,
+    ) -> bool {
+        let names_this_collection = offer.to.value.iter().any(|target| match target {
+            OfferToRef::Named(name) => name.as_str() == target_name.as_str(),
+            OfferToRef::All => true,
+            OfferToRef::OwnDictionary(_) => false,
+        });
+
+        let capability_names = match required_offer {
+            OfferToAllCapability::Dictionary(_) => offer.dictionary.as_ref(),
+            OfferToAllCapability::Protocol(_) => offer.protocol.as_ref(),
+        };
+
+        let names_this_capability = match capability_names {
+            Some(spanned_names) => match &spanned_names.value {
+                OneOrMany::Many(names) => {
+                    names.iter().any(|cap_name| cap_name.as_str() == required_offer.name())
+                }
+                OneOrMany::One(name) => {
+                    let cap_name = offer.r#as.as_ref().map(|s| &s.value).unwrap_or(name);
+
+                    cap_name.as_str() == required_offer.name()
+                }
+            },
+            None => false,
+        };
+
+        names_this_collection && names_this_capability
+    }
+
+    fn validate_required_use_decls(&self) -> Result<(), Error> {
+        let use_decls = self.document.r#use.as_ref().map(|u| u.as_slice()).unwrap_or(&[]);
+
+        for required_usage in self.capability_requirements.must_use {
+            if !use_decls.iter().any(|usage| match usage.value.protocol().as_ref() {
+                None => false,
+                Some(protocol) => protocol
+                    .value
+                    .iter()
+                    .any(|protocol_name| protocol_name.as_str() == required_usage.name()),
+            }) {
+                return Err(Error::validate(format!(
+                    r#"Protocol "{}" is not used by a component but is required by all"#,
+                    required_usage.name(),
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn validate_offer(
         &mut self,
         offer_wrapper: &'a ContextSpanned<ContextOffer>,
@@ -1464,6 +1579,37 @@ which is almost certainly a mistake: {}",
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_runner_specified(
+        &self,
+        program: Option<&ContextSpanned<ContextProgram>>,
+    ) -> Result<(), Error> {
+        if let Some(p) = program {
+            if p.value.runner.is_none() {
+                return Err(Error::validate_context(
+                    "Component has a `program` block defined, but doesn't specify a `runner`. \
+                    Components need to use a runner to actually execute code.",
+                    Some(p.origin.clone()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_runner_not_specified(
+        &self,
+        program: Option<&ContextSpanned<ContextProgram>>,
+    ) -> Result<(), Error> {
+        if let Some(p) = program {
+            if p.value.runner.is_some() {
+                return Err(Error::validate_context(
+                    "Component has conflicting runners in `program` block and `use` block.",
+                    Some(p.origin.clone()),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -2028,8 +2174,6 @@ impl<'a> ValidationContext<'a> {
 
         // Validate "offer".
         if let Some(offers) = self.document.offer.as_ref() {
-            let mut used_ids = HashMap::new();
-
             let mut duplicate_check: HashSet<CapabilityId<'a>> = HashSet::new();
             let mut problem_protocols = Vec::new();
             let mut problem_dictionaries = Vec::new();
@@ -2078,6 +2222,7 @@ impl<'a> ValidationContext<'a> {
                 .filter(|o| o.protocol.is_some() || o.dictionary.is_some())
                 .collect::<Vec<&Offer>>();
 
+            let mut used_ids = HashMap::new();
             for offer in offers.iter() {
                 self.validate_offer(&offer, &mut used_ids, &offered_to_all)?;
             }
@@ -4532,6 +4677,58 @@ mod tests {
             ]
         }"##;
 
+        let result = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &["fuchsia.logger.LogSink".into()],
+            &[],
+            &[],
+        );
+
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn offer_to_all_with_aliases_no_span() {
+        let input = r##"{
+            children: [
+                {
+                    name: "logger",
+                    url: "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
+                },
+                {
+                    name: "something",
+                    url: "fuchsia-pkg://fuchsia.com/something#meta/something.cm",
+                },
+            ],
+            offer: [
+                {
+                    protocol: "fuchsia.logger.LogSink",
+                    from: "parent",
+                    to: "all"
+                },
+                {
+                    protocol: "fuchsia.logger.LogSink",
+                    from: "framework",
+                    to: "all",
+                    as: "OtherLogSink",
+                },
+                {
+                    protocol: "fuchsia.logger.LogSink",
+                    from: "framework",
+                    to: "#something",
+                    as: "OtherOtherLogSink",
+                },
+                {
+                    protocol: "fuchsia.logger.LogSink",
+                    from: "parent",
+                    to: "#something",
+                    as: "fuchsia.logger.LogSink",
+                },
+            ]
+        }"##;
+
         let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
@@ -4539,6 +4736,42 @@ mod tests {
             &["fuchsia.logger.LogSink".into()],
             &[],
             &[],
+        );
+
+        assert_matches!(result, Ok(_));
+    }
+
+    #[test]
+    fn required_dict_offers_accept_aliases_no_span() {
+        let input = r##"{
+            capabilities: [
+                {
+                    dictionary: "test-diagnostics",
+                }
+            ],
+            children: [
+                {
+                    name: "something",
+                    url: "fuchsia-pkg://fuchsia.com/something#meta/something.cm",
+                },
+            ],
+            offer: [
+                {
+                    dictionary: "test-diagnostics",
+                    from: "self",
+                    to: "#something",
+                    as: "diagnostics",
+                }
+            ]
+        }"##;
+
+        let result = validate_with_features_for_test(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &[],
+            &[],
+            &["diagnostics".into()],
         );
 
         assert_matches!(result, Ok(_));
@@ -4568,7 +4801,7 @@ mod tests {
             ]
         }"##;
 
-        let result = validate_with_features_for_test(
+        let result = validate_with_features_for_test_context(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -4651,6 +4884,29 @@ mod tests {
             }
         );
 
+        let result_context = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &vec!["fuchsia.logger.LogSink".into()],
+            &[],
+            &[],
+        );
+
+        assert_matches!(result_context,
+            Err(Error::ValidateContext { err, origin }) => {
+                assert_eq!(
+                    err,
+                    fail_to_make_required_offer(
+                        "fuchsia.logger.LogSink",
+                        "child component",
+                        "something",
+                    ),
+                );
+                assert!(origin.is_some(), "Expected there to be an origin in error message");
+            }
+        );
+
         let input = r##"{
             children: [
                 {
@@ -4688,6 +4944,25 @@ mod tests {
                     fail_to_make_required_offer("fuchsia.logger.LogSink", "collection", "coll"),
                 );
                 assert!(filename.is_some(), "Expected there to be a filename in error message");
+            }
+        );
+
+        let result = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &vec!["fuchsia.logger.LogSink".into()],
+            &[],
+            &[],
+        );
+
+        assert_matches!(result,
+            Err(Error::ValidateContext { err, origin }) => {
+                assert_eq!(
+                    err,
+                    fail_to_make_required_offer("fuchsia.logger.LogSink", "collection", "coll"),
+                );
+                assert!(origin.is_some(), "Expected there to be an origin in error message");
             }
         );
     }
@@ -4746,6 +5021,29 @@ mod tests {
             }
         );
 
+        let result = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &vec![],
+            &[],
+            &["diagnostics".to_string()],
+        );
+
+        assert_matches!(result,
+            Err(Error::ValidateContext { err, origin }) => {
+                assert_eq!(
+                    err,
+                    fail_to_make_required_offer_dictionary(
+                        "diagnostics",
+                        "child component",
+                        "something",
+                    ),
+                );
+                assert!(origin.is_some(), "Expected there to be an origin in error message");
+            }
+        );
+
         let input = r##"{
             children: [
                 {
@@ -4792,6 +5090,24 @@ mod tests {
                     fail_to_make_required_offer_dictionary("diagnostics", "collection", "coll"),
                 );
                 assert!(filename.is_some(), "Expected there to be a filename in error message");
+            }
+        );
+
+        let result = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &vec!["fuchsia.logger.LogSink".into()],
+            &[],
+            &["diagnostics".to_string()],
+        );
+        assert_matches!(result,
+            Err(Error::ValidateContext { err, origin }) => {
+                assert_eq!(
+                    err,
+                    fail_to_make_required_offer_dictionary("diagnostics", "collection", "coll"),
+                );
+                assert!(origin.is_some(), "Expected there to be an origin in error message");
             }
         );
     }
@@ -4849,6 +5165,29 @@ mod tests {
                 assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
+
+        let result = validate_with_features_for_test_context(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &[],
+            &[],
+            &["diagnostics".to_string()],
+        );
+
+        assert_matches!(result,
+            Err(Error::ValidateContext { err, origin }) => {
+                assert_eq!(
+                    err,
+                    fail_to_make_required_offer_dictionary(
+                        "diagnostics",
+                        "child component",
+                        "logger",
+                    ),
+                );
+                assert!(origin.is_some(), "Expected there to be an origin in error message");
+            }
+        );
     }
 
     #[test]
@@ -4879,6 +5218,9 @@ mod tests {
             ],
         }"##;
         let result = validate_for_test("test.cml", input.as_bytes());
+        assert_matches!(result, Ok(()));
+
+        let result = validate_for_test_context("test.cml", input.as_bytes());
         assert_matches!(result, Ok(()));
     }
 
@@ -6210,6 +6552,55 @@ mod tests {
             Err(Error::Parse { err, .. }) if err.starts_with("invalid value: string \"/\", expected a path with no leading `/` and non-empty segments")
         ),
 
+        test_cml_program(
+            json!(
+                {
+                    "program": {
+                        "runner": "elf",
+                        "binary": "bin/app",
+                    },
+                }
+            ),
+            Ok(())
+        ),
+
+        test_cml_program_use_runner(
+            json!(
+                {
+                    "program": {
+                        "binary": "bin/app",
+                    },
+                    "use": [
+                        { "runner": "elf", "from": "parent" }
+                    ]
+                }
+            ),
+            Ok(())
+        ),
+
+        test_cml_program_use_runner_conflict(
+            json!(
+                {
+                    "program": {
+                        "runner": "elf",
+                        "binary": "bin/app",
+                    },
+                    "use": [
+                        { "runner": "elf", "from": "parent" }
+                    ]
+                }
+            ),
+            Err(Error::ValidateContext { err, .. }) if &err ==
+                "Component has conflicting runners in `program` block and `use` block."
+        ),
+
+        test_cml_program_no_runner(
+            json!({"program": { "binary": "bin/app" }}),
+            Err(Error::ValidateContext { err, .. }) if &err ==
+                "Component has a `program` block defined, but doesn't specify a `runner`. \
+                Components need to use a runner to actually execute code."
+        ),
+
     }
 
     test_validate_cml! {
@@ -6244,7 +6635,7 @@ mod tests {
             json!({}),
             Ok(())
         ),
-        test_cml_program(
+        test_cml_program_no_span(
             json!(
                 {
                     "program": {
@@ -6255,7 +6646,7 @@ mod tests {
             ),
             Ok(())
         ),
-        test_cml_program_use_runner(
+        test_cml_program_use_runner_no_span(
             json!(
                 {
                     "program": {
@@ -6268,7 +6659,7 @@ mod tests {
             ),
             Ok(())
         ),
-        test_cml_program_use_runner_conflict(
+        test_cml_program_use_runner_conflict_no_span(
             json!(
                 {
                     "program": {
@@ -6283,7 +6674,7 @@ mod tests {
             Err(Error::Validate { err, .. }) if &err ==
                 "Component has conflicting runners in `program` block and `use` block."
         ),
-        test_cml_program_no_runner(
+        test_cml_program_no_runner_no_span(
             json!({"program": { "binary": "bin/app" }}),
             Err(Error::Validate { err, .. }) if &err ==
                 "Component has a `program` block defined, but doesn't specify a `runner`. \
