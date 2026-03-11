@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ffx_target_log_message_args::LogMessageCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct LogMessageTool {
@@ -45,15 +45,16 @@ where
 mod test {
     use super::*;
     use diagnostics_log_types::Severity;
-    use fidl_fuchsia_developer_remotecontrol as rcs;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_developer_remotecontrol as rcs;
+    use target_holders::fdomain::fake_proxy;
 
     const EXPECTED_TAG: &str = "some tag";
     const EXPECTED_MESSAGE: &str = "some message";
     const EXPECTED_SEVERITY: Severity = Severity::Fatal;
 
     fn setup_fake_log_write_server_proxy() -> rcs::RemoteControlProxy {
-        fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        fake_proxy(client, move |req| match req {
             rcs::RemoteControlRequest::LogMessage { tag, message, severity, responder } => {
                 assert_eq!(tag, EXPECTED_TAG);
                 assert_eq!(message, EXPECTED_MESSAGE);

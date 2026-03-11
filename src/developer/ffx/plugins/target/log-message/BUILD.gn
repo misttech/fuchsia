@@ -25,8 +25,9 @@ ffx_plugin("ffx_target_log_message") {
     "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//src/lib/diagnostics/log/types",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
   ]
 }
