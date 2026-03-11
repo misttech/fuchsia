@@ -3,7 +3,13 @@
 # found in the LICENSE file.
 
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
+load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
+
+def _get_current_cpu_arch(ctx):
+    """Returns the CPU architecture of the current build."""
+    current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
+    return current_platform.cpu
 
 # LINT.IfChange(idk_atom_info)
 def _create_test_atom_info_impl(ctx):
@@ -45,7 +51,11 @@ def _create_test_atom_info_impl(ctx):
     ]
 
 create_test_atom_info = rule(
-    doc = "Creates a FuchsiaIdkAtomInfo provider for testing.",
+    doc = "Creates a FuchsiaIdkAtomInfo provider for use with `verify_atom_info()`." +
+          "For CPU architecture-specific strings, use `x64` as a placeholder " +
+          "for the current CPU architecture. `verify_atom_info()` will " +
+          "replace all instances of `x64` with the current CPU architecture " +
+          "before comparing the expected and actual atom info.",
     implementation = _create_test_atom_info_impl,
     attrs = {
         "label": attr.label(mandatory = True),
@@ -80,25 +90,39 @@ create_test_atom_info = rule(
 
 def _verify_atom_info_impl(ctx):
     atom_info = ctx.attr.atom[FuchsiaIdkAtomInfo]
+    atom_info_string = str(atom_info)
+
     expected_atom_info = ctx.attr.expected_atom_info[FuchsiaIdkAtomInfo]
 
+    # Replace instances of `x64` with the current CPU architecture after
+    # converting the expected info into a string. This is the simplest way to
+    # support these tests on multiple CPU architectures. It avoids complicating
+    # each test definition with `select()` statements or iterating through maps
+    # in `create_test_atom_info()`.
+    expected_atom_info_string = str(expected_atom_info).replace("x64", _get_current_cpu_arch(ctx))
+
     # Compare string representations because the objects are not equal.
-    if str(atom_info) != str(expected_atom_info):
+    if atom_info_string != expected_atom_info_string:
         # Break the strings on commas to make the output more readable and easy
         # to copy to a diff viewer.
         fail("The actual atom info does not match the expected atom info.\nActual:\n%s\nExpected:\n%s\n" % (
-            str(atom_info).replace(",", ",\n"),
-            str(expected_atom_info).replace(",", ",\n"),
+            atom_info_string.replace(",", ",\n"),
+            expected_atom_info_string.replace(",", ",\n"),
         ))
     return []
 
 verify_atom_info = rule(
     doc = "Verifies that the actual FuchsiaIdkAtomInfo provider of an atom " +
-          "target matches the expected provider representations for testing.",
+          "target matches the expected provider representations for testing. " +
+          "Replaces instances of `x64` in `expected_atom_info` with the current CPU architecture.",
     implementation = _verify_atom_info_impl,
     attrs = {
         "atom": attr.label(mandatory = True, providers = [FuchsiaIdkAtomInfo]),
         "expected_atom_info": attr.label(mandatory = True, providers = [FuchsiaIdkAtomInfo]),
+        "_current_platform": attr.label(
+            providers = [CurrentPlatformInfo],
+            default = "@//build/bazel:current_platform",
+        ),
     },
 )
 
