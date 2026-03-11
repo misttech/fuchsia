@@ -20,6 +20,7 @@ filegroup(
         "//sdk/lib/fidl:__pkg__",
         "//sdk/lib/fidl/cpp:__pkg__",
         "//sdk/lib/fidl/cpp/wire:__pkg__",
+        "//sdk/lib/fidl/hlcpp:__pkg__",
         "//sdk/lib/fidl_base:__pkg__",
         "//sdk/lib/fit:__pkg__",
         "//sdk/lib/fit-promise:__pkg__",
