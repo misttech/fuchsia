@@ -3658,3 +3658,23 @@
   reviewers: ['eieio@google.com', 'jamesr@google.com', 'maniscalco@google.com']
   submitted: '2026-02-24'
   reviewed: '2026-02-24'
+
+- name: 'RFC-0279'
+  title: 'Support for product-specific blob formats'
+  short_description: 'This RFC proposes the usage of different blob types for different products'
+  authors: ['thomasalpinus@google.com']
+  file: '0279_support_for_product-specific_blob_formats.md'
+  area: ['Software Delivery']
+  issue: ['472963800']
+  gerrit_change_id: ['1492616']
+  status: 'Accepted'
+  reviewers: [
+    'jfsulliv@google.com',
+    'etryzelaar@google.com',
+    'amituttam@google.com',
+    'awolter@google.com',
+    'markdittmer@google.com',
+    'gtsai@google.com',
+  ]
+  submitted: '2026-02-02'
+  reviewed: '2026-03-10'

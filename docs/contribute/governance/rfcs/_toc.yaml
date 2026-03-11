@@ -574,3 +574,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0277_merging_services_and_dictionaries.md
   - title: "RFC-0278: Restartable sequences"
     path: /docs/contribute/governance/rfcs/0278_restartable_sequences.md
+  - title: "RFC-0279: Support for product-specific blob formats"
+    path: /docs/contribute/governance/rfcs/0279_support_for_product-specific_blob_formats.md
