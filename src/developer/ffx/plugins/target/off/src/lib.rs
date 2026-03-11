@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use ffx_off_args::OffCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
-};
-use target_holders::moniker;
-use zx_status as zx;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct OffTool {
@@ -41,10 +40,10 @@ async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
     match res {
         Ok(_) => Ok(()),
         Err(ref e) => match e {
-            fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. } => Ok(()),
+            fidl::Error::ClientChannelClosed { status: fidl::Status::PEER_CLOSED, .. } => Ok(()),
             _ => res
                 .bug()?
-                .map_err(zx::Status::from_raw)
+                .map_err(fidl::Status::from_raw)
                 .user_message("Unexpected error from poweroff"),
         },
     }
@@ -56,11 +55,12 @@ async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_hardware_power_statecontrol::AdminRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_hardware_power_statecontrol::AdminRequest;
+    use target_holders::fdomain::fake_proxy;
 
     fn setup_fake_admin_server() -> AdminProxy {
-        fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::Poweroff));
                 assert_eq!(options.reasons, Some(vec![ShutdownReason::DeveloperRequest]));
