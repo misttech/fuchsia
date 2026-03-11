@@ -5,7 +5,7 @@
 // TODO(https://fxbug.dev/42144933): Migrate to the new library that substitutes io_utils and fuchsia_fs::directory.
 // Ask for host-side support on the new library (fxr/467217).
 
-use anyhow::{anyhow, format_err, Error, Result};
+use anyhow::{Error, Result, anyhow, format_err};
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use fuchsia_fs_fdomain as fuchsia_fs;
 
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_io as fio;
-use fuchsia_fs::directory::{open_directory_async, open_file_async, readdir, DirEntry};
+use fuchsia_fs::directory::{DirEntry, open_directory_async, open_file_async, readdir};
 use fuchsia_fs::file::{close, read, read_to_string, write};
 
 pub enum DirentKind {
@@ -268,7 +268,7 @@ impl Directory for RemoteDirectory {
                     "could not open file `{}`: {}",
                     path.as_path().display(),
                     e
-                ))
+                ));
             }
         };
 
@@ -296,7 +296,7 @@ impl Directory for RemoteDirectory {
                     "could not open file `{}`: {}",
                     path.as_path().display(),
                     e
-                ))
+                ));
             }
         };
 
@@ -307,14 +307,26 @@ impl Directory for RemoteDirectory {
     }
 
     async fn exists(&self, filename: &str) -> Result<bool> {
-        match self.entry_names().await {
-            Ok(entries) => Ok(entries.iter().any(|s| s == filename)),
-            Err(e) => Err(format_err!(
-                "could not check if `{}` exists in `{}`: {}",
-                filename,
-                self.path.as_path().display(),
-                e
-            )),
+        let filename = PathBuf::from(filename);
+        let mut path_iter = filename.iter().peekable();
+        let path_element = path_iter.next().ok_or_else(|| format_err!("path is empty"))?;
+        match path_iter.peek() {
+            Some(_) => {
+                let sub_directory = self.open_dir_readonly(path_element)?;
+                let sub_path = path_iter.collect::<PathBuf>();
+                let sub_path_str =
+                    sub_path.to_str().ok_or_else(|| format_err!("path is not valid utf8"))?;
+                sub_directory.exists(sub_path_str).await
+            }
+            None => match self.entry_names().await {
+                Ok(entries) => Ok(entries.iter().any(|s| s.as_str() == path_element)),
+                Err(e) => Err(format_err!(
+                    "could not check if `{}` exists in `{}`: {}",
+                    filename.display(),
+                    self.path.as_path().display(),
+                    e
+                )),
+            },
         }
     }
 
@@ -344,23 +356,50 @@ impl Directory for RemoteDirectory {
     }
 
     async fn remove(&self, filename: &str) -> Result<()> {
-        let options = fio::UnlinkOptions::default();
-        match self.proxy.unlink(filename, &options).await {
-            Ok(r) => match r {
-                Ok(()) => Ok(()),
-                Err(e) => Err(format_err!(
-                    "could not delete `{}` from `{}`: {}",
-                    filename,
-                    self.path.as_path().display(),
-                    e
-                )),
-            },
-            Err(e) => Err(format_err!(
-                "proxy error while deleting `{}` from `{}`: {}",
-                filename,
+        let filename = PathBuf::from(filename);
+        let mut path_iter = filename.iter().peekable();
+        let path_element = path_iter.next().ok_or_else(|| {
+            format_err!(
+                "could not delete `{}` from `{}: path is empty",
+                filename.display(),
                 self.path.as_path().display(),
-                e
-            )),
+            )
+        })?;
+        match path_iter.peek() {
+            Some(_) => {
+                let sub_directory = self.open_dir_readwrite(path_element)?;
+                let sub_path = path_iter.collect::<PathBuf>();
+                let sub_path_str = sub_path.to_str().ok_or_else(|| {
+                    format_err!(
+                        "could not delete `{}` from `{}: path is not valid utf8",
+                        filename.display(),
+                        self.path.as_path().display(),
+                    )
+                })?;
+                sub_directory.remove(sub_path_str).await
+            }
+            None => {
+                let options = fio::UnlinkOptions::default();
+                let path_str =
+                    path_element.to_str().ok_or_else(|| format_err!("path is not valid utf8"))?;
+                match self.proxy.unlink(path_str, &options).await {
+                    Ok(r) => match r {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(format_err!(
+                            "could not delete `{}` from `{}`: {}",
+                            path_element.display(),
+                            self.path.as_path().display(),
+                            e
+                        )),
+                    },
+                    Err(e) => Err(format_err!(
+                        "proxy error while deleting `{}` from `{}`: {}",
+                        path_element.display(),
+                        self.path.as_path().display(),
+                        e
+                    )),
+                }
+            }
         }
     }
 
@@ -382,7 +421,7 @@ impl Directory for RemoteDirectory {
                     "could not open file `{}`: {}",
                     path.as_path().display(),
                     e
-                ))
+                ));
             }
         };
 
@@ -404,7 +443,7 @@ impl Directory for RemoteDirectory {
                     "could not write to file `{}`: {}",
                     path.as_path().display(),
                     e
-                ))
+                ));
             }
         }
 
@@ -430,7 +469,7 @@ impl Directory for RemoteDirectory {
                     "could not open file `{}`: {}",
                     path.as_path().display(),
                     e
-                ))
+                ));
             }
         };
         let (_, immutable_attributes) = file
