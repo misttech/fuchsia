@@ -13,6 +13,7 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl, ComponentUrl, PackageUrl};
 use futures::TryStreamExt;
+use futures::future::FutureExt;
 use routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
 use std::path::Path;
 use std::sync::Arc;
@@ -28,6 +29,9 @@ const BOOT_PACKAGE_INDEX: &str = "data/bootfs_packages";
 /// The subdirectory of /boot that holds all merkle-root named
 /// blobs used by package resolution.
 static BOOTFS_BLOB_DIR: &str = "blob";
+
+/// The flags used to open the bootfs blobs dir.
+const BLOB_DIR_FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
 /// Resolves component URLs with the "fuchsia-boot" scheme, which supports loading components from
 /// the /boot directory in component_manager's namespace.
@@ -62,10 +66,8 @@ impl FuchsiaBootResolver {
             return Ok(None);
         }
 
-        let boot_proxy = fuchsia_fs::directory::open_in_namespace(
-            bootfs_dir.to_str().unwrap(),
-            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
-        )?;
+        let boot_proxy =
+            fuchsia_fs::directory::open_in_namespace(bootfs_dir.to_str().unwrap(), BLOB_DIR_FLAGS)?;
 
         let component_resolver = Self::new_from_directory(boot_proxy).await?;
         let package_resolver = component_resolver.boot_package_resolver.clone();
@@ -92,7 +94,7 @@ impl FuchsiaBootResolver {
         let path_proxy = fuchsia_fs::directory::open_directory_async(
             &self.boot_proxy,
             namespace_root,
-            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            BLOB_DIR_FLAGS,
         )
         .map_err(|_| fresolution::ResolverError::Internal)?;
 
@@ -308,8 +310,8 @@ impl FuchsiaBootResolver {
 
 #[derive(Debug)]
 pub struct FuchsiaBootPackageResolver {
-    // Blobfs client exposing the bootfs /boot/blob directory to package-directory interface.
-    boot_blob_storage: fio::DirectoryProxy,
+    // Cache of open package directories.
+    root_dir_cache: package_directory::RootDirCache<fio::DirectoryProxy>,
     // PathHashMapping encoding the index for boot package resolution.
     boot_package_index: PathHashMapping<Bootfs>,
     context_authenticator: context_authenticator::ContextAuthenticator,
@@ -334,9 +336,11 @@ impl FuchsiaBootPackageResolver {
         let boot_blob_storage = fuchsia_fs::directory::open_directory_async(
             &proxy,
             BOOTFS_BLOB_DIR,
-            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            BLOB_DIR_FLAGS
         )
         .map_err(|err| anyhow!("Bootfs blob directory existed, but converting it into a blob client for package resolution failed: {:?}", err))?;
+
+        let root_dir_cache = package_directory::RootDirCache::new(boot_blob_storage);
 
         let boot_package_index = Self::extract_bootfs_index(&proxy)
             .await
@@ -344,7 +348,7 @@ impl FuchsiaBootPackageResolver {
 
         let context_authenticator = Default::default();
 
-        Ok(Some(Arc::new(Self { boot_blob_storage, boot_package_index, context_authenticator })))
+        Ok(Some(Arc::new(Self { root_dir_cache, boot_package_index, context_authenticator })))
     }
 
     /// Load `data/bootfs_packages` from /boot, if present.
@@ -396,23 +400,17 @@ impl FuchsiaBootPackageResolver {
             .hash_for_package(&package_path)
             .ok_or(fpkg::ResolveError::PackageNotFound)?;
 
-        let blob_proxy = fuchsia_fs::directory::clone(&self.boot_blob_storage).map_err(|e| {
-            log::warn!("Cloning /boot/blob connection failed: {e:?}");
+        let root_dir = self.root_dir_cache.get_or_insert(meta_hash, None).await.map_err(|e| {
+            log::warn!(url:?; "creating RootDir for {meta_hash} {:#}", anyhow!(e));
             fpkg::ResolveError::Internal
         })?;
 
-        let () = package_directory::serve(
+        let () = vfs::directory::serve_on(
+            root_dir,
+            BLOB_DIR_FLAGS,
             package_directory::ExecutionScope::new(),
-            blob_proxy,
-            meta_hash,
-            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
             dir,
-        )
-        .await
-        .map_err(|e| {
-            log::warn!("serving the package directory: {:#}", anyhow!(e));
-            fpkg::ResolveError::Internal
-        })?;
+        );
 
         Ok(self.context_authenticator.clone().create(&meta_hash))
     }
@@ -456,16 +454,16 @@ impl FuchsiaBootPackageResolver {
                 log::warn!(url:%; "invalid context: {:#}", anyhow!(e));
                 fpkg::ResolveError::InvalidContext
             })?;
-        let superpackage = package_directory::RootDir::new(
-            Clone::clone(&self.boot_blob_storage),
-            superpackage_hash,
-        )
-        .await
-        .map_err(|e| {
-            log::warn!(url:%; "creating RootDir for superpackage {:#}", anyhow!(e));
-            fpkg::ResolveError::Internal
-        })?;
-        let subpackage = match superpackage
+
+        let superpackage =
+            self.root_dir_cache.get_or_insert(superpackage_hash, None).await.map_err(|e| {
+                log::warn!(
+                    url:?; "creating RootDir for superpackage {superpackage_hash} {:#}", anyhow!(e)
+                );
+                fpkg::ResolveError::Internal
+            })?;
+
+        let subpackage_hash = match superpackage
             .subpackages()
             .await
             .map_err(|e| {
@@ -487,26 +485,22 @@ impl FuchsiaBootPackageResolver {
                 return Err(fpkg::ResolveError::PackageNotFound);
             }
         };
+        let subpackage =
+            self.root_dir_cache.get_or_insert(subpackage_hash, None).await.map_err(|e| {
+                log::warn!(
+                  url:?; "creating RootDir for subpackage {subpackage_hash} {:#}", anyhow!(e)
+                );
+                fpkg::ResolveError::Internal
+            })?;
 
-        let blob_proxy = fuchsia_fs::directory::clone(&self.boot_blob_storage).map_err(|e| {
-            log::warn!(source:? = e; "Cloning connection to /boot/blob directory failed");
-            fpkg::ResolveError::Internal
-        })?;
-
-        let () = package_directory::serve(
-            package_directory::ExecutionScope::new(),
-            blob_proxy,
+        let () = vfs::directory::serve_on(
             subpackage,
-            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            BLOB_DIR_FLAGS,
+            package_directory::ExecutionScope::new(),
             dir,
-        )
-        .await
-        .map_err(|e| {
-            log::warn!(source:? = e; "serving the package directory");
-            fpkg::ResolveError::Internal
-        })?;
+        );
 
-        Ok(self.context_authenticator.clone().create(&subpackage))
+        Ok(self.context_authenticator.clone().create(&subpackage_hash))
     }
 
     pub async fn serve(
@@ -547,6 +541,39 @@ impl FuchsiaBootPackageResolver {
             }
         }
         Ok(())
+    }
+
+    /// Returns a callback to be given to `fuchsia_inspect::Node::record_lazy_child`.
+    pub fn record_lazy_inspect(
+        self: &Arc<Self>,
+    ) -> impl Fn() -> futures::future::BoxFuture<
+        'static,
+        Result<fuchsia_inspect::Inspector, anyhow::Error>,
+    > + Send
+    + Sync
+    + 'static {
+        let this = Arc::downgrade(self);
+        move || {
+            let this = this.clone();
+            async move {
+                let inspector = fuchsia_inspect::Inspector::default();
+                if let Some(this) = this.upgrade() {
+                    let root = inspector.root();
+                    root.record_lazy_child(
+                        "open-packages",
+                        this.root_dir_cache.record_lazy_inspect(),
+                    );
+
+                    root.record_child("index", |n| {
+                        for (path, hash) in this.boot_package_index.contents() {
+                            n.record_string(path.to_string(), hash.to_string())
+                        }
+                    });
+                }
+                Ok(inspector)
+            }
+            .boxed()
+        }
     }
 }
 
@@ -643,10 +670,9 @@ mod tests {
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {
         let fs_scope = ExecutionScope::new();
         let (client, server) = create_proxy::<fio::DirectoryMarker>();
-        const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
-        FLAGS
+        BLOB_DIR_FLAGS
             .to_object_request(server.into_channel())
-            .handle(|request| root.open(fs_scope.clone(), VfsPath::dot(), FLAGS, request));
+            .handle(|request| root.open(fs_scope.clone(), VfsPath::dot(), BLOB_DIR_FLAGS, request));
         let vfs_task = Task::spawn(async move { fs_scope.wait().await });
         (vfs_task, client)
     }

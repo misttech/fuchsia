@@ -74,8 +74,21 @@ use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::ProcessLauncher;
 use elf_runner::vdso_vmo::{get_next_vdso_vmo, get_stable_vdso_vmo, get_vdso_vmo};
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream, ServerEnd};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_internal::BuiltinBootResolver;
+use fidl_fuchsia_component_resolution as fresolution;
 use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_process as fprocess;
+use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_time as ftime;
+use fidl_fuchsia_update_verify as fupdate;
+use fuchsia_async as fasync;
 use fuchsia_component::server::*;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::stats::InspectorExt;
@@ -93,14 +106,6 @@ use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
 use zx::{self, Resource};
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime, fidl_fuchsia_update_verify as fupdate,
-    fuchsia_async as fasync,
-};
 
 #[cfg(feature = "tracing")]
 use {
@@ -366,11 +371,22 @@ impl BuiltinEnvironmentBuilder {
 
         register_builtin_resolver(&mut self.resolvers);
 
+        let inspector = self
+            .inspector
+            .unwrap_or_else(|| component::init_inspector_with_size(INSPECTOR_SIZE).clone());
+
         let boot_resolvers = if self.add_environment_resolvers {
             register_boot_resolver(&mut self.resolvers, &runtime_config).await?
         } else {
             None
         };
+
+        if let Some((_, Some(package_resolver))) = &boot_resolvers {
+            inspector.root().record_lazy_child(
+                "bootfs-package-resolver",
+                package_resolver.record_lazy_inspect(),
+            );
+        }
 
         let realm_builder_resolver = match runtime_config.realm_builder_resolver_and_runner {
             fidl_fuchsia_component_internal::RealmBuilderResolverAndRunner::Namespace => {
@@ -397,9 +413,7 @@ impl BuiltinEnvironmentBuilder {
             runtime_config: Arc::clone(&runtime_config),
             top_instance,
             instance_registry: self.instance_registry,
-            inspector: self
-                .inspector
-                .unwrap_or_else(|| component::init_inspector_with_size(INSPECTOR_SIZE).clone()),
+            inspector,
             #[cfg(test)]
             scope_factory: self.scope_factory,
         };
