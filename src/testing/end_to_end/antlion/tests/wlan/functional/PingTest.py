@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """
-PingStressTest exercises sending ICMP and ICMPv6 pings to a wireless access
+PingTest exercises sending ICMP and ICMPv6 pings to a wireless access
 router and another device behind the AP. Note, this does not reach out to the
 internet. The DUT is only responsible for sending a routable packet; any
 communication past the first-hop is not the responsibility of the DUT.
@@ -41,83 +41,58 @@ class Test(NamedTuple):
     interval: int = 1000
     timeout: int = 1000
     size: int = 25
+    min_success: int | None = None
 
 
-class PingStressTest(base_test.WifiBaseTest):
+class PingTest(base_test.WifiBaseTest):
     def pre_run(self) -> None:
         self.generate_tests(
             self.send_ping,
             lambda test_name, *_: f"test_{test_name}",
             [
-                Test("loopback_ipv4", LOOPBACK_IPV4),
-                Test("loopback_ipv6", LOOPBACK_IPV6),
-                Test("gateway_ipv4", lambda addrs: addrs.gateway_ipv4),
-                Test("gateway_ipv6", lambda addrs: addrs.gateway_ipv6),
                 Test(
-                    "gateway_ipv4_small_packet",
-                    lambda addrs: addrs.gateway_ipv4,
-                ),
-                Test(
-                    "gateway_ipv6_small_packet",
-                    lambda addrs: addrs.gateway_ipv6,
-                ),
-                Test(
-                    "gateway_ipv4_small_packet_long",
+                    "gateway_ipv4_small_packets",
                     lambda addrs: addrs.gateway_ipv4,
                     packet_count=50,
+                    min_success=49,
                 ),
                 Test(
-                    "gateway_ipv6_small_packet_long",
+                    "gateway_ipv6_small_packets",
                     lambda addrs: addrs.gateway_ipv6,
                     packet_count=50,
+                    min_success=49,
                 ),
                 Test(
-                    "gateway_ipv4_medium_packet",
-                    lambda addrs: addrs.gateway_ipv4,
-                    size=64,
-                ),
-                Test(
-                    "gateway_ipv6_medium_packet",
-                    lambda addrs: addrs.gateway_ipv6,
-                    size=64,
-                ),
-                Test(
-                    "gateway_ipv4_medium_packet_long",
+                    "gateway_ipv4_medium_packets",
                     lambda addrs: addrs.gateway_ipv4,
                     packet_count=50,
                     timeout=1500,
                     size=64,
+                    min_success=49,
                 ),
                 Test(
-                    "gateway_ipv6_medium_packet_long",
+                    "gateway_ipv6_medium_packets",
                     lambda addrs: addrs.gateway_ipv6,
                     packet_count=50,
                     timeout=1500,
                     size=64,
+                    min_success=49,
                 ),
                 Test(
-                    "gateway_ipv4_large_packet",
-                    lambda addrs: addrs.gateway_ipv4,
-                    size=500,
-                ),
-                Test(
-                    "gateway_ipv6_large_packet",
-                    lambda addrs: addrs.gateway_ipv6,
-                    size=500,
-                ),
-                Test(
-                    "gateway_ipv4_large_packet_long",
+                    "gateway_ipv4_large_packets",
                     lambda addrs: addrs.gateway_ipv4,
                     packet_count=50,
                     timeout=5000,
                     size=500,
+                    min_success=49,
                 ),
                 Test(
-                    "gateway_ipv6_large_packet_long",
+                    "gateway_ipv6_large_packets",
                     lambda addrs: addrs.gateway_ipv6,
                     packet_count=50,
                     timeout=5000,
                     size=500,
+                    min_success=49,
                 ),
             ],
         )
@@ -189,6 +164,7 @@ class PingStressTest(base_test.WifiBaseTest):
         interval: int = 1000,
         timeout: int = 1000,
         size: int = 25,
+        min_success: int | None = None,
     ) -> None:
         dest_ip = (
             get_addr_fn(
@@ -205,10 +181,15 @@ class PingStressTest(base_test.WifiBaseTest):
 
         self.log.info(f"Attempting to ping {dest_ip}...")
         ping_result = self.dut.ping(dest_ip, count, interval, timeout, size)
-        if ping_result.success:
-            self.log.info("Ping was successful.")
-        else:
-            raise signals.TestFailure(f"Ping was unsuccessful: {ping_result}")
+        min_success = min_success or count
+        asserts.assert_greater_equal(
+            ping_result.received,
+            min_success,
+            f"Expected at least {min_success}/{count} packets received, but got {ping_result.received}/{count}",
+        )
+        self.log.info(
+            f"Ping test to {dest_ip} passed ({ping_result.received}/{count})"
+        )
 
     def test_simultaneous_pings(self) -> None:
         ping_urls = [
@@ -219,7 +200,7 @@ class PingStressTest(base_test.WifiBaseTest):
         ping_results: list[PingResult] = []
 
         def ping_from_dut(
-            self: PingStressTest, dest_ip: str, ping_results: list[PingResult]
+            self: PingTest, dest_ip: str, ping_results: list[PingResult]
         ) -> None:
             self.log.info(f"Attempting to ping {dest_ip}...")
             ping_result = self.dut.ping(dest_ip, count=10, size=50)

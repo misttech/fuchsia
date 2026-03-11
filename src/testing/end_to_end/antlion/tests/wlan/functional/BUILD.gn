@@ -23,8 +23,8 @@ antlion_host_test("connection_stress_test") {
   environments = wlan_ap_envs
 }
 
-antlion_host_test("ping_stress_test") {
-  main_source = "PingStressTest.py"
+antlion_host_test("ping_test") {
+  main_source = "PingTest.py"
   environments = wlan_ap_envs
 }
 
@@ -146,7 +146,7 @@ group("e2e_tests") {
   public_deps = [
     ":beacon_loss_test",
     ":channel_switch_test",
-    ":ping_stress_test",
+    ":ping_test",
     ":wlan_reboot_ap_open_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_ap_wpa2_test",
@@ -164,7 +164,7 @@ group("e2e_tests") {
 group("e2e_tests_quick") {
   testonly = true
   public_deps = [
-    ":ping_stress_test",
+    ":ping_test",
     ":wlan_driver_restart_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_dut_test_quick",

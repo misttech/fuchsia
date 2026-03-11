@@ -257,9 +257,6 @@ class FuchsiaDevice:
             },
         )
 
-        self.ping_rtt_match = re.compile(
-            r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms"
-        )
         self.serial = re.sub("[.:%]", "_", self.ip)
 
         # Create honeydew fuchsia_device.
@@ -633,12 +630,16 @@ class FuchsiaDevice:
                 rtt_mdev_ms=None,
             )
 
+        stdout_str = ping_result.stdout.decode("utf-8")
+        stderr_str = ping_result.stderr.decode("utf-8")
         rtt_stats: re.Match[str] | None = None
 
-        if not ping_result.stderr:
-            rtt_lines = ping_result.stdout.decode("utf-8").split("\n")[:-1]
-            rtt_line = rtt_lines[-1]
-            rtt_stats = re.search(self.ping_rtt_match, rtt_line)
+        if not stderr_str:
+            rtt_line = stdout_str.strip().split("\n")[-1]
+            rtt_stats = re.search(
+                r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms",
+                rtt_line,
+            )
             if rtt_stats is None:
                 raise FuchsiaDeviceError(
                     f'Unable to parse ping output: "{rtt_line}"'
@@ -646,10 +647,14 @@ class FuchsiaDevice:
 
         return PingResult(
             exit_status=ping_result.returncode,
-            stdout=ping_result.stdout.decode("utf-8"),
-            stderr=ping_result.stderr.decode("utf-8"),
+            stdout=stdout_str,
+            stderr=stderr_str,
             transmitted=None,
-            received=None,
+            received=len(
+                re.findall(
+                    r"\d+ bytes from .* icmp_seq=\d+ rtt=.* ms", stdout_str
+                )
+            ),
             time_ms=None,
             rtt_min_ms=float(rtt_stats.group(1)) if rtt_stats else None,
             rtt_avg_ms=float(rtt_stats.group(3)) if rtt_stats else None,
