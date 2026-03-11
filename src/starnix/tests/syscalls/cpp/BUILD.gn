@@ -238,6 +238,7 @@ syscall_tests_migrated_to_machina = [
   "bpf_test",
   "capabilities_test",
   "cgroup_freezer_test",
+  "cgroup_test",
   "cpuinfo_test",
   "custom_artifact_test",
   "epoll_test",
