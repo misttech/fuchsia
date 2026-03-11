@@ -67,6 +67,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/modules",
     "//src/starnix/modules/ashmem",
     "//src/starnix/modules/boot",
+    "//src/starnix/modules/consent_sync",
     "//src/starnix/modules/fastrpc",
     "//src/starnix/modules/framebuffer",
     "//src/starnix/modules/gpu",

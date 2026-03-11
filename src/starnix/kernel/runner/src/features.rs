@@ -4,6 +4,11 @@
 
 use crate::ContainerStartInfo;
 use anyhow::{Context, Error, anyhow};
+use fidl_fuchsia_ui_composition as fuicomposition;
+use fidl_fuchsia_ui_input3 as fuiinput;
+use fidl_fuchsia_ui_policy as fuipolicy;
+use fidl_fuchsia_ui_views as fuiviews;
+use starnix_consent_sync::init as consent_sync_init;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
@@ -35,10 +40,6 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use std::sync::mpsc::channel;
-use {
-    fidl_fuchsia_ui_composition as fuicomposition, fidl_fuchsia_ui_input3 as fuiinput,
-    fidl_fuchsia_ui_policy as fuipolicy, fidl_fuchsia_ui_views as fuiviews,
-};
 
 /// A collection of parsed features, and their arguments.
 #[derive(Default, Debug)]
@@ -57,6 +58,9 @@ pub struct Features {
 
     /// Whether to enable a boot notifier device.
     pub boot_notifier: bool,
+
+    /// Whether to enable consent sync.
+    pub data_collection_consent_sync: bool,
 
     /// Whether to boost CPU for a fixed duration.
     pub boot_notifier_cpu_boost: Option<zx::MonotonicDuration>,
@@ -172,6 +176,7 @@ impl Features {
                 ashmem,
                 boot_notifier,
                 boot_notifier_cpu_boost,
+                data_collection_consent_sync,
                 framebuffer,
                 aspect_ratio,
                 enable_visual_debugging,
@@ -200,6 +205,8 @@ impl Features {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
+                inspect_node
+                    .record_bool("data_collection_consent_sync", *data_collection_consent_sync);
                 inspect_node.record_string(
                     "boot_notifier_cpu_boost",
                     boot_notifier_cpu_boost
@@ -347,6 +354,7 @@ pub fn parse_features(
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
             (Feature::Ashmem, _) => features.ashmem = true,
             (Feature::BootNotifier, _) => features.boot_notifier = true,
+            (Feature::DataCollectionConsentSync, _) => features.data_collection_consent_sync = true,
             (Feature::BootNotifierCpuBoost, Some(arg)) => {
                 let duration = zx::MonotonicDuration::from_seconds(arg.parse::<i64>()?);
                 features.boot_notifier_cpu_boost = Some(duration);
@@ -613,6 +621,9 @@ pub fn run_container_features(
     }
     if features.boot_notifier {
         booted_device_init(locked, system_task, features.boot_notifier_cpu_boost);
+    }
+    if features.data_collection_consent_sync {
+        consent_sync_init(locked, system_task);
     }
     if features.network_manager {
         if let Err(e) = nmfs_init(system_task) {
