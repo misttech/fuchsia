@@ -27,8 +27,11 @@ use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::HandleBased;
+use fidl::endpoints::ProtocolMarker as _;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
-use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, trace_duration, track_stub};
+use starnix_logging::{
+    CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
+};
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, Unlocked,
 };
@@ -925,11 +928,14 @@ macro_rules! fileops_impl_noop_sync {
 
 // Public re-export of macros allows them to be used like regular rust items.
 
-pub use {
-    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_directory,
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
-    fileops_impl_unbounded_seek,
-};
+pub use fileops_impl_dataless;
+pub use fileops_impl_delegate_read_write_and_seek;
+pub use fileops_impl_directory;
+pub use fileops_impl_nonseekable;
+pub use fileops_impl_noop_sync;
+pub use fileops_impl_seekable;
+pub use fileops_impl_seekless;
+pub use fileops_impl_unbounded_seek;
 pub const AES256_KEY_SIZE: usize = 32;
 
 pub fn canonicalize_ioctl_request(current_task: &CurrentTask, request: u32) -> u32 {
@@ -2339,6 +2345,32 @@ impl FileObject {
     {
         let ops = self.ops().as_any().downcast_ref::<T>()?;
         Some(DowncastedFile { file: self, ops })
+    }
+}
+
+/// Invokes the specified one-way `method` on the `proxy` and waits until the `proxy`'s underlying
+/// channel has been closed by the peer.
+///
+/// This is used in `close()` implementations when the `FileOps` wraps a FIDL resource that provides
+/// a one-way API to request teardown, and acknowledges completion of teardown by closing the FIDL
+/// channel, to ensure that the `close()` call does not return until the FIDL server has actually
+/// processed the teardown request.
+pub fn call_fidl_and_await_close<P, M>(method: M, proxy: &P)
+where
+    P: fidl::endpoints::SynchronousProxy,
+    M: FnOnce(&P) -> Result<(), fidl::Error>,
+{
+    if let Err(e) = method(proxy) {
+        log_error!("call_fidl_and_await_close: call {} failed: {e:?}", P::Protocol::DEBUG_NAME);
+        return;
+    }
+    let channel = proxy.as_channel();
+    let result = channel.wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE);
+    if let Err(status) = result.to_result() {
+        log_error!(
+            "call_fidl_and_await_close: wait_one {} failed: {status:?}",
+            P::Protocol::DEBUG_NAME
+        );
     }
 }
 

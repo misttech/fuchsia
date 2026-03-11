@@ -5,23 +5,25 @@
 //! This file contains code for creating and serving tun/tap devices.
 
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_tun as fnet_tun;
+use fuchsia_async as fasync;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::security;
 use starnix_core::signals::RunState;
 use starnix_core::task::{CurrentTask, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
-use starnix_core::vfs::{FileObject, FileOps, default_ioctl};
+use starnix_core::vfs::{
+    FileObject, FileObjectState, FileOps, call_fidl_and_await_close, default_ioctl,
+};
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{Locked, Mutex, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_uapi::errors::Errno;
 use std::num::NonZeroU64;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_tun as fnet_tun,
-    fuchsia_async as fasync,
-};
 
 #[derive(Debug, Clone, Copy)]
 enum DevKind {
@@ -322,7 +324,7 @@ pub struct DevTun(Mutex<Option<DevTunInner>>);
 
 struct DevTunInner {
     _tun_device: fnet_tun::DeviceSynchronousProxy,
-    _tun_port: fnet_tun::PortSynchronousProxy,
+    tun_port: fnet_tun::PortSynchronousProxy,
     _port_info: fhardware_network::PortInfo,
     _interface_id: NonZeroU64,
 }
@@ -330,6 +332,20 @@ struct DevTunInner {
 impl FileOps for DevTun {
     starnix_core::fileops_impl_nonseekable!();
     starnix_core::fileops_impl_noop_sync!();
+
+    fn close(
+        self: Box<Self>,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObjectState,
+        _current_task: &CurrentTask,
+    ) {
+        // Ensure that these TUN resources are available for reuse by explicitly `remove()`ing the
+        // port and waiting for that to be acknowledged, via the channel closing.
+        let Some(state) = self.0.lock().take() else {
+            return;
+        };
+        call_fidl_and_await_close(fnet_tun::PortSynchronousProxy::remove, &state.tun_port);
+    }
 
     fn write(
         &self,
@@ -421,7 +437,7 @@ impl FileOps for DevTun {
 
                 *inner = Some(DevTunInner {
                     _tun_device: device.into_sync_proxy(),
-                    _tun_port: port.into_sync_proxy(),
+                    tun_port: port.into_sync_proxy(),
                     _port_info: port_info,
                     _interface_id: interface_id,
                 });

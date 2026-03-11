@@ -12,7 +12,8 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::{CurrentTask, ThreadGroupKey};
 use starnix_core::vfs::{
-    Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode, default_ioctl,
+    Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
+    call_fidl_and_await_close, default_ioctl,
 };
 use starnix_core::{
     fileops_impl_dataless, fileops_impl_memory, fileops_impl_noop_sync, fileops_impl_seekless,
@@ -785,18 +786,7 @@ impl FileOps for FastRPCFile {
     ) {
         let inner = self.inner_state.lock(locked);
         if let Some(ref session) = inner.session {
-            session.close().expect("session close message send");
-            let evnt = session.wait_for_event(zx::MonotonicInstant::INFINITE);
-            match evnt {
-                Ok(evnt) => {
-                    log_error!("Received unexpected session event after close request: {:?}", evnt);
-                }
-                Err(e) => {
-                    if !e.is_closed() {
-                        log_error!("Received unexpected error after close request: {:?}", e);
-                    }
-                }
-            }
+            call_fidl_and_await_close(frpc::RemoteDomainSynchronousProxy::close, session.as_ref());
         }
     }
 
