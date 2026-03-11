@@ -20,7 +20,6 @@
 #include <iostream>
 #include <set>
 
-#include "src/performance/trace_manager/app.h"
 #include "src/performance/trace_manager/deferred_buffer_forwarder.h"
 
 namespace tracing {
@@ -74,8 +73,8 @@ std::optional<std::string> GetBoardName() {
 
 }  // namespace
 
-TraceController::TraceController(TraceManagerApp* app, std::unique_ptr<TraceSession> session)
-    : app_(app), session_(std::move(session)) {
+TraceController::TraceController(TraceManager* trace_manager, std::unique_ptr<TraceSession> session)
+    : trace_manager_(trace_manager), session_(std::move(session)) {
   session_->MarkInitialized();
 }
 
@@ -207,20 +206,33 @@ void TraceController::TerminateTracing(fit::closure cb) {
   });
 }
 
-TraceManager::TraceManager(TraceManagerApp* app, Config config, async::Executor& executor)
-    : app_(app), config_(std::move(config)), executor_(executor) {}
+TraceManager::TraceManager(Config config, async::Executor& executor)
+    : config_(std::move(config)), executor_(executor) {
+  session_bindings_.set_empty_set_handler([this]() { OnEmptyControllerSet(); });
+  provider_registry_bindings_.CreateHandler(this, executor.dispatcher(),
+                                            fidl::kIgnoreBindingClosure);
+}
 
 TraceManager::~TraceManager() = default;
+
+void TraceManager::AddSessionBinding(
+    const std::shared_ptr<TraceController>& trace_session,
+    fidl::ServerEnd<fuchsia_tracing_controller::Session> session_controller) {
+  session_bindings_.AddBinding(executor_.dispatcher(), std::move(session_controller),
+                               trace_session.get(), [trace_session](fidl::UnbindInfo) {});
+
+  FX_LOGS(DEBUG) << "TraceController registered";
+}
 
 void TraceManager::CloseSession() {
   // Clean up any bindings for the currently running trace so a new one
   // can be initiated.
 
-  // The actual trace_controller object is held by app.SessionBindings
+  // The actual trace_controller object is held by trace_manager.session_bindings
   // and will be removed once the binding is closed. Remove the stored
   // referencce to the trace_controller object to prevent use after free
   FX_LOGS(DEBUG) << "Clean up leftover bindings";
-  app_->CloseSessionBindings();
+  session_bindings_.CloseAll(ZX_ERR_PEER_CLOSED);
   trace_controller_.reset();
 }
 
@@ -379,8 +391,8 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
                variant);
   }
 
-  trace_controller_ = std::make_shared<TraceController>(app_, std::move(session));
-  app_->AddSessionBinding(trace_controller_, std::move(request.controller()));
+  trace_controller_ = std::make_shared<TraceController>(this, std::move(session));
+  AddSessionBinding(trace_controller_, std::move(request.controller()));
 }
 
 // fidl
@@ -588,7 +600,7 @@ void TraceManager::RegisterProviderSynchronously(
 }
 
 void TraceController::SendSessionStateEvent(fuchsia_tracing_controller::SessionState state) {
-  app_->session_bindings().ForEachBinding(
+  trace_manager_->session_bindings_.ForEachBinding(
       [state](const fidl::ServerBinding<fuchsia_tracing_controller::Session>& binding) {
         fit::result<fidl::Error> result = fidl::SendEvent(binding)->OnSessionStateChange({state});
         if (result.is_error()) {

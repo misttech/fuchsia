@@ -11,7 +11,6 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/sys/cpp/component_context.h>
 #include <lib/zx/socket.h>
 
 #include <list>
@@ -25,15 +24,13 @@
 
 namespace tracing {
 
-// forward decl, here to break mutual header dependency
-class TraceManagerApp;
 class TraceManager;
 
 class TraceController : public fidl::Server<fuchsia_tracing_controller::Session> {
   friend TraceManager;
 
  public:
-  TraceController(TraceManagerApp* app, std::unique_ptr<TraceSession> session);
+  TraceController(TraceManager* trace_manager, std::unique_ptr<TraceSession> session);
   ~TraceController() override;
 
   void TerminateTracing(fit::closure cb);
@@ -58,7 +55,7 @@ class TraceController : public fidl::Server<fuchsia_tracing_controller::Session>
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   void FlushBuffers(FlushBuffersCompleter::Sync& completer) override;
 #endif
-  TraceManagerApp* const app_;
+  TraceManager* const trace_manager_;
 
   // We only set this to false when aborting.
   bool write_results_on_terminate_ = true;
@@ -73,7 +70,7 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
   friend TraceController;
 
  public:
-  TraceManager(TraceManagerApp* app, Config config, async::Executor& executor);
+  TraceManager(Config config, async::Executor& executor);
   ~TraceManager() override;
 
   // For testing.
@@ -83,6 +80,16 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
   void OnEmptyControllerSet();
+
+  fidl::ProtocolHandler<fuchsia_tracing_provider::Registry> GetRegistryHandler() {
+    return provider_registry_bindings_.CreateHandler(this, executor_.dispatcher(),
+                                                     fidl::kIgnoreBindingClosure);
+  }
+
+  fidl::ProtocolHandler<fuchsia_tracing_controller::Provisioner> GetProvisionerHandler() {
+    return provisioner_bindings_.CreateHandler(this, executor_.dispatcher(),
+                                               fidl::kIgnoreBindingClosure);
+  }
 
  private:
   // |fuchsia_tracing_controller::Provisioner| implementation.
@@ -117,7 +124,12 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
 
   void CloseSession();
 
-  TraceManagerApp* const app_;
+  void AddSessionBinding(const std::shared_ptr<TraceController>& trace_session,
+                         fidl::ServerEnd<fuchsia_tracing_controller::Session> session_controller);
+
+  fidl::ServerBindingGroup<fuchsia_tracing_provider::Registry> provider_registry_bindings_;
+  fidl::ServerBindingGroup<fuchsia_tracing_controller::Provisioner> provisioner_bindings_;
+  fidl::ServerBindingGroup<fuchsia_tracing_controller::Session> session_bindings_;
 
   const Config config_;
 

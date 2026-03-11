@@ -20,13 +20,17 @@ void TraceManagerTest::SetUp() {
   Config config;
   ASSERT_TRUE(config.ReadFrom(kConfigFile));
 
-  app_ = std::make_unique<TraceManagerApp>(context_provider_.TakeContext(), std::move(config),
-                                           executor_);
+  trace_manager_ = std::make_unique<TraceManager>(std::move(config), executor_);
+
+  context_provider_.context()->outgoing()->AddProtocol<fuchsia_tracing_provider::Registry>(
+      trace_manager_->GetRegistryHandler());
+  context_provider_.context()->outgoing()->AddProtocol<fuchsia_tracing_controller::Provisioner>(
+      trace_manager_->GetProvisionerHandler());
 }
 
 void TraceManagerTest::TearDown() {
   fake_provider_bindings_.clear();
-  app_.reset();
+  trace_manager_.reset();
   TestLoopFixture::TearDown();
 }
 

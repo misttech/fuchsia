@@ -6,8 +6,6 @@ import("//build/components.gni")
 
 source_set("lib") {
   sources = [
-    "app.cc",
-    "app.h",
     "buffer_forwarder.cc",
     "buffer_forwarder.h",
     "config.cc",
@@ -46,8 +44,8 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fit",
-    "//sdk/lib/sys/cpp",
     "//src/lib/fxl:fxl_cli",
     "//zircon/system/ulib/trace-reader:trace-buffer-reader",
     "//zircon/system/ulib/zx",

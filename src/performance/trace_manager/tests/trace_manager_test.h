@@ -20,9 +20,9 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
-#include "src/performance/trace_manager/app.h"
 #include "src/performance/trace_manager/tests/fake_provider.h"
 #include "src/performance/trace_manager/tests/fake_provider_v2.h"
+#include "src/performance/trace_manager/trace_manager.h"
 
 namespace tracing {
 namespace test {
@@ -73,7 +73,7 @@ class TraceManagerTest : public gtest::TestLoopFixture,
 
   TraceManagerTest();
 
-  const TraceManager* trace_manager() const { return app_->trace_manager(); }
+  const TraceManager* trace_manager() const { return trace_manager_.get(); }
 
   sys::testing::ComponentContextProvider& context_provider() { return context_provider_; }
 
@@ -209,7 +209,7 @@ class TraceManagerTest : public gtest::TestLoopFixture,
       fidl::Event<fuchsia_tracing_controller::Session::OnSessionStateChange>& event) override;
 
   sys::testing::ComponentContextProvider context_provider_;
-  std::unique_ptr<TraceManagerApp> app_;
+  std::unique_ptr<TraceManager> trace_manager_;
 
   // Interfaces to make service requests.
   fidl::Client<fuchsia_tracing_controller::Session> controller_;
