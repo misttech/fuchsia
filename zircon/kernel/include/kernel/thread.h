@@ -613,7 +613,8 @@ class PreemptionState {
   // the immediate preemption of the calling thread.
   void PreemptReenable() {
     const uint32_t old_state = state_.fetch_sub(1);
-    ASSERT(PreemptDisableCount(old_state) > 0);
+    ASSERT_MSG(PreemptDisableCount(old_state) > 0, "unmasked preemption state: %" PRIu32,
+               old_state);
 
     // First, check for the expected situation of dropping the preempt count to zero
     // with a zero eager resched disable count and no timeslice extension.
