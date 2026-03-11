@@ -278,14 +278,22 @@ impl EpollFileObject {
 
     /// Cancel an asynchronous wait on an object. Events triggered before
     /// calling this will still be delivered.
-    pub fn delete(&self, file: &FileObject) -> Result<(), Errno> {
+    pub fn delete(&self, current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
         let mut state = self.state.lock();
         let key = file.id.as_epoll_key().into();
+        let ReadyItemKey::Usize(key_usize) = key else {
+            // This should never happen as we only use Usize keys for files in epoll.
+            return error!(EINVAL);
+        };
         if let Some(mut wait_object) = state.wait_objects.remove(&key) {
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
                 wait_canceler.cancel();
             }
             state.recheck_list.retain(|x| *x != key);
+            // Deactivate the wake lock if it was active.
+            current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
+                &WakeupSourceOrigin::Epoll(wakeup_source_name_for_epoll(current_task, key_usize)),
+            );
             Ok(())
         } else {
             error!(ENOENT)
@@ -700,7 +708,7 @@ mod tests {
                     .unwrap();
 
                 if do_cancel {
-                    epoll_file.delete(&event).unwrap();
+                    epoll_file.delete(&current_task, &event).unwrap();
                 }
 
                 let wait_canceler = event
@@ -852,7 +860,7 @@ mod tests {
             );
 
             // Remove the thing
-            epoll_file.delete(&event).unwrap();
+            epoll_file.delete(&current_task, &event).unwrap();
 
             // Wait for new notifications
             assert_eq!(

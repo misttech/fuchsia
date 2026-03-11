@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
-use crate::power::WakeupSourceOrigin;
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
 use crate::task::{CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Waiter};
@@ -23,7 +22,6 @@ use crate::vfs::{
     NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
     SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize, WdNumber,
     WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd, splice,
-    wakeup_source_name_for_epoll,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -2541,13 +2539,7 @@ pub fn sys_epoll_ctl(
             epoll_file.modify(locked, current_task, &operand_file, epoll_event?)?;
         }
         EPOLL_CTL_DEL => {
-            epoll_file.delete(&operand_file)?;
-            current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
-                &WakeupSourceOrigin::Epoll(wakeup_source_name_for_epoll(
-                    current_task,
-                    operand_file.id.as_epoll_key(),
-                )),
-            );
+            epoll_file.delete(current_task, &operand_file)?;
             operand_file.unregister_epfd(&file);
         }
         _ => return error!(EINVAL),

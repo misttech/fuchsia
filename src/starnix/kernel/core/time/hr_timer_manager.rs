@@ -11,8 +11,11 @@ use crate::task::{CurrentTask, Kernel, LockedAndTask};
 use crate::time::TargetTime;
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
+use fidl_fuchsia_time_alarms as fta;
+use fuchsia_async as fasync;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_runtime::UtcClock;
+use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
@@ -23,7 +26,6 @@ use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::{HandleBased, HandleRef};
-use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// Max value for inspect event history.
 const INSPECT_EVENT_BUFFER_SIZE: usize = 128;
@@ -147,13 +149,13 @@ async fn cancel_by_id(
 
         // Let the timer closure complete before continuing.
         let _ = log_long_op!(timer_state.task);
-
-        // If this timer is an interval timer, we must remove it from the pending reschedule list.
-        // This does not affect container suspend, since `_message_counter` is live. It's a no-op
-        // for other timers.
-        interval_timers_pending_reschedule.remove(timer_id);
-        log_debug!("cancel_by_id: 2/2 DONE canceling timer: {timer_id:?}: alarm_id: {alarm_id}");
     }
+
+    // If this timer is an interval timer, we must remove it from the pending reschedule list.
+    // This does not affect container suspend, since `_message_counter` is live. It's a no-op
+    // for other timers.
+    interval_timers_pending_reschedule.remove(timer_id);
+    log_debug!("cancel_by_id: 2/2 DONE canceling timer: {timer_id:?}: alarm_id: {alarm_id}");
 }
 
 /// Called when the underlying wake alarms manager reports a fta::WakeAlarmsError
@@ -240,6 +242,8 @@ struct TimerState {
     task: fasync::Task<()>,
     /// The desired deadline for the timer.
     deadline: TargetTime,
+    /// The node that represents the current generation of this timer.
+    node: HrTimerNodeHandle,
 }
 
 impl std::fmt::Display for TimerState {
@@ -323,7 +327,7 @@ enum Cmd {
     // The processing loop will signal `done` to allow synchronous
     // return from scheduling an async Cmd::Start.
     Start {
-        new_timer_node: HrTimerNode,
+        new_timer_node: HrTimerNodeHandle,
         /// Signaled once the timer is started.
         done: zx::Event,
         /// The Starnix container suspend lock. Keep it alive until no more
@@ -340,10 +344,10 @@ enum Cmd {
         /// work is necessary.
         message_counter: SharedMessageCounter,
     },
-    /// A wake alarm occurred.
+    /// Triggered by the underlying hrtimer device when an alarm expires.
     Alarm {
         /// The affected timer's node.
-        new_timer_node: HrTimerNode,
+        new_timer_node: HrTimerNodeHandle,
         /// The wake lease provided by the underlying API.
         lease: zx::EventPair,
         /// The Starnix container suspend lock. Keep it alive until no more
@@ -628,22 +632,48 @@ impl HrTimerManager {
         Ok(())
     }
 
-    // Notifies `timer` and wake sources about a triggered alarm.
+    /// Notifies `timer` and wake sources about a triggered alarm.
+    ///
+    /// # Returns
+    /// - `Ok(true)` if the alarm was for the current generation and was processed.
+    /// - `Ok(false)` if the alarm was stale. Either the timer was restarted ( via `Cmd:Start`) with
+    ///    the same id before the previous generation's alarm fired, or the timer was stopped
+    ///    (via `Cmd::Stop`) or already processed.
     fn notify_timer(
         self: &HrTimerManagerHandle,
         system_task: &CurrentTask,
-        timer: &HrTimerNode,
+        triggered_node: &HrTimerNodeHandle,
         lease: impl HandleBased,
-    ) -> Result<()> {
-        let timer_id = timer.hr_timer.get_id();
+    ) -> Result<bool> {
+        let timer_id = triggered_node.hr_timer.get_id();
+        {
+            let guard = self.lock();
+            if let Some(active_state) = guard.pending_timers.get(&timer_id) {
+                if !Arc::ptr_eq(&active_state.node, triggered_node) {
+                    log_debug!("notify_timer: ignoring stale alarm for timer_id: {:?}", timer_id);
+                    return Ok(false);
+                }
+            } else {
+                log_debug!(
+                    "notify_timer: ignoring alarm for timer_id: {:?} (not in pending_timers)",
+                    timer_id
+                );
+                return Ok(false);
+            }
+        }
+
         log_debug!("watch_new_hrtimer_loop: Cmd::Alarm: triggered alarm: {:?}", timer_id);
         ftrace::duration!("alarms", "starnix:hrtimer:notify_timer", "timer_id" => timer_id);
         self.lock().pending_timers.remove(&timer_id).map(|s| s.task.detach());
-        signal_event(&timer.hr_timer.event(), zx::Signals::NONE, zx::Signals::TIMER_SIGNALED)
-            .context("notify_timer: hrtimer signal handle")?;
+        signal_event(
+            &triggered_node.hr_timer.event(),
+            zx::Signals::NONE,
+            zx::Signals::TIMER_SIGNALED,
+        )
+        .context("notify_timer: hrtimer signal handle")?;
 
         // Handle wake source here.
-        let wake_source = timer.wake_source.clone();
+        let wake_source = triggered_node.wake_source.clone();
         if let Some(wake_source) = wake_source.as_ref().and_then(|f| f.upgrade()) {
             let lease_token = lease.into_handle();
             wake_source.on_wake(system_task, &lease_token);
@@ -651,8 +681,13 @@ impl HrTimerManager {
             // are activated.
             drop(lease_token);
         }
-        ftrace::instant!("alarms", "starnix:hrtimer:notify_timer:drop_lease", ftrace::Scope::Process, "timer_id" => timer_id);
-        Ok(())
+        ftrace::instant!(
+            "alarms",
+            "starnix:hrtimer:notify_timer:drop_lease",
+            ftrace::Scope::Process,
+            "timer_id" => timer_id
+        );
+        Ok(true)
     }
 
     // If no counter has been injected for tests, set provided `counter` to serve as that
@@ -691,11 +726,12 @@ impl HrTimerManager {
         timer_id: zx::Koid,
         task: fasync::Task<()>,
         deadline: TargetTime,
+        node: HrTimerNodeHandle,
         prev_len: usize,
     ) {
         guard
             .pending_timers
-            .insert(timer_id, TimerState { task, deadline })
+            .insert(timer_id, TimerState { task, deadline, node })
             .map(|timer_state| {
                 // This should not happen, at this point we already canceled
                 // any previous instances of the same wake alarm.
@@ -862,6 +898,7 @@ impl HrTimerManager {
 
                     self.lock().debug_start_stage_counter = 4;
                     let self_clone = self.clone();
+                    let new_timer_node_clone = new_timer_node.clone();
                     let task = fasync::Task::local(async move {
                         log_debug!(
                             "wake_alarm_future: set_and_wait will block here: {wake_alarm_id:?}"
@@ -883,7 +920,7 @@ impl HrTimerManager {
                             // only forward it.
                             Ok(Ok(lease)) => {
                                 log_long_op!(done_sender.send(Cmd::Alarm {
-                                    new_timer_node,
+                                    new_timer_node: new_timer_node_clone,
                                     lease,
                                     message_counter
                                 }))
@@ -917,7 +954,14 @@ impl HrTimerManager {
                     ftrace::instant!("alarms", "starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
                     let mut guard = self.lock();
                     guard.debug_start_stage_counter = 6;
-                    self.record_inspect_on_start(&mut guard, timer_id, task, deadline, prev_len);
+                    self.record_inspect_on_start(
+                        &mut guard,
+                        timer_id,
+                        task,
+                        deadline,
+                        new_timer_node,
+                        prev_len,
+                    );
                     log_debug!("Cmd::Start scheduled: timer_id: {:?}", timer_id);
                     guard.debug_start_stage_counter = 999;
                 }
@@ -927,25 +971,29 @@ impl HrTimerManager {
                     let timer_id = timer.get_id();
                     ftrace::duration!("alarms", "starnix:hrtimer:alarm", "timer_id" => timer_id);
                     ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
-                    self.notify_timer(system_task, &new_timer_node, lease)
-                        .map_err(|e| to_errno_with_log(e))?;
-
-                    // Interval timers currently need special handling: we must not suspend the
-                    // container until the interval timer in question gets re-scheduled. To
-                    // ensure that we stay awake, we store the suspend lock for a while. This
-                    // prevents container suspend.
-                    //
-                    // This map entry and its MessageCounterHandle is removed in one of the following cases:
-                    //
-                    // (1) When the interval timer eventually gets rescheduled. We
-                    // assume that for interval timers the reschedule will be imminent and that
-                    // therefore not suspending until that re-schedule happens will not unreasonably
-                    // extend the awake period.
-                    //
-                    // (2) When the timer is canceled.
-                    if *timer.is_interval.lock() {
-                        interval_timers_pending_reschedule.insert(timer_id, message_counter);
+                    match self.notify_timer(system_task, &new_timer_node, lease) {
+                        Ok(true) => {
+                            // Alarm was for current generation, success.
+                            // Interval timers currently need special handling: we must not suspend
+                            // the container until the interval timer in question gets re-scheduled.
+                            // To ensure that we stay awake, we store the suspend lock for a while.
+                            // This prevents container suspend.
+                            if *timer.is_interval.lock() {
+                                interval_timers_pending_reschedule
+                                    .insert(timer_id, message_counter);
+                            }
+                        }
+                        Ok(false) => {
+                            // Alarm was stale, ignored.
+                        }
+                        Err(e) => {
+                            log_error!("watch_new_hrtimer_loop: notify_timer failed: {e:?}");
+                        }
                     }
+                    // Interval timers usually reschedule themselves. But if an interval timer
+                    // is stopped (via Cmd::Stop) or is replaced (via Cmd::Start for the same timer
+                    // ID) before it has a chance to reschedule, the reschedule lock will get
+                    // dropped then.
                     log_debug!("Cmd::Alarm done: timer_id: {timer_id:?}");
                     self.lock().debug_start_stage_counter = 19;
                 }
@@ -1225,14 +1273,15 @@ struct HrTimerNode {
     /// The underlying HrTimer.
     hr_timer: HrTimerHandle,
 }
+type HrTimerNodeHandle = Arc<HrTimerNode>;
 
 impl HrTimerNode {
     fn new(
         deadline: TargetTime,
         wake_source: Option<Weak<dyn OnWakeOps>>,
         hr_timer: HrTimerHandle,
-    ) -> Self {
-        Self { deadline, wake_source, hr_timer }
+    ) -> HrTimerNodeHandle {
+        Arc::new(Self { deadline, wake_source, hr_timer })
     }
 }
 
@@ -1242,10 +1291,11 @@ mod tests {
     use crate::testing::spawn_kernel_and_run;
     use crate::time::HrTimer;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
+    use fidl_fuchsia_time_alarms as fta;
+    use fuchsia_async as fasync;
     use fuchsia_runtime::{UtcClockUpdate, UtcInstant};
     use std::sync::LazyLock;
     use std::thread;
-    use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync};
 
     static CLOCK_OPTS: LazyLock<zx::ClockOpts> = LazyLock::new(zx::ClockOpts::empty);
     const BACKSTOP_TIME: UtcInstant = UtcInstant::from_nanos(/*arbitrary*/ 222222);
