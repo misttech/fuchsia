@@ -418,5 +418,18 @@ TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
 }
 
+TEST(FinalShutdownInfoTest, InferredFdr_Cold) {
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
+      /*graceful_shutdown_info=*/std::nullopt,
+      /*not_a_fdr=*/false);
+
+  EXPECT_FALSE(final_shutdown_info->IsCrash());
+  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
+            cobalt::LastRebootReason::kFactoryDataReset);
+  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
+            fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
+}
+
 }  // namespace
 }  // namespace forensics::feedback

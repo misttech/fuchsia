@@ -534,6 +534,10 @@ std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
       break;
   }
 
+  if (!not_a_fdr) {
+    return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kFdr);
+  }
+
   // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
   // reasons more informative than just "cold."
   if (graceful_shutdown_info.has_value() &&
@@ -542,8 +546,6 @@ std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
         ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
         graceful_shutdown_info->action);
   }
-
-  // TODO(https://fxbug.dev/489823517): check for FDR and use that instead of cold.
 
   // While we now distinguish HwShutdownReason being cold, warm, undefined and not set,
   // for now we still report all of them as cold boots.
