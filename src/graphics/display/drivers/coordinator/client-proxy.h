@@ -109,8 +109,6 @@ class ClientProxy {
   Client handler_;
   bool enable_capture_ = false;
 
-  std::vector<std::unique_ptr<async::Task>> client_scheduled_tasks_;
-
   ClientVsyncQueue vsync_queue_;
 
   // Mapping from controller_stamp to client_stamp for all configurations that

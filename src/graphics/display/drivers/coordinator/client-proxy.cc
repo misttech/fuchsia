@@ -5,10 +5,7 @@
 #include "src/graphics/display/drivers/coordinator/client-proxy.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
-#include <lib/async/cpp/task.h>
-#include <lib/async/dispatcher.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/sync/completion.h>
@@ -40,29 +37,7 @@ void ClientProxy::SetOwnership(bool is_owner) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   is_owner_property_.Set(is_owner);
-
-  fbl::AllocChecker ac;
-  auto task = fbl::make_unique_checked<async::Task>(&ac);
-  if (!ac.check()) {
-    fdf::warn("Failed to allocate set ownership task");
-    return;
-  }
-  task->set_handler([this, client_handler = &handler_, is_owner](
-                        async_dispatcher_t* /*dispatcher*/, async::Task* task, zx_status_t status) {
-    if (status == ZX_OK && client_handler->IsValid()) {
-      is_owner_property_.Set(is_owner);
-      client_handler->SetOwnership(is_owner);
-    }
-    // Update `client_scheduled_tasks_`.
-    auto it = std::find_if(client_scheduled_tasks_.begin(), client_scheduled_tasks_.end(),
-                           [&](std::unique_ptr<async::Task>& t) { return t.get() == task; });
-    // Current task must have been added to the list.
-    ZX_DEBUG_ASSERT(it != client_scheduled_tasks_.end());
-    client_scheduled_tasks_.erase(it);
-  });
-  if (task->Post(controller_.driver_dispatcher()->async_dispatcher()) == ZX_OK) {
-    client_scheduled_tasks_.push_back(std::move(task));
-  }
+  handler_.SetOwnership(is_owner);
 }
 
 void ClientProxy::OnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
@@ -82,29 +57,7 @@ void ClientProxy::ReapplySpecialConfigs() {
 
 void ClientProxy::ReapplyConfig() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
-  fbl::AllocChecker ac;
-  auto task = fbl::make_unique_checked<async::Task>(&ac);
-  if (!ac.check()) {
-    fdf::warn("Failed to reapply config");
-    return;
-  }
-
-  task->set_handler([this, client_handler = &handler_](async_dispatcher_t* /*dispatcher*/,
-                                                       async::Task* task, zx_status_t status) {
-    if (status == ZX_OK && client_handler->IsValid()) {
-      client_handler->ReapplyConfig();
-    }
-    // Update `client_scheduled_tasks_`.
-    auto it = std::find_if(client_scheduled_tasks_.begin(), client_scheduled_tasks_.end(),
-                           [&](std::unique_ptr<async::Task>& t) { return t.get() == task; });
-    // Current task must have been added to the list.
-    ZX_DEBUG_ASSERT(it != client_scheduled_tasks_.end());
-    client_scheduled_tasks_.erase(it);
-  });
-  if (task->Post(controller_.driver_dispatcher()->async_dispatcher()) == ZX_OK) {
-    client_scheduled_tasks_.push_back(std::move(task));
-  }
+  handler_.ReapplyConfig();
 }
 
 void ClientProxy::OnCaptureComplete() {
