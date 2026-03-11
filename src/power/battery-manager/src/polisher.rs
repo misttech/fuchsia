@@ -57,6 +57,10 @@ const LOOKUP_TABLE_SIZE: usize = 100;
 
 struct ChargeTimeEstimator {
     baseline_duration_lookup: [i32; LOOKUP_TABLE_SIZE],
+    // If true, use actual capacity to calculate time to full.
+    // If false, use design capacity to calculate time to full.
+    use_actual_capacity: bool,
+    actual_capacity_uah: Option<i32>,
 }
 
 impl ChargeTimeEstimator {
@@ -85,10 +89,16 @@ impl ChargeTimeEstimator {
 
     // Battery capacity: 420 mAh = 420,000 uAh
     // TODO(https://fxbug.dev/442619993): Use actual capacity instead of the design capacity.
-    const CAPACITY_UAH: i64 = 420_000;
+    const DESIGN_CAPACITY_UAH: i64 = 420_000;
 
-    // Charge per 1% SOC = 4200 uAh
-    const DELTA_CC_UAH: i64 = Self::CAPACITY_UAH / 100;
+    fn get_delta_cc_uah(&self) -> i64 {
+        if self.use_actual_capacity {
+            if let Some(cap) = self.actual_capacity_uah {
+                return cap as i64 / 100;
+            }
+        }
+        Self::DESIGN_CAPACITY_UAH / 100
+    }
 
     fn get_reference_current_ua(level_percent: f32, temperature_mc: Option<i32>) -> i32 {
         // Default to 25C room temp
@@ -113,7 +123,7 @@ impl ChargeTimeEstimator {
         Self::CHG_CC_LIMITS_UA[row_idx][col_idx]
     }
 
-    fn new() -> ChargeTimeEstimator {
+    fn new(use_actual_capacity: bool) -> ChargeTimeEstimator {
         let mut table = [0i32; LOOKUP_TABLE_SIZE];
         let mut percent_start = 0;
         for (duration, threshold) in Self::PERCENT_CHARGE_DURATION.iter() {
@@ -128,7 +138,15 @@ impl ChargeTimeEstimator {
             }
         }
 
-        ChargeTimeEstimator { baseline_duration_lookup: table }
+        ChargeTimeEstimator {
+            baseline_duration_lookup: table,
+            use_actual_capacity,
+            actual_capacity_uah: None,
+        }
+    }
+
+    fn set_actual_capacity(&mut self, actual_capacity_uah: Option<i32>) {
+        self.actual_capacity_uah = actual_capacity_uah;
     }
 
     // Calculate the implied reference current (uA) for a given SOC level.
@@ -138,7 +156,8 @@ impl ChargeTimeEstimator {
             return Ok(0);
         }
 
-        Ok(((Self::DELTA_CC_UAH * 3600) / (base_elap as i64)) as i32)
+        let delta_cc = self.get_delta_cc_uah();
+        Ok(((delta_cc * 3600) / (base_elap as i64)) as i32)
     }
 
     /// Calculates the time to full for the range [from_soc, to_soc].
@@ -523,7 +542,7 @@ impl Polisher {
             curve_mapper: CurveMapper::new(),
             last_level: None,
             last_post_curve: None,
-            estimator: ChargeTimeEstimator::new(),
+            estimator: ChargeTimeEstimator::new(/*use_actual_capacity*/ false),
             rate_limiter: RateLimiter::default(),
         }
     }
@@ -547,7 +566,7 @@ impl Polisher {
         self.curve_mapper.adjust_level(level, info);
     }
 
-    fn calculate_time_to_full(&self, info: &mut fpower::BatteryInfo) {
+    fn calculate_time_to_full(&mut self, info: &mut fpower::BatteryInfo) {
         let Some(level) = info.level_percent else {
             warn!("level shouldn't be none");
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
@@ -559,6 +578,8 @@ impl Polisher {
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         }
+
+        self.estimator.set_actual_capacity(info.full_capacity_uah);
 
         let time_to_full_estimate =
             match self.estimator.time_to_full(level, 100.0, actual_current, info.temperature_mc) {
@@ -868,7 +889,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_get_level_duration_lookup() {
-        let estimator = ChargeTimeEstimator::new();
+        let estimator = ChargeTimeEstimator::new(false);
         // 1. Below the lowest threshold (78)
         assert_eq!(estimator.get_level_duration(70).unwrap(), 32, "Level 70 should return 32.");
         assert_eq!(estimator.get_level_duration(78).unwrap(), 32, "Level 78 should return 32.");
@@ -922,7 +943,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_ttf_current_ratio() {
-        let estimator = ChargeTimeEstimator::new();
+        let estimator = ChargeTimeEstimator::new(false);
 
         // Test Error conditions
         assert_eq!(
@@ -969,7 +990,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_time_to_full() {
-        let estimator = ChargeTimeEstimator::new();
+        let estimator = ChargeTimeEstimator::new(false);
 
         // Pre-calculated Bucket Sums (Seconds):
         // 79-86 (56s/level) = 8 * 56 = 448
@@ -1039,7 +1060,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_charge_time_estimator_fractional() {
-        let estimator = ChargeTimeEstimator::new();
+        let estimator = ChargeTimeEstimator::new(false);
 
         // 99.5% should be half of 99s level duration (92 / 2 = 46s)
         assert_eq!(
@@ -1085,7 +1106,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_charge_time_estimator_ratio() {
-        let estimator = ChargeTimeEstimator::new();
+        let estimator = ChargeTimeEstimator::new(false);
         let ref_current = ChargeTimeEstimator::get_reference_current_ua(100.0, None);
 
         // Base case with ref current: should match None
@@ -1122,7 +1143,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_calculate_time_to_full() {
-        let polisher = Polisher::new();
+        let mut polisher = Polisher::new();
 
         // Test None
         let mut info = fpower::BatteryInfo {
@@ -1163,7 +1184,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_calculate_time_to_full_with_current_limits() {
-        let polisher = Polisher::new();
+        let mut polisher = Polisher::new();
 
         // Level 50%, temperature 25C (25000 mc)
         // From get_reference_current_ua:
@@ -1421,5 +1442,43 @@ mod tests {
             Some(fpower::TimeRemaining::FullCharge(0)),
             "When level is None, time_remaining must be set to Indeterminate(0)."
         );
+    }
+
+    #[fuchsia::test]
+    fn test_actual_capacity() {
+        let mut estimator = ChargeTimeEstimator::new(false);
+        // Design capacity is 420,000 uAh. The base time for 99%->100% is 92s.
+        let implied_99_design = estimator.get_implied_ref_current_ua(99).unwrap();
+
+        // Time to full using design capacity (at exactly its own implied reference current)
+        let duration_design = estimator
+            .time_to_full(99.0, 100.0, Some(implied_99_design), None)
+            .unwrap()
+            .into_seconds();
+        // Since current matches the implied reference, ratio is 1.0, so time is just base_elap (92s).
+        assert_eq!(duration_design, 92);
+
+        // Now set actual capacity to 450,000 uAh. Since the capacity is larger,
+        // charging at the SAME current (implied_99_design) should take proportionally longer.
+        // 450 / 420 * 92 = 98.57 -> 98 seconds.
+        estimator.use_actual_capacity = true;
+        estimator.set_actual_capacity(Some(450_000));
+
+        let duration_actual = estimator
+            .time_to_full(99.0, 100.0, Some(implied_99_design), None)
+            .unwrap()
+            .into_seconds();
+
+        assert_eq!(duration_actual, 98);
+
+        // Finally check fallback: if use_actual_capacity is true but actual_capacity_uah is None,
+        // it should fall back to the design capacity implicitly and yield 92s again.
+        estimator.set_actual_capacity(None);
+        let duration_fallback = estimator
+            .time_to_full(99.0, 100.0, Some(implied_99_design), None)
+            .unwrap()
+            .into_seconds();
+
+        assert_eq!(duration_fallback, 92);
     }
 }
