@@ -13,6 +13,7 @@ load(
     "get_idk_deps",
     "json_encode_dict_values",
 )
+load("//build/json:validate_json.bzl", "validate_json")
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 load(":fidl_cc_library.bzl", "fidl_cpp_family")
 load(":fidl_ir.bzl", "fidl_ir")
@@ -292,7 +293,15 @@ def _fidl_library_impl(
         testonly = testonly,
         visibility = ["//visibility:private"],
     )
-    # TODO(https://fxbug.dev/428285014): Validate resulting JSON.
+
+    validate_json_target_name = "%s_validate_json" % name
+    validate_json(
+        name = validate_json_target_name,
+        data = fidl_ir_json,
+        schema = "//tools/fidl/fidlc:schema.json",
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
 
     # TODO(https://fxbug.dev/428285014): Implement linting.
 
@@ -409,7 +418,7 @@ def _fidl_library_impl(
     # linting, etc. are always performed (avoiding https://fxbug.dev/381123422).
     native.filegroup(
         name = name,
-        srcs = [compilation_target_name] + deps,
+        srcs = [compilation_target_name, validate_json_target_name] + deps,
         # For libraries in a category, add a deps on the allowlist to catch
         # cases where the macro is used but there is no dependency on the atom
         # target.
