@@ -103,8 +103,8 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void OnClientDead(ClientProxy* client);
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
-  void ApplyConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
-                   ClientId client_id);
+  void SubmitConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
+                    ClientId client_id);
 
   // ImageLifecycleListener:
   void ImageWillBeDestroyed(display::DriverImageId driver_image_id) override;
@@ -215,6 +215,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
   std::unique_ptr<EngineDriverClient> engine_driver_client_;
 
+  // TODO(https://fxbug.dev/489243434): Switch away from "applied" terminology.
   zx::time_monotonic last_valid_apply_config_timestamp_mono_;
   zx::time_boot last_valid_apply_config_timestamp_boot_;
 

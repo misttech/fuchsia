@@ -122,7 +122,7 @@ impl<'a, S: Scene> DoubleBufferedFenceLoop<'a, S> {
     pub async fn run(&mut self) -> Result<()> {
         // Apply the first config.
         let mut current_config = 0;
-        let _ = self.coordinator.apply_config(&self.build_display_configs(current_config)).await?;
+        let _ = self.coordinator.commit_config(&self.build_display_configs(current_config)).await?;
 
         let mut vsync_listener = self.coordinator.add_vsync_listener(None)?;
 
@@ -161,7 +161,7 @@ impl<'a, S: Scene> DoubleBufferedFenceLoop<'a, S> {
                     duration!(c"gfx", c"apply config");
                     applied_stamp = self
                         .coordinator
-                        .apply_config(&self.build_display_configs(current_config))
+                        .commit_config(&self.build_display_configs(current_config))
                         .await?;
                 }
             }

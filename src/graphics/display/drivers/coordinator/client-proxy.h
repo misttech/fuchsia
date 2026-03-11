@@ -61,8 +61,8 @@ class ClientProxy {
   void SetOwnership(bool is_owner);
   void OnCaptureComplete();
 
-  // See `Client::ReapplyConfig()`.
-  void ReapplyConfig();
+  // See `Client::SubmitLastCommittedConfig()`.
+  void SubmitLastCommittedConfig();
 
   // Must be called on the driver dispatcher.
   void AcknowledgeVsync(display::VsyncAckCookie ack_cookie);
@@ -70,10 +70,8 @@ class ClientProxy {
   void EnableCapture(bool enable);
   void OnClientDead();
 
-  // This function restores client configurations that are not part of
-  // the standard configuration. These configurations are typically one-time
-  // settings that need to get restored once the client takes control again.
-  void ReapplySpecialConfigs();
+  // Covers client state not included in the display config.
+  void SubmitSpecialConfigs();
 
   ClientId client_id() const { return handler_.id(); }
   ClientPriority client_priority() const { return handler_.priority(); }

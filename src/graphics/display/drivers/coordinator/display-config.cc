@@ -38,15 +38,15 @@ void DisplayConfig::InitializeInspect(inspect::Node* parent) {
   node_ = parent->CreateChild(fbl::StringPrintf("display-config-%ld", inspect_count++).c_str());
   draft_has_layer_list_change_property_ =
       node_.CreateBool("draft_has_layer_list_change", draft_has_layer_list_change_);
-  pending_apply_layer_change_property_ =
-      node_.CreateBool("pending_apply_layer_change", pending_apply_layer_change_);
+  pending_commit_layer_change_property_ =
+      node_.CreateBool("pending_commit_layer_change", pending_commit_layer_change_);
 }
 
 void DisplayConfig::DiscardNonLayerDraftConfig() {
   draft_has_layer_list_change_ = false;
   draft_has_layer_list_change_property_.Set(false);
 
-  draft_ = applied_;
+  draft_ = committed_;
   has_draft_nonlayer_config_change_ = false;
 }
 

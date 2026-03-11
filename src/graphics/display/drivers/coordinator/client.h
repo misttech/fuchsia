@@ -81,12 +81,13 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void NotifyVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                    display::ConfigStamp config_stamp, display::VsyncAckCookie vsync_ack_cookie);
 
-  // Applies a previously applied configuration.
+  // Submits the latest committed configuration.
   //
-  // Called when a client regains ownership of the displays.
+  // Called when the client gains ownership of the displays.
   //
-  // This method is a no-op if the client has not applied any configuration.
-  void ReapplyConfig();
+  // This method is a no-op if the Client instance has not committed any
+  // configuration.
+  void SubmitLastCommittedConfig();
 
   // `FenceListener`:
   void OnFenceSignaled(Fence& fence) override;
@@ -159,7 +160,11 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
 
  private:
   display::ConfigCheckResult CheckConfigImpl();
-  void ApplyConfigImpl();
+
+  // Submits the client's current (most recent) committed configuration.
+  //
+  // The client must have a committed configuration.
+  void SubmitConfig();
 
   // CheckConfig() implementation for a single display configuration.
   //
@@ -180,7 +185,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   //
   // Restores the draft layer lists of all the displays to their applied layer
   // list state respectively, undoing all draft changes to the layer lists.
-  void SetAllConfigDraftLayersToAppliedLayers();
+  void SetAllConfigDraftLayersToCommittedLayers();
 
   // `fuchsia.hardware.display/Coordinator.ImportImage()` helper for display
   // images.

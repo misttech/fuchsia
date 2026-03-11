@@ -215,7 +215,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
   }
   DisplayInfo& display_info = *displays_it;
 
-  // See ::ApplyConfig for more explanation of how vsync image tracking works.
+  // See ::SubmitConfig for more explanation of how vsync image tracking works.
   //
   // If there's a pending layer change, don't process any present/retire actions
   // until the change is complete.
@@ -239,23 +239,23 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
     //   incoming `controller_config_stamp` from display driver);
     // - older than the current displayed image (its
     //   `latest_controller_config_stamp` is less than the incoming
-    //   `controller_config_stamp`) and should be retired;
+    //   `controller_config_stamp`) and should be removed from DisplayInfo::images;
     // - newer than the current displayed image (its
     //   `latest_controller_config_stamp` is greater than the incoming
     //   `controller_config_stamp`) and yet to be presented.
     for (auto it = display_info.images.begin(); it != display_info.images.end();) {
-      bool should_retire = it->latest_driver_config_stamp() < driver_config_stamp;
+      bool image_should_be_removed = it->latest_driver_config_stamp() < driver_config_stamp;
 
       // Retire any images which are older than whatever is currently in their
       // layer.
-      if (should_retire) {
-        fbl::RefPtr<Image> image_to_retire = display_info.images.erase(it++);
+      if (image_should_be_removed) {
+        fbl::RefPtr<Image> removed_image = display_info.images.erase(it++);
         // Older images may not be presented. Ending their flows here
         // ensures the correctness of traces.
         //
         // NOTE: If changing this flow name or ID, please also do so in the
         // corresponding FLOW_BEGIN.
-        TRACE_FLOW_END("gfx", "present_image", image_to_retire->id().value());
+        TRACE_FLOW_END("gfx", "present_image", removed_image->id().value());
       } else {
         it++;
       }
@@ -274,7 +274,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
   // chronological order as well.
   //
   // Applying empty configs won't create entries in |config_image_queue|.
-  // Otherwise, we'll get the list of images used at ApplyConfig() with
+  // Otherwise, we'll get the list of images used at SubmitConfig() with
   // the given |config_stamp|.
   if (!config_image_queue.empty() &&
       config_image_queue.front().config_stamp == driver_config_stamp) {
@@ -288,7 +288,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
   }
 
   if (!config_stamp_source.has_value()) {
-    // The config was applied by a client that is no longer connected.
+    // The config was committed by a client that is no longer connected.
     fdf::debug("VSync event dropped; the config owner disconnected");
     return;
   }
@@ -296,8 +296,8 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
                                   config_stamp_source.value());
 }
 
-void Controller::ApplyConfig(DisplayConfig& display_config,
-                             display::ConfigStamp client_config_stamp, ClientId client_id) {
+void Controller::SubmitConfig(DisplayConfig& display_config,
+                              display::ConfigStamp client_config_stamp, ClientId client_id) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   zx::time_monotonic timestamp_mono = zx::clock::get_monotonic();
@@ -319,7 +319,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
   last_valid_apply_config_config_stamp_property_.Set(client_config_stamp.value());
 
-  // The applied configuration's stamp.
+  // The submitted configuration's stamp.
   display::DriverConfigStamp driver_config_stamp = {};
   cpp26::inplace_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
@@ -332,7 +332,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
     auto displays_it = displays_.find(display_config.id());
     if (!displays_it.IsValid()) {
-      fdf::warn("ApplyConfig(): Cannot find display with id {}", display_config.id());
+      fdf::warn("SubmitConfig(): Cannot find display with id {}", display_config.id());
       return;
     }
     DisplayInfo& display_info = *displays_it;
@@ -340,25 +340,25 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
     display_info.config_image_queue.push({.config_stamp = driver_config_stamp, .images = {}});
 
     display_info.switching_client = switching_client;
-    display_info.pending_layer_change = display_config.apply_layer_change();
+    display_info.pending_layer_change = display_config.commit_layer_change();
     if (display_info.pending_layer_change) {
       display_info.pending_layer_change_driver_config_stamp = driver_config_stamp;
     }
-    display_info.layer_count = display_config.applied_config().layer_count;
+    display_info.layer_count = display_config.committed_config().layer_count;
 
     if (display_info.layer_count == 0) {
       // TODO(https://fxbug.dev/336394440): Make this a fatal error.
-      fdf::warn("ApplyConfig(): config doesn't have any valid layer; skipped");
+      fdf::warn("SubmitConfig(): config doesn't have any valid layer; skipped");
       return;
     }
 
     ZX_DEBUG_ASSERT(driver_layers.empty());
-    for (const LayerNode& applied_layer_node : display_config.get_applied_layers()) {
-      const Layer* applied_layer = applied_layer_node.layer;
-      driver_layers.push_back(applied_layer->applied_driver_layer_config());
-      fbl::RefPtr<Image> applied_image = applied_layer->applied_image();
+    for (const LayerNode& committed_layer_node : display_config.get_committed_layers()) {
+      const Layer* committed_layer = committed_layer_node.layer;
+      driver_layers.push_back(committed_layer->committed_driver_layer_config());
+      fbl::RefPtr<Image> applied_image = committed_layer->committed_image();
 
-      if (applied_layer->is_skipped() || applied_image == nullptr) {
+      if (committed_layer->is_skipped() || applied_image == nullptr) {
         continue;
       }
 
@@ -393,7 +393,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
     ClientProxy* client_owning_displays = clients_.GetClientOwningDisplays();
     if (client_owning_displays != nullptr) {
       if (switching_client) {
-        client_owning_displays->ReapplySpecialConfigs();
+        client_owning_displays->SubmitSpecialConfigs();
       }
 
       client_owning_displays->UpdateConfigStampMapping({
@@ -403,8 +403,8 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
     }
   }
 
-  DriverDisplayConfig driver_display_config = display_config.applied_config();
-  // Populated by Client::ApplyConfig().
+  DriverDisplayConfig driver_display_config = display_config.committed_config();
+  // Populated by Client::SubmitConfig().
   ZX_DEBUG_ASSERT(static_cast<size_t>(driver_display_config.layer_count) == driver_layers.size());
 
   engine_driver_client_->SubmitConfiguration(driver_display_config, driver_layers,

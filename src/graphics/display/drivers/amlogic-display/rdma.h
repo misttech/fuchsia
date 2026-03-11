@@ -243,7 +243,7 @@ class RdmaEngine {
   size_t end_index_used_ __TA_GUARDED(rdma_lock_) = 0;
 
   bool rdma_active_ __TA_GUARDED(rdma_lock_) = false;
-  display::DriverConfigStamp latest_applied_config_ __TA_GUARDED(rdma_lock_) =
+  display::DriverConfigStamp latest_submitted_configuration_ __TA_GUARDED(rdma_lock_) =
       display::kInvalidDriverConfigStamp;
 
   RdmaChannelContainer rdma_channels_[kNumberOfTables];

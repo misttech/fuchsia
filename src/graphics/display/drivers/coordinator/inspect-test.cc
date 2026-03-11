@@ -53,7 +53,7 @@ class InspectTest : public ::testing::Test {
   std::optional<Controller> controller_;
 };
 
-TEST_F(InspectTest, ApplyConfigHierarchy) {
+TEST_F(InspectTest, SubmitConfigHierarchy) {
   inspect::Hierarchy hierarchy = GetInspectHierarchy(controller_->inspector());
   const inspect::Hierarchy* display = hierarchy.GetByPath({"display"});
   ASSERT_NE(display, nullptr);

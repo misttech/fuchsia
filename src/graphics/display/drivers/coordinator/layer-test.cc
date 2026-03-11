@@ -82,7 +82,7 @@ class LayerTest : public ::testing::Test {
 
   static void MakeLayerApplied(
       Layer& layer, fbl::DoublyLinkedList<LayerNode*>& applied_display_config_layer_list) {
-    applied_display_config_layer_list.push_front(&layer.applied_display_config_list_node_);
+    applied_display_config_layer_list.push_front(&layer.committed_display_config_list_node_);
   }
 
  protected:
@@ -114,7 +114,7 @@ TEST_F(LayerTest, PrimaryBasic) {
   layer.SetPrimaryAlpha(display::AlphaMode::kDisable, 0);
   fbl::RefPtr<Image> image = CreateReadyImage();
   layer.SetImage(image, display::kInvalidEventId);
-  layer.ApplyChanges();
+  layer.CommitChanges();
 }
 
 TEST_F(LayerTest, CleanUpImage) {
@@ -132,7 +132,7 @@ TEST_F(LayerTest, CleanUpImage) {
 
   auto displayed_image = CreateReadyImage();
   layer.SetImage(displayed_image, display::kInvalidEventId);
-  layer.ApplyChanges();
+  layer.CommitChanges();
 
   ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
 
@@ -151,27 +151,27 @@ TEST_F(LayerTest, CleanUpImage) {
 
   ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-  EXPECT_TRUE(layer.applied_image());
+  EXPECT_TRUE(layer.committed_image());
 
   // Nothing should happen if image doesn't match.
   auto not_matching_image = CreateReadyImage();
   EXPECT_FALSE(layer.CleanUpImage(*not_matching_image));
-  EXPECT_TRUE(layer.applied_image());
+  EXPECT_TRUE(layer.committed_image());
 
   // Test cleaning up a waiting image.
   EXPECT_FALSE(layer.CleanUpImage(*waiting_image));
-  EXPECT_TRUE(layer.applied_image());
+  EXPECT_TRUE(layer.committed_image());
 
   // Test cleaning up a draft image.
   EXPECT_FALSE(layer.CleanUpImage(*draft_image));
-  EXPECT_TRUE(layer.applied_image());
+  EXPECT_TRUE(layer.committed_image());
 
   // Test cleaning up the associated image.
   //
   // The layer is not in a display's applied configuration list. So, cleaning up
   // the layer's image doesn't change the applied config.
   EXPECT_FALSE(layer.CleanUpImage(*displayed_image));
-  EXPECT_FALSE(layer.applied_image());
+  EXPECT_FALSE(layer.committed_image());
 }
 
 TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
@@ -193,15 +193,15 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
   {
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
-    layer.ApplyChanges();
+    layer.CommitChanges();
     ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-    EXPECT_TRUE(layer.applied_image());
+    EXPECT_TRUE(layer.committed_image());
     // The layer is not in a display's applied configuration list. So, cleaning
     // up the layer's image doesn't change the applied config.
     EXPECT_FALSE(layer.CleanUpImage(*image));
-    EXPECT_FALSE(layer.applied_image());
+    EXPECT_FALSE(layer.committed_image());
   }
 
   // Clean up images, which changes the applied config.
@@ -210,16 +210,16 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
 
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
-    layer.ApplyChanges();
+    layer.CommitChanges();
     ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(2)));
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-    EXPECT_TRUE(layer.applied_image());
+    EXPECT_TRUE(layer.committed_image());
 
     // The layer is in a display's applied configuration list. So, cleaning up
     // the layer's image changes the applied config.
     EXPECT_TRUE(layer.CleanUpImage(*image));
-    EXPECT_FALSE(layer.applied_image());
+    EXPECT_FALSE(layer.committed_image());
 
     applied_layers.clear();
   }
@@ -240,7 +240,7 @@ TEST_F(LayerTest, CleanUpAllImages) {
 
   auto displayed_image = CreateReadyImage();
   layer.SetImage(displayed_image, display::kInvalidEventId);
-  layer.ApplyChanges();
+  layer.CommitChanges();
   ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
 
   zx::event event;
@@ -261,7 +261,7 @@ TEST_F(LayerTest, CleanUpAllImages) {
   // The layer is not in a display's applied configuration list. So, cleaning
   // up the layer's image doesn't change the applied config.
   EXPECT_FALSE(layer.CleanUpAllImages());
-  EXPECT_FALSE(layer.applied_image());
+  EXPECT_FALSE(layer.committed_image());
 }
 
 TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
@@ -283,15 +283,15 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
   {
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
-    layer.ApplyChanges();
+    layer.CommitChanges();
     ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-    EXPECT_TRUE(layer.applied_image());
+    EXPECT_TRUE(layer.committed_image());
     // The layer is not in a display's applied configuration list. So, cleaning
     // up the layer's image doesn't change the applied config.
     EXPECT_FALSE(layer.CleanUpAllImages());
-    EXPECT_FALSE(layer.applied_image());
+    EXPECT_FALSE(layer.committed_image());
   }
 
   // Clean up all images, which changes the applied config.
@@ -300,15 +300,15 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
 
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
-    layer.ApplyChanges();
+    layer.CommitChanges();
     ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(2)));
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-    EXPECT_TRUE(layer.applied_image());
+    EXPECT_TRUE(layer.committed_image());
     // The layer is in a display's applied configuration list. So, cleaning up
     // the layer's image changes the applied config.
     EXPECT_TRUE(layer.CleanUpAllImages());
-    EXPECT_FALSE(layer.applied_image());
+    EXPECT_FALSE(layer.committed_image());
 
     applied_layers.clear();
   }
@@ -329,20 +329,20 @@ TEST_F(LayerTest, ReuseImageInDifferentConfigs) {
 
   fbl::RefPtr<Image> image = CreateReadyImage();
   layer.SetImage(image, display::kInvalidEventId);
-  layer.ApplyChanges();
+  layer.CommitChanges();
   ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
   ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-  EXPECT_TRUE(layer.applied_image());
-  EXPECT_EQ(layer.applied_image()->id(), image->id());
+  EXPECT_TRUE(layer.committed_image());
+  EXPECT_EQ(layer.committed_image()->id(), image->id());
 
   layer.SetImage(image, display::kInvalidEventId);
-  layer.ApplyChanges();
+  layer.CommitChanges();
   ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(2)));
   ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-  EXPECT_TRUE(layer.applied_image());
-  EXPECT_EQ(layer.applied_image()->id(), image->id());
+  EXPECT_TRUE(layer.committed_image());
+  EXPECT_EQ(layer.committed_image()->id(), image->id());
 }
 
 }  // namespace display_coordinator

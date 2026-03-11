@@ -107,7 +107,7 @@ class Pipe {
 
   // Display device registers only store image handles / addresses. We should
   // convert the handles to corresponding config stamps using the existing
-  // mapping updated in |ApplyConfig()|.
+  // mapping updated in |SubmitConfiguration()|.
   display::DriverConfigStamp GetVsyncConfigStamp(
       const std::vector<display::DriverImageId>& image_ids);
 

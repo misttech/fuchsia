@@ -41,10 +41,10 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
 
   void InitializeInspect(inspect::Node* parent);
 
-  bool apply_layer_change() {
-    bool ret = pending_apply_layer_change_;
-    pending_apply_layer_change_ = false;
-    pending_apply_layer_change_property_.Set(false);
+  bool commit_layer_change() {
+    bool ret = pending_commit_layer_change_;
+    pending_commit_layer_change_ = false;
+    pending_commit_layer_change_property_.Set(false);
     return ret;
   }
 
@@ -65,12 +65,14 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
   // `display::EngineInfo::kMaxAllowedMaxLayerCount`.
   int engine_max_layer_count() const { return engine_max_layer_count_; }
 
-  const DriverDisplayConfig& applied_config() const { return applied_; }
-  const fbl::DoublyLinkedList<LayerNode*>& get_applied_layers() const { return applied_layers_; }
+  const DriverDisplayConfig& committed_config() const { return committed_; }
+  const fbl::DoublyLinkedList<LayerNode*>& get_committed_layers() const {
+    return committed_layers_;
+  }
 
  private:
   // The last configuration sent to the display engine.
-  DriverDisplayConfig applied_;
+  DriverDisplayConfig committed_;
 
   // The display configuration modified by client calls.
   DriverDisplayConfig draft_;
@@ -79,9 +81,9 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
   // configuration's list.
   bool draft_has_layer_list_change_ = false;
 
-  bool pending_apply_layer_change_ = false;
+  bool pending_commit_layer_change_ = false;
   fbl::DoublyLinkedList<LayerNode*> draft_layers_;
-  fbl::DoublyLinkedList<LayerNode*> applied_layers_;
+  fbl::DoublyLinkedList<LayerNode*> committed_layers_;
 
   const fbl::Vector<display::PixelFormat> pixel_formats_;
   const int engine_max_layer_count_;
@@ -94,8 +96,8 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
   inspect::Node node_;
   // Reflects `draft_has_layer_list_change_`.
   inspect::BoolProperty draft_has_layer_list_change_property_;
-  // Reflects `pending_apply_layer_change_`.
-  inspect::BoolProperty pending_apply_layer_change_property_;
+  // Reflects `pending_commit_layer_change_`.
+  inspect::BoolProperty pending_commit_layer_change_property_;
 };
 
 }  // namespace display_coordinator

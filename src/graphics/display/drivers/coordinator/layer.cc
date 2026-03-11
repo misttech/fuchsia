@@ -59,11 +59,11 @@ static_assert(WaitingImageList::kMaxSize ==
 Layer::Layer(display::LayerId id)
     : IdMappable(id),
       draft_layer_config_(CreatePlaceholderDriverLayer()),
-      applied_layer_config_(CreatePlaceholderDriverLayer()) {
-  draft_layer_config_differs_from_applied_ = false;
+      committed_layer_config_(CreatePlaceholderDriverLayer()) {
+  draft_layer_config_differs_from_committed_ = false;
 
   draft_display_config_list_node_.layer = this;
-  applied_display_config_list_node_.layer = this;
+  committed_display_config_list_node_.layer = this;
   is_skipped_ = false;
 }
 
@@ -83,7 +83,7 @@ bool Layer::ResolveDraftLayerProperties() {
     }
 
     waiting_images_.RemoveAllImages();
-    applied_image_ = nullptr;
+    committed_image_ = nullptr;
   }
   return true;
 }
@@ -98,50 +98,52 @@ bool Layer::ResolveDraftImage(FenceCollection* fences, display::ConfigStamp stam
     }
   }
 
-  // This relates to the strategy used by `Client::ApplyConfig()` to compute the vsync config stamp
-  // that will be returned to the client (see more detailed comment there). The subtlety is that we
-  // cannot set the image's stamp above (within the scope of `if (draft_image_) {`); it must be
+  // This relates to the strategy used by `Client::SubmitConfig()` to
+  // compute the vsync config stamp that will be returned to the client (see
+  // more detailed comment there). The subtlety is that we cannot set the
+  // image's stamp above (within the scope of `if (draft_image_) {`); it must be
   // done here.
   //
-  // This is because the same image can appear in multiple configs. If we only set the stamp when
-  // the image moves from `draft_image_` to `waiting_images_`, then we would improperly compute
-  // the vsync config stamp sent in `CoordinatorListener.OnVsync`. Consequently, the client would
+  // This is because the same image can appear in multiple configs. If we only
+  // set the stamp when the image moves from `draft_image_` to
+  // `waiting_images_`, then we would improperly compute the vsync config stamp
+  // sent in `CoordinatorListener.OnVsync`. Consequently, the client would
   // improperly compute whether a particular image is free to reuse.
   waiting_images_.UpdateLatestClientConfigStamp(stamp);
   return true;
 }
 
-void Layer::ApplyChanges() {
-  if (!draft_layer_config_differs_from_applied_) {
+void Layer::CommitChanges() {
+  if (!draft_layer_config_differs_from_committed_) {
     return;
   }
 
   const display::Rectangle& image_source = draft_layer_config_.image_source();
   const bool is_solid_color_fill = image_source.width() == 0 && image_source.height() == 0;
   if (is_solid_color_fill) {
-    applied_image_ = nullptr;
+    committed_image_ = nullptr;
     waiting_images_.RemoveAllImages();
   }
 
-  applied_layer_config_ = display::DriverLayer({
+  committed_layer_config_ = display::DriverLayer({
       .display_destination = draft_layer_config_.display_destination(),
       .image_source = draft_layer_config_.image_source(),
-      .image_id = applied_image_ ? applied_image_->driver_id() : display::kInvalidDriverImageId,
+      .image_id = committed_image_ ? committed_image_->driver_id() : display::kInvalidDriverImageId,
       .image_metadata = draft_layer_config_.image_metadata(),
       .fallback_color = draft_layer_config_.fallback_color(),
       .alpha_mode = draft_layer_config_.alpha_mode(),
       .alpha_coefficient = draft_layer_config_.alpha_coefficient(),
       .image_source_transformation = draft_layer_config_.image_source_transformation(),
   });
-  draft_layer_config_differs_from_applied_ = false;
+  draft_layer_config_differs_from_committed_ = false;
 }
 
 void Layer::DiscardChanges() {
   draft_image_config_gen_ = applied_image_config_gen_;
   draft_image_ = nullptr;
-  if (draft_layer_config_differs_from_applied_) {
-    draft_layer_config_ = applied_layer_config_;
-    draft_layer_config_differs_from_applied_ = false;
+  if (draft_layer_config_differs_from_committed_) {
+    draft_layer_config_ = committed_layer_config_;
+    draft_layer_config_differs_from_committed_ = false;
   }
 }
 
@@ -160,15 +162,15 @@ bool Layer::CleanUpImage(const Image& image) {
 
   RetireWaitingImage(image);
 
-  if (applied_image_.get() == &image) {
+  if (committed_image_.get() == &image) {
     return RetireAppliedImage();
   }
   return false;
 }
 
 std::optional<display::ConfigStamp> Layer::GetCurrentClientConfigStamp() const {
-  if (applied_image_ != nullptr) {
-    return applied_image_->latest_client_config_stamp();
+  if (committed_image_ != nullptr) {
+    return committed_image_->latest_client_config_stamp();
   }
   return std::nullopt;
 }
@@ -179,36 +181,36 @@ bool Layer::ActivateLatestReadyImage() {
     return false;
   }
 
-  // `newest_ready_image` can have the same config stamp as `applied_image_`,
+  // `newest_ready_image` can have the same config stamp as `committed_image_`,
   // since an image can be reused across multiple configs.
-  if (applied_image_ != nullptr) {
+  if (committed_image_ != nullptr) {
     ZX_DEBUG_ASSERT_MSG(
         newest_ready_image->latest_client_config_stamp() >=
-            applied_image_->latest_client_config_stamp(),
+            committed_image_->latest_client_config_stamp(),
         "Invalid image applied on Layer #%" PRIu64 ": The most recent ready image (#%" PRIu64
         ") was applied in config #%" PRIu64 "; the current applied image (#%" PRIu64
         ") was applied in config #%" PRIu64
         ". It's not allowed to apply an image in a config "
         "with an earlier stamp.",
         id().value(), newest_ready_image->id().value(),
-        newest_ready_image->latest_client_config_stamp().value(), applied_image_->id().value(),
-        applied_image_->latest_client_config_stamp().value());
+        newest_ready_image->latest_client_config_stamp().value(), committed_image_->id().value(),
+        committed_image_->latest_client_config_stamp().value());
   }
 
-  applied_image_ = std::move(newest_ready_image);
-  applied_layer_config_ = display::DriverLayer({
-      .display_destination = applied_layer_config_.display_destination(),
-      .image_source = applied_layer_config_.image_source(),
-      .image_id = applied_image_->driver_id(),
-      .image_metadata = applied_layer_config_.image_metadata(),
-      .fallback_color = applied_layer_config_.fallback_color(),
-      .alpha_mode = applied_layer_config_.alpha_mode(),
-      .alpha_coefficient = applied_layer_config_.alpha_coefficient(),
-      .image_source_transformation = applied_layer_config_.image_source_transformation(),
+  committed_image_ = std::move(newest_ready_image);
+  committed_layer_config_ = display::DriverLayer({
+      .display_destination = committed_layer_config_.display_destination(),
+      .image_source = committed_layer_config_.image_source(),
+      .image_id = committed_image_->driver_id(),
+      .image_metadata = committed_layer_config_.image_metadata(),
+      .fallback_color = committed_layer_config_.fallback_color(),
+      .alpha_mode = committed_layer_config_.alpha_mode(),
+      .alpha_coefficient = committed_layer_config_.alpha_coefficient(),
+      .image_source_transformation = committed_layer_config_.image_source_transformation(),
   });
 
-  // TODO(costan): `applied_layer_config_` is updated without updating
-  // `draft_layer_config_differs_from_applied_`. Is it guaranteed that the
+  // TODO(costan): `committed_layer_config_` is updated without updating
+  // `draft_layer_config_differs_from_committed_`. Is it guaranteed that the
   // draft config has changed enough, or will this cause trouble?
 
   return true;
@@ -241,7 +243,7 @@ void Layer::SetPrimaryConfig(display::ImageMetadata image_metadata) {
       .alpha_coefficient = draft_layer_config_.alpha_coefficient(),
       .image_source_transformation = draft_layer_config_.image_source_transformation(),
   });
-  draft_layer_config_differs_from_applied_ = true;
+  draft_layer_config_differs_from_committed_ = true;
 
   ++draft_image_config_gen_;
   draft_image_ = nullptr;
@@ -253,7 +255,7 @@ void Layer::SetPrimaryPosition(display::CoordinateTransformation image_source_tr
   draft_layer_config_ = display::DriverLayer({
       .display_destination = display_destination,
       .image_source = image_source,
-      .image_id = draft_layer_config_.image_id(),
+      .image_id = display::kInvalidDriverImageId,
       .image_metadata = draft_layer_config_.image_metadata(),
       .fallback_color = draft_layer_config_.fallback_color(),
       .alpha_mode = draft_layer_config_.alpha_mode(),
@@ -261,14 +263,14 @@ void Layer::SetPrimaryPosition(display::CoordinateTransformation image_source_tr
       .image_source_transformation = image_source_transformation,
   });
 
-  draft_layer_config_differs_from_applied_ = true;
+  draft_layer_config_differs_from_committed_ = true;
 }
 
 void Layer::SetPrimaryAlpha(display::AlphaMode alpha_mode, float alpha_coefficient) {
   draft_layer_config_ = display::DriverLayer({
       .display_destination = draft_layer_config_.display_destination(),
       .image_source = draft_layer_config_.image_source(),
-      .image_id = draft_layer_config_.image_id(),
+      .image_id = display::kInvalidDriverImageId,
       .image_metadata = draft_layer_config_.image_metadata(),
       .fallback_color = draft_layer_config_.fallback_color(),
       .alpha_mode = alpha_mode,
@@ -276,7 +278,7 @@ void Layer::SetPrimaryAlpha(display::AlphaMode alpha_mode, float alpha_coefficie
       .image_source_transformation = draft_layer_config_.image_source_transformation(),
   });
 
-  draft_layer_config_differs_from_applied_ = true;
+  draft_layer_config_differs_from_committed_ = true;
 }
 
 void Layer::SetColorConfig(display::Color color, display::Rectangle display_destination) {
@@ -295,7 +297,7 @@ void Layer::SetColorConfig(display::Color color, display::Rectangle display_dest
       .image_source_transformation = draft_layer_config_.image_source_transformation(),
   });
 
-  draft_layer_config_differs_from_applied_ = true;
+  draft_layer_config_differs_from_committed_ = true;
 
   draft_image_ = nullptr;
 }
@@ -309,17 +311,19 @@ bool Layer::MarkFenceReady(Fence& fence) { return waiting_images_.MarkFenceReady
 
 bool Layer::HasWaitingImages() const { return waiting_images_.size() > 0; }
 
-void Layer::RetireDraftImage() { draft_image_ = nullptr; }
+void Layer::RetireDraftImage() {
+  draft_image_ = nullptr;
+  draft_image_wait_event_id_ = display::kInvalidEventId;
+}
 
 void Layer::RetireWaitingImage(const Image& image) { waiting_images_.RemoveImage(image); }
 
 bool Layer::RetireAppliedImage() {
-  if (applied_image_ == nullptr) {
+  if (committed_image_ == nullptr) {
     return false;
   }
-  applied_image_ = nullptr;
-
-  return applied_display_config_list_node_.InContainer();
+  committed_image_ = nullptr;
+  return in_use();
 }
 
 }  // namespace display_coordinator

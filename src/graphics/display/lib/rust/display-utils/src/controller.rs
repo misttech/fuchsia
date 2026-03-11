@@ -44,7 +44,7 @@ struct CoordinatorInner {
     // Simple counter to generate client-assigned integer identifiers.
     id_counter: u64,
 
-    // Generate stamps for `apply_config()`.
+    // Generate stamps for `commit_config()`.
     stamp_counter: u64,
 }
 
@@ -232,7 +232,7 @@ impl Coordinator {
 
     /// Apply a display configuration. The client is expected to receive a vsync event once the
     /// configuration is successfully applied. Returns an error if the FIDL message cannot be sent.
-    pub async fn apply_config(
+    pub async fn commit_config(
         &self,
         configs: &[DisplayConfig],
     ) -> std::result::Result<u64, ConfigError> {
@@ -288,7 +288,7 @@ impl Coordinator {
     }
 
     /// Get the config stamp value of the most recent applied config in
-    /// `apply_config`. Returns an error if the FIDL message cannot be sent.
+    /// `commit_config`. Returns an error if the FIDL message cannot be sent.
     pub async fn get_recent_committed_config_stamp(&self) -> std::result::Result<u64, Error> {
         let proxy = self.proxy();
         let response = proxy.get_latest_committed_config_stamp().await?;
@@ -437,13 +437,11 @@ mod tests {
     use anyhow::{Context, Result, format_err};
     use assert_matches::assert_matches;
     use display_mocks::{MockCoordinator, create_proxy_and_mock};
+    use fidl_fuchsia_hardware_display as display;
+    use fidl_fuchsia_hardware_display_types as display_types;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
     use futures::{FutureExt, StreamExt, pin_mut, select};
-    use {
-        fidl_fuchsia_hardware_display as display,
-        fidl_fuchsia_hardware_display_types as display_types,
-    };
 
     async fn init_with_proxy_and_listener_requests(
         coordinator_proxy: display::CoordinatorProxy,

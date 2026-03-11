@@ -187,7 +187,7 @@ void Client::ReleaseImage(ReleaseImageRequestView request,
   auto image = images_.find(image_id);
   if (image.IsValid()) {
     if (CleanUpImage(*image)) {
-      ApplyConfigImpl();
+      SubmitConfig();
     }
     return;
   }
@@ -787,13 +787,13 @@ void Client::CommitConfig(CommitConfigRequestView request,
   // its draft configuration.
   for (DisplayConfig& display_config : display_configs_) {
     if (display_config.draft_has_layer_list_change_) {
-      display_config.applied_layers_.clear();
+      display_config.committed_layers_.clear();
     }
   }
 
   for (DisplayConfig& display_config : display_configs_) {
     if (display_config.has_draft_nonlayer_config_change_) {
-      display_config.applied_ = display_config.draft_;
+      display_config.committed_ = display_config.draft_;
       display_config.has_draft_nonlayer_config_change_ = false;
     }
 
@@ -816,39 +816,40 @@ void Client::CommitConfig(CommitConfigRequestView request,
 
     // Build applied layer lists that were emptied above.
     if (display_config.draft_has_layer_list_change_) {
-      // Rebuild the applied layer list from the draft layer list.
+      // Rebuild the committed layer list from the draft layer list.
       for (LayerNode& draft_layer_node : display_config.draft_layers_) {
         Layer* draft_layer = draft_layer_node.layer;
-        display_config.applied_layers_.push_back(&draft_layer->applied_display_config_list_node_);
+        display_config.committed_layers_.push_back(
+            &draft_layer->committed_display_config_list_node_);
       }
 
-      for (LayerNode& applied_layer_node : display_config.applied_layers_) {
-        Layer* applied_layer = applied_layer_node.layer;
+      for (LayerNode& committed_layer_node : display_config.committed_layers_) {
+        Layer* committed_layer = committed_layer_node.layer;
         // Don't migrate images between displays if there are pending images. See
-        // `Controller::ApplyConfig` for more details.
-        if (applied_layer->applied_to_display_id_ != display_config.id() &&
-            applied_layer->applied_image_ != nullptr && applied_layer->HasWaitingImages()) {
-          applied_layer->applied_image_ = nullptr;
+        // `Controller::SubmitConfig` for more details.
+        if (committed_layer->applied_to_display_id_ != display_config.id() &&
+            committed_layer->committed_image_ != nullptr && committed_layer->HasWaitingImages()) {
+          committed_layer->committed_image_ = nullptr;
 
           // This doesn't need to be reset anywhere, since we really care about the last
           // display this layer was shown on. Ignoring the 'null' display could cause
           // unusual layer changes to trigger this unnecessary, but that's not wrong.
-          applied_layer->applied_to_display_id_ = display_config.id();
+          committed_layer->applied_to_display_id_ = display_config.id();
         }
       }
       display_config.draft_has_layer_list_change_ = false;
       display_config.draft_has_layer_list_change_property_.Set(false);
-      display_config.pending_apply_layer_change_ = true;
-      display_config.pending_apply_layer_change_property_.Set(true);
+      display_config.pending_commit_layer_change_ = true;
+      display_config.pending_commit_layer_change_property_.Set(true);
     }
 
-    // Apply any draft configuration changes to active layers.
-    for (LayerNode& applied_layer_node : display_config.applied_layers_) {
-      applied_layer_node.layer->ApplyChanges();
+    // Commit draft configuration changes in committed layers.
+    for (LayerNode& committed_layer_node : display_config.committed_layers_) {
+      committed_layer_node.layer->CommitChanges();
     }
   }
 
-  ApplyConfigImpl();
+  SubmitConfig();
 
   // No reply defined.
 }
@@ -1013,7 +1014,7 @@ display::ConfigCheckResult Client::CheckConfigImpl() {
       // `SetDisplayLayers()` prevents the client from directly specifying an
       // empty layer list for a display. However, this can still happen if the
       // client put together a display configuration, a new display was added to
-      // the system, and the client called CheckConfig() or ApplyConfig() before
+      // the system, and the client called CheckConfig() or CommitConfig() before
       // it received the display change event.
       //
       // Skipping over the newly added display is appropriate, because display
@@ -1122,17 +1123,17 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
   }
 }
 
-void Client::ReapplyConfig() {
+void Client::SubmitLastCommittedConfig() {
   if (latest_config_stamp_ != display::kInvalidConfigStamp) {
-    ApplyConfigImpl();
+    SubmitConfig();
   }
 }
 
-void Client::ApplyConfigImpl() {
+void Client::SubmitConfig() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  TRACE_DURATION("gfx", "Display::Client::ApplyConfig internal");
+  TRACE_DURATION("gfx", "Display::Client::CommitConfig internal");
 
-  ZX_DEBUG_ASSERT_MSG(!layers_.is_empty(), "Empty layers during ApplyConfigImpl");
+  ZX_DEBUG_ASSERT_MSG(!layers_.is_empty(), "Empty layers during SubmitConfig");
 
   bool config_missing_image = false;
 
@@ -1150,18 +1151,18 @@ void Client::ApplyConfigImpl() {
   display::ConfigStamp displayed_config_stamp = latest_config_stamp_;
 
   for (DisplayConfig& display_config : display_configs_) {
-    display_config.applied_.layer_count = 0;
+    display_config.committed_.layer_count = 0;
 
-    // Displays with no current layers are filtered out in `Controller::ApplyConfig`,
+    // Displays with no current layers are filtered out in `Controller::SubmitConfig`,
     // after it updates its own image tracking logic.
 
-    for (LayerNode& applied_layer_node : display_config.applied_layers_) {
-      display_config.applied_.layer_count++;
+    for (LayerNode& applied_layer_node : display_config.committed_layers_) {
+      display_config.committed_.layer_count++;
       Layer* applied_layer = applied_layer_node.layer;
       const bool activated = applied_layer->ActivateLatestReadyImage();
-      if (activated && applied_layer->applied_image()) {
-        display_config.pending_apply_layer_change_ = true;
-        display_config.pending_apply_layer_change_property_.Set(true);
+      if (activated && applied_layer->committed_image()) {
+        display_config.pending_commit_layer_change_ = true;
+        display_config.pending_commit_layer_change_property_.Set(true);
       }
 
       // This is subtle. Compute the config stamp for this config as the *earliest* stamp of any
@@ -1182,10 +1183,11 @@ void Client::ApplyConfigImpl() {
             std::min(displayed_config_stamp, *applied_layer_client_config_stamp);
       }
 
-      bool is_solid_color_fill = applied_layer->applied_layer_config_.image_source().width() == 0 ||
-                                 applied_layer->applied_layer_config_.image_source().height() == 0;
+      bool is_solid_color_fill =
+          applied_layer->committed_layer_config_.image_source().width() == 0 ||
+          applied_layer->committed_layer_config_.image_source().height() == 0;
       if (!is_solid_color_fill) {
-        if (applied_layer->applied_image() == nullptr) {
+        if (applied_layer->committed_image() == nullptr) {
           config_missing_image = true;
         }
       }
@@ -1194,7 +1196,7 @@ void Client::ApplyConfigImpl() {
 
   if (!config_missing_image && is_owner_) {
     for (DisplayConfig& display_config : display_configs_) {
-      controller_.ApplyConfig(display_config, displayed_config_stamp, id_);
+      controller_.SubmitConfig(display_config, displayed_config_stamp, id_);
     }
   }
 }
@@ -1205,8 +1207,9 @@ void Client::SetOwnership(bool is_owner) {
 
   NotifyOwnershipChange(/*client_has_ownership=*/is_owner);
 
-  // Only apply the current config if the client has previously applied a config.
-  ReapplyConfig();
+  // TODO(costan): The config should only be submitted if the client owns the
+  // displays. Land this in a separate behavior-changing CL.
+  SubmitLastCommittedConfig();
 }
 
 void Client::NotifyDisplayChanges(
@@ -1297,13 +1300,13 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
     const display::ModeAndId preferred_mode_and_id = display_preferred_modes[0];
     ZX_DEBUG_ASSERT(preferred_mode_and_id.id() != display::kInvalidModeId);
 
-    display_config->applied_ = DriverDisplayConfig{
+    display_config->committed_ = DriverDisplayConfig{
         .display_id = display_config->id(),
         .mode_id = preferred_mode_and_id.id(),
         .color_conversion = display::ColorConversion::kIdentity,
         .layer_count = 0,
     };
-    display_config->draft_ = display_config->applied_;
+    display_config->draft_ = display_config->committed_;
 
     display_config->InitializeInspect(&proxy_.node());
 
@@ -1397,7 +1400,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
     std::unique_ptr<DisplayConfig> display_config = display_configs_.erase(removed_display_id);
     if (display_config != nullptr) {
       display_config->draft_layers_.clear();
-      display_config->applied_layers_.clear();
+      display_config->committed_layers_.clear();
       fidl_removed_display_ids.push_back(display_config->id().ToFidl());
     }
   }
@@ -1413,7 +1416,7 @@ void Client::OnFenceSignaled(Fence& fence) {
     new_image_ready |= layer.MarkFenceReady(fence);
   }
   if (new_image_ready) {
-    ApplyConfigImpl();
+    SubmitConfig();
   }
 }
 
@@ -1477,7 +1480,7 @@ void Client::TearDown(zx_status_t epitaph) {
 
   for (DisplayConfig& display_config : display_configs_) {
     display_config.draft_layers_.clear();
-    display_config.applied_layers_.clear();
+    display_config.committed_layers_.clear();
   }
 
   // The layer's images have already been handled in `CleanUpImageLayerState`.
@@ -1536,7 +1539,7 @@ void Client::CleanUpCaptureImage(display::ImageId id) {
   }
 }
 
-void Client::SetAllConfigDraftLayersToAppliedLayers() {
+void Client::SetAllConfigDraftLayersToCommittedLayers() {
   // Layers may have been moved between displays, so we must be extra careful
   // to avoid inserting a Layer in a display's draft list while it's
   // already moved to another Display's draft list.
@@ -1548,8 +1551,8 @@ void Client::SetAllConfigDraftLayersToAppliedLayers() {
     display_config.draft_layers_.clear();
   }
   for (DisplayConfig& display_config : display_configs_) {
-    // Rebuild the draft layers list from applied layers list.
-    for (LayerNode& layer_node : display_config.applied_layers_) {
+    // Rebuild the draft layers list from the committed layers list.
+    for (LayerNode& layer_node : display_config.committed_layers_) {
       display_config.draft_layers_.push_back(&layer_node.layer->draft_display_config_list_node_);
     }
   }
@@ -1564,7 +1567,7 @@ void Client::DiscardConfig() {
   }
 
   // Discard layer list changes.
-  SetAllConfigDraftLayersToAppliedLayers();
+  SetAllConfigDraftLayersToCommittedLayers();
 
   // Discard the rest of the Display changes.
   for (DisplayConfig& display_config : display_configs_) {

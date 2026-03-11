@@ -111,7 +111,7 @@ class FakeDisplay : public display::DisplayEngineInterface {
   void TriggerVsync() __TA_EXCLUDES(mutex_);
 
   // Can be called from any thread.
-  display::DriverConfigStamp LastAppliedConfigStamp() const __TA_EXCLUDES(mutex_) {
+  display::DriverConfigStamp LastSubmittedConfigStamp() const __TA_EXCLUDES(mutex_) {
     std::lock_guard lock(mutex_);
     return displayed_config_stamp_;
   }

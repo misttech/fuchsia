@@ -46,18 +46,18 @@ void ClientProxy::OnDisplaysChanged(std::span<const display::DisplayId> added_di
   handler_.OnDisplaysChanged(added_display_ids, removed_display_ids);
 }
 
-void ClientProxy::ReapplySpecialConfigs() {
+void ClientProxy::SubmitSpecialConfigs() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   zx::result<> result = controller_.engine_driver_client()->SetMinimumRgb(handler_.GetMinimumRgb());
   if (!result.is_ok()) {
-    fdf::error("Failed to reapply minimum RGB value: {}", result);
+    fdf::error("Failed to submit minimum RGB value: {}", result);
   }
 }
 
-void ClientProxy::ReapplyConfig() {
+void ClientProxy::SubmitLastCommittedConfig() {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  handler_.ReapplyConfig();
+  handler_.SubmitLastCommittedConfig();
 }
 
 void ClientProxy::OnCaptureComplete() {

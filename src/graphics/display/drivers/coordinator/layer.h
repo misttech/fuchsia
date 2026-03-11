@@ -56,8 +56,7 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
 
   ~Layer();
 
-  // The most recent image sent to the display engine for this layer.
-  fbl::RefPtr<Image> applied_image() const { return applied_image_; }
+  fbl::RefPtr<Image> committed_image() const { return committed_image_; }
 
   bool is_skipped() const { return is_skipped_; }
 
@@ -67,7 +66,7 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   friend LayerTest;
 
   bool in_use() const {
-    return applied_display_config_list_node_.InContainer() ||
+    return committed_display_config_list_node_.InContainer() ||
            draft_display_config_list_node_.InContainer();
   }
 
@@ -93,20 +92,20 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   bool ResolveDraftImage(FenceCollection* fence,
                          display::ConfigStamp stamp = display::kInvalidConfigStamp);
 
-  // Set the applied layer configuration to the draft layer configuration.
-  void ApplyChanges();
+  // Set the committed layer configuration to the draft layer configuration.
+  void CommitChanges();
 
-  // Set the draft layer configuration to the applied layer configuration.
+  // Set the draft layer configuration to the committed layer configuration.
   //
   // This discards any changes in the draft layer configuration.
   void DiscardChanges();
 
   // Removes references to all Images associated with this Layer.
-  // Returns true if the applied config has been affected.
+  // Returns true if the committed config has been affected.
   bool CleanUpAllImages();
 
   // Removes references to the provided Image. `image` must be valid.
-  // Returns true if the applied config has been affected.
+  // Returns true if the committed config has been affected.
   bool CleanUpImage(const Image& image);
 
   // If a new image is available, retire applied_image() and other pending images. Returns false if
@@ -143,7 +142,9 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   // "waiting" (in the context of a specific layer) when that layer appears in an applied config.
   bool HasWaitingImages() const;
 
-  const display::DriverLayer& applied_driver_layer_config() const { return applied_layer_config_; }
+  const display::DriverLayer& committed_driver_layer_config() const {
+    return committed_layer_config_;
+  }
 
  private:
   // Retires the `draft_image_`.
@@ -159,10 +160,10 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   bool RetireAppliedImage();
 
   display::DriverLayer draft_layer_config_;
-  display::DriverLayer applied_layer_config_;
+  display::DriverLayer committed_layer_config_;
 
-  // True if `draft_layer_` is different from `applied_layer_`.
-  bool draft_layer_config_differs_from_applied_;
+  // True if `draft_layer_` is different from `committed_layer_`.
+  bool draft_layer_config_differs_from_committed_;
 
   // The event passed to SetLayerImage which hasn't been applied yet.
   display::EventId draft_image_wait_event_id_ = display::kInvalidEventId;
@@ -177,14 +178,17 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   // `ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher())`.
   WaitingImageList waiting_images_;
 
-  fbl::RefPtr<Image> applied_image_;
+  fbl::RefPtr<Image> committed_image_;
 
   // Counters used for keeping track of when the layer's images need to be dropped.
   uint64_t draft_image_config_gen_ = 0;
   uint64_t applied_image_config_gen_ = 0;
 
+  // If valid, belongs to the `DisplayConfig::draft_layers_` list.
   LayerNode draft_display_config_list_node_;
-  LayerNode applied_display_config_list_node_;
+
+  // If valid, belongs to the `DisplayConfig::committed_layers_` list.
+  LayerNode committed_display_config_list_node_;
 
   // Identifies the display that this layer was last applied to.
   //

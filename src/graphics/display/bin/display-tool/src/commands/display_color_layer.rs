@@ -41,7 +41,7 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
     let Args { display, color, pixel_format } = args;
     let color_bytes = get_bytes_for_rgb_color(color, pixel_format)?;
 
-    // Ensure that vsync events are enabled before we issue the first call to ApplyConfig.
+    // Ensure that vsync events are enabled before we issue the first call to CommitConfig.
     let mut vsync = coordinator.add_vsync_listener(Some(display.id()))?;
 
     let layer = coordinator.create_layer().await?;
@@ -60,7 +60,7 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
             },
         }],
     }];
-    coordinator.apply_config(&configs).await?;
+    coordinator.commit_config(&configs).await?;
     let recent_committed_config_stamp = coordinator.get_recent_committed_config_stamp().await?;
 
     // The color layer should be displayed on the screen and Vsync events

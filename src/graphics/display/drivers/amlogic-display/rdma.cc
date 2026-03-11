@@ -142,7 +142,7 @@ display::DriverConfigStamp RdmaEngine::GetLastConfigStampApplied() {
   if (rdma_active_) {
     TryResolvePendingRdma();
   }
-  return latest_applied_config_;
+  return latest_submitted_configuration_;
 }
 
 void RdmaEngine::ProcessRdmaUsageTable() {
@@ -158,7 +158,7 @@ void RdmaEngine::ProcessRdmaUsageTable() {
     if (val == rdma_usage_table_[i]) {
       // Found the last table that was written to
       last_table_index = i;
-      latest_applied_config_ =
+      latest_submitted_configuration_ =
           display::DriverConfigStamp(rdma_usage_table_[i]);  // save this for vsync
     }
     rdma_usage_table_[i] = kRdmaTableUnavailable;  // mark as unavailable for now
@@ -450,7 +450,7 @@ void RdmaEngine::StopRdma() {
 
 void RdmaEngine::ResetConfigStamp(display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&rdma_lock_);
-  latest_applied_config_ = config_stamp;
+  latest_submitted_configuration_ = config_stamp;
 }
 
 void RdmaEngine::DumpRdmaRegisters() {
@@ -496,7 +496,8 @@ void RdmaEngine::DumpRdmaState() {
   }
 
   fdf::info("start_index = {}, end_index = {}", start_index_used_, end_index_used_);
-  fdf::info("latest applied config stamp = 0x{:x}", latest_applied_config_.value());
+  fdf::info("latest submitted configuration stamp = 0x{:x}",
+            latest_submitted_configuration_.value());
   fdf::info("\n\n=========================================");
 }
 

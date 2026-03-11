@@ -74,6 +74,8 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
   // A list of all images which have been sent to display driver.
   Image::DoublyLinkedList images;
 
+  // TODO(https://fxbug.dev/489243434): Switch away from "applied" terminology.
+
   // The number of layers in the applied configuration.
   uint32_t layer_count = 0;
 
