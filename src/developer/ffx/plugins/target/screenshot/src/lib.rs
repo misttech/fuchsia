@@ -5,11 +5,13 @@
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use chrono::{Datelike, Local, Timelike};
+use fdomain_fuchsia_io as fio;
+use fdomain_fuchsia_ui_composition::{
+    ScreenshotFormat, ScreenshotProxy, ScreenshotTakeFileRequest,
+};
 use ffx_target_screenshot_args::{Format, ScreenshotCommand};
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_ui_composition::{ScreenshotFormat, ScreenshotProxy, ScreenshotTakeFileRequest};
 use futures::stream::{FuturesOrdered, StreamExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 // Reads all of the contents of the given file from the current seek
 // offset to end of file, returning the content. It errors if the seek pointer
@@ -33,11 +35,12 @@ pub async fn read_data(file: &fio::FileProxy) -> Result<Vec<u8>> {
 
     let mut out = Vec::new();
 
-    let (_mutable_attributes, immutable_attributes) = file
+    let res = file
         .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
         .await
-        .map_err(|e| anyhow!("Failed get_attributes wire call: {e}"))?
-        .map_err(|e| anyhow!("Failed get_attributes of file: {e}"))?;
+        .map_err(|e| anyhow!("Failed get_attributes wire call: {e}"))?;
+    let (_mutable_attributes, immutable_attributes) =
+        res.map_err(|e| anyhow!("Failed get_attributes of file: {e}"))?;
     let content_size = immutable_attributes
         .content_size
         .ok_or_else(|| anyhow!("Failed to get content size of file"))?;
@@ -49,16 +52,16 @@ pub async fn read_data(file: &fio::FileProxy) -> Result<Vec<u8>> {
     }
 
     loop {
-        let mut bytes: Vec<u8> = queue
-            .next()
-            .await
-            .context("read stream closed prematurely")??
-            .map_err(|status: i32| fho::Error::from(anyhow!("read error: status={status}")))?;
+        if let Some(resp) = queue.next().await {
+            let res = resp.context("read stream closed prematurely")?;
+            let mut bytes: Vec<u8> = res
+                .map_err(|status: i32| fho::Error::from(anyhow!("read error: status={status}")))?;
 
-        if bytes.is_empty() {
-            break;
+            if bytes.is_empty() {
+                break;
+            }
+            out.append(&mut bytes);
         }
-        out.append(&mut bytes);
 
         while queue.len() < CONCURRENCY.try_into().unwrap() {
             queue.push_back(file.read(fio::MAX_BUF));
@@ -211,16 +214,15 @@ fn bgra_to_rgba(img_data: &mut Vec<u8>) {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_math::SizeU;
+    use fdomain_fuchsia_ui_composition::{ScreenshotRequest, ScreenshotTakeFileResponse};
     use ffx_writer::{Format as WriterFormat, TestBuffers};
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_math::SizeU;
-    use fidl_fuchsia_ui_composition::{ScreenshotRequest, ScreenshotTakeFileResponse};
     use futures::TryStreamExt;
     use std::os::unix::ffi::OsStrExt;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
     use tempfile::tempdir;
 
-    fn serve_fake_file(server: ServerEnd<fio::FileMarker>) {
+    fn serve_fake_file(server: fdomain_client::fidl::ServerEnd<fio::FileMarker>) {
         fuchsia_async::Task::local(async move {
             let data: [u8; 16] = [1, 2, 3, 4, 1, 2, 3, 4, 4, 3, 2, 1, 4, 3, 2, 1];
             let mut stream = server.into_stream();
@@ -277,12 +279,13 @@ mod test {
     }
 
     fn setup_fake_screenshot_server() -> ScreenshotProxy {
-        fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        fake_proxy(client.clone(), move |req| match req {
             ScreenshotRequest::TakeFile { payload: _, responder } => {
                 let mut screenshot = ScreenshotTakeFileResponse::default();
 
                 let (file_client_end, file_server_end) =
-                    fidl::endpoints::create_endpoints::<fio::FileMarker>();
+                    client.create_endpoints::<fio::FileMarker>();
 
                 let _ = screenshot.file.insert(file_client_end);
                 let _ = screenshot.size.insert(SizeU { width: 2, height: 2 });
