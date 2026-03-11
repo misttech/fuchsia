@@ -589,7 +589,8 @@ function is-valid-device {
   if [[ -n "${device}" ]] \
       && ! _looks_like_ipv4 "${device}" \
       && ! _looks_like_ipv6 "${device}" \
-      && ! _looks_like_hostname "${device}"; then
+      && ! _looks_like_hostname "${device}" \
+      && ! _looks_like_usb_or_vsock "${device}"; then
     return 1
   fi
 }
@@ -651,6 +652,10 @@ function get-device-name {
 
   fi
   echo "${device}"
+}
+
+function _looks_like_usb_or_vsock {
+  [[ "$1" =~ ^(usb|vsock):cid:[0-9]+$ ]] || return 1
 }
 
 function _looks_like_hostname {
