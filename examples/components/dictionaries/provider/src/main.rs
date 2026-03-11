@@ -4,14 +4,17 @@
 
 use fidl::endpoints;
 use fidl_fidl_examples_routing_echo::{EchoMarker, EchoRequest, EchoRequestStream};
-use fuchsia_component::client;
+use fidl_fuchsia_component_runtime as fcomponent;
+use fuchsia_async as fasync;
+use fuchsia_component::runtime::{
+    Connector, ConnectorReceiver, Dictionary, DictionaryRouterReceiver,
+};
 use fuchsia_component::server::ServiceFs;
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
 enum IncomingRequest {
-    Router(fsandbox::DictionaryRouterRequestStream),
+    Router(fcomponent::DictionaryRouterRequestStream),
 }
 
 #[fuchsia::main]
@@ -19,32 +22,16 @@ async fn main() {
     info!("Started");
 
     // [START init]
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let id_gen = sandbox::CapabilityIdGenerator::new();
 
     // Create a dictionary
-    let dict_id = id_gen.next();
-    store.dictionary_create(dict_id).await.unwrap().unwrap();
+    let dictionary = Dictionary::new().await;
 
     // Add 3 Echo servers to the dictionary
     let mut receiver_tasks = fasync::TaskGroup::new();
     for i in 1..=3 {
-        let (receiver, receiver_stream) =
-            endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-        let connector_id = id_gen.next();
-        store.connector_create(connector_id, receiver).await.unwrap().unwrap();
-        store
-            .dictionary_insert(
-                dict_id,
-                &fsandbox::DictionaryItem {
-                    key: format!("fidl.examples.routing.echo.Echo-{i}"),
-                    value: connector_id,
-                },
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        receiver_tasks.spawn(async move { handle_echo_receiver(i, receiver_stream).await });
+        let (connector, receiver) = Connector::new().await;
+        dictionary.insert(&&format!("fidl.examples.routing.echo.Echo-{i}"), connector).await;
+        receiver_tasks.spawn(handle_echo_receiver(i, receiver));
     }
     // [END init]
 
@@ -55,33 +42,16 @@ async fn main() {
     fs.dir("svc").add_fidl_service(IncomingRequest::Router);
     fs.take_and_serve_directory_handle().unwrap();
     fs.for_each_concurrent(None, move |request: IncomingRequest| {
-        let store = store.clone();
-        let id_gen = id_gen.clone();
+        let dictionary = dictionary.clone();
         async move {
             match request {
-                IncomingRequest::Router(mut stream) => {
-                    while let Ok(Some(request)) = stream.try_next().await {
-                        match request {
-                            // [START request]
-                            fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                                let dup_dict_id = id_gen.next();
-                                store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
-                                let capability = store.export(dup_dict_id).await.unwrap().unwrap();
-                                let fsandbox::Capability::Dictionary(dict) = capability else {
-                                    panic!("capability was not a dictionary? {capability:?}");
-                                };
-                                let _ = responder.send(Ok(
-                                    fsandbox::DictionaryRouterRouteResponse::Dictionary(dict),
-                                ));
-                            }
-                            // [END request]
-                            fsandbox::DictionaryRouterRequest::_UnknownMethod {
-                                ordinal, ..
-                            } => {
-                                warn!(ordinal:%; "Unknown DictionaryRouter request");
-                            }
-                        }
-                    }
+                IncomingRequest::Router(stream) => {
+                    let router_receiver = DictionaryRouterReceiver::from(stream);
+                    router_receiver
+                        .handle_with(move |_route_request, _instance_token| {
+                            futures::future::ready(Ok(Some(dictionary.clone()))).boxed()
+                        })
+                        .await;
                 }
             }
         }
@@ -91,20 +61,13 @@ async fn main() {
 }
 
 // [START receiver]
-async fn handle_echo_receiver(index: u64, mut receiver_stream: fsandbox::ReceiverRequestStream) {
+async fn handle_echo_receiver(index: u64, mut receiver: ConnectorReceiver) {
     let mut task_group = fasync::TaskGroup::new();
-    while let Some(request) = receiver_stream.try_next().await.unwrap() {
-        match request {
-            fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                task_group.spawn(async move {
-                    let server_end = endpoints::ServerEnd::<EchoMarker>::new(channel.into());
-                    run_echo_server(index, server_end.into_stream()).await;
-                });
-            }
-            fsandbox::ReceiverRequest::_UnknownMethod { ordinal, .. } => {
-                warn!(ordinal:%; "Unknown Receiver request");
-            }
-        }
+    while let Some(channel) = receiver.next().await {
+        task_group.spawn(async move {
+            let server_end = endpoints::ServerEnd::<EchoMarker>::new(channel.into());
+            run_echo_server(index, server_end.into_stream()).await;
+        });
     }
 }
 
