@@ -133,6 +133,10 @@ common --strip=never
 common --@io_bazel_rules_go//go/config:debug=True
 # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
 
+# Explicitly disable PIE to avoid `recompile with -fPIC` linking errors.
+# See https://fxbug.dev/489925970 for details.
+build --@io_bazel_rules_go//go/config:gc_linkopts="-extldflags,-no-pie"
+
 # Do not propagate Starlark flags to the exec config. This will be the default
 # behavior in Bazel 10 (https://github.com/bazelbuild/bazel/issues/26909).
 # Among other things, it avoids building host tools for each API level.
