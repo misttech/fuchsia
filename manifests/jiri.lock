@@ -315,6 +315,16 @@
         "instance_id": "5nSOpOGhZCcYwcBZwdE-3GLMVC-Qkvkn_e2K7ZPC6UwC"
     },
     {
+        "package": "fuchsia/third_party/3pp/dtsfmt/linux-amd64",
+        "version": "version:2@0.8.0",
+        "instance_id": "vNL1sqfN7JN-QPizy9YGiv20XZgD85l9jigbloZ6AMYC"
+    },
+    {
+        "package": "fuchsia/third_party/3pp/dtsfmt/linux-arm64",
+        "version": "version:2@0.8.0",
+        "instance_id": "SoEe2OAI1iMYWosOEi867_EUawVl3M2cBL6Ye7UrhfAC"
+    },
+    {
         "package": "fuchsia/third_party/3pp/fsatrace/linux-amd64",
         "version": "version:2@293203db83ebf37e63bd5477daf5b26dc98f8667",
         "instance_id": "ECeS5hnhBMIivqjvx-ZjPX8m2-hklVfFmzNPAkrIojsC"
