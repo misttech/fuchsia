@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
@@ -35,12 +37,15 @@ func mainImpl() error {
 
 	args := flag.Args()
 
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
 	var testErr error
 	stdoutForParsing := new(bytes.Buffer)
 	testStdout := io.MultiWriter(os.Stdout, stdoutForParsing)
 	r := &subprocess.Runner{Env: os.Environ()}
 	fmt.Fprintf(os.Stdout, "Running %s\n", args[0])
-	if err := r.Run(context.Background(), args, subprocess.RunOptions{Stdout: testStdout}); err != nil {
+	if err := r.Run(ctx, args, subprocess.RunOptions{Stdout: testStdout}); err != nil {
 		testErr = fmt.Errorf("Error running test: %w", err)
 	}
 
