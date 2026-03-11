@@ -277,6 +277,7 @@ syscall_tests_migrated_to_machina = [
   "sync_test",
   "sysctl_test",
   "sysfs_kernel_test",
+  "sysfs_power_test",
   "task_test",
   "test_helper_test",
   "thread_group_lifecycle_test",
