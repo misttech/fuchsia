@@ -21,6 +21,7 @@ def fuchsia_test_product_bundle(
         name,
         board_config,
         product_config_json,
+        cache_packages = [],
         virtual_devices = []):
     """A macro for defining a test-only product bundle.
 
@@ -32,12 +33,14 @@ def fuchsia_test_product_bundle(
         name: The name of the product bundle.
         board_config: The board configuration target.
         product_config_json: A dictionary for the product configuration.
+        cache_packages: A list of fuchsia_package targets to cache.
         virtual_devices: The fuchsia_virtual_device()s to include for running on emulators.
     """
     product_config_name = name + ".product_config"
     fuchsia_product_configuration(
         name = product_config_name,
         product_config_json = product_config_json,
+        cache_packages = cache_packages,
     )
 
     product_name = name + ".product"
