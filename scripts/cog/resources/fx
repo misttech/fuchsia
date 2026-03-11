@@ -31,6 +31,9 @@ diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
 # Copy over any added or modified files to the CartFS.
 added_or_modified_files=$(echo "${diff_output}" | grep '^\[[AM]\]' | awk '{print $2}')
 for file in "${added_or_modified_files[@]}"; do
+  if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
+    continue
+  fi
   sha256_cog=$(sha256sum "${COG_FUCHSIA_DIR}/${file}" | awk '{print $1}')
   sha256_cartfs=""
   if [[ -f "${CARTFS_FUCHSIA_DIR}/${file}" ]]; then
