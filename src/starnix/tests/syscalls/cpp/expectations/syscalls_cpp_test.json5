@@ -46,7 +46,7 @@
                 // TODO(https://fxbug.dev/489159960): Deflake and re-enable.
                 "ProcessMemoryReleaseTest.SuccessfulRelease",
 
-                // TODO(https://fxbug.dev/455731133) re-enable after flake rate is reduced
+                // TODO(https://fxbug.dev/489528448) re-enable after flake rate is reduced
                 "SignalHandling.SignalDeliveryWakesOnlyOneFutex",
 
                 // TODO(https://fxbug.dev/297440106)
