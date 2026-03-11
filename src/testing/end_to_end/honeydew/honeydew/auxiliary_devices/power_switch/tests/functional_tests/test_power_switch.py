@@ -5,7 +5,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew.auxiliary_devices.power_switch import (
@@ -19,15 +19,15 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 PDU_CONFIG_KEY: str = "pdu_config"
 
 
-class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
+class PowerSwitchTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Mobly test for PowerSwitchDmc implementation of PowerSwitch interface."""
 
     _power_switch: power_switch.PowerSwitch
     _outlet_arg: int | None
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
         try:
@@ -63,7 +63,7 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
             except power_switch_using_pdu.PowerSwitchPduError as e:
                 asserts.abort_class(f"PDU setup failed: {e}")
 
-    def test_power_switch(self) -> None:
+    async def test_power_switch(self) -> None:
         """Test case for PowerSwitchDmc.power_off and PowerSwitchDmc.power_on"""
         _LOGGER.info(
             "Testing power switch using %s",
@@ -71,7 +71,7 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
         # Check if device is online before powering off
-        self.dut.wait_for_online()
+        await self.dut.wait_for_online()
 
         # power off the device using the dynamically determined outlet argument
         _LOGGER.info("Starting power_off test cycle.")
@@ -83,8 +83,8 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Starting power_on test cycle.")
         self._power_switch.power_on(outlet=self._outlet_arg)
 
-        self.dut.wait_for_online()
-        self.dut.on_device_boot()
+        await self.dut.wait_for_online()
+        await self.dut.on_device_boot()
 
         _LOGGER.info("Power cycle test completed successfully.")
 
