@@ -246,6 +246,7 @@ syscall_tests_migrated_to_machina = [
   "extended_pstate_test",
   "fallocate_test",
   "fcntl_test",
+  "fs_test",
   "fsverity_test",
   "fuchsia_network_monitor_fs_test",
   "futex_test",
