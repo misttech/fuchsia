@@ -3,17 +3,24 @@
 # found in the LICENSE file.
 """Provides methods for Host-(Fuchsia)Target interactions via Fastboot."""
 
+import asyncio
 import atexit
+import inspect
 import logging
 import os
 import shutil
 import stat
 import tempfile
 import time
+import typing
+from datetime import timedelta
 from importlib import resources
-from typing import Any
+from typing import Any, Callable, Coroutine, TypeVar
+
+import fuchsia_async_extension
 
 from honeydew import affordances_capable, errors
+from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
@@ -22,7 +29,7 @@ from honeydew.transports.fastboot import fastboot as fastboot_interface
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_interface
 from honeydew.transports.serial import serial as serial_interface
-from honeydew.utils import common, host_shell, properties
+from honeydew.utils import host_shell, properties
 
 _FASTBOOT_PATH_ENV_VAR = "HONEYDEW_FASTBOOT_OVERRIDE"
 
@@ -76,12 +83,64 @@ def _get_fastboot_binary() -> str:
     return bin_path
 
 
-class FastbootImpl(fastboot_interface.Fastboot):
+T = TypeVar("T")
+
+
+async def _poll_until(
+    func: Callable[..., T | Coroutine[Any, Any, T]],
+    target_value: T,
+    interval: timedelta = timedelta(seconds=1),
+    timeout: timedelta | None = None,
+    *args: Any,
+    **kwargs: Any,
+) -> T:
+    """
+    Polls func(*args, **kwargs) every 'interval' seconds until
+    it returns 'target_value'.
+    """
+
+    func_name = getattr(func, "__qualname__", str(func))
+
+    async def _poll() -> T:
+        while True:
+            _LOGGER.debug(f"calling {func_name}")
+            try:
+                result_or_awaitable = func(*args, **kwargs)
+                if inspect.isawaitable(result_or_awaitable):
+                    result = await result_or_awaitable
+                else:
+                    result = typing.cast(T, result_or_awaitable)
+                _LOGGER.debug(f"{func_name} returned {result}")
+                if result == target_value:
+                    return result
+            except Exception as err:
+                _LOGGER.debug(err)
+
+            await asyncio.sleep(interval.total_seconds())
+
+    if timeout:
+        _LOGGER.info(
+            f"Waiting for {timeout.total_seconds()} sec for {func_name} "
+            f"to return {target_value}..."
+        )
+        try:
+            return await asyncio.wait_for(
+                _poll(), timeout=timeout.total_seconds()
+            )
+        except asyncio.TimeoutError as err:
+            raise errors.HoneydewTimeoutError(
+                f"{func_name} didn't return {target_value} in "
+                f"{timeout.total_seconds()} sec"
+            ) from err
+    return await _poll()
+
+
+class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
     """Provides methods for Host-(Fuchsia)Target interactions via Fastboot.
 
     Args:
         device_name: Fuchsia device name.
-        reboot_affordance: Object to RebootCapableDevice implementation.
+        reboot_affordance: Object to AsyncRebootCapableDevice implementation.
         ffx_transport: Object to FFX transport interface implementation.
         fastboot_node_id: Fastboot Node ID.
 
@@ -92,30 +151,37 @@ class FastbootImpl(fastboot_interface.Fastboot):
     def __init__(
         self,
         device_name: str,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
         ffx_transport: ffx_interface.FFX,
         fastboot_node_id: str | None = None,
     ) -> None:
+        super().__init__()
         self._device_name: str = device_name
-        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
             reboot_affordance
         )
         self._ffx_transport: ffx_interface.FFX = ffx_transport
         self._fastboot_binary: str = _get_fastboot_binary()
-        self._get_fastboot_node(fastboot_node_id)
+        self._fastboot_node_id = fastboot_node_id
+
+    async def make_ready(self) -> None:
+        await super().make_ready()
+        await self._get_fastboot_node()
 
     # List all the public properties
-    @properties.PersistentProperty
-    def node_id(self) -> str:
+    @ensure_ready
+    async def node_id(self) -> str:
         """Fastboot node id.
 
         Returns:
             Fastboot node value.
         """
+        assert self._fastboot_node_id is not None
         return self._fastboot_node_id
 
     # List all the public methods
-    def boot_to_fastboot_mode(
+    @ensure_ready
+    async def boot_to_fastboot_mode(
         self,
         use_serial: bool = False,
         serial_transport: serial_interface.Serial | None = None,
@@ -142,7 +208,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
         # operation.
         if use_serial is False:
             try:
-                self.wait_for_fuchsia_mode()
+                await self.wait_for_fuchsia_mode()
             except errors.FuchsiaDeviceError as err:
                 raise errors.FuchsiaStateError(
                     f"'{self._device_name}' is not in fuchsia mode to perform "
@@ -151,7 +217,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
 
         try:
             if use_serial:
-                self._boot_to_fastboot_mode_using_serial(
+                await self._boot_to_fastboot_mode_using_serial(
                     serial_transport,
                     power_switch,
                     outlet,
@@ -163,33 +229,35 @@ class FastbootImpl(fastboot_interface.Fastboot):
                 f"Failed to boot {self._device_name} into fastboot mode"
             ) from err
 
-        self.wait_for_fastboot_mode()
+        await self.wait_for_fastboot_mode()
 
-    def boot_to_fuchsia_mode(self) -> None:
+    @ensure_ready
+    async def boot_to_fuchsia_mode(self) -> None:
         """Boot the device to fuchsia mode from fastboot mode.
 
         Raises:
             FuchsiaStateError: Invalid state to perform this operation.
             FuchsiaDeviceError: Failed to boot the device to fuchsia mode.
         """
-        if not self.is_in_fastboot_mode():
+        if not await self.is_in_fastboot_mode():
             raise errors.FuchsiaStateError(
                 f"'{self._device_name}' is not in fastboot mode to perform "
                 f"this operation."
             )
 
         try:
-            self.run(cmd=_FASTBOOT_CMDS["BOOT_TO_FUCHSIA_MODE"])
-            self.wait_for_fuchsia_mode()
-            self._reboot_affordance.wait_for_online()
-            self._reboot_affordance.on_device_boot()
+            await self.run(cmd=_FASTBOOT_CMDS["BOOT_TO_FUCHSIA_MODE"])
+            await self.wait_for_fuchsia_mode()
+            await self._reboot_affordance.wait_for_online()
+            await self._reboot_affordance.on_device_boot()
         except errors.HoneydewError as err:
             raise errors.FuchsiaDeviceError(
                 f"Failed to reboot {self._device_name} to fuchsia mode from "
                 f"fastboot mode"
             ) from err
 
-    def is_in_fastboot_mode(self) -> bool:
+    @ensure_ready
+    async def is_in_fastboot_mode(self) -> bool:
         """Checks if device is in fastboot mode or not.
 
         Returns:
@@ -198,6 +266,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
         Raises:
             FastbootCommandError: Failed to check if device is in fastboot mode or not.
         """
+        assert self._fastboot_node_id is not None
         _LOGGER.debug(
             "Checking if '%s' is in fastboot mode or not", self._device_name
         )
@@ -224,7 +293,8 @@ class FastbootImpl(fastboot_interface.Fastboot):
         _LOGGER.info("'%s' is not in fastboot mode", self._device_name)
         return False
 
-    def run(
+    @ensure_ready
+    async def run(
         self,
         cmd: list[str],
     ) -> list[str]:
@@ -240,7 +310,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
             FuchsiaStateError: Invalid state to perform this operation.
             FastbootCommandError: In case of failure.
         """
-        if not self.is_in_fastboot_mode():
+        if not await self.is_in_fastboot_mode():
             raise errors.FuchsiaStateError(
                 f"'{self._device_name}' is not in fastboot mode to perform "
                 f"this operation."
@@ -249,7 +319,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
         fastboot_cmd: list[str] = [
             self._fastboot_binary,
             "-s",
-            self.node_id,
+            await self.node_id(),
         ] + cmd
 
         try:
@@ -268,15 +338,17 @@ class FastbootImpl(fastboot_interface.Fastboot):
         except errors.HostCmdError as err:
             raise fastboot_errors.FastbootCommandError(err) from err
 
-    def wait_for_fastboot_mode(self) -> None:
+    @ensure_ready
+    async def wait_for_fastboot_mode(self) -> None:
         """Wait for Fuchsia device to go to fastboot mode."""
         _LOGGER.info("Waiting for %s to go fastboot mode...", self._device_name)
-        common.wait_for_state(
-            state_fn=self.is_in_fastboot_mode,
-            expected_state=True,
+        await _poll_until(
+            func=self.is_in_fastboot_mode,
+            target_value=True,
         )
 
-    def wait_for_fuchsia_mode(self) -> None:
+    @ensure_ready
+    async def wait_for_fuchsia_mode(self) -> None:
         """Wait for Fuchsia device to go to fuchsia mode."""
         _LOGGER.info("Waiting for %s to go fuchsia mode...", self._device_name)
         self._ffx_transport.wait_for_rcs_connection()
@@ -296,7 +368,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
             pass
 
     # TODO(b/359261703): Once issue is resolved, remove `| None` from type hint for `serial_transport` and `power_switch`
-    def _boot_to_fastboot_mode_using_serial(
+    async def _boot_to_fastboot_mode_using_serial(
         self,
         serial_transport: serial_interface.Serial | None,
         power_switch: power_switch_interface.PowerSwitch | None,
@@ -339,9 +411,9 @@ class FastbootImpl(fastboot_interface.Fastboot):
         while time.time() < end_time:
             serial_transport.send(cmd="f")
             # Do not send continuously, it will fill buffers very quickly
-            time.sleep(0.2)
+            await asyncio.sleep(0.2)
 
-    def _get_fastboot_node(self, fastboot_node_id: str | None = None) -> None:
+    async def _get_fastboot_node(self) -> None:
         """Gets the fastboot node id and stores it in `self._fastboot_node_id`.
 
         Runs `ffx target list` and look for corresponding device information.
@@ -351,8 +423,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
         Raises:
             FuchsiaDeviceError: Failed to get the fastboot node id
         """
-        if fastboot_node_id:
-            self._fastboot_node_id: str = fastboot_node_id
+        if self._fastboot_node_id is not None:
             return
 
         try:
@@ -365,9 +436,9 @@ class FastbootImpl(fastboot_interface.Fastboot):
                 self._fastboot_node_id = target["serial"]
                 return
             else:  # TCP based fastboot connection
-                self.boot_to_fastboot_mode()
+                await self.boot_to_fastboot_mode()
 
-                self._wait_for_valid_tcp_address()
+                await self._wait_for_valid_tcp_address()
 
                 target = self._ffx_transport.get_target_info_from_target_list()
                 target_address: str = target["addresses"][0]
@@ -377,7 +448,7 @@ class FastbootImpl(fastboot_interface.Fastboot):
 
                 # before calling `boot_to_fuchsia_mode()`,
                 # self._fastboot_node_id need to be populated
-                self.boot_to_fuchsia_mode()
+                await self.boot_to_fuchsia_mode()
                 return
         except errors.HoneydewError as err:
             raise errors.FuchsiaDeviceError(
@@ -397,18 +468,150 @@ class FastbootImpl(fastboot_interface.Fastboot):
         ] = self._ffx_transport.get_target_info_from_target_list()
         return len(target["addresses"]) == 1
 
-    def _wait_for_valid_tcp_address(self) -> None:
+    async def _wait_for_valid_tcp_address(self) -> None:
         """Wait for Fuchsia device to have a valid TCP address."""
         _LOGGER.debug(
             "Waiting for a valid TCP address assigned to %s in fastboot "
             "mode...",
             self._device_name,
         )
-        common.wait_for_state(
-            state_fn=self._is_a_single_ip_address,
-            expected_state=True,
+        await _poll_until(
+            func=self._is_a_single_ip_address,
+            target_value=True,
         )
         _LOGGER.debug(
             "Valid TCP address has been assigned to %s in the fastboot mode.",
             self._device_name,
         )
+
+
+class FastbootImpl(fastboot_interface.Fastboot):
+    """Provides methods for Host-(Fuchsia)Target interactions via Fastboot.
+
+    Args:
+        device_name: Fuchsia device name.
+        reboot_affordance: Object to RebootCapableDevice implementation.
+        ffx_transport: Object to FFX transport interface implementation.
+        fastboot_node_id: Fastboot Node ID.
+
+    Raises:
+        FuchsiaDeviceError: Failed to get the fastboot node id
+    """
+
+    def __init__(
+        self,
+        device_name: str,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        ffx_transport: ffx_interface.FFX,
+        fastboot_node_id: str | None = None,
+    ) -> None:
+        self._inner = AsyncFastbootImpl(
+            device_name=device_name,
+            reboot_affordance=reboot_affordance.as_async(),
+            ffx_transport=ffx_transport,
+            fastboot_node_id=fastboot_node_id,
+        )
+
+    # List all the public properties
+    @properties.PersistentProperty
+    def node_id(self) -> str:
+        """Fastboot node id.
+
+        Returns:
+            Fastboot node value.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.node_id()
+        )
+
+    # List all the public methods
+    def boot_to_fastboot_mode(
+        self,
+        use_serial: bool = False,
+        serial_transport: serial_interface.Serial | None = None,
+        power_switch: power_switch_interface.PowerSwitch | None = None,
+        outlet: int | None = None,
+    ) -> None:
+        """Boot the device to fastboot mode from fuchsia mode.
+
+        Args:
+            use_serial: Use serial port on the device to boot into Fastboot mode.
+                If set to True, user need to also pass serial_transport, power_switch and outlet
+                args so that device can be power cycled.
+            serial_transport: Implementation of Serial interface.
+            power_switch: Implementation of PowerSwitch interface.
+            outlet (int): If required by power switch hardware, outlet on
+                power switch hardware where this fuchsia device is connected.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FuchsiaDeviceError: Failed to boot the device to fastboot mode.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.boot_to_fastboot_mode(
+                use_serial=use_serial,
+                serial_transport=serial_transport,
+                power_switch=power_switch,
+                outlet=outlet,
+            )
+        )
+
+    def boot_to_fuchsia_mode(self) -> None:
+        """Boot the device to fuchsia mode from fastboot mode.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FuchsiaDeviceError: Failed to boot the device to fuchsia mode.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.boot_to_fuchsia_mode()
+        )
+
+    def is_in_fastboot_mode(self) -> bool:
+        """Checks if device is in fastboot mode or not.
+
+        Returns:
+            True if in fastboot mode, False otherwise.
+
+        Raises:
+            FastbootCommandError: Failed to check if device is in fastboot mode or not.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.is_in_fastboot_mode()
+        )
+
+    def run(
+        self,
+        cmd: list[str],
+    ) -> list[str]:
+        """Executes and returns the output of `fastboot -s {node} {cmd}`.
+
+        Args:
+            cmd: Fastboot command to run.
+
+        Returns:
+            Output of `fastboot -s {node} {cmd}`.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FastbootCommandError: In case of failure.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.run(cmd=cmd)
+        )
+
+    def wait_for_fastboot_mode(self) -> None:
+        """Wait for Fuchsia device to go to fastboot mode."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_fastboot_mode()
+        )
+
+    def wait_for_fuchsia_mode(self) -> None:
+        """Wait for Fuchsia device to go to fuchsia mode."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_fuchsia_mode()
+        )
+
+    def as_async(self) -> AsyncFastbootImpl:
+        """Returns the async version of Fastboot."""
+        return self._inner

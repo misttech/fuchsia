@@ -382,7 +382,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
     # List all the tests related to transports
     @mock.patch.object(
-        fastboot_impl.FastbootImpl,
+        fastboot_impl.AsyncFastbootImpl,
         "__init__",
         autospec=True,
         return_value=None,
@@ -392,7 +392,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         transport."""
         self.assertIsInstance(
             self.fd_fc_obj.fastboot,
-            fastboot_impl.FastbootImpl,
+            fastboot_impl.AsyncFastbootImpl,
         )
         mock_fastboot_init.assert_called_once()
 

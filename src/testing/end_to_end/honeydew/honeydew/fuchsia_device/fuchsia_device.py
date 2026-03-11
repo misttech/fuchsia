@@ -67,6 +67,7 @@ from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.fastboot import (
     fastboot as fastboot_transport_interface,
 )
+from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import ffx as ffx_transport_interface
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.transports.fuchsia_controller import (
@@ -254,7 +255,11 @@ class FuchsiaDevice(
 
     @properties.Transport
     def fastboot(self) -> fastboot_transport_interface.Fastboot:
-        return self._inner.fastboot
+        return fastboot_impl.FastbootImpl(
+            device_name=self.device_name,
+            reboot_affordance=self,
+            ffx_transport=self.ffx,
+        )
 
     @properties.Transport
     def serial(self) -> serial_transport_interface.Serial:

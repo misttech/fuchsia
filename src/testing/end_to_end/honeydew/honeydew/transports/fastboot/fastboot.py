@@ -12,6 +12,85 @@ from honeydew.transports.serial import serial as serial_interface
 from honeydew.utils import properties
 
 
+class AsyncFastboot(abc.ABC):
+    """ABC with methods for Host-(Fuchsia)Target interactions via Fastboot."""
+
+    @abc.abstractmethod
+    async def node_id(self) -> str:
+        """Fastboot node id.
+
+        Returns:
+            Fastboot node value.
+        """
+
+    @abc.abstractmethod
+    async def boot_to_fastboot_mode(
+        self,
+        use_serial: bool = False,
+        serial_transport: serial_interface.Serial | None = None,
+        power_switch: power_switch_interface.PowerSwitch | None = None,
+        outlet: int | None = None,
+    ) -> None:
+        """Boot the device to fastboot mode from fuchsia mode.
+
+        Args:
+            use_serial: Use serial port on the device to boot into Fastboot mode.
+                If set to True, user need to also pass serial_transport, power_switch and outlet
+                args so that device can be power cycled.
+            serial_transport: Implementation of Serial interface.
+            power_switch: Implementation of PowerSwitch interface.
+            outlet (int): If required by power switch hardware, outlet on
+                power switch hardware where this fuchsia device is connected.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FuchsiaDeviceError: Failed to boot the device to fastboot mode.
+        """
+
+    @abc.abstractmethod
+    async def boot_to_fuchsia_mode(self) -> None:
+        """Boot the device to fuchsia mode from fastboot mode.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FuchsiaDeviceError: Failed to boot the device to fuchsia mode.
+        """
+
+    @abc.abstractmethod
+    async def is_in_fastboot_mode(self) -> bool:
+        """Checks if device is in fastboot mode or not.
+
+        Returns:
+            True if in fastboot mode, False otherwise.
+
+        Raises:
+            FastbootCommandError: Failed to check if device is in fastboot mode or not.
+        """
+
+    @abc.abstractmethod
+    async def run(self, cmd: list[str]) -> list[str]:
+        """Executes and returns the output of `fastboot -s {node} {cmd}`.
+
+        Args:
+            cmd: Fastboot command to run.
+
+        Returns:
+            Output of `fastboot -s {node} {cmd}`.
+
+        Raises:
+            FuchsiaStateError: Invalid state to perform this operation.
+            FastbootCommandError: In case of failure.
+        """
+
+    @abc.abstractmethod
+    async def wait_for_fastboot_mode(self) -> None:
+        """Wait for Fuchsia device to go to fastboot mode."""
+
+    @abc.abstractmethod
+    async def wait_for_fuchsia_mode(self) -> None:
+        """Wait for Fuchsia device to go to fuchsia mode."""
+
+
 class Fastboot(abc.ABC):
     """ABC with methods for Host-(Fuchsia)Target interactions via Fastboot."""
 
@@ -90,3 +169,7 @@ class Fastboot(abc.ABC):
     @abc.abstractmethod
     def wait_for_fuchsia_mode(self) -> None:
         """Wait for Fuchsia device to go to fuchsia mode."""
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncFastboot:
+        """Returns the async version of Fastboot."""

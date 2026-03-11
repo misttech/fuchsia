@@ -404,7 +404,7 @@ class AsyncFuchsiaDevice(
         return fuchsia_controller_obj
 
     @properties.Transport
-    def fastboot(self) -> fastboot_transport_interface.Fastboot:
+    def fastboot(self) -> fastboot_transport_interface.AsyncFastboot:
         """Returns the Fastboot transport object.
 
         Returns:
@@ -413,10 +413,10 @@ class AsyncFuchsiaDevice(
         Raises:
             FuchsiaDeviceError: Failed to instantiate.
         """
-        fastboot_obj: fastboot_transport_interface.Fastboot = (
-            fastboot_impl.FastbootImpl(
+        fastboot_obj: fastboot_transport_interface.AsyncFastboot = (
+            fastboot_impl.AsyncFastbootImpl(
                 device_name=self.device_name,
-                reboot_affordance=self.as_sync(),
+                reboot_affordance=self,
                 ffx_transport=self.ffx,
             )
         )
