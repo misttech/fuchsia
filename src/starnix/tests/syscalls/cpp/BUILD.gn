@@ -235,6 +235,7 @@ syscall_tests_migrated_to_machina = [
 
   "abort_test",
   "aspace_test",
+  "bpf_test",
   "capabilities_test",
   "cgroup_freezer_test",
   "cpuinfo_test",
