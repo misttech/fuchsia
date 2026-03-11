@@ -198,6 +198,9 @@ connected using `fx ffx target list`.
 If more than one device is present, you can choose the correct one by name as
 the first argument to `fx`: `fx -t <device name> test ...`.
 
+To filter test cases, use the `--test-filter` flag. This works for both C++
+(GTest) and Rust tests: `fx test <target> --test-filter <filter_pattern>`.
+
 ### Targets
 
 `ffx target list` will show you if any running Fuchsia development devices are
