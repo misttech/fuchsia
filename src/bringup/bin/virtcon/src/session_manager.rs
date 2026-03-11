@@ -13,17 +13,21 @@ use futures::prelude::*;
 use pty::ServerPty;
 use std::cell::RefCell;
 use std::rc::Rc;
+use term_model::ansi::Processor;
+use term_model::event::EventListener;
 
 const BYTE_BUFFER_MAX_SIZE: usize = 128;
 
 pub trait SessionManagerClient: 'static + Clone {
+    type Listener;
+
     fn create_terminal(
         &self,
         id: u32,
         title: String,
         make_active: bool,
         pty: ServerPty,
-    ) -> Result<Terminal, Error>;
+    ) -> Result<Terminal<Self::Listener>, Error>;
     fn request_update(&self, id: u32);
 }
 
@@ -46,7 +50,10 @@ impl SessionManager {
         *self.has_primary_connected.borrow_mut() = has_primary_connected;
     }
 
-    pub fn bind<T: SessionManagerClient>(&mut self, client: &T, channel: fasync::Channel) {
+    pub fn bind<T: SessionManagerClient>(&mut self, client: &T, channel: fasync::Channel)
+    where
+        <T as SessionManagerClient>::Listener: EventListener,
+    {
         let keep_log_visible = self.keep_log_visible;
         let first_session_id = self.first_session_id;
         let next_session_id = Rc::clone(&self.next_session_id);
@@ -87,11 +94,14 @@ impl SessionManager {
         client: &T,
         id: u32,
         make_active: bool,
-    ) {
+    ) where
+        <T as SessionManagerClient>::Listener: EventListener,
+    {
         let client = client.clone();
         let pty = ServerPty::new().expect("failed to create PTY");
         let () = pty.open_client(session).await.expect("failed to connect session");
         let read_fd = pty.try_clone_fd().expect("unable to clone PTY fd");
+        let mut write_fd = pty.try_clone_fd().expect("unable to clone PTY fd");
         let terminal = client
             .create_terminal(id, String::new(), make_active, pty)
             .expect("failed to create terminal");
@@ -106,6 +116,8 @@ impl SessionManager {
                 fasync::net::EventedFd::new(read_fd).expect("failed to create evented_fd")
             };
 
+            let mut parser = Processor::new();
+
             let mut read_buf = [0u8; BYTE_BUFFER_MAX_SIZE];
             loop {
                 let result = evented_fd.read(&mut read_buf).await;
@@ -113,10 +125,10 @@ impl SessionManager {
                     println!("vc: failed to read bytes, dropping current message: {:?}", e);
                     0
                 });
+                let mut term = term.borrow_mut();
                 if read_count > 0 {
-                    let mut parser = term.borrow_mut();
                     for byte in &read_buf[0..read_count] {
-                        parser.process(&[*byte]);
+                        parser.advance(&mut *term, *byte, &mut write_fd);
                     }
                     client.request_update(id);
                 }
@@ -131,19 +143,35 @@ mod tests {
     use super::*;
     use crate::colors::ColorScheme;
     use fuchsia_async as fasync;
+    use term_model::event::Event;
+
+    #[derive(Default)]
+    struct TestListener;
+
+    impl EventListener for TestListener {
+        fn send_event(&self, _event: Event) {}
+    }
 
     #[derive(Default, Clone)]
     struct TestSessionManagerClient;
 
     impl SessionManagerClient for TestSessionManagerClient {
+        type Listener = TestListener;
+
         fn create_terminal(
             &self,
             _id: u32,
             title: String,
             _make_active: bool,
             pty: ServerPty,
-        ) -> Result<Terminal, Error> {
-            Ok(Terminal::new(title, ColorScheme::default(), 1024, Some(pty)))
+        ) -> Result<Terminal<Self::Listener>, Error> {
+            Ok(Terminal::new(
+                TestListener::default(),
+                title,
+                ColorScheme::default(),
+                1024,
+                Some(pty),
+            ))
         }
         fn request_update(&self, _id: u32) {}
     }

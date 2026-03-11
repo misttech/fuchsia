@@ -1817,7 +1817,6 @@ dependencies = [
  "valico",
  "vk-sys",
  "vm-device",
- "vt100",
  "vte",
  "wait-timeout",
  "walkdir",
@@ -5565,15 +5564,6 @@ name = "vm-device"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "599adbdaddea4947ca23c085d2b8e47f3499ccda35438424526f3853748a8eb6"
-
-[[package]]
-name = "vt100"
-version = "0.16.2"
-dependencies = [
- "itoa 1.0.17",
- "unicode-width 0.2.2",
- "vte",
-]
 
 [[package]]
 name = "vte"

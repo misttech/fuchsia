@@ -183,6 +183,7 @@ sanitizer_extra_options("suppress-lsan.DO-NOT-USE-THIS") {
     "//src/graphics/lib/compute/surpass/*",
     "//src/media/audio/drivers/intel-hda/controller/*",
     "//src/media/codec/factory/*",
+    "//third_party/alacritty/alacritty_terminal/*",
     "//third_party/crashpad/src/*",
     "//vendor/*",
     "//zircon/third_party/uapp/dash/*",

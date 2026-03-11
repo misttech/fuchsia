@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::app::EventProxy;
 use crate::args::{MAX_FONT_SIZE, MIN_FONT_SIZE};
 use crate::colors::{ColorScheme, DARK_COLOR_SCHEME, LIGHT_COLOR_SCHEME, SPECIAL_COLOR_SCHEME};
 use crate::terminal::Terminal;
@@ -22,14 +23,18 @@ use fidl_fuchsia_hardware_power_statecontrol::{
 use fidl_fuchsia_hardware_pty::WindowSize;
 use fidl_fuchsia_input_report::ConsumerControlButton;
 use fuchsia_component::client::connect_channel_to_protocol;
+
 use futures::future::{FutureExt as _, join_all};
 use pty::key_util::{CodePoint, HidUsage};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::mem;
 use std::path::PathBuf;
-use terminal::renderer::Rgb;
-use terminal::{FontSet, Scroll, SizeInfo, cell_size_from_cell_height, get_scale_factor};
+use term_model::ansi::TermInfo;
+use term_model::grid::Scroll;
+use term_model::term::color::Rgb;
+use term_model::term::{SizeInfo, TermMode};
+use terminal::{FontSet, cell_size_from_cell_height, get_scale_factor};
 use {fuchsia_async as fasync, rive_rs as rive};
 
 fn is_control_only(modifiers: &input::Modifiers) -> bool {
@@ -56,7 +61,7 @@ fn get_input_sequence_for_key_event(
 }
 
 pub enum ViewMessages {
-    AddTerminalMessage(u32, Terminal, bool),
+    AddTerminalMessage(u32, Terminal<EventProxy>, bool),
     RequestTerminalUpdateMessage(u32),
 }
 
@@ -186,7 +191,7 @@ pub struct VirtualConsoleViewAssistant {
     cell_size: Size,
     tab_width: usize,
     scene_details: Option<SceneDetails>,
-    terminals: BTreeMap<u32, (Terminal, TerminalStatus)>,
+    terminals: BTreeMap<u32, (Terminal<EventProxy>, TerminalStatus)>,
     font_set: FontSet,
     animation: Option<Animation>,
     active_terminal_id: u32,
@@ -431,7 +436,7 @@ impl VirtualConsoleViewAssistant {
                 if let Some(textgrid) = &scene_details.textgrid {
                     scene_details.scene.send_message(
                         textgrid,
-                        Box::new(TextGridMessages::ChangeStatusMessage(new_status)),
+                        Box::new(TextGridMessages::<EventProxy>::ChangeStatusMessage(new_status)),
                     );
                     scene_details.scene.send_message(
                         textgrid,
@@ -469,7 +474,7 @@ impl VirtualConsoleViewAssistant {
             if let Some(textgrid) = &scene_details.textgrid {
                 scene_details.scene.send_message(
                     textgrid,
-                    Box::new(TextGridMessages::ChangeStatusMessage(new_status)),
+                    Box::new(TextGridMessages::<EventProxy>::ChangeStatusMessage(new_status)),
                 );
                 self.app_sender.request_render(self.view_key);
             }
@@ -742,10 +747,7 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
                 let active_term =
                     self.terminals.get(&self.active_terminal_id).map(|(t, _)| t.clone_term());
                 let status = self.get_status();
-                let columns = active_term
-                    .as_ref()
-                    .map(|t| t.borrow().screen().size().1 as usize)
-                    .unwrap_or(1);
+                let columns = active_term.as_ref().map(|t| t.borrow().cols().0).unwrap_or(1);
 
                 // Determine the status bar tab width based on the current number
                 // of terminals.
@@ -841,7 +843,7 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
 
         if let Some((terminal, _)) = self.terminals.get_mut(&self.active_terminal_id) {
             // Get input sequence and write it to the active terminal.
-            let app_cursor = terminal.mode();
+            let app_cursor = terminal.mode().contains(TermMode::APP_CURSOR);
             if let Some(string) = get_input_sequence_for_key_event(keyboard_event, app_cursor) {
                 terminal
                     .write_all(string.as_bytes())
@@ -891,7 +893,7 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
                     // Movement along Y-axis scrolls active terminal.
                     let cell_offset = div_and_trunc(location_offset.y, self.cell_size.height);
                     if cell_offset != 0 {
-                        self.scroll_active_terminal(Scroll::Lines(cell_offset as isize));
+                        self.scroll_active_terminal(Scroll::Lines(cell_offset));
                         self.start_pointer_location.y += cell_offset as f32 * self.cell_size.height;
                     }
                 }
