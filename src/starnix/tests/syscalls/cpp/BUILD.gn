@@ -225,9 +225,85 @@ foreach(onfault_behavior, mlock_onfault_behaviors) {
   }
 }
 
+# This is a temporary list of host tests which have been fully migrated to Machina. These tests will
+# NOT be built and ran against the host. This list will be removed once migration is fully complete.
+syscall_tests_migrated_to_machina = [
+  # Note that mlock_test is fully migrated to Machina, but since the target name is dynamically
+  # generated it's not easy to filter it this way. It'll get cleaned up once the full migration is
+  # complete and host tests are completely turned down.
+  # go/keep-sorted start
+
+  "abort_test",
+  "aspace_test",
+  "capabilities_test",
+  "cgroup_freezer_test",
+  "cpuinfo_test",
+  "custom_artifact_test",
+  "epoll_test",
+  "exit_test",
+  "extended_pstate_test",
+  "fallocate_test",
+  "fcntl_test",
+  "fsverity_test",
+  "fuchsia_network_monitor_fs_test",
+  "futex_test",
+  "getrandom_test",
+  "io_uring_test",
+  "loop_test",
+  "membarrier_test",
+  "memfd_test",
+  "pidfd_test",
+  "pipe_test",
+  "poll_test",
+  "pressure_test",
+  "process_mrelease_test",
+  "procfs_mem_test",
+  "ptrace_test",
+  "read_write_test",
+  "reboot_test",
+  "restart_read_test",
+  "rlimit_test",
+  "sched_test",
+  "sendfile_test",
+  "setpriority_test",
+  "signal_handling_test",
+  "signalfd_test",
+  "suid_test",
+  "sw_breakpoint_test",
+  "symlink_test",
+  "sync_test",
+  "task_test",
+  "test_helper_test",
+  "thread_group_lifecycle_test",
+  "time_test",
+  "timerfd_test",
+  "timers_test",
+  "tmpfs_test",
+  "trivial_test",
+  "uio_test",
+  "vdso_test",
+  "vmsplice_test",
+  "waitpid_exit_signal_test",
+  "waitpid_flags_test",
+  "zombie_test",
+
+  # go/keep-sorted end
+]
+
 all_test_names = syscall_tests
 foreach(test_def, syscall_tests_etc) {
   all_test_names += [ test_def.name ]
+}
+
+# Build a list of tests to run against the host.
+# TODO(b/435279160): Once all tests are migrated, simplify the build target filtering logic.
+legacy_host_tests = all_test_names
+foreach(test_name, syscall_tests_migrated_to_machina) {
+  # If the user has set starnix_force_build_host_tests, skip any filtering and build all the
+  # tests. Otherwise, Machina is the preferred environment and we'll filter out migrated targets.
+  if (!starnix_force_build_host_tests) {
+    legacy_host_tests -= [ test_name ]
+  }
 }
 
 # TODO: b/449149502 - Remove once diagnosed.
@@ -249,9 +325,9 @@ group("tests") {
     ]
   }
   if (host_os == "linux" && host_cpu == "x64") {
-    foreach(test_name, all_test_names) {
+    foreach(test_name, legacy_host_tests) {
       deps += [
-        # These are Linux tests, so we can run them as host tests on our host Linux bot.
+        # These are Linux tests which haven't migrated to Machina, build and run them as host tests.
         ":starnix_${test_name}_baseline($host_toolchain)",
       ]
     }

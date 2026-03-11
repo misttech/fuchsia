@@ -3,6 +3,10 @@
 # found in the LICENSE file.
 
 declare_args() {
+  # Whether or not to force the build of x64 ELF executables for the syscall tests, colliqually
+  # known as "host tests." The default preference is to build and run tests against Machina instead.
+  starnix_force_build_host_tests = false
+
   # Compiles-in trace and debug logging in release builds. By default, these
   # logs are compiled-out for performance reasons.
   #
