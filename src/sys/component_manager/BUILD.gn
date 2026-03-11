@@ -118,6 +118,7 @@ _component_manager_bin = {
     "//src/sys/lib/routing",
     "//src/sys/lib/runner",
     "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
+    "//src/sys/pkg/lib/context-authenticator",
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//src/sys/pkg/lib/package-directory",
     "//src/sys/pkg/lib/system-image",
@@ -310,6 +311,7 @@ rustc_binary("bin") {
   test_deps += [
     "//src/lib/test_util",
     "//src/sys/lib/library_loader",
+    "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:proptest",

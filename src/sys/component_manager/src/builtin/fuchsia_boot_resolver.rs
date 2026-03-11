@@ -11,7 +11,7 @@ use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_resolution as fresolution;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
-use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl};
+use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl, ComponentUrl, PackageUrl};
 use futures::TryStreamExt;
 use routing::resolving::{self, ComponentAddress, ResolvedComponent, ResolverError};
 use std::path::Path;
@@ -82,7 +82,7 @@ impl FuchsiaBootResolver {
 
     async fn resolve_unpackaged_component(
         &self,
-        boot_url: AbsoluteComponentUrl,
+        url: AbsoluteComponentUrl,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         // When a component is unpacked, the root of its namespace is the root
         // of the /boot directory.
@@ -96,27 +96,61 @@ impl FuchsiaBootResolver {
         )
         .map_err(|_| fresolution::ResolverError::Internal)?;
 
-        // unpackaged components resolved from the zbi are assigned the platform
-        // abi revision
+        // Unpackaged components resolved from the zbi are assigned the platform abi revision
         let abi_revision = version_history_data::HISTORY.get_abi_revision_for_platform_components();
 
-        self.construct_component(path_proxy, &boot_url, Some(abi_revision)).await
+        self.construct_component(path_proxy, &ComponentUrl::Absolute(url), Some(abi_revision), None)
+            .await
     }
 
-    async fn resolve_packaged_component(
+    async fn resolve_packaged_absolute_component(
         &self,
-        boot_url: &AbsoluteComponentUrl,
-        path: &fuchsia_url::Path,
+        url: &AbsoluteComponentUrl,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         match &self.boot_package_resolver {
             Some(boot_package_resolver) => {
                 let (proxy, server) = fidl::endpoints::create_proxy();
-                let () = boot_package_resolver
-                    .resolve_name(
-                        fuchsia_url::PackageName::try_from(path).map_err(|e| {
-                            log::warn!(boot_url:?, source:? = e; "invalid url");
-                            fresolution::ResolverError::InvalidArgs
-                        })?,
+                let context = boot_package_resolver
+                    .resolve_absolute_url(&url.to_package_url(), server)
+                    .await
+                    .map_err(package_to_component_error)?;
+
+                // TODO(https://fxbug.dev/42179754): when all bootfs components are packaged,
+                // abi_revision setting can be moved into `construct_component()`.
+                let abi_revision = fidl_fuchsia_component_abi_ext::read_abi_revision_optional(
+                    &proxy,
+                    AbiRevision::PATH,
+                )
+                .await?;
+                self.construct_component(
+                    proxy,
+                    &ComponentUrl::Absolute(url.clone()),
+                    abi_revision,
+                    Some(fresolution::Context { bytes: context.bytes }),
+                )
+                .await
+            }
+            None => {
+                log::warn!(
+                    "Cannot resolve packaged bootfs components without a package index: {url:?}",
+                );
+                return Err(fresolution::ResolverError::PackageNotFound);
+            }
+        }
+    }
+
+    async fn resolve_packaged_relative_component(
+        &self,
+        url: &fuchsia_url::RelativeComponentUrl,
+        context: fresolution::Context,
+    ) -> Result<fresolution::Component, fresolution::ResolverError> {
+        match &self.boot_package_resolver {
+            Some(boot_package_resolver) => {
+                let (proxy, server) = fidl::endpoints::create_proxy();
+                let context = boot_package_resolver
+                    .resolve_relative_url(
+                        url.package_url(),
+                        fpkg::ResolutionContext { bytes: context.bytes },
                         server,
                     )
                     .await
@@ -129,12 +163,17 @@ impl FuchsiaBootResolver {
                     AbiRevision::PATH,
                 )
                 .await?;
-                self.construct_component(proxy, boot_url, abi_revision).await
+                self.construct_component(
+                    proxy,
+                    &ComponentUrl::Relative(url.clone()),
+                    abi_revision,
+                    Some(fresolution::Context { bytes: context.bytes }),
+                )
+                .await
             }
-            _ => {
+            None => {
                 log::warn!(
-                    "Encountered a packaged bootfs component, but bootfs has no package index: {:?}",
-                    path
+                    "Cannot resolve packaged bootfs components without a package index: {url:?}",
                 );
                 return Err(fresolution::ResolverError::PackageNotFound);
             }
@@ -144,10 +183,11 @@ impl FuchsiaBootResolver {
     async fn construct_component(
         &self,
         proxy: fio::DirectoryProxy,
-        boot_url: &AbsoluteComponentUrl,
+        url: &ComponentUrl,
         abi_revision: Option<AbiRevision>,
+        resolution_context: Option<fresolution::Context>,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        let manifest = boot_url.resource();
+        let manifest = url.resource();
 
         // Read the component manifest (.cm file) from the package-root.
         let data = mem_util::open_file_data(&proxy, &manifest)
@@ -182,11 +222,11 @@ impl FuchsiaBootResolver {
             None
         };
         Ok(fresolution::Component {
-            url: Some(boot_url.to_string()),
-            resolution_context: None,
+            url: Some(url.to_string()),
+            resolution_context,
             decl: Some(data),
             package: Some(fresolution::Package {
-                url: Some(boot_url.to_package_url().to_string()),
+                url: Some(url.to_package_url().to_string()),
                 directory: Some(ClientEnd::new(proxy.into_channel().unwrap().into_zx_channel())),
                 ..Default::default()
             }),
@@ -196,18 +236,50 @@ impl FuchsiaBootResolver {
         })
     }
 
-    async fn resolve_async(
+    async fn resolve_unparsed_absolute_url(
         &self,
-        component_url: &str,
+        url: &str,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        let url = AbsoluteComponentUrl::parse(component_url)
-            .map_err(|_| fresolution::ResolverError::InvalidArgs)?;
+        let url = AbsoluteComponentUrl::parse(url).map_err(|e| {
+            log::warn!("invalid component url {url}: {:#}", anyhow!(e));
+            fresolution::ResolverError::InvalidArgs
+        })?;
+        self.resolve_parsed_absolute_url(url).await
+    }
+
+    async fn resolve_parsed_absolute_url(
+        &self,
+        url: AbsoluteComponentUrl,
+    ) -> Result<fresolution::Component, fresolution::ResolverError> {
         match url.path() {
-            None => {
-                return self.resolve_unpackaged_component(url).await;
+            None => self.resolve_unpackaged_component(url).await,
+            Some(_) => self.resolve_packaged_absolute_component(&url).await,
+        }
+    }
+
+    async fn resolve_url(
+        &self,
+        url: &str,
+        context: fresolution::Context,
+    ) -> Result<fresolution::Component, fresolution::ResolverError> {
+        let url = ComponentUrl::parse(url).map_err(|e| {
+            log::warn!(url:?; "invalid boot url: {:#}", anyhow!(e));
+            fresolution::ResolverError::InvalidArgs
+        })?;
+        match url {
+            ComponentUrl::Absolute(absolute) => {
+                if !context.bytes.is_empty() {
+                    log::warn!(
+                        "ResolveWithContext context must be empty if url is absolute {} {:?}",
+                        absolute,
+                        context,
+                    );
+                    return Err(fresolution::ResolverError::InvalidArgs);
+                }
+                self.resolve_parsed_absolute_url(absolute).await
             }
-            Some(path) => {
-                return self.resolve_packaged_component(&url, path).await;
+            ComponentUrl::Relative(relative) => {
+                self.resolve_packaged_relative_component(&relative, context).await
             }
         }
     }
@@ -216,16 +288,14 @@ impl FuchsiaBootResolver {
         while let Some(request) = stream.try_next().await? {
             match request {
                 fresolution::ResolverRequest::Resolve { component_url, responder } => {
-                    responder.send(self.resolve_async(&component_url).await)?;
+                    responder.send(self.resolve_unparsed_absolute_url(&component_url).await)?;
                 }
                 fresolution::ResolverRequest::ResolveWithContext {
                     component_url,
-                    context: _,
+                    context,
                     responder,
                 } => {
-                    // FuchsiaBootResolver ResolveWithContext currently ignores
-                    // context, but should still resolve absolute URLs.
-                    responder.send(self.resolve_async(&component_url).await)?;
+                    responder.send(self.resolve_url(&component_url, context).await)?;
                 }
                 fresolution::ResolverRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(ordinal:%; "Unknown Resolver request");
@@ -238,12 +308,11 @@ impl FuchsiaBootResolver {
 
 #[derive(Debug)]
 pub struct FuchsiaBootPackageResolver {
-    // Blobfs client exposing the bootfs
-    // /boot/blob directory to package-directory interface.
-    // TODO(97517): Refactor to an impl of NonMetaStorage.
+    // Blobfs client exposing the bootfs /boot/blob directory to package-directory interface.
     boot_blob_storage: fio::DirectoryProxy,
     // PathHashMapping encoding the index for boot package resolution.
     boot_package_index: PathHashMapping<Bootfs>,
+    context_authenticator: context_authenticator::ContextAuthenticator,
 }
 
 impl FuchsiaBootPackageResolver {
@@ -269,15 +338,13 @@ impl FuchsiaBootPackageResolver {
         )
         .map_err(|err| anyhow!("Bootfs blob directory existed, but converting it into a blob client for package resolution failed: {:?}", err))?;
 
-        let boot_package_index =
-            FuchsiaBootPackageResolver::extract_bootfs_index(&proxy).await.map_err(|err| {
-                anyhow!(
-                    "Failed to extract a package index from a bootfs that contains packages: {:?}",
-                    err
-                )
-            })?;
+        let boot_package_index = Self::extract_bootfs_index(&proxy)
+            .await
+            .context("Failed to extract a package index from a bootfs that contains packages")?;
 
-        Ok(Some(Arc::new(FuchsiaBootPackageResolver { boot_blob_storage, boot_package_index })))
+        let context_authenticator = Default::default();
+
+        Ok(Some(Arc::new(Self { boot_blob_storage, boot_package_index, context_authenticator })))
     }
 
     /// Load `data/bootfs_packages` from /boot, if present.
@@ -291,42 +358,36 @@ impl FuchsiaBootPackageResolver {
         )?;
 
         let bootfs_package_contents = fuchsia_fs::file::read(&bootfs_package_index).await?;
-
         PathHashMapping::<Bootfs>::deserialize(&(*bootfs_package_contents))
-            .map_err(|e| anyhow!("Parsing bootfs index failed: {:?}", e))
+            .context("Parsing bootfs index failed")
     }
 
-    async fn resolve_url(
+    async fn resolve_unparsed_absolute_url(
         &self,
         url: &str,
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(), fpkg::ResolveError> {
+    ) -> Result<fpkg::ResolutionContext, fpkg::ResolveError> {
         let url = AbsolutePackageUrl::parse(url).map_err(|e| {
             log::warn!(url:?; "invalid boot url: {:#}", anyhow!(e));
             fpkg::ResolveError::InvalidUrl
         })?;
-        let path = url.path().as_ref().ok_or_else(|| {
-            log::warn!(url:?; "bootfs package url without a path");
-            fpkg::ResolveError::InvalidUrl
-        })?;
-        let name = fuchsia_url::PackageName::try_from(path).map_err(|e| {
-            log::warn!(
-                url:?;
-                "bootfs package urls must have a single segment name: {:#}",
-                anyhow!(e)
-            );
-            fpkg::ResolveError::InvalidUrl
-        })?;
-        self.resolve_name(name, dir).await
+        self.resolve_absolute_url(&url, dir).await
     }
 
-    async fn resolve_name(
+    async fn resolve_absolute_url(
         &self,
-        name: fuchsia_url::PackageName,
+        url: &AbsolutePackageUrl,
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(), fpkg::ResolveError> {
+    ) -> Result<fpkg::ResolutionContext, fpkg::ResolveError> {
+        let path = url.path().as_ref().ok_or_else(|| {
+            log::warn!(url:?; "packaged url missing a path");
+            fpkg::ResolveError::InvalidUrl
+        })?;
         let package_path = fuchsia_pkg::PackagePath::from_name_and_variant(
-            name,
+            fuchsia_url::PackageName::try_from(path).map_err(|e| {
+                log::warn!(url:?; "packaged url path should just be a name: {:#}", anyhow!(e));
+                fpkg::ResolveError::InvalidUrl
+            })?,
             fuchsia_url::PackageVariant::zero(),
         );
 
@@ -336,15 +397,106 @@ impl FuchsiaBootPackageResolver {
             .ok_or(fpkg::ResolveError::PackageNotFound)?;
 
         let blob_proxy = fuchsia_fs::directory::clone(&self.boot_blob_storage).map_err(|e| {
-            log::warn!("Creating duplicate connection to /boot/blob directory failed: {:?}", e);
+            log::warn!("Cloning /boot/blob connection failed: {e:?}");
             fpkg::ResolveError::Internal
         })?;
 
         let () = package_directory::serve(
-            // scope is used to spawn an async task, which will continue until all features complete.
             package_directory::ExecutionScope::new(),
             blob_proxy,
             meta_hash,
+            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            dir,
+        )
+        .await
+        .map_err(|e| {
+            log::warn!("serving the package directory: {:#}", anyhow!(e));
+            fpkg::ResolveError::Internal
+        })?;
+
+        Ok(self.context_authenticator.clone().create(&meta_hash))
+    }
+
+    async fn resolve_url(
+        &self,
+        url: &str,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, fpkg::ResolveError> {
+        let url = PackageUrl::parse(url).map_err(|e| {
+            log::warn!(url:?; "invalid boot url: {:#}", anyhow!(e));
+            fpkg::ResolveError::InvalidUrl
+        })?;
+        match url {
+            PackageUrl::Absolute(absolute) => {
+                if !context.bytes.is_empty() {
+                    log::warn!(
+                        "ResolveWithContext context must be empty if url is absolute {} {:?}",
+                        absolute,
+                        context,
+                    );
+                    return Err(fpkg::ResolveError::InvalidContext);
+                }
+                self.resolve_absolute_url(&absolute, dir).await
+            }
+            PackageUrl::Relative(relative) => {
+                self.resolve_relative_url(&relative, context, dir).await
+            }
+        }
+    }
+
+    async fn resolve_relative_url(
+        &self,
+        url: &fuchsia_url::RelativePackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, fpkg::ResolveError> {
+        let superpackage_hash =
+            self.context_authenticator.clone().authenticate(context).map_err(|e| {
+                log::warn!(url:%; "invalid context: {:#}", anyhow!(e));
+                fpkg::ResolveError::InvalidContext
+            })?;
+        let superpackage = package_directory::RootDir::new(
+            Clone::clone(&self.boot_blob_storage),
+            superpackage_hash,
+        )
+        .await
+        .map_err(|e| {
+            log::warn!(url:%; "creating RootDir for superpackage {:#}", anyhow!(e));
+            fpkg::ResolveError::Internal
+        })?;
+        let subpackage = match superpackage
+            .subpackages()
+            .await
+            .map_err(|e| {
+                log::warn!(
+                    "reading subpackages of {} for {}: {:#}",
+                    superpackage_hash,
+                    url,
+                    anyhow!(e)
+                );
+                fpkg::ResolveError::Internal
+            })?
+            .subpackages()
+            .get(url)
+        {
+            Some(subpackage) => *subpackage,
+            None => {
+                let path = superpackage.path().await.ok();
+                log::warn!("'{url}' is not a subpackage of {path:?} {superpackage_hash}");
+                return Err(fpkg::ResolveError::PackageNotFound);
+            }
+        };
+
+        let blob_proxy = fuchsia_fs::directory::clone(&self.boot_blob_storage).map_err(|e| {
+            log::warn!(source:? = e; "Cloning connection to /boot/blob directory failed");
+            fpkg::ResolveError::Internal
+        })?;
+
+        let () = package_directory::serve(
+            package_directory::ExecutionScope::new(),
+            blob_proxy,
+            subpackage,
             fio::PERM_READABLE | fio::PERM_EXECUTABLE,
             dir,
         )
@@ -354,19 +506,22 @@ impl FuchsiaBootPackageResolver {
             fpkg::ResolveError::Internal
         })?;
 
-        Ok(())
+        Ok(self.context_authenticator.clone().create(&subpackage))
     }
 
     pub async fn serve(
         &self,
         mut stream: fpkg::PackageResolverRequestStream,
     ) -> Result<(), anyhow::Error> {
-        static EMPTY_CONTEXT: fpkg::ResolutionContext = fpkg::ResolutionContext { bytes: vec![] };
         while let Some(request) = stream.try_next().await? {
             match request {
                 fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
-                    let () = responder
-                        .send(self.resolve_url(&package_url, dir).await.map(|()| &EMPTY_CONTEXT))?;
+                    let () = responder.send(
+                        self.resolve_unparsed_absolute_url(&package_url, dir)
+                            .await
+                            .as_ref()
+                            .map_err(|e| *e),
+                    )?;
                 }
                 fpkg::PackageResolverRequest::ResolveWithContext {
                     package_url,
@@ -374,21 +529,9 @@ impl FuchsiaBootPackageResolver {
                     dir,
                     responder,
                 } => {
-                    if !context.bytes.is_empty() {
-                        log::error!(
-                            package_url:%;
-                            "bootfs resolver implementation of \
-                            fuchsia.pkg/PackageResolver.ResolveWithContext does not support \
-                            subpackages (context must be empty)",
-                        );
-                        let () = responder
-                            .send(Err(fpkg::ResolveError::Internal))
-                            .context("sending fuchsia.pkg/PackageResolver.GetHash response")?;
-                    } else {
-                        let () = responder.send(
-                            self.resolve_url(&package_url, dir).await.map(|()| &EMPTY_CONTEXT),
-                        )?;
-                    }
+                    let () = responder.send(
+                        self.resolve_url(&package_url, context, dir).await.as_ref().map_err(|e| *e),
+                    )?;
                 }
                 // GetHash was added to support a CLI tool for investigating the state of ephemeral
                 // packages and should otherwise not be used.
@@ -413,11 +556,28 @@ impl Resolver for FuchsiaBootResolver {
         &self,
         component_address: &ComponentAddress,
     ) -> Result<ResolvedComponent, ResolverError> {
-        if component_address.is_relative_path() {
-            return Err(ResolverError::UnexpectedRelativePath(component_address.url().to_string()));
-        }
-        let fresolution::Component { url: _, decl, package, config_values, abi_revision, .. } =
-            self.resolve_async(component_address.url()).await?;
+        let (url, context) = match component_address {
+            ComponentAddress::Absolute { url } => {
+                (url.as_str(), fresolution::Context { bytes: vec![] })
+            }
+            url @ ComponentAddress::RelativePath { scheme, url: _, context } => {
+                if scheme != SCHEME {
+                    return Err(ResolverError::MalformedUrl(
+                        anyhow!("expected scheme {SCHEME} but was {scheme}").into(),
+                    ));
+                }
+                (url.url(), context.into())
+            }
+        };
+
+        let fresolution::Component {
+            decl,
+            package,
+            config_values,
+            abi_revision,
+            resolution_context,
+            ..
+        } = self.resolve_url(url, context).await?;
         let decl = decl.ok_or_else(|| {
             ResolverError::ManifestInvalid(
                 anyhow!("missing manifest from resolved component").into(),
@@ -431,7 +591,7 @@ impl Resolver for FuchsiaBootResolver {
             None
         };
         Ok(ResolvedComponent {
-            context_to_resolve_children: None,
+            context_to_resolve_children: resolution_context.map(Into::into),
             decl,
             package: package.map(|p| p.try_into()).transpose()?,
             config_values,
@@ -472,6 +632,7 @@ mod tests {
     use fuchsia_async::Task;
     use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
+    use std::io::Read as _;
     use std::sync::Weak;
     use vfs::directory::entry_container::Directory;
     use vfs::execution_scope::ExecutionScope;
@@ -701,5 +862,160 @@ mod tests {
         let url = "fuchsia-boot:///#meta/invalid.cm".parse().unwrap();
         let res = resolver.resolve(&ComponentAddress::from_url(&url, &root).await.unwrap()).await;
         assert_matches!(res, Err(ResolverError::ManifestInvalid { .. }));
+    }
+
+    #[fuchsia::test]
+    async fn packaged_component_with_subsubpackage() {
+        // Create the subsub component.
+        let test_abi_revision: AbiRevision = AbiRevision::from_u64(1234567);
+        let test_program_decl = cm_rust::ProgramDecl {
+            runner: Some("kobold".parse().unwrap()),
+            info: fdata::Dictionary {
+                entries: Some(vec![
+                    fdata::DictionaryEntry {
+                        key: "binary".to_owned(),
+                        value: Some(Box::new(fdata::DictionaryValue::Str(
+                            "bin/your_bin".to_owned(),
+                        ))),
+                    },
+                    fdata::DictionaryEntry {
+                        key: "forward_stderr_to".to_owned(),
+                        value: Some(Box::new(fdata::DictionaryValue::Str("branch".to_owned()))),
+                    },
+                    fdata::DictionaryEntry {
+                        key: "forward_stdout_to".to_owned(),
+                        value: Some(Box::new(fdata::DictionaryValue::Str("stump".to_owned()))),
+                    },
+                ]),
+                ..Default::default()
+            },
+        };
+        let subsubpackage_manifest: fidl_fuchsia_component_decl::Component = fdecl::Component {
+            program: Some(test_program_decl.clone().native_into_fidl()),
+            ..Default::default()
+        };
+        let subsubpackage_manifest_encoded = persist(&subsubpackage_manifest).unwrap();
+        let subsubpackage = fuchsia_pkg_testing::PackageBuilder::new_with_abi_revision(
+            "subsubpackage",
+            test_abi_revision,
+        )
+        .add_resource_at("meta/the-subsubcomponent.cm", subsubpackage_manifest_encoded.as_slice())
+        .build()
+        .await
+        .unwrap();
+        let mut subsubpackage_far_contents = vec![];
+        let _: usize =
+            subsubpackage.meta_far().unwrap().read_to_end(&mut subsubpackage_far_contents).unwrap();
+
+        // Create the sub component.
+        let subpackage_manifest: fidl_fuchsia_component_decl::Component =
+            fdecl::Component { ..Default::default() };
+        let subpackage_manifest_encoded = persist(&subpackage_manifest).unwrap();
+        let subpackage = fuchsia_pkg_testing::PackageBuilder::new("subpackage")
+            .add_subpackage("my-subsubpackage", &subsubpackage)
+            .add_resource_at("meta/the-subcomponent.cm", subpackage_manifest_encoded.as_slice())
+            .build()
+            .await
+            .unwrap();
+        let mut subpackage_far_contents = vec![];
+        let _: usize =
+            subpackage.meta_far().unwrap().read_to_end(&mut subpackage_far_contents).unwrap();
+
+        // Create the component.
+        let superpackage_manifest = fdecl::Component { ..Default::default() };
+        let superpackage_manifest_encoded = persist(&superpackage_manifest).unwrap();
+        let superpackage = fuchsia_pkg_testing::PackageBuilder::new("superpackage")
+            .add_subpackage("my-subpackage", &subpackage)
+            .add_resource_at("meta/the-component.cm", superpackage_manifest_encoded.as_slice())
+            .build()
+            .await
+            .unwrap();
+        let mut superpackage_far_contents = vec![];
+        let _: usize =
+            superpackage.meta_far().unwrap().read_to_end(&mut superpackage_far_contents).unwrap();
+
+        // Create the test environment from the components.
+        let index = PathHashMapping::<Bootfs>::from_entries(vec![(
+            "superpackage/0".parse().unwrap(),
+            *superpackage.hash(),
+        )]);
+        let mut index_bytes = vec![];
+        let () = index.serialize(&mut index_bytes).unwrap();
+        let bootfs = vfs::pseudo_directory! {
+            "data" => vfs::pseudo_directory! {
+                "bootfs_packages" => vfs::file::read_only(index_bytes.as_slice()),
+            },
+            "blob" => vfs::pseudo_directory! {
+                superpackage.hash().to_string().as_str() =>
+                    vfs::file::read_only(superpackage_far_contents),
+                subpackage.hash().to_string().as_str() =>
+                    vfs::file::read_only(subpackage_far_contents),
+                subsubpackage.hash().to_string().as_str() =>
+                    vfs::file::read_only(subsubpackage_far_contents),
+            },
+        };
+        let (_task, bootfs_proxy) = serve_vfs_dir(bootfs);
+        let resolver = FuchsiaBootResolver::new_from_directory(bootfs_proxy).await.unwrap();
+
+        // Resolve the chain of components.
+        let supercomponent = resolver
+            .resolve(
+                &ComponentAddress::from_absolute_url(
+                    &"fuchsia-boot:///superpackage#meta/the-component.cm".parse().unwrap(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let subcomponent = resolver
+            .resolve(
+                &resolving::ComponentAddress::new_relative_path(
+                    "my-subpackage",
+                    Some("meta/the-subcomponent.cm"),
+                    SCHEME,
+                    supercomponent.context_to_resolve_children.unwrap(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let subsubcomponent = resolver
+            .resolve(
+                &resolving::ComponentAddress::new_relative_path(
+                    "my-subsubpackage",
+                    Some("meta/the-subsubcomponent.cm"),
+                    SCHEME,
+                    subcomponent.context_to_resolve_children.unwrap(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Check that both the returned subsubcomponent manifest and the manifest in the returned
+        // package dir match the expected value. This also tests that the resolver returned the
+        // correct package dir.
+        let ResolvedComponent { decl, package, abi_revision, .. } = subsubcomponent;
+        assert_eq!(abi_revision, Some(test_abi_revision));
+
+        // No need to check full decl as we just want to make sure that we were able to resolve.
+        assert_eq!(decl.program.unwrap(), test_program_decl);
+
+        let ResolvedPackage { url: package_url, directory: package_dir, .. } = package.unwrap();
+        assert_eq!(package_url, "my-subsubpackage");
+
+        let dir_proxy = package_dir.into_proxy();
+        let file_proxy = fuchsia_fs::directory::open_file_async(
+            &dir_proxy,
+            "meta/the-subsubcomponent.cm",
+            fio::PERM_READABLE,
+        )
+        .expect("could not open cm");
+        let decl = fuchsia_fs::file::read_fidl::<fdecl::Component>(&file_proxy)
+            .await
+            .expect("could not read cm");
+        let decl = decl.fidl_into_native();
+
+        assert_eq!(decl.program.unwrap(), test_program_decl);
     }
 }
