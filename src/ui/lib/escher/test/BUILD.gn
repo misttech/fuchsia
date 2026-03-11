@@ -79,7 +79,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
       "util/object_pool_unittest.cc",
       "util/stack_allocator_unittest.cc",
       "vk/buffer_unittest.cc",
-      "vk/chained_semaphore_generator_unittest.cc",
       "vk/command_buffer_unittest.cc",
       "vk/descriptor_set_allocator_cache_unittest.cc",
       "vk/descriptor_set_allocator_unittest.cc",

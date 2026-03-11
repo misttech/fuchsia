@@ -16,7 +16,6 @@ class BlockAllocator;
 class Buffer;
 class BufferCache;
 class Camera;
-class ChainedSemaphoreGenerator;
 class CommandBuffer;
 class DebugFont;
 class DefaultShaderProgramFactory;
