@@ -7,20 +7,20 @@
 import logging
 import time
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
+class SerialTransportTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Serial transport tests"""
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def test_send(self) -> None:
+    async def test_send(self) -> None:
         """Test case for Serial.send()"""
         for cmd in [
             "echo hi",
@@ -34,7 +34,7 @@ class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
                 cmd=cmd,
             )
 
-    def test_read(self) -> None:
+    async def test_read(self) -> None:
         """
         Test case for Serial.read()
 
