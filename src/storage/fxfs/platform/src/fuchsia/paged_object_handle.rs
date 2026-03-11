@@ -20,7 +20,6 @@ use fxfs::object_store::transaction::{
 use fxfs::object_store::{DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp};
 use fxfs::range::RangeExt;
 use fxfs::round::{how_many, round_up};
-use scopeguard::ScopeGuard;
 use std::future::Future;
 use std::ops::Range;
 use std::sync::Arc;
@@ -45,13 +44,52 @@ pub struct PagedObjectHandle {
     vmo: TempClonable<zx::Vmo>,
     handle: DataObjectHandle<FxVolume>,
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DirtyPages {
+    /// Pages that need a reservation in the allocator to write them back and mark them clean.
+    reserved: u64,
+
+    /// Pages that do not need a reservation in the allocator to mark them clean.
+    unreserved: u64,
+}
+
+impl DirtyPages {
+    fn total(&self) -> u64 {
+        self.reserved + self.unreserved
+    }
+}
+
+impl std::ops::AddAssign for DirtyPages {
+    fn add_assign(&mut self, rhs: Self) {
+        self.unreserved += rhs.unreserved;
+        self.reserved += rhs.reserved;
+    }
+}
+
+impl std::ops::Sub for DirtyPages {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            reserved: self.reserved - rhs.reserved,
+            unreserved: self.unreserved - rhs.unreserved,
+        }
+    }
+}
+
+impl std::ops::SubAssign for DirtyPages {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
 #[derive(Debug)]
 struct Inner {
     dirty_crtime: DirtyTimestamp,
     dirty_mtime: DirtyTimestamp,
 
     /// The number of pages that have been marked dirty by the kernel and need to be cleaned.
-    dirty_page_count: u64,
+    dirty_pages: DirtyPages,
 
     /// The amount of extra space currently reserved. See `SPARE_SIZE`.
     spare: u64,
@@ -167,49 +205,63 @@ fn page_count(range: Range<u64>) -> u64 {
     (range.end - range.start) / page_size
 }
 
-/// Drops `guard` without running the callback.
-fn dismiss_scopeguard<T, U: std::ops::FnOnce(T), S: scopeguard::Strategy>(
-    guard: ScopeGuard<T, U, S>,
-) {
-    ScopeGuard::into_inner(guard);
-}
-
 impl Inner {
-    fn reservation(&self) -> u64 {
-        reservation_needed(self.dirty_page_count) + self.spare
+    fn new(read_only: bool) -> Mutex<Self> {
+        Mutex::new(Self {
+            dirty_crtime: DirtyTimestamp::None,
+            dirty_mtime: DirtyTimestamp::None,
+            dirty_pages: DirtyPages { reserved: 0, unreserved: 0 },
+            spare: 0,
+            pending_shrink: PendingShrink::None,
+            read_only,
+        })
     }
 
-    /// Takes all the dirty pages and returns a (<count of dirty pages>, <reservation>).
-    fn take(&mut self, allocator: Arc<Allocator>, store_object_id: u64) -> (u64, Reservation) {
+    fn reservation(&self) -> u64 {
+        reservation_needed(self.dirty_pages.reserved) + self.spare
+    }
+
+    /// Takes all the dirty pages with reservations and returns (<DirtyPages>, <Reservation>).
+    fn take(
+        &mut self,
+        allocator: Arc<Allocator>,
+        store_object_id: u64,
+    ) -> (DirtyPages, Reservation) {
         let reservation = allocator.reserve_with(Some(store_object_id), |_| 0);
         reservation.add(self.reservation());
         self.spare = 0;
-        (std::mem::take(&mut self.dirty_page_count), reservation)
+        (std::mem::take(&mut self.dirty_pages), reservation)
     }
 
-    /// Takes all the dirty pages and adds to the reservation.  Returns the number of dirty pages.
-    fn move_to(&mut self, reservation: &Reservation) -> u64 {
+    /// Takes all the dirty pages and adds to the reservation.
+    fn move_to(&mut self, reservation: &Reservation) -> DirtyPages {
         reservation.add(self.reservation());
         self.spare = 0;
-        std::mem::take(&mut self.dirty_page_count)
+        std::mem::take(&mut self.dirty_pages)
     }
 
-    // Put back some dirty pages taking from reservation as required.
-    fn put_back(&mut self, count: u64, reservation: &Reservation) {
-        if count > 0 {
+    /// Put back some dirty pages taking from reservation as required.
+    fn put_back(&mut self, dirty_pages: DirtyPages, reservation: &Reservation) {
+        if dirty_pages.reserved > 0 {
             let before = self.reservation();
-            self.dirty_page_count += count;
-            let needed = reservation_needed(self.dirty_page_count);
+            self.dirty_pages += dirty_pages;
+            let needed = reservation_needed(self.dirty_pages.reserved);
             self.spare = std::cmp::min(reservation.amount() + before - needed, SPARE_SIZE);
             reservation.forget_some(needed + self.spare - before);
+        } else {
+            self.dirty_pages += dirty_pages;
         }
     }
 
     /// Return the reservation to the allocator, and return the number of currently dirty pages.
-    fn forget_dirty_pages(&mut self, allocator: Arc<Allocator>, store_object_id: u64) -> u64 {
+    fn forget_dirty_pages(
+        &mut self,
+        allocator: Arc<Allocator>,
+        store_object_id: u64,
+    ) -> DirtyPages {
         allocator.release_reservation(Some(store_object_id), self.reservation());
         self.spare = 0;
-        std::mem::take(&mut self.dirty_page_count)
+        std::mem::take(&mut self.dirty_pages)
     }
 
     fn end_flush(&mut self) {
@@ -218,21 +270,145 @@ impl Inner {
     }
 }
 
+struct FlushState {
+    /// Allocator reservation for space on disk.
+    reservation: Reservation,
+
+    /// The number of pages recorded through `MarkDirty` calls that this flush knows about.
+    marked_dirty_pages: DirtyPages,
+
+    /// The number of pages we expect to flush, from the collected flush batches.
+    pages_to_flush: DirtyPages,
+
+    /// The number of pages we have actually flushed.
+    pages_flushed: DirtyPages,
+
+    /// The number of COW pages we won't be flushing because they're beyond the current end of the
+    /// file.
+    reserved_pages_not_to_flush: u64,
+
+    /// If this flush is the last chance to flush the file before it is destroyed.
+    last_chance: bool,
+
+    /// True when extra pages were taken because of races where after capturing the initial
+    /// reservation and dirty page counts more pages got marked dirty while collecting the batches
+    /// from the kernel.
+    has_extra_reserved: bool,
+}
+
+impl FlushState {
+    fn new(reservation: Reservation, marked_dirty_pages: DirtyPages, last_chance: bool) -> Self {
+        Self {
+            reservation,
+            marked_dirty_pages,
+            pages_to_flush: Default::default(),
+            pages_flushed: Default::default(),
+            reserved_pages_not_to_flush: 0,
+            last_chance,
+            has_extra_reserved: false,
+        }
+    }
+
+    fn reservation(&self) -> &Reservation {
+        &self.reservation
+    }
+
+    /// Set the number of dirty pages that expect to be cleaned by the current flush batches,
+    /// and the number of reserved pages found past the end of the file. Returns Err if there are
+    /// insufficient marked dirty pages or reservation for the flush batches. The use of Result here
+    /// is to enforce result checking and error handling.
+    fn set_flush_batch_count(
+        &mut self,
+        dirty_pages_to_flush: DirtyPages,
+        reserved_pages_not_to_flush: u64,
+    ) -> Result<(), ()> {
+        assert_eq!(self.pages_to_flush.total(), 0, "This should only be called once.");
+        self.pages_to_flush = dirty_pages_to_flush;
+        self.reserved_pages_not_to_flush = reserved_pages_not_to_flush;
+
+        // Need to ensure that we are flushing not only the correct number of total pages, but also
+        // the correct number of reserved pages to ensure that we have enough reservation. The
+        // reservation should also cover the reserved pages not to flush.
+        if self.pages_to_flush.reserved + self.reserved_pages_not_to_flush
+            > self.marked_dirty_pages.reserved
+            || self.pages_to_flush.unreserved > self.marked_dirty_pages.unreserved
+        {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Take the reservation and dirty pages again. This is called if `set_flush_batch_count()`
+    /// takes too many pages for the `marked_dirty_pages` count to handle. It may take too much,
+    /// but such will be put back before the end of the flush. This asserts if the total dirty pages
+    /// don't meet or exceed the required amount.
+    fn take_extra_dirty_pages(&mut self, inner: &mut Inner) {
+        assert!(!self.has_extra_reserved, "This should only be called once");
+        self.has_extra_reserved = true;
+        self.marked_dirty_pages += inner.move_to(&self.reservation);
+
+        assert!(
+            self.reservation.amount() >= reservation_needed(self.pages_to_flush.reserved),
+            "reservation: {}, needed: {}, dirty_pages.reserved: {}, pages_to_flush: {}",
+            self.reservation.amount(),
+            reservation_needed(self.pages_to_flush.reserved),
+            self.marked_dirty_pages.reserved,
+            self.pages_to_flush.reserved
+        );
+    }
+
+    /// Add batches of pages that have been flushed.
+    fn did_flush_pages(&mut self, flushed_pages: DirtyPages) {
+        self.pages_flushed += flushed_pages;
+    }
+
+    /// Puts back the dirty pages and reservations that were not used as part of this flush and
+    /// returns the total number of pages to mark clean as a result of the batch. The total includes
+    /// both pages that were properly cleaned as well as dirty pages that are in excess and should
+    /// be marked clean as they no longer exist, likely due to truncation.
+    fn finish(self, inner: &Mutex<Inner>) -> u64 {
+        assert!(
+            self.pages_to_flush.total() >= self.pages_flushed.total(),
+            "Should not clean more than it planned to clean."
+        );
+
+        let new_dirty_pages = if self.last_chance {
+            // No more pages can be flushed now.
+            DirtyPages::default()
+        } else if self.pages_flushed.reserved == self.pages_to_flush.reserved
+            && self.pages_flushed.unreserved == self.pages_to_flush.unreserved
+            && !self.has_extra_reserved
+        {
+            // In this (common) case, there was no race and we succeeded in flushing
+            // all the pages we expected to, so the number of pages we need to keep
+            // reserved is simply the reserved pages beyond the end of the file.
+            DirtyPages { reserved: self.reserved_pages_not_to_flush, unreserved: 0 }
+        } else if self.pages_flushed.unreserved > self.marked_dirty_pages.unreserved {
+            // It's possible that pages can be marked dirty as COW but then get allocated before
+            // collecting the ranges, creating a mismatch. This allows for that shift to happen.
+            DirtyPages {
+                reserved: self.marked_dirty_pages.total() - self.pages_flushed.total(),
+                unreserved: 0,
+            }
+        } else {
+            // In this path, just subtract whatever we successfully flushed.
+            self.marked_dirty_pages - self.pages_flushed
+        };
+
+        if new_dirty_pages.total() > 0 {
+            inner.lock().put_back(new_dirty_pages, &self.reservation);
+        }
+
+        // Report the delta
+        (self.marked_dirty_pages - new_dirty_pages).total()
+    }
+}
+
 impl PagedObjectHandle {
     pub fn new(handle: DataObjectHandle<FxVolume>, vmo: zx::Vmo) -> Self {
         let verified_file = handle.is_verified_file();
-        Self {
-            vmo: TempClonable::new(vmo),
-            handle,
-            inner: Mutex::new(Inner {
-                dirty_crtime: DirtyTimestamp::None,
-                dirty_mtime: DirtyTimestamp::None,
-                dirty_page_count: 0,
-                spare: 0,
-                pending_shrink: PendingShrink::None,
-                read_only: verified_file,
-            }),
-        }
+        Self { vmo: TempClonable::new(vmo), handle, inner: Inner::new(verified_file) }
     }
 
     pub fn owner(&self) -> &Arc<FxVolume> {
@@ -331,41 +507,51 @@ impl PagedObjectHandle {
             page_range.report_failure(zx::Status::BAD_STATE);
             return Err(zx::Status::BAD_STATE);
         }
-        let mut pages_added = 0;
+        let mut new_dirty_pages = DirtyPages::default();
         for subrange in self.handle.overwrite_ranges().overlap(page_range.range()) {
             // Check the overwrite ranges we have recorded for this file. We only add to the
             // reservation if the range is not one of our overwrite ranges, since overwrite ranges
             // are already allocated.
-            if let RangeType::Cow(cow_range) = subrange {
-                pages_added += page_count(cow_range);
+            match subrange {
+                RangeType::Cow(range) => {
+                    new_dirty_pages.reserved += page_count(range);
+                }
+                RangeType::Overwrite(range) => {
+                    new_dirty_pages.unreserved += page_count(range);
+                }
             }
         }
-        let new_inner = Inner {
-            dirty_page_count: inner.dirty_page_count + pages_added,
-            spare: if pages_added == 0 { inner.spare } else { SPARE_SIZE },
+        let mut new_inner = Inner {
+            spare: if new_dirty_pages.reserved == 0 { inner.spare } else { SPARE_SIZE },
             ..*inner
         };
+        new_inner.dirty_pages += new_dirty_pages;
         let previous_reservation = inner.reservation();
         let new_reservation = new_inner.reservation();
         let reservation_delta = new_reservation - previous_reservation;
         // The reserved amount will never decrease but might be the same.
-        if reservation_delta > 0 {
+        let new_reservation = if reservation_delta > 0 {
             match self.allocator().reserve(Some(self.store().store_object_id()), reservation_delta)
             {
-                Some(reservation) => {
-                    // `PagedObjectHandle` doesn't hold onto a `Reservation` object for tracking
-                    // reservations. The amount of space reserved by a `PagedObjectHandle` should
-                    // always be derivable from `Inner`.
-                    reservation.forget();
-                }
+                Some(reservation) => Some(reservation),
                 None => {
                     page_range.report_failure(zx::Status::NO_SPACE);
                     return Err(zx::Status::NO_SPACE);
                 }
             }
-        }
+        } else {
+            None
+        };
+        page_range.dirty_pages()?;
+
+        // Commit all the changes.
         *inner = new_inner;
-        page_range.dirty_pages();
+        if let Some(reservation) = new_reservation {
+            // `PagedObjectHandle` doesn't hold onto a `Reservation` object for tracking
+            // reservations. The amount of space reserved by a `PagedObjectHandle` should
+            // always be derivable from `Inner`.
+            reservation.forget();
+        }
         Ok(())
     }
 
@@ -423,7 +609,7 @@ impl PagedObjectHandle {
     fn collect_flush_batches(
         &self,
         content_size: u64,
-    ) -> Result<(Vec<FlushBatch>, u64, u64), Error> {
+    ) -> Result<(Vec<FlushBatch>, DirtyPages, u64), Error> {
         let page_aligned_content_size = round_up(content_size, zx::system_get_page_size()).unwrap();
         let modified_ranges =
             self.collect_modified_ranges().context("collect_modified_ranges failed")?;
@@ -468,7 +654,14 @@ impl PagedObjectHandle {
                                 BatchMode::Cow
                             },
                         ),
-                        RangeType::Overwrite(range) => (range, BatchMode::Overwrite),
+                        RangeType::Overwrite(range) => (
+                            range,
+                            if modified_range.is_zero_range() {
+                                BatchMode::Zero
+                            } else {
+                                BatchMode::Overwrite
+                            },
+                        ),
                     };
                     flush_batches.add_range(range, mode);
                 }
@@ -522,10 +715,9 @@ impl PagedObjectHandle {
         Ok(())
     }
 
-    async fn flush_data<T: FnOnce(u64)>(
+    async fn flush_data(
         &self,
-        reservation: &Reservation,
-        mut reservation_guard: ScopeGuard<u64, T>,
+        flush_state: &mut FlushState,
         mut content_size: u64,
         mut previous_content_size: u64,
         crtime: Option<Timestamp>,
@@ -540,10 +732,10 @@ impl PagedObjectHandle {
             let first_batch = i == 0;
             let last_batch = i == last_batch_index;
 
-            let mut transaction = match batch.mode {
-                BatchMode::Zero => self.new_transaction(None).await?,
-                BatchMode::Cow => self.new_transaction(Some(&reservation)).await?,
-                BatchMode::Overwrite => self.new_transaction(None).await?,
+            let mut transaction = if batch.mode == BatchMode::Cow {
+                self.new_transaction(Some(flush_state.reservation())).await?
+            } else {
+                self.new_transaction(None).await?
             };
             batch.writeback_begin(vmo, pager);
 
@@ -587,22 +779,13 @@ impl PagedObjectHandle {
                 .await
                 .context("batch add_to_transaction failed")?;
             transaction.commit().await.context("Failed to commit transaction")?;
-            if batch.mode == BatchMode::Cow {
-                *reservation_guard -= batch.page_count();
-            }
+            flush_state.did_flush_pages(batch.dirty_pages());
             if first_batch {
                 self.inner.lock().end_flush();
             }
 
             batch.writeback_end(vmo, pager);
-            if batch.mode == BatchMode::Cow {
-                self.owner().report_pager_clean(batch.dirty_byte_count);
-            }
         }
-
-        // Before releasing the reservation, mark those pages as cleaned, since they weren't used.
-        self.owner().report_pager_clean(*reservation_guard * (zx::system_get_page_size() as u64));
-        dismiss_scopeguard(reservation_guard);
 
         Ok(())
     }
@@ -654,69 +837,45 @@ impl PagedObjectHandle {
             )
         };
 
-        let mut reservation_guard = scopeguard::guard(dirty_pages, |dirty_pages| {
-            self.inner.lock().put_back(dirty_pages, &reservation);
+        let flush_state = FlushState::new(reservation, dirty_pages, last_chance);
+
+        // Can't use a normal drop on FlushState here without letting it hold a reference to the
+        // FxVolume in order to report the cleaned pages. If we do that then we lose the ability to
+        // isolate the FlushState logic from all the workings of an `FxVolume` and
+        // `VolumesDirectory` during testing.
+        let mut flush_state_wrapper = scopeguard::guard(flush_state, |flush_state| {
+            let cleaned_pages = flush_state.finish(&self.inner);
+            if cleaned_pages > 0 {
+                self.owner().report_pager_clean(cleaned_pages * zx::system_get_page_size() as u64);
+            }
         });
 
         let content_size = self.vmo().get_stream_size().context("get_stream_size failed")?;
         let previous_content_size = self.handle.get_size();
-        let (flush_batches, required_reserved_pages, mut pages_not_flushed) =
+        let (flush_batches, dirty_pages_to_flush, reserved_pages_not_to_flush) =
             self.collect_flush_batches(content_size)?;
 
-        // If pages were dirtied between getting the reservation and collecting the dirty ranges
-        // then we might need to update the reservation.
-        if required_reserved_pages > dirty_pages {
-            // This potentially takes more reservation than might be necessary.  We could perhaps
-            // optimize this to take only what might be required.
-            let new_dirty_pages = self.inner.lock().move_to(&reservation);
-
-            // Make sure we account for pages we might not flush to ensure we keep them reserved.
-            pages_not_flushed = dirty_pages + new_dirty_pages - required_reserved_pages;
-
-            // Make sure we return the new dirty pages on failure.
-            *reservation_guard += new_dirty_pages;
-
-            assert!(
-                reservation.amount() >= reservation_needed(required_reserved_pages),
-                "reservation: {}, needed: {}, dirty_pages: {}, pages_to_flush: {}",
-                reservation.amount(),
-                reservation_needed(required_reserved_pages),
-                dirty_pages,
-                required_reserved_pages
-            );
-        } else {
-            // The reservation we have is sufficient for pages_to_flush, but it might not be enough
-            // for pages_not_flushed as well.
-            pages_not_flushed =
-                std::cmp::min(dirty_pages - required_reserved_pages, pages_not_flushed);
+        if let Err(_) = flush_state_wrapper
+            .set_flush_batch_count(dirty_pages_to_flush, reserved_pages_not_to_flush)
+        {
+            flush_state_wrapper.take_extra_dirty_pages(&mut *self.inner.lock());
         }
 
         if flush_batches.is_empty() {
             self.flush_metadata(content_size, previous_content_size, crtime, mtime).await?;
-            dismiss_scopeguard(reservation_guard);
             self.inner.lock().end_flush();
+            Ok(())
         } else {
             self.flush_data(
-                &reservation,
-                reservation_guard,
+                &mut *flush_state_wrapper,
                 content_size,
                 previous_content_size,
                 crtime,
                 mtime,
                 flush_batches,
             )
-            .await?
+            .await
         }
-
-        if last_chance {
-            // They can't be flushed now, so they never will be. We'll drop them.
-            self.owner().report_pager_clean(pages_not_flushed * zx::system_get_page_size() as u64);
-        } else {
-            let mut inner = self.inner.lock();
-            inner.put_back(pages_not_flushed, &reservation);
-        }
-
-        Ok(())
     }
 
     async fn flush_impl(&self, last_chance: bool) -> Result<(), Error> {
@@ -904,11 +1063,11 @@ impl PagedObjectHandle {
             let mut inner = self.inner.lock();
 
             // If there are no dirty pages, the client can't have modified anything.
-            if inner.dirty_page_count > 0 && self.was_file_modified_since_last_call()? {
+            if inner.dirty_pages.total() > 0 && self.was_file_modified_since_last_call()? {
                 inner.dirty_mtime = DirtyTimestamp::Some(Timestamp::now());
             }
             (
-                inner.dirty_page_count,
+                inner.dirty_pages.reserved,
                 self.vmo.get_stream_size()?,
                 inner.dirty_crtime.timestamp(),
                 inner.dirty_mtime.timestamp(),
@@ -932,7 +1091,7 @@ impl PagedObjectHandle {
         let mut inner = self.inner.lock();
         if inner.dirty_crtime.needs_flush()
             || inner.dirty_mtime.needs_flush()
-            || inner.dirty_page_count > 0
+            || inner.dirty_pages.total() > 0
             || inner.pending_shrink != PendingShrink::None
         {
             return true;
@@ -972,15 +1131,20 @@ impl PagedObjectHandle {
             .inspect_err(|error| error!(error:?; "Failed to flush in allocate"))?;
 
         // Allocate extends the file if the range is beyond the current file size, so update the
-        // stream size in that case as well.
-        if self.vmo.get_stream_size()? < range.end {
+        // stream size in that case as well. Unwrap safe as this can't fail if the vmo is in a valid
+        // state.
+        if self.vmo.get_stream_size().unwrap() < range.end {
             let vmo = self.vmo.temp_clone();
             // Similar to truncate above, this unblock is to break an executor ordering deadlock
             // situation. Vmo::set_stream_size() may trigger a blocking call back into Fxfs on the
             // same executor via the kernel. If all executor threads are busy, the reentrant call
             // will queue up behind the blocking set_stream_size() call and never complete.
+            // It's worth noting that some of the pages marked dirty as part of this call will be
+            // COW when the request comes in, but will be overwrite after the `allocate()` call
+            // below.
             unblock(move || vmo.set_stream_size(range.end)).await?;
         }
+
         self.handle.allocate(range).await
     }
 
@@ -988,7 +1152,10 @@ impl PagedObjectHandle {
     /// This is done if the file is about to be closed and also deleted, no point in flushing.
     pub fn forget_dirty_pages(&self) {
         self.owner().report_pager_clean(
-            self.inner.lock().forget_dirty_pages(self.allocator(), self.store().store_object_id())
+            self.inner
+                .lock()
+                .forget_dirty_pages(self.allocator(), self.store().store_object_id())
+                .total()
                 * zx::system_get_page_size() as u64,
         );
     }
@@ -1000,11 +1167,11 @@ impl Drop for PagedObjectHandle {
         // If we're dropping the vmo, all the dirty pages should be flushed, or they should be
         // knowingly discarded using `forget_dirty_pages()`.
         // TODO(https://fxbug.dev/452935329): Turn this into a real assert once we gain some
-        // confidence.
-        debug_assert!(inner.dirty_page_count == 0, "Dropping VMO with dirty bytes");
+        // confidence, then delete the cleanup below.
+        debug_assert!(inner.dirty_pages.total() == 0, "Dropping VMO with dirty bytes");
         // Return what's left.
         self.owner().report_pager_clean(
-            inner.forget_dirty_pages(self.allocator(), self.store().store_object_id())
+            inner.forget_dirty_pages(self.allocator(), self.store().store_object_id()).total()
                 * zx::system_get_page_size() as u64,
         );
     }
@@ -1027,8 +1194,12 @@ impl ObjectHandle for PagedObjectHandle {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum BatchMode {
-    Zero,
+    /// Cow pages. Needs to reserve pages to back each page being written.
     Cow,
+    /// These do not require space reservations and also does not hold any memory while the page is
+    /// dirty. Zero ranges do not generate MarkDirty notifications from the kernel.
+    Zero,
+    /// Overwrite pages don't need a page reservation as the pages are already allocated.
     Overwrite,
 }
 
@@ -1045,10 +1216,9 @@ struct FlushBatches {
     working_cow_batch: Option<FlushBatch>,
     working_overwrite_batch: Option<FlushBatch>,
 
-    /// The number of new pages to be written spanned by the `batches`, which will use the running
-    /// reservation. This does not include zero ranges or writes to ranges that are already
-    /// allocated.
-    dirty_reserved_count: u64,
+    /// The number of dirty pages that will be cleaned as a result of `batches`. This does not
+    /// include zero ranges as they are not really dirty pages.
+    dirty_pages: DirtyPages,
 
     /// The number of pages that were marked dirty but are not included in `batches` because they
     /// don't need to be flushed. These are pages that were beyond the VMO's stream size.
@@ -1062,16 +1232,19 @@ struct FlushBatches {
 impl FlushBatches {
     fn add_range(&mut self, range: Range<u64>, mode: BatchMode) {
         let working_batch_ref = match mode {
-            BatchMode::Zero => {
-                self.zero_batch.get_or_insert_with(|| FlushBatch::new(mode)).add_range(range);
-                return;
-            }
+            BatchMode::Zero => &mut self.zero_batch,
             BatchMode::Cow => &mut self.working_cow_batch,
             BatchMode::Overwrite => &mut self.working_overwrite_batch,
         };
         let mut working_batch = working_batch_ref.get_or_insert_with(|| FlushBatch::new(mode));
-        if mode == BatchMode::Cow {
-            self.dirty_reserved_count += page_count(range.clone());
+        match mode {
+            BatchMode::Cow => self.dirty_pages.reserved += page_count(range.clone()),
+            BatchMode::Overwrite => self.dirty_pages.unreserved += page_count(range.clone()),
+            BatchMode::Zero => {
+                // Zero batches do not require any disk writes.
+                working_batch.add_range(range);
+                return;
+            }
         }
         let mut remaining = working_batch.add_range(range);
         while let Some(range) = remaining {
@@ -1085,7 +1258,7 @@ impl FlushBatches {
         self.skipped_dirty_page_count += page_count(range);
     }
 
-    fn consume(mut self) -> (Vec<FlushBatch>, u64, u64) {
+    fn consume(mut self) -> (Vec<FlushBatch>, DirtyPages, u64) {
         if let Some(batch) = self.working_cow_batch {
             self.batches.push(batch);
         }
@@ -1095,7 +1268,7 @@ impl FlushBatches {
         if let Some(batch) = self.zero_batch {
             self.batches.push(batch)
         }
-        (self.batches, self.dirty_reserved_count, self.skipped_dirty_page_count)
+        (self.batches, self.dirty_pages, self.skipped_dirty_page_count)
     }
 }
 
@@ -1136,14 +1309,27 @@ impl FlushBatch {
         remaining
     }
 
-    fn page_count(&self) -> u64 {
-        how_many(self.dirty_byte_count, zx::system_get_page_size())
+    /// The number of dirty pages that this batch covers, separated by reserved and unreserved based
+    ///  on the batch mode.
+    fn dirty_pages(&self) -> DirtyPages {
+        match self.mode {
+            BatchMode::Cow => DirtyPages {
+                reserved: self.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64),
+                unreserved: 0,
+            },
+            BatchMode::Overwrite => DirtyPages {
+                reserved: 0,
+                unreserved: self.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64),
+            },
+            BatchMode::Zero => DirtyPages::default(),
+        }
     }
 
     fn writeback_begin(&self, vmo: &zx::Vmo, pager: &Pager) {
-        let options = match self.mode {
-            BatchMode::Zero => zx::PagerWritebackBeginOptions::DIRTY_RANGE_IS_ZERO,
-            BatchMode::Cow | BatchMode::Overwrite => zx::PagerWritebackBeginOptions::empty(),
+        let options = if self.mode == BatchMode::Zero {
+            zx::PagerWritebackBeginOptions::DIRTY_RANGE_IS_ZERO
+        } else {
+            zx::PagerWritebackBeginOptions::empty()
         };
         for range in &self.ranges {
             pager.writeback_begin(vmo, range.clone(), options);
@@ -1168,9 +1354,7 @@ impl FlushBatch {
                 // TODO(https://fxbug.dev/349447236): This doesn't seem to ever do anything, so
                 // this experimental assert is going to sit around for a bit to see if there is a
                 // case we aren't aware of.
-                let pre_zero_len = transaction.mutations().len();
-                handle.zero(transaction, range.clone()).await.context("zeroing a range failed")?;
-                assert_eq!(pre_zero_len, transaction.mutations().len());
+                assert!(handle.check_unwritten_zero(range.clone()).await?);
             }
             return Ok(());
         }
@@ -1197,15 +1381,15 @@ impl FlushBatch {
                 dirty_ranges.push(range);
             }
             match self.mode {
-                BatchMode::Zero => unreachable!(),
-                BatchMode::Cow => handle
-                    .multi_write(transaction, 0, &dirty_ranges, buffer.as_mut())
-                    .await
-                    .context("multi_write failed")?,
                 BatchMode::Overwrite => handle
                     .multi_overwrite(transaction, 0, &dirty_ranges, buffer.as_mut())
                     .await
                     .context("multi_overwrite failed")?,
+                BatchMode::Cow => handle
+                    .multi_write(transaction, 0, &dirty_ranges, buffer.as_mut())
+                    .await
+                    .context("multi_write failed")?,
+                BatchMode::Zero => unreachable!("Handled above"),
             }
         }
 
@@ -1221,6 +1405,7 @@ impl FlushBatch {
 mod tests {
     use super::*;
     use crate::fuchsia::directory::FxDirectory;
+    use crate::fuchsia::file::FxFile;
     use crate::fuchsia::node::FxNode;
     use crate::fuchsia::pager::{PageInRange, PagerPacketReceiverRegistration, default_page_in};
     use crate::fuchsia::testing::{
@@ -1230,6 +1415,8 @@ mod tests {
     use anyhow::bail;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_fs::file;
     use fuchsia_sync::Condvar;
     use futures::channel::mpsc::{UnboundedSender, unbounded};
@@ -1246,7 +1433,6 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
     use storage_device::{DeviceHolder, buffer};
     use test_util::{assert_geq, assert_lt};
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const BLOCK_SIZE: u32 = 512;
     const BLOCK_COUNT: u64 = 16384;
@@ -1704,17 +1890,40 @@ mod tests {
     }
 
     #[test]
-    fn test_flush_batch_page_count() {
-        let mut flush_batch = FlushBatch::new(BatchMode::Cow);
-        assert_eq!(flush_batch.page_count(), 0);
+    fn test_flush_batch_dirty_pages() {
+        {
+            let mut flush_batch = FlushBatch::new(BatchMode::Cow);
+            assert_eq!(flush_batch.dirty_pages().reserved, 0);
+            assert_eq!(flush_batch.dirty_pages().unreserved, 0);
+
+            flush_batch.add_range(4096..8192);
+            assert_eq!(flush_batch.dirty_pages().reserved, 1);
+
+            // Adding a partial page rounds up to the next page. Only the page containing the
+            // content size should be a partial page so handling multiple partial pages isn't
+            // necessary.
+            flush_batch.add_range(8192..8704);
+            assert_eq!(flush_batch.dirty_pages().reserved, 2);
+            assert_eq!(flush_batch.dirty_pages().unreserved, 0);
+        }
+
+        {
+            let mut flush_batch = FlushBatch::new(BatchMode::Overwrite);
+            assert_eq!(flush_batch.dirty_pages().reserved, 0);
+            assert_eq!(flush_batch.dirty_pages().unreserved, 0);
+
+            flush_batch.add_range(4096..8192);
+            assert_eq!(flush_batch.dirty_pages().reserved, 0);
+            assert_eq!(flush_batch.dirty_pages().unreserved, 1);
+        }
+
+        let mut flush_batch = FlushBatch::new(BatchMode::Zero);
+        assert_eq!(flush_batch.dirty_pages().reserved, 0);
+        assert_eq!(flush_batch.dirty_pages().unreserved, 0);
 
         flush_batch.add_range(4096..8192);
-        assert_eq!(flush_batch.page_count(), 1);
-
-        // Adding a partial page rounds up to the next page. Only the page containing the content
-        // size should be a partial page so handling multiple partial pages isn't necessary.
-        flush_batch.add_range(8192..8704);
-        assert_eq!(flush_batch.page_count(), 2);
+        assert_eq!(flush_batch.dirty_pages().reserved, 0);
+        assert_eq!(flush_batch.dirty_pages().unreserved, 0);
     }
 
     #[test]
@@ -1733,8 +1942,8 @@ mod tests {
     fn test_flush_batches_add_range_huge_range() {
         let mut batches = FlushBatches::default();
         batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + 8192), BatchMode::Cow);
-        let (batches, dirty_reserved_count, skipped_dirty_page_count) = batches.consume();
-        assert_eq!(dirty_reserved_count, 258);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, 258);
         assert_eq!(skipped_dirty_page_count, 0);
         assert_eq!(
             batches,
@@ -1768,8 +1977,9 @@ mod tests {
         batches.add_range((page_size * 200)..(page_size * 500), BatchMode::Zero);
         batches.add_range((page_size * 500)..(page_size * 650), BatchMode::Overwrite);
 
-        let (batches, dirty_reserved_count, skipped_dirty_page_count) = batches.consume();
-        assert_eq!(dirty_reserved_count, 144);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, 144);
+        assert_eq!(dirty_page_count.unreserved, 150);
         assert_eq!(skipped_dirty_page_count, 0);
         assert_eq!(
             batches,
@@ -1807,8 +2017,8 @@ mod tests {
     fn test_flush_batches_skip_range() {
         let mut batches = FlushBatches::default();
         batches.skip_range(0..8192);
-        let (batches, dirty_reserved_count, skipped_dirty_page_count) = batches.consume();
-        assert_eq!(dirty_reserved_count, 0);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, 0);
         assert_eq!(batches, Vec::new());
         assert_eq!(skipped_dirty_page_count, 2);
     }
@@ -2517,6 +2727,719 @@ mod tests {
         fixture.close().await;
     }
 
+    /// The flush has some concrete steps that we step through here.
+    /// 1. Take the reservation and dirty page count. We pre-fill the inner with additional
+    /// dirty pages to find there.
+    /// 2. Collect the dirty ranges. We may find more or fewer than what was taken from the
+    /// inner and reservation. If so we do step 3, otherwise it is skipped.
+    /// 3. Take the reservation and dirty page count again, add it to our previous ones.
+    /// 4. Step through flushing. This might partially fail due to failures during flush, so
+    /// not everything will necessarily be flush that was found in the batches.
+    /// 5. Calling `finish()` to put back what was not flushed, and return the number of pages
+    /// that were previously accounted as dirty which should now be counted as cleaned.
+    struct FlushSimulation {
+        /// Dirty pages added before the flush starts.
+        initial_dirty_pages: DirtyPages,
+
+        /// Dirty pages added after grabbing the reservation but before/during collecting the flush
+        /// batches.
+        racy_dirty_pages: DirtyPages,
+
+        /// The number of dirty pages to be flushed by the collected flush batches.
+        to_be_flushed: DirtyPages,
+
+        /// The number of dirty pages that are intentionally not flushed. Pages past eof.
+        pages_not_to_flush: u64,
+
+        /// Pages that get flushed by the call to `flush_data()`
+        pages_that_get_flushed: DirtyPages,
+
+        /// Expected pages cleaned according to finish.
+        pages_cleaned: u64,
+
+        /// If this is a last chance flush before object destruction.
+        last_chance: bool,
+    }
+
+    impl FlushSimulation {
+        fn run(self, inner: &Mutex<Inner>, allocator: &Arc<Allocator>, store_object_id: u64) {
+            // First add some dirty pages to find.
+            add_dirty_pages(
+                &mut *inner.lock(),
+                self.initial_dirty_pages,
+                &allocator,
+                store_object_id,
+            );
+
+            // Simulate the first stage of a flush.
+            let (dirty_pages, reservation) = inner.lock().take(allocator.clone(), store_object_id);
+            let mut state = FlushState::new(reservation, dirty_pages, self.last_chance);
+
+            // More dirty pages snuck in before the page collection.
+            add_dirty_pages(&mut *inner.lock(), self.racy_dirty_pages, &allocator, store_object_id);
+
+            // How many pages found in the flush batch collection.
+            if state.set_flush_batch_count(self.to_be_flushed, self.pages_not_to_flush).is_err() {
+                // Find all the new dirty pages if there was a race.
+                state.take_extra_dirty_pages(&mut *inner.lock());
+            }
+
+            // Pretend we've flushed the pages. Give back some reservation that would be spent.
+            state.reservation().give_back(
+                self.pages_that_get_flushed.reserved * zx::system_get_page_size() as u64,
+            );
+            state.did_flush_pages(self.pages_that_get_flushed);
+
+            assert_eq!(state.finish(&inner), self.pages_cleaned);
+        }
+    }
+
+    fn add_dirty_pages(
+        inner: &mut Inner,
+        new_pages: DirtyPages,
+        allocator: &Arc<Allocator>,
+        store_object_id: u64,
+    ) {
+        let old_reservation = inner.reservation();
+        inner.dirty_pages += new_pages;
+        if new_pages.reserved > 0 && inner.spare == 0 {
+            inner.spare = SPARE_SIZE;
+        }
+        let reservation_delta = inner.reservation() - old_reservation;
+        if reservation_delta > 0 {
+            // Reserve the bytes and throw them away. They're already in the inner.
+            allocator.clone().reserve(Some(store_object_id), reservation_delta).unwrap().forget();
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_sim_race_conditions() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let allocator = fixture.fs().allocator();
+            let store_object_id = fixture.volume().volume().store().store_object_id();
+            let before_usage = allocator.get_used_bytes();
+
+            // Simple race with reserved pages.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // Find all four from the race.
+                    to_be_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    pages_cleaned: 4,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Partial race with reserved pages. Not all of the new dirty pages are found during
+            // collection.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // Find only 3/4 from the race.
+                    to_be_flushed: DirtyPages { reserved: 3, unreserved: 0 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 3, unreserved: 0 },
+                    pages_cleaned: 3,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 1);
+                // One page left. Another flush to clean it up.
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages { reserved: 1, unreserved: 0 },
+                    pages_not_to_flush: 0,
+                    pages_that_get_flushed: DirtyPages { reserved: 1, unreserved: 0 },
+                    pages_cleaned: 1,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Simple race with unreserved pages.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 0, unreserved: 2 },
+                    racy_dirty_pages: DirtyPages { reserved: 0, unreserved: 2 },
+                    // Find only three from the race.
+                    to_be_flushed: DirtyPages { reserved: 0, unreserved: 4 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 0, unreserved: 4 },
+                    pages_cleaned: 4,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Partial race with unreserved pages. Not all of the new dirty pages are found during
+            // collection.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 0, unreserved: 2 },
+                    racy_dirty_pages: DirtyPages { reserved: 0, unreserved: 2 },
+                    // Find only 3/4 from the race.
+                    to_be_flushed: DirtyPages { reserved: 0, unreserved: 3 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 0, unreserved: 3 },
+                    pages_cleaned: 3,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 1);
+                // One page left. Another flush to clean it up.
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages { reserved: 0, unreserved: 1 },
+                    pages_not_to_flush: 0,
+                    pages_that_get_flushed: DirtyPages { reserved: 0, unreserved: 1 },
+                    pages_cleaned: 1,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Shift pages, from COW to overwrite. This happens as a result of an `allocate()` on
+            // space already written.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    racy_dirty_pages: DirtyPages { reserved: 0, unreserved: 0 },
+                    // The pages are seen as pre-allocated ranges.
+                    to_be_flushed: DirtyPages { reserved: 0, unreserved: 2 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 0, unreserved: 2 },
+                    pages_cleaned: 2,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Shift pages from overwrite to COW. This happens as a result of truncating away an
+            // allocated length, and then appending back to it.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 0, unreserved: 2 },
+                    // The pages will be marked dirty again, because truncate will lose the old
+                    // dirty ranges.
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // The pages are seen as COW ranges.
+                    to_be_flushed: DirtyPages { reserved: 2, unreserved: 0 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 2, unreserved: 0 },
+                    pages_cleaned: 2,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                // Two dirty pages get put back. They aren't actually dirty anymore, but we don't
+                // know that due to the race with the range collection. One more flush to clean them.
+                assert_eq!(inner.lock().dirty_pages.total(), 2);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages::default(),
+                    pages_not_to_flush: 0,
+                    pages_that_get_flushed: DirtyPages::default(),
+                    // Marking the old pages cleaned with no action taken.
+                    pages_cleaned: 2,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // If a file gets truncated shorter, the dirty pages cannot be flushed but need to be
+            // cleaned up eventually.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    // Three pages dirty. File gets truncated losing two of them.
+                    initial_dirty_pages: DirtyPages { reserved: 3, unreserved: 0 },
+                    // Three more get marked dirty as well.
+                    racy_dirty_pages: DirtyPages { reserved: 3, unreserved: 0 },
+                    // 3 + 3 - 2 = 4 dirty pages found.
+                    to_be_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    pages_not_to_flush: 0,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    pages_cleaned: 4,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                // Two pages left over. They get cleaned up with another flush.
+                assert_eq!(inner.lock().dirty_pages.total(), 2);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages::default(),
+                    pages_not_to_flush: 0,
+                    pages_that_get_flushed: DirtyPages::default(),
+                    // Marking the old pages cleaned with no action taken.
+                    pages_cleaned: 2,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // If there is a write past the end (due to touching the vmo after the stream was
+            // truncated shorter) puts a dirty page in a state that we can't immediately clean
+            // it up.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    // Three pages dirty. One is past the file end.
+                    initial_dirty_pages: DirtyPages { reserved: 3, unreserved: 0 },
+                    // Two more get dirty.
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // Four total dirty pages found. One past the end is not counted.
+                    to_be_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    // The one past the end is here.
+                    pages_not_to_flush: 1,
+                    // Everything flushes successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 4, unreserved: 0 },
+                    pages_cleaned: 4,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                // One page left over, won't get cleaned by a flush.
+                assert_eq!(inner.lock().dirty_pages.total(), 1);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages::default(),
+                    // Still held as not flushable.
+                    pages_not_to_flush: 1,
+                    pages_that_get_flushed: DirtyPages::default(),
+                    pages_cleaned: 0,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 1);
+                // The extra page gets cleaned up in a `last_chance` flush.
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    to_be_flushed: DirtyPages::default(),
+                    // Still held as not flushable.
+                    pages_not_to_flush: 1,
+                    pages_that_get_flushed: DirtyPages::default(),
+                    pages_cleaned: 1,
+                    last_chance: true,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Part way through flushing the batches a failure can occur in allocating space or
+            // committing transactions. In this case the unflushed pages and reservations should be
+            // put back.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 2, unreserved: 2 },
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // Four total dirty pages found.
+                    to_be_flushed: DirtyPages { reserved: 4, unreserved: 2 },
+                    pages_not_to_flush: 0,
+                    // Half the pages flushed successfully. This split doesn't really
+                    // make a lot of sense but it tests the code paths well.
+                    pages_that_get_flushed: DirtyPages { reserved: 2, unreserved: 1 },
+                    pages_cleaned: 3,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                // 3 left unflushed. They'll get handled next flush.
+                assert_eq!(inner.lock().dirty_pages.total(), 3);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages::default(),
+                    racy_dirty_pages: DirtyPages::default(),
+                    // Four total dirty pages found.
+                    to_be_flushed: DirtyPages { reserved: 2, unreserved: 1 },
+                    pages_not_to_flush: 0,
+                    // Half the pages flushed successfully.
+                    pages_that_get_flushed: DirtyPages { reserved: 2, unreserved: 1 },
+                    pages_cleaned: 3,
+                    last_chance: false,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+
+            // Partial flush success. last chance though, so mark them clean anyways.
+            {
+                let inner = Inner::new(false);
+                FlushSimulation {
+                    initial_dirty_pages: DirtyPages { reserved: 2, unreserved: 2 },
+                    racy_dirty_pages: DirtyPages { reserved: 2, unreserved: 0 },
+                    // Four total dirty pages found.
+                    to_be_flushed: DirtyPages { reserved: 4, unreserved: 2 },
+                    pages_not_to_flush: 0,
+                    // Half the pages flushed successfully. This split doesn't really
+                    // make a lot of sense but it tests the code paths well.
+                    pages_that_get_flushed: DirtyPages { reserved: 2, unreserved: 1 },
+                    // All pages get marked clean, since this is `last_chance`.``
+                    pages_cleaned: 6,
+                    last_chance: true,
+                }
+                .run(&inner, &allocator, store_object_id);
+                assert_eq!(inner.lock().dirty_pages.total(), 0);
+                assert_eq!(before_usage, allocator.get_used_bytes());
+            }
+        }
+        fixture.close().await;
+    }
+
+    // Try to induce a race end to end, where pages are marked dirty while collecting dirty ranges.
+    #[fuchsia::test(threads = 3)]
+    async fn test_race_mark_dirty_with_write_past_end() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let root = fixture.root();
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            let file_obj = {
+                let id = file
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get attr")
+                    .1
+                    .id
+                    .expect("Missing id");
+                fixture
+                    .volume()
+                    .volume()
+                    .cache()
+                    .get(id)
+                    .expect("Node should be live")
+                    .into_any()
+                    .downcast::<FxFile>()
+                    .unwrap()
+            };
+
+            let page_size = zx::system_get_page_size() as u64;
+            // Set up a file 64 pages long, alternating with first unallocated then allocated.
+            for i in (1..64).step_by(2) {
+                file.allocate(i * page_size, page_size, fio::AllocateMode::empty())
+                    .await
+                    .unwrap()
+                    .expect("Allocate file");
+            }
+            let vmo = file
+                .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+                .await
+                .unwrap()
+                .map_err(zx::Status::from_raw)
+                .unwrap();
+
+            let (signal_start, await_start) = std::sync::mpsc::channel();
+            let (signal_done, mut await_done) = unbounded::<()>();
+            let dirty_thread = std::thread::spawn(move || {
+                let mut byte_to_write: u8 = 0;
+                let page_size = zx::system_get_page_size() as u64;
+                while let Ok(wait_dur) = await_start.recv() {
+                    byte_to_write = byte_to_write.wrapping_add(1);
+                    std::thread::sleep(std::time::Duration::from_micros(wait_dur));
+                    // Skip the first two pages. They are written by the main thread.
+                    for i in 2..64 {
+                        vmo.write(&[byte_to_write], i * page_size).expect("Dirtying pages");
+                    }
+                    signal_done.unbounded_send(()).unwrap();
+                }
+            });
+
+            let mut race = async move |sleep_dur| {
+                let (local_sleep, remote_sleep) =
+                    if sleep_dur < 10 { (sleep_dur, 0) } else { (0, sleep_dur - 10) };
+                // First dirty the first two pages synchronously.
+                file.write_at(&[1, 2, 3, 4], 0).await.unwrap().expect("Writing");
+                file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+
+                signal_start.send(remote_sleep).unwrap();
+                fasync::Timer::new(std::time::Duration::from_micros(local_sleep)).await;
+                // Run the racy sync.
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                await_done.next().await.unwrap();
+            };
+
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+
+            // Do 10 iterations slowing things down more and more and on this side, then 10
+            // iterations slowing more and more on the dirtying thread. This tends to get 2-4
+            // triggers of the racy branch.
+            for sleep_dur in 0..20 {
+                race(sleep_dur).await;
+                // No more races should be possible. Sync and verify that everything is clean.
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            }
+
+            // Create a dirty page past the end of file and try again. Now there should always be a
+            // lingering dirty page.
+            file.write_at(&[1, 2, 3, 4], page_size * 64).await.unwrap().expect("Writing");
+            let vmo = file
+                .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+                .await
+                .unwrap()
+                .map_err(zx::Status::from_raw)
+                .unwrap();
+            file.resize(page_size * 64).await.unwrap().expect("Shrinking file");
+            vmo.write(&[2], page_size * 64).expect("Writing past eof");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+            for sleep_dur in 0..20 {
+                race(sleep_dur).await;
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+            }
+
+            // Extend the file and sync and the lingering dirty page is gone.
+            file.write_at(&[1, 2, 3, 4], page_size * 64).await.unwrap().expect("Writing");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+
+            // Should tell the dirty thread to shut down when `signal_start` gets dropped.
+            std::mem::drop(race);
+            dirty_thread.join().unwrap();
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_race_mark_dirty_with_truncation() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let root = fixture.root();
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            let file_obj = {
+                let id = file
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get attr")
+                    .1
+                    .id
+                    .expect("Missing id");
+                fixture
+                    .volume()
+                    .volume()
+                    .cache()
+                    .get(id)
+                    .expect("Node should be live")
+                    .into_any()
+                    .downcast::<FxFile>()
+                    .unwrap()
+            };
+
+            let page_size = zx::system_get_page_size() as u64;
+            let stream = file.describe().await.unwrap().stream.expect("Getting stream");
+
+            let (signal_start, await_start) = std::sync::mpsc::channel();
+            let (signal_done, mut await_done) = unbounded::<()>();
+            let dirty_thread = std::thread::spawn(move || {
+                while let Ok(wait_dur) = await_start.recv() {
+                    std::thread::sleep(std::time::Duration::from_micros(wait_dur));
+                    stream
+                        .write_at(zx::StreamWriteOptions::empty(), 0, &[1u8])
+                        .expect("Stream write");
+                    signal_done.unbounded_send(()).unwrap();
+                }
+            });
+
+            let stream = file.describe().await.unwrap().stream.expect("Getting stream");
+            // Trying to get the MarkDirty to land in the right place, means flush needs a bit of
+            // a head start.
+            for sleep_dur in (40u64..80).step_by(2) {
+                // Allocated a page, dirty it, then truncate without flush.
+                file.allocate(0, page_size, fio::AllocateMode::empty())
+                    .await
+                    .unwrap()
+                    .expect("Allocate file");
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                stream.write_at(zx::StreamWriteOptions::empty(), 0, &[2u8]).expect("Stream write");
+                file.resize(0).await.unwrap().expect("Truncating to zero");
+
+                signal_start.send(sleep_dur).unwrap();
+                // Run the racy sync.
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                await_done.next().await.unwrap();
+
+                // Everything should be clean after this sync.
+                file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+                assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            }
+
+            // Should tell the dirty thread to shut down when `signal_start` gets dropped.
+            std::mem::drop(signal_start);
+            dirty_thread.join().unwrap();
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_file_shrink_with_dirty_pages() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let root = fixture.root();
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            let file_obj = {
+                let id = file
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get attr")
+                    .1
+                    .id
+                    .expect("Missing id");
+                fixture
+                    .volume()
+                    .volume()
+                    .cache()
+                    .get(id)
+                    .expect("Node should be live")
+                    .into_any()
+                    .downcast::<FxFile>()
+                    .unwrap()
+            };
+
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            let page_size = zx::system_get_page_size() as u64;
+            file.resize(page_size * 2).await.unwrap().expect("Grow file");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+            file.resize(page_size).await.unwrap().expect("Shrink file");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_file_shrink_with_allocated_dirty_pages() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let root = fixture.root();
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            let file_obj = {
+                let id = file
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get attr")
+                    .1
+                    .id
+                    .expect("Missing id");
+                fixture
+                    .volume()
+                    .volume()
+                    .cache()
+                    .get(id)
+                    .expect("Node should be live")
+                    .into_any()
+                    .downcast::<FxFile>()
+                    .unwrap()
+            };
+
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            let page_size = zx::system_get_page_size() as u64;
+            file.allocate(0, page_size * 2, fio::AllocateMode::empty())
+                .await
+                .unwrap()
+                .expect("Allocate file");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+            file.resize(page_size).await.unwrap().expect("Shrink file");
+            file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
+            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
+        }
+
+        fixture.close().await;
+    }
+
     #[fuchsia::test]
     async fn test_file_allocate() {
         let fixture = TestFixture::new_unencrypted().await;
@@ -2970,6 +3893,26 @@ mod tests {
             &Default::default(),
         )
         .await;
+        let file_obj = {
+            let id = file
+                .get_attributes(fio::NodeAttributesQuery::ID)
+                .await
+                .unwrap()
+                .expect("Get attr")
+                .1
+                .id
+                .expect("Missing id");
+            fixture
+                .volume()
+                .volume()
+                .cache()
+                .get(id)
+                .expect("Node should be live")
+                .into_any()
+                .downcast::<FxFile>()
+                .unwrap()
+        };
+        assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
 
         let page_size = zx::system_get_page_size() as u64;
         file.allocate(0, page_size * 2, fio::AllocateMode::empty())
@@ -2990,6 +3933,7 @@ mod tests {
 
         file.resize(page_size).await.unwrap().map_err(zx::Status::from_raw).unwrap();
         file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
 
         assert_eq!(
             file.write_at(&write_data, page_size)
@@ -2999,6 +3943,8 @@ mod tests {
                 .unwrap(),
             page_size
         );
+        // Should be a COW dirty range now.
+        assert_eq!(file_obj.handle().inner.lock().dirty_pages.reserved, 1);
         file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
         assert_eq!(
             file.read_at(page_size, page_size)
@@ -3008,6 +3954,7 @@ mod tests {
                 .unwrap(),
             write_data,
         );
+        std::mem::drop(file_obj);
 
         fixture.close().await;
     }

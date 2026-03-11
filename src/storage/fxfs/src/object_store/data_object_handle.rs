@@ -385,6 +385,58 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.handle.write_at(self.attribute_id(), offset, buf, None, device_offset).await
     }
 
+    /// Verifies that the entire range in the file is zeroes, as either uninitialized overwrite
+    /// range, or no extent at all. If a single allocated and written extent is found, this returns
+    /// false.
+    pub async fn check_unwritten_zero(&self, range: Range<u64>) -> Result<bool, Error> {
+        let tree = &self.store().tree();
+        let layer_set = tree.layer_set();
+        let key = ExtentKey { range };
+        let lower_bound = ObjectKey::attribute(
+            self.object_id(),
+            self.attribute_id,
+            AttributeKey::Extent(key.search_key()),
+        );
+        let mut merger = layer_set.merger();
+        let mut iter = merger.query(Query::FullRange(&lower_bound)).await?;
+        while let Some(ItemRef {
+            key:
+                ObjectKey {
+                    object_id,
+                    data: ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent_key)),
+                },
+            value: ObjectValue::Extent(value),
+            ..
+        }) = iter.get()
+            && *object_id == self.object_id()
+            && *attr_id == self.attribute_id
+        {
+            if let ExtentValue::Some { mode, .. } = value {
+                if let Some(overlap) = key.overlap(extent_key) {
+                    if let ExtentMode::OverwritePartial(bits) = mode {
+                        let starting_index =
+                            (overlap.start - extent_key.range.start) / self.block_size();
+                        for initialized in bits
+                            .iter()
+                            .skip(starting_index as usize)
+                            .take((overlap.length().unwrap() / self.block_size()) as usize)
+                        {
+                            if initialized {
+                                return Ok(false);
+                            }
+                        }
+                    } else {
+                        return Ok(false);
+                    }
+                } else {
+                    break;
+                }
+            }
+            iter.advance().await?;
+        }
+        Ok(true)
+    }
+
     /// Zeroes the given range.  The range must be aligned.  Returns the amount of data deallocated.
     pub async fn zero(
         &self,
@@ -1908,7 +1960,9 @@ mod tests {
     use crate::round::{round_down, round_up};
     use assert_matches::assert_matches;
     use bit_vec::BitVec;
+    use fidl_fuchsia_io as fio;
     use fsverity_merkle::{FsVerityDescriptor, FsVerityDescriptorRaw};
+    use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::FutureExt;
     use futures::channel::oneshot::channel;
@@ -1920,7 +1974,6 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 
@@ -1937,11 +1990,11 @@ mod tests {
         FxFilesystem::new_empty(device).await.expect("new_empty failed")
     }
 
-    async fn test_filesystem_and_object_with_key(
+    async fn create_object_with_key(
+        fs: Arc<FxFilesystem>,
         crypt: Option<&dyn Crypt>,
         write_object_test_data: bool,
-    ) -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>) {
-        let fs = test_filesystem().await;
+    ) -> DataObjectHandle<ObjectStore> {
         let store = fs.root_store();
         let object;
 
@@ -1995,6 +2048,15 @@ mod tests {
         }
         transaction.commit().await.expect("commit failed");
         object.truncate(TEST_OBJECT_SIZE).await.expect("truncate failed");
+        object
+    }
+
+    async fn test_filesystem_and_object_with_key(
+        crypt: Option<&dyn Crypt>,
+        write_object_test_data: bool,
+    ) -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>) {
+        let fs = test_filesystem().await;
+        let object = create_object_with_key(fs.clone(), crypt, write_object_test_data).await;
         (fs, object)
     }
 
@@ -4508,6 +4570,59 @@ mod tests {
             get_modes(&object, 0..10 * block_size).await,
             vec![(0..10 * block_size, ExtentMode::Overwrite)]
         );
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_check_unwritten_zero() {
+        let device = DeviceHolder::new(FakeDevice::new(256 * 1024, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let object = create_object_with_key(fs.clone(), Some(&new_insecure_crypt()), false).await;
+        let block_size = fs.block_size();
+
+        // Set up a file with eight blocks to look like this:
+        // | None | COW | COW | None | Overwrite(unwritten) | Overwrite(written) | None |
+        let file_size = block_size * 7;
+        object.truncate(file_size).await.unwrap();
+        assert!(object.check_unwritten_zero(0..file_size).await.unwrap());
+
+        let mut buffer = object.allocate_buffer(block_size as usize).await;
+        buffer.as_mut_slice().fill(1);
+        object.write_or_append(Some(block_size), buffer.as_ref()).await.expect("write failed");
+        object.write_or_append(Some(block_size * 2), buffer.as_ref()).await.expect("write failed");
+
+        object.allocate((block_size * 4)..(block_size * 6)).await.expect("Allocate failed");
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(object.store().store_object_id(), object.object_id(),)],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        object
+            .multi_overwrite(
+                &mut transaction,
+                DEFAULT_DATA_ATTRIBUTE_ID,
+                &vec![(block_size * 5)..(block_size * 6)],
+                buffer.as_mut(),
+            )
+            .await
+            .expect("Multi overwrite");
+        transaction.commit().await.expect("Committing overwrite");
+
+        // Anything touching the COW ranges should fail.
+        assert!(!object.check_unwritten_zero(0..(block_size * 2)).await.unwrap());
+        assert!(!object.check_unwritten_zero(block_size..(block_size * 3)).await.unwrap());
+        assert!(!object.check_unwritten_zero((block_size * 2)..(block_size * 4)).await.unwrap());
+
+        // This should be fine, as the OverwritePartial should only touch the unwritten block.
+        assert!(object.check_unwritten_zero((block_size * 3)..(block_size * 5)).await.unwrap());
+
+        // These should touch the written overwrite block and fail.
+        assert!(!object.check_unwritten_zero((block_size * 4)..(block_size * 6)).await.unwrap());
+        assert!(!object.check_unwritten_zero((block_size * 5)..(block_size * 7)).await.unwrap());
 
         fs.close().await.expect("close failed");
     }

@@ -334,16 +334,15 @@ impl Pager {
 
     /// Allows the kernel to dirty the `range` of pages. Sent in response to a `ZX_PAGER_VMO_DIRTY`
     /// page request. See `ZX_PAGER_OP_DIRTY` for more information.
-    fn dirty_pages(&self, vmo: &zx::Vmo, range: Range<u64>) {
-        if let Err(e) = self.pager.op_range(zx::PagerOp::Dirty, vmo, range) {
+    fn dirty_pages(&self, vmo: &zx::Vmo, range: Range<u64>) -> Result<(), zx::Status> {
+        let result = self.pager.op_range(zx::PagerOp::Dirty, vmo, range);
+        if let Err(e) = &result {
             // It is possible for `ZX_ERR_NOT_FOUND` to be returned on a clean page that has been
-            // evicted. In this case, the  kernel will retry if necessary. Unfortunately, this will
-            // cause a mismatch in the accounting between Fxfs and the kernel but there is nothing
-            // we can do about that right now. See https://fxubg.dev/42086069 for more information.
-            if e != zx::Status::NOT_FOUND {
-                error!(error:? = e; "dirty_pages failed");
-            }
+            // evicted. In this case, the  kernel will retry if necessary.See
+            // https://fxbug.dev/42086069 for more information.
+            error!(error:? = e; "dirty_pages failed");
         }
+        return result;
     }
 
     /// Notifies the kernel that the filesystem has started cleaning the `range` of pages. See
@@ -685,9 +684,9 @@ impl<T: PagerBacked> MarkDirtyRange<T> {
 
     /// Allows the kernel to dirty this range of pages. See `ZX_PAGER_OP_DIRTY` for more
     /// information.
-    pub fn dirty_pages(mut self) {
+    pub fn dirty_pages(mut self) -> Result<(), zx::Status> {
         let inner = self.inner.take().unwrap();
-        inner.file.pager().dirty_pages(inner.file.vmo(), self.range.clone());
+        inner.file.pager().dirty_pages(inner.file.vmo(), self.range.clone())
     }
 }
 
@@ -998,7 +997,7 @@ mod tests {
 
         fn mark_dirty(self: Arc<Self>, range: MarkDirtyRange<Self>) {
             self.pager_requests.lock().push(PagerRequest::Dirty(range.range()));
-            range.dirty_pages();
+            let _ = range.dirty_pages();
         }
 
         fn on_zero_children(self: Arc<Self>) {}
@@ -1560,7 +1559,7 @@ mod tests {
     }
 
     fn real_mark_dirty(range: MarkDirtyRange<PagerRangeTestFile>) {
-        range.dirty_pages();
+        let _ = range.dirty_pages();
     }
 
     #[fuchsia::test(threads = 2)]
