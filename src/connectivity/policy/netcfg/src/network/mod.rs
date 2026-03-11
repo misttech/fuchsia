@@ -14,12 +14,11 @@ use std::collections::hash_map::Entry;
 
 mod token_registry;
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_posix_socket as fposix_socket,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_posix_socket as fposix_socket;
 
 // The id for each network, separated by network source.
 //
@@ -382,7 +381,7 @@ pub enum NetworkUpdate {
     MakeDefault,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum UpdateApplied {
     /// No update was performed.
     None,
@@ -937,5 +936,107 @@ impl<Stream: futures::Stream + Unpin> futures::Stream for ConnectionTagged<Strea
 impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for ConnectionTagged<Stream> {
     fn is_terminated(&self) -> bool {
         self.streams.is_terminated()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::InterfaceId;
+    use std::num::NonZeroU64;
+    const ID_1: InterfaceId = InterfaceId(NonZeroU64::new(1).unwrap());
+    const ID_2: InterfaceId = InterfaceId(NonZeroU64::new(2).unwrap());
+    const ID_3: InterfaceId = InterfaceId(NonZeroU64::new(3).unwrap());
+
+    #[test]
+    fn test_handle_changed_network_delegated() {
+        let mut networks = RegisteredNetworks::default();
+        let network_id = NetworkId::Delegated(ID_1);
+        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+
+        // Add a new delegated network
+        let event = NetworkPropertiesChange { added: true, marks: Some(marks.clone()) };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+        );
+
+        let properties = networks.networks.get(&network_id).expect("network should be present");
+        assert_eq!(properties.socket_marks, Some(marks.clone()));
+
+        // Update with different connectivity state but same marks
+        let event = NetworkPropertiesChange { added: false, marks: Some(marks.clone()) };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: false }
+        );
+
+        let properties = networks.networks.get(&network_id).expect("network should be present");
+        assert_eq!(properties.socket_marks, Some(marks.clone()));
+
+        // Update with different marks
+        let new_marks = fnet::Marks { mark_1: Some(456), ..Default::default() };
+        let event = NetworkPropertiesChange { added: false, marks: Some(new_marks.clone()) };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: true }
+        );
+
+        let properties = networks.networks.get(&network_id).expect("network should be present");
+        assert_eq!(properties.socket_marks, Some(new_marks));
+    }
+
+    #[test]
+    fn test_handle_changed_network_fuchsia() {
+        let mut networks = RegisteredNetworks::default();
+        let network_id = NetworkId::Fuchsia(ID_1);
+
+        // Add a Fuchsia network
+        let event = NetworkPropertiesChange { added: true, marks: None };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+        );
+
+        let properties = networks.networks.get(&network_id).expect("network should be present");
+        assert_eq!(properties.socket_marks, None);
+
+        // Update Fuchsia network connectivity
+        let event = NetworkPropertiesChange { added: false, marks: None };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: false }
+        );
+    }
+
+    #[test]
+    fn test_handle_changed_network_validation() {
+        let mut networks = RegisteredNetworks::default();
+        let network_id = NetworkId::Delegated(ID_1);
+        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+
+        // Update a non-added network
+        let event = NetworkPropertiesChange { added: false, marks: Some(marks.clone()) };
+        assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
+        // Add the network
+        let event = NetworkPropertiesChange { added: true, marks: Some(marks.clone()) };
+        assert_eq!(
+            networks.handle_changed_network(network_id, event),
+            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+        );
+
+        // Add already added network
+        let event = NetworkPropertiesChange { added: true, marks: Some(marks.clone()) };
+        assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
+
+        // Fuchsia network with marks
+        let fuchsia_id = NetworkId::Fuchsia(ID_2);
+        let event = NetworkPropertiesChange { added: true, marks: Some(marks.clone()) };
+        assert_eq!(networks.handle_changed_network(fuchsia_id, event), UpdateApplied::None);
+
+        // Delegated network without marks
+        let delegated_id = NetworkId::Delegated(ID_3);
+        let event = NetworkPropertiesChange { added: true, marks: None };
+        assert_eq!(networks.handle_changed_network(delegated_id, event), UpdateApplied::None);
     }
 }
