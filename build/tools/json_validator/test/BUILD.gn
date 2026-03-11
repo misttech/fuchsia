@@ -74,5 +74,4 @@ validate_json("test_validate_json_valico") {
   testonly = true
   data = "test_document.json"
   schema = "test_schema.json"
-  use_valico = true
 }
