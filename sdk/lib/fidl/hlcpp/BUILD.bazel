@@ -208,6 +208,7 @@ idk_cc_source_library(
         "//sdk/lib/fidl_base",
         "//sdk/lib/fit",
         "//sdk/lib/fit-promise",
+        "//sdk/lib/zircon-assert",
     ],
     fuchsia_deps = [
         "//sdk/lib/fidl",

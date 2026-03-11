@@ -242,6 +242,7 @@ sdk_source_set("hlcpp_base") {
     "//sdk/lib/fidl_base",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
+    "//sdk/lib/zircon-assert",
   ]
   if (is_fuchsia) {
     public_deps += [
