@@ -33,6 +33,8 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
 
     // Generally indicates a full reset of all devices, including memory.
     {.reason = "cold", .value = ZBI_HW_REBOOT_REASON_COLD},
+    {.reason = "reboot,cold", .value = ZBI_HW_REBOOT_REASON_COLD},
+
     {.reason = "watchdog", .value = ZBI_HW_REBOOT_REASON_WATCHDOG},
     {.reason = "reboot,uvlo", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
 });
