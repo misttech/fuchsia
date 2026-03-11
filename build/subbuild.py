@@ -139,7 +139,7 @@ def run_checked_command(
 
     args_str = command_args_to_string(args, env, cwd)
     logger.error(
-        f"When running command: {args_str}\n{ret.stdout}\n{ret.stderr}\n"
+        f"Exit code {ret.returncode} when running command: `{args_str}`\nOutput:\n{ret.stdout}\nError:\n{ret.stderr}\n"
     )
     return False
 
