@@ -16,21 +16,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use term_model::ansi::TermInfo;
-use term_model::config::Config;
-use term_model::Term;
-use terminal::{renderable_layers, FontSet, Offset, Renderer};
-
-/// Empty type for term model config
-pub struct UIConfig;
-
-impl Default for UIConfig {
-    fn default() -> UIConfig {
-        UIConfig
-    }
-}
-
-pub type TerminalConfig = Config<UIConfig>;
+use terminal::{FontSet, Offset, Renderer, TerminalCallbacks, renderable_layers};
 
 pub enum TerminalMessages {
     SetScrollThumbMessage(Option<(Rect, f32)>),
@@ -54,25 +40,25 @@ fn scroll_thumb_fade_out_alpha(total_duration: f32, time_elapsed: f32, alpha: f3
 }
 
 /// Facet that implements a terminal text grid with a scroll bar.
-pub struct TerminalFacet<T> {
+pub struct TerminalFacet {
     app_sender: Option<AppSender>,
     view_key: ViewKey,
     font_set: FontSet,
     size: Size,
-    term: Rc<RefCell<Term<T>>>,
+    term: Rc<RefCell<vt100::Parser<TerminalCallbacks>>>,
     scroll_thumb: Option<(Rect, f32)>,
     scroll_thumb_fade_out: Option<(Instant, Duration)>,
     thumb_order: Option<SceneOrder>,
     renderer: Renderer,
 }
 
-impl<T: 'static> TerminalFacet<T> {
+impl TerminalFacet {
     pub fn new(
         app_sender: Option<AppSender>,
         view_key: ViewKey,
         font_set: FontSet,
         cell_size: &Size,
-        term: Rc<RefCell<Term<T>>>,
+        term: Rc<RefCell<vt100::Parser<TerminalCallbacks>>>,
     ) -> Self {
         let renderer = Renderer::new(&font_set, cell_size);
 
@@ -90,7 +76,7 @@ impl<T: 'static> TerminalFacet<T> {
     }
 }
 
-impl<T: 'static> Facet for TerminalFacet<T> {
+impl Facet for TerminalFacet {
     fn update_layers(
         &mut self,
         _: Size,
@@ -102,10 +88,9 @@ impl<T: 'static> Facet for TerminalFacet<T> {
 
         self.size = view_context.size;
 
-        let config = TerminalConfig::default();
         let term = self.term.borrow();
-        let cols = term.cols().0;
-        let rows = term.lines().0;
+        let cols = term.screen().size().1 as usize;
+        let rows = term.screen().size().0 as usize;
         let stride = cols * 4;
         let new_thumb_order =
             SceneOrder::try_from(stride * rows).unwrap_or_else(|e| panic!("{}", e));
@@ -116,7 +101,12 @@ impl<T: 'static> Facet for TerminalFacet<T> {
         }
 
         let offset = Offset { column: 0, row: 0 };
-        let layers = renderable_layers(&term, &config, &offset);
+        let layers = renderable_layers(
+            term.screen(),
+            terminal::renderer::Rgb { r: 0, g: 0, b: 0 },
+            terminal::renderer::Rgb { r: 255, g: 255, b: 255 },
+            &offset,
+        );
         self.renderer.render(layer_group, render_context, &self.font_set, layers);
 
         // Add new scrollbar thumb.

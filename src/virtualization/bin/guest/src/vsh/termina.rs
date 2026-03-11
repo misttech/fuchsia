@@ -9,7 +9,7 @@ use fidl_fuchsia_virtualization::{
 use fuchsia_async::{Interval, MonotonicDuration};
 
 use futures::future::ready;
-use futures::{select, stream, StreamExt};
+use futures::{StreamExt, select, stream};
 use std::io::Write;
 
 // ANSI Escape sequences for terminal manipulation.
@@ -195,213 +195,143 @@ pub async fn launch(linux_manager: &LinuxManagerProxy, w: &mut impl Write) -> Re
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::iter::repeat;
-    use term_model::ansi::{Color, NamedColor, Processor, TermInfo};
-    use term_model::clipboard::Clipboard;
-    use term_model::config::Config;
-    use term_model::event::{Event, EventListener};
-    use term_model::index::{Column, Line, Point};
-    use term_model::term::cell::{Cell, Flags};
-    use term_model::term::mode::TermMode;
-    use term_model::term::SizeInfo;
-    use term_model::Term;
+    use vt100::Parser;
 
-    struct TestListener;
-    impl EventListener for TestListener {
-        fn send_event(&self, _: Event) {
-            // Don't yet care about events.
-        }
-    }
-
-    fn make_term(lines: usize, cols: usize) -> Term<TestListener> {
-        let cell_width = 8.0;
-        let cell_height = 16.0;
-        let config = Config::<()>::default();
-        let size_info = SizeInfo {
-            width: cell_width * cols as f32,
-            height: cell_height * lines as f32,
-            cell_width,
-            cell_height,
-            padding_x: 0.0,
-            padding_y: 0.0,
-            dpr: 1.0,
-        };
-        Term::new(&config, &size_info, Clipboard::new(), TestListener {})
-    }
-
-    // Get the terminal's currently displayed cells as a Vec<Vec<Cell>> with dimensions matching
-    // that of the terminal.
-    fn get_cells(term: &Term<TestListener>) -> Vec<Vec<Cell>> {
-        let mut current_line = Line(0);
-        let mut cells = vec![vec![]];
-        for c in term.grid().display_iter() {
-            if c.line != current_line {
-                current_line = c.line;
-                cells.push(vec![]);
+    fn get_text(parser: &Parser) -> Vec<String> {
+        let screen = parser.screen();
+        let (num_rows, num_cols) = screen.size();
+        let mut res = Vec::new();
+        for r in 0..num_rows {
+            let mut s = String::new();
+            for c in 0..num_cols {
+                if let Some(cell) = screen.cell(r, c) {
+                    if cell.has_contents() {
+                        s.push_str(cell.contents());
+                    } else {
+                        s.push(' ');
+                    }
+                } else {
+                    s.push(' ');
+                }
             }
-            cells.last_mut().unwrap().push(c.inner);
+            res.push(s);
         }
-        cells
-    }
-
-    // Get the text content of the terminal as a Vec of `num_lines` Strings of length `num_cols`.
-    // In other words this is just `get_cells` with each line of cells collected into a string of
-    // their characters.
-    fn get_text(term: &Term<TestListener>) -> Vec<String> {
-        get_cells(term).iter().map(|line| line.into_iter().map(|cell| cell.c).collect()).collect()
+        res
     }
 
     #[test]
     fn test_move_forward() {
-        let mut term = make_term(24, 80);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(24, 80, 0);
 
-        for c in move_forward(40).bytes() {
-            processor.advance(&mut term, c, &mut writer);
-        }
-        assert_eq!(term.cursor().point, Point::new(Line(0), Column(40)));
-        assert_eq!(
-            get_cells(&term).concat(),
-            repeat(Cell::default()).take(term.lines().0 * term.cols().0).collect::<Vec<Cell>>()
-        );
-        assert_eq!(writer, Vec::<u8>::new());
+        term.process(move_forward(40).as_bytes());
+
+        assert_eq!(term.screen().cursor_position(), (0, 40));
+        assert_eq!(get_text(&term), vec![" ".repeat(80); 24]);
     }
 
     #[test]
     fn test_erase_in_line() {
-        let mut term = make_term(1, 20);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(1, 20, 0);
 
-        for c in "0123456789".bytes() {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(b"0123456789");
         assert_eq!(get_text(&term), vec!["0123456789          "]);
-        assert_eq!(writer, Vec::<u8>::new());
 
-        for c in format!("\r{}{}", move_forward(5), ERASE_REST_OF_LINE).bytes() {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(format!("\r{}{}", move_forward(5), ERASE_REST_OF_LINE).as_bytes());
         assert_eq!(get_text(&term), vec!["01234               "]);
-        assert_eq!(writer, Vec::<u8>::new());
     }
 
     #[test]
     fn test_cursor_hide_and_show() {
-        let mut term = make_term(1, 20);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(1, 20, 0);
 
-        let original_mode = *term.mode();
-        assert!(original_mode.contains(TermMode::SHOW_CURSOR));
+        assert!(!term.screen().hide_cursor());
 
-        for c in CURSOR_HIDE.bytes() {
-            processor.advance(&mut term, c, &mut writer);
-        }
-        assert_eq!(*term.mode(), original_mode - TermMode::SHOW_CURSOR);
+        term.process(CURSOR_HIDE.as_bytes());
+        assert!(term.screen().hide_cursor());
 
-        for c in CURSOR_SHOW.bytes() {
-            processor.advance(&mut term, c, &mut writer);
-        }
-        assert_eq!(*term.mode(), original_mode | TermMode::SHOW_CURSOR);
+        term.process(CURSOR_SHOW.as_bytes());
+        assert!(!term.screen().hide_cursor());
 
-        assert_eq!(
-            get_cells(&term).concat(),
-            repeat(Cell::default()).take(term.lines().0 * term.cols().0).collect::<Vec<Cell>>()
-        );
-        assert_eq!(writer, Vec::<u8>::new());
+        assert_eq!(get_text(&term), vec![" ".repeat(20); 1]);
     }
 
     #[test]
     fn test_colours() {
-        let mut term = make_term(1, 12);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(1, 12, 0);
 
-        for c in format!(
-            "0{}12{}345{}6{}7{}8{}9 ",
-            COLOUR3_YELLOW,
-            COLOUR1_RED_BRIGHT,
-            COLOUR0_NORMAL,
-            COLOUR5_MAGENTA,
-            COLOUR2_GREEN_BRIGHT,
-            COLOUR5_MAGENTA,
-        )
-        .bytes()
-        {
-            processor.advance(&mut term, c, &mut writer);
+        term.process(
+            format!(
+                "0{}12{}345{}6{}7{}8{}9 ",
+                COLOUR3_YELLOW,
+                COLOUR1_RED_BRIGHT,
+                COLOUR0_NORMAL,
+                COLOUR5_MAGENTA,
+                COLOUR2_GREEN_BRIGHT,
+                COLOUR5_MAGENTA,
+            )
+            .as_bytes(),
+        );
+
+        let screen = term.screen();
+        let mut cells = vec![];
+        for i in 0..12 {
+            cells.push(screen.cell(0, i).unwrap());
         }
 
-        assert_eq!(
-            get_cells(&term),
-            vec![vec![
-                Cell { c: '0', ..Cell::default() },
-                Cell { c: '1', fg: Color::Named(NamedColor::Yellow), ..Cell::default() },
-                Cell { c: '2', fg: Color::Named(NamedColor::Yellow), ..Cell::default() },
-                // One might notice that despite being named `*_BRIGHT`, the observed effect is the
-                // specified colour with the BOLD display attribute set instead of the
-                // NamedColor::Bright* variant. In most terminals bold was implemented as a
-                // modifier on colour intensity rather than what the name suggests, and also the
-                // Bright* series of colours were a later non-standard addition.
-                Cell {
-                    c: '3',
-                    fg: Color::Named(NamedColor::Red),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                Cell {
-                    c: '4',
-                    fg: Color::Named(NamedColor::Red),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                Cell {
-                    c: '5',
-                    fg: Color::Named(NamedColor::Red),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                Cell { c: '6', ..Cell::default() },
-                Cell { c: '7', fg: Color::Named(NamedColor::Magenta), ..Cell::default() },
-                Cell {
-                    c: '8',
-                    fg: Color::Named(NamedColor::Green),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                // Notice that the previous bold state leaks through when there isn't a reset, even
-                // though we haven't specified a "bright" magenta with the input control sequence.
-                Cell {
-                    c: '9',
-                    fg: Color::Named(NamedColor::Magenta),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                Cell {
-                    c: ' ',
-                    fg: Color::Named(NamedColor::Magenta),
-                    flags: Flags::BOLD,
-                    ..Cell::default()
-                },
-                Cell { c: ' ', ..Cell::default() },
-            ]]
-        );
-        assert_eq!(writer, Vec::<u8>::new());
+        assert_eq!(cells[0].contents(), "0");
+        assert_eq!(cells[0].fgcolor(), vt100::Color::Default);
+
+        assert_eq!(cells[1].contents(), "1");
+        assert_eq!(cells[1].fgcolor(), vt100::Color::Idx(3));
+
+        assert_eq!(cells[2].contents(), "2");
+        assert_eq!(cells[2].fgcolor(), vt100::Color::Idx(3));
+
+        assert_eq!(cells[3].contents(), "3");
+        assert_eq!(cells[3].fgcolor(), vt100::Color::Idx(1));
+        assert!(cells[3].bold());
+
+        assert_eq!(cells[4].contents(), "4");
+        assert_eq!(cells[4].fgcolor(), vt100::Color::Idx(1));
+        assert!(cells[4].bold());
+
+        assert_eq!(cells[5].contents(), "5");
+        assert_eq!(cells[5].fgcolor(), vt100::Color::Idx(1));
+        assert!(cells[5].bold());
+
+        assert_eq!(cells[6].contents(), "6");
+        assert_eq!(cells[6].fgcolor(), vt100::Color::Default);
+        assert!(!cells[6].bold());
+
+        assert_eq!(cells[7].contents(), "7");
+        assert_eq!(cells[7].fgcolor(), vt100::Color::Idx(5));
+        assert!(!cells[7].bold());
+
+        assert_eq!(cells[8].contents(), "8");
+        assert_eq!(cells[8].fgcolor(), vt100::Color::Idx(2));
+        assert!(cells[8].bold());
+
+        assert_eq!(cells[9].contents(), "9");
+        assert_eq!(cells[9].fgcolor(), vt100::Color::Idx(5));
+        assert!(cells[9].bold());
+
+        assert_eq!(cells[10].contents(), " ");
+        assert_eq!(cells[10].fgcolor(), vt100::Color::Idx(5));
+        assert!(cells[10].bold());
+
+        assert_eq!(cells[11].contents(), "");
+        assert_eq!(cells[11].fgcolor(), vt100::Color::Default);
+        assert!(!cells[11].bold());
     }
 
     #[test]
     fn test_progress_bar() {
-        let mut term = make_term(5, 20);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(5, 20, 0);
         let mut input = vec![];
         print_progress_bar(&mut input).unwrap();
-        for c in input {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(&input);
 
-        assert!(!term.mode().contains(TermMode::SHOW_CURSOR));
+        assert!(term.screen().hide_cursor());
         assert_eq!(
             get_text(&term),
             vec![
@@ -413,50 +343,34 @@ mod test {
             ]
         );
 
-        let mut progress_part = get_cells(&term).concat();
-        let unformatted = progress_part.split_off(12);
-
-        // We previously checked the cell contents, so clear the chars to check only formatting.
-        for cell in progress_part.iter_mut() {
-            cell.c = ' ';
+        let screen = term.screen();
+        for i in 0..12 {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Idx(5));
         }
-        assert_eq!(
-            progress_part,
-            repeat(Cell { fg: Color::Named(NamedColor::Magenta), ..Cell::default() })
-                .take(12)
-                .collect::<Vec<Cell>>()
-        );
-        assert_eq!(unformatted, repeat(Cell::default()).take(88).collect::<Vec<Cell>>());
-        assert_eq!(writer, Vec::<u8>::new());
+        for i in 12..20 {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Default);
+        }
     }
 
     #[test]
     fn test_print_stage() {
-        let mut term = make_term(2, 50);
-        let mut processor = Processor::new();
-        let mut writer: Vec<u8> = vec![];
+        let mut term = Parser::new(2, 50, 0);
 
         let mut input = vec![];
         print_progress_bar(&mut input).unwrap();
-        for c in input {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(&input);
 
         let mut input = vec![];
         let download_msg = "Some download message";
         let line_end =
             print_stage(&mut input, COLOUR3_YELLOW, ContainerStatus::Downloading, download_msg)
                 .unwrap();
-        for c in input {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(&input);
 
         let mut input = vec![];
         let after_msg = "Err details";
         print_after_stage(&mut input, line_end, COLOUR5_MAGENTA, after_msg).unwrap();
-        for c in input {
-            processor.advance(&mut term, c, &mut writer);
-        }
+        term.process(&input);
 
         assert_eq!(
             get_text(&term),
@@ -466,40 +380,20 @@ mod test {
             ]
         );
 
-        let mut linear_grid = get_cells(&term).concat();
-        // We previously checked the cell contents, so clear the chars to check only formatting.
-        for cell in linear_grid.iter_mut() {
-            cell.c = ' ';
+        let screen = term.screen();
+        for i in 0..12 {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Idx(5));
         }
-
-        let rest = linear_grid.as_slice();
-        let (progress_part, rest) = rest.split_at(12);
-        let (unformatted1, rest) = rest.split_at(2);
-        let (stage_part, rest) = rest.split_at(download_msg.len());
-        let (after_stage_part, rest) = rest.split_at(after_msg.len() + 2);
-        let unformatted2 = rest;
-
-        assert_eq!(
-            progress_part,
-            repeat(Cell { fg: Color::Named(NamedColor::Magenta), ..Cell::default() })
-                .take(12)
-                .collect::<Vec<Cell>>()
-        );
-        assert_eq!(unformatted1, repeat(Cell::default()).take(2).collect::<Vec<Cell>>());
-        assert_eq!(
-            stage_part,
-            repeat(Cell { fg: Color::Named(NamedColor::Yellow), ..Cell::default() })
-                .take(download_msg.len())
-                .collect::<Vec<Cell>>()
-        );
-        assert_eq!(
-            after_stage_part,
-            repeat(Cell { fg: Color::Named(NamedColor::Magenta), ..Cell::default() })
-                .take(after_msg.len() + 2)
-                .collect::<Vec<Cell>>()
-        );
-        assert_eq!(unformatted2, repeat(Cell::default()).take(52).collect::<Vec<Cell>>());
-
-        assert_eq!(writer, Vec::<u8>::new());
+        for i in 12..14 {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Default);
+        }
+        for i in 14..(14 + download_msg.len() as u16) {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Idx(3));
+        }
+        for i in (14 + download_msg.len() as u16)
+            ..(14 + download_msg.len() as u16 + after_msg.len() as u16 + 2)
+        {
+            assert_eq!(screen.cell(0, i).unwrap().fgcolor(), vt100::Color::Idx(5));
+        }
     }
 }

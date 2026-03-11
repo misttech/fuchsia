@@ -303,7 +303,6 @@
       // updates don't clobber your change.
       "third_party/abseil-cpp/**": true,
       "third_party/acpica/**": true,
-      "third_party/alacritty-migrating/src/**": true,
       "third_party/android/**": true,
       "third_party/bazel_platforms/**": true,
       "third_party/bazel_rules_cc/**": true,

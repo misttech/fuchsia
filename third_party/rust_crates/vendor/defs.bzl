@@ -496,6 +496,7 @@ _NORMAL_DEPENDENCIES = {
             "uuid": Label("//third_party/rust_crates/vendor/uuid-1.1.2:uuid"),
             "valico": Label("//third_party/rust_crates/vendor/valico-2.4.2:valico"),
             "vm-device": Label("//third_party/rust_crates/vendor/vm-device-0.1.0:vm_device"),
+            "vt100": Label("//third_party/rust_crates/vendor/vt100-0.16.2:vt100"),
             "vte": Label("//third_party/rust_crates/vendor/vte-0.15.0:vte"),
             "walkdir": Label("//third_party/rust_crates/vendor/walkdir-2.5.0:walkdir"),
             "which": Label("//third_party/rust_crates/vendor/which-4.0.2:which"),
