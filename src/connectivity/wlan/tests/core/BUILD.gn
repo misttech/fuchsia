@@ -96,6 +96,7 @@ antlion_host_test("roam_request_test_should_succeed") {
     "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_host_test_data",
   ]
   test_cases = [ "re:.*should_succeed" ]
+  timeout_secs = 900
 }
 
 antlion_host_test("sar_setting_test") {

@@ -40,6 +40,7 @@ group("per_test_timeout_allowlist") {
     "//src/chromium/web_runner_tests:*",
     "//src/connectivity/network/tests/integration:netstack-multicast-forwarding-integration-test-no-err-logs_test_netstack-multicast-forwarding-integration-test",
     "//src/connectivity/network/tests/integration:netstack-multicast-forwarding-integration-test-with-err-logs_test_netstack-multicast-forwarding-integration-test",
+    "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
     "//src/firmware/paver/test:*",
     "//src/starnix/tests/gvisor:*",
     "//src/storage/blackout/host/tests:*",

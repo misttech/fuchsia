@@ -440,6 +440,10 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
             # Send a roam request for target BSS. From this point, failed assert calls are relevant
             # to the roam attempt.
+
+            # Add a delay to let the connection stabalized, and avoid sending the roam request too
+            # quickly after the initial connection (b/484056019).
+            time.sleep(10)
             roam_request = fidl_sme.RoamRequest(bss_description=target_bss_desc)
             logger.info(f"RoamRequest: {roam_request!r}")
             self.test_kit.client_sme.roam(req=roam_request)
