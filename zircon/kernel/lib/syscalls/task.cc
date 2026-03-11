@@ -272,8 +272,7 @@ zx_status_t sys_thread_set_rseq(zx_handle_t vmo_handle, uint64_t offset, uint64_
 
   current_thread->set_rseq_accessor(ktl::move(*accessor));
 
-  // We just changed the rseq configuration for this thread.  Check if the thread is currently
-  // executing within a restartable sequence and make sure the current CPU gets written out.
+  // Set the thread signal to ensure we write out the cpu_id field before returning to user mode.
   current_thread->SignalCheckRestartableSequenceIfNeeded();
 
   return ZX_OK;
