@@ -129,6 +129,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "argh_complete"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54b8dd784af6db022d2b8054d8ba41c09f16cd8242a8bae11be7a05a7e692ad4"
+dependencies = [
+ "argh_shared",
+]
+
+[[package]]
 name = "argh_derive"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -142,9 +151,9 @@ dependencies = [
 
 [[package]]
 name = "argh_shared"
-version = "0.1.14"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5127f8a5bc1cfb0faf1f6248491452b8a5b6901068d8da2d47cbb285986ae683"
+checksum = "284b476f7c2b6af9aa49f059466ebfa725b0f53c33d271a691e613e9187bf507"
 dependencies = [
  "serde",
 ]
@@ -1555,6 +1564,7 @@ dependencies = [
  "arbitrary",
  "arc-swap",
  "argh",
+ "argh_complete",
  "arrayref",
  "arrayvec",
  "ash",

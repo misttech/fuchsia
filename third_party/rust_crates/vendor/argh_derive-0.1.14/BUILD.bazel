@@ -74,7 +74,7 @@ rust_proc_macro(
     }),
     version = "0.1.14",
     deps = [
-        "//third_party/rust_crates/vendor/argh_shared-0.1.14:argh_shared",
+        "//third_party/rust_crates/vendor/argh_shared-0.1.17:argh_shared",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.45:quote",
         "//third_party/rust_crates/vendor/syn-2.0.117:syn",

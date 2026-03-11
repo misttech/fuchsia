@@ -139,6 +139,18 @@ alias(
 )
 
 alias(
+    name = "argh_complete-0.1.17",
+    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.17:argh_complete",
+    tags = ["manual"],
+)
+
+alias(
+    name = "argh_complete",
+    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.17:argh_complete",
+    tags = ["manual"],
+)
+
+alias(
     name = "arrayref-0.3.9",
     actual = "//third_party/rust_crates/vendor/arrayref-0.3.9:arrayref",
     tags = ["manual"],

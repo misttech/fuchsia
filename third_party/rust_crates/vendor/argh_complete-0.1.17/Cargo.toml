@@ -11,8 +11,8 @@
 
 [package]
 edition = "2018"
-name = "argh_shared"
-version = "0.1.14"
+name = "argh_complete"
+version = "0.1.17"
 authors = [
     "Taylor Cramer <cramertj@google.com>",
     "Benjamin Brittain <bwb@google.com>",
@@ -24,16 +24,14 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Derive-based argument parsing optimized for code size"
+description = "Autocompletion generators for argh-based CLIs"
 readme = "README.md"
 license = "BSD-3-Clause"
 repository = "https://github.com/google/argh"
 
 [lib]
-name = "argh_shared"
+name = "argh_complete"
 path = "src/lib.rs"
 
-[dependencies.serde]
-version = "1"
-features = ["derive"]
-optional = true
+[dependencies.argh_shared]
+version = "0.1.17"
