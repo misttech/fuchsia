@@ -73,7 +73,7 @@ impl<F: Fn() -> anyhow::Result<fnet_name::LookupProxy> + std::marker::Sync> Dig 
         match r {
             Ok(ips) => Some(ips),
             Err(e) => {
-                warn!("error while digging {domain}: {e}");
+                warn!("error while digging {domain}: {e:#}");
                 None
             }
         }

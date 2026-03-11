@@ -132,7 +132,7 @@ impl Fetch for Fetcher {
                 log!(
                     level,
                     "err fetching {host}{path} from {addr} \
-                     through {interface_name}: {e}"
+                     through {interface_name}: {e:#}"
                 );
 
                 None

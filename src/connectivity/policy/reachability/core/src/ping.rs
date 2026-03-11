@@ -84,11 +84,11 @@ impl Ping for Pinger {
                     if io_error.raw_os_error() == Some(libc::ENETUNREACH)
                         || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
                     {
-                        info!("err pinging {}: {}", addr, e);
+                        info!("err pinging {}: {:#}", addr, e);
                         return false;
                     }
                 }
-                warn!("err pinging {}: {}", addr, e);
+                warn!("err pinging {}: {:#}", addr, e);
                 false
             }
         }
