@@ -875,10 +875,9 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
 
         while let Some(Ok(req)) = blocker_stream.next().await {
             match req {
-                fsystem::SuspendBlockerRequest::AfterResume { .. } => {
-                    // OnResume never responds.
-                    // Check SAG state after resume to confirm SAG doesn't block on the OnResume.
-                    after_resume_tx.try_send(()).unwrap();
+                fsystem::SuspendBlockerRequest::AfterResume { responder, .. } => {
+                    // AfterResume hangs until the responder is dropped later.
+                    after_resume_tx.try_send(responder).unwrap();
                 }
                 fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
                     responder.send().unwrap();
@@ -891,6 +890,22 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
         }
     })
     .detach();
+
+    // Stabilize async state: Wait for registration wake lease to be satisfied BEFORE
+    // triggering BootControl drop. This ensures ExecutionState goes
+    // Active -> Suspending -> Inactive predictably, rather than bouncing unpredictably due to IPC
+    // race conditions.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::SUSPEND_EVENTS_NODE: contains {
+                "4": {
+                    ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                },
+            }
+        }
+    );
 
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
@@ -978,7 +993,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
         }
     );
 
-    // OnSuspendStarted should have been called once.
+    // BeforeSuspend should have been called once.
     before_suspend_rx.next().await.unwrap();
 
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
@@ -1000,11 +1015,28 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
     assert_eq!(Some(2), current_stats.last_time_in_suspend);
     assert_eq!(Some(2), current_stats.total_time_in_suspend);
 
-    // OnResume should have been called once.
-    after_resume_rx.next().await.unwrap();
+    // AfterResume should have been called once.
+    let after_resume_responder = after_resume_rx.next().await.unwrap();
 
-    // OnResume does not block. SAG raises ExecutionState to Suspending state.
+    // Hang the response to block suspension, then drop it to allow it to proceed.
+    // 3 seconds is chosen arbitrarily to be long enough to allow some delay-based logic in SAG to
+    // run but short enough to not time out in CI or delay local development. We're not explicitly
+    // testing the behavior of the delay-based logic here, but we want to give it a chance to run in
+    // case it affects the behavior of the suspend blocker.
+    // TODO(fxbug.dev/491840509): When configurable timeouts land, revisit this test logic.
+    let now = std::time::Instant::now();
+    let hang_duration = std::time::Duration::from_secs(3);
+
+    fasync::Task::local(async move {
+        fasync::Timer::new(hang_duration).await;
+        drop(after_resume_responder);
+    })
+    .detach();
+
+    // AfterResume blocks, so SAG will only drop ExecutionState to the Inactive state after hanging.
+    let custom_max_loops_count = 1000; // Run more times to ensure we don't time out.
     block_until_inspect_matches!(
+        custom_max_loops_count,
         activity_governor_moniker,
         root: contains {
             booting: false,
@@ -1076,6 +1108,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
         }
     );
 
+    assert!(now.elapsed() >= hang_duration);
     Ok(())
 }
 
@@ -2399,6 +2432,26 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
         wake_leases.insert(0, (wake_lease, server_token_koid));
     }
 
+    let koid_0 = &wake_leases[0].1;
+    let koid_1 = &wake_leases[1].1;
+
+    // Stabilize async state: Wait for both wake leases to be satisfied BEFORE
+    // triggering BootControl drop. This ensures ExecutionState goes Active -> Suspending,
+    // avoiding an intermittent dip to Inactive that produces extra tracking events.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var koid_0: contains {
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                },
+                var koid_1: contains {
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                },
+            }
+        }
+    );
+
     // Call SetBootComplete to allow SAG to start suspending.
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
@@ -2977,6 +3030,22 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
     })
     .detach();
 
+    // Stabilize async state: Wait for registration wake lease to be satisfied BEFORE
+    // triggering BootControl drop. This ensures ExecutionState goes
+    // Active -> Suspending -> Inactive predictably, rather than bouncing unpredictably due to IPC
+    // race conditions.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::SUSPEND_EVENTS_NODE: contains {
+                "4": {
+                    ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
+                },
+            }
+        }
+    );
+
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
         let () =
@@ -3236,23 +3305,34 @@ async fn test_activity_governor_cleans_up_suspend_blocker_on_channel_drop_after_
         .unwrap()
         .unwrap();
 
-    let (after_resume_tx, mut after_resume_rx) = mpsc::channel(1);
+    let (mut after_resume_tx, mut after_resume_rx) = mpsc::channel(1);
+
+    // Since we don't save the lease returned by `register_suspend_blocker`, it drops immediately.
+    // This can cause unpredictable suspend/resume cycles depending on when SAG processes the drop.
+    // Instead of counting cycles, we use `drop_tx` to control exactly when the suspend blocker
+    // stream is dropped, which deterministically unregisters the blocker.
+    let (drop_tx, mut drop_rx) = mpsc::channel::<()>(1);
 
     fasync::Task::local(async move {
-        let mut after_resume_tx = after_resume_tx;
-
-        while let Some(Ok(req)) = suspend_blocker_stream.next().await {
-            match req {
-                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
-                    responder.send().unwrap();
+        loop {
+            futures::select! {
+                req = suspend_blocker_stream.next() => {
+                    match req {
+                        Some(Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder })) => {
+                            responder.send().unwrap();
+                        }
+                        Some(Ok(fsystem::SuspendBlockerRequest::AfterResume { responder })) => {
+                            let _ = after_resume_tx.try_send(());
+                            responder.send().unwrap();
+                        }
+                        Some(Ok(fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. })) => {
+                            panic!("Unexpected method: {}", ordinal);
+                        }
+                        _ => break,
+                    }
                 }
-                fsystem::SuspendBlockerRequest::AfterResume { responder } => {
-                    after_resume_tx.try_send(suspend_blocker_stream).unwrap();
-                    responder.send().unwrap();
-                    break;
-                }
-                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
-                    panic!("Unexpected method: {}", ordinal);
+                _ = drop_rx.next() => {
+                    break; // Causes suspend_blocker_stream to be dropped
                 }
             }
         }
@@ -3278,8 +3358,7 @@ async fn test_activity_governor_cleans_up_suspend_blocker_on_channel_drop_after_
     let _wake_lease = activity_governor.acquire_wake_lease("test_wake_lease").await?;
 
     // Wait for the cycle to complete and AfterResume to be called.
-    // The task will send us the stream back over the channel so we hold it, keeping it alive.
-    let suspend_blocker_stream = after_resume_rx.next().await.unwrap();
+    after_resume_rx.next().await.unwrap();
 
     // Verify the suspend blocker is still in the inspect node (it was moved to the active list
     // during the suspend cycle but is still alive).
@@ -3293,7 +3372,7 @@ async fn test_activity_governor_cleans_up_suspend_blocker_on_channel_drop_after_
     );
 
     // Drop the server side of the channel, simulating the client disconnecting or dying.
-    drop(suspend_blocker_stream);
+    drop(drop_tx);
 
     // Verify the suspend blocker is automatically pruned from the lists.
     block_until_inspect_matches!(
@@ -3434,7 +3513,7 @@ async fn test_acquire_wake_lease_doesnt_deadlock_in_before_suspend() -> Result<(
                         leases.push(lease);
                     }
 
-                    before_suspend_tx.try_send(lease).unwrap();
+                    before_suspend_tx.try_send(leases).unwrap();
                     responder.send().unwrap()
                 }
                 fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
@@ -3452,8 +3531,8 @@ async fn test_acquire_wake_lease_doesnt_deadlock_in_before_suspend() -> Result<(
             boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
     }
 
-    // Wait to receive the wake lease from BeforeSuspend.
-    let _wake_lease = before_suspend_rx.next().await.unwrap();
+    // Wait to receive the wake leases from BeforeSuspend.
+    let _wake_leases = before_suspend_rx.next().await.unwrap();
 
     // Verify that SAG did not call Suspender.Suspend due to the existence of the wake lease.
     assert!(suspend_device.await_suspend().now_or_never().is_none());

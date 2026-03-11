@@ -33,8 +33,13 @@ use {
     fidl_fuchsia_power_suspend as fsuspend,
 };
 
+// TODO(fxbug.dev/491840509): Allow configurable timeouts when needed.
 const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
     std::time::Duration::from_millis(100);
+const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
+    fasync::MonotonicDuration::from_seconds(10);
+const SUSPEND_RESUME_STUCK_WARNING_TIMEOUT: fasync::MonotonicDuration =
+    fasync::MonotonicDuration::from_seconds(60);
 
 type NotifyFn = Box<dyn Fn(&fsuspend::SuspendStats, fsuspend::StatsWatchResponder) -> bool>;
 type StatsHangingGet = HangingGet<fsuspend::SuspendStats, fsuspend::StatsWatchResponder, NotifyFn>;
@@ -1160,7 +1165,7 @@ impl SystemActivityGovernor {
         // Queue a task to warn if the entire suspend or resume operation gets stuck.
         let _outer_warn_task = fasync::Task::local(async move {
             for count in 1.. {
-                fasync::Timer::new(fasync::MonotonicDuration::from_seconds(60)).await;
+                fasync::Timer::new(SUSPEND_RESUME_STUCK_WARNING_TIMEOUT).await;
                 let phase = if is_suspending { "Suspend" } else { "Resume" };
                 log::warn!(
                     "{phase} has been stuck for {count} minutes; device is likely unresponsive"
@@ -1178,7 +1183,7 @@ impl SystemActivityGovernor {
                 let _warn_task = fasync::Task::local(async move {
                     // Log every 10 seconds that a given callback has not completed.
                     for count in 1.. {
-                        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(10)).await;
+                        fasync::Timer::new(SUSPEND_BLOCKER_WARNING_TIMEOUT).await;
                         let seconds = count * 10;
                         log::warn!(
                             "No response to {method_name} from SuspendBlocker '{name2}' ({i}) after {seconds} seconds!"
