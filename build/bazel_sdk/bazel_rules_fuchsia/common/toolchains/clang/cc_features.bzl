@@ -217,10 +217,6 @@ _flag_configs = struct(
             "-Wno-unused-parameter",
             "-Wnonportable-system-include-path",
 
-            # TODO(https://fxbug.dev/324268041): Disable "-Wextra-qualification"
-            # which warns when an extra qualifier appears on a member.
-            "-Wno-extra-qualification",
-
             # TODO(https://fxbug.dev/330769701): Disable
             # "-Wcast-function-type-mismatch"  which enforces an exact type match
             # between a function pointer and the target function.
