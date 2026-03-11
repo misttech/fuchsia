@@ -227,7 +227,7 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
 
   // Whether not this has been accessed since |AccessedSinceLastCheck| was called. This is updated
   // by MarkAccessed, and anywhere a mapping is installed with the AF flag set.
-  bool accessed_since_last_check_ TA_GUARDED(lock_) = false;
+  RelaxedAtomic<bool> accessed_since_last_check_ = false;
 
   uint16_t asid_ = MMU_ARM64_UNUSED_ASID;
 

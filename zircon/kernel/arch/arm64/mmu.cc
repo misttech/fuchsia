@@ -1829,7 +1829,6 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
 }
 
 bool ArmArchVmAspace::AccessedSinceLastCheck(bool clear) {
-  Guard<CriticalMutex> guard{&lock_};
   const bool accessed = accessed_since_last_check_;
   if (clear && accessed_since_last_check_) {
     accessed_since_last_check_ = false;

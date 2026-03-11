@@ -202,7 +202,8 @@ class ArchVmAspaceInterface {
   // accessed.
   //
   // The |clear| flag controls whether the aspace having been accessed should be cleared or not. Not
-  // clearing makes this function const and not modify any state.
+  // clearing makes this function const and not modify any state. If |clear| is true then this
+  // method is only thread-compatible and must be externally synchronized.
   virtual bool AccessedSinceLastCheck(bool clear) = 0;
 
   // Physical address of the backing data structure used for translation.
