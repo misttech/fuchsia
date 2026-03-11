@@ -288,6 +288,7 @@ syscall_tests_migrated_to_machina = [
   "tmpfs_test",
   "trivial_test",
   "uio_test",
+  "userfaultfd_test",
   "vdso_test",
   "vmsplice_test",
   "waitpid_exit_signal_test",
