@@ -5,7 +5,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -13,19 +13,19 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _REBOOT: list[str] = ["target", "reboot"]
 
 
-class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.FuchsiaBaseTest):
+class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Test class to test FFX.wait_for_rcs_disconnection().
 
     This is included in a separate test class as it involves rebooting the
     device.
     """
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def test_wait_for_rcs_connection(self) -> None:
+    async def test_wait_for_rcs_connection(self) -> None:
         """Test case for FFX.wait_for_rcs_connection()."""
         self.device.ffx.wait_for_rcs_connection()
 
@@ -36,7 +36,7 @@ class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.FuchsiaBaseTest):
         self.device.ffx.wait_for_rcs_connection()
 
         # Make the device ready after reboot
-        self.device.on_device_boot()
+        await self.device.on_device_boot()
 
 
 if __name__ == "__main__":
