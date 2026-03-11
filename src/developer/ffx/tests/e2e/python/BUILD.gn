@@ -64,6 +64,8 @@ if (is_host) {
     ]
   }
 
+  # This isn't included in ":tests" because it is flaky and may not be fixable
+  # given its nature.
   python_mobly_test("stress_e2e_test") {
     main_source = "stress.py"
     libraries = [
@@ -101,7 +103,6 @@ if (is_host) {
       ":direct_daemon_e2e_test($host_toolchain)",
       ":ffx_host_tool_e2e_test($host_toolchain)",
       ":ffx_strict_host_tool_e2e_test($host_toolchain)",
-      ":stress_e2e_test($host_toolchain)",
     ]
   }
 }
