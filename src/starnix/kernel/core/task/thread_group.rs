@@ -841,6 +841,9 @@ impl ThreadGroup {
                 }
             }
 
+            // Clear the `parent` reference now that children have been re-`parent`ed.
+            self.write().parent = None;
+
             #[cfg(any(test, debug_assertions))]
             {
                 let state = self.read();
@@ -2337,6 +2340,35 @@ mod test {
 
             // Task3 parent should be current_task.
             assert_eq!(task3.thread_group().read().get_ppid(), current_task.tid);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_getppid_after_self_and_parent_exit() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let task1 = current_task.clone_task_for_test(locked, 0, None);
+            let task2 = task1.clone_task_for_test(locked, 0, None);
+
+            // Take strong references to the ThreadGroups.
+            let tg1 = task1.thread_group().clone();
+            let tg2 = task2.thread_group().clone();
+
+            assert_eq!(tg1.read().get_ppid(), current_task.tid);
+            assert_eq!(tg2.read().get_ppid(), task1.tid);
+
+            // Exit `task2` first, so that when `task1` exits, it will not be reparented to init.
+            tg2.exit(locked, ExitStatus::Exit(0), None);
+            std::mem::drop(task2);
+
+            // Exit `task1`, and drop the task and ThreadGroup.
+            tg1.exit(locked, ExitStatus::Exit(0), None);
+            std::mem::drop(task1);
+            std::mem::drop(tg1);
+
+            // It should still be valid to call `get_ppid()` on `tg2`, though is parent ThreadGroup
+            // no longer exists.
+            let _ = tg2.read().get_ppid();
         })
         .await;
     }
