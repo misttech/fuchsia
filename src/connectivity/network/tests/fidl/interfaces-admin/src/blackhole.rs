@@ -8,10 +8,9 @@ use futures::TryStreamExt;
 use netstack_testing_common::ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 
 #[fuchsia::test]
 async fn create_blackhole_interface() {

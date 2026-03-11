@@ -17,11 +17,11 @@ use {
     crate::{
         lowlevel::{Argument, Arguments, DelimitedArguments},
         parser::common::{
-            next_match, next_match_one_of, next_match_option, next_match_rep, parse_string,
-            ParseResult,
+            ParseResult, next_match, next_match_one_of, next_match_option, next_match_rep,
+            parse_string,
         },
     },
-    pest::{iterators::Pair, RuleType},
+    pest::{RuleType, iterators::Pair},
 };
 
 pub struct ArgumentsParser<Rule: RuleType> {

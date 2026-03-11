@@ -8,13 +8,14 @@ use std::convert::TryFrom as _;
 use std::num::NonZeroU64;
 use std::pin::pin;
 
-use {
-    fidl_fuchsia_hardware_network as fhardware_network,
-    fidl_fuchsia_hardware_network_driver as fhardware_network_driver, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_tun as fnet_tun,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet, fuchsia_async as fasync,
-};
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_hardware_network_driver as fhardware_network_driver;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_tun as fnet_tun;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fuchsia_async as fasync;
 
 use fidl_fuchsia_net_ext::IntoExt as _;
 use fuchsia_async::TimeoutExt as _;

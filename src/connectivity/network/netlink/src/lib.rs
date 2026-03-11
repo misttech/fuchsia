@@ -28,6 +28,14 @@ pub(crate) mod util;
 
 use std::num::NonZeroU64;
 
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_sockets as fnet_sockets;
 use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -36,12 +44,6 @@ use net_types::ip::{Ipv4, Ipv6};
 use netlink_packet_route::RouteNetlinkMessage;
 use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use protocol_family::route::NetlinkRouteNotifiedGroup;
-use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_sockets as fnet_sockets,
-};
 
 use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClient};
 use crate::logging::{log_debug, log_warn};

@@ -7,8 +7,8 @@
 //! Extension types and helpers for the fuchsia.net.dhcpv6 FIDL library.
 
 use fidl_table_validation::{ValidFidlTable, Validate};
-use futures::future::Either;
 use futures::FutureExt as _;
+use futures::future::Either;
 
 /// Parameters to configure a new client.
 ///
@@ -268,7 +268,7 @@ pub fn into_watch_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::{into_watch_stream, WatchItem};
+    use super::{WatchItem, into_watch_stream};
 
     use assert_matches::assert_matches;
     use futures::{StreamExt as _, TryStreamExt as _};

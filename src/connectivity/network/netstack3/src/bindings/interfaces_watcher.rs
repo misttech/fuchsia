@@ -6,10 +6,12 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 
 use fidl::prelude::*;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_interfaces::{
     self as finterfaces, StateRequest, StateRequestStream, WatcherRequest, WatcherRequestStream,
     WatcherWatchResponder,
 };
+use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
 use futures::channel::mpsc;
 use futures::sink::SinkExt as _;
 use futures::task::Poll;
@@ -20,7 +22,6 @@ use log::{debug, error, warn};
 use net_types::ip::{AddrSubnetEither, IpAddr, IpVersion};
 use netstack3_core::ip::{IpAddressState, PreferredLifetime};
 use thiserror::Error;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as finterfaces_ext};
 
 use crate::bindings::devices::BindingId;
 use crate::bindings::util::{ErrorLogExt, IntoFidl, ResultExt as _, TryIntoFidl as _};

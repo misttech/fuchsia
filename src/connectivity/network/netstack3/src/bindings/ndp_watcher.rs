@@ -17,8 +17,9 @@ use thiserror::Error;
 use crate::bindings::devices::BindingId;
 use crate::bindings::util::{ErrorLogExt, ResultExt as _};
 
+use fidl_fuchsia_net_ndp as fnet_ndp;
 use fidl_fuchsia_net_ndp::OptionType;
-use {fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_ndp_ext as fnet_ndp_ext};
+use fidl_fuchsia_net_ndp_ext as fnet_ndp_ext;
 
 /// Possible errors when serving
 /// `fuchsia.net.ndp/RouterAdvertisementOptionWatcherProvider`.

@@ -6,6 +6,11 @@ use core::num::NonZeroU8;
 use std::ops::ControlFlow;
 
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_raw as fpraw;
+use fuchsia_async as fasync;
 use futures::TryStreamExt as _;
 use log::{error, warn};
 use net_types::SpecifiedAddr;
@@ -22,11 +27,6 @@ use packet::Buf;
 use packet_formats::ip::IpPacket as _;
 use zerocopy::SplitByteSlice;
 use zx::{HandleBased, Peered};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_posix as fposix,
-    fidl_fuchsia_posix_socket as fposix_socket, fidl_fuchsia_posix_socket_raw as fpraw,
-    fuchsia_async as fasync,
-};
 
 use crate::bindings::settings::IpLayerSettings;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};

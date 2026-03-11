@@ -9,11 +9,17 @@ use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine,
     IpHook, Matchers, Namespace, NamespaceId, NatHook, RegisterEbpfProgramError, Resource,
     ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use futures::future::LocalBoxFuture;
 use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -28,11 +34,6 @@ use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 use crate::matchers::{
     AllTraffic, DstAddressRange, DstAddressSubnet, EbpfMatcher, Icmp, InterfaceDeviceClass,

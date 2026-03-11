@@ -15,12 +15,11 @@
 //! used by netstack itself.
 
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy as _, RequestStream as _};
+use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
+use fuchsia_async as fasync;
 use futures::{FutureExt as _, StreamExt as _};
 use vfs::directory::helper::DirectlyMutable;
-use {
-    fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration,
-    fidl_fuchsia_process_lifecycle as fprocess_lifecycle, fuchsia_async as fasync,
-};
 
 #[fasync::run_singlethreaded]
 pub async fn main() -> std::process::ExitCode {

@@ -57,7 +57,14 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_multicast_admin as fnet_multicast_admin;
 use fidl_fuchsia_net_multicast_ext::FidlMulticastAdminIpExt;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fuchsia_async as fasync;
 use fuchsia_inspect::health::Reporter as _;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
@@ -66,13 +73,6 @@ use packet::{Buf, BufferMut};
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore, TryRngCore as _};
 use util::{ConversionContext, IntoFidl as _};
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fuchsia_async as fasync,
-};
 
 use devices::{
     BindingId, BlackholeDeviceInfo, DeviceIdAndName, DeviceSpecificInfo, Devices,

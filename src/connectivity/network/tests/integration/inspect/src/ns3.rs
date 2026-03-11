@@ -16,10 +16,21 @@ use std::os::fd::AsFd;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_multicast_admin as fnet_multicast_admin;
 use fidl_fuchsia_net_multicast_ext::{
     self as fnet_multicast_ext, FidlMulticastAdminIpExt, TableControllerProxy,
 };
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_netemul as fnetemul;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fnet_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine,
     IpHook, Matchers, Namespace, NamespaceId, NatHook, PortRange, Resource, Routine, RoutineId,
@@ -48,17 +59,6 @@ use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 use regex::Regex;
 use test_case::test_case;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul as fnetemul,
-    fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
-};
 
 enum TcpSocketState {
     Unbound,

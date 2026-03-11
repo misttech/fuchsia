@@ -7,7 +7,12 @@ use super::NetlinkSockDiag;
 use std::convert::Infallible as Never;
 
 use derivative::Derivative;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_sockets as fnet_sockets;
+use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_sockets_ext::{IpSocketState, IpSocketStateSpecific};
+use fidl_fuchsia_net_tcp as fnet_tcp;
+use fidl_fuchsia_net_udp as fnet_udp;
 use futures::channel::{mpsc, oneshot};
 use futures::{StreamExt as _, pin_mut};
 use linux_uapi::{AF_INET, AF_INET6};
@@ -19,11 +24,6 @@ use netlink_packet_sock_diag::{
     SockDiagResponse, TCP_CA_CWR, TCP_CA_DISORDER, TCP_CA_LOSS, TCP_CA_OPEN, TCP_CA_RECOVERY,
     TCP_CLOSE, TCP_CLOSE_WAIT, TCP_CLOSING, TCP_ESTABLISHED, TCP_FIN_WAIT1, TCP_FIN_WAIT2,
     TCP_LAST_ACK, TCP_LISTEN, TCP_SYN_RECV, TCP_SYN_SENT, TCP_TIME_WAIT,
-};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_sockets as fnet_sockets,
-    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
-    fidl_fuchsia_net_udp as fnet_udp,
 };
 
 use crate::client::{AsyncWorkItem, InternalClient};

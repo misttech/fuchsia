@@ -6,12 +6,11 @@
 
 use anyhow::{Context as _, Error};
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_virtualization_guest_interaction as fguest_interaction;
 use packet::ParsablePacket as _;
 use rand::distr::DistString as _;
 use std::io::Write as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_virtualization_guest_interaction as fguest_interaction,
-};
 
 #[fuchsia_async::run_singlethreaded(test)]
 async fn multiple_guests_disallowed() {

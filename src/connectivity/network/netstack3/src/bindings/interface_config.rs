@@ -4,6 +4,8 @@
 
 use std::num::NonZeroU16;
 
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_settings as fnet_settings;
 use net_types::ip::IpVersion;
 use netstack3_core::device::{
     ArpConfiguration, ArpConfigurationUpdate, DeviceConfiguration, DeviceConfigurationUpdate,
@@ -17,10 +19,6 @@ use netstack3_core::ip::{
     StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
 };
 use netstack3_core::neighbor::{NudUserConfig, NudUserConfigUpdate};
-use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_settings as fnet_settings,
-};
 
 use crate::bindings::util::{self, IllegalNonPositiveValueError, IntoFidl, TryIntoCore as _};
 use crate::bindings::{BindingsCtx, DeviceIdExt as _};

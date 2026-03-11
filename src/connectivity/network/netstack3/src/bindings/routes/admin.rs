@@ -9,8 +9,11 @@ use std::sync::Arc;
 use assert_matches::assert_matches;
 use fidl::endpoints::{ControlHandle as _, ProtocolMarker, RequestStream, Responder as _};
 use fidl_fuchsia_net_resources::ProofOfInterfaceAuthorization;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fnet_routes_ext::admin::{FidlRouteAdminIpExt, RouteSetRequest, RouteTableRequest};
 use fnet_routes_ext::{FidlRouteIpExt, Responder as _};
+use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
 use futures::{Future, FutureExt as _, StreamExt as _, TryStreamExt as _};
 use log::{debug, error, warn};
@@ -19,10 +22,6 @@ use netstack3_core::device::DeviceId;
 use netstack3_core::routes::AddableEntry;
 use thiserror::Error;
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
-};
 
 use crate::bindings::devices::StaticCommonInfo;
 use crate::bindings::routes::interface_local::LocalRouteTable;

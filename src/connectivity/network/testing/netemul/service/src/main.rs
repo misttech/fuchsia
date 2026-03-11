@@ -6,10 +6,18 @@ use anyhow::{Context as _, anyhow};
 use cm_rust::FidlIntoNative as _;
 use component_events::events::Event;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_logger as flogger;
 use fidl_fuchsia_netemul::{
     self as fnetemul, ChildDef, ChildUses, ManagedRealmMarker, ManagedRealmRequest, RealmOptions,
     SandboxRequest, SandboxRequestStream,
 };
+use fidl_fuchsia_netemul_network as fnetemul_network;
+use fidl_fuchsia_sys2 as fsys2;
+use fidl_fuchsia_tracing_provider as ftracing_provider;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_component_test::{
     self as fcomponent, Capability, ChildOptions, LocalComponentHandles, RealmBuilder,
@@ -30,12 +38,6 @@ use vfs::directory::entry::{EntryInfo, OpenRequest};
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::directory::immutable::simple::Simple as SimpleImmutableDir;
 use vfs::remote::RemoteLike;
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    fidl_fuchsia_logger as flogger, fidl_fuchsia_netemul_network as fnetemul_network,
-    fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_tracing_provider as ftracing_provider,
-    fuchsia_async as fasync,
-};
 
 type Result<T = (), E = anyhow::Error> = std::result::Result<T, E>;
 
@@ -1331,12 +1333,13 @@ mod tests {
     use cm_rust::NativeIntoFidl as _;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::Proxy as _;
+    use fidl_fuchsia_device as fdevice;
+    use fidl_fuchsia_netemul as fnetemul;
     use fidl_fuchsia_netemul_test::{self as fnetemul_test, CounterMarker};
     use fixture::fixture;
     use fuchsia_fs::directory as fvfs_watcher;
     use std::convert::TryFrom as _;
     use test_case::test_case;
-    use {fidl_fuchsia_device as fdevice, fidl_fuchsia_netemul as fnetemul};
 
     // We can't just use a counter for the sandbox identifier, as we do in `main`, because tests
     // each run in separate processes, but use the same backing collection of components created

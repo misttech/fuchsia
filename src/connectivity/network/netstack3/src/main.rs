@@ -12,11 +12,12 @@ mod bindings;
 use std::num::NonZeroU8;
 
 use fidl::endpoints::RequestStream as _;
+use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
+use fuchsia_async as fasync;
 use fuchsia_async::SendExecutorBuilder;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures::{Future, StreamExt as _};
 use log::{error, info};
-use {fidl_fuchsia_process_lifecycle as fprocess_lifecycle, fuchsia_async as fasync};
 
 use bindings::{GlobalConfig, InspectPublisher, InterfaceConfigDefaults, NetstackSeed, Service};
 

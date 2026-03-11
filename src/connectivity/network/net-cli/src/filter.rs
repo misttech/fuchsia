@@ -7,14 +7,14 @@ use std::pin::pin;
 use std::str::FromStr as _;
 
 use anyhow::{Error, anyhow};
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook,
     NamespaceId, NatHook, Resource, ResourceId, RoutineId, RoutineType, Rule, RuleId, Update,
 };
-use {
-    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_root as fnet_root,
-};
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_root as fnet_root;
 
 use crate::{NetCliDepsConnector, connect_with_context, opts};
 

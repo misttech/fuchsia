@@ -12,6 +12,20 @@ use std::pin::pin;
 use assert_matches::assert_matches;
 use fidl::HandleBased as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, ServiceMarker as _};
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_hardware_power_suspend as fhsuspend;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
+use fidl_fuchsia_net_power as fnet_power;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_tun as fnet_tun;
+use fidl_fuchsia_netemul as fnetemul;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_power_broker as fpower_broker;
+use fidl_fuchsia_power_system as fpower_system;
+use fidl_test_sagcontrol as fsagcontrol;
+use fidl_test_suspendcontrol as ftest_suspendcontrol;
+use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt as _;
 use futures::stream::FusedStream;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
@@ -27,17 +41,6 @@ use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::udp::{UdpPacket, UdpParseArgs};
 use test_case::test_case;
-use {
-    fidl_fuchsia_hardware_network as fhardware_network,
-    fidl_fuchsia_hardware_power_suspend as fhsuspend,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as finterfaces_ext, fidl_fuchsia_net_power as fnet_power,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_tun as fnet_tun,
-    fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_power_broker as fpower_broker, fidl_fuchsia_power_system as fpower_system,
-    fidl_test_sagcontrol as fsagcontrol, fidl_test_suspendcontrol as ftest_suspendcontrol,
-    fuchsia_async as fasync,
-};
 
 // TODO(https://fxbug.dev/372010366): Revisit this test as we consider better integrating
 // fake-suspend with fake SAG.

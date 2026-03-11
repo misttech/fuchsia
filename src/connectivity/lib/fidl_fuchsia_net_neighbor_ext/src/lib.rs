@@ -10,14 +10,14 @@
 pub mod testutil;
 
 use async_utils::{fold, stream};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use fidl_table_validation::*;
 use futures::{Stream, TryStreamExt as _};
 use std::num::NonZeroU64;
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, zx_types as zx,
-};
+use zx_types as zx;
 
 #[derive(Debug, Error)]
 enum ConversionError {

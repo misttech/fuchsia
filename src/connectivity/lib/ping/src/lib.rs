@@ -21,9 +21,9 @@
 mod fuchsia;
 
 #[cfg(target_os = "fuchsia")]
-pub use fuchsia::{new_icmp_socket, IpExt as FuchsiaIpExt};
+pub use fuchsia::{IpExt as FuchsiaIpExt, new_icmp_socket};
 
-use futures::{ready, Sink, SinkExt as _, Stream, TryStreamExt as _};
+use futures::{Sink, SinkExt as _, Stream, TryStreamExt as _, ready};
 use net_types::ip::{Ip, Ipv4, Ipv6};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -478,7 +478,7 @@ mod test {
                         return Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
                             "failed to parse ICMP header from provided bytes",
-                        )))
+                        )));
                     }
                 };
             header.type_ = I::ECHO_REPLY_TYPE;

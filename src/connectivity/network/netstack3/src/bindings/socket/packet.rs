@@ -6,10 +6,10 @@ use std::fmt::Debug;
 use std::num::NonZeroU16;
 use std::ops::ControlFlow;
 
-use {
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fpsocket,
-    fidl_fuchsia_posix_socket_packet as fppacket, fuchsia_async as fasync,
-};
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fpsocket;
+use fidl_fuchsia_posix_socket_packet as fppacket;
+use fuchsia_async as fasync;
 
 use fidl::Peered as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};

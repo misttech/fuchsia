@@ -3,16 +3,15 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, RuleIndex};
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Subnet};
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
-use {
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
-};
 
 /// Common test setup that can be shared by all routes tests.
 pub struct TestSetup<'a, I: Ip + FidlRouteIpExt + FidlRouteAdminIpExt> {

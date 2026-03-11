@@ -13,6 +13,7 @@ use std::str::FromStr as _;
 use std::time::Duration;
 
 use fidl::endpoints::{ControlHandle as _, ServerEnd};
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcpv6::{
     ClientMarker, ClientRequest, ClientRequestStream, ClientWatchAddressResponder,
     ClientWatchPrefixesResponder, ClientWatchServersResponder, Duid, Empty, Lifetimes,
@@ -22,11 +23,10 @@ use fidl_fuchsia_net_dhcpv6::{
 use fidl_fuchsia_net_dhcpv6_ext::{
     AddressConfig, ClientConfig, InformationConfig, NewClientParams,
 };
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_name as fnet_name;
+use fuchsia_async as fasync;
 use futures::{Future, FutureExt as _, StreamExt as _, TryStreamExt as _, select, stream};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_name as fnet_name,
-    fuchsia_async as fasync,
-};
 
 use anyhow::{Context as _, Result};
 use assert_matches::assert_matches;

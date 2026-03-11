@@ -17,6 +17,15 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use argh::FromArgs as _;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_test_realm as fntr;
 use futures::StreamExt as _;
 use net_cli::{UserFacingError, underlying_user_facing_error};
 use net_declare::{fidl_ip_v6, fidl_mac};
@@ -24,14 +33,6 @@ use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use netemul::TestRealm;
 use netstack_testing_common::realms::KnownServiceProvider;
 use test_case::test_case;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_test_realm as fntr,
-};
 
 struct NetworkTestRealmConnector<'a> {
     realm: &'a netemul::TestRealm<'a>,

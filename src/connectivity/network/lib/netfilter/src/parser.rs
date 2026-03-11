@@ -5,11 +5,10 @@
 use pest::Parser;
 use pest::iterators::Pair;
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as filter_ext,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_ext as filter_ext;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 
 use crate::grammar::{Error, FilterRuleParser, InvalidReason, Rule};
 use crate::util;

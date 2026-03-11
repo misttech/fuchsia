@@ -16,13 +16,14 @@ use std::sync::atomic::{self, AtomicUsize};
 use std::task::Waker;
 
 use explicit::{PollExt as _, ResultExt as _};
+use fidl_fuchsia_hardware_network as netdev;
 use fidl_fuchsia_hardware_network::DelegatedRxLease;
 use fidl_table_validation::ValidFidlTable;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::future::{Future, poll_fn};
 use futures::task::{Context, Poll};
 use futures::{Stream, ready};
-use {fidl_fuchsia_hardware_network as netdev, fuchsia_async as fasync};
 
 use crate::error::{Error, Result};
 use buffer::pool::{Pool, RxLeaseWatcher};

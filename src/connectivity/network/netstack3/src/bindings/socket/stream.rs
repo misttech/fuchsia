@@ -13,6 +13,10 @@ use std::time::Duration;
 use explicit::ResultExt as _;
 use fidl::HandleBased as _;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _, RequestStream as _};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
 use log::{debug, error, warn};
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6};
@@ -28,10 +32,6 @@ use netstack3_core::tcp::{
 };
 use packet_formats::utils::NonZeroDuration;
 use zx::{self as zx, Peered as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_posix as fposix,
-    fidl_fuchsia_posix_socket as fposix_socket, fuchsia_async as fasync,
-};
 
 use crate::bindings::socket::worker::{self, CloseResponder, SocketWorker};
 use crate::bindings::socket::{

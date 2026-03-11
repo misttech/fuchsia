@@ -8,11 +8,11 @@ use std::str::FromStr;
 
 use anyhow::{Context as _, anyhow};
 use argh::{ArgsInfo, FromArgs};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand, name = "filter")]

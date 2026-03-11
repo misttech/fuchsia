@@ -11,12 +11,11 @@ use std::num::{NonZeroU8, NonZeroU16, NonZeroU64, NonZeroUsize, TryFromIntError}
 use std::ops::{ControlFlow, Deref};
 
 use either::Either;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
 use netstack3_core::MapDerefExt as _;
 use netstack3_core::types::BufferSizeSettings;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_posix as fposix,
-    fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 use derivative::Derivative;
 use explicit::ResultExt as _;

@@ -16,8 +16,8 @@ use packet_formats::tcp::TcpParseArgs;
 use packet_formats::udp::UdpParseArgs;
 use zerocopy::FromBytes;
 
-use crate::zerocopy::ArbitraryFromBytes;
 use crate::Fuzzed;
+use crate::zerocopy::ArbitraryFromBytes;
 
 impl<'a> Arbitrary<'a> for Fuzzed<EtherType> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {

@@ -8,16 +8,16 @@ use std::fmt::Debug;
 
 use async_utils::{fold, stream};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy as _};
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{IntoExt as _, TryIntoExt as _};
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use futures::future::Either;
 use futures::{Stream, TryStreamExt as _};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Subnet};
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-};
 
 use crate::{FidlRouteIpExt, Responder, SliceResponder, WatcherCreationError, impl_responder};
 

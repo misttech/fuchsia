@@ -12,7 +12,9 @@ use std::panic::Location;
 use either::Either;
 use fidl::encoding::ProxyChannelBox as _;
 use fidl::endpoints::RequestStream as _;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_posix::Errno;
+use fidl_fuchsia_posix_socket as psocket;
 use futures::TryStreamExt as _;
 use log::warn;
 use net_types::ip::{Ip, IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
@@ -28,7 +30,6 @@ use netstack3_core::socket::{
 };
 use netstack3_core::{tcp, udp};
 use zx::AsHandleRef;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_posix_socket as psocket};
 
 use crate::bindings::devices::{
     BindingId, DeviceIdAndName, DeviceSpecificInfo, Devices, DynamicCommonInfo,

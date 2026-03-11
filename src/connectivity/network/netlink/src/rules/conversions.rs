@@ -11,11 +11,9 @@ use netlink_packet_route::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleUidRange,
 };
 
-use {
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-};
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
 use crate::route_tables::NetlinkRouteTableIndex;
 

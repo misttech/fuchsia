@@ -12,15 +12,16 @@
     clippy::precedence
 )]
 
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{IntoExt, Marks};
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_sockets as fnet_sockets;
+use fidl_fuchsia_net_tcp as fnet_tcp;
+use fidl_fuchsia_net_udp as fnet_udp;
 use futures::{Stream, TryStreamExt as _};
 use net_types::ip::{self, GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
-    fidl_fuchsia_net_tcp as fnet_tcp, fidl_fuchsia_net_udp as fnet_udp,
-};
 
 /// An extension type for [`fnet_sockets::IpSocketMatcher`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -691,10 +692,11 @@ mod tests {
     use std::num::NonZeroU64;
 
     use assert_matches::assert_matches;
+    use fidl_fuchsia_net as fnet;
+    use fidl_fuchsia_net_tcp as fnet_tcp;
     use futures::{FutureExt as _, StreamExt as _, future, pin_mut};
     use net_declare::{fidl_ip, fidl_subnet, net_ip_v4, net_ip_v6};
     use test_case::test_case;
-    use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_tcp as fnet_tcp};
 
     #[test_case(
         fnet_sockets::IpSocketMatcher::Family(fnet::IpVersion::V4),

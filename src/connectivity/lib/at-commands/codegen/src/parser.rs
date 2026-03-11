@@ -17,7 +17,7 @@ use {
         PrimitiveType, Type, Variant,
     },
     crate::grammar::{Grammar, Rule},
-    anyhow::{bail, ensure, Context, Result},
+    anyhow::{Context, Result, bail, ensure},
     pest::Parser,
 };
 

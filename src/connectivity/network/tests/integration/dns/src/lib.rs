@@ -10,15 +10,18 @@ use std::num::NonZeroU16;
 use std::pin::pin;
 use std::str::FromStr as _;
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as net_dhcp;
+use fidl_fuchsia_net_dhcpv6 as net_dhcpv6;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_name as net_name;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_testing as ftesting;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as net_dhcp,
-    fidl_fuchsia_net_dhcpv6 as net_dhcpv6, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_name as net_name, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_testing as ftesting,
-};
 
 use futures::future::{self, FusedFuture, Future, FutureExt as _};
 use futures::stream::{self, StreamExt as _};

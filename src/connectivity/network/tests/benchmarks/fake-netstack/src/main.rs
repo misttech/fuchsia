@@ -10,6 +10,10 @@ use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl::{HandleBased as _, Peered as _};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures::io::AsyncReadExt as _;
 use futures::stream::SelectAll;
@@ -26,10 +30,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::{TryFrom as _, TryInto as _};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_posix as fposix,
-    fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 #[fuchsia::main]
 async fn main() {

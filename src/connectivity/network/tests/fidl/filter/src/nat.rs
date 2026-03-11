@@ -14,6 +14,9 @@ use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, CommitError, MarkAction, Matchers, NatHook, PortRange, Resource, Rule, RuleId,
 };
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fuchsia_async as fasync;
 use futures::{FutureExt as _, StreamExt as _};
 use heck::ToSnakeCase as _;
 use net_declare::fidl_mac;
@@ -34,10 +37,6 @@ use packet_formats::icmp::{
 };
 use packet_formats::ip::{IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto};
 use test_case::test_case;
-use {
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
-    fuchsia_async as fasync,
-};
 
 use crate::ip_hooks::{
     Addrs, BoundSockets, ExpectedConnectivity, IcmpSocket, LOW_RULE_PRIORITY, MEDIUM_RULE_PRIORITY,

@@ -4,28 +4,30 @@
 
 #![cfg(test)]
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, IpHook, MarkAction,
     Matchers, Namespace, NamespaceId, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{
     FidlRuleAdminIpExt, FidlRuleIpExt, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority,
 };
 use fidl_fuchsia_net_routes_ext::{FidlRouteIpExt, TableId};
+use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async::{self as fasync};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, StreamExt as _};
 use net_declare::{fidl_subnet, std_ip};
 use net_types::ip::IpVersion;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 use assert_matches::assert_matches;
 use netemul::{InStack, RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};

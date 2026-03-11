@@ -26,19 +26,25 @@ use fidl_fuchsia_net_interfaces_ext::admin::Control;
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
 use fnet_ext::{FromExt as _, IntoExt as _};
 
-use {
-    fidl_fuchsia_hardware_network as fnetwork, fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fnet_stack,
-    fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_netemul_network as fnetemul_network,
-    fidl_fuchsia_posix_socket as fposix_socket, fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
-};
+use fidl_fuchsia_hardware_network as fnetwork;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_netemul as fnetemul;
+use fidl_fuchsia_netemul_network as fnetemul_network;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_ext as fposix_socket_ext;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 
 use anyhow::{Context as _, anyhow};
 use futures::future::{FutureExt as _, LocalBoxFuture, TryFutureExt as _};

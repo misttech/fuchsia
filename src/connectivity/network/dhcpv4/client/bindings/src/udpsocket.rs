@@ -6,7 +6,8 @@ use std::num::NonZeroU64;
 use std::os::fd::AsRawFd;
 
 use dhcp_client_core::deps::UdpSocketProvider;
-use {fidl_fuchsia_posix as fposix, fuchsia_async as fasync};
+use fidl_fuchsia_posix as fposix;
+use fuchsia_async as fasync;
 
 pub(crate) struct UdpSocket {
     inner: fasync::net::UdpSocket,
@@ -250,10 +251,8 @@ impl UdpSocketProvider for LibcUdpSocketProvider {
 #[cfg(test)]
 mod testutil {
     use super::*;
-    use {
-        fidl_fuchsia_posix_socket as fposix_socket,
-        fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
-    };
+    use fidl_fuchsia_posix_socket as fposix_socket;
+    use fidl_fuchsia_posix_socket_ext as fposix_socket_ext;
 
     pub(crate) struct TestUdpSocketProvider {
         provider: fposix_socket::ProviderProxy,
@@ -305,13 +304,13 @@ mod test {
     use super::*;
     use crate::udpsocket::testutil::TestUdpSocketProvider;
     use dhcp_client_core::deps::{DatagramInfo, Socket as _};
+    use fidl_fuchsia_net_ext as fnet_ext;
+    use fidl_fuchsia_netemul_network as fnetemul_network;
+    use fidl_fuchsia_posix_socket as fposix_socket;
+    use fuchsia_async as fasync;
     use futures::{FutureExt as _, join};
     use net_declare::std_socket_addr;
     use netstack_testing_common::realms::TestSandboxExt as _;
-    use {
-        fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_netemul_network as fnetemul_network,
-        fidl_fuchsia_posix_socket as fposix_socket, fuchsia_async as fasync,
-    };
 
     #[fasync::run_singlethreaded(test)]
     async fn udp_socket_provider_impl_send_receive() {

@@ -21,13 +21,14 @@ use std::ops::RangeInclusive;
 
 use async_utils::fold::FoldWhile;
 use fidl::marker::SourceBreaking;
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_root as fnet_root;
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
-use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_root as fnet_root,
-};
 
 /// Conversion errors from `fnet_filter` FIDL types to the
 /// equivalents defined in this module.
@@ -1623,10 +1624,8 @@ mod tests {
     use futures::{FutureExt as _, SinkExt as _};
     use test_case::test_case;
 
-    use {
-        fidl_fuchsia_hardware_network as fhardware_network,
-        fidl_fuchsia_net_interfaces as fnet_interfaces,
-    };
+    use fidl_fuchsia_hardware_network as fhardware_network;
+    use fidl_fuchsia_net_interfaces as fnet_interfaces;
 
     use super::*;
 

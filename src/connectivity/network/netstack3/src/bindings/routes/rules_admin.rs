@@ -9,18 +9,17 @@ use std::pin::pin;
 
 use async_utils::fold::{FoldResult, FoldWhile};
 use fidl::endpoints::ControlHandle as _;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fnet_routes_ext::Responder;
 use fnet_routes_ext::rules::{
     FidlRuleAdminIpExt, InstalledRule, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority,
     RuleSetRequest, RuleTableRequest,
 };
+use fuchsia_async as fasync;
 use futures::TryStreamExt as _;
 use futures::channel::{mpsc, oneshot};
 use net_types::ip::Ip;
-use {
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
-};
 
 use crate::bindings::util::{IntoCore as _, ScopeExt as _, TryFromFidl, TryIntoCore as _};
 use crate::bindings::{BindingsCtx, Ctx, MatcherBindingsTypes, routes};

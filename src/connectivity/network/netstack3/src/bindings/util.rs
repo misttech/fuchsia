@@ -9,6 +9,16 @@ use std::num::{NonZeroU16, NonZeroU64};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
+use fidl_fuchsia_net as fidl_net;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_stack as fidl_net_stack;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
 use futures::task::AtomicWaker;
 use futures::{Future, Stream};
 use log::debug;
@@ -36,14 +46,6 @@ use netstack3_core::socket::{
 use netstack3_core::sync::RemoveResourceResult;
 use packet_formats::utils::NonZeroDuration;
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fidl_net, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fidl_net_stack,
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 use crate::bindings::devices::BindingId;
 use crate::bindings::socket::{IntoErrno, IpSockAddrExt, SockAddr};

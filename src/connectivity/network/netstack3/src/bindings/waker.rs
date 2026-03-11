@@ -8,15 +8,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net_power as fnet_power;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fuchsia_async as fasync;
 use futures::future::{FusedFuture, OptionFuture};
 use futures::{FutureExt as _, TryStreamExt as _};
 use log::{debug, info, warn};
 use netstack3_core::sync::Mutex;
 use zx::HandleBased;
-use {
-    fidl_fuchsia_net_power as fnet_power, fidl_fuchsia_net_resources as fnet_resources,
-    fuchsia_async as fasync,
-};
 
 use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _, ScopeExt as _};
 

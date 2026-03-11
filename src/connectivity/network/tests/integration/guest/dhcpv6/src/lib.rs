@@ -5,16 +5,16 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
+use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_netemul_network as _;
 use net_declare::fidl_ip_v6;
 use netstack_testing_common::realms::{KnownServiceProvider, Netstack2};
 use netstack_testing_common::{interfaces, setup_network_with};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
-    fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_netemul_network as _,
-};
 
 #[netstack_test]
 async fn gets_dns_servers(name: &str) {

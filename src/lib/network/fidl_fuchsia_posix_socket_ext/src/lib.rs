@@ -5,7 +5,8 @@
 //! Extension crate for `fuchsia.posix.socket` and `fuchsia.posix.socket.packet`.
 #![deny(missing_docs)]
 
-use {fidl_fuchsia_posix_socket as fposix_socket, fidl_fuchsia_posix_socket_packet as fpacket};
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fpacket;
 
 /// Creates a datagram socket using the given provider.
 pub async fn datagram_socket(
@@ -72,14 +73,13 @@ pub async fn packet_socket(
 #[cfg(test)]
 mod test {
     use super::*;
+    use fidl_fuchsia_net_ext as fnet_ext;
+    use fidl_fuchsia_netemul_network as fnetemul_network;
+    use fidl_fuchsia_posix_socket as fposix_socket;
     use net_declare::std_socket_addr;
     use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
     use netstack_testing_macros::netstack_test;
     use sockaddr::{IntoSockAddr as _, TryToSockaddrLl as _};
-    use {
-        fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_netemul_network as fnetemul_network,
-        fidl_fuchsia_posix_socket as fposix_socket,
-    };
 
     #[netstack_test]
     #[variant(N, Netstack)]

@@ -138,8 +138,9 @@ pub mod net {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::std;
+    use fidl_fuchsia_net as fidl;
     use net_declare_macros::net_prefix_length_v4;
-    use {::std, fidl_fuchsia_net as fidl};
 
     #[test]
     fn test_std_ip() {

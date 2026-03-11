@@ -31,11 +31,11 @@ use netlink_packet_route::route::RouteType;
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 use thiserror::Error;
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext;
 
 /// NetlinkNeighborMessage conversion related errors.
 #[derive(Debug, PartialEq)]
@@ -855,8 +855,11 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
+    use fidl_fuchsia_net as fnet;
+    use fidl_fuchsia_net_interfaces as fnet_interfaces;
     use fidl_fuchsia_net_neighbor::ViewRequest;
     use fidl_fuchsia_net_neighbor_ext::testutil::EventSpec;
+    use fidl_fuchsia_net_root as fnet_root;
     use futures::channel::mpsc;
     use futures::{FutureExt as _, SinkExt as _, TryStreamExt as _, pin_mut};
     use maplit::hashset;
@@ -865,10 +868,6 @@ mod tests {
     use netlink_packet_route::neighbour::{NeighbourAddress, NeighbourFlags};
     use std::collections::HashSet;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-        fidl_fuchsia_net_root as fnet_root,
-    };
 
     fn valid_neighbor_entry() -> fnet_neighbor_ext::Entry {
         fnet_neighbor_ext::Entry {

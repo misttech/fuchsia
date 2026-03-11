@@ -4,6 +4,12 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fuchsia_async::{DurationExt, MonotonicDuration, TimeoutExt};
 use futures_util::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt, SinkExt, StreamExt};
 use net_declare::{fidl_ip, fidl_subnet};
@@ -18,13 +24,6 @@ use netstack_testing_macros::netstack_test;
 use ping::PingError;
 use std::num::NonZeroU64;
 use test_case::test_case;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
 
 enum ForwardingConfig {
     BothDisabled,

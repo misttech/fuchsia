@@ -16,14 +16,13 @@ use std::num::NonZeroU64;
 use std::ops::RangeInclusive;
 
 use fidl::marker::SourceBreaking;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{FromExt, IntoExt};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers as fnet_matchers;
 use net_types::ip::Ip;
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers as fnet_matchers,
-};
 
 /// Extension type for [`fnet_matchers::Interface`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

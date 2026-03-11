@@ -61,13 +61,13 @@ use netstack3_core::ip::{
 use thiserror::Error;
 use zx::{self as zx, HandleBased, Rights};
 
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fuchsia_async as fasync,
-};
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fuchsia_async as fasync;
 
 use crate::bindings::devices::{
     self, BlackholeDeviceInfo, DynamicCommonInfo, EthernetInfo, LoopbackInfo,

@@ -7,16 +7,16 @@ use std::pin::pin;
 
 use assert_matches::assert_matches;
 use async_trait::async_trait;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_tun as fnet_tun;
 use futures::{SinkExt as _, StreamExt as _};
 use net_declare::fidl_mac;
 use net_types::Witness as _;
 use net_types::ip::Ip as _;
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_tun as fnet_tun,
-};
 
 const PERF_TEST_MODE_ITERATIONS: usize = 10;
 const PERF_TEST_MODE_INTERFACES: usize = 10;

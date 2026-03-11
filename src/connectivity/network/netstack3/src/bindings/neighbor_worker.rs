@@ -5,13 +5,14 @@
 use std::collections::{HashMap, VecDeque};
 
 use fidl::endpoints::{ControlHandle as _, RequestStream as _, Responder as _};
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::IntoExt;
 use fidl_fuchsia_net_multicast_ext::FidlMulticastAdminIpExt;
 use fidl_fuchsia_net_neighbor::{
     self as fnet_neighbor, ControllerError, ControllerRequest, ControllerRequestStream,
     ViewRequest, ViewRequestStream,
 };
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext};
+use fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext;
 
 use assert_matches::assert_matches;
 use futures::channel::mpsc;

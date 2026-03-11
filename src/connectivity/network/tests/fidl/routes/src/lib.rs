@@ -32,13 +32,13 @@ use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation, Ro
 use routes_common::{TestSetup, test_route};
 use test_case::test_case;
 
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
-use {
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, zx_status,
-};
+use zx_status;
 
 async fn resolve(
     routes: &fidl_fuchsia_net_routes::StateProxy,

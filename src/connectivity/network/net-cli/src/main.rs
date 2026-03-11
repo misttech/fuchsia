@@ -5,19 +5,23 @@
 use anyhow::Error;
 use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_net_debug as fdebug;
+use fidl_fuchsia_net_dhcp as fdhcp;
+use fidl_fuchsia_net_filter as ffilter;
+use fidl_fuchsia_net_filter_deprecated as ffilter_deprecated;
+use fidl_fuchsia_net_interfaces as finterfaces;
+use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
+use fidl_fuchsia_net_name as fname;
+use fidl_fuchsia_net_neighbor as fneighbor;
+use fidl_fuchsia_net_root as froot;
+use fidl_fuchsia_net_routes as froutes;
+use fidl_fuchsia_net_stack as fstack;
+use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::io::Write;
-use {
-    fidl_fuchsia_net_debug as fdebug, fidl_fuchsia_net_dhcp as fdhcp,
-    fidl_fuchsia_net_filter as ffilter, fidl_fuchsia_net_filter_deprecated as ffilter_deprecated,
-    fidl_fuchsia_net_interfaces as finterfaces,
-    fidl_fuchsia_net_interfaces_admin as finterfaces_admin, fidl_fuchsia_net_name as fname,
-    fidl_fuchsia_net_neighbor as fneighbor, fidl_fuchsia_net_root as froot,
-    fidl_fuchsia_net_routes as froutes, fidl_fuchsia_net_stack as fstack,
-    fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration, fidl_fuchsia_sys2 as fsys,
-    fuchsia_async as fasync,
-};
 
 const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 

@@ -6,13 +6,12 @@
 
 use fidl::endpoints::ProtocolMarker as _;
 use fidl::{HandleBased, Rights};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_resources as fnet_resources;
 use futures::{Future, FutureExt as _, Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
-use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_resources as fnet_resources, zx_status as zx,
-};
+use zx_status as zx;
 
 /// Error type when using a [`fnet_interfaces_admin::AddressStateProviderProxy`].
 #[derive(Error, Debug)]
@@ -531,13 +530,12 @@ mod test {
     use assert_matches::assert_matches;
     use fidl::Rights;
     use fidl::prelude::*;
+    use fidl_fuchsia_net_interfaces as fnet_interfaces;
+    use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
     use fnet_interfaces_admin::InterfaceRemovedReason;
     use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
     use test_case::test_case;
-    use {
-        fidl_fuchsia_net_interfaces as fnet_interfaces,
-        fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, zx_status as zx,
-    };
+    use zx_status as zx;
 
     use super::*;
 

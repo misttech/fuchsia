@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, anyhow};
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_netemul as fnetemul;
+use fidl_fuchsia_netemul_network as fnetemul_network;
+use fidl_fuchsia_sys2 as fsys2;
 use log::{debug, info};
 use std::collections::{HashMap, HashSet, hash_map};
 use std::str::FromStr;
-use {
-    fidl_fuchsia_data as fdata, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_netemul as fnetemul,
-    fidl_fuchsia_netemul_network as fnetemul_network, fidl_fuchsia_sys2 as fsys2,
-};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Network {

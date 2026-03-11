@@ -8,8 +8,28 @@ use std::sync::{Arc, Once};
 
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_net as fidl_net;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_interfaces_ext::admin::TerminalError;
+use fidl_fuchsia_net_multicast_admin as fnet_multicast_admin;
+use fidl_fuchsia_net_multicast_ext as fnet_multicast_ext;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_netemul_network as net;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt as _, TryFutureExt as _};
 use ip_test_macro::ip_test;
@@ -27,21 +47,6 @@ use netstack3_core::neighbor::LinkResolutionResult;
 use netstack3_core::routes::{AddableEntry, AddableEntryEither, AddableMetric, Entry, RawMetric};
 use packet_formats::ip::Ipv4Proto;
 use test_case::{test_case, test_matrix};
-use {
-    fidl_fuchsia_net as fidl_net, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-    fidl_fuchsia_net_multicast_ext as fnet_multicast_ext, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul_network as net,
-    fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fuchsia_async as fasync,
-};
 
 use crate::bindings::ctx::BindingsCtx;
 use crate::bindings::devices::{BindingId, Devices};

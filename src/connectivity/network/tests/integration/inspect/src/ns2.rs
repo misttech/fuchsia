@@ -17,11 +17,11 @@ use diagnostics_assertions::{
     AnyProperty, NonZeroIntProperty, PropertyAssertion, TreeAssertion, assert_data_tree,
     tree_assertion,
 };
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fuchsia_async as fasync,
-};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
+use fuchsia_async as fasync;
 
 use diagnostics_hierarchy::{DiagnosticsHierarchy, Property};
 use itertools::Itertools as _;

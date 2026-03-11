@@ -5,10 +5,11 @@
 //! A Netstack3 worker to serve fuchsia.net.debug.Interfaces API requests.
 
 use fidl::endpoints::{ProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net_debug as fnet_debug;
 use fuchsia_async::LocalExecutorBuilder;
 use futures::{StreamExt as _, TryStreamExt as _};
 use log::{error, warn};
-use {fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net_debug as fnet_debug};
 
 use crate::bindings::devices::BindingId;
 use crate::bindings::{DeviceIdExt as _, DeviceSpecificInfo};

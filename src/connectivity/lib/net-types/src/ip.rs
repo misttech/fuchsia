@@ -69,9 +69,9 @@ pub use net_types_macros::GenericOverIp;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::{
-    sealed, LinkLocalAddr, LinkLocalAddress, MappedAddress, MulticastAddr, MulticastAddress,
-    NonMappedAddr, NonMulticastAddr, Scope, ScopeableAddress, SpecifiedAddr, SpecifiedAddress,
-    UnicastAddr, UnicastAddress, Witness,
+    LinkLocalAddr, LinkLocalAddress, MappedAddress, MulticastAddr, MulticastAddress, NonMappedAddr,
+    NonMulticastAddr, Scope, ScopeableAddress, SpecifiedAddr, SpecifiedAddress, UnicastAddr,
+    UnicastAddress, Witness, sealed,
 };
 
 // NOTE on passing by reference vs by value: Clippy advises us to pass IPv4
@@ -1035,7 +1035,7 @@ pub trait IpAddress:
 
     #[doc(hidden)]
     fn array_into_ip_addr<const N: usize>(addrs: [Self; N])
-        -> IpAddr<[Ipv4Addr; N], [Ipv6Addr; N]>;
+    -> IpAddr<[Ipv4Addr; N], [Ipv6Addr; N]>;
 }
 
 impl<A: IpAddress> SpecifiedAddress for A {
@@ -3911,46 +3911,74 @@ mod tests {
         let subnet =
             Subnet::new(Ipv6Addr::from([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 64)
                 .expect("1::/64 is a valid subnet");
-        assert!(Ipv6Addr::from([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-            .is_unicast_in_subnet(&subnet));
-        assert!(!Ipv6Addr::from([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-            .is_unicast_in_subnet(&subnet));
+        assert!(
+            Ipv6Addr::from([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+                .is_unicast_in_subnet(&subnet)
+        );
+        assert!(
+            !Ipv6Addr::from([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+                .is_unicast_in_subnet(&subnet)
+        );
 
         // Unspecified address
-        assert!(!Ipv4::UNSPECIFIED_ADDRESS
-            .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 16).unwrap()));
-        assert!(!Ipv6::UNSPECIFIED_ADDRESS
-            .is_unicast_in_subnet(&Subnet::new(Ipv6::UNSPECIFIED_ADDRESS, 64).unwrap()));
+        assert!(
+            !Ipv4::UNSPECIFIED_ADDRESS
+                .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 16).unwrap())
+        );
+        assert!(
+            !Ipv6::UNSPECIFIED_ADDRESS
+                .is_unicast_in_subnet(&Subnet::new(Ipv6::UNSPECIFIED_ADDRESS, 64).unwrap())
+        );
         // The "31- or 32-bit prefix" exception doesn't apply to the unspecified
         // address (IPv4 only).
-        assert!(!Ipv4::UNSPECIFIED_ADDRESS
-            .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 31).unwrap()));
-        assert!(!Ipv4::UNSPECIFIED_ADDRESS
-            .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 32).unwrap()));
+        assert!(
+            !Ipv4::UNSPECIFIED_ADDRESS
+                .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 31).unwrap())
+        );
+        assert!(
+            !Ipv4::UNSPECIFIED_ADDRESS
+                .is_unicast_in_subnet(&Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 32).unwrap())
+        );
         // All-zeroes host part (IPv4 only)
-        assert!(!Ipv4Addr::new([1, 2, 0, 0])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 0, 0]), 16).unwrap()));
+        assert!(
+            !Ipv4Addr::new([1, 2, 0, 0])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 0, 0]), 16).unwrap())
+        );
         // Exception: 31- or 32-bit prefix (IPv4 only)
-        assert!(Ipv4Addr::new([1, 2, 3, 0])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 3, 0]), 31).unwrap()));
-        assert!(Ipv4Addr::new([1, 2, 3, 0])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 3, 0]), 32).unwrap()));
+        assert!(
+            Ipv4Addr::new([1, 2, 3, 0])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 3, 0]), 31).unwrap())
+        );
+        assert!(
+            Ipv4Addr::new([1, 2, 3, 0])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 3, 0]), 32).unwrap())
+        );
         // Limited broadcast (IPv4 only)
-        assert!(!Ipv4::LIMITED_BROADCAST_ADDRESS
-            .get()
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([128, 0, 0, 0]), 1).unwrap()));
+        assert!(
+            !Ipv4::LIMITED_BROADCAST_ADDRESS
+                .get()
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([128, 0, 0, 0]), 1).unwrap())
+        );
         // Subnet broadcast (IPv4 only)
-        assert!(!Ipv4Addr::new([1, 2, 255, 255])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 0, 0]), 16).unwrap()));
+        assert!(
+            !Ipv4Addr::new([1, 2, 255, 255])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 0, 0]), 16).unwrap())
+        );
         // Exception: 31- or 32-bit prefix (IPv4 only)
-        assert!(Ipv4Addr::new([1, 2, 255, 255])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 255, 254]), 31).unwrap()));
-        assert!(Ipv4Addr::new([1, 2, 255, 255])
-            .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 255, 255]), 32).unwrap()));
+        assert!(
+            Ipv4Addr::new([1, 2, 255, 255])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 255, 254]), 31).unwrap())
+        );
+        assert!(
+            Ipv4Addr::new([1, 2, 255, 255])
+                .is_unicast_in_subnet(&Subnet::new(Ipv4Addr::new([1, 2, 255, 255]), 32).unwrap())
+        );
         // Multicast
         assert!(!Ipv4Addr::new([224, 0, 0, 1]).is_unicast_in_subnet(&Ipv4::MULTICAST_SUBNET));
-        assert!(!Ipv6Addr::from([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-            .is_unicast_in_subnet(&Ipv6::MULTICAST_SUBNET));
+        assert!(
+            !Ipv6Addr::from([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+                .is_unicast_in_subnet(&Ipv6::MULTICAST_SUBNET)
+        );
         // Class E (IPv4 only)
         assert!(!Ipv4Addr::new([240, 0, 0, 1]).is_unicast_in_subnet(&Ipv4::CLASS_E_SUBNET));
     }

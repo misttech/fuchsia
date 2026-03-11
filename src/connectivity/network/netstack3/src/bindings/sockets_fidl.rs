@@ -8,17 +8,17 @@ use std::convert::Infallible as Never;
 
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_net_sockets::{self as fnet_sockets};
+use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
+use fidl_fuchsia_net_tcp as fnet_tcp;
+use fidl_fuchsia_net_udp as fnet_udp;
+use fuchsia_async as fasync;
 use futures::TryStreamExt;
 use net_types::ip::{Ip, Ipv4, Ipv6};
 use netstack3_core::socket::IpSocketMatcher;
 use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use netstack3_core::{Instant as _, MatcherBindingsTypes};
-use {
-    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
-    fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
-};
 
 use crate::bindings::time::StackTime;
 use crate::bindings::util::{

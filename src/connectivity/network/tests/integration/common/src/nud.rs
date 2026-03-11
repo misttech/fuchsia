@@ -5,12 +5,10 @@
 //! Useful NUD functions for tests.
 
 use anyhow::Context;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use futures::StreamExt as _;
 use net_types::SpecifiedAddress as _;
-use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-};
 
 /// Frame metadata of interest to neighbor tests.
 #[derive(Debug, Eq, PartialEq)]

@@ -4,12 +4,12 @@
 
 #![cfg(test)]
 
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{IntoExt as _, NetTypesIpAddressExt};
+use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
+use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_netemul as fnetemul;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as finterfaces_admin,
-    fidl_fuchsia_net_stack as fnet_stack, fidl_fuchsia_netemul as fnetemul,
-};
 
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_mac, fidl_subnet, net_ip_v4, net_ip_v6, net_mac, std_socket_addr};

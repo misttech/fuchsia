@@ -8,9 +8,14 @@ use std::pin::pin;
 use assert_matches::assert_matches;
 use fidl::HandleBased;
 use fidl::endpoints::{ProtocolMarker, Proxy as _};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, FidlRuleIpExt};
+use fidl_fuchsia_posix_socket as fposix_socket;
 use fnet_routes_ext::rules::{InstalledRule, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, StreamExt as _};
 use net_declare::fidl_subnet;
@@ -20,11 +25,6 @@ use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{Netstack2, Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use routes_common::{TestSetup, add_default_route_for_mark};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 fn rule_set_err_stream<I: FidlRuleAdminIpExt>(
     rule_set: <I::RuleSetMarker as ProtocolMarker>::Proxy,

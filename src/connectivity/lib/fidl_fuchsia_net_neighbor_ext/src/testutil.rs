@@ -8,9 +8,10 @@
 //! supporting tests of this `fidl_fuchsia_net_neighbor_ext` crate and tests
 //! of clients of the `fuchsia.net.neighbors` FIDL library, respectively.
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use futures::future::FusedFuture;
 use futures::{FutureExt, Stream, StreamExt as _};
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_neighbor as fnet_neighbor};
 
 /// Responds to the given `GetNext` request with the given batch of events.
 fn handle_get_next(

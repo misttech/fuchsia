@@ -15,6 +15,10 @@ use ebpf_api::{
     SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext,
     uid_t,
 };
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_posix as fposix;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
@@ -33,10 +37,6 @@ use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
-use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_posix as fposix,
-};
 
 fn get_linux_packet_mark(marks: &Marks) -> u32 {
     let Mark(mark) = marks.get(fnet::MARK_DOMAIN_SO_MARK.into_core());

@@ -7,13 +7,13 @@ use std::num::NonZeroU64;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_filter_ext::Matchers;
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use net_types::ip::{Ip, IpVersion};
 use netemul::TestInterface;
-use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
 
 use crate::ip_hooks::{
     IcmpSocket, Interfaces, IrrelevantToTest, Ports, SocketType, Subnets, TcpSocket, UdpSocket,

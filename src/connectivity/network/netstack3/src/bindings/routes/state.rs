@@ -8,6 +8,10 @@ use std::fmt::Debug;
 
 use either::Either;
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::{TryStream, TryStreamExt as _};
 use log::{error, info, warn};
@@ -19,10 +23,6 @@ use netstack3_core::error::AddressResolutionFailed;
 use netstack3_core::ip::WrapBroadcastMarker;
 use netstack3_core::neighbor::{LinkResolutionContext, LinkResolutionResult};
 use netstack3_core::routes::{NextHop, ResolvedRoute};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
-};
 
 use crate::bindings::routes::rules_state::RuleInterest;
 use crate::bindings::routes::watcher::{

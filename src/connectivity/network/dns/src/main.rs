@@ -6,9 +6,13 @@ use anyhow::{Context as _, Error};
 use async_trait::async_trait;
 use dns::async_resolver::{Resolver, Spawner};
 use dns::config::{ServerList, UpdateServersResult};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as net_ext;
 use fidl_fuchsia_net_name::{
     self as fname, LookupAdminRequest, LookupAdminRequestStream, LookupRequest, LookupRequestStream,
 };
+use fidl_fuchsia_net_routes as fnet_routes;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_sync::RwLock;
 use futures::channel::mpsc;
@@ -35,10 +39,6 @@ use trust_dns_resolver::config::{
 use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 use trust_dns_resolver::lookup;
 use unicode_xid::UnicodeXID as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as net_ext,
-    fidl_fuchsia_net_routes as fnet_routes, fuchsia_async as fasync,
-};
 
 struct SharedResolver<T>(RwLock<Rc<T>>);
 

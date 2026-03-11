@@ -7,7 +7,8 @@
 use std::convert::From as _;
 use std::num::NonZeroU64;
 
-use {fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_ndp_ext as fnet_ndp_ext};
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_ndp_ext as fnet_ndp_ext;
 
 use futures::StreamExt as _;
 use net_declare::fidl_mac;

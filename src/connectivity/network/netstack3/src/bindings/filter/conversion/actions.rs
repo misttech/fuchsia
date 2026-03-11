@@ -6,7 +6,8 @@ use fidl_fuchsia_net_ext::IntoExt as _;
 use net_types::ip::{GenericOverIp, Ip};
 use packet_formats::ip::IpExt;
 
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
 
 use crate::bindings::filter::conversion::{
     ConversionError, ConversionResult, IpVersionStrictness, TryConvertToCoreState,

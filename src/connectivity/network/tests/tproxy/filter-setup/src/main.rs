@@ -18,13 +18,14 @@
 
 use std::num::NonZeroU16;
 
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     Action, Change, Controller, ControllerId, Domain, InstalledIpRoutine, IpHook, Matchers,
     Namespace, NamespaceId, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
     TransparentProxy,
 };
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use net_declare::fidl_ip;
-use {fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext};
 
 const BUS_NAME: &str = "test-bus";
 const SETUP_COMPLETE: &str = "setup-complete";

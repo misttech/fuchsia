@@ -21,13 +21,15 @@ use netstack_testing_macros::netstack_test;
 use test_case::test_case;
 use test_util::{assert_geq, assert_gt};
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
-    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
-    fidl_fuchsia_net_udp as fnet_udp, fidl_fuchsia_posix_socket as fposix_socket,
-    fuchsia_async as fasync,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_sockets as fnet_sockets;
+use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
+use fidl_fuchsia_net_tcp as fnet_tcp;
+use fidl_fuchsia_net_udp as fnet_udp;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fuchsia_async as fasync;
 
 const MARK_1: u32 = 100;
 const MARK_2: u32 = 200;

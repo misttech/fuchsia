@@ -7,7 +7,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 use derivative::Derivative;
 use futures::StreamExt;
 
-use {fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_ndp as fnet_ndp};
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_ndp as fnet_ndp;
 
 /// Errors regarding the length of an NDP option body observed in an
 /// [`OptionWatchEntry`].

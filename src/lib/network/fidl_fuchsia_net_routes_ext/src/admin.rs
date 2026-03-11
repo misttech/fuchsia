@@ -7,13 +7,12 @@
 use std::fmt::Debug;
 
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use futures::future::Either;
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use thiserror::Error;
-use {
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-};
 
 use crate::{FidlRouteIpExt, Responder, TableId, impl_responder};
 

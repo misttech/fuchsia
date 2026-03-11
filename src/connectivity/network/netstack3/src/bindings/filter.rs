@@ -21,11 +21,11 @@ use itertools::Itertools;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 
-use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_root as fnet_root,
-    fuchsia_async as fasync,
-};
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
+use fidl_fuchsia_net_root as fnet_root;
+use fuchsia_async as fasync;
 
 use crate::bindings::util::{ErrorLogExt, ScopeExt as _};
 use controller::{CommitResult, Controller};

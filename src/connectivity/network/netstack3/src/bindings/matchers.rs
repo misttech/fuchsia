@@ -7,12 +7,11 @@ use std::convert::Infallible as Never;
 use crate::bindings::util::{IntoCore, TryFromFidl};
 use crate::bindings::{BindingsCtx, MatcherBindingsTypes};
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use netstack3_core::socket::{
     SocketCookieMatcher, SocketTransportProtocolMatcher, TcpSocketMatcher, TcpStateMatcher,
     UdpSocketMatcher, UdpStateMatcher,
-};
-use {
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 impl TryFromFidl<fnet_matchers_ext::Interface>

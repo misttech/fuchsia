@@ -9,6 +9,10 @@ use derivative::Derivative;
 use fidl::endpoints::Proxy as _;
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_multicast_admin as fnet_multicast_admin;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use maplit::hashmap;
 use net_declare::{fidl_ip, fidl_subnet};
@@ -20,11 +24,6 @@ use netstack_testing_macros::netstack_test;
 use std::collections::HashMap;
 use test_case::test_case;
 use test_util::assert_gt;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-};
 
 use fidl_fuchsia_net_multicast_ext::{
     self as fnet_multicast_ext, AddRouteError, DelRouteError, FidlMulticastAdminIpExt,

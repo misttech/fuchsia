@@ -9,13 +9,13 @@
 
 use std::collections::HashMap;
 
+use delegated_provisioning_constants as constants;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fuchsia_async as fasync;
 use futures::StreamExt as _;
 use log::{info, warn};
-use {
-    delegated_provisioning_constants as constants, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fuchsia_async as fasync,
-};
 
 const START_LOGGING_WARNINGS_AFTER: std::time::Duration = std::time::Duration::from_secs(3 * 60);
 const WARNING_LOG_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);

@@ -9,22 +9,22 @@ use std::sync::Arc;
 use dhcp_client_core::inspect::Counters;
 use diagnostics_traits::Inspector;
 use fidl::endpoints;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcp::{
     self as fdhcp, ClientExitReason, ClientRequestStream, ClientWatchConfigurationResponse,
     ConfigurationToRequest, NewClientParams,
 };
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt as _};
 use indexmap::IndexSet;
 use net_types::ip::{Ipv4, Ipv4Addr, PrefixLength};
 use net_types::{SpecifiedAddr, Witness as _};
 use rand::SeedableRng as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fuchsia_async as fasync,
-};
 
 use crate::inspect::{Inspect, LeaseChangeInspect, LeaseInspectProperties, StateInspect};
 

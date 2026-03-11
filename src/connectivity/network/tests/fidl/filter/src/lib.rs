@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, Action, Change, ChangeCommitError, CommitError, Controller,
     ControllerId, Domain, Event, InstalledIpRoutine, InstalledNatRoutine, IpHook, Matchers,
@@ -24,6 +26,8 @@ use fidl_fuchsia_net_filter_ext::{
     Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId, TransparentProxy,
 };
 use fidl_fuchsia_net_interfaces_ext::PortClass;
+use fidl_fuchsia_net_matchers as fnet_matchers;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fidl_fuchsia_net_matchers_ext::TransportProtocol;
 use fuchsia_async::{DurationExt as _, OnSignals, TimeoutExt as _};
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
@@ -37,10 +41,6 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use test_case::{test_case, test_matrix};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
 
 trait TestValue {
     fn test_value() -> Self;

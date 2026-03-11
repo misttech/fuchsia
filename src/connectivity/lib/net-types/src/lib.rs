@@ -671,7 +671,7 @@ macro_rules! impl_nested_witness {
 
         impl<A: $trait1 + $trait2> AsRef<A> for $type1<$type2<A>> {
             fn as_ref(&self) -> &A {
-                &self.0 .0
+                &self.0.0
             }
         }
     };
@@ -694,7 +694,7 @@ macro_rules! impl_nested_witness {
 
         impl<A: $trait1 + $trait2 + $trait3> AsRef<A> for $type1<$type2<$type3<A>>> {
             fn as_ref(&self) -> &A {
-                &self.0 .0
+                &self.0.0
             }
         }
     };
@@ -1040,11 +1040,7 @@ impl<A: ScopeableAddress, Z> AddrAndZone<A, Z> {
     /// Constructs a new `AddrAndZone`, returning `Some` only if the provided
     /// `addr`'s scope can have a zone (`addr.scope().can_have_zone()`).
     pub fn new(addr: A, zone: Z) -> Option<Self> {
-        if addr.scope().can_have_zone() {
-            Some(Self(addr, zone))
-        } else {
-            None
-        }
+        if addr.scope().can_have_zone() { Some(Self(addr, zone)) } else { None }
     }
 }
 
@@ -1391,11 +1387,7 @@ mod tests {
         type Scope = AddressScope;
 
         fn scope(&self) -> AddressScope {
-            if self.is_link_local() {
-                AddressScope::LinkLocal
-            } else {
-                AddressScope::Global
-            }
+            if self.is_link_local() { AddressScope::LinkLocal } else { AddressScope::Global }
         }
     }
 

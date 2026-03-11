@@ -38,7 +38,9 @@
 use lock_order::Unlocked;
 
 use netstack3_base::ContextProvider;
-use {netstack3_device as device, netstack3_ip as ip, netstack3_udp as udp};
+use netstack3_device as device;
+use netstack3_ip as ip;
+use netstack3_udp as udp;
 
 use crate::marker::{BindingsContext, BindingsTypes};
 use crate::state::StackState;

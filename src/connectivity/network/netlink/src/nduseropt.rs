@@ -22,7 +22,8 @@ use packet::records::options::OptionLayout;
 use packet_formats::icmp::ndp;
 use packet_formats::icmp::ndp::options::option_types as ndp_option_types;
 
-use {fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_ndp_ext as fnet_ndp_ext};
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_ndp_ext as fnet_ndp_ext;
 
 use crate::logging::{log_error, log_info, log_warn};
 

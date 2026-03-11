@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_deprecated as fnetfilter;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use futures::{FutureExt as _, StreamExt, TryFutureExt as _};
@@ -14,7 +16,6 @@ use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use std::ops::RangeInclusive;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_deprecated as fnetfilter};
 
 pub const CLIENT_IPV4_SUBNET: fnet::Subnet = fidl_subnet!("192.168.0.2/24");
 pub const SERVER_IPV4_SUBNET: fnet::Subnet = fidl_subnet!("192.168.0.1/24");

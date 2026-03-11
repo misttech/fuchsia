@@ -5,21 +5,21 @@
 use anyhow::{Context as _, anyhow};
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_netemul as fnetemul;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures_util::{StreamExt as _, TryStreamExt as _};
 use log::{error, info};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Ipv4, Ipv6};
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-    fidl_fuchsia_netemul as fnetemul,
-};
 
 #[fuchsia_async::run_singlethreaded]
 async fn main() {

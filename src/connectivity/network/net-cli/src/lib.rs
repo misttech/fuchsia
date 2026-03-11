@@ -7,7 +7,25 @@ mod opts;
 mod ser;
 
 use anyhow::{Context as _, Error, anyhow};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_debug as fdebug;
+use fidl_fuchsia_net_dhcp as fdhcp;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_deprecated as ffilter_deprecated;
+use fidl_fuchsia_net_interfaces as finterfaces;
+use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_name as fname;
+use fidl_fuchsia_net_neighbor as fneighbor;
+use fidl_fuchsia_net_neighbor_ext as fneighbor_ext;
+use fidl_fuchsia_net_root as froot;
+use fidl_fuchsia_net_routes as froutes;
+use fidl_fuchsia_net_routes_ext as froutes_ext;
+use fidl_fuchsia_net_stack as fstack;
 use fidl_fuchsia_net_stack_ext::{self as fstack_ext, FidlReturn as _};
+use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use itertools::Itertools as _;
 use log::{info, warn};
@@ -25,19 +43,7 @@ use std::ops::Deref;
 use std::pin::pin;
 use std::str::FromStr as _;
 use writer::ToolIO as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_debug as fdebug, fidl_fuchsia_net_dhcp as fdhcp,
-    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_deprecated as ffilter_deprecated,
-    fidl_fuchsia_net_interfaces as finterfaces,
-    fidl_fuchsia_net_interfaces_admin as finterfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as finterfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_name as fname,
-    fidl_fuchsia_net_neighbor as fneighbor, fidl_fuchsia_net_neighbor_ext as fneighbor_ext,
-    fidl_fuchsia_net_root as froot, fidl_fuchsia_net_routes as froutes,
-    fidl_fuchsia_net_routes_ext as froutes_ext, fidl_fuchsia_net_stack as fstack,
-    fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration, zx_status as zx,
-};
+use zx_status as zx;
 
 pub use opts::{
     Command, CommandEnum, UserFacingError, underlying_user_facing_error, user_facing_error,
@@ -2051,10 +2057,11 @@ mod tests {
     use std::fmt::Debug;
 
     use assert_matches::assert_matches;
+    use fidl_fuchsia_net_routes as froutes;
+    use fidl_fuchsia_net_routes_ext as froutes_ext;
     use fuchsia_async::{self as fasync, TimeoutExt as _};
     use net_declare::{fidl_ip, fidl_ip_v4, fidl_mac, fidl_subnet};
     use test_case::test_case;
-    use {fidl_fuchsia_net_routes as froutes, fidl_fuchsia_net_routes_ext as froutes_ext};
 
     use super::testutil::TestConnector;
     use super::*;

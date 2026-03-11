@@ -8,6 +8,9 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use fidl_fuchsia_hardware_network::{self as fhardware_network};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, StreamExt, TryStreamExt as _};
@@ -24,10 +27,6 @@ use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use thiserror::Error;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fuchsia_async as fasync,
-};
 
 use crate::bindings::devices::{StaticCommonInfo, TxTask};
 use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_route_tables};

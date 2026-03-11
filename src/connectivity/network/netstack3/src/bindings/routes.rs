@@ -24,6 +24,8 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{
     DEFAULT_RULE_SET_PRIORITY, InstalledRule, RuleAction, RuleEvent, RuleIndex, RuleSetPriority,
@@ -35,7 +37,6 @@ use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6, Subnet};
 use netstack3_core::routes::{AddableEntry, AddableMetric};
 use thiserror::Error;
-use {fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin};
 
 use crate::bindings::util::{
     EntryAndTableId, RemoveResourceResultExt as _, ResultExt as _, TryIntoFidlWithContext,

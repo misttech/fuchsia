@@ -200,10 +200,10 @@ fn validate_arg_vec(
             match arg.typ {
                 Type::PossiblyOptionType(_) => {}
                 Type::ListType(_) => {
-                    return Err(Error::ListMustBeLast(args_for_error_reporting.clone()))
+                    return Err(Error::ListMustBeLast(args_for_error_reporting.clone()));
                 }
                 Type::MapType { .. } => {
-                    return Err(Error::MapMustBeLast(args_for_error_reporting.clone()))
+                    return Err(Error::MapMustBeLast(args_for_error_reporting.clone()));
                 }
             }
         }

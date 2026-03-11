@@ -6,7 +6,7 @@
 //! generic ASTs to the high level, typed, generated AT command and response types.
 
 use super::common::type_names::*;
-use super::common::{to_initial_capital, write_indent, write_newline, TABSTOP};
+use super::common::{TABSTOP, to_initial_capital, write_indent, write_newline};
 use super::error::Result;
 use crate::definition::{
     Argument, Arguments, Command, Definition, DelimitedArguments, PossiblyOptionType,
@@ -21,7 +21,11 @@ pub fn codegen<W: io::Write>(sink: &mut W, indent: u64, definitions: &[Definitio
 }
 
 fn codegen_commands<W: io::Write>(sink: &mut W, indent: u64, definitions: &[Definition]) -> Result {
-    write_indented!(sink, indent, "pub fn raise_command(lowlevel: &lowlevel::Command) -> Result<highlevel::Command, DeserializeErrorCause> {{\n")?;
+    write_indented!(
+        sink,
+        indent,
+        "pub fn raise_command(lowlevel: &lowlevel::Command) -> Result<highlevel::Command, DeserializeErrorCause> {{\n"
+    )?;
 
     // Increment indent
     {
@@ -106,8 +110,16 @@ fn codegen_responses<W: io::Write>(
     indent: u64,
     definitions: &[Definition],
 ) -> Result {
-    write_indented!(sink, indent, "// Clients are responsible for ensuring this is only called with lowlevel::Result::Success.\n")?;
-    write_indented!(sink, indent, "pub fn raise_success(lowlevel: &lowlevel::Response) -> Result<highlevel::Success, DeserializeErrorCause> {{\n")?;
+    write_indented!(
+        sink,
+        indent,
+        "// Clients are responsible for ensuring this is only called with lowlevel::Result::Success.\n"
+    )?;
+    write_indented!(
+        sink,
+        indent,
+        "pub fn raise_success(lowlevel: &lowlevel::Response) -> Result<highlevel::Success, DeserializeErrorCause> {{\n"
+    )?;
 
     // Increment indent
     {
@@ -487,9 +499,11 @@ fn codegen_arguments_extraction<W: io::Write>(
                 )?;
                 let mut i = 0;
                 for arg_vec in arg_vec_vec {
-                    write_indented!(sink, indent,
+                    write_indented!(
+                        sink,
+                        indent,
                         "let arg_vec = arg_vec_vec.get({}).ok_or_else(|| DeserializeErrorCause::UnknownArguments(arguments.clone()))?;\n",
-                         i
+                        i
                     )?;
                     codegen_argument_vec_extraction(sink, indent, arg_vec)?;
                     i += 1;

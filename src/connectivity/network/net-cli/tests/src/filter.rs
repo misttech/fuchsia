@@ -12,17 +12,16 @@ use std::pin::pin;
 use anyhow::Result;
 use argh::FromArgs as _;
 use assert_matches::assert_matches;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, Action, ControllerId, Domain, InstalledIpRoutine, IpHook, Matchers,
     Namespace, NamespaceId, Resource, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use net_declare::fidl_subnet;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use test_case::test_case;
-use {
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
 
 struct TestRealmConnector<'a> {
     realm: &'a netemul::TestRealm<'a>,

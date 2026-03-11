@@ -5,13 +5,13 @@
 use assert_matches::assert_matches;
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, TokenTree};
-use quote::{quote, ToTokens as _};
+use quote::{ToTokens as _, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, AngleBracketedGenericArguments, GenericArgument, GenericParam, Generics, Ident,
-    Token, Type, TypeParam, TypeParamBound, TypePath,
+    AngleBracketedGenericArguments, GenericArgument, GenericParam, Generics, Ident, Token, Type,
+    TypeParam, TypeParamBound, TypePath, parse_quote,
 };
 
 /// Implements a derive macro for [`net_types::ip::GenericOverIp`].
@@ -210,7 +210,7 @@ fn find_generic_over_ip_attr(
             return Err(syn::Error::new(
                 attr.span(),
                 "derive(GenericOverIp) cannot be used with multiple generic_over_ip attributes",
-            ))
+            ));
         }
     }
 
