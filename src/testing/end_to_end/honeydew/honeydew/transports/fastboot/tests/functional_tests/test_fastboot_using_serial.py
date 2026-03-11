@@ -5,7 +5,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew import errors
@@ -18,7 +18,7 @@ from honeydew.transports.serial import serial as serial_transport
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
+class FastbootUsingSerialTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Test class to test rebooting the device into Fastboot mode using serial transport.
 
     Note: This test case can only be run in infra as it uses below which are available only in infra:
@@ -26,7 +26,7 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
     * Serial transport implementation using unix socket
     """
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
@@ -34,7 +34,7 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
             * Calls some Fastboot transport method to initialize Fastboot
               transport (as it may involve device reboots)
         """
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
         # Calling some fastboot method here, so that Fastboot __init__ gets called which will
@@ -46,24 +46,24 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
         #   * reboot back to fuchsia mode
         # So to avoid all these additional steps in actual test case, we are explicitly
         # instantiating fastboot transport in setup_class
-        self._fastboot_node_id: str = self.device.fastboot.node_id
+        self._fastboot_node_id: str = await self.device.fastboot.node_id()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
 
         It does the following things:
             * Ensures device is in fuchsia mode.
         """
-        super().teardown_test()
-        if self.device.fastboot.is_in_fastboot_mode():
+        await super().teardown_test()
+        if await self.device.fastboot.is_in_fastboot_mode():
             _LOGGER.warning(
                 "%s is in fastboot mode which is not expected. "
                 "Rebooting to fuchsia mode",
                 self.device.device_name,
             )
-            self.device.fastboot.boot_to_fuchsia_mode()
+            await self.device.fastboot.boot_to_fuchsia_mode()
 
-    def test_fastboot_using_serial(self) -> None:
+    async def test_fastboot_using_serial(self) -> None:
         """Test case that puts the device in fastboot mode using serial, runs
         a command in fastboot mode and reboots the device back to fuchsia mode.
         """
@@ -87,15 +87,15 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
                 "This test can't be run."
             )
 
-        self.device.fastboot.boot_to_fastboot_mode(
+        await self.device.fastboot.boot_to_fastboot_mode(
             use_serial=True,
             serial_transport=serial,
             power_switch=power_switch,
         )
 
-        self.device.fastboot.run(cmd=["getvar", "hw-revision"])
+        await self.device.fastboot.run(cmd=["getvar", "hw-revision"])
 
-        self.device.fastboot.boot_to_fuchsia_mode()
+        await self.device.fastboot.boot_to_fuchsia_mode()
 
 
 if __name__ == "__main__":
