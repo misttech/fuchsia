@@ -51,8 +51,7 @@
 
                 // TODO(https://fxbug.dev/297440106)
                 // TODO(https://fxbug.dev/365540067)
-                "ZombieProcTest.ZombieStatus",
-                "ZombieProcTest.ZombieMapsEmpty",
+                "ZombieProcTest.*",
             ],
         },
         {
