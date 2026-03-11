@@ -196,3 +196,20 @@ impl StubLastRebootInfo {
         Ok(())
     }
 }
+
+#[fasync::run_singlethreaded(test)]
+async fn test_update_android_bootreason_uvlo() {
+    let reason = bootreason::update_android_bootreason(None, Some("reboot,uvlo,extra".to_string()))
+        .await
+        .expect("should return Ok");
+    assert_eq!(reason, "reboot,uvlo,extra");
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn test_update_android_bootreason_longkey_s2() {
+    let reason =
+        bootreason::update_android_bootreason(None, Some("reboot,longkey,s2,moreinfo".to_string()))
+            .await
+            .expect("should return Ok");
+    assert_eq!(reason, "reboot,longkey,s2,moreinfo");
+}

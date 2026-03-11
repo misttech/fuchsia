@@ -8,7 +8,7 @@ use crate::{
     serve_graphical_presenter, serve_lutex_controller,
 };
 use anyhow::{Context, Error, anyhow, bail};
-use bootreason::get_android_bootreason;
+use bootreason::get_or_init_android_bootreason;
 use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
 use devicetree::types::Devicetree;
@@ -589,6 +589,8 @@ async fn create_container(
 
     log_debug!("Creating container with {:#?}", features);
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());
+    let mut android_provided_bootreason = None;
+
     if features.android_serialno {
         if let Some(device_tree) = &device_tree {
             match get_bootargs(device_tree).await {
@@ -600,10 +602,13 @@ async fn create_container(
                         }
                         if item.starts_with("androidboot.bootreason") && features.android_bootreason
                         {
-                            // androidboot.rebootreason is sourced from the Fuchsia reboot reason.
+                            // androidboot.bootreason is sourced from the Fuchsia reboot reason.
                             // It is still useful to log it from userspace to learn what the
                             // possible values are.
                             log_info!("Original devicetree bootarg {:?}", item);
+                            if let Some((_, v)) = item.split_once('=') {
+                                android_provided_bootreason = Some(v.to_string());
+                            }
                             continue;
                         }
                         kernel_cmdline.extend(b" ");
@@ -627,7 +632,7 @@ async fn create_container(
             _ => None,
         };
 
-        match get_android_bootreason(tmp_proxy).await {
+        match get_or_init_android_bootreason(tmp_proxy, android_provided_bootreason).await {
             Ok(reason) => {
                 kernel_cmdline.extend(reason.bytes());
             }

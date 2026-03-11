@@ -19,17 +19,23 @@ const LRIP_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::INFINITE
 static ANDROID_BOOTREASON: OnceCell<Result<String, Error>> = OnceCell::new();
 
 /// Get an Android-compatible boot reason suitable to add to the cmdline or bootconfig.
-pub async fn get_android_bootreason(
+pub async fn get_or_init_android_bootreason(
     dir: Option<fio::DirectoryProxy>,
+    android_provided_bootreason: Option<String>,
 ) -> &'static Result<String, Error> {
-    ANDROID_BOOTREASON.get_or_init(async || update_android_bootreason(dir).await).await
+    ANDROID_BOOTREASON
+        .get_or_init(async || update_android_bootreason(dir, android_provided_bootreason).await)
+        .await
 }
 
 /// Update the Android bootreason.
 ///
 /// Called only once when the Starnix kernel is initialized.
 /// If called more than once, it reports false Android crash cases to Pitot.
-async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<String, Error> {
+pub async fn update_android_bootreason(
+    dir: Option<fio::DirectoryProxy>,
+    android_provided_bootreason: Option<String>,
+) -> Result<String, Error> {
     if let Some(dir) = dir {
         match fuchsia_fs::directory::open_file(&dir, STARTED_ONCE, fio::Flags::FLAG_MUST_CREATE)
             .await
@@ -44,6 +50,14 @@ async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<S
                     "Failed to generate the file with err {err:#?}. Continue with LastRebootInfo."
                 );
             }
+        }
+    }
+
+    // There are certain values from the Android bootloader that are more specific than
+    // what the Fuchsia platform knows so use that when relevant.
+    if let Some(reason) = &android_provided_bootreason {
+        if reason.starts_with("reboot,uvlo") || reason.starts_with("reboot,longkey") {
+            return Ok(reason.clone());
         }
     }
 
