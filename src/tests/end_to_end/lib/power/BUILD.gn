@@ -14,18 +14,7 @@ python_library("power") {
     "powerserver.py",
     "sampler.py",
   ]
-  library_deps = [
-    "//src/performance/lib/trace_processing",
-    "//src/tests/end_to_end/power:monsoon_measure_power",
-  ]
-
-  _monsoon_label = "//src/tests/end_to_end/power:monsoon_measure_power"
-  _monsoon_measure_power_tool =
-      get_label_info(_monsoon_label, "target_out_dir") + "/" +
-      get_label_info(_monsoon_label, "name") + ".pyz"
-
-  data_sources = [ _monsoon_measure_power_tool ]
-  data_package_name = "data"
+  library_deps = [ "//src/performance/lib/trace_processing" ]
 }
 
 # A small wrapper executable around the library call to merge power and trace data.

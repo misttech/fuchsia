@@ -12,17 +12,13 @@ import logging
 import operator
 import os
 import signal
-import stat
 import subprocess
-import sys
 import time
 from collections import deque
 from collections.abc import Iterable, Mapping
-from contextlib import contextmanager
-from importlib import resources
-from typing import Generator, Sequence
+from typing import Sequence
 
-from power import data, sampler
+from power import sampler
 from trace_processing import trace_model, trace_time
 
 SAMPLE_INTERVAL_NS = 200000
@@ -149,11 +145,7 @@ class _NoopPowerSampler(sampler.PowerSampler):
 class _RealPowerSampler(sampler.PowerSampler):
     """Wrapper for the measurepower command-line tool."""
 
-    def __init__(
-        self,
-        config: sampler.PowerSamplerConfig,
-        monsoon_serial: str | None = None,
-    ) -> None:
+    def __init__(self, config: sampler.PowerSamplerConfig) -> None:
         """Constructor.
 
         Args:
@@ -167,7 +159,6 @@ class _RealPowerSampler(sampler.PowerSampler):
             f"{self._config.metric_name}_power_samples.csv",
         )
         self._sampled_data = False
-        self._monsoon_serial = monsoon_serial
 
     def _start_impl(self) -> None:
         _LOGGER.info("Starting power sampling")
@@ -183,15 +174,12 @@ class _RealPowerSampler(sampler.PowerSampler):
     def _start_power_measurement(self) -> None:
         assert self._config.measurepower_path
         cmd = [
-            sys.executable,
             self._config.measurepower_path,
             "-format",
             "csv",
             "-out",
             self._csv_output_path,
         ]
-        if self._monsoon_serial:
-            cmd += ["--serialno", self._monsoon_serial]
         _LOGGER.debug(f"Power measurement cmd: {cmd}")
         self._measurepower_proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
@@ -278,34 +266,6 @@ def create_power_sampler(
             config, measurepower_path=measurepower_path
         )
     return _RealPowerSampler(config)
-
-
-@contextmanager
-def with_hermetic_monsoon_power_sampler(
-    output_dir: str,
-    metric_name: str,
-    monsoon_serial: str,
-) -> Generator[sampler.PowerSampler, None, None]:
-    """Returns a monsoon-backed power sampler."""
-
-    if not monsoon_serial:
-        raise ValueError("monsoon_serial must be provided")
-
-    _MONSOON_MEASURE_POWER_TOOL = "monsoon_measure_power.pyz"
-
-    with resources.path(data, _MONSOON_MEASURE_POWER_TOOL) as measurepower_path:
-        if not measurepower_path:
-            raise RuntimeError(
-                f"Could not find {_MONSOON_MEASURE_POWER_TOOL} in package {data}"
-            )
-
-        st = os.stat(measurepower_path)
-        os.chmod(measurepower_path, st.st_mode | stat.S_IEXEC)
-
-        config = sampler.PowerSamplerConfig(
-            output_dir, metric_name, False, str(measurepower_path)
-        )
-        yield _RealPowerSampler(config, monsoon_serial)
 
 
 def _read_fuchsia_trace_cpu_usage(
