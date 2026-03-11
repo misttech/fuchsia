@@ -167,6 +167,10 @@ fit::result<int> SetLabel(const std::string& path, const std::string_view label)
   return fit::ok();
 }
 
+std::string MakeTestSecurityContext(std::string_view test_domain) {
+  return std::string("test_u:test_r:") + std::string(test_domain) + ":s0";
+}
+
 fit::result<int, bool> IsSameInode(int fd_1, int fd_2) {
   struct stat fd_1_info;
   if (fstat(fd_1, &fd_1_info) < 0) {

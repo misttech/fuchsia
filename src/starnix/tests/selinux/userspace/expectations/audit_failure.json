@@ -5,7 +5,7 @@
 
         // TODO(https://fxbug.dev/479845044): The audit expectations for this test
         // contain an erroneous line.
-        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/28",
+        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_SOCK_DIAG__SOCK_DIAG_BY_FAMILY__0x5__netlink_socket_nlmsg_read_t",
 
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
         "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",

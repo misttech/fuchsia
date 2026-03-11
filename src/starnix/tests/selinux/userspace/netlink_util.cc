@@ -20,7 +20,8 @@
 namespace netlink_util {
 
 int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
-  auto sockcreate = ScopedTaskAttrResetter::SetTaskAttr("sockcreate", test_case.label);
+  auto sockcreate = ScopedTaskAttrResetter::SetTaskAttr(
+      "sockcreate", MakeTestSecurityContext(test_case.label_type));
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   fbl::unique_fd sock_fd(socket(AF_NETLINK, SOCK_RAW, test_case.protocol));

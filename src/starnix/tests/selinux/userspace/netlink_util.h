@@ -15,7 +15,7 @@ struct NetlinkSocketTestCase {
   int protocol;
   uint16_t message_type;
   uint16_t flags;
-  std::string_view label;
+  std::string_view label_type;
   fit::result<int> expected_result;
 };
 

@@ -17,6 +17,6 @@
         "NetlinkAuditTest.ForkedChildUnregistersParentOnOneSocket",
 
         // Uses `AUDIT_STATUS_PID` with `AUDIT_SET` which consumes the start sentinel.
-        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/24"
+        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_AUDIT__AUDIT_SET__0x5__netlink_socket_nlmsg_write_t"
     ]
 }

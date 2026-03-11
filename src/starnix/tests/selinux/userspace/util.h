@@ -57,6 +57,9 @@ fit::result<int, std::string> GetLabel(const std::string& path);
 /// Sets the security `label` of the specified `path`.
 fit::result<int> SetLabel(const std::string& path, std::string_view label);
 
+/// Returns a full SELinux security context constructed from the specified `test_domain`.
+std::string MakeTestSecurityContext(std::string_view test_domain);
+
 /// Checks whether two file descriptors map to the same inode.
 /// Returns an `errno` on failure.
 fit::result<int, bool> IsSameInode(int fd_1, int fd_2);
