@@ -408,6 +408,22 @@ if (is_host) {
 	}
 }`,
 		},
+		{
+			name: "file_level_visibility variable assignment",
+			bazel: `_foo_visibility = [
+				"//bar:__pkg__",
+				"//baz:__subpackages__",
+			]`,
+			wantGN: `_foo_visibility = [
+	"//bar:*",
+	"//baz/*",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_foo_visibility" ])
+`,
+		},
 	} {
 		f := toSyntaxFile(t, tc.bazel)
 		gotGN, err := bazelToGN(f)

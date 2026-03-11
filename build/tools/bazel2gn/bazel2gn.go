@@ -107,7 +107,11 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 		return nil, errors.New("lhs of assignment statement is unexpectedly empty")
 	}
 
-	rhs, err := exprToGN(stmt.RHS, nil)
+	// Apply the visibility transformation to assignments, enabling the use of
+	// file-level variables for visibility.
+	var transformers = []transformer{bazelVisibilityToGN}
+
+	rhs, err := exprToGN(stmt.RHS, transformers)
 	if err != nil {
 		return nil, fmt.Errorf("converting rhs of assignment statement: %v", err)
 	}
