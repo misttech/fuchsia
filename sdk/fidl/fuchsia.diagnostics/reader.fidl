@@ -160,6 +160,14 @@ type StreamParameters = table {
     /// Parameters which configure a diagnostics stream's performance properties.
     /// NOTE: OPTIONAL
     6: performance_configuration PerformanceConfiguration;
+
+    /// Indicates if the client wants to receive a stream of tag definitions
+    /// and log records referencing those tags. This is transitional and will
+    /// be removed in a future CL once this feature is stable.
+    /// TODO(b/315520045): Remove this.
+    /// NOTE: OPTIONAL
+    @available(added=HEAD)
+    7: subscribe_to_manifest bool;
 };
 
 /// Outer protocol for interacting with the different diagnostics data sources.

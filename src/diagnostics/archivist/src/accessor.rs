@@ -22,9 +22,12 @@ use fidl_fuchsia_diagnostics::{
     SelectorArgument, StreamMode, StreamParameters, StringSelector, TreeSelector,
     TreeSelectorUnknown,
 };
+use fidl_fuchsia_diagnostics_host as fhost;
 use fidl_fuchsia_mem::Buffer;
+use fuchsia_async as fasync;
 use fuchsia_inspect::NumericProperty;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use futures::StreamExt;
 use futures::future::{Either, select};
 use futures::prelude::*;
@@ -36,7 +39,6 @@ use std::collections::HashMap;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use thiserror::Error;
-use {fidl_fuchsia_diagnostics_host as fhost, fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 #[derive(Debug, Copy, Clone)]
 pub struct BatchRetrievalTimeout(i64);
@@ -668,6 +670,7 @@ where
                 .aggregated_content_limit_bytes
                 .unwrap_or(FORMATTED_CONTENT_CHUNK_SIZE_TARGET),
             data,
+            performance_config.subscribe_to_manifest,
         );
         Self::new_inner(
             new_batcher(data, Arc::clone(&stats), mode),
@@ -781,6 +784,7 @@ pub struct PerformanceConfig {
     pub batch_timeout_sec: i64,
     pub aggregated_content_limit_bytes: Option<u64>,
     pub maximum_concurrent_snapshots_per_reader: u64,
+    pub subscribe_to_manifest: bool,
 }
 
 impl PerformanceConfig {
@@ -826,10 +830,13 @@ impl PerformanceConfig {
             _ => None,
         };
 
+        let subscribe_to_manifest = params.subscribe_to_manifest.unwrap_or(false);
+
         Ok(PerformanceConfig {
             batch_timeout_sec: batch_timeout.seconds(),
             aggregated_content_limit_bytes,
             maximum_concurrent_snapshots_per_reader,
+            subscribe_to_manifest,
         })
     }
 }
@@ -1110,5 +1117,201 @@ mod tests {
 
         // We receive a response for WaitForReady
         assert!(batch_iterator.wait_for_ready().await.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn accessor_logs_with_manifest_reused_tag() {
+        use crate::identity::ComponentIdentity;
+        use crate::logs::shared_buffer::create_ring_buffer;
+        use crate::logs::testing::make_message;
+        use diagnostics_log_encoding::parse::parse_record;
+        use diagnostics_log_encoding::{LOG_CONTROL_BIT, Value};
+        use moniker::ExtendedMoniker;
+        use zerocopy::FromBytes;
+
+        let scope = fasync::Scope::new();
+        // Use a small buffer to facilitate rolling out logs.
+        let repo = LogsRepository::new(
+            create_ring_buffer(65536),
+            std::iter::empty(),
+            &Default::default(),
+            scope.new_child(),
+        );
+
+        let proxy_scope = scope.new_child();
+        let (accessor, stream) =
+            fidl::endpoints::create_proxy_and_stream::<ArchiveAccessorMarker>();
+        let pipeline = Arc::new(Pipeline::for_test(None));
+        let _inspector = fuchsia_inspect::Inspector::default();
+        let inspect_repo = Arc::new(InspectRepository::new(
+            vec![Arc::downgrade(&pipeline)],
+            proxy_scope.new_child(),
+        ));
+        let server = ArchiveAccessorServer::new(
+            inspect_repo,
+            Arc::clone(&repo),
+            4,
+            BatchRetrievalTimeout::max(),
+            proxy_scope,
+        );
+        server.spawn_server(pipeline, stream);
+
+        let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
+
+        // Connect with subscribe_to_manifest = true
+        assert!(
+            accessor
+                .r#stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::SnapshotThenSubscribe),
+                        format: Some(Format::Fxt),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true)
+                        ),
+                        subscribe_to_manifest: Some(true),
+                        ..Default::default()
+                    },
+                    server_end
+                )
+                .is_ok()
+        );
+
+        // 1. Setup Identity A
+        let identity_a = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./foo").unwrap(),
+            "fuchsia-pkg://foo",
+        ));
+        let container_a = repo.get_log_container(Arc::clone(&identity_a));
+        let tag_a = container_a.buffer().iob_tag();
+
+        // 2. Ingest A
+        container_a.ingest_message(make_message("msg_a", None, zx::BootInstant::from_nanos(1)));
+
+        // Helper to read all records from current VMO format stream
+        async fn get_next_vmo_records(
+            iterator: &fidl_fuchsia_diagnostics::BatchIteratorProxy,
+        ) -> Vec<(diagnostics_log_encoding::Header, diagnostics_log_encoding::Record<'static>)>
+        {
+            let batch = iterator.get_next().await.unwrap().unwrap();
+            let mut records = vec![];
+            for content in batch {
+                if let FormattedContent::Fxt(vmo) = content {
+                    let size = vmo.get_content_size().unwrap();
+                    let mut buf = vec![0u8; size as usize];
+                    vmo.read(&mut buf, 0).expect("vmo read");
+                    let mut current_slice = buf.as_slice();
+
+                    // We need actual length from VMO properties or parse_record error
+                    while !current_slice.is_empty() {
+                        if let Ok((record, remaining)) = parse_record(current_slice) {
+                            let header = diagnostics_log_encoding::Header::read_from_bytes(
+                                &current_slice[..8],
+                            )
+                            .unwrap();
+                            records.push((header, record.into_owned()));
+                            current_slice = remaining;
+                        } else {
+                            break; // Completed or buffer end
+                        }
+                    }
+                }
+            }
+            records
+        }
+
+        // 3. Read Manifest A and Log A from proxy output
+        let records = get_next_vmo_records(&batch_iterator).await;
+        assert!(records.len() >= 2);
+
+        let manifest_a = &records[0].1;
+        assert_eq!(manifest_a.arguments[0].value(), Value::Text("foo".into()));
+
+        let _log_a = &records[1].1;
+        // In full stream via BatchIterator, index 2 usually holds message text if mapped.
+        // For fxt, the data should just have Arguments appended?
+        // Let's verify "msg_a" is contained.
+        assert!(records.iter().any(|(_, r)| {
+            r.arguments
+                .iter()
+                .any(|a| a.name() == "message" && a.value() == Value::Text("msg_a".into()))
+        }));
+
+        // 4. Mark A inactive and release
+        container_a.mark_stopped();
+        drop(container_a);
+
+        // 5. Force rollout A by ingesting filler logs
+        let identity_filler = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./filler").unwrap(),
+            "fuchsia-pkg://filler",
+        ));
+        let container_filler = repo.get_log_container(Arc::clone(&identity_filler));
+
+        let identity_b = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./bar").unwrap(),
+            "fuchsia-pkg://bar",
+        ));
+
+        let mut container_b;
+        loop {
+            // Ingest filler
+            container_filler.ingest_message(make_message(
+                "fill",
+                None,
+                zx::BootInstant::from_nanos(1),
+            ));
+
+            // Try to allocate B
+            container_b = repo.get_log_container(Arc::clone(&identity_b));
+            if container_b.buffer().iob_tag() == tag_a {
+                break;
+            }
+
+            // Failed to reuse, clean up B
+            container_b.mark_stopped();
+            drop(container_b);
+
+            // Yield to let cleanup tasks run
+            fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+        }
+
+        // 6. Ingest B
+        container_b.ingest_message(make_message("msg_b", None, zx::BootInstant::from_nanos(2)));
+
+        // 7. Read Manifest B + Log B
+        let mut manifest_b_found = false;
+        let mut log_b_found = false;
+
+        'outer: loop {
+            let records = get_next_vmo_records(&batch_iterator).await;
+            for (h, r) in records {
+                // Is it Manifest B?
+                if (h.tag() & LOG_CONTROL_BIT) != 0 {
+                    if r.arguments
+                        .first()
+                        .map(|a| a.name() == "moniker" && a.value() == Value::Text("bar".into()))
+                        .unwrap_or(false)
+                    {
+                        manifest_b_found = true;
+                    }
+                } else {
+                    // Is it Log B?
+                    if r.arguments
+                        .iter()
+                        .any(|a| a.name() == "message" && a.value() == Value::Text("msg_b".into()))
+                    {
+                        log_b_found = true;
+                    }
+                }
+
+                if manifest_b_found && log_b_found {
+                    break 'outer;
+                }
+            }
+        }
+
+        assert!(manifest_b_found, "Manifest B must be emitted on tag reuse");
+        assert!(log_b_found, "Log B must be emitted");
     }
 }

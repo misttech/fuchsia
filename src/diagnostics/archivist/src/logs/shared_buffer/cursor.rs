@@ -250,6 +250,16 @@ impl FxtMessage {
     pub fn timestamp(&self) -> zx::BootInstant {
         zx::BootInstant::from_nanos(i64::read_from_bytes(&self.data[8..16]).unwrap())
     }
+
+    #[cfg(test)]
+    pub fn new_test(
+        data: Box<[u8]>,
+        dropped: u64,
+        component_identity: Arc<ComponentIdentity>,
+        tag: u64,
+    ) -> Self {
+        Self { data, dropped, component_identity, tag }
+    }
 }
 
 impl TryFrom<Message<'_>> for FxtMessage {

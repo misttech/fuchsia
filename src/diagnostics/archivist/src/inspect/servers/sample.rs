@@ -10,6 +10,7 @@ use crate::pipeline::StaticHierarchyAllowlist;
 use diagnostics_data::InspectData;
 use diagnostics_hierarchy::{SelectResult, filter_tree, select_from_hierarchy};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, ServerEnd};
+use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics::{
     BatchIteratorMarker, BatchIteratorRequestStream, ConfigurationError, DataType, Format,
     RuntimeError, SampleDatum, SampleMarker, SampleParameters, SampleReady, SampleRequest,
@@ -18,6 +19,7 @@ use fidl_fuchsia_diagnostics::{
 };
 use fuchsia_async::{Interval, Scope};
 use fuchsia_inspect::Node;
+use fuchsia_trace as ftrace;
 use futures::channel::oneshot;
 use futures::{StreamExt, TryStreamExt, select};
 use log::{debug, warn};
@@ -27,7 +29,6 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use thiserror::Error;
 use zx::MonotonicDuration;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_trace as ftrace};
 
 /// This is an unfiltered pipeline.
 ///
@@ -1397,6 +1398,7 @@ mod tests {
             aggregated_content_limit_bytes: None,
             batch_timeout_sec: 100,
             maximum_concurrent_snapshots_per_reader: 100,
+            subscribe_to_manifest: false,
         };
 
         let actual = sampler

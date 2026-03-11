@@ -294,7 +294,12 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
 }
 
 #[pin_project]
-pub struct FxtPacketFormat<I>(#[pin] I);
+pub struct FxtPacketFormat<I> {
+    #[pin]
+    pub stream: I,
+    pub subscribe_to_manifest: bool,
+    pub sent_tags: std::collections::HashMap<u64, Arc<crate::identity::ComponentIdentity>>,
+}
 
 impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
     const FORMAT: Format = Format::Fxt;
@@ -305,15 +310,66 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
         _first: bool,
         buffer: &mut Vec<u8>,
     ) -> Poll<Option<usize>> {
-        if let Some(item) = ready!(self.project().0.poll_next(cx)) {
+        let this = self.project();
+        if let Some(item) = ready!(this.stream.poll_next(cx)) {
+            if *this.subscribe_to_manifest {
+                let tag = item.tag();
+                let identity = item.component_identity();
+                let send_manifest = match this.sent_tags.entry(tag) {
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(Arc::clone(identity));
+                        true
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        if !Arc::ptr_eq(e.get(), identity) && **e.get() != **identity {
+                            e.insert(Arc::clone(identity));
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+
+                if send_manifest {
+                    use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
+                    use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+                    use fidl_fuchsia_diagnostics_types::Severity;
+                    use std::io::Cursor;
+                    use zerocopy::{FromBytes, IntoBytes};
+
+                    let mut encoder = Encoder::new(
+                        Cursor::new(ResizableBuffer::from(Vec::new())),
+                        EncoderOpts::default(),
+                    );
+                    let record = Record {
+                        timestamp: zx::BootInstant::from_nanos(0),
+                        severity: Severity::Info.into_primitive(),
+                        arguments: vec![
+                            Argument::other("moniker", identity.moniker.to_string()),
+                            Argument::other("url", identity.url.as_str()),
+                        ],
+                    };
+                    encoder.write_record(record).unwrap();
+                    let mut manifest_buffer = encoder.take().into_inner().into_inner();
+                    if manifest_buffer.len() >= 8 {
+                        let mut header = Header::read_from_bytes(&manifest_buffer[0..8]).unwrap();
+                        header.set_tag((tag as u32) | LOG_CONTROL_BIT);
+                        manifest_buffer[0..8].copy_from_slice(header.as_bytes());
+                    }
+                    buffer.extend_from_slice(&manifest_buffer);
+                }
+            }
+
             buffer.extend_from_slice(item.data());
+
+            // if we are subscribing to the manifest, don't inject metadata into every record
             extend_fxt_record(
                 item.component_identity(),
                 item.dropped(),
                 &ExtendRecordOpts {
-                    component_url: true,
-                    moniker: true,
-                    rolled_out: true,
+                    component_url: !*this.subscribe_to_manifest,
+                    moniker: !*this.subscribe_to_manifest,
+                    rolled_out: !*this.subscribe_to_manifest,
                     subscribe_to_manifest: false,
                 },
                 buffer,
@@ -328,8 +384,21 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
 pub type FxtPacketSerializer<I> = PacketSerializer<FxtPacketFormat<I>>;
 
 impl<I> FxtPacketSerializer<I> {
-    pub fn new(stats: Arc<BatchIteratorConnectionStats>, max_packet_size: u64, items: I) -> Self {
-        Self::with_format(Some(stats), max_packet_size, FxtPacketFormat(items))
+    pub fn new(
+        stats: Arc<BatchIteratorConnectionStats>,
+        max_packet_size: u64,
+        items: I,
+        subscribe_to_manifest: bool,
+    ) -> Self {
+        Self::with_format(
+            Some(stats),
+            max_packet_size,
+            FxtPacketFormat {
+                stream: items,
+                subscribe_to_manifest,
+                sent_tags: std::collections::HashMap::new(),
+            },
+        )
     }
 }
 
@@ -517,5 +586,132 @@ mod tests {
         let packets = make_packets(8).await;
         // Item should be dropped, so we get no packets.
         assert_eq!(packets.len(), 0);
+    }
+
+    #[fuchsia::test]
+    async fn fxt_packet_serializer_subscribe_to_manifest() {
+        use crate::identity::ComponentIdentity;
+        use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
+        use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+        use fidl_fuchsia_diagnostics_types::Severity;
+        use std::io::Cursor;
+        use zerocopy::{FromBytes, IntoBytes};
+
+        let identity1 = Arc::new(ComponentIdentity::unknown());
+        let mut identity2_inner = ComponentIdentity::unknown();
+        identity2_inner.url =
+            flyweights::FlyStr::new("fuchsia-pkg://fuchsia.com/test#meta/test.cm");
+        let identity2 = Arc::new(identity2_inner);
+
+        // create message 1
+        let mut buffer = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder
+            .write_record(Record {
+                timestamp: zx::BootInstant::from_nanos(100),
+                severity: Severity::Info.into_primitive(),
+                arguments: vec![Argument::other("msg", "hello")],
+            })
+            .unwrap();
+        let end = encoder.inner().position() as usize;
+        let mut msg1_bytes = encoder.inner().get_ref()[..end].to_vec();
+        let mut header = Header::read_from_bytes(&msg1_bytes[0..8]).unwrap();
+        header.set_tag(1);
+        msg1_bytes[0..8].copy_from_slice(header.as_bytes());
+        let msg1 =
+            FxtMessage::new_test(msg1_bytes.into_boxed_slice(), 0, Arc::clone(&identity1), 1);
+
+        // create message 2
+        let mut buffer = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder
+            .write_record(Record {
+                timestamp: zx::BootInstant::from_nanos(200),
+                severity: Severity::Info.into_primitive(),
+                arguments: vec![Argument::other("msg", "world")],
+            })
+            .unwrap();
+        let end = encoder.inner().position() as usize;
+        let mut msg2_bytes = encoder.inner().get_ref()[..end].to_vec();
+        let mut header = Header::read_from_bytes(&msg2_bytes[0..8]).unwrap();
+        header.set_tag(2);
+        msg2_bytes[0..8].copy_from_slice(header.as_bytes());
+        let msg2 =
+            FxtMessage::new_test(msg2_bytes.into_boxed_slice(), 0, Arc::clone(&identity2), 2);
+
+        // create message 3 (same tag/identity as message 2)
+        let mut buffer = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder
+            .write_record(Record {
+                timestamp: zx::BootInstant::from_nanos(300),
+                severity: Severity::Info.into_primitive(),
+                arguments: vec![Argument::other("msg", "again")],
+            })
+            .unwrap();
+        let end = encoder.inner().position() as usize;
+        let mut msg3_bytes = encoder.inner().get_ref()[..end].to_vec();
+        let mut header = Header::read_from_bytes(&msg3_bytes[0..8]).unwrap();
+        header.set_tag(2);
+        msg3_bytes[0..8].copy_from_slice(header.as_bytes());
+        let msg3 =
+            FxtMessage::new_test(msg3_bytes.into_boxed_slice(), 0, Arc::clone(&identity2), 2);
+
+        let inputs = vec![msg1, msg2, msg3];
+
+        let node = fuchsia_inspect::Node::default();
+        let accessor_stats = Arc::new(AccessorStats::new(node));
+        let test_stats = Arc::new(accessor_stats.new_logs_batch_iterator());
+
+        // Test with subscribe_to_manifest = true
+        let packets: Vec<_> =
+            FxtPacketSerializer::new(Arc::clone(&test_stats), 1024 * 1024, iter(inputs), true)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|r| {
+                    let result = r.unwrap();
+                    let mut buf = vec![0; result.size as usize];
+                    result.vmo.read(&mut buf, 0).expect("reading vmo");
+                    buf
+                })
+                .collect();
+
+        assert_eq!(packets.len(), 1);
+        let output = &packets[0];
+
+        let mut current_slice = output.as_slice();
+        let mut records = vec![];
+
+        while !current_slice.is_empty() {
+            let (record, remaining) =
+                diagnostics_log_encoding::parse::parse_record(current_slice).unwrap();
+            let header =
+                diagnostics_log_encoding::Header::read_from_bytes(&current_slice[..8]).unwrap();
+            records.push((header, record));
+            current_slice = remaining;
+        }
+
+        assert_eq!(records.len(), 5);
+
+        // Record 0: Manifest for tag 1
+        assert_ne!(records[0].0.tag() & LOG_CONTROL_BIT, 0);
+        assert_eq!(records[0].0.tag() & !LOG_CONTROL_BIT, 1);
+
+        // Record 1: Msg 1
+        assert_eq!(records[1].0.tag(), 1);
+        assert_eq!(records[1].1.arguments.len(), 1); // no moniker/url injected
+
+        // Record 2: Manifest for tag 2
+        assert_ne!(records[2].0.tag() & LOG_CONTROL_BIT, 0);
+        assert_eq!(records[2].0.tag() & !LOG_CONTROL_BIT, 2);
+
+        // Record 3: Msg 2
+        assert_eq!(records[3].0.tag(), 2);
+        assert_eq!(records[3].1.arguments.len(), 1); // no moniker/url injected
+
+        // Record 4: Msg 3
+        assert_eq!(records[4].0.tag(), 2);
+        assert_eq!(records[4].1.arguments.len(), 1); // no moniker/url injected
     }
 }
