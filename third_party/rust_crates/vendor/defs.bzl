@@ -393,7 +393,7 @@ _NORMAL_DEPENDENCIES = {
             "itoa": Label("//third_party/rust_crates/vendor/itoa-1.0.17:itoa"),
             "json-spanned-value": Label("//third_party/rust_crates/vendor/json-spanned-value-0.2.2:json_spanned_value"),
             "json5format": Label("//third_party/rust_crates/vendor/json5format-0.2.6:json5format"),
-            "libc": Label("//third_party/rust_crates/vendor/libc-0.2.182:libc"),
+            "libc": Label("//third_party/rust_crates/vendor/libc-0.2.183:libc"),
             "libm": Label("//third_party/rust_crates/vendor/libm-0.2.15:libm"),
             "linked-hash-map": Label("//third_party/rust_crates/vendor/linked-hash-map-0.5.6:linked_hash_map"),
             "lock_api": Label("//third_party/rust_crates/vendor/lock_api-0.4.14:lock_api"),
