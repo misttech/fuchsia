@@ -115,6 +115,7 @@ class Flags:
     style: bool
     log: bool
     logpath: str | None
+    json: bool
     status: bool | None
     verbose: bool
     status_lines: int
@@ -192,6 +193,9 @@ class Flags:
 
         # Compute environment and check it is valid.
         self.computed_env()
+
+        if self.json:
+            self.logpath = LOG_TO_STDOUT_OPTION
 
         if self.only_e2e:
             self.e2e = True
@@ -658,6 +662,12 @@ def parse_args(
         "--logpath",
         help="If passed and --log is enabled, customizes the destination of the target log.",
         default=None,
+    )
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="Format output as JSON logs, alias for --logpath -",
+        default=False,
     )
     output.add_argument(
         "-v",

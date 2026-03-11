@@ -162,6 +162,17 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(flags.style, False)
         self.assertEqual(flags.status, False)
 
+    def test_json(self) -> None:
+        flags = args.parse_args(["--json"])
+        flags.validate()
+        self.assertEqual(flags.json, True)
+        self.assertEqual(flags.logpath, args.LOG_TO_STDOUT_OPTION)
+
+        flags = args.parse_args([])
+        flags.validate()
+        self.assertEqual(flags.json, False)
+        self.assertIsNone(flags.logpath)
+
     def test_e2e(self) -> None:
         flags = args.parse_args(["--only-e2e"])
         flags.validate()
