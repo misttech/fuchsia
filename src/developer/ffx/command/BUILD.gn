@@ -42,6 +42,9 @@ rustc_library("lib") {
 
     # ffx-target-ssh explicitly specifies the exit code
     "//src/developer/ffx/plugins/target/ssh:*",
+
+    # completion plugin needs to build the command struct from json
+    "//src/developer/ffx/plugins/completion:*",
   ]
 
   deps = [

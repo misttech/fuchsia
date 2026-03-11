@@ -1,5 +1,6 @@
 assembly
 audio
+completion
 component
 config
 coverage

@@ -31,6 +31,7 @@ required_ffx_plugins = [
   "//src/developer/ffx/plugins/version:ffx_version",
   "//src/developer/ffx/plugins/platform:ffx_platform",
   "//src/developer/ffx/plugins/sdk:ffx_sdk",
+  "//src/developer/ffx/plugins/completion:ffx_completion",
 
   # TODO(402497848): Remove these once MOS has been updated.
   "//src/developer/ffx/plugins/package:ffx_package",
