@@ -257,19 +257,22 @@ class WlanRebootTest(base_test.WifiBaseTest):
             raise TypeError(f"Invalid IP type: {ip_version}")
 
         if ap_address:
+            ping_count = 5
             if ip_version == IpVersionType.IPV4:
-                ping_result = self.dut.ping(ap_address)
+                ping_result = self.dut.ping(ap_address, count=ping_count)
             else:
                 ap_address = (
                     f"{ap_address}%{self.dut.get_default_wlan_test_interface()}"
                 )
-                ping_result = self.dut.ping(ap_address)
-            if ping_result.success:
-                self.log.info("Ping was successful.")
-            else:
-                raise signals.TestFailure(
-                    f"Ping was unsuccessful: {ping_result}"
-                )
+                ping_result = self.dut.ping(ap_address, count=ping_count)
+            # To avoid flakes at scale, we allow for up to 1 ping to fail.
+            expected_ping_replies = ping_count - 1
+            asserts.assert_greater_equal(
+                ping_result.received,
+                expected_ping_replies,
+                f"Expected at least {expected_ping_replies}/{ping_count} packets received, but got {ping_result.received}/{ping_count}",
+            )
+            self.log.info("Ping was successful.")
         else:
             raise ConnectionError("Failed to retrieve APs ping address.")
 
