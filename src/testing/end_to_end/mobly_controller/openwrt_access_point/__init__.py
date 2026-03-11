@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Library for interacting with OpenWRT Access Points."""
 
+import ipaddress
 import json
 import logging
 import time
@@ -205,3 +206,104 @@ class OpenWrtAP:
         # https://openwrt.org/docs/guide-user/network/wifi/basic#regenerate_configuration
         self.ssh.run("rm -f /etc/config/wireless")
         self.ssh.run("wifi config")
+
+    def get_addr(
+        self,
+        interface: str,
+        addr_type: str = "ipv4_private",
+        timeout_sec: int = 30,
+    ) -> str:
+        """Get the requested type of IP address for an interface.
+
+        Args:
+            interface: The interface name on the device (e.g., 'br-lan').
+            addr_type: Type of address to get (e.g., 'ipv4_private', 'ipv6_link_local').
+            timeout_sec: Seconds to wait to acquire an address.
+
+        Returns:
+            A string containing the requested address.
+
+        Raises:
+            TimeoutError: No address is available after timeout_sec.
+            ValueError: Several addresses are available or unknown addr_type.
+        """
+        end_time = time.time() + timeout_sec
+        while time.time() < end_time:
+            addrs_dict = self.get_interface_ip_addresses(interface)
+            if addr_type not in addrs_dict:
+                raise ValueError(f"Unknown addr_type: {addr_type}")
+
+            ip_addrs = addrs_dict[addr_type]
+            if len(ip_addrs) > 1:
+                raise ValueError(
+                    f'Expected only one "{addr_type}" address, got {ip_addrs}'
+                )
+            elif len(ip_addrs) == 1:
+                return ip_addrs[0]
+            time.sleep(1)
+
+        raise TimeoutError(
+            f'No available "{addr_type}" address on {interface} after {timeout_sec}s'
+        )
+
+    def get_interface_ip_addresses(
+        self, interface: str
+    ) -> Dict[str, List[str]]:
+        """Gets all of the IP addresses associated with a particular interface name.
+
+        Args:
+            interface: The interface name on the device (e.g., 'br-lan').
+
+        Returns:
+            A dictionary of the various IP addresses:
+                ipv4_private: Any 192.168, 172.16, 10, or 169.254 addresses
+                ipv4_public: Any IPv4 public addresses
+                ipv6_link_local: Any fe80:: addresses
+                ipv6_private: Any fd00:: addresses
+                ipv6_public: Any publicly routable addresses
+        """
+        stdout = self.ssh.run(f"ip -o addr show {interface}").stdout.decode(
+            "utf-8"
+        )
+        addrs = [
+            line.replace("/", " ").split()[3]
+            for line in stdout.splitlines()
+            if len(line.split()) > 3
+        ]
+
+        ipv4_private_addresses = []
+        ipv4_public_addresses = []
+        ipv6_link_local_addresses = []
+        ipv6_private_addresses = []
+        ipv6_public_addresses = []
+
+        for addr in addrs:
+            on_device_ip = ipaddress.ip_address(addr)
+            if on_device_ip.version == 4:
+                if on_device_ip.is_private:
+                    ipv4_private_addresses.append(str(on_device_ip))
+                elif on_device_ip.is_global or (
+                    # Carrier private doesn't have a property, so we check if
+                    # all other values are left unset.
+                    not on_device_ip.is_reserved
+                    and not on_device_ip.is_unspecified
+                    and not on_device_ip.is_link_local
+                    and not on_device_ip.is_loopback
+                    and not on_device_ip.is_multicast
+                ):
+                    ipv4_public_addresses.append(str(on_device_ip))
+            elif on_device_ip.version == 6:
+                if on_device_ip.is_link_local:
+                    ipv6_link_local_addresses.append(str(on_device_ip))
+                elif on_device_ip.is_private:
+                    ipv6_private_addresses.append(str(on_device_ip))
+                elif on_device_ip.is_global:
+                    ipv6_public_addresses.append(str(on_device_ip))
+
+        return {
+            "ipv4_private": ipv4_private_addresses,
+            "ipv4_public": ipv4_public_addresses,
+            "ipv6_link_local": ipv6_link_local_addresses,
+            "ipv6_private": ipv6_private_addresses,
+            "ipv6_public": ipv6_public_addresses,
+        }

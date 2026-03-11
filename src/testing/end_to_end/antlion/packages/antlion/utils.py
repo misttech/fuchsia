@@ -660,17 +660,17 @@ def get_interface_ip_addresses(
     else:
         raise ValueError("Unsupported method to send command to device.")
 
-    ipv4_private_local_addresses = []
+    ipv4_private_addresses = []
     ipv4_public_addresses = []
     ipv6_link_local_addresses = []
-    ipv6_private_local_addresses = []
+    ipv6_private_addresses = []
     ipv6_public_addresses = []
 
     for addr in addrs:
         on_device_ip = ipaddress.ip_address(addr)
         if on_device_ip.version == 4:
             if on_device_ip.is_private:
-                ipv4_private_local_addresses.append(str(on_device_ip))
+                ipv4_private_addresses.append(str(on_device_ip))
             elif on_device_ip.is_global or (
                 # Carrier private doesn't have a property, so we check if
                 # all other values are left unset.
@@ -685,15 +685,15 @@ def get_interface_ip_addresses(
             if on_device_ip.is_link_local:
                 ipv6_link_local_addresses.append(str(on_device_ip))
             elif on_device_ip.is_private:
-                ipv6_private_local_addresses.append(str(on_device_ip))
+                ipv6_private_addresses.append(str(on_device_ip))
             elif on_device_ip.is_global:
                 ipv6_public_addresses.append(str(on_device_ip))
 
     return {
-        "ipv4_private": ipv4_private_local_addresses,
+        "ipv4_private": ipv4_private_addresses,
         "ipv4_public": ipv4_public_addresses,
         "ipv6_link_local": ipv6_link_local_addresses,
-        "ipv6_private_local": ipv6_private_local_addresses,
+        "ipv6_private": ipv6_private_addresses,
         "ipv6_public": ipv6_public_addresses,
     }
 

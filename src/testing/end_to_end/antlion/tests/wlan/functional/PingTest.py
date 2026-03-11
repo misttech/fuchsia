@@ -15,14 +15,20 @@ import multiprocessing
 from typing import Callable, NamedTuple
 
 from antlion import utils
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.access_point import setup_ap
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from antlion.utils import PingResult, rand_ascii_str
 from mobly import asserts, signals, test_runner
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 LOOPBACK_IPV4 = "127.0.0.1"
 LOOPBACK_IPV6 = "::1"
@@ -106,38 +112,58 @@ class PingTest(base_test.WifiBaseTest):
             FuchsiaDevice, AssociationMode.POLICY
         )
 
-        if len(self.access_points) < 1:
-            raise signals.TestAbortClass(
-                "At least one access point is required"
-            )
-        self.access_point: AccessPoint = self.access_points[0]
-
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            setup_bridge=True,
-            is_ipv6_enabled=True,
-            is_nat_enabled=False,
-        )
-
-        ap_bridges = self.access_point.interfaces.get_bridge_interface()
-        if ap_bridges and len(ap_bridges) > 0:
-            ap_bridge = ap_bridges[0]
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
         else:
-            asserts.abort_class(
-                f"Expected one bridge interface on the AP, got {ap_bridges}"
+            raise signals.TestAbortClass("Requires at least one access point")
+
+        band = Band.BAND_2G
+        security = Security.NONE
+
+        if hasattr(self, "openwrt_ap"):
+            config = AccessPointConfig.generate(
+                band=band,
+                ssid=self.ssid,
+                security=security,
             )
-        self.ap_ipv4 = utils.get_addr(self.access_point.ssh, ap_bridge)
-        self.ap_ipv6 = utils.get_addr(
-            self.access_point.ssh, ap_bridge, addr_type="ipv6_link_local"
-        )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band)
+
+            # Retrieve Gateway IPs.
+            self.ap_ipv4 = self.openwrt_ap.get_addr("br-lan", "ipv4_private")
+            self.ap_ipv6 = self.openwrt_ap.get_addr("br-lan", "ipv6_link_local")
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=ConfigMapper.to_hostapd_band(band).default_channel(),
+                ssid=self.ssid,
+                setup_bridge=True,
+                is_ipv6_enabled=True,
+                is_nat_enabled=False,
+            )
+
+            ap_bridges = self.access_point.interfaces.get_bridge_interface()
+            if not ap_bridges:
+                raise signals.TestAbortClass(
+                    f"Expected bridge interfaces on the AP, got {ap_bridges}"
+                )
+            ap_bridge = ap_bridges[0]
+            self.ap_ipv4 = utils.get_addr(self.access_point.ssh, ap_bridge)
+            self.ap_ipv6 = utils.get_addr(
+                self.access_point.ssh, ap_bridge, addr_type="ipv6_link_local"
+            )
+
         self.log.info(
             f"Gateway finished setup ({self.ap_ipv4} | {self.ap_ipv6})"
         )
 
-        self.dut.associate(self.ssid, SecurityMode.OPEN)
+        self.dut.associate(
+            self.ssid, ConfigMapper.to_hostapd_security(security)
+        )
 
         # Wait till the DUT has valid IP addresses after connecting.
         self.fuchsia_device.wait_for_ipv4_addr(
@@ -153,7 +179,8 @@ class PingTest(base_test.WifiBaseTest):
             self.dut.disconnect()
             self.dut.reset_wifi()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
         super().teardown_class()
 
     def send_ping(
@@ -224,16 +251,15 @@ class PingTest(base_test.WifiBaseTest):
                 p.join(PING_RESULT_TIMEOUT_SEC)
 
         finally:
-            is_alive = False
-
+            last_alive_index = None
             for index, p in enumerate(ping_processes):
                 if p.is_alive():
                     p.terminate()
-                    is_alive = True
+                    last_alive_index = index
 
-            if is_alive:
+            if last_alive_index is not None:
                 raise signals.TestFailure(
-                    f"Timed out while pinging {ping_urls[index]}"
+                    f"Timed out while pinging {ping_urls[last_alive_index]}"
                 )
 
         for i, ping_result in enumerate(ping_results):

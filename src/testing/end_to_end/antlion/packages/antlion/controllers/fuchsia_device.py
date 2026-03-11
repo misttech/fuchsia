@@ -733,11 +733,16 @@ class FuchsiaDevice:
         timeout = time.time() + IP_ADDRESS_TIMEOUT
         while time.time() < timeout:
             ip_addrs = self.get_interface_ip_addresses(interface)
-            if len(ip_addrs["ipv6_private_local"]) > 0:
-                self.log.info(
-                    "Device has an ipv6 private local address: "
-                    f"{ip_addrs['ipv6_private_local'][0]}"
-                )
+            # Check for any valid IPv6 address. While the test ideally uses a
+            # routed ULA (private local) address, a link-local address is
+            # sufficient for connectivity in some environments.
+            valid_addrs = (
+                ip_addrs["ipv6_link_local"]
+                + ip_addrs["ipv6_private"]
+                + ip_addrs["ipv6_public"]
+            )
+            if len(valid_addrs) > 0:
+                self.log.info(f"Device has valid ipv6 addresses: {valid_addrs}")
                 break
             else:
                 self.log.debug(
