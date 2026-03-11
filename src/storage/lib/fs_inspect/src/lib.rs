@@ -34,7 +34,8 @@ pub trait FsInspect {
 /// Trait that Rust filesystems which are multi-volume should implement for each volume.
 #[async_trait]
 pub trait FsInspectVolume {
-    async fn get_volume_data(&self) -> VolumeData;
+    /// Returns the populated VolumeData struct, or None if the volume is unable to return the data.
+    async fn get_volume_data(&self) -> Option<VolumeData>;
 }
 
 /// Maintains ownership of the various inspect nodes/properties. Will be removed from the root node
@@ -105,9 +106,12 @@ impl FsInspectTree {
                         Some(v) => v,
                         None => continue,
                     };
-                    let child = root.create_child(name.clone());
-                    volume.get_volume_data().await.record_into(&child);
-                    root.record(child);
+                    // Exclude a volume that is not able to return it.
+                    if let Some(volume_data) = volume.get_volume_data().await {
+                        let child = root.create_child(name.clone());
+                        volume_data.record_into(&child);
+                        root.record(child);
+                    }
                 }
                 Ok(inspector)
             }

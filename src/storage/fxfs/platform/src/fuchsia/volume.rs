@@ -848,13 +848,16 @@ impl AsRef<ObjectStore> for FxVolume {
 
 #[async_trait]
 impl FsInspectVolume for FxVolume {
-    async fn get_volume_data(&self) -> VolumeData {
+    async fn get_volume_data(&self) -> Option<VolumeData> {
+        // Don't try to return data if the volume is shutting down.
+        let _guard = self.scope.try_active_guard()?;
+
         let object_count = self.store().object_count();
         let (used_bytes, bytes_limit) =
             self.store.filesystem().allocator().owner_allocation_info(self.store.store_object_id());
         let encrypted = self.store().crypt().is_some();
         let port_koid = fasync::EHandle::local().port().as_handle_ref().koid().unwrap().raw_koid();
-        VolumeData { bytes_limit, used_bytes, used_nodes: object_count, encrypted, port_koid }
+        Some(VolumeData { bytes_limit, used_bytes, used_nodes: object_count, encrypted, port_koid })
     }
 }
 
@@ -997,6 +1000,7 @@ mod tests {
     use crate::volume::MAX_READ_AHEAD_SIZE;
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::{BytesAndNodes, ProjectIdMarker};
+    use fs_inspect::FsInspectVolume;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder};
@@ -1006,7 +1010,7 @@ mod tests {
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, StoreOptions};
     use fxfs_crypt_common::CryptBase;
-    use fxfs_crypto::WrappingKeyId;
+    use fxfs_crypto::{Crypt, WrappingKeyId};
     use fxfs_insecure_crypto::new_insecure_crypt;
     use refaults_vmo::PageRefaultCounter;
     use std::sync::atomic::Ordering;
@@ -1599,6 +1603,37 @@ mod tests {
             wait_for_read_ahead_to_change(MemoryPressureLevel::Warning, 8 * 1024).await;
             wait_for_read_ahead_to_change(MemoryPressureLevel::Normal, 12 * 1024).await;
             wait_for_read_ahead_to_change(MemoryPressureLevel::Critical, 4 * 1024).await;
+        }
+        fixture.close().await;
+    }
+
+    // This test verifies that it is safe to query a volume after it is unmounted in case of a race
+    // during unmount/shutdown.
+    #[fuchsia::test(threads = 2)]
+    async fn test_query_info_unmounted_volume() {
+        const TEST_VOLUME: &str = "test_1234";
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
+
+        let fixture = TestFixture::new().await;
+        {
+            let volumes_directory = fixture.volumes_directory();
+            let volume = volumes_directory
+                .create_and_mount_volume(TEST_VOLUME, Some(crypt.clone()), false, None)
+                .await
+                .unwrap();
+
+            assert!(volume.volume().get_volume_data().await.is_some());
+
+            // Unmount it but keep a reference.
+            volumes_directory
+                .lock()
+                .await
+                .unmount(volume.volume().store().store_object_id())
+                .await
+                .expect("unmount failed");
+
+            // This returns None, but doesn't crash.
+            assert!(volume.volume().get_volume_data().await.is_none());
         }
         fixture.close().await;
     }
