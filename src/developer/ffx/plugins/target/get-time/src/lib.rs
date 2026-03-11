@@ -47,11 +47,10 @@ where
 mod test {
     use super::*;
     use fdomain_fuchsia_developer_remotecontrol as rcs;
-    use fdomain_local::local_client;
     use target_holders::fdomain::fake_proxy;
 
     fn setup_fake_time_server_proxy() -> rcs::RemoteControlProxy {
-        let client = local_client(|| Err(fidl::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         fake_proxy(client, move |req| match req {
             rcs::RemoteControlRequest::GetTime { responder } => {
                 responder.send(fidl::MonotonicInstant::from_nanos(123456789)).unwrap();

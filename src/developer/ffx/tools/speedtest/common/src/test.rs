@@ -5,16 +5,17 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
+use fuchsia_async as fasync;
 use futures::TryStreamExt as _;
 use test_case::test_case;
-use {flex_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 use crate::client::{self, PingReport, SocketTransferParams, SocketTransferReport};
 use crate::server;
 
 async fn with_client(f: impl AsyncFnOnce(client::Client)) {
     #[cfg(feature = "fdomain")]
-    let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+    let client = fdomain_local::local_client_empty();
     #[cfg(not(feature = "fdomain"))]
     let client = fidl::endpoints::ZirconClient;
     let (client, mut server_rs) = client.create_proxy_and_stream::<fspeedtest::SpeedtestMarker>();

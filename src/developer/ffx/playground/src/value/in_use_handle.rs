@@ -446,7 +446,7 @@ mod test {
 
     #[fuchsia::test]
     async fn coerce() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let a = a.take_server(Some("test_proto")).unwrap();
         assert_eq!("test_proto", &b.get_client_protocol().unwrap());
@@ -460,7 +460,7 @@ mod test {
 
     #[fuchsia::test]
     async fn coerce_socket() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let FidlValue::Handle(a, a_ty, _) = a.take_socket().unwrap() else {
             panic!();

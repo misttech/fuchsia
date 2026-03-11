@@ -114,7 +114,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_schema() -> Result<()> {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let cmd = ComponentListCommand { filter: None, verbose: false };
         let tool = ListTool { cmd, rcs: setup_fake_rcs(vec![], client).into() };
         let buffers = TestBuffers::default();

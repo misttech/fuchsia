@@ -225,7 +225,7 @@ mod test {
     #[fuchsia::test]
     async fn receive_hangup() {
         #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         #[cfg(not(feature = "fdomain"))]
         let client = fidl::endpoints::ZirconClient;
         let (socket, _) = client.create_stream_socket();

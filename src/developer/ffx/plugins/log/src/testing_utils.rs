@@ -15,8 +15,10 @@ use fdomain_fuchsia_diagnostics::{
 use fdomain_fuchsia_diagnostics_host::{
     ArchiveAccessorMarker, ArchiveAccessorRequest, ArchiveAccessorRequestStream,
 };
+use fdomain_fuchsia_sys2 as fsys;
 use ffx_config::EnvironmentContext;
 use fho::{FhoEnvironment, TryFromEnv};
+use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
 use futures::{Stream, StreamExt, TryStreamExt};
 use log_command_fdomain::parse_utc_time;
@@ -29,7 +31,6 @@ use target_behavior::ConnectionBehavior;
 use target_connector::Connector;
 use target_holders::FakeInjector;
 use target_holders::fdomain::RemoteControlProxyHolder;
-use {fdomain_fuchsia_sys2 as fsys, fuchsia_async as fasync};
 
 const NODENAME: &str = "Rust";
 
@@ -132,7 +133,7 @@ pub struct TestEnvironment {
 
 impl TestEnvironment {
     pub async fn new(config: TestEnvironmentConfig) -> Self {
-        let client = fdomain_local::local_client(|| Err(fidl::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let (event_snd, event_rcv) = mpsc::unbounded();
         let (disconnect_snd, disconnect_rcv) = oneshot::channel();
         let state = Rc::new(State::new(config, event_snd, disconnect_rcv));

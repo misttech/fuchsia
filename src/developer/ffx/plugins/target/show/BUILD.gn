@@ -35,7 +35,6 @@ ffx_plugin("ffx_target_show") {
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust_fdomain",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
-    "//sdk/rust/zx-status",
     "//src/connectivity/lib/net-declare",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",

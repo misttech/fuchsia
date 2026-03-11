@@ -52,3 +52,7 @@ pub fn local_client(
 ) -> Arc<Client> {
     LocalFDomain::new_client(namespace)
 }
+
+pub fn local_client_empty() -> Arc<Client> {
+    local_client(|| Err(fidl::Status::NOT_SUPPORTED))
+}

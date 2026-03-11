@@ -10,6 +10,8 @@ use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
+use ffx_target;
+use ffx_target_show_args as args;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
@@ -22,7 +24,6 @@ use target_behavior::{ConnectionBehavior, DirectConnector};
 use target_holders::TargetProxyHolder;
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use timeout::timeout;
-use {ffx_target, ffx_target_show_args as args};
 
 mod show;
 
@@ -433,7 +434,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();
@@ -478,7 +479,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gather_board_show() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let test_proxy = setup_fake_board_server(client);
         let result = gather_board_show(test_proxy).await.expect("gather board show");
         assert_eq!(result.name, Some("fake_name".to_string()));
@@ -502,7 +503,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gather_device_show() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let test_proxy = setup_fake_device_server(Arc::clone(&client));
         let device_id_proxy = Deferred::from_output(Ok(setup_fake_device_id_server(client)));
         let result =
@@ -545,7 +546,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gather_product_show() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let test_proxy = setup_fake_product_server(client);
         let result = gather_product_show(test_proxy).await.expect("gather product show");
         assert_eq!(result.audio_amplifier, Some("fake_audio_amplifier".to_string()));
@@ -584,7 +585,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gather_update_show() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let test_proxy = setup_fake_channel_control_server(client);
         let result = gather_update_show(test_proxy).await.expect("gather update show");
         assert_eq!(result.current_channel, "fake_channel".to_string());
@@ -600,7 +601,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_verify_machine_schema() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let mut output =
             <ShowTool as FfxMain>::Writer::new_test(Some(Format::JsonPretty), &buffers);
@@ -650,7 +651,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl_direct_connection() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();

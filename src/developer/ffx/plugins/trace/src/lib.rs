@@ -1053,7 +1053,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1211,7 +1211,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_machine() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
@@ -1237,7 +1237,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_peer_closed() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1257,7 +1257,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1279,7 +1279,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_peer_closed() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1300,7 +1300,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_machine() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
@@ -1319,7 +1319,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_start() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1366,7 +1366,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_status() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1392,7 +1392,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1423,7 +1423,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_abort() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1462,7 +1462,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_with_long_path() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1496,7 +1496,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_verbose() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1543,7 +1543,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_verbose() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1583,7 +1583,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1620,7 +1620,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration_foreground() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1660,7 +1660,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_foreground() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1700,7 +1700,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_large_buffer() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);

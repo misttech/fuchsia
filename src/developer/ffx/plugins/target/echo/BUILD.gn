@@ -27,7 +27,6 @@ ffx_plugin("ffx_target_echo") {
     "//src/developer/ffx/lib/target/behavior:lib",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",

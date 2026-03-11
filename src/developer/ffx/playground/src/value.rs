@@ -1319,7 +1319,7 @@ mod test {
     #[fuchsia::test]
     async fn promote_handles() {
         let mut ns = lib::Namespace::new();
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         ns.load(test_fidl::TEST_FIDL).unwrap();
         let (a, b) = client.create_channel();
 
@@ -1376,7 +1376,7 @@ mod test {
             zx::RIGHTS_BASIC | zx::RIGHTS_IO | Rights::SIGNAL | Rights::SIGNAL_PEER;
 
         let ns = lib::Namespace::new();
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
         let a = Value::OutOfLine(PlaygroundValue::InUseHandle(a));
 
@@ -1417,7 +1417,7 @@ mod test {
     #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn duplicate_raw_handle() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let (socket, _b) = client.create_stream_socket();
         let socket = socket.into_handle();
         let mut socket = Value::Handle(socket, ObjectType::Socket, None);

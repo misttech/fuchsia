@@ -154,7 +154,7 @@ mod test {
     }
 
     async fn run_echo_test(cmd: EchoCommand) -> String {
-        let client = fdomain_local::local_client(|| Err(fidl::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let fake_injector = Arc::new(FakeInjector {
             remote_factory_closure_f: Box::new(move || {
                 Box::pin(setup_fake_service(Arc::clone(&client)).map(Ok))
@@ -202,7 +202,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_echo_with_machine() -> Result<()> {
-        let client = fdomain_local::local_client(|| Err(fidl::Status::NOT_SUPPORTED));
+        let client = fdomain_local::local_client_empty();
         let fake_injector = Arc::new(FakeInjector {
             remote_factory_closure_f: Box::new(move || {
                 Box::pin(setup_fake_service(Arc::clone(&client)).map(Ok))

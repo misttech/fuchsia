@@ -22,7 +22,6 @@ ffx_plugin("ffx_component_list") {
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
-    "//sdk/rust/zx-status",
     "//src/developer/ffx/lib/rcs:lib",
     "//src/diagnostics/iquery/test_support:iquery_test_support",
     "//src/lib/fdomain/client",

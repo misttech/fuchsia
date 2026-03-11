@@ -133,7 +133,7 @@ pub struct Test<T> {
 impl<T: AsRef<str>> Test<T> {
     /// Create a new test which will run the given Playground code.
     pub fn test(test: T) -> Self {
-        let fdomain_client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        let fdomain_client = fdomain_local::local_client_empty();
         Test { test, fdomain_client, with_fidl: false, with_test_cmds: false, with_dirs: None }
     }
 
