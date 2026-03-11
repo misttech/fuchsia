@@ -88,29 +88,17 @@ std::pair<zx::ticks, std::vector<uint64_t>> SampleThread(const zx::unowned_proce
     return {zx::ticks(), std::vector<uint64_t>()};
   }
   auto registers = unwinder::FromFuchsiaRegisters(regs);
+  const auto& frames = unwinder.Unwind(&memory, registers);
 
   std::vector<uint64_t> pcs;
-  pcs.reserve(50);
-  registers.GetPC(pcs.emplace_back());
-  unwinder::Frame current{registers, /*pc_is_return_address=*/true,
-                          unwinder::Frame::Trust::kContext};
-  for (size_t i = 0; i < 50; i++) {
-    unwinder::Frame next(unwinder::Registers{current.regs.arch()},
-                         /*pc_is_return_address=*/false,
-                         /*placeholder*/ unwinder::Frame::Trust::kFP);
-
-    bool success = unwinder.Step(&memory, current, next).ok();
-
-    // An undefined PC (e.g. on Linux) or 0 PC (e.g. on Fuchsia) marks the end of the unwinding.
-    // Don't include this in the output because it's not a real frame and provides no information.
-    // A failed unwinding will also end up with an undefined PC.
+  pcs.reserve(frames.size());
+  std::ranges::transform(frames, std::back_inserter(pcs), [](const unwinder::Frame& frame) {
     uint64_t pc;
-    if (!success || next.regs.GetPC(pc).has_err() || pc == 0) {
-      break;
-    }
-    pcs.push_back(pc);
-    current = next;
-  }
+    // This will always succeed - the unwinder will not return frames that do not contain PC.
+    std::ignore = frame.regs.GetPC(pc);
+    return pc;
+  });
+
   zx::ticks duration = zx::ticks::now() - before;
   return {duration, pcs};
 }
