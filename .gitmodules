@@ -728,3 +728,8 @@
 	url = https://fuchsia.googlesource.com/third_party/protobuf
 	name = third_party/protobuf
 	ignore = all
+[submodule "third_party/alacritty-migrating/src"]
+	path = third_party/alacritty-migrating/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/alacritty/alacritty
+	name = third_party/alacritty
+	ignore = all
