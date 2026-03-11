@@ -2,8 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+
+driver_bind_rules("bind") {
+  rules = "meta/cqhci.bind"
+  bind_output = "cqhci.bindbc"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_bindlib",
+    "//src/devices/bind/fuchsia.sdmmc",
+  ]
+}
 
 fuchsia_rust_driver("driver") {
   with_unit_tests = true
@@ -60,6 +70,21 @@ fuchsia_rust_driver("driver") {
 
 fuchsia_unittest_package("cqhci-test") {
   deps = [ ":driver_test" ]
+}
+
+fuchsia_driver_component("cqhci") {
+  component_name = "cqhci"
+  manifest = "meta/cqhci.cml"
+  info = "meta/cqhci-info.json"
+  deps = [
+    ":bind",
+    ":driver",
+  ]
+}
+
+fuchsia_driver_package("package") {
+  package_name = "cqhci"
+  driver_components = [ ":cqhci" ]
 }
 
 group("tests") {

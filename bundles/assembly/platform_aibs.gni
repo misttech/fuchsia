@@ -92,6 +92,7 @@ bringup_platform_aib_names = [
   "realtek_8211f_driver",
   "xhci_driver",
   "sdhci_driver",
+  "cqhci_driver",
 
   # The embeddable feature-set-level
   "embeddable_userdebug",

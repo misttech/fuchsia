@@ -321,6 +321,12 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             builder.platform_bundle("sdhci_driver")?;
         }
 
+        // Include CQHCI driver through a platform AIB.
+        // TODO(https://fxbug.dev/42176727): Enable on user builds.
+        if sdmmc_command_queueing && context.build_type != &BuildType::User {
+            builder.platform_bundle("cqhci_driver")?;
+        }
+
         // Include UFS PCI driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::ufs_pci") {
             builder.platform_bundle("ufs_pci_driver")?;

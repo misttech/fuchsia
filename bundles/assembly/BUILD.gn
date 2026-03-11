@@ -738,6 +738,22 @@ assembly_input_bundle("sdhci_driver") {
   ]
 }
 
+# AIB for the cqhci driver
+assembly_input_bundle("cqhci_driver") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
+  drivers = [
+    {
+      set = "bootfs"
+      package_target = "//src/devices/block/drivers/cqhci:package"
+      driver_components = [ "meta/cqhci.cm" ]
+    },
+  ]
+}
+
 # AIB for the ufs driver
 assembly_input_bundle("ufs_pci_driver") {
   allowed_in = [ "eng" ]
