@@ -30,7 +30,7 @@ diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
 
 # Copy over any added or modified files to the CartFS.
 added_or_modified_files=$(echo "${diff_output}" | grep '^\[[AM]\]' | awk '{print $2}')
-for file in ${added_or_modified_files[@]}; do
+for file in "${added_or_modified_files[@]}"; do
   sha256_cog=$(sha256sum "${COG_FUCHSIA_DIR}/${file}" | awk '{print $1}')
   sha256_cartfs=""
   if [[ -f "${CARTFS_FUCHSIA_DIR}/${file}" ]]; then
@@ -61,9 +61,7 @@ source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh" && fx-update-path
 
 # Copy modified files back to the COG workspace. This is mostly needed for
 # fx format-code
-git_status_output=$(cd "${CARTFS_FUCHSIA_DIR}" && "${GIT_PATH}" add . && "${GIT_PATH}" status -s)
-modified_files=$(echo "${git_status_output}" | grep '^[AM]' | awk '{print $2}')
-for file in ${modified_files[@]}; do
+for file in "${added_or_modified_files[@]}"; do
   if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
     continue
   fi
