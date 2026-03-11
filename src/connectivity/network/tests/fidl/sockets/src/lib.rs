@@ -655,7 +655,10 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
             rtt_var_usec,
             snd_ssthresh,
             snd_cwnd,
-            tcpi_total_retrans,
+            // NB: There's no valuable check to perform against the number of
+            // retransmits. Retransmissions may or may not have occurred during
+            // the handshake.
+            tcpi_total_retrans: _,
             tcpi_segs_out,
             tcpi_segs_in,
             reorder_seen,
@@ -693,7 +696,6 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
         assert_gt!(snd_cwnd, 0);
         assert_gt!(tcpi_segs_out, 0);
         assert_gt!(tcpi_segs_in, 0);
-        assert_eq!(tcpi_total_retrans, 0);
         assert_eq!(state, fnet_tcp::State::Established);
         assert_eq!(ca_state, fnet_tcp::CongestionControlState::Open);
         assert_eq!(reorder_seen, false);
