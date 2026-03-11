@@ -358,14 +358,14 @@ def _generate_bind_library_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     lib_base_path = meta["root"] + "/"
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "bind_library",
+    _merge_template(
+        runtime.ctx,
+        build_file,
+        _sdk_template_path(runtime, "bind_library"),
         {
             "{{deps}}": _get_starlark_list(runtime, meta["deps"], "//bind/"),
             "{{cc_deps}}": _get_starlark_list(
@@ -392,6 +392,7 @@ def _generate_sysroot_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -416,11 +417,10 @@ def _generate_sysroot_build_rules(
 
     process_context.files_to_copy[meta["_meta_sdk_root"]].extend(files)
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "sysroot",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "sysroot"),
         {
             "{{relative_dir}}": relative_dir,
         },
@@ -502,22 +502,23 @@ def _generate_sysroot_build_rules(
                 "{{unstripped_file}}": _final_bazel_path(debug_lib),
             }
 
-        per_arch_build_dir = "{}/{}".format(relative_dir, arch)
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            per_arch_build_dir,
-            "sysroot_arch_sub",
+        per_arch_build_file = build_file.dirname.get_child(arch).get_child(
+            "BUILD.bazel",
+        )
+        ctx.file(per_arch_build_file, content = _header(), executable = False)
+        _merge_template(
+            ctx,
+            per_arch_build_file,
+            _sdk_template_path(runtime, "sysroot_arch_sub"),
             {
                 "{{select_variants}}": _get_starlark_dict(runtime, select_variant_targets),
             },
         )
         for variant_target, substitutions in variant_targets_map.items():
-            _merge_build_dir_template(
-                runtime,
-                process_context,
-                per_arch_build_dir,
-                "sysroot_arch_sub_variant",
+            _merge_template(
+                ctx,
+                per_arch_build_file,
+                _sdk_template_path(runtime, "sysroot_arch_sub_variant"),
                 substitutions,
             )
 
@@ -538,6 +539,7 @@ def _generate_ffx_subtool_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     # Include meta manifest itself because ffx uses it to locate ffx tools.
@@ -554,11 +556,10 @@ def _generate_ffx_subtool_build_rules(
     if internal_files:
         relative_files = _meta_root_relative_paths(meta, internal_files)
 
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            relative_dir,
-            "ffx_subtool",
+        _merge_template(
+            runtime.ctx,
+            build_file,
+            _sdk_template_path(runtime, "ffx_subtool"),
             {
                 "{{files}}": _get_starlark_list(runtime, relative_files),
             },
@@ -569,11 +570,10 @@ def _generate_ffx_subtool_build_rules(
         repository, _, label = file.partition("//")
         relative_file = _meta_root_relative_path(meta, label.replace(":", "/"))
 
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            relative_dir,
-            "ffx_subtool_external",
+        _merge_template(
+            runtime.ctx,
+            build_file,
+            _sdk_template_path(runtime, "ffx_subtool_external"),
             {
                 "{{name}}": relative_file,
                 "{{actual}}": file,
@@ -585,6 +585,7 @@ def _generate_host_tool_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -601,11 +602,10 @@ def _generate_host_tool_build_rules(
     if internal_files:
         relative_files = _meta_root_relative_paths(meta, internal_files)
 
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            relative_dir,
-            "host_tool",
+        _merge_template(
+            ctx,
+            build_file,
+            _sdk_template_path(runtime, "host_tool"),
             {
                 "{{files}}": _get_starlark_list(runtime, relative_files),
             },
@@ -616,11 +616,10 @@ def _generate_host_tool_build_rules(
         repository, _, label = file.partition("//")
         relative_file = _meta_root_relative_path(meta, label.replace(":", "/"))
 
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            relative_dir,
-            "host_tool_external",
+        _merge_template(
+            ctx,
+            build_file,
+            _sdk_template_path(runtime, "host_tool_external"),
             {
                 "{{name}}": relative_file,
                 "{{actual}}": file,
@@ -632,6 +631,7 @@ def _generate_companion_host_tool_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -664,11 +664,10 @@ def _generate_companion_host_tool_build_rules(
     else:
         name = meta["name"]
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "companion_host_tool",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "companion_host_tool"),
         {
             "{{name}}": name,
             "{{files}}": _get_starlark_list(runtime, tool_files),
@@ -687,6 +686,7 @@ def _generate_api_version_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -722,37 +722,38 @@ def _generate_api_version_rules(
     # unlike other template rules that affect the corresponding BUILD.bazel file,
     # the api_version template creates a api_version.bzl file that is loaded in
     # the top-level BUILD.bazel created by fuchsia_sdk_repository_template.BUILD.
-    _merge_build_file_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "api_version.bzl",
-        "api_version",
+    bzl_file = ctx.path(build_file).dirname.get_child("api_version.bzl")
+
+    _merge_template(
+        ctx,
+        bzl_file,
+        _sdk_template_path(runtime, "api_version"),
         {
             "{{supported_api_levels}}": _get_starlark_list(runtime, supported_api_levels),
             "{{unsupported_api_levels}}": _get_starlark_list(runtime, unsupported_api_levels),
         },
     )
 
+    constraint_build_file = _constraints_build_file(ctx)
+
     # writes the api level constraints to the constraints build file
-    _merge_build_file_template(
-        runtime,
-        process_context,
-        "",
-        "constraints/BUILD.bazel",
-        "api_level_constraint",
+    _merge_template(
+        ctx,
+        constraint_build_file,
+        _sdk_template_path(runtime, "api_level_constraint"),
         {
             "{{target_cpus}}": _get_starlark_list(runtime, process_context.constants.target_cpus),
         },
     )
 
+    # write the api level flags
+    flags_build_file = _flags_build_file(ctx)
+
     # writes the api level constraints to the constraints build file
-    _merge_build_file_template(
-        runtime,
-        process_context,
-        "",
-        "flags/BUILD.bazel",
-        "api_level_flag",
+    _merge_template(
+        ctx,
+        flags_build_file,
+        _sdk_template_path(runtime, "api_level_flag"),
         {},
     )
 
@@ -761,6 +762,7 @@ def _generate_fidl_library_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -777,11 +779,10 @@ def _generate_fidl_library_build_rules(
         process_context.visibility_templates.get(HLCPP_VISIBILITY_KEY, None),
     )
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "fidl_library",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "fidl_library"),
         {
             "{{deps}}": _get_starlark_list(runtime, deps),
             "{{name}}": _get_target_name(meta["name"]),
@@ -806,6 +807,7 @@ def _generate_component_manifest_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     if "data" in meta:
@@ -825,11 +827,10 @@ def _generate_component_manifest_rules(
                 target_label = "//{}/{}:{}".format(include_path, lib_name, name)
                 process_context.component_manifest_targets.append(target_label)
 
-                _merge_build_dir_template(
-                    runtime,
-                    process_context,
-                    relative_dir,
-                    "component_manifest",
+                _merge_template(
+                    runtime.ctx,
+                    build_file,
+                    _sdk_template_path(runtime, "component_manifest"),
                     {
                         "{{name}}": name,
                         "{{source}}": shard_name,
@@ -861,6 +862,7 @@ def _generate_cc_source_library_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -917,11 +919,10 @@ def _generate_cc_source_library_build_rules(
     )
     if meta["stable"] == False:
         srcs.append(":" + verify_cc_head_api_level_name)
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "cc_library",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "cc_library"),
         {
             "{{deps}}": _get_starlark_list(runtime, deps),
             "{{fidl_deps}}": _get_starlark_list(runtime, fidl_deps),
@@ -996,6 +997,7 @@ def _generate_cc_prebuilt_library_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -1048,15 +1050,16 @@ def _generate_cc_prebuilt_library_build_rules(
 
         for arch in arch_list:
             head_dirname = "%s-HEAD" % (arch)
-            per_arch_build_file = "{}/BUILD.bazel".format(head_dirname)
+            per_arch_build_file = build_file.dirname.get_child(
+                head_dirname,
+            ).get_child("BUILD.bazel")
+            ctx.file(per_arch_build_file, content = _header(), executable = False)
 
             linklib = meta["binaries"][arch]["link"]
-            _merge_build_file_template(
-                runtime,
-                process_context,
-                relative_dir,
+            _merge_template(
+                ctx,
                 per_arch_build_file,
-                "cc_prebuilt_library_linklib",
+                _sdk_template_path(runtime, "cc_prebuilt_library_linklib"),
                 {
                     "{{link_lib}}": _final_bazel_path(linklib),
                     "{{library_type}}": meta["format"],
@@ -1072,12 +1075,13 @@ def _generate_cc_prebuilt_library_build_rules(
                 )
 
                 debug_lib = meta["binaries"][arch].get("debug", dist_lib)
-                _merge_build_file_template(
-                    runtime,
-                    process_context,
-                    relative_dir,
+                _merge_template(
+                    ctx,
                     per_arch_build_file,
-                    "cc_prebuilt_library_distlib",
+                    _sdk_template_path(
+                        runtime,
+                        "cc_prebuilt_library_distlib",
+                    ),
                     {
                         "{{stripped_file}}": _final_bazel_path(dist_lib),
                         "{{unstripped_file}}": _final_bazel_path(debug_lib),
@@ -1125,13 +1129,15 @@ def _generate_cc_prebuilt_library_build_rules(
             "//%s/%s:prebuilts" % (relative_dir, variant.name),
         ]
 
-        per_arch_x_api_build_file = "{}/BUILD.bazel".format(variant.name)
-        _merge_build_file_template(
-            runtime,
-            process_context,
-            relative_dir,
+        per_arch_x_api_build_file = build_file.dirname.get_child(
+            variant.name,
+        ).get_child("BUILD.bazel")
+        ctx.file(per_arch_x_api_build_file, content = _header(), executable = False)
+
+        _merge_template(
+            ctx,
             per_arch_x_api_build_file,
-            "cc_prebuilt_library_linklib",
+            _sdk_template_path(runtime, "cc_prebuilt_library_linklib"),
             {
                 "{{link_lib}}": _final_bazel_path(variant.link_lib),
                 "{{library_type}}": meta["format"],
@@ -1148,12 +1154,13 @@ def _generate_cc_prebuilt_library_build_rules(
             )
 
             debug_lib = variant.debug if variant.has_debug else dist_lib
-            _merge_build_file_template(
-                runtime,
-                process_context,
-                relative_dir,
+            _merge_template(
+                ctx,
                 per_arch_x_api_build_file,
-                "cc_prebuilt_library_distlib",
+                _sdk_template_path(
+                    runtime,
+                    "cc_prebuilt_library_distlib",
+                ),
                 {
                     "{{stripped_file}}": _final_bazel_path(dist_lib),
                     "{{unstripped_file}}": _final_bazel_path(debug_lib),
@@ -1184,11 +1191,10 @@ def _generate_cc_prebuilt_library_build_rules(
             "{{dist_select}}": dist_select_str,
         },
     )
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "cc_prebuilt_library",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "cc_prebuilt_library"),
         subs,
     )
 
@@ -1197,14 +1203,14 @@ def _generate_package_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "export_all_files",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "export_all_files"),
     )
 
     # Parse package variants from metadata.
@@ -1227,11 +1233,10 @@ def _generate_package_build_rules(
 
     for variant in package_variants:
         # Write build defs for each package variant.
-        _merge_build_dir_template(
-            runtime,
-            process_context,
-            relative_dir,
-            "package",
+        _merge_template(
+            ctx,
+            build_file,
+            _sdk_template_path(runtime, "package"),
             {
                 "{{name}}": variant.name,
                 "{{files}}": _get_starlark_list(
@@ -1251,11 +1256,10 @@ def _generate_package_build_rules(
             variant.files,
         )
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "select_alias",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "select_alias"),
         {
             "{{name}}": name,
             "{{select_map}}": _get_starlark_dict(
@@ -1274,16 +1278,16 @@ def _generate_config_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
     process_context.files_to_copy[meta["_meta_sdk_root"]].extend(meta["data"])
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "filegroup",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "filegroup"),
         {
             "{{name}}": _get_target_name(meta["name"]),
             "{{srcs}}": _get_starlark_list(
@@ -1298,6 +1302,7 @@ def _generate_python_e2e_test_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     # Helper functions to handle the unversioned tests.
@@ -1338,13 +1343,12 @@ def _generate_python_e2e_test_rules(
     # Write api level specific targets.
     name = _get_target_name(meta["name"])
     for api_level, files in files_for_api_level.items():
-        subpackage_build_file = "{}/BUILD.bazel".format(api_level)
-        _merge_build_file_template(
-            runtime,
-            process_context,
-            relative_dir,
+        subpackage_build_file = "%s/%s/BUILD.bazel" % (relative_dir, api_level)
+        ctx.file(subpackage_build_file, content = _header())
+        _merge_template(
+            ctx,
             subpackage_build_file,
-            "prebuilt_lacewing_test",
+            _sdk_template_path(runtime, "prebuilt_lacewing_test"),
             {
                 "{{name}}": name,
                 "{{test_binary}}": "%s_bin" % name,
@@ -1353,11 +1357,10 @@ def _generate_python_e2e_test_rules(
             },
         )
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "select_alias",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "select_alias"),
         {
             "{{name}}": name,
             "{{select_map}}": _get_starlark_dict(
@@ -1378,6 +1381,7 @@ def _generate_loadable_module_build_rules(
         runtime,
         meta,
         relative_dir,
+        build_file,
         process_context,
         parent_sdk_contents):
     ctx = runtime.ctx
@@ -1394,13 +1398,14 @@ def _generate_loadable_module_build_rules(
         files.extend(meta["binaries"][arch])
 
         # Create sub BUILD file
-        per_arch_build_file = "{}/BUILD.bazel".format(arch)
-        _merge_build_file_template(
-            runtime,
-            process_context,
-            relative_dir,
+        per_arch_build_file = build_file.dirname.get_child(arch).get_child(
+            "BUILD.bazel",
+        )
+        ctx.file(per_arch_build_file, content = _header(), executable = False)
+        _merge_template(
+            ctx,
             per_arch_build_file,
-            "loadable_module_sub",
+            _sdk_template_path(runtime, "loadable_module_sub"),
             {
                 "{{name}}": name,
                 "{{srcs}}": _get_starlark_list(
@@ -1416,11 +1421,10 @@ def _generate_loadable_module_build_rules(
 
     process_context.files_to_copy[meta["_meta_sdk_root"]].extend(files)
 
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        relative_dir,
-        "loadable_module",
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "loadable_module"),
         {
             "{{name}}": name,
             "{{relative_dir}}": relative_dir,
@@ -1435,42 +1439,21 @@ def _generate_loadable_module_build_rules(
         },
     )
 
-def _merge_build_file_template(runtime, process_context, build_dir, build_file, template_name, subs = {}):
-    """Expand the content of a given named template and append it to a given build file.
+def _merge_template(ctx, target_build_file, template_file, subs = {}):
+    if ctx.path(target_build_file).exists:
+        existing_content = ctx.read(target_build_file)
+    else:
+        existing_content = ""
 
-    This function does not write anything to disk, but instead records the modification
-    in a map held by process_context, to minimize disk I/O.
+    ctx.template(target_build_file, template_file, subs, executable = False)
 
-    Args:
-       runtime: A runtime value.
-       process_context: A process_context value.
-       build_dir: The directory containing the build file, relative to the output
-           repository directory. Can be empty.
-       build_file: The build file, relative to build_dir.
-       subs: A dictionary of substitutions to apply to the template's content.
-    """
-    build_file_path = "{}/{}".format(build_dir, build_file) if build_dir else str(build_file)
-    build_file_content = process_context.build_content_map.get(build_file_path)
-    if not build_file_content:
-        if build_file_path.endswith("BUILD.bazel"):
-            build_file_content = _header()
-        else:
-            build_file_content = ""
-
-    template_content = process_context.template_map.get(template_name)
-    if not template_content:
-        template_path = _sdk_template_path(runtime, template_name)
-        template_content = runtime.ctx.read(template_path)
-        process_context.template_map[template_name] = template_content
-
-    for key, value in subs.items():
-        template_content = template_content.replace(key, value)
-
-    process_context.build_content_map[build_file_path] = build_file_content + "\n" + template_content
-
-def _merge_build_dir_template(runtime, process_context, build_dir, template_name, subs = {}):
-    """A variant of _merge_build_file_template() that takes a build_dir argument, instead of a build_file one."""
-    return _merge_build_file_template(runtime, process_context, build_dir, "BUILD.bazel", template_name, subs)
+    if existing_content != "":
+        new_content = ctx.read(target_build_file)
+        ctx.file(
+            target_build_file,
+            content = existing_content + "\n" + new_content,
+            executable = False,
+        )
 
 def _process_dir(
         runtime,
@@ -1496,6 +1479,7 @@ def _process_dir(
     }
 
     ctx = runtime.ctx
+    build_file = ctx.path(relative_dir).get_child("BUILD.bazel")
 
     for meta in libraries:
         t = _type_from_meta(runtime, meta)
@@ -1504,26 +1488,46 @@ def _process_dir(
         if generator == None:
             continue
 
+        if not build_file.exists:
+            ctx.file(build_file, content = _header(), executable = False)
+
         generator(
             runtime,
             meta,
             relative_dir,
+            build_file,
             process_context,
             parent_sdk_contents,
         )
 
 def _write_cmc_includes(runtime, process_context):
     # write the cmc includes to the BUILD file
-    _merge_build_dir_template(
-        runtime,
-        process_context,
-        "",
-        "component_manifest_collection",
+    ctx = runtime.ctx
+    build_file = _root_build_file(ctx)
+    _merge_template(
+        ctx,
+        build_file,
+        _sdk_template_path(runtime, "component_manifest_collection"),
         {
             "{{name}}": "cmc_includes",
             "{{deps}}": str(process_context.component_manifest_targets),
         },
     )
+
+def _root_build_file(ctx):
+    return ctx.path("BUILD.bazel")
+
+def _constraints_build_file(ctx):
+    build_file = _root_build_file(ctx).dirname.get_child("constraints").get_child("BUILD.bazel")
+    if not build_file.exists:
+        ctx.file(build_file, content = _header(), executable = False)
+    return build_file
+
+def _flags_build_file(ctx):
+    build_file = _root_build_file(ctx).dirname.get_child("flags").get_child("BUILD.bazel")
+    if not build_file.exists:
+        ctx.file(build_file, content = _header(), executable = False)
+    return build_file
 
 def _type_from_meta(runtime, meta):
     if "type" in meta:
@@ -1776,11 +1780,7 @@ def _generate_sdk_build_rules(
             key: [Label(v) for v in _expand_values(values)]
             for key, values in ctx.attr.visibility_templates.items()
         },
-        template_map = {},  # Map { template_name -> template_content }
-        build_content_map = {},  # Map { build_file -> build_content }
     )
-
-    process_context.build_content_map["BUILD.bazel"] = runtime.ctx.read("BUILD.bazel")
 
     for dir in dir_to_meta.keys():
         meta = dir_to_meta[dir]
@@ -1804,10 +1804,6 @@ def _generate_sdk_build_rules(
         )
 
     _write_cmc_includes(runtime, process_context)
-
-    # Now write all build files to disk.
-    for build_file, build_content in process_context.build_content_map.items():
-        runtime.ctx.file(build_file, content = build_content, executable = False)
 
     # Do not copy files from external repositories.
     # E.g. `@fuchsia_idk//arch/x64:dist/lib/libfoo.so`.
