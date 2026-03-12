@@ -476,6 +476,59 @@ idk_cc_source_library(
     stable = True,
 )
 
+# TODO(https://fxbug.dev/417305295): Add "fuchsia_only_source.cc" to the list of
+# sources and files map after fixing the `fuchsia_srcs` bug.
+create_test_atom_info(
+    name = "platform_dependent_source_library_golden_info",
+    testonly = True,
+    additional_prebuild_info = {
+        "include_dir": '"pkg/platform_dependent_source_library/include"',
+        "sources": '["pkg/platform_dependent_source_library/platform_dependent_library.cc"]',
+        "headers": '["pkg/platform_dependent_source_library/include/lib/test_lib/platform_dependent_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/test_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/fuchsia_only_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"]',
+        "file_base": '"pkg/platform_dependent_source_library"',
+    },
+    api_area = "Developer",
+    api_contents_map = {
+        "pkg/platform_dependent_source_library/include/lib/test_lib/platform_dependent_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/platform_dependent_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/fuchsia_only_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/fuchsia_only_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/internal_header_appears_in_api_file.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h",
+    },
+    api_file_path = "//build/bazel/bazel_idk/tests:platform_dependent_source_library.api",
+    atom_build_deps = [
+        "//build/bazel/bazel_idk/tests:platform_dependent_source_library_verify_no_duplicate_files",
+        "//build/bazel/bazel_idk/tests:platform_dependent_source_library_verify_pragma_once",
+        "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist",
+        "//build/bazel/bazel_idk/tests:platform_dependent_source_library_idk_verify_api",
+    ],
+    atom_files_map_generated_files = {},
+    atom_files_map_source_files = {
+        "pkg/platform_dependent_source_library/include/lib/test_lib/platform_dependent_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/platform_dependent_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/fuchsia_only_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/fuchsia_only_header.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/internal_header_appears_in_api_file.h",
+        "pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h",
+        "pkg/platform_dependent_source_library/platform_dependent_library.cc": "//build/bazel/bazel_idk/tests:platform_dependent_library.cc",
+    },
+    atoms_depset = depset([]),
+    category = "partner",
+    id = "sdk://pkg/platform_dependent_source_library",
+    idk_deps = [],
+    idk_name = "platform_dependent_source_library",
+    is_stable = True,
+    label = "//build/bazel/bazel_idk/tests:platform_dependent_source_library_idk",
+    meta_dest = "pkg/platform_dependent_source_library/meta.json",
+    type = "cc_source_library",
+)
+
+verify_atom_info(
+    name = "verify_platform_dependent_source_library_atom_info",
+    testonly = True,
+    atom = ":platform_dependent_source_library_idk",
+    expected_atom_info = ":platform_dependent_source_library_golden_info",
+)
+
 idk_cc_source_library(
     name = "test_source_set_dependency",
     testonly = True,
@@ -832,6 +885,7 @@ filegroup(
         ":verify_test_shared_library_atom_info",
         ":verify_test_source_library_atom_info",
         ":verify_test_static_library_atom_info",
+        ":verify_platform_dependent_source_library_atom_info",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
