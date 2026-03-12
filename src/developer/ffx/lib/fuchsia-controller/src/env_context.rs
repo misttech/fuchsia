@@ -240,7 +240,9 @@ impl EnvContext {
         //
         // See said function for the explanation of what it's doing and a "bit of history."
         self.invariant_check().await?;
-        self.device_connection.lock().await.as_ref().unwrap().fdomain_client().await
+        let (fdomain, _) =
+            self.device_connection.lock().await.as_ref().unwrap().fdomain_client().await?;
+        Ok(fdomain)
     }
 
     pub async fn connect_remote_control_proxy(&self) -> Result<zx_types::zx_handle_t> {

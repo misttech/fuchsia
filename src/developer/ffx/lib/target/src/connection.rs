@@ -69,13 +69,17 @@ impl Connection {
         Ok(Self { overnet, fdomain: Mutex::new(client), fidl_pipe, rcs_info: Default::default() })
     }
 
-    pub async fn fdomain_client(&self) -> Result<Arc<fdomain_client::Client>> {
-        self.fdomain
-            .lock()
-            .await
-            .as_ref()
-            .map(|c| c.clone())
-            .ok_or_else(|| anyhow::anyhow!("FDomain client has not been initialized"))
+    /// Attempts to connect to an FDomain client. Will start a pass-through client if necessary,
+    /// returning `true` for the second item in the tuple if this is indeed a pass-through client.
+    pub async fn fdomain_client(&self) -> Result<(Arc<fdomain_client::Client>, bool)> {
+        let mut fdomain = self.fdomain.lock().await;
+        if let Some(fdomain) = fdomain.clone() {
+            Ok((fdomain, false))
+        } else {
+            let client = self.pass_thru_client().await?;
+            *fdomain = Some(client);
+            Ok((fdomain.clone().unwrap(), true))
+        }
     }
 
     /// Attempts to retrieve an instance of the remote control proxy. When invoked for the first
@@ -117,19 +121,7 @@ impl Connection {
     /// time, this function will run indefinitely until it finds a remote control proxy, so it is
     /// the caller's responsibility to time out.
     pub async fn rcs_proxy_fdomain(&self) -> Result<FDRemoteControlProxy, ConnectionError> {
-        let mut pass_thru = false;
-        let fdomain = {
-            let mut fdomain = self.fdomain.lock().await;
-            if let Some(fdomain) = fdomain.clone() {
-                fdomain
-            } else {
-                let client = self.pass_thru_client().await?;
-                pass_thru = true;
-                *fdomain = Some(client);
-                fdomain.clone().unwrap()
-            }
-        };
-
+        let (fdomain, pass_thru) = self.fdomain_client().await?;
         let (proxy, server_end) = fdomain.create_proxy::<FDRemoteControlMarker>();
         let ns = fdomain.namespace().await.map_err(|e| ConnectionError::InternalError(e.into()))?;
         let ns = fio::DirectoryProxy::new(ns);
