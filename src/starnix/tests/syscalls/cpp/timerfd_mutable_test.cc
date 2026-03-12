@@ -38,7 +38,12 @@ TEST(TimerFD, AlarmCancelOnSet) {
   ASSERT_EQ(0, timerfd_settime(timer_fd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &wakeup_spec,
                                nullptr));
 
-  std::thread test_thread([epoll_fd, timer_fd] {
+  auto rendezvous = test_helper::MakeRendezvous();
+  pid_t test_thread_tid = 0;
+  std::thread test_thread([&rendezvous, &test_thread_tid, epoll_fd, timer_fd] {
+    test_thread_tid = static_cast<pid_t>(syscall(SYS_gettid));
+    rendezvous.poker.poke();
+
     struct epoll_event events[1];
 
     // When the UTC timeline changes, we should get an event, and reading
@@ -58,12 +63,9 @@ TEST(TimerFD, AlarmCancelOnSet) {
   // We must ensure that there is an active epoll_wait monitoring for timeline change before
   // we attempt to change the UTC timeline. Otherwise the change would have happened
   // "before" the poll, and the poll will not see it.
-  //
-  // Sleeping is flaky, but there seems to be no other closed-box mechanism to ensure that this
-  // happens deterministically. Since infra timings can be very generous, we sleep for a
-  // *long* time to reduce the chance that epoll_wait doesn't happen.
+  rendezvous.holder.hold();
   printf("main_thread: wait here to ensure test_thread entered epoll_wait\n");
-  sleep(5);
+  test_helper::WaitUntilBlocked(test_thread_tid, true);
   printf("main_thread: ending wait, on to changing the timeline\n");
 
   // Now, rejigger the UTC timeline. This should cause epoll_wait above to unblock.

@@ -643,10 +643,7 @@ fuchsia_test_package("starnix_syscalls_cpp_flaky_tests") {
   deps += [ "//src/lib/testing/expectation:expectation_comparer" ]
 
   test_specs = {
-    # Run only on infra. Above tests exclude gce_env due to lack of Vulkan
-    # support. Presumably this test doesn't use Vulkan, so should be OK to
-    # run on GCE.
-    environments = [ gce_env ]
+    environments = basic_envs
 
     log_settings = {
       # Tests exercise failure cases, so ERROR logs are expected.
