@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_pkg_resolution::{
+    PackageResolverProxy, PackageResolverResolveRequest, ResolveError,
+};
 use ffx_target_package_resolve_args::ResolveCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, user_error};
-use fidl::marker::SourceBreaking;
-use fidl_fuchsia_pkg_resolution::{PackageResolverProxy, PackageResolverResolveRequest};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -66,11 +67,11 @@ impl ResolveTool {
             resolver
                 .resolve(PackageResolverResolveRequest {
                     package_url: Some(package.to_string()),
-                    __source_breaking: SourceBreaking,
+                    ..Default::default()
                 })
                 .await
                 .map_err(|e| user_error!("{e}"))?
-                .map_err(|e| user_error!("Failed to resolve {package}: {e:?}"))?;
+                .map_err(|e: ResolveError| user_error!("Failed to resolve {package}: {e:?}"))?;
         } else {
             return Err(user_error!("No package URL given."));
         }
@@ -81,18 +82,16 @@ impl ResolveTool {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_pkg_resolution::{PackageResolverRequest, ResolveError, ResolveResult};
     use ffx_writer::TestBuffers;
-    use fidl_fuchsia_pkg_resolution::{PackageResolverRequest, ResolveError, ResolveResult};
-    use target_holders::fake_proxy;
 
     async fn setup_fake_package_resolver_proxy(urls: Vec<String>) -> PackageResolverProxy {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = target_holders::fdomain::fake_proxy(client, move |req| match req {
             PackageResolverRequest::Resolve { payload, responder } => {
                 if let Some(package_url) = payload.package_url {
                     if urls.contains(&package_url) {
-                        responder
-                            .send(Ok(ResolveResult { __source_breaking: SourceBreaking }))
-                            .unwrap();
+                        responder.send(Ok(ResolveResult { ..Default::default() })).unwrap();
                     } else {
                         responder.send(Err(ResolveError::PackageNotFound)).unwrap();
                     }
