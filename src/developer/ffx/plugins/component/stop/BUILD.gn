@@ -8,13 +8,14 @@ ffx_plugin("ffx_component_stop") {
   sdk_category = "not-yet-specified"
   version = "0.1.0"
   edition = "2024"
+  with_unit_tests = true
   deps = [
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/component/common:ffx_component",
-    "//src/sys/lib/component_debug",
+    "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:async-trait",
   ]
 
@@ -25,4 +26,15 @@ ffx_plugin("ffx_component_stop") {
   ]
 
   sources = [ "src/lib.rs" ]
+
+  test_deps = [
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
+    "//src/lib/fdomain/client",
+    "//src/lib/fdomain/local",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+  ]
 }
