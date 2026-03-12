@@ -11,11 +11,11 @@ ffx_plugin("ffx_session_add") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+    "//sdk/fidl/fuchsia.element:fuchsia.element_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
@@ -23,8 +23,10 @@ ffx_plugin("ffx_session_add") {
   ]
 
   test_deps = [
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:futures",
   ]
 
   args_sources = [ "src/args.rs" ]
