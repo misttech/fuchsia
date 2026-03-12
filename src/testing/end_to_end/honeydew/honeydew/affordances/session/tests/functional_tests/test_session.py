@@ -6,7 +6,7 @@
 import logging
 import time
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew.affordances.session import errors as session_errors
@@ -18,19 +18,19 @@ _TILE_URL = (
 )
 
 
-class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+class SessionAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Session affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `dut` variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def test_add_component_without_started_session(self) -> None:
+    async def test_add_component_without_started_session(self) -> None:
         """Test case for calling session.add_component() without started
         session.
 
@@ -42,7 +42,7 @@ class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         with asserts.assert_raises(session_errors.SessionError):
             self.dut.session.add_component(_TILE_URL)
 
-    def test_start_multiple(self) -> None:
+    async def test_start_multiple(self) -> None:
         """Test case for session.start() called multiple times."""
 
         self.dut.session.ensure_started()
@@ -57,14 +57,14 @@ class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
         self.dut.session.add_component(_TILE_URL)
 
-    def test_stop_stopped_session(self) -> None:
+    async def test_stop_stopped_session(self) -> None:
         """Test case for session.stop() called multiple times."""
 
         self.dut.session.ensure_started()
         self.dut.session.stop()
         self.dut.session.stop()
 
-    def test_restart_session_stopped_session(self) -> None:
+    async def test_restart_session_stopped_session(self) -> None:
         """Test case for session.restart() starting a stopped session."""
 
         self.dut.session.ensure_started()
@@ -80,7 +80,7 @@ class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             # restart when session is stopped will get error: Not Running
             self.dut.session.restart()
 
-    def test_restart_session_started_session(self) -> None:
+    async def test_restart_session_started_session(self) -> None:
         """Test case for session.restart() restarting a started session."""
 
         self.dut.session.ensure_started()
