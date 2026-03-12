@@ -9,6 +9,7 @@ group("fuchsia_controller_tests") {
   testonly = true
   deps = [
     ":echo_stress_test",
+    ":fdomain_client_test",
     ":nuc_target_identity_tests",
     ":reboot_test",
     ":tracing_test",
@@ -77,6 +78,23 @@ if (is_host) {
 
   python_mobly_test("echo_stress_test") {
     main_source = "echo_stress_test.py"
+    libraries = [
+      "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
+      "//src/developer/ffx/lib/fuchsia-controller/end_to_end_tests/mobly/mobly_controller",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
+      "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_python",
+    ]
+    environments = [
+      emu_env,
+      vim3_env,
+      nuc7_env,
+      nuc11_env,
+    ]
+    deps = [ "//src/developer/ffx/lib/fuchsia-controller/tests:fuchsia_controller_test_data" ]
+  }
+
+  python_mobly_test("fdomain_client_test") {
+    main_source = "fdomain_client_test.py"
     libraries = [
       "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
       "//src/developer/ffx/lib/fuchsia-controller/end_to_end_tests/mobly/mobly_controller",
