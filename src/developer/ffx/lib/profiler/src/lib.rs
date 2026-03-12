@@ -6,3 +6,4 @@ mod fxt_parse;
 mod parse;
 pub mod pprof;
 pub mod symbolize;
+pub mod unwinder;

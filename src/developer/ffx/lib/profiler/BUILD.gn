@@ -37,7 +37,10 @@ rustc_library("profiler") {
     "src/parse.rs",
     "src/pprof.rs",
     "src/symbolize.rs",
+    "src/unwinder.rs",
   ]
+
+  non_rust_deps = [ ":sys" ]
 }
 
 rust_proto_library("profile_rust_proto") {
@@ -58,4 +61,17 @@ if (is_host) {
     testonly = true
     deps = [ "tests:host_tests" ]
   }
+}
+
+source_set("sys") {
+  sources = [
+    "sys/unwinder_wrapper.cc",
+    "sys/unwinder_wrapper.h",
+  ]
+  deps = [
+    "//sdk/lib/fit",
+    "//sdk/lib/stdcompat",
+    "//src/lib/unwinder",
+    "//zircon/system/public",
+  ]
 }
