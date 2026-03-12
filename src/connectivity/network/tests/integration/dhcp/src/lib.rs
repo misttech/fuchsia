@@ -250,14 +250,9 @@ async fn assert_interface_assigned_addr(
         },
     )
     .map_err(anyhow::Error::from)
-    .on_timeout(
-        // Netstack's DHCP client retries every 3 seconds. At the time of writing, dhcpd
-        // loses the race here and only starts after the first request from the DHCP
-        // client, which results in a 3 second toll. This test typically takes ~4.5
-        // seconds; we apply a large multiple to be safe.
-        fuchsia_async::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(30)),
-        || Err(anyhow::anyhow!("timed out")),
-    )
+    .on_timeout(fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT), || {
+        Err(anyhow::anyhow!("timed out"))
+    })
     .await
     .unwrap_or_else(|e| {
         panic!(
