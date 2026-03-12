@@ -2,30 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::compat::FcTransportStatus;
 use crate::env_context::{EnvContext, FfxConfigEntry};
 use crate::ext_buffer::ExtBuffer;
 use crate::lib_context::LibContext;
-use crate::waker::handle_notifier_waker;
-use fidl::{
-    AsHandleRef, HandleBased, HandleDisposition, HandleOp, ObjectType, Peered, Rights, Status,
-};
-use fuchsia_async::OnSignalsRef;
-use fuchsia_async::emulated_handle::Koid;
-use std::future::Future;
-use std::mem::{ManuallyDrop, MaybeUninit};
+use fdomain_client::{AsHandleRef, HandleOp, MessageBuf, Peered};
+use fidl::Rights;
+use std::mem::MaybeUninit;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::{Arc, mpsc};
-use std::task::{Context, Poll};
-use {zx_status, zx_types};
+use std::task::Poll;
+use zx_types;
 
 type Responder<T> = mpsc::SyncSender<T>;
-type CmdResult<T> = Result<T, zx_status::Status>;
+type CmdResult<T> = Result<T, FcTransportStatus>;
 
 pub(crate) struct ReadResponse {
     pub(crate) actual_bytes_count: usize,
     pub(crate) actual_handles_count: usize,
-    pub(crate) result: zx_status::Status,
+    pub(crate) result: FcTransportStatus,
+}
+
+impl From<FcTransportStatus> for ReadResponse {
+    fn from(result: FcTransportStatus) -> Self {
+        Self { actual_bytes_count: 0, actual_handles_count: 0, result }
+    }
 }
 
 pub(crate) enum LibraryCommand {
@@ -51,81 +52,96 @@ pub(crate) enum LibraryCommand {
         responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     HandleGetKoid {
-        handle: fidl::NullableHandle,
-        responder: Responder<Result<Koid, zx_status::Status>>,
+        lib: Arc<LibContext>,
+        handle: zx_types::zx_handle_t,
+        responder: Responder<CmdResult<u64>>,
     },
     ChannelRead {
         lib: Arc<LibContext>,
-        channel: fidl::Channel,
+        channel: zx_types::zx_handle_t,
         out_buf: ExtBuffer<u8>,
-        out_handles: ExtBuffer<MaybeUninit<fidl::NullableHandle>>,
+        out_handles: ExtBuffer<MaybeUninit<zx_types::zx_handle_t>>,
         responder: Responder<ReadResponse>,
     },
     ChannelCreate {
-        responder: Responder<(fidl::Channel, fidl::Channel)>,
+        env: Arc<EnvContext>,
+        responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     ChannelWrite {
-        channel: fidl::Channel,
+        lib: Arc<LibContext>,
+        channel: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
-        handles: ExtBuffer<fidl::NullableHandle>,
-        responder: Responder<zx_status::Status>,
+        handles: ExtBuffer<zx_types::zx_handle_t>,
+        responder: Responder<FcTransportStatus>,
     },
     ConfigGetString {
         env_ctx: Arc<EnvContext>,
         config_key: String,
         out_buf: ExtBuffer<u8>,
-        responder: Responder<Result<usize, zx_status::Status>>,
+        responder: Responder<CmdResult<usize>>,
     },
     ChannelWriteEtc {
-        channel: fidl::Channel,
+        lib: Arc<LibContext>,
+        channel: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
         handles: ExtBuffer<zx_types::zx_handle_disposition_t>,
-        responder: Responder<zx_status::Status>,
+        responder: Responder<FcTransportStatus>,
     },
     EventCreate {
-        responder: Responder<fidl::Event>,
+        env: Arc<EnvContext>,
+        responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     EventPairCreate {
-        responder: Responder<(fidl::EventPair, fidl::EventPair)>,
+        env: Arc<EnvContext>,
+        responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     ObjectSignal {
-        handle: fidl::NullableHandle,
+        lib: Arc<LibContext>,
+        handle: zx_types::zx_handle_t,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
-        responder: Responder<zx_status::Status>,
+        responder: Responder<FcTransportStatus>,
     },
     ObjectSignalPeer {
-        handle: fidl::NullableHandle,
+        lib: Arc<LibContext>,
+        handle: zx_types::zx_handle_t,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
-        responder: Responder<zx_status::Status>,
+        responder: Responder<FcTransportStatus>,
     },
     ObjectSignalPoll {
         lib: Arc<LibContext>,
-        handle: fidl::NullableHandle,
+        handle: zx_types::zx_handle_t,
         signals: fidl::Signals,
         responder: Responder<CmdResult<fidl::Signals>>,
     },
     SocketCreate {
-        options: fidl::SocketOpts,
-        responder: Responder<(fidl::Socket, fidl::Socket)>,
+        env: Arc<EnvContext>,
+        options: u32,
+        responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     SocketRead {
         lib: Arc<LibContext>,
-        socket: fidl::Socket,
+        socket: zx_types::zx_handle_t,
         out_buf: ExtBuffer<u8>,
         responder: Responder<ReadResponse>,
     },
     SocketWrite {
-        socket: fidl::Socket,
+        lib: Arc<LibContext>,
+        socket: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
-        responder: Responder<zx_status::Status>,
+        responder: Responder<FcTransportStatus>,
     },
     TargetWait {
         env: Arc<EnvContext>,
         timeout: u64,
-        responder: Responder<zx_status::Status>,
+        responder: Responder<FcTransportStatus>,
         offline: bool,
+    },
+    HandleClose {
+        lib: Arc<LibContext>,
+        handle: zx_types::zx_handle_t,
+        responder: Responder<()>,
     },
 }
 
@@ -140,7 +156,7 @@ impl LibraryCommand {
                     }
                     Err(e) => {
                         lib.write_err(e);
-                        responder.send(zx_status::Status::INTERNAL.into_raw()).unwrap();
+                        responder.send(FcTransportStatus::INTERNAL.into_raw()).unwrap();
                     }
                 }
             }
@@ -151,7 +167,7 @@ impl LibraryCommand {
                     }
                     Err(e) => {
                         lib.write_err(e);
-                        responder.send(Err(zx_status::Status::INTERNAL)).unwrap();
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
@@ -162,13 +178,27 @@ impl LibraryCommand {
                     }
                     Err(e) => {
                         env.write_err(e);
-                        responder.send(Err(zx_status::Status::INTERNAL)).unwrap();
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
-            Self::HandleGetKoid { handle, responder } => {
-                let handle = ManuallyDrop::new(handle);
-                responder.send(handle.koid()).unwrap();
+            Self::HandleGetKoid { lib, handle, responder } => {
+                let mut state = lib.fdomain_state().await;
+                let handle = match state.handle(handle) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
+                        return;
+                    }
+                };
+                match handle.as_handle_ref().get_koid().await {
+                    Ok(koid) => responder.send(Ok(koid)).unwrap(),
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        responder.send(Err(e.into())).unwrap();
+                    }
+                }
             }
             Self::OpenDeviceProxy { env, moniker, capability_name, responder } => {
                 match env.connect_device_proxy(moniker, capability_name).await {
@@ -177,95 +207,146 @@ impl LibraryCommand {
                     }
                     Err(e) => {
                         env.write_err(e);
-                        responder.send(Err(zx_status::Status::INTERNAL)).unwrap();
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
             Self::ChannelRead { lib, channel, mut out_buf, mut out_handles, responder } => {
-                let channel = fidl::AsyncChannel::from_channel(channel);
-                // Creates a waker that can notify when the channel needs to be
-                // woken for reads. Does not actually cause any reads to happen. One
-                // must manually invoke reading from this channel in a subsequent
-                // call.
-                let waker =
-                    handle_notifier_waker(channel.raw_handle(), lib.notification_sender().await);
-                let task_ctx = &mut Context::from_waker(&waker);
-                let res = match channel.read_raw(task_ctx, &mut out_buf, &mut out_handles) {
-                    Poll::Ready(res) => res,
-                    Poll::Pending => {
-                        // Don't want to drop the channel since it is pending.
-                        let _channel = ManuallyDrop::new(channel.into_zx_channel());
-                        responder
-                            .send(ReadResponse {
-                                actual_bytes_count: 0,
-                                actual_handles_count: 0,
-                                result: zx_status::Status::SHOULD_WAIT,
-                            })
-                            .unwrap();
-                        return;
-                    }
-                };
-                let _channel = ManuallyDrop::new(channel.into_zx_channel());
-                match res {
-                    Ok((res, actual_bytes_count, actual_handles_count)) => match res {
+                // There's room here to optimize this. We've already got an out buffer to read
+                // directly into here. For the sake of avoiding complexity this is just copying
+                // things for now.
+                let mut message_buf = MessageBuf::new();
+                let poll_res =
+                    match lib.fdomain_state().await.channel_read(channel, &mut message_buf).await {
+                        Ok(p) => match p {
+                            Poll::Ready(res) => res,
+                            Poll::Pending => {
+                                responder.send(FcTransportStatus::SHOULD_WAIT.into()).unwrap();
+                                return;
+                            }
+                        },
                         Err(e) => {
+                            lib.write_err(e);
+                            responder.send(FcTransportStatus::INTERNAL.into()).unwrap();
+                            return;
+                        }
+                    };
+                match poll_res {
+                    Ok(()) => {
+                        let actual_bytes_count = message_buf.bytes.len();
+                        let actual_handles_count = message_buf.handles.len();
+                        // Just for whomever is reading here: this is the behavior of
+                        // ZX_ERR_CHANNEL_READ_MAY_DISCARD, which is to discard the message rather
+                        // than saving it for a subsequent read attempt. For the time being this is
+                        // much easier to implement, and the only bindings existing have the maximum
+                        // FIDL message size in use and cannot hit this message.
+                        //
+                        // An alternative would just be to have either FDomain channels or for the
+                        // library context to save the message and then for each subsequent read we
+                        // see if there's a stored message to be sent out instead of discarding.
+                        if out_buf.len() < message_buf.bytes.len()
+                            || out_handles.len() < message_buf.handles.len()
+                        {
                             responder
                                 .send(ReadResponse {
                                     actual_bytes_count,
                                     actual_handles_count,
-                                    result: e,
+                                    result: FcTransportStatus::BUFFER_TOO_SMALL,
                                 })
                                 .unwrap();
+                            return;
                         }
-                        Ok(()) => {
-                            responder
-                                .send(ReadResponse {
-                                    actual_bytes_count,
-                                    actual_handles_count,
-                                    result: zx_status::Status::OK,
-                                })
-                                .unwrap();
+                        out_buf[..actual_bytes_count].copy_from_slice(message_buf.bytes.as_slice());
+                        let mut fdomain_state = lib.fdomain_state().await;
+                        for (i, handle_info) in message_buf.handles.into_iter().enumerate() {
+                            let hdl_num = fdomain_state.register(handle_info.handle.into());
+                            out_handles[i] = MaybeUninit::new(hdl_num);
                         }
-                    },
-                    Err((actual_bytes_count, actual_handles_count)) => {
                         responder
                             .send(ReadResponse {
                                 actual_bytes_count,
                                 actual_handles_count,
-                                result: zx_status::Status::BUFFER_TOO_SMALL,
+                                result: FcTransportStatus::OK,
                             })
                             .unwrap();
                     }
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        responder.send(FcTransportStatus::from(e).into()).unwrap();
+                    }
                 }
             }
-            Self::ChannelCreate { responder } => {
-                responder.send(fidl::Channel::create()).unwrap();
+            Self::ChannelCreate { env, responder } => {
+                let fdomain_client = match env.fdomain_client().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
+                        return;
+                    }
+                };
+                let (left, right) = fdomain_client.create_channel();
+                let lib = env.lib_ctx();
+                let mut state = lib.fdomain_state().await;
+                let left = state.register(left.into());
+                let right = state.register(right.into());
+                responder.send(Ok((left, right))).unwrap();
             }
-            Self::ChannelWrite { channel, buf, mut handles, responder } => {
-                let channel = ManuallyDrop::new(channel);
-                let status = match channel.write(&buf, &mut handles) {
-                    Ok(_) => zx_status::Status::OK,
-                    Err(e) => e,
+            Self::ChannelWrite { lib, channel, buf, handles, responder } => {
+                let mut fdomain_handles = Vec::new();
+                let mut state = lib.fdomain_state().await;
+                for hdl in handles.into_iter() {
+                    let fd_hdl = match state.take_handle(*hdl) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            lib.write_err(e);
+                            responder.send(FcTransportStatus::INTERNAL).unwrap();
+                            return;
+                        }
+                    };
+                    fdomain_handles.push(fd_hdl);
+                }
+                let handle = match state.handle(channel) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let channel = handle.as_unowned::<fdomain_client::Channel>();
+                let status = match channel.fdomain_write(&buf, fdomain_handles).await {
+                    Ok(()) => FcTransportStatus::OK,
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        e.into()
+                    }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ChannelWriteEtc { channel, buf, mut handles, responder } => {
-                let channel = ManuallyDrop::new(channel);
-                let mut handle_dispositions =
+            Self::ChannelWriteEtc { lib, channel, buf, mut handles, responder } => {
+                let mut handle_ops =
                     Vec::with_capacity(zx_types::ZX_CHANNEL_MAX_MSG_HANDLES as usize);
                 // The verification pass is just to eliminate some headaches around lifetime checks
                 // regarding the allocation of channels from raw handle numbers.
                 for i in 0..handles.len() {
                     let disp = handles[i];
+                    // For the time being we're still not supporting non-move ops. Though with
+                    // FDomain it should now be doable.
                     if disp.operation != zx_types::ZX_HANDLE_OP_MOVE {
-                        responder.send(zx_status::Status::NOT_SUPPORTED).unwrap();
+                        log::warn!(
+                            "Unsupported handle operation type received: {}",
+                            disp.operation
+                        );
+                        responder.send(FcTransportStatus::NOT_SUPPORTED).unwrap();
                         return;
                     }
                     if Rights::from_bits(disp.rights).is_none() {
-                        responder.send(zx_status::Status::INVALID_ARGS).unwrap();
+                        responder.send(FcTransportStatus::INVALID_ARGS).unwrap();
                         return;
                     }
                 }
+                let mut fdomain = lib.fdomain_state().await;
                 for i in 0..handles.len() {
                     let disp = std::mem::replace(
                         &mut handles[i],
@@ -277,24 +358,37 @@ impl LibraryCommand {
                             rights: 0,
                         },
                     );
-                    let handle_op =
-                        HandleOp::Move(unsafe { fidl::NullableHandle::from_raw(disp.handle) });
-                    let object_type = ObjectType::from_raw(disp.type_);
-                    let rights = Rights::from_bits(disp.rights).unwrap();
-                    let result = Status::from_raw(disp.result);
-                    handle_dispositions.push(HandleDisposition {
-                        handle_op,
-                        object_type,
-                        rights,
-                        result,
-                    });
+                    let fdomain_hdl = match fdomain.take_handle(disp.handle) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            lib.write_err(e);
+                            responder.send(FcTransportStatus::INTERNAL).unwrap();
+                            return;
+                        }
+                    };
+                    // SAFETY: There should have been a `Rights::from_bits` call above verifying
+                    // this is not `None`.
+                    handle_ops.push(HandleOp::Move(
+                        fdomain_hdl,
+                        Rights::from_bits(disp.rights)
+                            .expect("handle rights should have been verified"),
+                    ));
                 }
-                let status = match channel.write_etc(
-                    &buf,
-                    handle_dispositions.as_mut_slice() as &mut [HandleDisposition<'_>],
-                ) {
-                    Ok(_) => zx_status::Status::OK,
-                    Err(e) => e,
+                let handle = match fdomain.handle(channel) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let channel = handle.as_unowned::<fdomain_client::Channel>();
+                let status = match channel.fdomain_write_etc(&buf, handle_ops).await {
+                    Ok(_) => FcTransportStatus::OK,
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        e.into()
+                    }
                 };
                 responder.send(status).unwrap();
             }
@@ -303,119 +397,202 @@ impl LibraryCommand {
                     Ok(r) => r,
                     Err(e) => {
                         env_ctx.write_err(e);
-                        responder.send(Err(zx_status::Status::NOT_FOUND)).unwrap();
+                        responder.send(Err(FcTransportStatus::NOT_FOUND)).unwrap();
                         return;
                     }
                 };
                 let result_bytes = result.as_bytes();
                 if out_buf.len() < result_bytes.len() {
-                    responder.send(Err(zx_status::Status::BUFFER_TOO_SMALL)).unwrap();
+                    responder.send(Err(FcTransportStatus::BUFFER_TOO_SMALL)).unwrap();
                     return;
                 }
                 out_buf[..result_bytes.len()].copy_from_slice(result_bytes);
                 responder.send(Ok(result_bytes.len())).unwrap();
             }
-            Self::EventCreate { responder } => {
-                responder.send(fidl::Event::create()).unwrap();
+            Self::EventCreate { env, responder } => {
+                let fdomain_client = match env.fdomain_client().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
+                        return;
+                    }
+                };
+                let hdl = fdomain_client.create_event();
+                let lib = env.lib_ctx();
+                let mut fdomain_state = lib.fdomain_state().await;
+                let hdl = fdomain_state.register(hdl.into());
+                responder.send(Ok(hdl)).unwrap();
             }
-            Self::EventPairCreate { responder } => {
-                responder.send(fidl::EventPair::create()).unwrap();
+            Self::EventPairCreate { env, responder } => {
+                let fdomain_client = match env.fdomain_client().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
+                        return;
+                    }
+                };
+                let (left, right) = fdomain_client.create_event_pair();
+                let lib = env.lib_ctx();
+                let mut state = lib.fdomain_state().await;
+                let left = state.register(left.into());
+                let right = state.register(right.into());
+                responder.send(Ok((left, right))).unwrap();
             }
-            Self::ObjectSignal { handle, clear_mask, set_mask, responder } => {
-                let handle = ManuallyDrop::new(handle);
-                let status = match handle.signal(clear_mask, set_mask) {
-                    Ok(_) => zx_status::Status::OK,
-                    Err(e) => e,
+            Self::ObjectSignal { lib, handle, clear_mask, set_mask, responder } => {
+                let mut fdomain = lib.fdomain_state().await;
+                let handle = match fdomain.handle(handle) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let status = match handle.signal_handle(set_mask, clear_mask).await {
+                    Ok(_) => FcTransportStatus::OK,
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        e.into()
+                    }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ObjectSignalPeer { handle, clear_mask, set_mask, responder } => {
+            Self::ObjectSignalPeer { lib, handle, clear_mask, set_mask, responder } => {
+                let mut fdomain = lib.fdomain_state().await;
+                let handle = match fdomain.handle(handle) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
+                        return;
+                    }
+                };
                 // Any handle that has a peer can be converted into an EventPair.
-                let handle: ManuallyDrop<fidl::EventPair> = ManuallyDrop::new(handle.into());
-                let status = match handle.signal_peer(clear_mask, set_mask) {
-                    Ok(_) => zx_status::Status::OK,
-                    Err(e) => e,
+                let ep = handle.as_unowned::<fdomain_client::EventPair>();
+                let status = match ep.signal_peer(set_mask, clear_mask).await {
+                    Ok(_) => FcTransportStatus::OK,
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        e.into()
+                    }
                 };
                 responder.send(status).unwrap();
             }
             Self::ObjectSignalPoll { lib, handle, signals, responder } => {
-                let mut on_signals = OnSignalsRef::new(&handle, signals);
-                let waker =
-                    handle_notifier_waker(handle.raw_handle(), lib.notification_sender().await);
-                let task_ctx = &mut Context::from_waker(&waker);
-                let res = match Pin::new(&mut on_signals).poll(task_ctx) {
-                    Poll::Ready(res) => res,
-                    Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
-                };
-                // Prevent the handle from closing prematurely.
-                std::mem::forget(handle);
-                responder.send(res).unwrap();
-            }
-            Self::SocketCreate { options, responder } => {
-                match options {
-                    fidl::SocketOpts::STREAM => {
-                        responder.send(fidl::Socket::create_stream()).unwrap();
-                    }
-                    fidl::SocketOpts::DATAGRAM => {
-                        responder.send(fidl::Socket::create_datagram()).unwrap();
-                    }
-                };
-            }
-            Self::SocketRead { lib, socket, mut out_buf, responder } => {
-                let socket = fidl::AsyncSocket::from_socket(socket);
-                let waker =
-                    handle_notifier_waker(socket.raw_handle(), lib.notification_sender().await);
-                let task_ctx = &mut Context::from_waker(&waker);
-                let res = match socket.poll_read_ref(task_ctx, &mut out_buf) {
-                    Poll::Ready(res) => res,
-                    Poll::Pending => {
-                        let _ = socket.into_zx_socket().into_raw();
-                        responder
-                            .send(ReadResponse {
-                                actual_bytes_count: 0,
-                                actual_handles_count: 0,
-                                result: zx_status::Status::SHOULD_WAIT,
-                            })
-                            .unwrap();
+                let poll_res = match lib.fdomain_state().await.poll_signal(handle, signals).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
                 };
-                let _ = socket.into_zx_socket().into_raw();
-                match res {
-                    Err(e) => responder
-                        .send(ReadResponse {
-                            actual_bytes_count: 0,
-                            actual_handles_count: 0,
-                            result: e,
-                        })
-                        .unwrap(),
+                let res = match poll_res {
+                    Poll::Ready(res) => match res {
+                        Ok(sig) => Ok(sig),
+                        Err(e) => {
+                            lib.write_fdomain_err(&e);
+                            responder.send(Err(e.into())).unwrap();
+                            return;
+                        }
+                    },
+                    Poll::Pending => Err(FcTransportStatus::SHOULD_WAIT),
+                };
+                responder.send(res).unwrap();
+            }
+            Self::SocketCreate { env, options, responder } => {
+                let fdomain_client = match env.fdomain_client().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
+                        return;
+                    }
+                };
+                let (left, right) = match options {
+                    zx_types::ZX_SOCKET_STREAM => fdomain_client.create_stream_socket(),
+                    zx_types::ZX_SOCKET_DATAGRAM => fdomain_client.create_datagram_socket(),
+                    o => {
+                        log::warn!("Received unknown socket options: {o}");
+                        responder.send(Err(FcTransportStatus::INVALID_ARGS)).unwrap();
+                        return;
+                    }
+                };
+                let lib = env.lib_ctx();
+                let mut fdomain_state = lib.fdomain_state().await;
+                let left = fdomain_state.register(left.into());
+                let right = fdomain_state.register(right.into());
+                responder.send(Ok((left, right))).unwrap();
+            }
+            Self::SocketRead { lib, socket, mut out_buf, responder } => {
+                let poll_res =
+                    match lib.fdomain_state().await.socket_read(socket, &mut out_buf).await {
+                        Ok(p) => match p {
+                            Poll::Ready(res) => res,
+                            Poll::Pending => {
+                                responder.send(FcTransportStatus::SHOULD_WAIT.into()).unwrap();
+                                return;
+                            }
+                        },
+                        Err(e) => {
+                            lib.write_err(e);
+                            responder.send(FcTransportStatus::INTERNAL.into()).unwrap();
+                            return;
+                        }
+                    };
+                match poll_res {
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        responder.send(FcTransportStatus::from(e).into()).unwrap()
+                    }
                     Ok(size) => responder
                         .send(ReadResponse {
                             actual_handles_count: 0,
                             actual_bytes_count: size,
-                            result: zx_status::Status::OK,
+                            result: FcTransportStatus::OK,
                         })
                         .unwrap(),
                 }
             }
-            Self::SocketWrite { socket, buf, responder } => {
-                let socket = ManuallyDrop::new(socket);
-                let status = match socket.write(&buf) {
-                    Ok(_) => zx_status::Status::OK,
-                    Err(e) => e,
+            Self::SocketWrite { lib, socket, buf, responder } => {
+                let mut fdomain_state = lib.fdomain_state().await;
+                let handle = match fdomain_state.handle(socket) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        lib.write_err(e);
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let socket = handle.as_unowned::<fdomain_client::Socket>();
+                let status = match socket.write_all(&buf).await {
+                    Ok(()) => FcTransportStatus::OK,
+                    Err(e) => {
+                        lib.write_fdomain_err(&e);
+                        e.into()
+                    }
                 };
                 responder.send(status).unwrap();
             }
             Self::TargetWait { env, timeout, responder, offline } => {
                 match env.target_wait(timeout, offline).await {
                     Ok(()) => {
-                        responder.send(zx_status::Status::OK).unwrap();
+                        responder.send(FcTransportStatus::OK).unwrap();
                     }
                     Err(e) => {
                         env.write_err(e);
-                        responder.send(zx_status::Status::INTERNAL).unwrap();
+                        responder.send(FcTransportStatus::INTERNAL).unwrap();
                     }
                 }
+            }
+            Self::HandleClose { lib, handle, responder } => {
+                let closed = lib.fdomain_state().await.close_handle(handle);
+                if !closed {
+                    log::trace!("Attempted to close {handle} but no handle found");
+                }
+                responder.send(()).unwrap();
             }
         }
     }

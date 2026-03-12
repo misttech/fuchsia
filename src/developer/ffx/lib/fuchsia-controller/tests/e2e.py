@@ -11,14 +11,19 @@ import unittest
 import fidl_fuchsia_controller_test as fc_test
 import fidl_fuchsia_developer_ffx as ffx_fidl
 from fidl_codec import encode_fidl_message, method_ordinal
-from fuchsia_controller_py import Channel, Context, IsolateDir, Socket, ZxStatus
+from fuchsia_controller_py import (
+    Channel,
+    Context,
+    FcTransportStatus,
+    IsolateDir,
+)
 
-from fidl import DomainError
+from fidl import AsyncChannel, DomainError
 
 
 class TestSocketServer(fc_test.TestingServer):
-    def __init__(self, ch: Channel):
-        client, server = Socket.create()
+    def __init__(self, ctx: Context, ch: Channel):
+        client, server = ctx.socket_create()
         self.client = client
         self.server = server
         super().__init__(ch)
@@ -27,7 +32,7 @@ class TestSocketServer(fc_test.TestingServer):
         self,
     ) -> fc_test.TestingServer.ReturnSocketOrErrorResponse:
         if self.server.as_int() == 0:
-            return DomainError(ZxStatus.ZX_ERR_NOT_SUPPORTED)
+            return DomainError(FcTransportStatus.FC_ERR_NOT_SUPPORTED)
         return fc_test.TestingReturnSocketOrErrorResponse(
             reader_thing=self.server.take()
         )
@@ -72,14 +77,8 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             isolation_path = os.path.join(tmp_path, "isolate")
         return IsolateDir(dir=isolation_path)
 
-    def _make_ctx(self) -> Context:
-        return Context(
-            config=self._get_default_config(),
-            isolate_dir=self._get_isolate_dir(),
-        )
-
     def test_config_get_nonexistent(self) -> None:
-        ctx = self._make_ctx()
+        ctx = Context()
         self.assertEqual(ctx.config_get_string("foobarzzzzzzo==?"), None)
 
     def test_config_get_exists(self) -> None:
@@ -100,10 +99,12 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
             ctx.config_get_string(key)
 
     async def test_client_sends_message_before_coro_await(self) -> None:
-        (ch0, ch1) = Channel.create()
+        ctx = Context()
+        (ch0, ch1) = ctx.channel_create()
+        async_ch1 = AsyncChannel(ch1)
         echo_proxy = ffx_fidl.EchoClient(ch0)
         coro = echo_proxy.echo_string(value="foo")
-        buf, _ = ch1.read()
+        buf, _ = await async_ch1.read()
         txid = int.from_bytes(buf[0:4], sys.byteorder)
         encoded_bytes, _ = encode_fidl_message(
             object=ffx_fidl.EchoEchoStringRequest(value="foo"),
@@ -124,7 +125,7 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
                 protocol="fuchsia.developer.ffx/Echo", method="EchoString"
             ),
         )
-        ch1.write(msg)
+        async_ch1.write(msg)
         result = await coro
         self.assertEqual(result.response, "otherthing")
 
@@ -136,22 +137,26 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         Context()
 
     async def test_sending_fidl_protocol(self) -> None:
-        tc_server, tc_client = Channel.create()
-        list_server, list_client = Channel.create()
+        ctx = Context()
+        tc_server, tc_client = ctx.channel_create()
+        list_server, list_client = ctx.channel_create()
         tc_proxy = ffx_fidl.TargetCollectionClient(tc_client)
         query = ffx_fidl.TargetQuery(string_matcher="foobar")
         tc_proxy.list_targets(query=query, reader=list_client.take())
-        buf, hdls = tc_server.read()
+        async_tc_server = AsyncChannel(tc_server)
+        buf, hdls = await async_tc_server.read()
         self.assertEqual(len(hdls), 1)
         new_list_client = Channel(hdls[0])
         new_list_client.write((bytearray([5, 6, 7]), []))
-        list_buf, list_hdls = list_server.read()
+        async_list_server = AsyncChannel(list_server)
+        list_buf, list_hdls = await async_list_server.read()
         self.assertEqual(len(list_hdls), 0)
         self.assertEqual(list_buf, bytearray([5, 6, 7]))
 
     async def test_sending_socket_as_result(self) -> None:
-        t_server, t_client = Channel.create()
-        server = TestSocketServer(t_server)
+        ctx = Context()
+        t_server, t_client = ctx.channel_create()
+        server = TestSocketServer(ctx, t_server)
         client = fc_test.TestingClient(t_client)
         server_task = asyncio.get_running_loop().create_task(server.serve())
         res1 = await client.return_union()
@@ -166,6 +171,6 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         assert res3.response is not None
         self.assertNotEqual(res3.response.reader_thing, 0)
         res4 = await client.return_socket_or_error()
-        self.assertEqual(res4.err, ZxStatus.ZX_ERR_NOT_SUPPORTED)
+        self.assertEqual(res4.err, FcTransportStatus.FC_ERR_NOT_SUPPORTED)
         server_task.cancel()
         server.close()

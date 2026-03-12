@@ -5,51 +5,60 @@
 import asyncio
 import unittest
 
-from fuchsia_controller_py import Channel, Socket, ZxStatus
+from fuchsia_controller_py import Context, FcTransportStatus, Socket
 
-from fidl import AlreadyReadingAll, AsyncSocket
+from fidl import AlreadyReadingAll, AsyncChannel, AsyncSocket
 
 
 class SocketTests(unittest.IsolatedAsyncioTestCase):
     """Socket tests."""
 
-    def test_socket_write_then_read(self):
+    async def test_socket_write_then_read(self):
         """Tests a simple write followed by an immediate read."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         bytes_in = bytearray([1, 2, 3])
         sock_out.write(bytes_in)
-        bytes_out = sock_in.read()
+        async_sock_in = AsyncSocket(sock_in)
+        bytes_out = await async_sock_in.read()
         self.assertEqual(bytes_out, bytes_in)
 
     def test_socket_write_fails_when_closed(self):
-        """Verifies PEER_CLOSED is surfaced when opposing socket is closed."""
-        (sock_out, sock_in) = Socket.create()
+        """Verifies FC_ERR_SOCKET_WRITE is surfaced when opposing socket is closed."""
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         del sock_in
-        with self.assertRaises(ZxStatus):
+        with self.assertRaises(FcTransportStatus):
             try:
                 sock_out.write(bytearray([1, 2, 3]))
-            except ZxStatus as e:
-                self.assertEqual(e.args[0], ZxStatus.ZX_ERR_PEER_CLOSED)
+            except FcTransportStatus as e:
+                self.assertEqual(
+                    e.code(), FcTransportStatus.FC_ERR_SOCKET_WRITE
+                )
                 raise e
 
-    def test_socket_passing(self):
+    async def test_socket_passing(self):
         """Verifies a socket remains connected when passed through a channel."""
-        (chan_out, chan_in) = Channel.create()
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (chan_out, chan_in) = ctx.channel_create()
+        (sock_out, sock_in) = ctx.socket_create()
         # This is using 'take' rather than 'as_int' as using 'as_int' would cause a double-close
         # error on a channel that has already been closed.
         chan_out.write((bytearray(), [(0, sock_out.take(), 0, 0, 0)]))
-        _, hdls = chan_in.read()
+        async_chan_in = AsyncChannel(chan_in)
+        _, hdls = await async_chan_in.read()
         self.assertEqual(len(hdls), 1)
         bytes_in = bytearray([1, 2, 3])
         new_sock_out = Socket(hdls[0])
         new_sock_out.write(bytes_in)
-        bytes_out = sock_in.read()
+        async_sock_in = AsyncSocket(sock_in)
+        bytes_out = await async_sock_in.read()
         self.assertEqual(bytes_out, bytes_in)
 
     async def test_async_socket(self):
         """Verifies an async socket is able to wait for the other end to complete writing."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         sock_in = AsyncSocket(sock_in)
         bytes_in = bytearray([1, 2, 3])
 
@@ -70,31 +79,36 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_async_socket_write_fails_when_closed(self):
         """Verifies an async socket write fails in the expected way when the other end is closed."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         del sock_in
-        with self.assertRaises(ZxStatus):
+        with self.assertRaises(FcTransportStatus):
             sock_out = AsyncSocket(sock_out)
             try:
                 sock_out.write(bytearray([1, 2, 3]))
-            except ZxStatus as e:
-                self.assertEqual(e.args[0], ZxStatus.ZX_ERR_PEER_CLOSED)
+            except FcTransportStatus as e:
+                self.assertEqual(
+                    e.code(), FcTransportStatus.FC_ERR_SOCKET_WRITE
+                )
                 raise e
 
     async def test_async_socket_read_fails_when_closed(self):
         """Verifies an async socket read fails in the expected way when the other end is closed."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         del sock_out
-        with self.assertRaises(ZxStatus):
+        with self.assertRaises(FcTransportStatus):
             sock_in = AsyncSocket(sock_in)
             try:
                 await sock_in.read()
-            except ZxStatus as e:
-                self.assertEqual(e.args[0], ZxStatus.ZX_ERR_PEER_CLOSED)
+            except FcTransportStatus as e:
+                self.assertEqual(e.code(), FcTransportStatus.FC_ERR_FDOMAIN)
                 raise e
 
     async def test_async_socket_read_fails_when_already_reading_all(self):
         """Verifies running `read_all()` twice fails."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         with self.assertRaises(AlreadyReadingAll):
             sock_out = AsyncSocket(sock_out)
             task = asyncio.get_running_loop().create_task(sock_out.read_all())
@@ -102,7 +116,8 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_async_socket_read_fails_when_already_reading_all(self):
         """Verifies running `read_all()` then `read()` fails."""
-        (sock_out, sock_in) = Socket.create()
+        ctx = Context()
+        (sock_out, sock_in) = ctx.socket_create()
         with self.assertRaises(AlreadyReadingAll):
             sock_out = AsyncSocket(sock_out)
             task = asyncio.get_running_loop().create_task(sock_out.read_all())

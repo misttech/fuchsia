@@ -11,12 +11,13 @@ use fdomain_client::fidl::DiscoverableProtocolMarker;
 use fdomain_fuchsia_developer_remotecontrol::{
     RemoteControlMarker as FDRemoteControlMarker, RemoteControlProxy as FDRemoteControlProxy,
 };
+use fdomain_fuchsia_io as fio;
 use ffx_ssh::parse::HostAddr;
 use fidl::prelude::*;
 use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
+use fidl_fuchsia_io as fio_f;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use {fdomain_fuchsia_io as fio, fidl_fuchsia_io as fio_f};
 
 #[derive(Debug)]
 struct RcsInfo {
@@ -66,6 +67,15 @@ impl Connection {
         })?;
         let overnet = node.map(|node| OvernetClient { node });
         Ok(Self { overnet, fdomain: Mutex::new(client), fidl_pipe, rcs_info: Default::default() })
+    }
+
+    pub async fn fdomain_client(&self) -> Result<Arc<fdomain_client::Client>> {
+        self.fdomain
+            .lock()
+            .await
+            .as_ref()
+            .map(|c| c.clone())
+            .ok_or_else(|| anyhow::anyhow!("FDomain client has not been initialized"))
     }
 
     /// Attempts to retrieve an instance of the remote control proxy. When invoked for the first

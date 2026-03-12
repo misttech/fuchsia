@@ -15,6 +15,7 @@ import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fidl import AsyncSocket
+from fuchsia_controller_py import ZxStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing
@@ -198,9 +199,12 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
                 _FC_PROXIES["TraceProvisioner"]
             )
         )
-        client, server = fc.Channel.create()
+        client, server = self._fc_transport.channel_create()
 
-        trace_socket_server, trace_socket_client = fc.Socket.create()
+        (
+            trace_socket_server,
+            trace_socket_client,
+        ) = self._fc_transport.ctx.socket_create()
 
         try:
             trace_provisioner_proxy.initialize_tracing(
@@ -214,7 +218,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
                 ),
                 output=trace_socket_server.take(),
             )
-        except fc.ZxStatus as status:
+        except fc.FcTransportStatus as status:
             raise TracingError(
                 "fuchsia.tracing.controller.Initialize FIDL Error"
             ) from status
@@ -245,7 +249,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
             await self._trace_controller_proxy.start_tracing(
                 buffer_disposition=f_tracing.BufferDisposition.CLEAR_ENTIRE
             )
-        except fc.ZxStatus as status:
+        except fc.FcTransportStatus as status:
             raise TracingError(
                 "fuchsia.tracing.controller.Start FIDL Error"
             ) from status
@@ -286,7 +290,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
                         p.records_dropped,
                         p.name,
                     )
-        except (AssertionError, fc.ZxStatus) as e:
+        except (AssertionError, fc.FcTransportStatus, ZxStatus) as e:
             raise TracingError(
                 "fuchsia.tracing.controller.Stop FIDL Error"
             ) from e
@@ -321,7 +325,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
                 self._trace_controller_proxy.close_cleanly()
             if self._drain_task:
                 await self._drain_task
-        except (RuntimeError, fc.ZxStatus, TracingError) as e:
+        except (RuntimeError, fc.FcTransportStatus, TracingError) as e:
             _LOGGER.warning(
                 "Could not cleanly wait for trace termination: %s. "
                 "Forcibly resetting state.",

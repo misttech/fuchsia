@@ -10,19 +10,21 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::commands::{LibraryCommand, ReadResponse};
+use crate::compat::FcTransportStatus;
 use crate::env_context::{EnvContext, FfxConfigEntry};
 use crate::ext_buffer::ExtBuffer;
 use crate::lib_context::LibContext;
-use fidl::HandleBased;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
-use {zx_status, zx_types};
+use zx_types;
 
 mod commands;
+mod compat;
 mod env_context;
 mod ext_buffer;
+mod fdomain;
 mod lib_context;
 mod logging;
 mod waker;
@@ -61,7 +63,7 @@ pub unsafe extern "C" fn create_ffx_env_context(
     external_config: *const FfxExternalConfigEntry,
     config_len: u64,
     isolate_dir: *const i8,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let lib = unsafe { get_arc(lib_ctx) };
     let isolate_dir = unsafe { isolate_dir.as_ref() }.map(|i| {
         PathBuf::from(unsafe {
@@ -86,7 +88,7 @@ pub unsafe extern "C" fn create_ffx_env_context(
     match rx.recv().unwrap() {
         Ok(env) => {
             unsafe { *env_ctx = Arc::into_raw(env) };
-            zx_status::Status::OK
+            FcTransportStatus::OK
         }
         Err(e) => e,
     }
@@ -98,7 +100,7 @@ pub unsafe extern "C" fn ffx_connect_device_proxy(
     moniker: *const i8,
     capability_name: *const i8,
     handle: *mut zx_types::zx_handle_t,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let moniker = unsafe { CStr::from_ptr(moniker) }.to_str().expect("valid moniker").to_owned();
     let capability_name = unsafe { CStr::from_ptr(capability_name) }
         .to_str()
@@ -115,7 +117,7 @@ pub unsafe extern "C" fn ffx_connect_device_proxy(
     match rx.recv().unwrap() {
         Ok(h) => {
             unsafe { *handle = h };
-            zx_status::Status::OK
+            FcTransportStatus::OK
         }
         Err(e) => e,
     }
@@ -126,25 +128,25 @@ pub unsafe extern "C" fn ffx_target_wait(
     ctx: *mut EnvContext,
     timeout: u64,
     offline: bool,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::TargetWait { env: ctx.clone(), timeout, responder, offline });
-    rx.recv().unwrap()
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_connect_remote_control_proxy(
     ctx: *mut EnvContext,
     handle: *mut zx_types::zx_handle_t,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::OpenRemoteControlProxy { env: ctx.clone(), responder });
     match rx.recv().unwrap() {
         Ok(h) => {
             unsafe { *handle = h };
-            zx_status::Status::OK
+            FcTransportStatus::OK
         }
         Err(e) => e,
     }
@@ -166,8 +168,11 @@ pub unsafe extern "C" fn destroy_ffx_env_context(ctx: *const EnvContext) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ffx_close_handle(hdl: zx_types::zx_handle_t) {
-    drop(unsafe { fidl::NullableHandle::from_raw(hdl) });
+pub unsafe extern "C" fn ffx_close_handle(ctx: *const LibContext, handle: zx_types::zx_handle_t) {
+    let ctx = unsafe { get_arc(ctx) };
+    let (responder, rx) = mpsc::sync_channel(1);
+    ctx.run(LibraryCommand::HandleClose { lib: ctx.clone(), handle, responder });
+    rx.recv().unwrap();
 }
 
 fn safe_write<T>(dest: *mut T, value: T) {
@@ -178,23 +183,22 @@ fn safe_write<T>(dest: *mut T, value: T) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_write(
     ctx: *const LibContext,
-    handle: zx_types::zx_handle_t,
+    channel: zx_types::zx_handle_t,
     out_buf: *mut u8,
     out_len: u64,
     hdls: *mut zx_types::zx_handle_t,
     hdls_len: u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
-    let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelWrite {
+        lib: ctx.clone(),
         channel,
         buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
-        handles: unsafe { ExtBuffer::new(hdls as *mut fidl::NullableHandle, hdls_len as usize) },
+        handles: unsafe { ExtBuffer::new(hdls, hdls_len as usize) },
         responder,
     });
-    rx.recv().unwrap()
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
@@ -205,20 +209,19 @@ pub unsafe extern "C" fn ffx_channel_write_etc(
     out_len: u64,
     hdls: *mut zx_types::zx_handle_disposition_t,
     hdls_len: u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
-    let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelWriteEtc {
-        channel,
+        lib: ctx.clone(),
+        channel: handle,
         buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         // Construction of HandleDisposition structs has to happen in the main thread, as it
         // contains a lifetime bound.
         handles: unsafe { ExtBuffer::new(hdls, hdls_len as usize) },
         responder,
     });
-    rx.recv().unwrap()
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
@@ -231,17 +234,15 @@ pub unsafe extern "C" fn ffx_channel_read(
     hdls_len: u64,
     actual_bytes_count: *mut u64,
     actual_hdls_count: *mut u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
-    let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelRead {
         lib: ctx.clone(),
-        channel,
+        channel: handle,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         out_handles: unsafe {
-            ExtBuffer::new(hdls as *mut MaybeUninit<fidl::NullableHandle>, hdls_len as usize)
+            ExtBuffer::new(hdls as *mut MaybeUninit<zx_types::zx_handle_t>, hdls_len as usize)
         },
         responder,
     });
@@ -252,28 +253,28 @@ pub unsafe extern "C" fn ffx_channel_read(
     } = rx.recv().unwrap();
     safe_write(actual_bytes_count, bytes_count_recv as u64);
     safe_write(actual_hdls_count, handles_count_recv as u64);
-    result
+    result.into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_socket_create(
-    ctx: *const LibContext,
+    ctx: *const EnvContext,
     options: u32,
     out0: *mut zx_types::zx_handle_t,
     out1: *mut zx_types::zx_handle_t,
-) -> zx_status::Status {
-    let socket_opts = match options {
-        zx_types::ZX_SOCKET_STREAM => fidl::SocketOpts::STREAM,
-        zx_types::ZX_SOCKET_DATAGRAM => fidl::SocketOpts::DATAGRAM,
-        _ => return zx_status::Status::INVALID_ARGS,
-    };
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::SocketCreate { options: socket_opts, responder: tx });
-    let (ch0, ch1) = rx.recv().unwrap();
-    unsafe { *out0 = ch0.into_raw() };
-    unsafe { *out1 = ch1.into_raw() };
-    zx_status::Status::OK
+    ctx.lib_ctx().run(LibraryCommand::SocketCreate { env: ctx.clone(), options, responder: tx });
+    match rx.recv().unwrap() {
+        Ok((ch0, ch1)) => {
+            unsafe { *out0 = ch0 };
+            unsafe { *out1 = ch1 };
+            FcTransportStatus::OK
+        }
+        Err(e) => e,
+    }
+    .into()
 }
 
 #[unsafe(no_mangle)]
@@ -282,17 +283,16 @@ pub unsafe extern "C" fn ffx_socket_write(
     handle: zx_types::zx_handle_t,
     buf: *mut u8,
     buf_len: u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
-    let socket = fidl::Socket::from_handle(handle);
     ctx.run(LibraryCommand::SocketWrite {
-        socket,
+        lib: ctx.clone(),
+        socket: handle,
         buf: unsafe { ExtBuffer::new(buf, buf_len as usize) },
         responder,
     });
-    rx.recv().unwrap()
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
@@ -302,20 +302,18 @@ pub unsafe extern "C" fn ffx_socket_read(
     out_buf: *mut u8,
     out_len: u64,
     bytes_read: *mut u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
-    let socket = fidl::Socket::from_handle(handle);
     ctx.run(LibraryCommand::SocketRead {
         lib: ctx.clone(),
-        socket,
+        socket: handle,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         responder,
     });
     let ReadResponse { actual_bytes_count: bytes_count_recv, result, .. } = rx.recv().unwrap();
     safe_write(bytes_read, bytes_count_recv as u64);
-    result
+    result.into()
 }
 
 #[unsafe(no_mangle)]
@@ -328,116 +326,143 @@ pub unsafe extern "C" fn ffx_connect_handle_notifier(ctx: *const LibContext) -> 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_event_create(
-    ctx: *const LibContext,
+    ctx: *const EnvContext,
     _options: u32,
     out: *mut zx_types::zx_handle_t,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::EventCreate { responder: tx });
-    let hdl = rx.recv().unwrap();
-    unsafe { *out = hdl.into_raw() };
-    zx_status::Status::OK
+    ctx.lib_ctx().run(LibraryCommand::EventCreate { env: ctx.clone(), responder: tx });
+    match rx.recv().unwrap() {
+        Ok(hdl) => {
+            unsafe { *out = hdl };
+            FcTransportStatus::OK
+        }
+        Err(e) => e,
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_eventpair_create(
-    ctx: *const LibContext,
+    ctx: *const EnvContext,
     _options: u32,
     out0: *mut zx_types::zx_handle_t,
     out1: *mut zx_types::zx_handle_t,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::EventPairCreate { responder: tx });
-    let (hdl0, hdl1) = rx.recv().unwrap();
-    unsafe { *out0 = hdl0.into_raw() };
-    unsafe { *out1 = hdl1.into_raw() };
-    zx_status::Status::OK
+    ctx.lib_ctx().run(LibraryCommand::EventPairCreate { env: ctx.clone(), responder: tx });
+    match rx.recv().unwrap() {
+        Ok((hdl0, hdl1)) => {
+            unsafe { *out0 = hdl0 };
+            unsafe { *out1 = hdl1 };
+            FcTransportStatus::OK
+        }
+        Err(e) => e,
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal(
     ctx: *const LibContext,
-    hdl: zx_types::zx_handle_t,
+    handle: zx_types::zx_handle_t,
     clear_mask: u32,
     set_mask: u32,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
-    ctx.run(LibraryCommand::ObjectSignal { handle, clear_mask, set_mask, responder: tx });
-    rx.recv().unwrap()
+    ctx.run(LibraryCommand::ObjectSignal {
+        lib: ctx.clone(),
+        handle,
+        clear_mask,
+        set_mask,
+        responder: tx,
+    });
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal_peer(
     ctx: *const LibContext,
-    hdl: zx_types::zx_handle_t,
+    handle: zx_types::zx_handle_t,
     clear_mask: u32,
     set_mask: u32,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
-    ctx.run(LibraryCommand::ObjectSignalPeer { handle, clear_mask, set_mask, responder: tx });
-    rx.recv().unwrap()
+    ctx.run(LibraryCommand::ObjectSignalPeer {
+        lib: ctx.clone(),
+        handle,
+        clear_mask,
+        set_mask,
+        responder: tx,
+    });
+    rx.recv().unwrap().into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_object_signal_poll(
     ctx: *const LibContext,
-    hdl: zx_types::zx_handle_t,
+    handle: zx_types::zx_handle_t,
     signals: u32,
     signals_out: *mut u32,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let signals = fidl::Signals::from_bits_retain(signals);
     ctx.run(LibraryCommand::ObjectSignalPoll { lib: ctx.clone(), handle, signals, responder: tx });
     match rx.recv().unwrap() {
-        Ok(sig) => safe_write(signals_out, sig.bits()),
-        Err(status) => return status,
+        Ok(sig) => {
+            safe_write(signals_out, sig.bits());
+            FcTransportStatus::OK
+        }
+        Err(status) => status,
     }
-    zx_status::Status::OK
+    .into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_channel_create(
-    ctx: *const LibContext,
+    ctx: *const EnvContext,
     _options: u32,
     out0: *mut zx_types::zx_handle_t,
     out1: *mut zx_types::zx_handle_t,
-) {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::ChannelCreate { responder: tx });
-    let (ch0, ch1) = rx.recv().unwrap();
-    unsafe { *out0 = ch0.into_raw() };
-    unsafe { *out1 = ch1.into_raw() };
+    ctx.lib_ctx().run(LibraryCommand::ChannelCreate { env: ctx.clone(), responder: tx });
+    match rx.recv().unwrap() {
+        Ok((hdl0, hdl1)) => {
+            unsafe { *out0 = hdl0 };
+            unsafe { *out1 = hdl1 };
+            FcTransportStatus::OK
+        }
+        Err(e) => e,
+    }
+    .into()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_handle_get_koid(
     ctx: *const LibContext,
-    hdl: zx_types::zx_handle_t,
+    handle: zx_types::zx_handle_t,
     out: *mut zx_types::zx_koid_t,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
-    ctx.run(LibraryCommand::HandleGetKoid { handle, responder: tx });
-    let koid = match rx.recv().unwrap() {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    unsafe { *out = koid.raw_koid() };
-    zx_status::Status::OK
+    ctx.run(LibraryCommand::HandleGetKoid { lib: ctx.clone(), handle, responder: tx });
+    match rx.recv().unwrap() {
+        Ok(k) => {
+            unsafe { *out = k };
+            FcTransportStatus::OK
+        }
+        Err(e) => e,
+    }
+    .into()
 }
 
 #[unsafe(no_mangle)]
@@ -447,13 +472,13 @@ pub unsafe extern "C" fn ffx_config_get_string(
     config_key_len: u64,
     out_buf: *mut u8,
     out_buf_len: *mut u64,
-) -> zx_status::Status {
+) -> FcTransportStatus {
     if ctx == std::ptr::null()
         || config_key == std::ptr::null()
         || out_buf == std::ptr::null_mut()
         || out_buf_len == std::ptr::null_mut()
     {
-        return zx_status::Status::INVALID_ARGS;
+        return FcTransportStatus::INVALID_ARGS;
     }
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
@@ -462,7 +487,7 @@ pub unsafe extern "C" fn ffx_config_get_string(
         Ok(s) => s.to_owned(),
         Err(e) => {
             ctx.write_err(e);
-            return zx_status::Status::INTERNAL;
+            return FcTransportStatus::INTERNAL;
         }
     };
     let out_buf_size = unsafe { *out_buf_len as usize };
@@ -475,10 +500,11 @@ pub unsafe extern "C" fn ffx_config_get_string(
     match rx.recv().unwrap() {
         Ok(size) => {
             safe_write(out_buf_len, size as u64);
-            zx_status::Status::OK
+            FcTransportStatus::OK
         }
         Err(e) => e,
     }
+    .into()
 }
 
 // LINT.ThenChange(../cpp/fuchsia_controller_internal/fuchsia_controller.h)
@@ -487,39 +513,166 @@ pub unsafe extern "C" fn ffx_config_get_string(
 mod test {
     use super::*;
     use byteorder::{NativeEndian, ReadBytesExt};
-    use fidl::AsHandleRef;
+    use fidl_fuchsia_fdomain as fdproto;
     use futures_test as _;
     use std::io::Read;
     use std::os::fd::{FromRawFd, RawFd};
     use std::os::unix::net::UnixStream;
+    use std::sync::Mutex;
 
+    // Since we'll be reading the buffer, we need to ensure that we've got mutual exclusion between
+    // threads.
+    static SCRATCH_LOCK: Mutex<()> = Mutex::new(());
     static mut SCRATCH: [u8; 1024] = [0; 1024];
     fn testing_lib_context() -> *const LibContext {
         let raw = std::ptr::addr_of_mut!(SCRATCH) as *mut u8;
         let mut ctx: *const LibContext = std::ptr::null_mut();
         // SAFETY: This is unsafe because it is a static location, which can
-        // then be potentially accessed by multiple threads. So far this is not
-        // actually read by anything and any data clobbering should not be an
-        // issue. If it comes to the point that these values need to be read in
-        // the tests, this must be changed so that each data buffer is declared
-        // in each individual test (either that or just a re-design of the
-        // library context).
+        // then be potentially accessed by multiple threads. This remains safe
+        // so long as each test using a lib context acquires the scratch lock
+        // at the beginning of the test.
         unsafe {
             create_ffx_lib_context(&mut ctx, raw, 1024);
         }
         ctx
     }
 
+    fn decode_fidl_err<T: fidl::Persistable>(_guard: &std::sync::MutexGuard<'_, ()>) -> T {
+        // SAFETY: While it can't be proven it's the right lock, we should be holding it here.
+        unsafe {
+            let msg_len = usize::from_ne_bytes(SCRATCH[0..8].try_into().unwrap());
+            fidl::unpersist(&SCRATCH[8..(8 + msg_len)]).unwrap()
+        }
+    }
+
+    fn testing_env_context(lib_ctx: *const LibContext) -> *const EnvContext {
+        let mut env: *const EnvContext = std::ptr::null_mut();
+        unsafe {
+            create_ffx_env_context(&mut env, lib_ctx, std::ptr::null(), 0, std::ptr::null());
+        }
+        env
+    }
+
+    fn async_channel_read(
+        lib_ctx: *const LibContext,
+        ch: u32,
+        out_buf: &mut [u8],
+        out_handle_buf: &mut [u32],
+        out_buf_read: *mut u64,
+        out_handle_read: *mut u64,
+    ) -> FcTransportStatus {
+        let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
+        let mut notifier = unsafe { UnixStream::from_raw_fd(fd) };
+        notifier.set_nonblocking(false).unwrap();
+        let mut do_read = || unsafe {
+            ffx_channel_read(
+                lib_ctx,
+                ch,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handle_buf.as_mut_ptr(),
+                out_handle_buf.len() as u64,
+                out_buf_read,
+                out_handle_read,
+            )
+        };
+        let result = do_read();
+        if result == FcTransportStatus::OK {
+            return result;
+        }
+        if result != FcTransportStatus::SHOULD_WAIT {
+            panic!("Unexpected channel read result: {result:?}");
+        }
+        let mut notifier_buf = [0u8; 4];
+        let bytes_read = notifier.read(&mut notifier_buf).unwrap();
+        let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
+        assert_eq!(bytes_read, 4);
+        let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
+        assert_eq!(read_handle, ch, "Got notification for the wrong channel: {read_handle}");
+        do_read()
+    }
+
+    fn async_socket_read(
+        lib_ctx: *const LibContext,
+        ch: u32,
+        out_buf: &mut [u8],
+        out_len: &mut u64,
+    ) -> FcTransportStatus {
+        let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
+        let mut notifier = std::mem::ManuallyDrop::new(unsafe { UnixStream::from_raw_fd(fd) });
+        notifier.set_nonblocking(false).unwrap();
+        let mut do_read = || unsafe {
+            ffx_socket_read(
+                lib_ctx,
+                ch,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_len as *mut u64,
+            )
+        };
+        let result = do_read();
+        if result == FcTransportStatus::OK {
+            return result;
+        }
+        if result != FcTransportStatus::SHOULD_WAIT {
+            panic!("Unexpected channel read result: {result:?}");
+        }
+        let mut notifier_buf = [0u8; 4];
+        let bytes_read = notifier.read(&mut notifier_buf).unwrap();
+        let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
+        assert_eq!(bytes_read, 4);
+        let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
+        assert_eq!(read_handle, ch, "Got notification for the wrong channel: {read_handle}");
+        do_read()
+    }
+
+    fn async_signal_wait(
+        lib_ctx: *const LibContext,
+        ch: u32,
+        signals: fidl::Signals,
+        signals_out: &mut fidl::Signals,
+    ) -> FcTransportStatus {
+        let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
+        let mut notifier = std::mem::ManuallyDrop::new(unsafe { UnixStream::from_raw_fd(fd) });
+        notifier.set_nonblocking(false).unwrap();
+        let mut out: u32 = 0;
+        let mut do_read = || unsafe {
+            let res = ffx_object_signal_poll(lib_ctx, ch, signals.bits(), &mut out as *mut u32);
+            *signals_out = fidl::Signals::from_bits_retain(out);
+            return res;
+        };
+        let result = do_read();
+        if result == FcTransportStatus::OK {
+            return result;
+        }
+        if result != FcTransportStatus::SHOULD_WAIT {
+            panic!("Unexpected channel read result: {result:?}");
+        }
+        let mut notifier_buf = [0u8; 4];
+        let bytes_read = notifier.read(&mut notifier_buf).unwrap();
+        let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
+        assert_eq!(bytes_read, 4);
+        let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
+        assert_eq!(read_handle, ch, "Got notification for the wrong channel: {read_handle}");
+        do_read()
+    }
+
     #[test]
     fn channel_read_empty() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, _b) = fidl::Channel::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
         let result = unsafe {
             ffx_channel_read(
                 lib_ctx,
-                a.raw_handle(),
+                a,
                 buf.as_mut_ptr(),
                 buf.len() as u64,
                 handles.as_mut_ptr(),
@@ -528,232 +681,336 @@ mod test {
                 std::ptr::null_mut(),
             )
         };
-        assert_eq!(result, zx_status::Status::SHOULD_WAIT);
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn socket_read_empty() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, _b) = fidl::Socket::create_stream();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut buf = [0u8; 2];
         let result = unsafe {
-            ffx_socket_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                std::ptr::null_mut(),
-            )
+            ffx_socket_read(lib_ctx, a, buf.as_mut_ptr(), buf.len() as u64, std::ptr::null_mut())
         };
-        assert_eq!(result, zx_status::Status::SHOULD_WAIT);
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_read_some_data_null_out_params() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let mut buf = [0u8; 2];
-        let mut handles = [0u32; 2];
-        let c_handle = c.raw_handle();
-        let d_handle = d.raw_handle();
-        b.write(&[1, 2], &mut vec![c.into(), d.into()]).unwrap();
-        let result = unsafe {
-            ffx_channel_read(
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf: [u8; 2] = [1, 2];
+        let mut out_handles: [u32; 2] = [c, d];
+        let status = unsafe {
+            ffx_channel_write(
                 lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                b,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handles.as_mut_ptr(),
+                out_handles.len() as u64,
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(&buf, &[1, 2]);
-        assert_eq!(&handles, &[c_handle, d_handle]);
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut in_buf = [0u8; 2];
+        let mut in_handles = [0u32; 2];
+        let status = async_channel_read(
+            lib_ctx,
+            a,
+            &mut in_buf,
+            &mut in_handles,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(status, FcTransportStatus::OK);
+        assert_eq!(&in_buf, &[1, 2]);
+        assert_eq!(&in_handles, &[c, d]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_read_some_data_too_small_byte_buffer() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let mut buf = [0u8; 1];
-        let mut handles = [0u32; 2];
-        b.write(&[1, 2], &mut vec![c.into(), d.into()]).unwrap();
-        let result = unsafe {
-            ffx_channel_read(
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf = [1, 2];
+        let mut out_handles = [c, d];
+        let status = unsafe {
+            ffx_channel_write(
                 lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                b,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handles.as_mut_ptr(),
+                out_handles.len() as u64,
             )
         };
-        assert_eq!(result, zx_status::Status::BUFFER_TOO_SMALL);
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut buf = [0u8; 1];
+        let mut handles = [0u32; 2];
+        let status = async_channel_read(
+            lib_ctx,
+            a,
+            &mut buf,
+            &mut handles,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(status, FcTransportStatus::BUFFER_TOO_SMALL);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn socket_read_some_data_too_large_byte_buffer() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Socket::create_stream();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf = [1, 2];
+        let status =
+            unsafe { ffx_socket_write(lib_ctx, b, out_buf.as_mut_ptr(), out_buf.len() as u64) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut buf = [0u8; 3];
-        b.write(&[1, 2]).unwrap();
         let mut bytes_len = 0u64;
-        let result = unsafe {
-            ffx_socket_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                &mut bytes_len,
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
+        let status = async_socket_read(lib_ctx, a, &mut buf, &mut bytes_len);
+        assert_eq!(status, FcTransportStatus::OK);
         assert_eq!(bytes_len, 2);
         assert_eq!(&buf[0..2], &[1, 2]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_read_some_data_too_small_handle_buffer() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let mut buf = [0u8; 2];
-        let mut handles = [0u32; 1];
-        let mut read_bytes = 0;
-        let mut read_handles = 0;
-        b.write(&[1, 2], &mut vec![c.into(), d.into()]).unwrap();
-        let result = unsafe {
-            ffx_channel_read(
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf = [1, 2];
+        let mut out_handles = [c, d];
+        let status = unsafe {
+            ffx_channel_write(
                 lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                &mut read_bytes,
-                &mut read_handles,
+                b,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handles.as_mut_ptr(),
+                out_handles.len() as u64,
             )
         };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut buf = [0u8; 2];
+        let mut handles = [0u32; 1];
+        let mut read_bytes = 0u64;
+        let mut read_handles = 0u64;
+        let result = async_channel_read(
+            lib_ctx,
+            a,
+            &mut buf,
+            &mut handles,
+            &mut read_bytes as *mut u64,
+            &mut read_handles as *mut u64,
+        );
         assert_eq!(read_bytes, 2);
         assert_eq!(read_handles, 2);
-        assert_eq!(result, zx_status::Status::BUFFER_TOO_SMALL);
+        assert_eq!(result, FcTransportStatus::BUFFER_TOO_SMALL);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_read_some_data_nonnull_out_params() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let mut buf = [0u8; 2];
-        let mut handles = [0u32; 2];
-        let c_handle = c.raw_handle();
-        let d_handle = d.raw_handle();
-        b.write(&[1, 2], &mut vec![c.into(), d.into()]).unwrap();
-        let mut read_bytes = 0;
-        let mut read_handles = 0;
-        let result = unsafe {
-            ffx_channel_read(
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf = [1, 2];
+        let mut out_handles = [c, d];
+        let status = unsafe {
+            ffx_channel_write(
                 lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                &mut read_bytes,
-                &mut read_handles,
+                b,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handles.as_mut_ptr(),
+                out_handles.len() as u64,
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut buf = [0u8; 2];
+        let mut handles = [0u32; 2];
+        let mut read_bytes = 0u64;
+        let mut read_handles = 0u64;
+        let result = async_channel_read(
+            lib_ctx,
+            a,
+            &mut buf,
+            &mut handles,
+            &mut read_bytes as *mut u64,
+            &mut read_handles as *mut u64,
+        );
+        assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(read_bytes, 2);
         assert_eq!(read_handles, 2);
         assert_eq!(&buf, &[1, 2]);
-        assert_eq!(&handles, &[c_handle, d_handle]);
+        assert_eq!(&handles, &[c, d]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_write_then_read_some_data() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        // For anyone reading these, the handles sent to the write and write_etc functions are
-        // presumed to be owned by said functions when called. The behavior here is written under
-        // the assumption that the tests are going to pass. If they don't there is a lot of global
-        // state under the FIDL host-side handle emulation that is going to look very strange, and
-        // will likely cause tests outside of this one to fail due to double-closing of channels.
-        // Since tests run in parallel it is possible for another test to open a new channel with
-        // the same raw handle number _before_ one of these channels is closed, thus causing a
-        // double close error.
-        //
-        // Just something to keep in mind, especially if attempting to extend this code with more
-        // potential failure cases.
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let c_handle = c.raw_handle();
-        let d_handle = d.raw_handle();
-        let mut write_buf = [1u8, 2u8];
-        let mut handles_buf: [fidl::NullableHandle; 2] = [c.into(), d.into()];
-        let result = unsafe {
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut out_buf = [1, 2];
+        let mut out_handles = [c, d];
+        let status = unsafe {
             ffx_channel_write(
                 lib_ctx,
-                b.raw_handle(),
-                write_buf.as_mut_ptr(),
-                2,
-                handles_buf.as_mut_ptr().cast(),
-                2,
+                b,
+                out_buf.as_mut_ptr(),
+                out_buf.len() as u64,
+                out_handles.as_mut_ptr(),
+                out_handles.len() as u64,
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        let mut buf = [0u8; 2];
-        let mut handles = [0u32; 2];
-        let result = unsafe {
-            ffx_channel_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(&buf, &[1, 2]);
-        assert_eq!(&handles, &[c_handle, d_handle]);
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut in_buf = [0u8; 2];
+        let mut in_handles = [0u32; 2];
+        let status = async_channel_read(
+            lib_ctx,
+            a,
+            &mut in_buf,
+            &mut in_handles,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(status, FcTransportStatus::OK);
+        assert_eq!(&in_buf, &[1, 2]);
+        assert_eq!(&in_handles, &[c, d]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_write_etc_then_read_some_data() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let c_handle = c.raw_handle();
-        let d_handle = d.raw_handle();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut write_buf = [1u8, 2u8];
         let mut handles_buf: [zx_types::zx_handle_disposition_t; 2] = [
             zx_types::zx_handle_disposition_t {
                 operation: zx_types::ZX_HANDLE_OP_MOVE,
-                handle: c.raw_handle(),
+                handle: c,
                 type_: zx_types::ZX_OBJ_TYPE_CHANNEL,
                 rights: zx_types::ZX_RIGHT_SAME_RIGHTS,
                 result: zx_types::ZX_OK,
             },
             zx_types::zx_handle_disposition_t {
                 operation: zx_types::ZX_HANDLE_OP_MOVE,
-                handle: d.raw_handle(),
+                handle: d,
                 type_: zx_types::ZX_OBJ_TYPE_CHANNEL,
                 rights: zx_types::ZX_RIGHT_SAME_RIGHTS,
                 result: zx_types::ZX_OK,
@@ -762,53 +1019,62 @@ mod test {
         let result = unsafe {
             ffx_channel_write_etc(
                 lib_ctx,
-                b.raw_handle(),
+                b,
                 write_buf.as_mut_ptr(),
                 2,
                 handles_buf.as_mut_ptr().cast(),
                 2,
             )
         };
-        assert_eq!(handles_buf[0].handle, 0);
-        assert_eq!(handles_buf[1].handle, 0);
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::OK);
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
-        let result = unsafe {
-            ffx_channel_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
+        let result = async_channel_read(
+            lib_ctx,
+            a,
+            &mut buf,
+            &mut handles,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(&buf, &[1, 2]);
-        assert_eq!(&handles, &[c_handle, d_handle]);
+        assert_eq!(&handles, &[c, d]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_write_etc_unsupported_op() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (_a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut write_buf = [1u8, 2u8];
         let mut handles_buf: [zx_types::zx_handle_disposition_t; 2] = [
             zx_types::zx_handle_disposition_t {
                 operation: zx_types::ZX_HANDLE_OP_DUPLICATE,
-                handle: c.raw_handle(),
+                handle: c,
                 type_: zx_types::ZX_OBJ_TYPE_CHANNEL,
                 rights: zx_types::ZX_RIGHT_SAME_RIGHTS,
                 result: zx_types::ZX_OK,
             },
             zx_types::zx_handle_disposition_t {
                 operation: zx_types::ZX_HANDLE_OP_MOVE,
-                handle: d.raw_handle(),
+                handle: d,
                 type_: zx_types::ZX_OBJ_TYPE_CHANNEL,
                 rights: zx_types::ZX_RIGHT_SAME_RIGHTS,
                 result: zx_types::ZX_OK,
@@ -817,24 +1083,37 @@ mod test {
         let result = unsafe {
             ffx_channel_write_etc(
                 lib_ctx,
-                b.raw_handle(),
+                b,
                 write_buf.as_mut_ptr(),
                 2,
                 handles_buf.as_mut_ptr().cast(),
                 2,
             )
         };
-        assert_eq!(result, zx_status::Status::NOT_SUPPORTED);
+        assert_eq!(result, FcTransportStatus::NOT_SUPPORTED);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_write_etc_invalid_arg() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (_a, b) = fidl::Channel::create();
-        let (c, d) = fidl::Channel::create();
-        let c = c.into_raw();
-        let d = d.into_raw();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut write_buf = [1u8, 2u8];
         let mut handles_buf: [zx_types::zx_handle_disposition_t; 2] = [
             zx_types::zx_handle_disposition_t {
@@ -855,287 +1134,370 @@ mod test {
         let result = unsafe {
             ffx_channel_write_etc(
                 lib_ctx,
-                b.raw_handle(),
+                b,
                 write_buf.as_mut_ptr(),
                 2,
                 handles_buf.as_mut_ptr().cast(),
                 2,
             )
         };
-        assert_eq!(result, zx_status::Status::INVALID_ARGS);
+        assert_eq!(result, FcTransportStatus::INVALID_ARGS);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn socket_write_then_read_some_data() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Socket::create_stream();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut write_buf = [1u8, 2u8];
-        let result = unsafe {
-            ffx_socket_write(
-                lib_ctx,
-                b.raw_handle(),
-                write_buf.as_mut_ptr(),
-                write_buf.len() as u64,
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
+        let result =
+            unsafe { ffx_socket_write(lib_ctx, b, write_buf.as_mut_ptr(), write_buf.len() as u64) };
+        assert_eq!(result, FcTransportStatus::OK);
         let mut buf = [0u8; 2];
-        let result = unsafe {
-            ffx_socket_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
+        let mut out_len = 0;
+        let result = async_socket_read(lib_ctx, a, &mut buf, &mut out_len);
+        assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(&buf, &[1, 2]);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn channel_read_peer_closed() {
+        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        drop(b);
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        unsafe { ffx_close_handle(lib_ctx, b) };
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
-        let result = unsafe {
-            ffx_channel_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                handles.as_mut_ptr(),
-                handles.len() as u64,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(result, zx_status::Status::PEER_CLOSED);
+        let result = async_channel_read(
+            lib_ctx,
+            a,
+            &mut buf,
+            &mut handles,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        let expected_inner = fdproto::Error::TargetError(zx_status::Status::PEER_CLOSED.into_raw());
+        let expect: FcTransportStatus =
+            fdomain_client::Error::FDomain(expected_inner.clone()).into();
+        assert_eq!(result, expect);
+        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        assert_eq!(msg, expected_inner);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn event_pair_signal_peer_peer_closed() {
+        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::EventPair::create();
-        drop(b);
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_eventpair_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        unsafe { ffx_close_handle(lib_ctx, b) };
         let result = unsafe {
             ffx_object_signal_peer(
                 lib_ctx,
-                a.raw_handle(),
+                a,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::PEER_CLOSED);
+        let expected_inner = fdproto::Error::TargetError(zx_status::Status::PEER_CLOSED.into_raw());
+        let expect: FcTransportStatus =
+            fdomain_client::Error::FDomain(expected_inner.clone()).into();
+        assert_eq!(result, expect.into());
+        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        assert_eq!(msg, expected_inner);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
-    fn channel_write_peer_closed() {
+    fn channel_write_no_such_handle() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Channel::create();
-        drop(b);
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        unsafe { ffx_close_handle(lib_ctx, b) };
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
         let result = unsafe {
             ffx_channel_write(
                 lib_ctx,
-                a.raw_handle(),
+                a,
                 buf.as_mut_ptr(),
                 buf.len() as u64,
                 handles.as_mut_ptr(),
                 handles.len() as u64,
             )
         };
-        assert_eq!(result, zx_status::Status::PEER_CLOSED);
+        assert_eq!(result, FcTransportStatus::INTERNAL);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn socket_read_peer_closed() {
+        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Socket::create_datagram();
-        drop(b);
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        unsafe { ffx_close_handle(lib_ctx, b) };
         let mut buf = [0u8];
-        let result = unsafe {
-            ffx_socket_read(
-                lib_ctx,
-                a.raw_handle(),
-                buf.as_mut_ptr(),
-                buf.len() as u64,
-                std::ptr::null_mut(),
-            )
-        };
-        assert_eq!(result, zx_status::Status::PEER_CLOSED);
+        let mut out_len = 0;
+        let _result = async_socket_read(lib_ctx, a, &mut buf, &mut out_len);
+        let result = async_socket_read(lib_ctx, a, &mut buf, &mut out_len);
+        let expected_inner = fdproto::Error::TargetError(zx_status::Status::PEER_CLOSED.into_raw());
+        let expect: FcTransportStatus =
+            fdomain_client::Error::FDomain(expected_inner.clone()).into();
+        assert_eq!(result, expect.into());
+        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        assert_eq!(msg, expected_inner);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_events_null_out() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let event = fidl::Event::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut event: u32 = 0;
+        let status = unsafe { ffx_event_create(env_ctx, 0, &mut event as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal_poll(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::USER_0.bits(),
                 std::ptr::null_mut(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
+        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_events_one_signal() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let event = fidl::Event::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut event: u32 = 0;
+        let status = unsafe { ffx_event_create(env_ctx, 0, &mut event as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        let mut out = 0u32;
-        let result = unsafe {
-            ffx_object_signal_poll(
-                lib_ctx,
-                event.raw_handle(),
-                fidl::Signals::USER_0.bits(),
-                &mut out,
-            )
-        };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(out, fidl::Signals::USER_0.bits());
+        assert_eq!(result, FcTransportStatus::OK);
+        let mut out = fidl::Signals::from_bits_retain(0);
+        let result = async_signal_wait(lib_ctx, event, fidl::Signals::USER_0, &mut out);
+        assert_eq!(result, FcTransportStatus::OK);
+        assert_eq!(out, fidl::Signals::USER_0);
+        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_events_many_signals() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let event = fidl::Event::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut event: u32 = 0;
+        let status = unsafe { ffx_event_create(env_ctx, 0, &mut event as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        let mut out = 0u32;
+        assert_eq!(result, FcTransportStatus::OK);
+        let mut out = fidl::Signals::from_bits_retain(0);
         let signals = fidl::Signals::from_bits(
             fidl::Signals::USER_0.bits()
                 | fidl::Signals::OBJECT_ALL.bits()
                 | fidl::Signals::USER_2.bits(),
         )
         .unwrap();
-        let result = unsafe {
-            ffx_object_signal_poll(lib_ctx, event.raw_handle(), signals.bits(), &mut out)
-        };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(out, fidl::Signals::USER_0.bits());
+        let result = async_signal_wait(lib_ctx, event, signals, &mut out);
+        assert_eq!(result, FcTransportStatus::OK);
+        assert_eq!(out, fidl::Signals::USER_0);
+        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_event_pair() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (event, _otherevent) = fidl::EventPair::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut event: u32 = 0;
+        let mut other_event: u32 = 0;
+        let status = unsafe {
+            ffx_eventpair_create(env_ctx, 0, &mut event as *mut u32, &mut other_event as *mut u32)
+        };
+        assert_eq!(status, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        let mut out = 0u32;
+        assert_eq!(result, FcTransportStatus::OK);
+        let mut out = fidl::Signals::from_bits_retain(0);
         let signals = fidl::Signals::from_bits(
             fidl::Signals::USER_0.bits()
                 | fidl::Signals::OBJECT_ALL.bits()
                 | fidl::Signals::USER_2.bits(),
         )
         .unwrap();
-        let result = unsafe {
-            ffx_object_signal_poll(lib_ctx, event.raw_handle(), signals.bits(), &mut out)
-        };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(out, fidl::Signals::USER_0.bits());
+        let result = async_signal_wait(lib_ctx, event, signals, &mut out);
+        assert_eq!(result, FcTransportStatus::OK);
+        assert_eq!(out, fidl::Signals::USER_0);
+        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe { ffx_close_handle(lib_ctx, other_event) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_peer_event_pair() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (tx, rx) = fidl::EventPair::create();
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut tx: u32 = 0;
+        let mut rx: u32 = 0;
+        let status =
+            unsafe { ffx_eventpair_create(env_ctx, 0, &mut tx as *mut u32, &mut rx as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let result = unsafe {
             ffx_object_signal_peer(
                 lib_ctx,
-                tx.raw_handle(),
+                tx,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
-        let mut out = 0u32;
+        assert_eq!(result, FcTransportStatus::OK);
+        let mut out = fidl::Signals::from_bits_retain(0);
         let signals = fidl::Signals::from_bits(
             fidl::Signals::USER_0.bits()
                 | fidl::Signals::OBJECT_ALL.bits()
                 | fidl::Signals::USER_2.bits(),
         )
         .unwrap();
-        let result =
-            unsafe { ffx_object_signal_poll(lib_ctx, rx.raw_handle(), signals.bits(), &mut out) };
-        assert_eq!(result, zx_status::Status::OK);
-        assert_eq!(out, fidl::Signals::USER_0.bits());
+        let result = async_signal_wait(lib_ctx, rx, signals, &mut out);
+        assert_eq!(result, FcTransportStatus::OK);
+        assert_eq!(out, fidl::Signals::USER_0);
+        unsafe { ffx_close_handle(lib_ctx, tx) }
+        unsafe { ffx_close_handle(lib_ctx, rx) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn socket_write_peer_closed() {
+        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
-        let (a, b) = fidl::Socket::create_stream();
-        drop(b);
+        let env_ctx = testing_env_context(lib_ctx);
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
+        unsafe { ffx_close_handle(lib_ctx, b) };
         let mut buf = [0u8];
-        let result = unsafe {
-            ffx_socket_write(lib_ctx, a.raw_handle(), buf.as_mut_ptr(), buf.len() as u64)
+        let result = unsafe { ffx_socket_write(lib_ctx, a, buf.as_mut_ptr(), buf.len() as u64) };
+        let expected_inner = fdproto::WriteSocketError {
+            error: fdproto::Error::TargetError(zx_status::Status::PEER_CLOSED.into_raw()),
+            wrote: 0,
         };
-        assert_eq!(result, zx_status::Status::PEER_CLOSED);
+        let expect: FcTransportStatus =
+            fdomain_client::Error::SocketWrite(expected_inner.clone()).into();
+        assert_eq!(result, expect);
+        let msg = decode_fidl_err::<fdproto::WriteSocketError>(&lock);
+        assert_eq!(msg, expected_inner);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn handle_ready_notification() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
+        let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
         let mut notifier = unsafe { UnixStream::from_raw_fd(fd) };
         notifier.set_nonblocking(false).unwrap();
-        let (a, b) = fidl::Channel::create();
+        let mut a: u32 = 0;
+        let mut b: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
         let result = unsafe {
             ffx_channel_read(
                 lib_ctx,
-                a.raw_handle(),
+                a,
                 buf.as_mut_ptr(),
                 buf.len() as u64,
                 handles.as_mut_ptr(),
@@ -1144,37 +1506,50 @@ mod test {
                 std::ptr::null_mut(),
             )
         };
-        assert_eq!(result, zx_status::Status::SHOULD_WAIT);
-        let (c, d) = fidl::Channel::create();
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
+        let mut c: u32 = 0;
+        let mut d: u32 = 0;
+        let status =
+            unsafe { ffx_channel_create(env_ctx, 0, &mut c as *mut u32, &mut d as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut write_buf = [1u8, 2u8];
-        let mut handles_buf: [fidl::NullableHandle; 2] = [c.into(), d.into()];
+        let mut handles_buf: [u32; 2] = [c, d];
         let result = unsafe {
             ffx_channel_write(
                 lib_ctx,
-                b.raw_handle(),
+                b,
                 write_buf.as_mut_ptr(),
                 2,
                 handles_buf.as_mut_ptr().cast(),
                 2,
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::OK);
         let mut notifier_buf = [0u8; 4];
         let bytes_read = notifier.read(&mut notifier_buf).unwrap();
         let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
         assert_eq!(bytes_read, 4);
         let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
-        assert_eq!(read_handle, a.raw_handle());
+        assert_eq!(read_handle, a);
+        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe { ffx_close_handle(lib_ctx, c) }
+        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_pending() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
+        let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
         let mut notifier = unsafe { UnixStream::from_raw_fd(fd) };
         notifier.set_nonblocking(false).unwrap();
-        let event = fidl::Event::create();
+        let mut event: u32 = 0;
+        let status = unsafe { ffx_event_create(env_ctx, 0, &mut event as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut out = 0u32;
         let signals = fidl::Signals::from_bits(
             fidl::Signals::USER_0.bits()
@@ -1182,40 +1557,44 @@ mod test {
                 | fidl::Signals::USER_2.bits(),
         )
         .unwrap();
-        let result = unsafe {
-            ffx_object_signal_poll(lib_ctx, event.raw_handle(), signals.bits(), &mut out)
-        };
-        assert_eq!(result, zx_status::Status::SHOULD_WAIT);
+        let result = unsafe { ffx_object_signal_poll(lib_ctx, event, signals.bits(), &mut out) };
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
         let result = unsafe {
             ffx_object_signal(
                 lib_ctx,
-                event.raw_handle(),
+                event,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::OK);
         let mut notifier_buf = [0u8; 4];
         let bytes_read = notifier.read(&mut notifier_buf).unwrap();
         let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
         assert_eq!(bytes_read, 4);
         let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
-        assert_eq!(read_handle, event.raw_handle());
-        let result = unsafe {
-            ffx_object_signal_poll(lib_ctx, event.raw_handle(), signals.bits(), &mut out)
-        };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(read_handle, event);
+        let result = unsafe { ffx_object_signal_poll(lib_ctx, event, signals.bits(), &mut out) };
+        assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0.bits());
+        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 
     #[test]
     fn user_signal_peer_pending() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
+        let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
         let mut notifier = unsafe { UnixStream::from_raw_fd(fd) };
         notifier.set_nonblocking(false).unwrap();
-        let (tx, rx) = fidl::EventPair::create();
+        let mut tx: u32 = 0;
+        let mut rx: u32 = 0;
+        let status =
+            unsafe { ffx_eventpair_create(env_ctx, 0, &mut tx as *mut u32, &mut rx as *mut u32) };
+        assert_eq!(status, FcTransportStatus::OK);
         let mut out = 0u32;
         let signals = fidl::Signals::from_bits(
             fidl::Signals::USER_0.bits()
@@ -1223,28 +1602,29 @@ mod test {
                 | fidl::Signals::USER_2.bits(),
         )
         .unwrap();
-        let result =
-            unsafe { ffx_object_signal_poll(lib_ctx, rx.raw_handle(), signals.bits(), &mut out) };
-        assert_eq!(result, zx_status::Status::SHOULD_WAIT);
+        let result = unsafe { ffx_object_signal_poll(lib_ctx, rx, signals.bits(), &mut out) };
+        assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
         let result = unsafe {
             ffx_object_signal_peer(
                 lib_ctx,
-                tx.raw_handle(),
+                tx,
                 fidl::Signals::empty().bits(),
                 fidl::Signals::USER_0.bits(),
             )
         };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(result, FcTransportStatus::OK);
         let mut notifier_buf = [0u8; 4];
         let bytes_read = notifier.read(&mut notifier_buf).unwrap();
         let mut notifier_buf_reader = std::io::Cursor::new(notifier_buf);
         assert_eq!(bytes_read, 4);
         let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
-        assert_eq!(read_handle, rx.raw_handle());
-        let result =
-            unsafe { ffx_object_signal_poll(lib_ctx, rx.raw_handle(), signals.bits(), &mut out) };
-        assert_eq!(result, zx_status::Status::OK);
+        assert_eq!(read_handle, rx);
+        let result = unsafe { ffx_object_signal_poll(lib_ctx, rx, signals.bits(), &mut out) };
+        assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0.bits());
+        unsafe { ffx_close_handle(lib_ctx, tx) }
+        unsafe { ffx_close_handle(lib_ctx, rx) }
+        unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
 }

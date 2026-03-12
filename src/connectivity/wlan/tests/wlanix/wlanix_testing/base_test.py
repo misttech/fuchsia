@@ -16,7 +16,6 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.packet_capture import PacketCapture
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.wifi import wifi_test_utils as wutils
-from fuchsia_controller_py import Channel
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import assert_equal, fail
@@ -135,7 +134,10 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
     async def setup_class(self) -> None:
         await super().setup_class()
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
@@ -150,7 +152,10 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
         )
 
         self.chip_id = response.chip_ids[0]
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         (
             await wifi_proxy.get_chip(chip_id=self.chip_id, chip=server.take())
         ).unwrap()
@@ -195,7 +200,10 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
             "WifiChip should have returned an empty list of iface names",
         )
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()
@@ -209,15 +217,25 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         ), "WifiStaIface.GetName() response is missing an iface_name value"
         self.iface_name = get_name_response.iface_name
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_supplicant(supplicant=server.take())
         supplicant_proxy = fidl_wlanix.SupplicantClient(proxy)
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+
         self.wlanix_proxy.get_nl80211(nl80211=server.take())
         self.nl80211_proxy = fidl_wlanix.Nl80211Client(proxy)
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         supplicant_proxy.add_sta_interface(
             iface=server.take(),
             iface_name=self.iface_name,

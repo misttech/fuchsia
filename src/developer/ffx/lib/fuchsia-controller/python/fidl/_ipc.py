@@ -61,11 +61,11 @@ class GlobalHandleWaker(HandleWaker):
     """
 
     def __init__(self) -> None:
-        self.handle_ready_queues = HANDLE_READY_QUEUES
+        self._handle_ready_queues = HANDLE_READY_QUEUES
 
     def register(self, h: fc.BaseHandle, *, name: str) -> None:
-        if h.as_int() not in self.handle_ready_queues:
-            self.handle_ready_queues[h.as_int()] = asyncio.Queue()
+        if h.as_int() not in self._handle_ready_queues:
+            self._handle_ready_queues[h.as_int()] = asyncio.Queue()
         notification_fd = fc.connect_handle_notifier()
         # This try call is simply here in case registration occurs in outside
         # an async event loop.
@@ -76,7 +76,7 @@ class GlobalHandleWaker(HandleWaker):
                 notification_fd,
                 enqueue_ready_zx_handle_from_fd,
                 notification_fd,
-                self.handle_ready_queues,
+                self._handle_ready_queues,
             )
         except RuntimeError as e:
             logger.debug(
@@ -88,14 +88,28 @@ class GlobalHandleWaker(HandleWaker):
             logger.debug("[[ TRACE END ]]")
 
     def unregister(self, h: fc.BaseHandle) -> None:
-        if h.as_int() in self.handle_ready_queues:
-            self.handle_ready_queues.pop(h.as_int())
+        if h.as_int() in self._handle_ready_queues:
+            self._handle_ready_queues.pop(h.as_int())
 
     def post_ready(self, h: fc.BaseHandle) -> None:
         logger.debug(f"Re-notifying for channel: {h.as_int()}")
-        self.handle_ready_queues[h.as_int()].put_nowait(h.as_int())
+        self._handle_ready_queues[h.as_int()].put_nowait(h.as_int())
 
     async def wait_ready(self, h: fc.BaseHandle) -> int:
-        res = await self.handle_ready_queues[h.as_int()].get()
-        self.handle_ready_queues[h.as_int()].task_done()
+        res = await self._handle_ready_queues[h.as_int()].get()
+        self._handle_ready_queues[h.as_int()].task_done()
         return res
+
+    def _reset_for_testing(self) -> None:
+        """This is a method intended only to be used for testing.
+
+        This implementation of handle notifications doesn't consistently get cleaned up
+        when channels are garbage collected. There is likely a clearer root-cause
+        for this that can be prevented, but for the time being this is a hacked-together
+        fix for using `unittest.IsolatedAsyncioTestCase` with various FIDL server
+        implementations and background tasks. Each test uses its own new/isolated
+        loop to prevent pollution from other tasks, so resetting state will at least
+        ensure that any asyncio.Queue objects in our state are removed and don't cross from
+        one loop into another.
+        """
+        self._handle_ready_queues.clear()

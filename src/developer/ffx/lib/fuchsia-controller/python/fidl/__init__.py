@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from ._async_channel import AsyncChannel
 from ._async_socket import AlreadyReadingAll, AsyncSocket
 from ._construct import Unsupported, construct_response_object
 from ._fidl_common import (
@@ -16,6 +17,7 @@ from ._ipc import GlobalHandleWaker, HandleWaker
 __all__ = [
     "AlreadyReadingAll",
     "AsyncSocket",
+    "AsyncChannel",
     "DomainError",
     "EpitaphError",
     "FrameworkError",

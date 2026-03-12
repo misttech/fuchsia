@@ -92,7 +92,14 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 break
         assert bss_description is not None, f"Failed to find SSID: {ssid}"
 
-        async with ConnectTransactionEventHandler() as ctx:
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        async with ConnectTransactionEventHandler(
+            proxy,
+            server,
+        ) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

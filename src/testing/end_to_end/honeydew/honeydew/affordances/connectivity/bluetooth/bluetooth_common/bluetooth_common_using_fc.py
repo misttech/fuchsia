@@ -12,7 +12,6 @@ import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
 import fuchsia_async_extension
 import fuchsia_controller_py as fc
-from fuchsia_controller_py import Channel
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
@@ -413,7 +412,7 @@ class AsyncBluetoothCommonUsingFc(bluetooth_common.AsyncBluetoothCommon):
         self._async_op_count += 1
         try:
             async with asyncio.timeouts.timeout(timeout_sec):
-                (tx, rx) = Channel.create()
+                (tx, rx) = self._fc_transport.channel_create()
                 server = bt_fidl_servers.PairingDelegateImpl(rx)
                 self._pairing_delegate_server = asyncio.create_task(
                     server.serve()
@@ -634,7 +633,7 @@ class AsyncBluetoothCommonUsingFc(bluetooth_common.AsyncBluetoothCommon):
                 "Cannot start discovery: Active discovery is "
                 f"initialized on {self._device_name}"
             )
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         assert self._access_controller_proxy is not None
         self._async_op_count += 1
         try:
@@ -668,7 +667,7 @@ class AsyncBluetoothCommonUsingFc(bluetooth_common.AsyncBluetoothCommon):
                 "Cannot turn on discoverability: discoverability is "
                 f"initialized on {self._device_name}"
             )
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         assert self._access_controller_proxy is not None
         self._async_op_count += 1
         try:

@@ -6,7 +6,6 @@ Battery of tests of the lifecycle of ifaces managed by wlanix.
 """
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-from fuchsia_controller_py import Channel
 from mobly import test_runner
 from mobly.asserts import assert_equal
 from wlanix_testing import base_test
@@ -22,7 +21,7 @@ class IfaceLifecycleTest(base_test.WifiChipBaseTestClass):
             "WifiChip should have returned an empty list of iface names",
         )
 
-        proxy, server = Channel.create()
+        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()

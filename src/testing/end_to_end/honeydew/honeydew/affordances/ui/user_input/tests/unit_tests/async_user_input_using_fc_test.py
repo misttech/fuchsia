@@ -3,12 +3,14 @@
 # found in the LICENSE file.
 """Unit tests for honeydew.affordances.fuchsia_controller.user_input.py."""
 
+import types
 import unittest
 from unittest import mock
 
 import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
+import fuchsia_controller_py
 
 from honeydew import errors
 from honeydew.affordances.ui.user_input import types as ui_custom_types
@@ -28,6 +30,18 @@ class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
         super().setUp()
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
+        )
+        self.fc_transport_obj.ctx = fuchsia_controller_py.Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[
+            fuchsia_controller_py.Channel, fuchsia_controller_py.Channel
+        ]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
         self.ffx_transport_obj = mock.MagicMock(spec=ffx_transport.FFX)
 

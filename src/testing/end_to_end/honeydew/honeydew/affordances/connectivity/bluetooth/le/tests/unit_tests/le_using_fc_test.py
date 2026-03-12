@@ -6,6 +6,7 @@
 """Unit tests for honeydew.affordances.fuchsia_controller.bluetooth.profiles.bluetooth_le.py"""
 
 import asyncio
+import types
 import typing
 import unittest
 from collections.abc import Callable
@@ -15,6 +16,7 @@ from unittest import mock
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_le as f_ble_controller
+import fuchsia_controller_py as fc
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable
@@ -126,6 +128,16 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
+        )
+        self.fc_transport_obj.ctx = fc.Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
 
         self.bluetooth_le_obj = le_using_fc.AsyncLEUsingFc(

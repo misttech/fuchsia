@@ -16,11 +16,12 @@ extern PyTypeObject* ZxStatusType;
 // Creates the ZxStatus error type. Must only be run once.
 extern PyTypeObject* ZxStatusType_Create();
 
-// The (singleton) type of the FcStatus error type. Must be initialized using FcStatusType_Create().
-extern PyTypeObject* FcStatusType;
+// The (singleton) type of the FcTransportStatus error type. Must be initialized using
+// FcTransportStatusType_Create().
+extern PyTypeObject* FcTransportStatusType;
 
-// Creates the FcStatus error type. Must only be run once.
-extern PyTypeObject* FcStatusType_Create();
+// Creates the FcTransportStatus error type. Must only be run once.
+extern PyTypeObject* FcTransportStatusType_Create();
 
 }  // namespace error
 

@@ -4,6 +4,7 @@
 """Provides Host-(Fuchsia)Target interactions via Fuchsia-Controller."""
 
 import logging
+from typing import Tuple
 
 import fuchsia_controller_py as fuchsia_controller
 
@@ -151,7 +152,7 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
             return self.ctx.connect_device_proxy(
                 fidl_end_point.moniker, fidl_end_point.protocol
             )
-        except fuchsia_controller.ZxStatus as status:
+        except fuchsia_controller.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
@@ -170,9 +171,28 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
 
     def channel_create(
         self,
-    ) -> tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
+    ) -> Tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
         """Opens a pair of connected channels, usef for FIDL endpoints.
 
         Raises: FuchsiaControllerError: On failure to create the channels.
         """
-        return fuchsia_controller.Channel.create()
+        try:
+            return self.ctx.channel_create()
+        except fuchsia_controller.FcTransportStatus as status:
+            raise fc_errors.FuchsiaControllerError(
+                "Fuchsia Controller Channel Create Error"
+            ) from status
+
+    def socket_create(
+        self,
+    ) -> tuple[fuchsia_controller.Socket, fuchsia_controller.Socket]:
+        """Opens a pair of connected sockets, used for FIDL endpoints.
+
+        Raises: FuchsiaControllerError: On failure to create the sockets.
+        """
+        try:
+            return self.ctx.socket_create()
+        except fuchsia_controller.FcTransportStatus as status:
+            raise fc_errors.FuchsiaControllerError(
+                "Fuchsia Controller Socket Create Error"
+            ) from status

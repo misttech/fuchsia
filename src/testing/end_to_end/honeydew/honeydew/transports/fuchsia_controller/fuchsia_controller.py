@@ -55,7 +55,16 @@ class FuchsiaController(abc.ABC):
     def channel_create(
         self,
     ) -> tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
-        """Opens a pair of connected channels, usef for FIDL endpoints.
+        """Opens a pair of connected channels, used for FIDL endpoints.
 
         Raises: FuchsiaControllerError: On failure to create the channels.
+        """
+
+    @abc.abstractmethod
+    def socket_create(
+        self,
+    ) -> tuple[fuchsia_controller.Socket, fuchsia_controller.Socket]:
+        """Opens a pair of connected sockets, used for FIDL endpoints.
+
+        Raises: FuchsiaControllerError: On failure to create the sockets.
         """

@@ -10,7 +10,6 @@ import tempfile
 import fidl_fuchsia_tracing as tracing
 import fidl_fuchsia_tracing_controller as tracing_controller
 import fuchsia_async_extension
-from fuchsia_controller_py import Channel, Socket
 from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
@@ -69,10 +68,10 @@ class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
             categories=categories,
             buffering_mode=tracing.BufferingMode.ONESHOT,
         )
-        _client, server = Socket.create()
+        _client, server = self.device.ctx.socket_create()
         client = AsyncSocket(_client)
 
-        client_end, server_end = Channel.create()
+        client_end, server_end = self.device.channel_create()
 
         provisioner.initialize_tracing(
             controller=server_end.take(), config=config, output=server.take()

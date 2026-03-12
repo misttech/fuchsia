@@ -7,7 +7,7 @@ import logging
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fuchsia_async_extension
-from fuchsia_controller_py import ZxStatus
+from fuchsia_controller_py import FcTransportStatus
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.location import location
@@ -118,8 +118,8 @@ class AsyncLocationUsingFc(location.AsyncLocation):
 
         try:
             self._regulatory_region_configurator.set_region(region=region_code)
-        except ZxStatus as status:
-            _LOGGER.error("set_region zxstatus error = %s", status)
+        except FcTransportStatus as status:
+            _LOGGER.error("set_region error = %s", status)
             raise HoneydewLocationError(
                 f"RegulatoryRegionConfigurator.SetRegion() error {status}"
             ) from status

@@ -156,7 +156,12 @@ class PythonHandle : public PythonObject {
 
   ~PythonHandle() override {
     if (handle() != 0) {
-      ffx_close_handle(handle_);
+      auto state = mod::get_module_state();
+      if (state == nullptr) {
+        return;
+      }
+      auto ctx = state->ctx;
+      ffx_close_handle(ctx, handle_);
       handle_ = 0;
     }
   }
@@ -192,9 +197,13 @@ class PythonChannel : public PythonObject {
     return ret;
   }
 
-  ~PythonChannel() {
+  ~PythonChannel() override {
     if (handle() != 0) {
-      ffx_close_handle(channel_);
+      auto state = mod::get_module_state();
+      if (state == nullptr) {
+        return;
+      }
+      ffx_close_handle(state->ctx, channel_);
       channel_ = 0;
     }
   }
@@ -217,9 +226,13 @@ class PythonSocket : public PythonObject {
 
   zx_handle_t handle() const { return handle_; }
 
-  ~PythonSocket() {
+  ~PythonSocket() override {
     if (handle() != 0) {
-      ffx_close_handle(handle());
+      auto state = mod::get_module_state();
+      if (state == nullptr) {
+        return;
+      }
+      ffx_close_handle(state->ctx, handle());
       handle_ = 0;
     }
   }
@@ -243,7 +256,11 @@ class PythonEvent : public PythonObject {
 
   ~PythonEvent() override {
     if (handle() != 0) {
-      ffx_close_handle(handle());
+      auto state = mod::get_module_state();
+      if (state == nullptr) {
+        return;
+      }
+      ffx_close_handle(state->ctx, handle());
       handle_ = 0;
     }
   }
@@ -452,8 +469,8 @@ PyObject *handle_koid_helper(PyObject *self, PyObject *args) {
   }
   zx_koid_t out;
   zx_status_t status = ffx_handle_get_koid(mod::get_module_state()->ctx, handle->handle(), &out);
-  if (status != ZX_OK) {
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return PyLong_FromUnsignedLongLong(out);
@@ -509,9 +526,10 @@ PyObject *context_create(PyObject *self, PyObject *args) {
   ffx_config = std::move(pair.first);
   config_len = pair.second;
   ffx_env_context_t *env_context;
-  if (create_ffx_env_context(&env_context, mod::get_module_state()->ctx, ffx_config.get(),
-                             config_len, isolate) != ZX_OK) {
-    mod::dump_python_err();
+  fc_status_t status = create_ffx_env_context(&env_context, mod::get_module_state()->ctx,
+                                              ffx_config.get(), config_len, isolate);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     Py_XDECREF(config);
     return nullptr;
   }
@@ -530,8 +548,8 @@ PyObject *context_connect_remote_control_proxy(PyObject *self, PyObject *args) {
   }
   zx_handle_t handle;
   zx_status_t status = ffx_connect_remote_control_proxy(context->context(), &handle);
-  if (status != ZX_OK) {
-    mod::dump_python_err();
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return MakePyObject<PythonChannel>(handle);
@@ -550,8 +568,8 @@ PyObject *context_connect_device_proxy(PyObject *self, PyObject *args) {
   }
   zx_handle_t handle;
   zx_status_t status = ffx_connect_device_proxy(context->context(), moniker, capability, &handle);
-  if (status != ZX_OK) {
-    mod::dump_python_err();
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return MakePyObject<PythonChannel>(handle);
@@ -573,16 +591,16 @@ PyObject *context_config_get_string(PyObject *self, PyObject *args) {
   char buf[kMaxBufSize];
   if (zx_status_t res = ffx_config_get_string(context->context(), key,
                                               static_cast<uint64_t>(key_len), buf, &buf_size);
-      res != ZX_OK) {
+      res != FC_OK) {
     switch (res) {
-      case ZX_ERR_BUFFER_TOO_SMALL:
+      case FC_ERR_BUFFER_TOO_SMALL:
         PyErr_Format(PyExc_BufferError, "config key larger than %" PRIu64 " characters",
                      kMaxBufSize);
         break;
-      case ZX_ERR_NOT_FOUND:
+      case FC_ERR_NOT_FOUND:
         Py_RETURN_NONE;
       default:
-        mod::dump_python_err();
+        mod::set_python_exception(res);
     }
     return nullptr;
   }
@@ -592,7 +610,7 @@ PyObject *context_config_get_string(PyObject *self, PyObject *args) {
 PyObject *connect_handle_notifier(PyObject *self, PyObject *Py_UNUSED(arg)) {
   auto descriptor = ffx_connect_handle_notifier(mod::get_module_state()->ctx);
   if (descriptor <= 0) {
-    mod::dump_python_err();
+    mod::set_python_exception(FC_ERR_INTERNAL);
     return nullptr;
   }
   return PyLong_FromLong(descriptor);
@@ -619,8 +637,8 @@ PyObject *context_target_wait(PyObject *self, PyObject *args) {
     return nullptr;
   }
   zx_status_t status = ffx_target_wait(context->context(), timeout_seconds, offline);
-  if (status != ZX_OK) {
-    mod::dump_python_err();
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   Py_RETURN_NONE;
@@ -663,9 +681,9 @@ PyObject *channel_write(PyObject *self, PyObject *args) {
   zx_status_t status =
       ffx_channel_write_etc(mod::get_module_state()->ctx, channel->handle(),
                             static_cast<const char *>(view.buf), view.len, c_handles, handles_len);
-  if (status != ZX_OK) {
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
     PyBuffer_Release(&view);
+    mod::set_python_exception(status);
     return nullptr;
   }
   PyBuffer_Release(&view);
@@ -691,11 +709,8 @@ PyObject *channel_read(PyObject *self, PyObject *args) {
 
   auto status = ffx_channel_read(mod::get_module_state()->ctx, channel->handle(), c_buf, c_buf_len,
                                  handles, handles_len, &actual_bytes_count, &actual_handles_count);
-  if (status != ZX_OK) {
-    // Lint suppressed because we are asserting on the sizeof(long),
-    // not int64.
-    static_assert(sizeof(long) >= sizeof(status));  // NOLINT
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   auto res = fc::abi::utils::Object(PyTuple_New(2));
@@ -740,11 +755,8 @@ PyObject *socket_write(PyObject *self, PyObject *args) {
   auto status = ffx_socket_write(mod::get_module_state()->ctx, socket->handle(),
                                  static_cast<const char *>(view.buf), view.len);
   PyBuffer_Release(&view);
-  if (status != ZX_OK) {
-    // Lint suppressed because we are asserting on the sizeof(long),
-    // not int64.
-    static_assert(sizeof(long) >= sizeof(status));  // NOLINT
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   Py_RETURN_NONE;
@@ -764,11 +776,8 @@ PyObject *socket_read(PyObject *self, PyObject *args) {
   uint64_t actual_bytes_count = 0;
   auto status = ffx_socket_read(mod::get_module_state()->ctx, socket->handle(), c_buf,
                                 sizeof(c_buf), &actual_bytes_count);
-  if (status != ZX_OK) {
-    // Lint suppressed because we are asserting on the sizeof(long),
-    // not int64.
-    static_assert(sizeof(long) >= sizeof(status));  // NOLINT
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return PyByteArray_FromStringAndSize(c_buf, static_cast<ssize_t>(actual_bytes_count));
@@ -814,17 +823,19 @@ PyObject *MakePythonTuple(Args... args) {
 
 PyObject *socket_create(PyObject *self, PyObject *args) {
   unsigned int options;
-  if (!PyArg_ParseTuple(args, "I", &options)) {
+  PyObject *obj = nullptr;
+  if (!PyArg_ParseTuple(args, "OI", &obj, &options)) {
     return nullptr;
   }
   zx_handle_t socket1 = ZX_HANDLE_INVALID;
   zx_handle_t socket2 = ZX_HANDLE_INVALID;
-  auto status = ffx_socket_create(mod::get_module_state()->ctx, options, &socket1, &socket2);
-  if (status != ZX_OK) {
-    // Lint suppressed because we are asserting on the sizeof(long),
-    // not int64.
-    static_assert(sizeof(long) >= sizeof(status));  // NOLINT
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  auto context = DowncastPyObject<PythonContext>(obj);
+  if (!context) {
+    return nullptr;
+  }
+  auto status = ffx_socket_create(context->context(), options, &socket1, &socket2);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return MakePythonTuple(MakePyObject<PythonSocket>(socket1), MakePyObject<PythonSocket>(socket2));
@@ -858,7 +869,19 @@ PyObject *channel_take(PyObject *self, PyObject *args) {
 PyObject *channel_create(PyObject *self, PyObject *args) {
   zx_handle_t hdl0;
   zx_handle_t hdl1;
-  ffx_channel_create(mod::get_module_state()->ctx, 0, &hdl0, &hdl1);
+  PyObject *obj = nullptr;
+  if (!PyArg_ParseTuple(args, "O", &obj)) {
+    return nullptr;
+  }
+  auto context = DowncastPyObject<PythonContext>(obj);
+  if (context == nullptr) {
+    return nullptr;
+  }
+  auto status = ffx_channel_create(context->context(), 0, &hdl0, &hdl1);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
+    return nullptr;
+  }
   fc::abi::utils::Object tuple(PyTuple_New(2));
   if (tuple == nullptr) {
     return nullptr;
@@ -897,8 +920,8 @@ PyObject *event_signal_peer(PyObject *self, PyObject *args) {
   }
   zx_status_t status =
       ffx_object_signal_peer(mod::get_module_state()->ctx, event->handle(), clear_mask, set_mask);
-  if (status != ZX_OK) {
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   Py_RETURN_NONE;
@@ -931,9 +954,17 @@ PyObject *event_take(PyObject *self, PyObject *args) {
 
 PyObject *event_create(PyObject *self, PyObject *args) {
   zx_handle_t hdl;
-  auto status = ffx_event_create(mod::get_module_state()->ctx, 0, &hdl);
-  if (status != ZX_OK) {
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  PyObject *obj = nullptr;
+  if (!PyArg_ParseTuple(args, "O", &obj)) {
+    return nullptr;
+  }
+  auto context = DowncastPyObject<PythonContext>(obj);
+  if (context == nullptr) {
+    return nullptr;
+  }
+  auto status = ffx_event_create(context->context(), 0, &hdl);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   return MakePyObject<PythonEvent>(hdl);
@@ -942,9 +973,17 @@ PyObject *event_create(PyObject *self, PyObject *args) {
 PyObject *event_create_pair(PyObject *self, PyObject *args) {
   zx_handle_t hdl0;
   zx_handle_t hdl1;
-  auto status = ffx_eventpair_create(mod::get_module_state()->ctx, 0, &hdl0, &hdl1);
-  if (status != ZX_OK) {
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::ZxStatusType), PyLong_FromLong(status));
+  PyObject *obj = nullptr;
+  if (!PyArg_ParseTuple(args, "O", &obj)) {
+    return nullptr;
+  }
+  auto context = DowncastPyObject<PythonContext>(obj);
+  if (context == nullptr) {
+    return nullptr;
+  }
+  auto status = ffx_eventpair_create(context->context(), 0, &hdl0, &hdl1);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
     return nullptr;
   }
   fc::abi::utils::Object tuple(PyTuple_New(2));
@@ -1025,13 +1064,16 @@ PyMethodDef FuchsiaControllerMethods[] = {
      nullptr},
     {"context_config_get_string", reinterpret_cast<PyCFunction>(context_config_get_string),
      METH_VARARGS, nullptr},
+    {"channel_create", reinterpret_cast<PyCFunction>(channel_create), METH_VARARGS, nullptr},
+    {"socket_create", reinterpret_cast<PyCFunction>(socket_create), METH_VARARGS, nullptr},
+    {"event_create", reinterpret_cast<PyCFunction>(event_create), METH_VARARGS, nullptr},
+    {"event_create_pair", reinterpret_cast<PyCFunction>(event_create_pair), METH_VARARGS, nullptr},
 
     // v2 methods for channel
     {"channel_read", reinterpret_cast<PyCFunction>(channel_read), METH_VARARGS, nullptr},
     {"channel_write", reinterpret_cast<PyCFunction>(channel_write), METH_VARARGS, nullptr},
     {"channel_as_int", reinterpret_cast<PyCFunction>(channel_as_int), METH_VARARGS, nullptr},
     {"channel_take", reinterpret_cast<PyCFunction>(channel_take), METH_VARARGS, nullptr},
-    {"channel_create", reinterpret_cast<PyCFunction>(channel_create), METH_NOARGS, nullptr},
     {"channel_from_int", reinterpret_cast<PyCFunction>(channel_from_int), METH_VARARGS, nullptr},
     {"channel_koid", reinterpret_cast<PyCFunction>(handle_koid_helper<PythonChannel>), METH_VARARGS,
      nullptr},
@@ -1041,7 +1083,6 @@ PyMethodDef FuchsiaControllerMethods[] = {
     {"socket_write", reinterpret_cast<PyCFunction>(socket_write), METH_VARARGS, nullptr},
     {"socket_as_int", reinterpret_cast<PyCFunction>(socket_as_int), METH_VARARGS, nullptr},
     {"socket_take", reinterpret_cast<PyCFunction>(socket_take), METH_VARARGS, nullptr},
-    {"socket_create", reinterpret_cast<PyCFunction>(socket_create), METH_VARARGS, nullptr},
     {"connect_handle_notifier", reinterpret_cast<PyCFunction>(connect_handle_notifier),
      METH_VARARGS, nullptr},
     {"socket_from_int", reinterpret_cast<PyCFunction>(socket_from_int), METH_VARARGS, nullptr},
@@ -1053,8 +1094,6 @@ PyMethodDef FuchsiaControllerMethods[] = {
     {"event_as_int", reinterpret_cast<PyCFunction>(event_as_int), METH_VARARGS, nullptr},
     {"event_take", reinterpret_cast<PyCFunction>(event_take), METH_VARARGS, nullptr},
     {"event_signal_peer", reinterpret_cast<PyCFunction>(event_signal_peer), METH_VARARGS, nullptr},
-    {"event_create", reinterpret_cast<PyCFunction>(event_create), METH_NOARGS, nullptr},
-    {"event_create_pair", reinterpret_cast<PyCFunction>(event_create_pair), METH_NOARGS, nullptr},
     {"event_koid", reinterpret_cast<PyCFunction>(handle_koid_helper<PythonEvent>), METH_VARARGS,
      nullptr},
 
@@ -1085,11 +1124,12 @@ PyMODINIT_FUNC PyInit_libfuchsia_controller_internal() {
   if (m == nullptr) {
     return nullptr;
   }
-  auto fc_status_type = error::FcStatusType_Create();
+  auto fc_status_type = error::FcTransportStatusType_Create();
   if (fc_status_type == nullptr) {
     return nullptr;
   }
-  if (PyModule_AddObject(m.get(), "FcStatus", reinterpret_cast<PyObject *>(fc_status_type)) < 0) {
+  if (PyModule_AddObject(m.get(), "FcTransportStatus",
+                         reinterpret_cast<PyObject *>(fc_status_type)) < 0) {
     Py_DECREF(fc_status_type);
     return nullptr;
   }

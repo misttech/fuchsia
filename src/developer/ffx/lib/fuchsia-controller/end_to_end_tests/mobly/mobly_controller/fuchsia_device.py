@@ -10,7 +10,12 @@ import os.path
 import time
 from typing import Any, Tuple
 
-from fuchsia_controller_py import Channel, Context, IsolateDir, ZxStatus
+from fuchsia_controller_py import (
+    Channel,
+    Context,
+    FcTransportStatus,
+    IsolateDir,
+)
 from mobly import base_test
 
 MOBLY_CONTROLLER_CONFIG_NAME = "FuchsiaDevice"
@@ -69,7 +74,8 @@ class FuchsiaDevice(object):
         )
 
     def channel_create(self) -> Tuple[Channel, Channel]:
-        return Channel.create()
+        assert self.ctx is not None
+        return self.ctx.channel_create()
 
     async def wait_offline(self, timeout: int = TIMEOUTS["OFFLINE"]) -> None:
         """Waits for the Fuchsia device to be offline.
@@ -86,7 +92,7 @@ class FuchsiaDevice(object):
         try:
             assert self.ctx is not None
             self.ctx.target_wait(timeout, True)
-        except ZxStatus:
+        except FcTransportStatus:
             raise TimeoutError()
         logging.info(
             f"Target '{self.target}' is now offline after {time.time() - start_time} seconds"
@@ -111,7 +117,7 @@ class FuchsiaDevice(object):
         try:
             assert self.ctx is not None
             self.ctx.target_wait(timeout)
-        except ZxStatus:
+        except FcTransportStatus:
             raise TimeoutError()
         logging.info(
             f"Target '{self.target}' back online after {time.time() - start_time} seconds."

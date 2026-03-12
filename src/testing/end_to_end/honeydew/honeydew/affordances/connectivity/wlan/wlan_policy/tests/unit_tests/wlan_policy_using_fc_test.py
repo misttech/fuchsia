@@ -4,13 +4,15 @@
 """Unit tests for wlan_policy_using_fc.py"""
 
 import asyncio
+import types
 import unittest
 from typing import TypeVar
 from unittest import mock
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-from fuchsia_controller_py import Channel, ZxStatus
+import fuchsia_controller_py
+from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
@@ -145,15 +147,28 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             spec=fc_transport.FuchsiaController,
             autospec=True,
         )
-        self.ffx_transport_obj = mock.MagicMock(
-            spec=ffx_transport.FFX,
-            autospec=True,
+        self.fc_transport_obj.ctx = Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[
+            fuchsia_controller_py.Channel, fuchsia_controller_py.Channel
+        ]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
+
         self.location_obj = mock.MagicMock(
             spec=AsyncLocation,
             autospec=True,
         )
 
+        self.ffx_transport_obj = mock.MagicMock(
+            spec=ffx_transport.FFX,
+            autospec=True,
+        )
         self.ffx_transport_obj.run.return_value = "".join(
             wlan_policy_using_fc._REQUIRED_CAPABILITIES
         )
@@ -320,7 +335,9 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "internal error",
-                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+                _async_error(
+                    FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                ),
                 None,
             ),
         ]:
@@ -511,7 +528,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                 )
             client_controller.remove_network.assert_called_once()
 
-        with self.subTest(msg="ZxStatus"):
+        with self.subTest(msg="FcTransportStatus"):
             res = f_wlan_policy.ClientControllerRemoveNetworkResult(
                 err=int(
                     f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
@@ -519,7 +536,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             )
             client_controller.remove_network.reset_mock()
             client_controller.remove_network.return_value = _async_error(
-                ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
+                FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
             )
 
             with self.assertRaises(HoneydewWlanError):
@@ -556,7 +573,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                 )
             client_controller.save_network.assert_called_once()
 
-        with self.subTest(msg="ZxStatus"):
+        with self.subTest(msg="FcTransportStatus"):
             res = f_wlan_policy.ClientControllerSaveNetworkResult(
                 err=int(
                     f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
@@ -564,7 +581,7 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             )
             client_controller.save_network.reset_mock()
             client_controller.save_network.return_value = _async_error(
-                ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
+                FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
             )
 
             with self.assertRaises(HoneydewWlanError):
@@ -699,7 +716,9 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "internal error",
-                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+                _async_error(
+                    FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                ),
             ),
         ]:
             with self.subTest(msg=msg, resp=resp):
@@ -760,7 +779,9 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "internal error",
-                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+                _async_error(
+                    FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                ),
             ),
         ]:
             with self.subTest(msg=msg, resp=resp):

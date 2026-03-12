@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fidl_fuchsia_wlan_sme as fidl_sme
-from fuchsia_controller_py import Channel
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
 from mobly.asserts import (
@@ -35,7 +34,7 @@ class ApfTest(base_test.ConnectionBaseTestClass):
                 )
             )
         )
-        proxy, server = Channel.create()
+        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
 
         # Find the interface ID for the client SME
         list_ifaces_response = await device_monitor_proxy.list_ifaces()

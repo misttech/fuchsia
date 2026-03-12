@@ -98,8 +98,8 @@ class FuchsiaControllerTests(unittest.TestCase):
     @mock.patch.object(
         fuchsia_controller,
         "Context",
-        side_effect=fuchsia_controller.ZxStatus(
-            fuchsia_controller.ZxStatus.ZX_ERR_INVALID_ARGS
+        side_effect=fuchsia_controller.FcTransportStatus(
+            fuchsia_controller.FcTransportStatus.FC_ERR_INVALID_ARGS
         ),
         autospec=True,
     )
@@ -131,8 +131,8 @@ class FuchsiaControllerTests(unittest.TestCase):
     @mock.patch.object(
         fuchsia_controller.Context,
         "connect_device_proxy",
-        side_effect=fuchsia_controller.ZxStatus(
-            fuchsia_controller.ZxStatus.ZX_ERR_INVALID_ARGS
+        side_effect=fuchsia_controller.FcTransportStatus(
+            fuchsia_controller.FcTransportStatus.FC_ERR_INVALID_ARGS
         ),
         autospec=True,
     )

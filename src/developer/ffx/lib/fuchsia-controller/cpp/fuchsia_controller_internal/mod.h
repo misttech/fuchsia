@@ -7,8 +7,6 @@
 
 #include <Python.h>
 
-#include <fuchsia_controller_abi/utils.h>
-
 #include "fuchsia_controller.h"
 
 namespace mod {
@@ -24,7 +22,7 @@ using FuchsiaControllerState = struct {
 };
 
 FuchsiaControllerState *get_module_state();
-void dump_python_err();
+void set_python_exception(fc_status_t err);
 
 inline int GenericTypeInit(PyTypeObject **type, PyType_Spec *spec) {
   assert(type != nullptr);

@@ -57,7 +57,10 @@ class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
 
     async def make_ready(self) -> None:
         await super().make_ready()
-        channel_server, channel_client = fcp.Channel.create()
+        (
+            channel_server,
+            channel_client,
+        ) = self._fuchsia_controller.channel_create()
 
         try:
             input_registry_proxy = f_test_input.RegistryClient(
@@ -75,7 +78,7 @@ class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
                     self._touch_screen_size.height,
                 ),
             )
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise user_input_errors.UserInputError(
                 f"Failed to initialize touch device on {self._device_name}"
             ) from status
@@ -125,7 +128,7 @@ class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
                     interval / 1000 - duration_of_one_tap_ms / 1000
                 )  # Sleep in seconds
 
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise user_input_errors.UserInputError(
                 f"tap operation failed on {self._device_name}"
             ) from status
@@ -150,7 +153,7 @@ class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
                 move_event_count=move_event_count,
                 duration=duration_ms * 1000000,  # milliseconds to nanoseconds
             )
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise user_input_errors.UserInputError(
                 f"swipe operation failed on {self._device_name}"
             ) from status
@@ -236,7 +239,10 @@ class AsyncKeyboardDeviceUsingFc(
 
     async def make_ready(self) -> None:
         await super().make_ready()
-        channel_server, channel_client = fcp.Channel.create()
+        (
+            channel_server,
+            channel_client,
+        ) = self._fuchsia_controller.channel_create()
 
         try:
             input_registry_proxy = f_test_input.RegistryClient(
@@ -247,7 +253,7 @@ class AsyncKeyboardDeviceUsingFc(
             await input_registry_proxy.register_keyboard(
                 device=channel_server.take(),
             )
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise user_input_errors.UserInputError(
                 f"Failed to initialize keyboard device on {self._device_name}"
             ) from status
@@ -263,7 +269,7 @@ class AsyncKeyboardDeviceUsingFc(
         assert self._keyboard_proxy is not None
         try:
             await self._keyboard_proxy.simulate_key_press(key_code=key_code)
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise user_input_errors.UserInputError(
                 f"key press operation failed on {self._device_name}"
             ) from status

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_async_extension
-from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py import Channel, FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -86,8 +86,17 @@ async def collect_network_config_iterator(
     while True:
         try:
             response = await asyncio.wait_for(iterator.get_next(), timeout)
-        except ZxStatus as status:
-            if status.raw() == ZxStatus.ZX_ERR_PEER_CLOSED:
+        except (FcTransportStatus, ZxStatus) as status:
+            is_fdomain_close = False
+            if isinstance(status, FcTransportStatus):
+                is_fdomain_close = (
+                    status.code() == FcTransportStatus.FC_ERR_FDOMAIN
+                    or status.code() == FcTransportStatus.FC_ERR_CHANNEL_WRITE
+                )
+            elif isinstance(status, ZxStatus):
+                is_fdomain_close = status.args[0] == ZxStatus.ZX_ERR_PEER_CLOSED
+
+            if is_fdomain_close:
                 # The server closed the channel, signifying the end of elements.
                 break
             raise wlan_errors.HoneydewWlanError(
@@ -123,8 +132,16 @@ async def collect_scan_result_iterator(
     while True:
         try:
             result = await asyncio.wait_for(iterator.get_next(), timeout)
-        except ZxStatus as status:
-            if status.raw() == ZxStatus.ZX_ERR_PEER_CLOSED:
+        except (FcTransportStatus, ZxStatus) as status:
+            is_fdomain_close = False
+            if isinstance(status, FcTransportStatus):
+                is_fdomain_close = (
+                    status.code() == FcTransportStatus.FC_ERR_FDOMAIN
+                )
+            elif isinstance(status, ZxStatus):
+                is_fdomain_close = status.args[0] == ZxStatus.ZX_ERR_PEER_CLOSED
+
+            if is_fdomain_close:
                 # The server closed the channel, signifying the end of elements.
                 break
             raise wlan_errors.HoneydewWlanError(
@@ -133,7 +150,7 @@ async def collect_scan_result_iterator(
 
         try:
             response = result.unwrap()
-        except AssertionError as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             if result.err is not None:
                 raise wlan_errors.HoneydewWlanError(
                     f"{type(iterator).__name__}.GetNext() error: {f_wlan_policy.ScanErrorCode(result.err).name}"
@@ -217,14 +234,17 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             self._client_controller.client_state_updates_server_task.cancel()
             self._client_controller = None
 
-        controller_client, controller_server = Channel.create()
+        (
+            controller_client,
+            controller_server,
+        ) = self._fc_transport.channel_create()
         client_controller_proxy = f_wlan_policy.ClientControllerClient(
             controller_client.take()
         )
 
         updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
 
-        updates_client, updates_server = Channel.create()
+        updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
         )
@@ -239,7 +259,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 requests=controller_server.take(),
                 updates=updates_client.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientProvider.GetController() error {status}"
             ) from status
@@ -317,20 +337,19 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
         deadline = datetime.now() + _SET_COUNTRY_CODE_TIMEOUT
         while datetime.now() < deadline:
-            phy_country_codes = [
-                CountryCode.from_bytes(
-                    bytes(
-                        (
-                            await self._device_monitor_proxy.get_country(
-                                phy_id=phy_id
-                            )
-                        )
-                        .unwrap()
-                        .resp.alpha2
+            phy_country_codes = []
+            for phy_id in phy_list:
+                try:
+                    res = await self._device_monitor_proxy.get_country(
+                        phy_id=phy_id
                     )
-                )
-                for phy_id in phy_list
-            ]
+                    phy_country_codes.append(
+                        CountryCode.from_bytes(bytes(res.unwrap().resp.alpha2))
+                    )
+                except (AssertionError, ZxStatus, FcTransportStatus) as e:
+                    raise wlan_errors.HoneydewWlanError(
+                        f"DeviceMonitor.GetCountry(phy_id={phy_id}) error"
+                    ) from e
 
             # TODO(https://fxbug.dev/469784448): USER_XZ is the equivalent of WORLDWIDE
             # on some devices.
@@ -404,7 +423,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 timeout,
             )
             return f_wlan_policy.RequestStatus(resp.status)
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.Connect() error {status}"
             ) from status
@@ -428,7 +447,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         """
         assert self._client_controller is not None
 
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         iterator = f_wlan_policy.NetworkConfigIteratorClient(client.take())
 
         _LOGGER.debug(
@@ -439,7 +458,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             self._client_controller.proxy.get_saved_networks(
                 iterator=server.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.GetSavedNetworks() error {status}"
             ) from status
@@ -482,7 +501,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         )
 
         updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
-        updates_client, updates_server = Channel.create()
+        updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
         )
@@ -495,10 +514,10 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             client_listener_proxy.get_listener(
                 updates=updates_client.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             task.cancel()
             raise wlan_errors.HoneydewWlanError(
-                f"ClientListener.GetListener() error {status}"
+                f"ClientListener.GetListener() FcTransportStatus error {status}"
             ) from status
 
         try:
@@ -690,9 +709,9 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 raise wlan_errors.HoneydewWlanError(
                     f"ClientController.RemoveNetwork() error {res.err}"
                 )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
-                f"ClientController.RemoveNetwork() ZxStatus error {status}"
+                f"ClientController.RemoveNetwork() FcTransportStatus error {status}"
             )
 
     @ensure_ready
@@ -748,7 +767,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                     "ClientController.SaveNetworks() NetworkConfigChangeError "
                     f"{res.err}"
                 )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.SaveNetwork() error {status}"
             ) from status
@@ -772,7 +791,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         """
         assert self._client_controller is not None
 
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         iterator = f_wlan_policy.ScanResultIteratorClient(client.take())
 
         _LOGGER.debug(
@@ -783,7 +802,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             self._client_controller.proxy.scan_for_networks(
                 iterator=server.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.ScanForNetworks() error {status}"
             ) from status
@@ -842,7 +861,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         )
 
         updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
-        updates_client, updates_server = Channel.create()
+        updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
         )
@@ -856,7 +875,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             client_listener_proxy.get_listener(
                 updates=updates_client.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientListener.GetListener() error {status}"
             ) from status
@@ -900,9 +919,9 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                     "ClientController.StartClientConnections() returned "
                     f"request status {status.name}"
                 )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
-                f"ClientController.StartClientConnections() ZxStatus error {status}"
+                f"ClientController.StartClientConnections() FcTransportStatus error {status}"
             )
 
     @ensure_ready
@@ -938,7 +957,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 raise wlan_errors.HoneydewWlanError(
                     f"ClientController.StopClientConnections() returned request status {status.name}"
                 )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.StopClientConnections() error {status}"
             ) from status

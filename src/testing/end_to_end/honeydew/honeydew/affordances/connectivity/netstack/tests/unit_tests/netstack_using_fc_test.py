@@ -4,6 +4,7 @@
 """Unit tests for honeydew.affordances.fuchsia_controller.netstack."""
 
 import asyncio
+import types
 import unittest
 from ipaddress import IPv4Address, IPv6Address
 from typing import TypeVar
@@ -12,6 +13,7 @@ from unittest import mock
 import fidl_fuchsia_net as f_net
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
+import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel, ZxStatus
 
 from honeydew import affordances_capable
@@ -42,7 +44,6 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
@@ -51,9 +52,20 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
             spec=fc_transport.FuchsiaController,
             autospec=True,
         )
+        self.fc_transport_obj.ctx = fc.Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
         self.ffx_transport_obj = mock.MagicMock(
             spec=ffx_transport.FFX,
             autospec=True,
+        )
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
 
         self.ffx_transport_obj.run.return_value = "".join(

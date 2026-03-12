@@ -11,8 +11,14 @@ import fidl_fuchsia_controller_othertest as fc_othertest
 import fidl_fuchsia_controller_test as fc_test
 import fidl_fuchsia_developer_ffx as ffx
 import fidl_fuchsia_io as f_io
-from fidl import DomainError, FrameworkError, StopEventHandler, StopServer
-from fuchsia_controller_py import Channel, ZxStatus
+from fidl import (
+    DomainError,
+    FrameworkError,
+    GlobalHandleWaker,
+    StopEventHandler,
+    StopServer,
+)
+from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 
 T = typing.TypeVar("T")
 
@@ -172,7 +178,7 @@ class TestEventHandler(fc_othertest.CrossLibraryNoopEventHandler):
 @implement_missing_abstract_methods
 class FailingFileServer(f_io.FileServer):
     def read(self, _: f_io.ReadableReadRequest) -> DomainError:
-        return DomainError(ZxStatus.ZX_ERR_PEER_CLOSED)
+        return DomainError(FcTransportStatus.FC_ERR_FDOMAIN)
 
 
 @implement_missing_abstract_methods
@@ -189,9 +195,22 @@ class TestingServer(fc_test.TestingServer):
 
 
 class ServerTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        waker = GlobalHandleWaker()
+        # See this method definition for why this is (currently) necessary.
+        # Ideally we wouldn't need to do this, but when running tests in new
+        # asyncio loop we're getting into situations where old queues are still
+        # in the handle waker dictionary.
+        waker._reset_for_testing()
+
     async def test_echo_server_sync(self) -> None:
         # [START use_echoer_example]
-        (tx, rx) = Channel.create()
+        # The context is necessary in order to create channels and other
+        # emulated Zircon objects (sockets, events, etc). An empty context
+        # with no arguments creates a local container for these objects, and
+        # is sufficient for testing.
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = TestEchoer(rx)
         client = ffx.EchoClient(tx)
         server_task = asyncio.get_running_loop().create_task(server.serve())
@@ -201,7 +220,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         # [END use_echoer_example]
 
     async def test_epitaph_propagation(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         client = ffx.EchoClient(tx)
         coro1 = client.echo_string(value="foobar")
         # Creating a task here so at least one task is awaiting on a staged
@@ -216,7 +236,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         err_msg = ZxStatus.ZX_ERR_NOT_SUPPORTED
         rx.close_with_epitaph(err_msg)
 
-        # The main thing here is to ensure that PEER_CLOSED is not sent early.
+        # The main thing here is to ensure that FDOMAIN is not sent early.
         # After running rx.close_with_epitaph, the channel will be closed, and
         # that message will have been queued for the client.
         with self.assertRaises(ZxStatus) as cm:
@@ -233,12 +253,15 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         # Finally, ensure that the channel is just plain-old closed for new
         # interactions.
-        with self.assertRaises(ZxStatus) as cm:
+        with self.assertRaises(FcTransportStatus) as cm:  # type: ignore
             await client.echo_string(value="foobar")
-        self.assertEqual(cm.exception.args[0], ZxStatus.ZX_ERR_PEER_CLOSED)
+        self.assertEqual(
+            cm.exception.args[0], FcTransportStatus.FC_ERR_CHANNEL_WRITE
+        )
 
     async def test_echo_server_async(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = AsyncEchoer(rx)
         client = ffx.EchoClient(tx)
         server_task = asyncio.get_running_loop().create_task(server.serve())
@@ -250,7 +273,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
     # many spurious wakeups as a side-effect. Having this test ensures ServerBase is resilient
     # to spurious wakeups, even several at a time.
     async def test_echo_server_async_stress(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = AsyncEchoer(rx)
         client = ffx.EchoClient(tx)
         server_task = asyncio.get_running_loop().create_task(server.serve())
@@ -260,10 +284,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server_task.cancel()
 
     async def test_target_iterator(self) -> None:
-        (reader_client_channel, reader_server_channel) = Channel.create()
+        ctx = Context()
+        (reader_client_channel, reader_server_channel) = ctx.channel_create()
         target_list: typing.List[typing.Any] = []
         server = TargetCollectionReaderImpl(reader_server_channel, target_list)
-        (tc_client_channel, tc_server_channel) = Channel.create()
+        (tc_client_channel, tc_server_channel) = ctx.channel_create()
         target_collection_server = TargetCollectionImpl(tc_server_channel)  # type: ignore[abstract]
         loop = asyncio.get_running_loop()
         reader_task = loop.create_task(server.serve())
@@ -288,7 +313,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_file_server(self) -> None:
         # This handles the kind of case where a method has a signature of `-> (data) error Error;`
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         file_proxy = f_io.FileClient(client)
         print(StubFileServer.get_flags)
         file_server = StubFileServer(server)  # type: ignore[abstract]
@@ -300,18 +326,20 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server_task.cancel()
 
     async def test_failing_file_server(self) -> None:
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         file_proxy = f_io.FileClient(client)
         file_server = FailingFileServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(
             file_server.serve()
         )
         result = await file_proxy.read(count=4)
-        self.assertEqual(result.err, ZxStatus.ZX_ERR_PEER_CLOSED)
+        self.assertEqual(result.err, FcTransportStatus.FC_ERR_FDOMAIN)
         server_task.cancel()
 
     async def test_testing_server(self) -> None:
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.TestingClient(client)
         t_server = TestingServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -341,7 +369,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def some_method_just_error(self) -> FrameworkError:
                 return FrameworkError.UNKNOWN_METHOD
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -375,7 +404,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def some_method_just_error(self) -> None:
                 return
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -390,15 +420,16 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         @implement_missing_abstract_methods
         class FlexibleMethodTesterServer(fc_test.FlexibleMethodTesterServer):
             def some_method(self) -> DomainError:
-                return DomainError(error=ZxStatus.ZX_ERR_INTERNAL)
+                return DomainError(error=FcTransportStatus.FC_ERR_INTERNAL)
 
             def some_method_without_error(self) -> FrameworkError:
                 return FrameworkError.UNKNOWN_METHOD
 
             def some_method_just_error(self) -> DomainError:
-                return DomainError(error=ZxStatus.ZX_ERR_INTERNAL)
+                return DomainError(error=FcTransportStatus.FC_ERR_INTERNAL)
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -419,7 +450,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def strict_one_way_union(self, value: Any) -> None:
                 pass
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.NoopClient(client)
         t_server = NoopServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -432,7 +464,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def strict_two_way_union(self, value: Any) -> None:
                 return
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.NoopClient(client)
         t_server = NoopServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -448,7 +481,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             ) -> None:
                 pass
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -461,7 +495,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def flexible_two_way_union(self, value: Any) -> None:
                 return
 
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
         server_task = asyncio.get_running_loop().create_task(t_server.serve())
@@ -469,7 +504,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server_task.cancel()
 
     async def test_sending_and_receiving_event(self) -> None:
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_othertest.CrossLibraryNoopClient(client)
         THIS_EXPECTED = 3
         THAT_EXPECTED = fc_othertest.TestingEnum.FLIPPED_OTHER_TEST
@@ -491,7 +527,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         await task
 
     async def test_sending_and_receiving_empty_event(self) -> None:
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_othertest.CrossLibraryNoopClient(client)
         # It's okay to use an unimplemented server here since we're not fielding any calls.
         t_server = NotImplementedCrossLibraryNoopServer(server)  # type: ignore[abstract]
@@ -503,7 +540,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         await task
 
     async def test_closing_channel_closes_event_loop(self) -> None:
-        client, server = Channel.create()
+        ctx = Context()
+        client, server = ctx.channel_create()
         t_client = fc_othertest.CrossLibraryNoopClient(client)
         del server
         # A generic unimplemented event handler is fine, since we're just making it exit.

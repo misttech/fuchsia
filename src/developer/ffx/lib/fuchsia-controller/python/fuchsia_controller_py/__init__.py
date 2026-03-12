@@ -3,9 +3,9 @@
 # found in the LICENSE file.
 
 import fuchsia_controller_internal
-from fuchsia_controller_internal import FcStatus, ZxStatus
+from fuchsia_controller_internal import FcTransportStatus, ZxStatus
 
-__all__ = ["FcStatus", "ZxStatus"]
+__all__ = ["FcTransportStatus", "ZxStatus"]
 
 from abc import ABC, abstractmethod
 from typing import Self
@@ -35,6 +35,16 @@ class BaseHandle(ABC):
     @abstractmethod
     def close(self) -> None:
         """Releases the underlying handle."""
+
+    @abstractmethod
+    def _is_unregistered(self) -> bool:
+        """Returns whether this handle has been closed.
+
+        This is NOT intended to be used other than internally with the
+        fidl AsyncChannel and AsyncSocket wrappers, as they have specific
+        async notification checks they are working with. You cannot (and should
+        not) rely on this for any form of synchronization.
+        """
 
 
 class Handle(BaseHandle):
@@ -75,14 +85,8 @@ class Handle(BaseHandle):
     def close(self) -> None:
         self._handle = None
 
-    @classmethod
-    def create(cls) -> "Handle":
-        """Classmethod for creating a Fuchsia controller handle.
-
-        Returns:
-            A Handle object.
-        """
-        return Handle(fuchsia_controller_internal.handle_create())
+    def _is_unregistered(self) -> bool:
+        return self._handle is None
 
 
 class Socket(BaseHandle):
@@ -147,19 +151,8 @@ class Socket(BaseHandle):
     def close(self) -> None:
         self._socket = None
 
-    @classmethod
-    def create(cls, options: int | None = None) -> tuple["Socket", "Socket"]:
-        """Classmethod for creating a pair of socket.
-
-        The returned sockets are connected bidirectionally.
-
-        Returns:
-            A tuple of two Socket objects.
-        """
-        if options is None:
-            options = 0
-        sockets = fuchsia_controller_internal.socket_create(options)
-        return (Socket(sockets[0]), Socket(sockets[1]))
+    def _is_unregistered(self) -> bool:
+        return self._socket is None
 
 
 class IsolateDir:
@@ -270,6 +263,63 @@ class Context:
                 self._handle
             )
         )
+
+    def channel_create(self) -> tuple["Channel", "Channel"]:
+        """Method for creating a pair of channels.
+
+        The returned channels are connected bidirectionally.
+
+        Returns:
+            A tuple of two Channel objects.
+        """
+        if self._handle is None:
+            raise ValueError("Context is already closed")
+        left, right = fuchsia_controller_internal.channel_create(self._handle)
+        return (Channel(left), Channel(right))
+
+    def event_create_pair(self) -> tuple["Event", "Event"]:
+        """Method for creating a pair of events.
+
+        The returned event objects are connected bidirectionally.
+
+        Returns:
+            A tuple of two event objects.
+        """
+        if self._handle is None:
+            raise ValueError("Context is already closed")
+        left, right = fuchsia_controller_internal.event_create_pair(
+            self._handle
+        )
+        return (Event(left), Event(right))
+
+    def event_create(self) -> "Event":
+        """Method for creating a single event.
+
+        Returns:
+            A single event object.
+        """
+        if self._handle is None:
+            raise ValueError("Context is already closed")
+        return Event(fuchsia_controller_internal.event_create(self._handle))
+
+    def socket_create(
+        self, options: int | None = None
+    ) -> tuple["Socket", "Socket"]:
+        """Method for creating a pair of sockets.
+
+        The returned sockets are connected bidirectionally.
+
+        Returns:
+            A tuple of two Socket objects.
+        """
+        if options is None:
+            options = 0
+        if self._handle is None:
+            raise ValueError("Context is already closed")
+        left, right = fuchsia_controller_internal.socket_create(
+            self._handle, options
+        )
+        return (Socket(left), Socket(right))
 
     def close(self) -> None:
         """Releases the underlying handle."""
@@ -386,17 +436,8 @@ class Channel(BaseHandle):
         self.write((msg, []))
         self.close()
 
-    @classmethod
-    def create(cls) -> tuple["Channel", "Channel"]:
-        """Classmethod for creating a pair of channels.
-
-        The returned channels are connected bidirectionally.
-
-        Returns:
-            A tuple of two Channel objects.
-        """
-        handles = fuchsia_controller_internal.channel_create()
-        return (Channel(handles[0]), Channel(handles[1]))
+    def _is_unregistered(self) -> bool:
+        return self._channel is None
 
 
 class Event(BaseHandle):
@@ -411,16 +452,8 @@ class Event(BaseHandle):
     _event: fuchsia_controller_internal.InternalHandle | None
 
     def __init__(
-        self,
-        handle: int
-        | Handle
-        | fuchsia_controller_internal.InternalHandle
-        | None = None,
+        self, handle: int | Handle | fuchsia_controller_internal.InternalHandle
     ):
-        if handle is None:
-            self._event = fuchsia_controller_internal.event_create()
-            return
-
         if isinstance(handle, int):
             self._event = fuchsia_controller_internal.event_from_int(handle)
         elif isinstance(handle, Handle):
@@ -456,14 +489,5 @@ class Event(BaseHandle):
     def close(self) -> None:
         self._handle = None
 
-    @classmethod
-    def create(cls) -> tuple["Event", "Event"]:
-        """Classmethod for creating a pair of events.
-
-        The returned event objects are connected bidirectionally.
-
-        Returns:
-            A tuple of two event objects.
-        """
-        handles = fuchsia_controller_internal.event_create_pair()
-        return (Event(handles[0]), Event(handles[1]))
+    def _is_unregistered(self) -> bool:
+        return self._handle is None

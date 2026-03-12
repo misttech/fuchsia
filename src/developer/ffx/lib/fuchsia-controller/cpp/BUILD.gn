@@ -82,6 +82,9 @@ python_c_extension("fuchsia_controller_internal") {
   deps = [
     ":fuchsia_controller_abi",
     "..:lib",
+    "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
+    "//sdk/lib/zircon-assert",
+    "//src/lib/fidl/rust/fidl",
     "//zircon/system/public",
   ]
 

@@ -13,7 +13,6 @@ import statistics
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import perf_publish.publish as publish
 import test_data
-from fuchsia_controller_py import Channel
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
 from wlanix_testing import base_test
@@ -25,7 +24,7 @@ NUM_ITERATIONS = 20
 
 class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
     async def _create_iface(self) -> str:
-        proxy, server = Channel.create()
+        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()

@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 import unittest
 
-from fuchsia_controller_py import FcStatus, ZxStatus
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
 
 
 class Errors(unittest.TestCase):
@@ -64,21 +64,21 @@ class Errors(unittest.TestCase):
         self.assertEqual(err.raw(), ZxStatus.ZX_ERR_NEXT)
 
     def test_fc_status(self):
-        err = FcStatus(FcStatus.FC_ERR_INTERNAL)
-        self.assertEqual(err.code(), FcStatus.FC_ERR_INTERNAL)
+        err = FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+        self.assertEqual(err.code(), FcTransportStatus.FC_ERR_INTERNAL)
         self.assertEqual(err.desc(), None)
 
     def test_fc_status_non_string_description(self):
-        err = FcStatus(FcStatus.FC_ERR_INTERNAL, 1)
+        err = FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL, 1)
         with self.assertRaises(RuntimeError):
             _ = err.desc()
 
     def test_fc_status_unknown(self):
         """Tests that the unknown string shows the ZX status if possible."""
         # This test might be a bit fragile if we expand error types for
-        # FcStatus, however it's good to ensure users who may have raised the
+        # FcTransportStatus, however it's good to ensure users who may have raised the
         # wrong error type can have it printed in a way that is debuggable.
-        err = FcStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
+        err = FcTransportStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
         s = str(err)
         # Full string is
         # "(UNKNOWN: -24. As ZxStatus this is: ZX_ERR_PEER_CLOSED)"

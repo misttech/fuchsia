@@ -4,6 +4,7 @@
 """Unit tests for wlan_core_using_fc.py"""
 
 import copy
+import types
 import unittest
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,7 +16,8 @@ import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_sme as f_wlan_sme
-from fuchsia_controller_py import Channel, ZxStatus
+import fuchsia_controller_py
+from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
@@ -139,7 +141,6 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
@@ -152,11 +153,27 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             spec=fc_transport.FuchsiaController,
             autospec=True,
         )
+        self.fc_transport_obj.ctx = Context()
+        self.fuchsia_device_close_obj = mock.MagicMock(
+            spec=affordances_capable.FuchsiaDeviceClose,
+            autospec=True,
+        )
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[
+            fuchsia_controller_py.Channel, fuchsia_controller_py.Channel
+        ]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
+        )
+
         self.ffx_transport_obj = mock.MagicMock(
             spec=ffx_transport.FFX,
             autospec=True,
         )
-
         self.ffx_transport_obj.run.return_value = "".join(
             wlan_core_using_fc._REQUIRED_CAPABILITIES
         )
@@ -203,7 +220,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         """Mock fuchsia.wlan.device.service.DeviceMonitor/QueryIface."""
         if zx_err:
             self.device_monitor_proxy.list_ifaces.return_value = _async_error(
-                ZxStatus(zx_err)
+                FcTransportStatus(zx_err)
             )
             return
 
@@ -361,7 +378,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
 
         with self._mock_client_sme() as client_sme:
             client_sme.connect.side_effect = [
-                ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
+                FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
             ]
             with self.assertRaises(HoneydewWlanError):
                 await self.wlan_core_obj.connect(
@@ -514,7 +531,9 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "internal error",
-                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+                _async_error(
+                    FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                ),
             ),
         ]:
             with self.subTest(msg=msg, status_resp=status_resp):
@@ -606,8 +625,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
     async def test_destroy_iface(self) -> None:
         """Test if destroy_iface works."""
         for msg, iface_id, status in [
-            ("valid", 1, ZxStatus.ZX_OK),
-            ("invalid", 2, ZxStatus.ZX_ERR_INTERNAL),
+            ("valid", 1, FcTransportStatus.FC_OK),
+            ("invalid", 2, FcTransportStatus.FC_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, iface_id=iface_id, status=status):
                 self.device_monitor_proxy.destroy_iface.return_value = (
@@ -618,7 +637,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     )
                 )
 
-                if status == ZxStatus.ZX_OK:
+                if status == FcTransportStatus.FC_OK:
                     await self.wlan_core_obj.destroy_iface(iface_id)
                 else:
                     with self.assertRaises(HoneydewWlanError):
@@ -632,7 +651,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         ]:
             with self.subTest(msg=msg, zx_err=zx_err):
                 self._mock_list_ifaces()
-                self._mock_query_iface()
+                self._mock_query_iface(zx_err=zx_err)
 
                 with self._mock_client_sme() as client_sme:
                     if not zx_err:
@@ -735,7 +754,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     await self.wlan_core_obj.get_phy_id_list()
                 else:
                     self.device_monitor_proxy.list_phys.return_value = (
-                        _async_error(ZxStatus(zx_err))
+                        _async_error(FcTransportStatus(zx_err))
                     )
                     with self.assertRaises(HoneydewWlanError):
                         await self.wlan_core_obj.get_phy_id_list()
@@ -873,7 +892,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(got, expected)
                     else:
                         client_sme.status.return_value = _async_error(
-                            ZxStatus(zx_err)
+                            FcTransportStatus(zx_err)
                         )
                         with self.assertRaises(HoneydewWlanError):
                             await self.wlan_core_obj.status()

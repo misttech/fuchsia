@@ -10,7 +10,7 @@ import logging
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
 import fuchsia_async_extension
-from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.netstack import netstack
@@ -119,7 +119,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
             HoneydewNetstackError: Error from the netstack.
             TypeError: Received invalid Watcher events from netstack.
         """
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         watcher = f_net_interfaces.WatcherClient(client.take())
 
         try:
@@ -130,7 +130,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
                 ),
                 watcher=server.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise HoneydewNetstackError(
                 f"State.GetWatcher() error {status}"
             ) from status
@@ -140,7 +140,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
         while True:
             try:
                 resp = await watcher.watch()
-            except ZxStatus as status:
+            except FcTransportStatus as status:
                 raise HoneydewNetstackError(
                     f"Watcher.Watch() error {status}"
                 ) from status
@@ -173,7 +173,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
                         if get_mac_response.mac
                         else None
                     )
-                except ZxStatus as status:
+                except (FcTransportStatus, ZxStatus) as status:
                     raise HoneydewNetstackError(
                         f"Interfaces.GetMac() error {status}"
                     ) from status

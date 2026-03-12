@@ -8,7 +8,7 @@ from typing import TypeVar
 from unittest import mock
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
-from fuchsia_controller_py import ZxStatus
+from fuchsia_controller_py import FcTransportStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.location import location_using_fc
@@ -101,8 +101,8 @@ class LocationFCTests(unittest.TestCase):
                 spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
             )
         )
-        self.location_obj._inner._regulatory_region_configurator.set_region.side_effect = ZxStatus(
-            ZxStatus.ZX_ERR_INTERNAL
+        self.location_obj._inner._regulatory_region_configurator.set_region.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INTERNAL
         )
         with self.assertRaises(HoneydewLocationError):
             self.location_obj.set_region("AT")

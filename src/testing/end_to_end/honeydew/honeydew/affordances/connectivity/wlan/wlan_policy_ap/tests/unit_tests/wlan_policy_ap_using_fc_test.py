@@ -4,6 +4,7 @@
 """Unit tests for wlan_policy_ap_using_fc.py"""
 
 import asyncio
+import types
 import unittest
 from typing import TypeVar
 from unittest import mock
@@ -11,7 +12,8 @@ from unittest import mock
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-from fuchsia_controller_py import Channel, ZxStatus
+import fuchsia_controller_py as fc
+from fuchsia_controller_py import Channel, Context, FcTransportStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
@@ -87,6 +89,16 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController,
             autospec=True,
+        )
+        self.fc_transport_obj.ctx = Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
         self.ffx_transport_obj = mock.MagicMock(
             spec=ffx_transport.FFX,
@@ -231,7 +243,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_fails(self) -> None:
         """Verify WlanPolicyAp.start() throws HoneydewWlanError on internal error."""
         self.access_point_controller_obj.start_access_point.side_effect = [
-            _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL))
+            _async_error(FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL))
         ]
 
         with self.assertRaises(HoneydewWlanError):
@@ -262,7 +274,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_fails(self) -> None:
         """Verify WlanPolicyAp.stop() throws HoneydewWlanError on internal error."""
         self.access_point_controller_obj.stop_access_point.side_effect = [
-            _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL))
+            _async_error(FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL))
         ]
 
         with self.assertRaises(HoneydewWlanError):

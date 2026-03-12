@@ -14,7 +14,7 @@ import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_async_extension
 from fidl._client import FidlClient
-from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -148,7 +148,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         iface_id = await self._get_first_sme(f_wlan_common.WlanMacRole.CLIENT)
         sme = await self._get_client_sme(iface_id)
 
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         connect_transaction_client = f_wlan_sme.ConnectTransactionClient(
             client.take()
         )
@@ -174,7 +174,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
 
             # Wait for the driver to finish connecting.
             result = await asyncio.wait_for(results.get(), timeout=60)
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientSme.Connect() error {status}"
             ) from status
@@ -249,7 +249,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                     sta_address=MacAddress(sta_addr).bytes(),
                 )
             ).unwrap()
-        except (ZxStatus, AssertionError) as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             raise wlan_errors.HoneydewWlanError(
                 "DeviceMonitor.CreateIface() error"
             ) from e
@@ -274,9 +274,9 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             destroy_iface = await self._device_monitor_proxy.destroy_iface(
                 req=req
             )
-            if destroy_iface.status != ZxStatus.ZX_OK:
-                raise ZxStatus(destroy_iface.status)
-        except ZxStatus as status:
+            if destroy_iface.status != FcTransportStatus.FC_OK:
+                raise FcTransportStatus(destroy_iface.status)
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.DestroyIface() error {status}"
             ) from status
@@ -298,7 +298,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                     await sme.disconnect(
                         reason=f_wlan_sme.UserDisconnectReason.WLAN_SERVICE_UTIL_TESTING,
                     )
-                except ZxStatus as status:
+                except FcTransportStatus as status:
                     raise wlan_errors.HoneydewWlanError(
                         f"SmeClient.Disconnect() error {status}"
                     ) from status
@@ -320,7 +320,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             get_country_response = (
                 await self._device_monitor_proxy.get_country(phy_id=phy_id)
             ).unwrap()
-        except (ZxStatus, AssertionError) as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             raise wlan_errors.HoneydewWlanError(
                 "DeviceMonitor.GetCountry() error"
             ) from e
@@ -338,7 +338,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                     alpha2=[ord(c) for c in code],
                 )
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.SetCountry() error {status}"
             ) from status
@@ -358,7 +358,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
     async def _get_iface_id_list(self) -> Sequence[int]:
         try:
             return (await self._device_monitor_proxy.list_ifaces()).iface_list
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.ListIfaces() error {status}"
             ) from status
@@ -375,7 +375,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         """
         try:
             return (await self._device_monitor_proxy.list_phys()).phy_list
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.ListPhys() error {status}"
             ) from status
@@ -453,7 +453,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                 .unwrap()
                 .resp
             )
-        except (ZxStatus, AssertionError) as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             raise wlan_errors.HoneydewWlanError(
                 "DeviceMonitor.QueryIface() error"
             ) from e
@@ -482,7 +482,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             scan_for_controller_response = (
                 await client_sme.scan_for_controller(req=req)
             ).unwrap()
-        except (ZxStatus, AssertionError) as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             raise wlan_errors.HoneydewWlanError(
                 "ClientSme.ScanForController() error"
             ) from e
@@ -548,14 +548,14 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             Client-side handle to the fuchsia.wlan.sme.ClientSme protocol, used
             for performing driver-layer actions on the underlying WLAN hardware.
         """
-        client, server = Channel.create()
+        client, server = self._fc_transport.channel_create()
         sme_client = f_wlan_sme.ClientSmeClient(client)
 
         try:
             await self._device_monitor_proxy.get_client_sme(
                 iface_id=iface_id, sme_server=server.take()
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"DeviceMonitor.GetClientSme() error {status}"
             ) from status
@@ -584,7 +584,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
     ) -> ClientStatusResponse:
         try:
             resp = await sme.status()
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientSme.Status() error {status}"
             ) from status

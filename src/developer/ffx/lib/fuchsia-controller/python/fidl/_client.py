@@ -116,14 +116,15 @@ class FidlClient(metaclass=FidlMeta):
             function could wait forever.
 
         Raises:
-            Any exceptions other than ZX_ERR_PEER_CLOSED (fuchsia_controller_py.ZxStatus)
+            Any exceptions other than ZX_ERR_PEER_CLOSED (fuchsia_controller_py.FcTransportStatus)
         """
         # TODO(awdavies): Raise an exception if there are no events supported for this client.
         try:
             self._channel_waker.register(self._channel, name=str(self))
             return await self._read_and_decode(0)
-        except fc.ZxStatus as e:
-            if e.args[0] != fc.ZxStatus.ZX_ERR_PEER_CLOSED:
+        except fc.FcTransportStatus as e:
+            err_code = e.code()
+            if err_code != fc.FcTransportStatus.FC_ERR_FDOMAIN:
                 _LOGGER.warning(
                     f"{self} received error waiting for next event: {e}"
                 )
@@ -197,8 +198,9 @@ class FidlClient(metaclass=FidlMeta):
                 # an epitaph error. It should not unregister the channel.
                 _LOGGER.warning(f"{self} received epitaph error: {ep}")
                 raise ep
-            except fc.ZxStatus as e:
-                if e.args[0] != fc.ZxStatus.ZX_ERR_SHOULD_WAIT:
+            except fc.FcTransportStatus as e:
+                err_code = e.code()
+                if err_code != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
                     self._channel_waker.unregister(self._channel)
                     _LOGGER.warning(f"{self} received channel error: {e}")
                     raise e

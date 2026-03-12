@@ -96,11 +96,17 @@ class ServerBase(
             self._channel.close()
             return False
         except Exception as e:
-            # It's very important to close the channel, because if this is run inside a task,
-            # then it isn't possible for the exception to get raised in time. So if another
-            # coroutine depends on this server functioning (like a client), then it'll hang
-            # forever. So, we must close the channel in order to make progress.
-            self._channel.close()
+            # Explicitly close the channel instead of deferring closure to the
+            # garbage collector to close it. The garbage collector may never
+            # close the channel since removing the last reference to an object
+            # only ever makes it eligible for garbage collection. One cannot
+            # treat these objects like scoped RAII objects in C++ or Rust.
+            #
+            # If another coroutine depends on this server functioning (like a
+            # client), then it'll hang forever. So, we must close the channel in
+            # order to make progress.
+            if self._channel is not None:
+                self._channel.close()
             self._channel = None
             _LOGGER.debug(f"{self} request handling error: {e}")
             raise e
@@ -111,8 +117,8 @@ class ServerBase(
         # an unknown method.
         try:
             msg, txid, ordinal = await self._channel_read_and_parse()
-        except fc.ZxStatus as e:
-            if e.args[0] == fc.ZxStatus.ZX_ERR_PEER_CLOSED:
+        except fc.FcTransportStatus as e:
+            if e.code() == fc.FcTransportStatus.FC_ERR_FDOMAIN:
                 _LOGGER.debug(f"{self} shutting down. PEER_CLOSED received")
                 return False
             else:
@@ -181,10 +187,10 @@ class ServerBase(
         while True:
             try:
                 return self._channel.read()
-            except fc.ZxStatus as e:
+            except fc.FcTransportStatus as e:
                 # Any number of spurious wakeups are possible. Stay in the loop if the error
-                # is ZX_ERR_SHOULD_WAIT.
-                if e.args[0] == fc.ZxStatus.ZX_ERR_SHOULD_WAIT:
+                # is FC_ERR_SHOULD_WAIT.
+                if e.code() == fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
                     _LOGGER.debug(f"{self} channel spurious wakeup")
                     await self._channel_waker.wait_ready(self._channel)
                     continue

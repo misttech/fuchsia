@@ -105,8 +105,12 @@ class ConnectTransactionContext:
 class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
     def __init__(
         self,
+        proxy: Channel,
+        server: Channel,
         verbose: bool = True,
     ) -> None:
+        self.proxy = proxy
+        self.server = server
         # Defer initialization of parent class to __aenter__
         self.verbose = verbose
 
@@ -151,8 +155,9 @@ class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
         self.txn_queue.put_nowait(request)
 
     async def __aenter__(self) -> ConnectTransactionContext:
-        proxy, server = Channel.create()
-        super().__init__(client=fidl_sme.ConnectTransactionClient(proxy.take()))
+        super().__init__(
+            client=fidl_sme.ConnectTransactionClient(self.proxy.take())
+        )
         self.txn_queue: asyncio.Queue[
             fidl_sme.ConnectTransactionOnConnectResultRequest
             | fidl_sme.ConnectTransactionOnDisconnectRequest
@@ -163,7 +168,7 @@ class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
         self.server_task = asyncio.create_task(self.serve())
         return ConnectTransactionContext(
             txn_queue=self.txn_queue,
-            server=server,
+            server=self.server,
         )
 
     async def __aexit__(self, *args: Any, **kwargs: Any) -> None:

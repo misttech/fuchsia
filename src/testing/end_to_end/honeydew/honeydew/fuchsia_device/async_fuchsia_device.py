@@ -1276,7 +1276,7 @@ class AsyncFuchsiaDevice(
             )
             build_info_resp = await buildinfo_provider_proxy.get_build_info()
             return build_info_resp.build_info
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
@@ -1299,7 +1299,7 @@ class AsyncFuchsiaDevice(
             )
             device_info_resp = await hwinfo_device_proxy.get_info()
             return device_info_resp.info
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
@@ -1322,7 +1322,7 @@ class AsyncFuchsiaDevice(
             )
             product_info_resp = await hwinfo_product_proxy.get_info()
             return product_info_resp.info
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
@@ -1345,7 +1345,7 @@ class AsyncFuchsiaDevice(
             )
             resp = await proxy.get()
             return resp.last_reboot
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "_last_reboot_info() failed"
             ) from status
@@ -1378,7 +1378,7 @@ class AsyncFuchsiaDevice(
             await rcs_proxy.log_message(
                 tag=tag, message=message, severity=_LOG_SEVERITIES[level]
             )
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
@@ -1405,13 +1405,13 @@ class AsyncFuchsiaDevice(
                     ),
                 )
             )
-        except fcp.ZxStatus as status:
-            # ZX_ERR_PEER_CLOSED is expected in this instance because the device
+        except fcp.FcTransportStatus as status:
+            # FC_ERR_FDOMAIN is expected in this instance because the device
             # powered off.
             zx_status: int | None = (
                 status.args[0] if len(status.args) > 0 else None
             )
-            if zx_status != fcp.ZxStatus.ZX_ERR_PEER_CLOSED:
+            if zx_status != fcp.FcTransportStatus.FC_ERR_FDOMAIN:
                 raise fc_errors.FuchsiaControllerError(
                     "Fuchsia Controller FIDL Error"
                 ) from status
@@ -1441,7 +1441,10 @@ class AsyncFuchsiaDevice(
                     query=f_io.NodeAttributesQuery.CONTENT_SIZE
                 )
             ).unwrap()
-        except (AssertionError, fcp.ZxStatus) as e:
+        except (AssertionError, fcp.ZxStatus, fcp.FcTransportStatus) as e:
+            # The above `fcp.ZxStatus` is for the possible error returned by
+            # calling `unwrap()` on the result of the function call, NOT for
+            # the underlying protocol.
             raise fc_errors.FuchsiaControllerError(
                 "get_attributes() failed"
             ) from e
@@ -1459,7 +1462,7 @@ class AsyncFuchsiaDevice(
                 if not response.data:
                     break
                 ret.extend(response.data)
-        except (AssertionError, fcp.ZxStatus) as e:
+        except (AssertionError, fcp.FcTransportStatus, fcp.ZxStatus) as e:
             raise fc_errors.FuchsiaControllerError("read() failed") from e
 
         # Verify transfer.
@@ -1481,7 +1484,10 @@ class AsyncFuchsiaDevice(
             Bytes containing snapshot data as a zip archive.
         """
 
-        channel_server, channel_client = fcp.Channel.create()
+        (
+            channel_server,
+            channel_client,
+        ) = self.fuchsia_controller.channel_create()
         params = f_feedback.GetSnapshotParameters(
             # Set timeout to 2 minutes in nanoseconds.
             collection_timeout_per_data=2 * 60 * 10**9,
@@ -1497,7 +1503,7 @@ class AsyncFuchsiaDevice(
             # The data channel isn't populated until get_snapshot() returns so
             # there's no need to drain the channel in parallel.
             (await feedback_proxy.get_snapshot(params=params))
-        except fcp.ZxStatus as status:
+        except fcp.FcTransportStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "get_snapshot() failed"
             ) from status

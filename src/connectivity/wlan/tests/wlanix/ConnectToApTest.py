@@ -92,7 +92,8 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
         logger.info("Using IfaceIndex %d for connection test", iface_index)
 
         logger.info("Triggering a scan on IfaceIndex %d", iface_index)
-        async with Nl80211MulticastServer() as ctx:
+        client, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        async with Nl80211MulticastServer(client, server) as ctx:
             scan_queue = ctx.message_queue
             scan_callback_channel = ctx.callback_channel
 
@@ -150,7 +151,8 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     "Did not receive a scan result within 20 seconds"
                 )
 
-        async with SupplicantStaIfaceCallbackServer() as ctx:
+        client, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        async with SupplicantStaIfaceCallbackServer(client, server) as ctx:
             state_change_queue = ctx.state_change_queue
             callback_channel = ctx.callback_channel
 
@@ -158,7 +160,10 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 callback=callback_channel.take()
             )
 
-            proxy, server = Channel.create()
+            (
+                proxy,
+                server,
+            ) = self.fuchsia_device.fuchsia_controller.channel_create()
             self.supplicant_sta_iface_proxy.add_network(network=server.take())
             supplicant_sta_network_proxy = (
                 fidl_wlanix.SupplicantStaNetworkClient(proxy)
@@ -215,9 +220,13 @@ class SupplicantStaIfaceCallbackServer(
 ):
     def __init__(
         self,
+        client: Channel,
+        server: Channel,
         verbose: bool = True,
     ) -> None:
         # Defer initialization of parent class to __aenter__
+        self.client = client
+        self.server = server
         self.verbose = verbose
 
     def on_state_changed(
@@ -245,8 +254,7 @@ class SupplicantStaIfaceCallbackServer(
         self.state_change_queue.put_nowait(request)
 
     async def __aenter__(self) -> SupplicantStaIfaceCallbackContext:
-        client, server = Channel.create()
-        super().__init__(channel=server)
+        super().__init__(channel=self.server)
 
         self.state_change_queue: asyncio.Queue[
             fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest
@@ -256,7 +264,7 @@ class SupplicantStaIfaceCallbackServer(
         self.server_task = asyncio.create_task(self.serve())
         return SupplicantStaIfaceCallbackContext(
             state_change_queue=self.state_change_queue,
-            callback_channel=client,
+            callback_channel=self.client,
         )
 
     async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
@@ -271,9 +279,10 @@ class Nl80211MulticastServerContext:
 
 
 class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
-    def __init__(self) -> None:
+    def __init__(self, client: Channel, server: Channel) -> None:
         # Defer initialization of parent class to __aenter__
-        pass
+        self.client = client
+        self.server = server
 
     async def message(
         self, request: fidl_wlanix.Nl80211MulticastMessageRequest
@@ -282,16 +291,14 @@ class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
             self.message_queue.put_nowait(request.message)
 
     async def __aenter__(self) -> Nl80211MulticastServerContext:
-        client, server = Channel.create()
-        super().__init__(channel=server)
-
+        super().__init__(channel=self.server)
         self.message_queue: asyncio.Queue[
             fidl_wlanix.Nl80211Message
         ] = asyncio.Queue()
         self.server_task = asyncio.create_task(self.serve())
         return Nl80211MulticastServerContext(
             message_queue=self.message_queue,
-            callback_channel=client,
+            callback_channel=self.client,
         )
 
     async def __aexit__(self, *args: Any, **kwargs: Any) -> None:

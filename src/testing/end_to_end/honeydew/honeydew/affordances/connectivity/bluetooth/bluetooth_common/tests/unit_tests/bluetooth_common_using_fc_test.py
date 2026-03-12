@@ -5,6 +5,7 @@
 """Unit tests for bluetooth_common_using_fc.py"""
 
 import asyncio
+import types
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +13,7 @@ from unittest import mock
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
+import fuchsia_controller_py as fc
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable
@@ -88,6 +90,16 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
+        )
+        self.fc_transport_obj.ctx = fc.Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
 
         self.bluetooth_common_fc_obj = (

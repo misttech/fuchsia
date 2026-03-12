@@ -8,7 +8,7 @@ import typing
 
 import fidl_fuchsia_hardware_power_statecontrol as power_statecontrol
 import fuchsia_async_extension
-from fuchsia_controller_py import ZxStatus
+from fuchsia_controller_py import FcTransportStatus
 from mobly import test_runner
 from mobly_controller import fuchsia_device
 
@@ -43,8 +43,8 @@ class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
         try:
             _LOGGER.info("Issuing reboot command")
             await coro
-        except ZxStatus as status:
-            if status.raw() != ZxStatus.ZX_ERR_PEER_CLOSED:
+        except FcTransportStatus as status:
+            if status.code() != FcTransportStatus.FC_ERR_FDOMAIN:
                 raise status
             _LOGGER.info("Device reboot command sent")
         # [END reboot_example]

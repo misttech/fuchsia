@@ -5,11 +5,13 @@
 
 import os
 import tempfile
+import types
 import unittest
 from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
+import fidl
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_controller_py as fc
 from parameterized import param, parameterized
@@ -64,7 +66,16 @@ class TracingFCTests(unittest.TestCase):
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
+        self.fc_transport_obj.ctx = fc.Context()
 
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
+        )
         self.tracing_obj = tracing_using_fc.TracingUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
@@ -132,9 +143,9 @@ class TracingFCTests(unittest.TestCase):
         self, mock_tracingcontroller_initialize: mock.Mock
     ) -> None:
         """Test for Tracing.initialize() when the FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_tracingcontroller_initialize.side_effect = fc.ZxStatus(
-            fc.ZxStatus.ZX_ERR_INVALID_ARGS
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_tracingcontroller_initialize.side_effect = fc.FcTransportStatus(
+            fc.FcTransportStatus.FC_ERR_INVALID_ARGS
         )
         with self.assertRaises(TracingError):
             self.tracing_obj.initialize()
@@ -211,11 +222,11 @@ class TracingFCTests(unittest.TestCase):
         self, mock_tracingcontroller_start: mock.Mock, *unused_args: Any
     ) -> None:
         """Test for Tracing.start() when the FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.tracing_obj.initialize()
 
-        mock_tracingcontroller_start.side_effect = fc.ZxStatus(
-            fc.ZxStatus.ZX_ERR_INVALID_ARGS
+        mock_tracingcontroller_start.side_effect = fc.FcTransportStatus(
+            fc.FcTransportStatus.FC_ERR_INVALID_ARGS
         )
         with self.assertRaises(TracingError):
             self.tracing_obj.start()
@@ -314,7 +325,7 @@ class TracingFCTests(unittest.TestCase):
         mock_tracingcontroller_init: mock.Mock,
     ) -> None:
         """Test for Tracing.stop() when the FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         mock_tracingcontroller_init.side_effect = _initialize_tracing_fake
 
         self.tracing_obj.initialize()
@@ -494,13 +505,11 @@ class TracingFCTests(unittest.TestCase):
         f_tracingcontroller.ProvisionerClient,
         "initialize_tracing",
     )
-    @mock.patch.object(fc, "Channel")
-    @mock.patch.object(fc, "Socket")
+    @mock.patch.object(fc, "Context")
     def test_terminate_and_download(
         self,
         parameterized_dict: dict[str, Any],
-        mock_fc_socket: mock.Mock,
-        mock_fc_channel: mock.Mock,
+        mock_fc_context: mock.Mock,
         *unused_args: Any,
     ) -> None:
         """Test for Tracing.terminate_and_download() method."""
@@ -509,14 +518,14 @@ class TracingFCTests(unittest.TestCase):
         mock_client_socket = mock.MagicMock()
         mock_client_socket.read.side_effect = [
             bytes(return_value, encoding="utf-8"),
-            fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED),
+            fc.FcTransportStatus(fc.FcTransportStatus.FC_ERR_FDOMAIN),
         ]
-        mock_fc_socket.create.return_value = (
+        mock_fc_context.socket_create.return_value = (
             mock.MagicMock(),
             mock_client_socket,
         )
 
-        mock_fc_channel.create.return_value = (
+        mock_fc_context.channel_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )
@@ -560,6 +569,7 @@ class TracingFCTests(unittest.TestCase):
                 {
                     "label": "when_session_is_initialized",
                     "session_initialized": True,
+                    "return_value": "samp_trace_data",
                 },
             ),
             (
@@ -567,7 +577,6 @@ class TracingFCTests(unittest.TestCase):
                     "label": "with_tracing_download",
                     "download_trace": True,
                     "trace_file": "trace.fxt",
-                    "return_value": "samp_trace_data",
                 },
             ),
         ],
@@ -590,29 +599,28 @@ class TracingFCTests(unittest.TestCase):
             response=f_tracingcontroller.StopResult(provider_stats=[])
         ),
     )
-    @mock.patch.object(fc, "Channel")
-    @mock.patch.object(fc, "Socket")
+    @mock.patch.object(fc, "Context")
+    @mock.patch.object(
+        fidl.AsyncSocket, "read_all", new_callable=mock.AsyncMock
+    )
     def test_trace_session(
         self,
         parameterized_dict: dict[str, Any],
-        mock_fc_socket: mock.MagicMock,
-        mock_fc_channel: mock.MagicMock,
+        mock_fc_context: mock.MagicMock,
+        mock_async_socket: mock.MagicMock,
         *unused_args: Any,
     ) -> None:
         """Test for Tracing.trace_session() method."""
         # Mock out the tracing Socket.
         return_value: str = parameterized_dict.get("return_value", "")
-        mock_client_socket = mock.MagicMock()
-        mock_client_socket.read.side_effect = [
-            bytes(return_value, encoding="utf-8"),
-            fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED),
-        ]
-        mock_fc_socket.create.return_value = (
-            mock.MagicMock(),
-            mock_client_socket,
+        mock_async_socket.read_all.return_value = bytes(
+            return_value, encoding="utf-8"
         )
-
-        mock_fc_channel.create.return_value = (
+        mock_fc_context.socket_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+        mock_fc_context.channel_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )

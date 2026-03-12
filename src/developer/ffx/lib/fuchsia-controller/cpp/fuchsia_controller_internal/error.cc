@@ -171,7 +171,7 @@ std::string fc_status_get_string(fc_status_t status) {
 }
 
 // This was copied and macro'd from fuchsia_controller.h
-PyObject *FcStatus_make_constants() {
+PyObject *FcTransportStatus_make_constants() {
   PyObject *dict = PyDict_New();
   if (dict == nullptr) {
     return nullptr;
@@ -203,7 +203,7 @@ PyObject *FcStatus_make_constants() {
   return dict;
 }
 
-std::string FcStatus_reprstr_helper(PyObject *self) {
+std::string FcTransportStatus_reprstr_helper(PyObject *self) {
   if (!PyObject_HasAttrString(self, "args")) {
     return "unknown: object has no args";
   }
@@ -236,27 +236,27 @@ std::string FcStatus_reprstr_helper(PyObject *self) {
   return ss.str();
 }
 
-PyObject *FcStatus_repr(PyObject *self, PyTypeObject *defining_class, PyObject *const *args,
-                        Py_ssize_t nargs, PyObject *kwnames) {
-  return PyUnicode_FromString(FcStatus_reprstr_helper(self).c_str());
+PyObject *FcTransportStatus_repr(PyObject *self, PyTypeObject *defining_class,
+                                 PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+  return PyUnicode_FromString(FcTransportStatus_reprstr_helper(self).c_str());
 }
 
-PyObject *FcStatus_str(PyObject *self) {
+PyObject *FcTransportStatus_str(PyObject *self) {
   std::stringstream ss;
-  ss << "FC status: " << FcStatus_reprstr_helper(self);
+  ss << "FC status: " << FcTransportStatus_reprstr_helper(self);
   return PyUnicode_FromString(ss.str().c_str());
 }
 
-PyMethodDef FcStatus_repr_def = {
+PyMethodDef FcTransportStatus_repr_def = {
     "__repr__",
-    reinterpret_cast<PyCFunction>(FcStatus_repr),
+    reinterpret_cast<PyCFunction>(FcTransportStatus_repr),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
-PyMethodDef FcStatus_str_def = {
+PyMethodDef FcTransportStatus_str_def = {
     "__str__",
-    reinterpret_cast<PyCFunction>(FcStatus_str),
+    reinterpret_cast<PyCFunction>(FcTransportStatus_str),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
@@ -281,7 +281,7 @@ PyObject *ZxStatus_raw(PyObject *self) {
   return i;
 }
 
-PyObject *FcStatus_desc(PyObject *self) {
+PyObject *FcTransportStatus_desc(PyObject *self) {
   auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
   if (args == nullptr) {
     return nullptr;
@@ -307,14 +307,14 @@ PyObject *FcStatus_desc(PyObject *self) {
   return i;
 }
 
-PyMethodDef FcStatus_desc_def = {
+PyMethodDef FcTransportStatus_desc_def = {
     "desc",
-    reinterpret_cast<PyCFunction>(FcStatus_desc),
+    reinterpret_cast<PyCFunction>(FcTransportStatus_desc),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
-PyMethodDef FcStatus_code_def = {
+PyMethodDef FcTransportStatus_code_def = {
     "code",
     reinterpret_cast<PyCFunction>(ZxStatus_raw),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
@@ -435,7 +435,7 @@ PyObject *ZxStatus_make_constants() {
 
 }  // namespace
 
-PyTypeObject *FcStatusType = nullptr;
+PyTypeObject *FcTransportStatusType = nullptr;
 PyTypeObject *ZxStatusType = nullptr;
 
 // This is necessary as Python exception extensions in C are weird. Python exceptions can't be
@@ -476,33 +476,33 @@ PyTypeObject *ZxStatusType_Create() {
   return res;
 }
 
-PyTypeObject *FcStatusType_Create() {
-  assert(FcStatusType == nullptr);
-  auto constants = FcStatus_make_constants();
+PyTypeObject *FcTransportStatusType_Create() {
+  assert(FcTransportStatusType == nullptr);
+  auto constants = FcTransportStatus_make_constants();
   if (constants == nullptr) {
     return nullptr;
   }
-  auto res = reinterpret_cast<PyTypeObject *>(
-      PyErr_NewException("fuchsia_controller_internal.FcStatus", PyExc_Exception, constants));
+  auto res = reinterpret_cast<PyTypeObject *>(PyErr_NewException(
+      "fuchsia_controller_internal.FcTransportStatus", PyExc_Exception, constants));
   if (res == nullptr) {
     return nullptr;
   }
-  auto repr = PyDescr_NewMethod(res, &FcStatus_repr_def);
+  auto repr = PyDescr_NewMethod(res, &FcTransportStatus_repr_def);
   if (repr == nullptr) {
     return nullptr;
   }
   if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr) < 0) {
     return nullptr;
   }
-  auto desc = PyDescr_NewMethod(res, &FcStatus_desc_def);
+  auto desc = PyDescr_NewMethod(res, &FcTransportStatus_desc_def);
   if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "desc", desc) < 0) {
     return nullptr;
   }
-  auto code = PyDescr_NewMethod(res, &FcStatus_code_def);
+  auto code = PyDescr_NewMethod(res, &FcTransportStatus_code_def);
   if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "code", code) < 0) {
     return nullptr;
   }
-  auto str = PyDescr_NewMethod(res, &FcStatus_str_def);
+  auto str = PyDescr_NewMethod(res, &FcTransportStatus_str_def);
   if (str == nullptr) {
     return nullptr;
   }
@@ -510,7 +510,7 @@ PyTypeObject *FcStatusType_Create() {
     return nullptr;
   }
   Py_IncRef(reinterpret_cast<PyObject *>(res));
-  FcStatusType = res;
+  FcTransportStatusType = res;
   return res;
 }
 

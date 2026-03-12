@@ -5,7 +5,7 @@
 */}}
 
 import fuchsia_controller_py
-from fuchsia_controller_py import BaseHandle, Channel, Event, Handle, Socket
+from fuchsia_controller_py import BaseHandle, Context, Channel, Event, Handle, Socket
 import fidl_test_conformance as test_conformance
 
 import struct
@@ -17,6 +17,7 @@ from fidl_codec import decode_standalone
 class EncodeConformanceTests(unittest.TestCase):
 {{ range .EncodeSuccessCases }}
     def test_{{ .Name }}_encode(self) -> None:
+        ctx = Context()
         {{- if .HandleDefs }}
         handle_defs: list[BaseHandle] = {{ .HandleDefs }}
         {{- end }}
@@ -36,6 +37,7 @@ class EncodeConformanceTests(unittest.TestCase):
 class DecodeConformanceTests(unittest.TestCase):
 {{ range .DecodeSuccessCases }}
     def test_{{ .Name }}_decode(self) -> None:
+        ctx = Context()
         {{- if .HandleDefs }}
         handle_defs: list[BaseHandle] = {{ .HandleDefs }}
         handles = [handle_defs[i].as_int() for i in {{ .Handles }}]

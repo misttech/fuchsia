@@ -16,7 +16,8 @@ from honeydew.affordances.rtc.errors import HoneydewRtcError
 from honeydew.transports.fuchsia_controller import fuchsia_controller
 
 # Alias for convenience.
-ZX_OK = fuchsia_controller_py.ZxStatus.ZX_OK
+FC_OK = fuchsia_controller_py.FcTransportStatus.FC_OK
+FC_ERR_INTERNAL = fuchsia_controller_py.FcTransportStatus.FC_ERR_INTERNAL
 ZX_ERR_INTERNAL = fuchsia_controller_py.ZxStatus.ZX_ERR_INTERNAL
 
 
@@ -56,7 +57,7 @@ class RtcFcTests(unittest.TestCase):
 
         self.transport.connect_device_proxy.side_effect = [
             RuntimeError("Device not found"),
-            ZX_OK,
+            FC_OK,
         ]
 
         _ = rtc_using_fc.RtcUsingFc(self.transport, self.reboot_af)

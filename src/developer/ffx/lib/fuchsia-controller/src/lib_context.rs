@@ -4,8 +4,10 @@
 
 use crate::commands::LibraryCommand;
 use crate::ext_buffer::ExtBuffer;
+use crate::fdomain::FDomainState;
 use anyhow::Result;
-use async_lock::Mutex as AsyncMutex;
+use async_lock::{Mutex as AsyncMutex, MutexGuard};
+use fdomain_client::Error as FDomainInternalError;
 use fuchsia_async::{LocalExecutor, Task};
 use std::ops::DerefMut;
 use std::os::fd::{IntoRawFd, RawFd};
@@ -14,13 +16,14 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use zx_types;
 
-type Notifier = Arc<AsyncMutex<Option<LibNotifier>>>;
+pub type Notifier = Arc<AsyncMutex<Option<LibNotifier>>>;
 
 pub struct LibContext {
     buf: Mutex<ExtBuffer<u8>>,
     notifier: Notifier,
     cmd_sender: async_channel::Sender<LibraryCommand>,
     thread_ctx: Mutex<Option<std::thread::JoinHandle<()>>>,
+    fdomain_state: AsyncMutex<FDomainState>,
 }
 
 impl LibContext {
@@ -31,7 +34,33 @@ impl LibContext {
             cmd_sender,
             buf: Mutex::new(buf),
             notifier: notifier.clone(),
-            thread_ctx: Mutex::new(Some(new_command_thread(receiver, notifier))),
+            thread_ctx: Mutex::new(Some(new_command_thread(receiver, notifier.clone()))),
+            fdomain_state: AsyncMutex::new(FDomainState::new(notifier)),
+        }
+    }
+
+    fn write_fidl_to_buffer(&self, fidl_err: impl fidl::Persistable) {
+        let mut guard = self.buf.lock().unwrap();
+        let buf = guard.deref_mut();
+        let msg = fidl::persist(&fidl_err).expect("encoding fdomain fidl error");
+        buf[0..8].clone_from_slice(&msg.len().to_ne_bytes());
+        buf[8..(8 + msg.len())].clone_from_slice(&msg);
+    }
+
+    pub(crate) fn write_fdomain_err(&self, err: &FDomainInternalError) {
+        use FDomainInternalError::*;
+        match err {
+            SocketWrite(s) => self.write_fidl_to_buffer(s.clone()),
+            ChannelWrite(c) => self.write_fidl_to_buffer(c.clone()),
+            FDomain(f) => self.write_fidl_to_buffer(f.clone()),
+            Protocol(p) => self.write_err(p),
+            ProtocolObjectTypeIncompatible
+            | ProtocolRightsIncompatible
+            | ConnectionMismatch
+            | StreamingAborted
+            | ProtocolSignalsIncompatible
+            | ProtocolStreamEventIncompatible => {}
+            Transport(t) => self.write_err(t),
         }
     }
 
@@ -39,8 +68,9 @@ impl LibContext {
         let error = format!("FFX Library Error: {err:?}");
         let mut guard = self.buf.lock().unwrap();
         let buf = guard.deref_mut();
-        buf[..error.len()].clone_from_slice(error.as_bytes());
-        buf[error.len()] = 0.into();
+        buf[0..8].clone_from_slice(&error.len().to_ne_bytes());
+        buf[8..(8 + error.len())].clone_from_slice(error.as_bytes());
+        buf[8 + error.len()] = 0.into();
     }
 
     pub(crate) fn run(&self, cmd: LibraryCommand) {
@@ -58,12 +88,6 @@ impl LibContext {
         Ok(notifier.as_ref().unwrap().receiver())
     }
 
-    pub(crate) async fn notification_sender(
-        &self,
-    ) -> Option<async_channel::Sender<zx_types::zx_handle_t>> {
-        self.notifier.lock().await.as_ref().map(|n| n.sender())
-    }
-
     pub(crate) fn shutdown_cmd_thread(&self) {
         self.run(LibraryCommand::ShutdownLib);
         let thread =
@@ -74,6 +98,10 @@ impl LibContext {
             "thread is being dropped from inside itself"
         );
         thread.join().expect("joining thread");
+    }
+
+    pub(crate) async fn fdomain_state<'a>(&'a self) -> MutexGuard<'a, FDomainState> {
+        self.fdomain_state.lock().await
     }
 }
 
@@ -130,7 +158,7 @@ impl LibNotifier {
         self.stream_fd
     }
 
-    fn sender(&self) -> async_channel::Sender<zx_types::zx_handle_t> {
+    pub fn sender(&self) -> async_channel::Sender<zx_types::zx_handle_t> {
         self.handle_notification_sender.clone()
     }
 }

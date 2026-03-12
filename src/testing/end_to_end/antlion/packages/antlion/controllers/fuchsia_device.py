@@ -485,8 +485,8 @@ class FuchsiaDevice:
     def channel_create(self) -> Tuple[Any, Any]:
         """Returns a pair of connected channels.
 
-        NOTE: This is intended to be used with FDomain so that these channels
-        are usable on this fuchsia-device.
+        Note: this returns the `Any` type, but this is a fuchsia-controller
+        channel. This is just an importing issue.
         """
         return self.honeydew_fd.fuchsia_controller.channel_create()
 

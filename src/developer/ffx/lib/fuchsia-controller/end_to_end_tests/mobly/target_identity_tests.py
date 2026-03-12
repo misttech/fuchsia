@@ -11,7 +11,6 @@ import fidl_fuchsia_feedback as feedback
 import fidl_fuchsia_hwinfo as hwinfo
 import fidl_fuchsia_io as io
 import fuchsia_async_extension
-from fuchsia_controller_py import Channel
 from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
@@ -96,7 +95,7 @@ class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
            (fuchsia.io/File server).
         """
         # [START snapshot_example]
-        client, server = Channel.create()
+        client, server = self.device.channel_create()
         file = io.FileClient(client)
         params = feedback.GetSnapshotParameters(
             # Two minutes of timeout time.

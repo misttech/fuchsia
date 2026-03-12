@@ -8,13 +8,15 @@ use async_lock::Mutex;
 use camino::Utf8PathBuf;
 use discovery::query::TargetInfoQuery;
 use errors::ffx_error;
+use fdomain_client::HandleBased;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_device::ControllerMarker;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
 use ffx_target::connection::Connection;
-
-use fidl::AsHandleRef;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_device::ControllerMarker;
+use fuchsia_async::Task;
+use futures::stream::TryStreamExt;
+use rcs_fdomain as rcs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
@@ -54,6 +56,28 @@ async fn new_device_connection(
     // to pass an address directly if they don't want to wait for discovery.
     let resolution = ffx_target::resolve_target_address(target_spec, false, ctx).await?;
     resolution.get_connection(ctx).await
+}
+
+fn fdomain_local_client() -> Arc<fdomain_client::Client> {
+    fdomain_local::local_client(move || {
+        let (client, server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_io::DirectoryMarker>();
+        Task::spawn(async move {
+            let mut stream = server.into_stream();
+            // This is here to provide the bare minimum handling for host-side FDomain. If we are
+            // using this function then there is only going to be host-side-to-host-side handle
+            // communication going on, so most facilities can be ignored.
+            while let Ok(Some(req)) = stream.try_next().await {
+                if let fidl_fuchsia_io::DirectoryRequest::Open { path: _, object: _, .. } = req {
+                    // Ignoring directory open request
+                } else {
+                    panic!("Unexpected request: {req:?}");
+                }
+            }
+        })
+        .detach();
+        Ok(client)
+    })
 }
 
 impl EnvContext {
@@ -105,13 +129,18 @@ impl EnvContext {
             )
             .map_err(fxe)?,
         };
-        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context)?.into();
         logging::init_logging(&context);
         logging::LOG_SINK.add_log_output(&context)?;
         log::info!("Logging setup for EnvContext instance: {}", logging::log_id(&context));
+        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context)?.into();
+        let device_connection = if matches!(target_spec, TargetInfoQuery::First) {
+            log::info!("No target specified. Creating local/testing FDomain.");
+            Mutex::new(Some(Arc::new(Connection::from_fdomain_client(fdomain_local_client()))))
+        } else {
+            Mutex::new(None)
+        };
         let cache_path = context.get_cache_path()?;
         std::fs::create_dir_all(&cache_path)?;
-        let device_connection = Mutex::new(None);
         Ok(Self { context, device_connection, target_spec, lib_ctx })
     }
 
@@ -120,9 +149,6 @@ impl EnvContext {
             "Checking connectivity invariant for EnvContext: {}",
             logging::log_id(&self.context)
         );
-        if matches!(self.target_spec, TargetInfoQuery::First) {
-            return Err(unspecified_target());
-        }
         let mut device_connection = self.device_connection.lock().await;
         // This is a race condition here. It is possible that the connection
         // will have been terminated between here and when this function completes even if
@@ -146,15 +172,38 @@ impl EnvContext {
 
     async fn connect_remote_control_helper<F, Fut>(&self, func: F) -> Result<zx_types::zx_handle_t>
     where
-        F: Fn(fidl_fuchsia_developer_remotecontrol::RemoteControlProxy) -> Fut,
+        F: Fn(fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy) -> Fut,
         Fut: Future<Output = Result<zx_types::zx_handle_t>>,
     {
+        if matches!(self.target_spec, TargetInfoQuery::First) {
+            return Err(unspecified_target());
+        }
+        // For a bit of history: originally this was written to deal with a race condition in
+        // Overnet. What is rare but possible is for us to establish a connection successfully
+        // (usually SSH) and at some point afterward drop the connection.
+        //
+        // The race condition works like follows:
+        // 1. We enter a loop that waits for a RemoteControlProxy advertisement to show up in
+        //    Overnet.
+        // 2. We lose a connection before this advertisement shows up.
+        // 3. Because of this if we don't time out we will loop forever given the way the logic for
+        //    this is written (see `locate_remote_control_node` in
+        //    //src/developer/ffx/lib/target/src/connection.rs if it still exists at the time of
+        //    reading this). That code just waits for Overnet to announce that it sees something
+        //    advertising the remote control protocol.
+        // 4. Once we timeout we run the `invariant_check` again to check if we've somehow
+        //    disconnected and that's the reason we've timed out.
+        //
+        // All that is to say, we might not need this code so much with FDomain, as the method for
+        // connecting to RemoteControlProxy really just requires a connection to the device, and
+        // there's not a signal we're expecting to surface from a black box. It probably doesn't
+        // hurt to keep this here, but we may want to re-examine its usefulness in the future.
         const MAX_RECONNECT_ATTEMPTS: u32 = 1;
         for attempt in 0..=MAX_RECONNECT_ATTEMPTS {
             self.invariant_check().await?;
             let t = Duration::from_secs_f64(self.context.get(ffx_config::keys::PROXY_TIMEOUT)?);
             match timeout::timeout(t, async {
-                let rcs_proxy = self.device_connection.lock().await.as_ref().unwrap().rcs_proxy().await?;
+                let rcs_proxy = self.device_connection.lock().await.as_ref().unwrap().rcs_proxy_fdomain().await?;
                 log::debug!(
                     "Acquired remote_control_proxy for EnvContext instance: {}",
                     logging::log_id(&self.context)
@@ -181,15 +230,27 @@ impl EnvContext {
         unreachable!();
     }
 
+    pub async fn fdomain_client(&self) -> Result<Arc<fdomain_client::Client>> {
+        // While this may attempt to reconnect, we may hit similar race conditions that motivated
+        // the original `connect_remote_control_helper` function in the future, so it's possible
+        // there will need to be future work done here. However, unlike Overnet, there isn't a loop
+        // in which we have to wait for something like remote-control-proxy to announce itself,
+        // which is what led to the timeouts motivating `connect_remote_control_helper` in the
+        // first place.
+        //
+        // See said function for the explanation of what it's doing and a "bit of history."
+        self.invariant_check().await?;
+        self.device_connection.lock().await.as_ref().unwrap().fdomain_client().await
+    }
+
     pub async fn connect_remote_control_proxy(&self) -> Result<zx_types::zx_handle_t> {
         log::debug!(
             "Entering connect_remote_control_proxy for EnvContext instance: {}",
             logging::log_id(&self.context)
         );
         self.connect_remote_control_helper(|proxy| async move {
-            let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
-            let res = hdl.raw_handle();
-            std::mem::forget(hdl);
+            let hdl = proxy.into_channel().map_err(fxe)?.into_handle();
+            let res = self.lib_ctx().fdomain_state().await.register(hdl);
             Ok(res)
         })
         .await
@@ -220,9 +281,12 @@ impl EnvContext {
                 log::debug!(
                     "Successfully connected to {moniker_clone}:{capability_name_clone} via RCS"
                 );
-                let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
-                let res = hdl.raw_handle();
-                std::mem::forget(hdl);
+                let hdl = proxy
+                    .into_channel()
+                    .map_err(fxe)?
+                    .into_handle_based::<fdomain_client::Channel>()
+                    .into_handle();
+                let res = self.lib_ctx().fdomain_state().await.register(hdl);
                 Ok(res)
             }
         })
@@ -234,6 +298,9 @@ impl EnvContext {
             "Executing target_wait for EnvContext instance: {}",
             logging::log_id(&self.context)
         );
+        if matches!(self.target_spec, TargetInfoQuery::First) {
+            return Err(unspecified_target());
+        }
         let cmd = ffx_wait_args::WaitOptions { timeout, down: offline };
         let tool = ffx_wait::WaitOperation {
             cmd,

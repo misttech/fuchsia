@@ -6,7 +6,7 @@ import asyncio
 import unittest
 
 import fidl_test_python_reserved as test_python_reserved
-from fuchsia_controller_py import Channel
+from fuchsia_controller_py import Context
 
 
 class ReservedNamesProtocolServer(
@@ -34,28 +34,32 @@ class ReservedNamesProtocolServer(
 
 class ReservedNamesTestsuite(unittest.IsolatedAsyncioTestCase):
     async def test_reserved_method_name(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = ReservedNamesProtocolServer(rx)
         client = test_python_reserved.ReservedNamesProtocolClient(tx)
         asyncio.get_running_loop().create_task(server.serve())
         client.next_()
 
     async def test_reserved_struct_arg(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = ReservedNamesProtocolServer(rx)
         client = test_python_reserved.ReservedNamesProtocolClient(tx)
         asyncio.get_running_loop().create_task(server.serve())
         client.struct_arg(int_=0)
 
     async def test_reserved_table_arg(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = ReservedNamesProtocolServer(rx)
         client = test_python_reserved.ReservedNamesProtocolClient(tx)
         asyncio.get_running_loop().create_task(server.serve())
         client.table_arg(int_=1)
 
     async def test_reserved_union_arg(self) -> None:
-        (tx, rx) = Channel.create()
+        ctx = Context()
+        (tx, rx) = ctx.channel_create()
         server = ReservedNamesProtocolServer(rx)
         client = test_python_reserved.ReservedNamesProtocolClient(tx)
         asyncio.get_running_loop().create_task(server.serve())

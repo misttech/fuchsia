@@ -115,7 +115,7 @@ class AsyncVirtualAudioUsingFuchsiaController(audio.AsyncVirtualAudio):
                 f"Failed to clear audio: {val.err}"
             )
 
-        (sender, server_end) = Socket.create()
+        (sender, server_end) = self.fuchsia_controller.socket_create()
         self._injection_client.write_input_audio(
             index=0,
             audio_writer=server_end.take(),

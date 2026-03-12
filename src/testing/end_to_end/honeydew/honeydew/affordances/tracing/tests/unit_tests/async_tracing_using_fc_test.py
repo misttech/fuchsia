@@ -5,6 +5,7 @@
 
 import os
 import tempfile
+import types
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -57,6 +58,16 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
+        )
+        self.fc_transport_obj.ctx = fc.Context()
+
+        def channel_create(
+            self: fc_transport.FuchsiaController,
+        ) -> tuple[fc.Channel, fc.Channel]:
+            return self.ctx.channel_create()
+
+        self.fc_transport_obj.channel_create = types.MethodType(
+            channel_create, self.fc_transport_obj
         )
 
         self.mock_provisioner_client = mock.create_autospec(
@@ -143,10 +154,10 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
             self.mock_provisioner_client.initialize_tracing.assert_called()
 
     async def test_initialize_error(self) -> None:
-        """Test for Tracing.initialize() when the FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        """Test for Tracing.initialize() when the FIDL transport raises an error.
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.mock_provisioner_client.initialize_tracing.side_effect = (
-            fc.ZxStatus(fc.ZxStatus.ZX_ERR_INVALID_ARGS)
+            fc.FcTransportStatus(fc.FcTransportStatus.FC_ERR_INVALID_ARGS)
         )
         with self.assertRaises(TracingError):
             self.tracing_obj.initialize()
@@ -200,12 +211,12 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
             self.mock_session_client.start_tracing.assert_called()
 
     async def test_start_error(self) -> None:
-        """Test for Tracing.start() when the FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        """Test for Tracing.start() when the FIDL transport raises an error.
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.tracing_obj.initialize()
 
-        self.mock_session_client.start_tracing.side_effect = fc.ZxStatus(
-            fc.ZxStatus.ZX_ERR_INVALID_ARGS
+        self.mock_session_client.start_tracing.side_effect = (
+            fc.FcTransportStatus(fc.FcTransportStatus.FC_ERR_INVALID_ARGS)
         )
         with self.assertRaises(TracingError):
             await self.tracing_obj.start()

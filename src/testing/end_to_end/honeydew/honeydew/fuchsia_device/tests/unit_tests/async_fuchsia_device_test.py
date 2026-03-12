@@ -20,7 +20,7 @@ import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
 import fuchsia_controller_py as fuchsia_controller
 import fuchsia_inspect
-from fuchsia_controller_py import ZxStatus
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable, errors
@@ -298,6 +298,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.fd_fc_obj = sync_fd_fc_obj.as_async()
+            self.fd_fc_obj.fuchsia_controller.ctx = fuchsia_controller.Context()
 
             mock_fc_create_context.assert_called_once_with(
                 self.fd_fc_obj.fuchsia_controller
@@ -1604,9 +1605,9 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._build_info property when the get_info
         FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_buildinfo_provider.side_effect = ZxStatus(
-            ZxStatus.ZX_ERR_INVALID_ARGS
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_buildinfo_provider.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INVALID_ARGS
         )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
@@ -1658,8 +1659,10 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._device_info property when the get_info
         FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_hwinfo_device.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_hwinfo_device.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INVALID_ARGS
+        )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
             await self.fd_fc_obj._device_info_from_fidl()
@@ -1710,8 +1713,10 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._product_info property when the get_info
         FIDL call raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_hwinfo_product.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_hwinfo_product.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INVALID_ARGS
+        )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
             await self.fd_fc_obj._product_info()
@@ -1776,11 +1781,11 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_log_command() when the log FIDL call
         raises an error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
 
-        mock_rcs_log_message.side_effect = ZxStatus(
-            ZxStatus.ZX_ERR_INVALID_ARGS
+        mock_rcs_log_message.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INVALID_ARGS
         )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
@@ -1826,9 +1831,11 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_reboot_command() when the reboot
-        FIDL call raises a non-ZX_ERR_PEER_CLOSED error.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
+        FIDL call raises a non-FC_ERR_FDOMAIN error.
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        mock_admin_shutdown.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_INVALID_ARGS
+        )
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
             await self.fd_fc_obj._send_reboot_command()
@@ -1852,9 +1859,11 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_reboot_command() when the reboot
-        FIDL call raises a ZX_ERR_PEER_CLOSED error.  This error should not
+        FIDL call raises a FC_ERR_FDOMAIN error.  This error should not
         result in `FuchsiaControllerError` being raised."""
-        mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
+        mock_admin_shutdown.side_effect = FcTransportStatus(
+            FcTransportStatus.FC_ERR_FDOMAIN
+        )
         # pylint: disable=protected-access
         await self.fd_fc_obj._send_reboot_command()
 
@@ -1919,7 +1928,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         "get_snapshot",
         new_callable=mock.AsyncMock,
         # Raise arbitrary failure.
-        side_effect=ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS),
+        side_effect=FcTransportStatus(FcTransportStatus.FC_ERR_INVALID_ARGS),
     )
     @mock.patch.object(
         fuchsia_controller_impl.FuchsiaControllerImpl,
@@ -1945,7 +1954,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the
         get_snapshot FIDL call raises an exception.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             await self.fd_fc_obj._send_snapshot_command()
@@ -1988,7 +1997,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for AsyncFuchsiaDevice._send_snapshot_command() when the get_attributes
         FIDL call raises an exception.
-        ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
+        FC_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
         # pylint: disable=protected-access
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             await self.fd_fc_obj._send_snapshot_command()

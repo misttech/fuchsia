@@ -17,7 +17,7 @@ import fidl_fuchsia_wlan_device_service as fw_device_service
 import fidl_fuchsia_wlan_sme as fw_sme
 from antlion import controllers
 from core_testing.handlers import DeviceWatcherEventHandler
-from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py import ZxStatus
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
@@ -58,7 +58,10 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
             )
         )
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
 
         # Wait for first phy device to appear, and assert no additional
         # phy devices are added after a brief pause.
@@ -191,7 +194,10 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         ), "DeviceMonitor.CreateIface() response is missing a iface_id"
         iface_id = create_iface_response.iface_id
 
-        proxy, server = Channel.create()
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
         (
             (
                 await self._core_test_kit.device_monitor.get_client_sme(

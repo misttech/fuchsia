@@ -7,7 +7,7 @@ import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
 import fuchsia_async_extension
-from fuchsia_controller_py import ZxStatus
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.rtc import rtc
@@ -68,7 +68,7 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
         """See base class."""
         try:
             response = (await self._proxy.get()).unwrap()
-        except (AssertionError, ZxStatus) as e:
+        except (AssertionError, FcTransportStatus, ZxStatus) as e:
             msg = f"Device.Get() error {e}"
             raise HoneydewRtcError(msg) from e
 
@@ -89,7 +89,7 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
         )
         try:
             (await self._proxy.set2(rtc=ftime)).unwrap()
-        except (AssertionError, ZxStatus) as e:
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
             msg = f"Device.Set2() error {e}"
             raise HoneydewRtcError(msg) from e
 

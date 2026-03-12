@@ -304,7 +304,11 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             origin_bss_desc = bss_desc_5g
             target_bss_desc = bss_desc_2g
 
-        async with ConnectTransactionEventHandler() as ctx:
+        (
+            proxy,
+            server,
+        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        async with ConnectTransactionEventHandler(proxy, server) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

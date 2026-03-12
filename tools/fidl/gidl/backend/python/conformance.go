@@ -140,13 +140,13 @@ func buildHandleDefs(defs []ir.HandleDef) string {
 		var subtype = d.Subtype
 		switch subtype {
 		case fidlgen.HandleSubtypeNone:
-			builder.WriteString(fmt.Sprintf("fuchsia_controller_py.Handle.create(),\n"))
+			builder.WriteString(fmt.Sprintf("ctx.handle_create(),\n"))
 		case fidlgen.HandleSubtypeChannel:
 			// Discard other end of the channel since this only tests message encoding.
-			builder.WriteString(fmt.Sprintf("fuchsia_controller_py.Channel.create()[0],\n"))
+			builder.WriteString(fmt.Sprintf("ctx.channel_create()[0],\n"))
 		case fidlgen.HandleSubtypeEvent:
 			// Discard other end of the event since this only tests message encoding.
-			builder.WriteString(fmt.Sprintf("fuchsia_controller_py.Event.create()[0],\n"))
+			builder.WriteString(fmt.Sprintf("ctx.event_create_pair()[0],\n"))
 		default:
 			panic(fmt.Sprintf("unsupported handle subtype: %s", subtype))
 		}

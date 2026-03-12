@@ -14,7 +14,6 @@ import fidl_fuchsia_bluetooth_le as f_ble_controller
 import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fidl import StopServer
-from fuchsia_controller_py import Channel
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
@@ -187,7 +186,10 @@ class AsyncLEUsingFc(
         Returns:
             A list of all known LE remote devices.
         """
-        (central_client, central_server) = Channel.create()
+        (
+            central_client,
+            central_server,
+        ) = self._fc_transport.channel_create()
         watcher = f_ble_controller.ScanResultWatcherClient(central_client)
         filter_options = f_ble_controller.Filter()
         scan_options = f_ble_controller.ScanOptions(filters=[filter_options])
@@ -224,7 +226,7 @@ class AsyncLEUsingFc(
         Raises:
             BluetoothError: If the peripheral is not initialized.
         """
-        (conn_client, conn_server) = Channel.create()
+        (conn_client, conn_server) = self._fc_transport.channel_create()
         self._connection_client = f_ble_controller.ConnectionClient(
             conn_client.take()
         )
@@ -279,7 +281,7 @@ class AsyncLEUsingFc(
         params = f_ble_controller.AdvertisingParameters(
             data=advertising_data, connection_options=connection_options
         )
-        (client, server) = Channel.create()
+        (client, server) = self._fc_transport.channel_create()
         advertised_server = AdvertisedPeripheralImpl(server)
         self._peripheral_advertisement_server = (
             asyncio.get_running_loop().create_task(advertised_server.serve())
@@ -340,7 +342,7 @@ class AsyncLEUsingFc(
             assert (
                 self._connection_client is not None
             )  # the central connection handle should request Gatt client
-            (client, server) = Channel.create()
+            (client, server) = self._fc_transport.channel_create()
             gatt_client = f_gatt_controller.ClientClient(client.take())
             self._connection_client.request_gatt_client(
                 client=server.take()
@@ -393,7 +395,7 @@ class AsyncLEUsingFc(
         """
         try:
             assert self._gatt_client is not None
-            (client, server) = Channel.create()
+            (client, server) = self._fc_transport.channel_create()
             self._gatt_client.connect_to_service(
                 handle=handle, service=server.take()
             )

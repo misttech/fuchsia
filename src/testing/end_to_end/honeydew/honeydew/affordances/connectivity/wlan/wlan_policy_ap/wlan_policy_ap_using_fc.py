@@ -12,7 +12,7 @@ import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_async_extension
-from fuchsia_controller_py import Channel, ZxStatus
+from fuchsia_controller_py import Channel, FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -106,14 +106,23 @@ class AsyncWlanPolicyApUsingFc(
                 )
             )
         )
-        phy_list = (await device_monitor_proxy.list_phys()).phy_list
+        try:
+            phy_list = (await device_monitor_proxy.list_phys()).phy_list
 
-        phy_supported_roles = [
-            (await device_monitor_proxy.get_supported_mac_roles(phy_id=phy_id))
-            .unwrap()
-            .supported_mac_roles
-            for phy_id in phy_list
-        ]
+            phy_supported_roles = [
+                (
+                    await device_monitor_proxy.get_supported_mac_roles(
+                        phy_id=phy_id
+                    )
+                )
+                .unwrap()
+                .supported_mac_roles
+                for phy_id in phy_list
+            ]
+        except (AssertionError, ZxStatus, FcTransportStatus) as e:
+            raise wlan_errors.HoneydewWlanError(
+                "DeviceMonitor.GetSupportedMacRoles() error"
+            ) from e
         if not any(
             [
                 f_wlan_common.WlanMacRole.AP in roles
@@ -166,14 +175,17 @@ class AsyncWlanPolicyApUsingFc(
         Raises:
             HoneydewWlanError: Error from WLAN stack.
         """
-        controller_client, controller_server = Channel.create()
+        (
+            controller_client,
+            controller_server,
+        ) = self._fc_transport.channel_create()
         access_point_controller_proxy = (
             f_wlan_policy.AccessPointControllerClient(controller_client.take())
         )
 
         updates: asyncio.Queue[list[AccessPointState]] = asyncio.Queue()
 
-        updates_client, updates_server = Channel.create()
+        updates_client, updates_server = self._fc_transport.channel_create()
         access_point_state_updates_server = AccessPointStateUpdatesImpl(
             updates_server, updates
         )
@@ -190,7 +202,7 @@ class AsyncWlanPolicyApUsingFc(
                 requests=controller_server.take(),
                 updates=updates_client.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"AccessPointProvider.GetController() error {status}"
             ) from status
@@ -235,7 +247,7 @@ class AsyncWlanPolicyApUsingFc(
                 mode=mode.to_fidl(),
                 band=band.to_fidl(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"AccessPointController.StartAccessPoint() error {status}"
             ) from status
@@ -275,7 +287,7 @@ class AsyncWlanPolicyApUsingFc(
                     ssid, security, cred.type(), cred.value()
                 ).to_fidl(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"AccessPointController.StopAccessPoint() error {status}"
             ) from status
@@ -327,7 +339,7 @@ class AsyncWlanPolicyApUsingFc(
         )
 
         updates: asyncio.Queue[list[AccessPointState]] = asyncio.Queue()
-        updates_client, updates_server = Channel.create()
+        updates_client, updates_server = self._fc_transport.channel_create()
         access_point_state_updates_server = AccessPointStateUpdatesImpl(
             updates_server, updates
         )
@@ -337,7 +349,7 @@ class AsyncWlanPolicyApUsingFc(
             access_point_listener_proxy.get_listener(
                 updates=updates_client.take(),
             )
-        except ZxStatus as status:
+        except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"AccessPointListener.GetListener() error {status}"
             ) from status
