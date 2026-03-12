@@ -2,7 +2,6 @@
 IfsVersion:      3.0
 SoName:          libdriver_runtime.so
 Symbols:
-  - { Name: async_get_default_dispatcher, Type: Func }
   - { Name: fdf_arena_add_ref, Type: Func }
   - { Name: fdf_arena_allocate, Type: Func }
   - { Name: fdf_arena_contains, Type: Func }

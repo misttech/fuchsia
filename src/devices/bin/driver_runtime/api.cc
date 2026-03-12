@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <dlfcn.h>
 #include <lib/fdf/arena.h>
 #include <lib/fdf/channel.h>
 #include <lib/fdf/dispatcher.h>
@@ -171,25 +170,6 @@ __EXPORT void fdf_dispatcher_destroy(fdf_dispatcher_t* dispatcher) { return disp
 __EXPORT fdf_dispatcher_t* fdf_dispatcher_get_current_dispatcher() {
   return static_cast<fdf_dispatcher_t*>(thread_context::GetCurrentDispatcher());
 }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-// the original async_get_default_dispatcher from libasync so that we can fall back to it if
-// we're not running on a driver dispatcher.
-static async_dispatcher_t* (*orig_async_get_default_dispatcher)() = (async_dispatcher_t * (*)())
-    dlsym(RTLD_NEXT, "async_get_default_dispatcher");
-
-// Overrides the async-default get current dispatcher to return the current driver dispatcher
-// instead.
-__EXPORT async_dispatcher_t* async_get_default_dispatcher(void) {
-  fdf_dispatcher_t* dispatcher = fdf_dispatcher_get_current_dispatcher();
-  if (dispatcher) {
-    return fdf_dispatcher_get_async_dispatcher(dispatcher);
-  } else if (orig_async_get_default_dispatcher) {
-    return orig_async_get_default_dispatcher();
-  }
-  return nullptr;
-}
-#endif
 
 __EXPORT zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t option) {
   return dispatcher->Seal(option);

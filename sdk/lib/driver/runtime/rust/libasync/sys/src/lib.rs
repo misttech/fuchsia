@@ -3,7 +3,5 @@
 // found in the LICENSE file.
 
 mod bindings;
-mod default;
 
 pub use bindings::*;
-pub use default::*;

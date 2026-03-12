@@ -6,6 +6,7 @@
 
 use fdf_sys::*;
 
+use core::cell::RefCell;
 use core::ffi;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
@@ -19,8 +20,7 @@ use crate::shutdown_observer::ShutdownObserver;
 
 pub use fdf_sys::fdf_dispatcher_t;
 pub use libasync::{
-    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, CurrentDispatcher, JoinHandle,
-    OnDispatcher, Task,
+    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, JoinHandle, OnDispatcher, Task,
 };
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
@@ -178,6 +178,9 @@ pub struct Dispatcher(pub(crate) NonNull<fdf_dispatcher_t>);
 // SAFETY: The api of fdf_dispatcher_t is thread safe.
 unsafe impl Send for Dispatcher {}
 unsafe impl Sync for Dispatcher {}
+thread_local! {
+    pub(crate) static OVERRIDE_DISPATCHER: RefCell<Option<NonNull<fdf_dispatcher_t>>> = const { RefCell::new(None) };
+}
 
 impl Dispatcher {
     /// Creates a dispatcher ref from a raw handle.
@@ -374,14 +377,6 @@ impl<'a> DispatcherRef<'a> {
         unsafe { Self::from_raw(handle) }
     }
 
-    /// Creates an [`AsyncDispatcherRef`] to this dispatcher with the same lifetime.
-    pub fn as_async_dispatcher(&self) -> AsyncDispatcherRef<'a> {
-        // SAFETY: The dispatcher referenced is valid by construction, and it should always
-        // be possible to get an async dispatcher from a valid driver dispatcher.
-        let handle = unsafe { fdf_dispatcher_get_async_dispatcher(self.0.0.as_ptr()) };
-        unsafe { AsyncDispatcherRef::from_raw(NonNull::new(handle).unwrap()) }
-    }
-
     /// Gets the raw handle from this dispatcher ref.
     ///
     /// # Safety
@@ -518,6 +513,35 @@ impl<'a> OnDispatcher for DispatcherRef<'a> {
 }
 
 impl<'a> OnDriverDispatcher for DispatcherRef<'a> {}
+
+/// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
+/// access it when needed.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CurrentDispatcher;
+
+impl OnDispatcher for CurrentDispatcher {
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
+        let dispatcher = OVERRIDE_DISPATCHER
+            .with(|global| *global.borrow())
+            .or_else(|| {
+                // SAFETY: NonNull::new will null-check that we have a current dispatcher.
+                NonNull::new(unsafe { fdf_dispatcher_get_current_dispatcher() })
+            })
+            .map(|dispatcher| {
+                // SAFETY: We constrain the lifetime of the `DispatcherRef` we provide to the
+                // function below to the span of the current function. Since we are running on
+                // the dispatcher, or another dispatcher that is bound to the same lifetime (through
+                // override_dispatcher), we can be sure that the dispatcher will not be shut
+                // down before that function completes.
+                let async_dispatcher = NonNull::new(unsafe {
+                    fdf_dispatcher_get_async_dispatcher(dispatcher.as_ptr())
+                })
+                .expect("No async dispatcher on driver dispatcher");
+                unsafe { AsyncDispatcherRef::from_raw(async_dispatcher) }
+            });
+        f(dispatcher)
+    }
+}
 
 impl OnDriverDispatcher for CurrentDispatcher {}
 

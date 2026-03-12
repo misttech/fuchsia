@@ -15,11 +15,9 @@ use std::sync::{Arc, Weak};
 use zx::Status;
 
 mod after_deadline;
-mod current_dispatcher;
 mod task;
 
 pub use after_deadline::*;
-pub use current_dispatcher::*;
 pub use task::*;
 
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
