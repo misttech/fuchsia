@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 mod args;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use args::{ProfilerCommand, ProfilerSubCommand};
 use async_fs::File;
 use core::fmt;
@@ -11,6 +11,8 @@ use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, deferred};
+use fidl_fuchsia_cpu_profiler as profiler;
+use fidl_fuchsia_test_manager as test_manager;
 use log::info;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -19,7 +21,6 @@ use std::time::Duration;
 use target_holders::moniker;
 use tempfile::Builder;
 use termion::{color, style};
-use {fidl_fuchsia_cpu_profiler as profiler, fidl_fuchsia_test_manager as test_manager};
 
 #[derive(Serialize, JsonSchema)]
 pub struct ShowCpuProfilerCmd {
@@ -239,6 +240,116 @@ async fn run_session(
     }
 }
 
+async fn download_android_symbols(opts: args::DownloadAndroidSymbols) -> Result<()> {
+    info!("Fetching android symbols for build {} target {}", opts.bid, opts.target);
+
+    let target_prefix = opts.target.split('-').next().unwrap_or(&opts.target);
+    let glob = format!("{}-symbols-*.zip", target_prefix);
+
+    // Create a temporary directory to download the zip into
+    let tmp_dir = Builder::new().prefix("android_symbols_").tempdir()?;
+    let out_dir = tmp_dir.path().join("symbols");
+    std::fs::create_dir_all(&out_dir)?;
+
+    // Invoke fetch_artifact to get the symbol archive
+    let mut command = std::process::Command::new("/google/data/ro/projects/android/fetch_artifact");
+    command
+        .arg("--bid")
+        .arg(&opts.bid)
+        .arg("--target")
+        .arg(&opts.target)
+        .arg("--use_shared_quota")
+        .arg(&glob)
+        .arg(&out_dir);
+
+    println!("Running: {:?}", command);
+    let status = command.status()?;
+
+    if !status.success() {
+        anyhow::bail!("fetch_artifact failed: {}", status);
+    }
+
+    // Now extract the zip(s) into a sub-directory
+    let extract_dir = tmp_dir.path().join("extracted");
+    std::fs::create_dir_all(&extract_dir)?;
+
+    println!("Extracting symbols...");
+    for entry in std::fs::read_dir(&out_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("zip") {
+            println!("Unzipping {}", path.display());
+            let extract_status = std::process::Command::new("unzip")
+                .arg("-q")
+                .arg(&path)
+                .arg("-d")
+                .arg(&extract_dir)
+                .status()?;
+
+            if !extract_status.success() {
+                anyhow::bail!("unzip failed: {}", extract_status);
+            }
+        }
+    }
+
+    // Determine the user's .build-id directory
+    let home = std::env::var("HOME").context("Failed to get HOME env var")?;
+    let build_id_dir = std::path::PathBuf::from(home).join(".fuchsia/debug/build-id");
+    std::fs::create_dir_all(&build_id_dir)?;
+
+    println!("Populating .build-id cache...");
+
+    // Traverse extracted directory to find all .so files
+    let mut dirs_to_visit = vec![extract_dir];
+    while let Some(dir) = dirs_to_visit.pop() {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs_to_visit.push(path);
+                continue;
+            }
+            if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("so") {
+                continue;
+            }
+
+            // Get Build ID using readelf
+            let Ok(output) = std::process::Command::new("readelf").arg("-n").arg(&path).output()
+            else {
+                continue;
+            };
+
+            if !output.status.success() {
+                continue;
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let Some(line) = stdout.lines().find(|l| l.contains("Build ID:")) else {
+                continue;
+            };
+
+            let Some(build_id) = line.split_whitespace().last() else {
+                continue;
+            };
+
+            if build_id.len() <= 2 {
+                continue;
+            }
+
+            let (xx, yy) = build_id.split_at(2);
+            let target_dir = build_id_dir.join(xx);
+            if std::fs::create_dir_all(&target_dir).is_ok() {
+                let target_file = target_dir.join(format!("{}.debug", yy));
+                let _ = std::fs::copy(&path, &target_file);
+            }
+        }
+    }
+
+    println!("Successfully downloaded and cached Android symbols for bid {}!", opts.bid);
+
+    Ok(())
+}
+
 pub async fn profiler(
     context: &EnvironmentContext,
     controller: fho::Deferred<profiler::SessionProxy>,
@@ -333,6 +444,9 @@ pub async fn profiler(
             } else {
                 anyhow::bail!("Failed to symbolize profile");
             }
+        }
+        ProfilerSubCommand::DownloadAndroidSymbols(opts) => {
+            return download_android_symbols(opts).await;
         }
     };
     let config = profiler::Config {

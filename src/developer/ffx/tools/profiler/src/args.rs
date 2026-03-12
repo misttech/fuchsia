@@ -20,6 +20,7 @@ pub enum ProfilerSubCommand {
     Attach(Attach),
     Launch(Launch),
     Symbolize(Symbolize),
+    DownloadAndroidSymbols(DownloadAndroidSymbols),
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
@@ -162,4 +163,19 @@ pub struct Symbolize {
     /// pprof format.
     #[argh(option, default = "true")]
     pub pprof_conversion: bool,
+}
+
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+/// Download Android debug symbols from Android Build using fetch_artifact.
+#[argh(subcommand, name = "download-android-symbols")]
+#[derive(Default)]
+pub struct DownloadAndroidSymbols {
+    /// build id of the Android target (e.g. 11000000 or P023423)
+    // We cannot use build_id here because some args could have clashes if we don't watch out, but bid is standard for fetch_artifact
+    #[argh(option)]
+    pub bid: String,
+
+    /// target name of the Android build (e.g. aosp_arm64-userdebug, etc.)
+    #[argh(option)]
+    pub target: String,
 }
