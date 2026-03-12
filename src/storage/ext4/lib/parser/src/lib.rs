@@ -520,4 +520,94 @@ mod tests {
             .map_err(zx::Status::from_raw)
             .expect("failed to close root");
     }
+
+    #[fuchsia::test]
+    async fn test_metrics_of_fs_with_multiple_files() {
+        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end, block_server_end) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end),
+            /* read_only= */ false,
+            &inspector,
+        )
+        .expect("failed to parse the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+
+        let _status = open_file(
+            &root,
+            "file1",
+            fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FILE_TRUNCATE,
+        )
+        .await
+        .expect_err("open with truncate should fail as it is currently not supported");
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
+            file_metrics: {
+                num_open_requests: 1u64,
+                num_read_requests: 0u64,
+                num_truncate_requests: 1u64,
+                num_write_requests: 0u64,
+                num_writes_past_eof_attempts: 0u64,
+                num_successful_overwrites: 0u64,
+                num_blocks_overwritten: 0u64,
+            }
+        });
+
+        // Perform opens, reads, and writes. Should see them reflected in the inspector metrics.
+        let file1 = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open file1");
+        let _ = read_to_string(&file1).await.expect("failed to read file1");
+
+        let file2 = open_file(&root, "inner/file2", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open inner/file2");
+        let _ = read_to_string(&file2).await.expect("failed to read file2");
+
+        file1
+            .seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("failed to seek")
+            .map_err(zx::Status::from_raw)
+            .expect("seek error");
+        let _ = write(&file1, "new content").await.expect("failed to write to file1");
+
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
+            file_metrics: {
+                num_open_requests: 3u64,
+                num_read_requests: 2u64,
+                num_truncate_requests: 1u64,
+                num_write_requests: 1u64,
+                num_writes_past_eof_attempts: 0u64,
+                num_successful_overwrites: 1u64,
+                num_blocks_overwritten: 1u64,
+            }
+        });
+
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
+    }
 }

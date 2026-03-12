@@ -27,6 +27,7 @@ rustc_library("parser") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",

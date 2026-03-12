@@ -159,6 +159,7 @@ impl FileLike for ExtFile {
         if !self.read_only() {
             // Use a FidlIoConnection to manage writes. Note that reads will be slower because they
             // won't be using a stream.
+            self.processor.as_ref().unwrap().record_open_metrics();
             FidlIoConnection::create_sync(scope, self, options, object_request.take());
         } else {
             StreamIoConnection::create_sync(scope, self, options, object_request.take());
@@ -184,8 +185,15 @@ impl File for ExtFile {
         Ok(())
     }
 
-    async fn truncate(&self, _length: u64) -> Result<(), Status> {
-        Err(Status::NOT_SUPPORTED)
+    async fn truncate(&self, length: u64) -> Result<(), Status> {
+        if let Some(processor) = &self.processor {
+            processor.truncate(length).map_err(|e| {
+                log::warn!("Error truncating: {:?}", e);
+                Status::INTERNAL
+            })
+        } else {
+            Err(Status::NOT_SUPPORTED)
+        }
     }
 
     async fn get_backing_memory(&self, flags: fio::VmoFlags) -> Result<Vmo, Status> {
@@ -241,6 +249,7 @@ impl FileIo for ExtFile {
             return Ok(0);
         }
         self.vmo.read(&mut buffer[..readable_bytes as usize], offset)?;
+        self.processor.as_ref().unwrap().record_read_metrics();
         Ok(readable_bytes)
     }
 
