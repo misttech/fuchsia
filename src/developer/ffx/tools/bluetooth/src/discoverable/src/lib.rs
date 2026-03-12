@@ -31,6 +31,11 @@ impl FfxMain for DiscoverableTool {
                 self.set_discoverability(true).await?;
                 writer.line("Becoming discoverable")?;
             }
+            // ffx bluetooth discoverable stop
+            DiscoverableSubCommand::Stop(ref _cmd) => {
+                self.set_discoverability(false).await?;
+                writer.line("Revoking discoverability")?;
+            }
         }
         Ok(())
     }

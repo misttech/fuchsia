@@ -22,6 +22,7 @@ pub struct DiscoverableCommand {
 #[argh(subcommand)]
 pub enum DiscoverableSubCommand {
     Start(StartCommand),
+    Stop(StopCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -32,3 +33,12 @@ pub enum DiscoverableSubCommand {
     example = "ffx bluetooth discoverable start"
 )]
 pub struct StartCommand {}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "stop",
+    description = "Revoking this device's discoverability.",
+    example = "ffx bluetooth discoverable stop"
+)]
+pub struct StopCommand {}
