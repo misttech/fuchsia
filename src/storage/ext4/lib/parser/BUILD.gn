@@ -20,7 +20,7 @@ rustc_library("parser") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-sync",
-    "//src/storage/ext4/read-only:ext4-read-only",
+    "//src/storage/ext4:ext4-lib",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:log",
   ]
@@ -45,9 +45,9 @@ rustc_library("parser") {
 
 resource("test-images") {
   sources = [
-    "../../read-only/test_files/1file.img",
-    "../../read-only/test_files/dac_attributes.img",
-    "../../read-only/test_files/nest.img",
+    "../../test_files/1file.img",
+    "../../test_files/dac_attributes.img",
+    "../../test_files/nest.img",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }

@@ -195,11 +195,12 @@ mod tests {
     use super::*;
     use crate::readers::{BlockDeviceReader, VecReader};
     use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::Vmo;
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn test_processor_read_only_blocks_write() {

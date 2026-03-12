@@ -4,9 +4,9 @@
 
 #![recursion_limit = "256"]
 
-use ext4_read_only::parser::{Parser as ExtParser, XattrMap as ExtXattrMap};
-use ext4_read_only::readers::VmoReader;
-use ext4_read_only::structs::{EntryType, INode, ROOT_INODE_NUM};
+use ext4_lib::parser::{Parser as ExtParser, XattrMap as ExtXattrMap};
+use ext4_lib::readers::VmoReader;
+use ext4_lib::structs::{EntryType, INode, ROOT_INODE_NUM};
 use once_cell::sync::OnceCell;
 use starnix_core::mm::ProtectionFlags;
 use starnix_core::mm::memory::MemoryObject;
@@ -331,8 +331,8 @@ impl FsNodeOps for ExtFile {
     }
 }
 
-impl From<ext4_read_only::structs::Extent> for PagerExtent {
-    fn from(e: ext4_read_only::structs::Extent) -> Self {
+impl From<ext4_lib::structs::Extent> for PagerExtent {
+    fn from(e: ext4_lib::structs::Extent) -> Self {
         let block_count: u16 = e.e_len.into();
         let start = e.e_blk.into();
         Self { logical: start..start + block_count as u32, physical_block: e.target_block_num() }
@@ -422,7 +422,7 @@ fn directory_entry_type(entry_type: EntryType) -> DirectoryEntryType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ext4_read_only::structs::INode;
+    use ext4_lib::structs::INode;
     use starnix_uapi::file_mode::mode;
     use zerocopy::FromBytes;
     use zerocopy::byteorder::little_endian::{U16 as LE16, U32 as LE32};

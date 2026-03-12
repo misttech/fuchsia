@@ -5,10 +5,10 @@
 use crate::remote_bundle::{Owner, Writer};
 
 use anyhow::{Context, Error, Result};
+use ext4_lib::parser::Parser as ExtParser;
+use ext4_lib::readers::{IoAdapter, Reader};
+use ext4_lib::structs::{DirEntry2, EntryType};
 use ext4_metadata::{ExtendedAttributes, ROOT_INODE_NUM};
-use ext4_read_only::parser::Parser as ExtParser;
-use ext4_read_only::readers::{IoAdapter, Reader};
-use ext4_read_only::structs::{DirEntry2, EntryType};
 use sparse::reader::SparseReader;
 use std::collections::HashMap;
 use std::io::Cursor;

@@ -5,9 +5,9 @@
 use crate::directory::ExtDirectory;
 use crate::file::ExtFile;
 use crate::types::ExtAttributes;
-use ext4_read_only::processor::Ext4Processor;
-use ext4_read_only::readers::{BlockDeviceReader, ReaderWriter, VmoReader};
-use ext4_read_only::structs::{self, EntryType, MIN_EXT4_SIZE};
+use ext4_lib::processor::Ext4Processor;
+use ext4_lib::readers::{BlockDeviceReader, ReaderWriter, VmoReader};
+use ext4_lib::structs::{self, EntryType, MIN_EXT4_SIZE};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_storage_block::BlockMarker;
 use log::error;
@@ -121,14 +121,16 @@ fn build_fs_dir(
 mod tests {
     use super::{FsSourceType, construct_fs, construct_fs_internal};
 
-    use ext4_read_only::structs::MIN_EXT4_SIZE;
+    use ext4_lib::structs::MIN_EXT4_SIZE;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
     use fuchsia_fs::file::{WriteError, read_to_string, write};
     use std::fs;
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::{HandleBased, Status, Vmo};
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     fn image_too_small() {

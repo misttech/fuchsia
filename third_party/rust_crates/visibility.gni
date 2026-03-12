@@ -69,7 +69,7 @@ once_cell_visibility = [
   "//src/starnix/modules/ashmem:*",
   "//src/starnix/modules/ext4:*",
   "//src/starnix/modules/overlayfs:*",
-  "//src/storage/ext4/read-only:*",
+  "//src/storage/ext4:*",
   "//src/testing/sl4f:*",
   "//tools/shush:*",
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ext4_read_only::structs::INode;
+use ext4_lib::structs::INode;
 use fidl_fuchsia_io as fio;
 
 /// Others may write.

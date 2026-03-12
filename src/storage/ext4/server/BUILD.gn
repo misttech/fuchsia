@@ -74,9 +74,9 @@ fuchsia_unittest_component("ext4_server_integration_test_component") {
 resource("ext4_server_integration_test_data") {
   testonly = true
   sources = [
-    "../read-only/test_files/1file.img",
-    "../read-only/test_files/extents.img",
-    "../read-only/test_files/nest.img",
+    "../test_files/1file.img",
+    "../test_files/extents.img",
+    "../test_files/nest.img",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }

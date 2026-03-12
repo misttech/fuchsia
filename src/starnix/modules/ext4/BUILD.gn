@@ -40,7 +40,7 @@ rustc_library("ext4") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
-    "//src/storage/ext4/read-only:ext4-read-only",
+    "//src/storage/ext4:ext4-lib",
     "//third_party/rust_crates:once_cell",
   ]
 

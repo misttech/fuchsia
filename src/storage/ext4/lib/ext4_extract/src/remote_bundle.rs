@@ -4,8 +4,8 @@
 
 use crate::METADATA_PATH;
 
+use ext4_lib::structs::INode;
 use ext4_metadata::{ExtendedAttributes, Metadata};
-use ext4_read_only::structs::INode;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 

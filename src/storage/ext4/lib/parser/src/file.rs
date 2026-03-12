@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ext4_read_only::parser::XattrMap;
-use ext4_read_only::structs::ParsingError;
+use ext4_lib::parser::XattrMap;
+use ext4_lib::structs::ParsingError;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
@@ -16,7 +16,7 @@ use vfs::{ObjectRequestRef, immutable_attributes};
 use zx::{self, HandleBased as _, Status, Vmo};
 
 use crate::types::ExtAttributes;
-use ext4_read_only::processor::Ext4Processor;
+use ext4_lib::processor::Ext4Processor;
 
 /// An ext4 filesystem file node.
 pub struct ExtFile {
@@ -312,12 +312,13 @@ mod tests {
     use fidl_fuchsia_io::ExtendedAttributeValue;
 
     use super::*;
-    use ext4_read_only::readers::BlockDeviceReader;
+    use ext4_lib::readers::BlockDeviceReader;
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
     use test_case::test_case;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn test_read() {

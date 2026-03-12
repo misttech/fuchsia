@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ext4_read_only::parser::XattrMap;
+use ext4_lib::parser::XattrMap;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
