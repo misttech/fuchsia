@@ -1,5 +1,5 @@
 ---
-name: fx test-remote
+name: fx-test-remote
 description: >
   Run Fuchsia tests on infrastructure builders using locally built artifacts "Infra At Desk".
   Use this skill when you need to reproduce test failures that only occur in infra,
