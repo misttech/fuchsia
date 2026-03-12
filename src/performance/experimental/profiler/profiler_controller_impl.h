@@ -13,6 +13,8 @@
 #include <lib/zx/thread.h>
 #include <zircon/compiler.h>
 
+#include <set>
+
 #include "component.h"
 #include "fxt_writer.h"
 #include "sampler.h"
@@ -52,6 +54,11 @@ class ProfilerControllerImpl : public fidl::Server<fuchsia_cpu_profiler::Session
   elf_search::Searcher searcher_;
   std::vector<fuchsia_cpu_profiler::SamplingConfig> sample_specs_;
   std::unique_ptr<ComponentTarget> component_target_;
+
+  size_t num_samples_ = 0;
+  zx::ticks first_sample_timestamp_{0};
+  std::set<zx_koid_t> pids_seen_;
+  std::set<zx_koid_t> tids_seen_;
 };
 }  // namespace profiler
 

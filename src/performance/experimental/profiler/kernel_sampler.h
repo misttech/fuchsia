@@ -40,8 +40,9 @@ class KernelSamplerSession {
 class KernelSampler : public Sampler {
  public:
   explicit KernelSampler(async_dispatcher_t* dispatcher, TargetTree&& targets,
-                         std::vector<fuchsia_cpu_profiler::SamplingConfig> sampling_specs)
-      : Sampler(dispatcher, std::move(targets), std::move(sampling_specs)) {}
+                         std::vector<fuchsia_cpu_profiler::SamplingConfig> sampling_specs,
+                         SampleCallback sample_cb = nullptr)
+      : Sampler(dispatcher, std::move(targets), std::move(sampling_specs), std::move(sample_cb)) {}
 
   zx::result<> AddTarget(JobTarget&& target) override;
   zx::result<> Start(size_t buffer_size_mb) override;

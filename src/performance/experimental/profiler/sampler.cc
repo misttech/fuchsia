@@ -237,7 +237,6 @@ zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer
   }
 
   inspecting_durations_.reserve(1000);
-  samples_.reserve(1000);
   sample_task_.Post(dispatcher_);
   return zx::ok();
 }
@@ -265,7 +264,9 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
           auto [time_sampling, pcs] =
               SampleThread(target.handle.borrow(), thread.handle.borrow(), fp_unwinder);
           if (time_sampling != zx::ticks()) {
-            samples_[target.pid].push_back({target.pid, thread.tid, std::move(pcs), time_sampling});
+            if (sample_cb_) {
+              sample_cb_({target.pid, thread.tid, std::move(pcs), time_sampling, {}});
+            }
             inspecting_durations_.push_back(time_sampling);
           }
         }

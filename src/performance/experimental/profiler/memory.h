@@ -96,18 +96,33 @@ class BufferedStackMemory : public unwinder::Memory {
     return status;
   }
 
+  const std::vector<StackChunk>& GetChunks() const { return chunks_; }
+
  private:
   bool ReadFromChunks(uint64_t addr, uint64_t size, void* dst) {
-    for (const StackChunk& chunk : chunks_) {
-      if (addr >= chunk.base && addr < chunk.base + chunk.data.size()) {
-        size_t offset = addr - chunk.base;
-        size_t available = chunk.data.size() - offset;
-        size_t copy_size = std::min(static_cast<size_t>(size), available);
-        memcpy(dst, chunk.data.data() + offset, copy_size);
-        return true;
+    uint8_t* dst_ptr = static_cast<uint8_t*>(dst);
+    while (size > 0) {
+      bool chunk_found = false;
+      for (const StackChunk& chunk : chunks_) {
+        if (addr >= chunk.base && addr < chunk.base + chunk.data.size()) {
+          size_t offset = addr - chunk.base;
+          size_t available = chunk.data.size() - offset;
+          size_t copy_size = std::min(static_cast<size_t>(size), available);
+
+          memcpy(dst_ptr, chunk.data.data() + offset, copy_size);
+
+          addr += copy_size;
+          size -= copy_size;
+          dst_ptr += copy_size;
+          chunk_found = true;
+          break;
+        }
+      }
+      if (!chunk_found) {
+        return false;
       }
     }
-    return false;
+    return true;
   }
 
   bool IsCaptured(uint64_t addr) {

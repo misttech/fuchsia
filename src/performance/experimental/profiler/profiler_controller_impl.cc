@@ -417,19 +417,70 @@ void profiler::ProfilerControllerImpl::Start(StartRequest& request,
 
   auto strategy = config.sample()->callgraph()->strategy().value();
 
+  num_samples_ = 0;
+  first_sample_timestamp_ = zx::ticks(0);
+  pids_seen_.clear();
+  tids_seen_.clear();
+
+  FX_LOGS(DEBUG) << "Sending profiler headers.";
+  fxt::WriteMagicNumberRecord(writer_.get());
+  fxt::WriteInitializationRecord(writer_.get(), zx::ticks::per_second().get());
+
+  SampleCallback on_sample = [this](profiler::Sample sample) {
+    num_samples_++;
+    if (first_sample_timestamp_ == zx::ticks(0)) {
+      first_sample_timestamp_ = sample.timestamp;
+    }
+    if (pids_seen_.insert(sample.pid).second) {
+      if (sampler_) {
+        auto names = sampler_->GetProcessNames();
+        if (auto it = names.find(sample.pid); it != names.end()) {
+          const std::string& name = it->second;
+          fxt::WriteKernelObjectRecord(
+              writer_.get(), fxt::Koid(sample.pid), ZX_OBJ_TYPE_PROCESS,
+              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+        }
+      }
+    }
+    if (tids_seen_.insert(sample.tid).second) {
+      if (sampler_) {
+        auto names = sampler_->GetThreadNames();
+        if (auto it = names.find(sample.tid); it != names.end()) {
+          const std::string& name = it->second;
+          fxt::WriteKernelObjectRecord(
+              writer_.get(), fxt::Koid(sample.tid), ZX_OBJ_TYPE_THREAD,
+              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+        }
+      }
+    }
+    if (!sample.stack_memory.empty()) {
+      fxt::WriteLargeBlobRecordWithMetadata(
+          writer_.get(), sample.timestamp.get(),
+          fxt::StringRef<fxt::RefType::kInline>("cpu_profiler"),
+          fxt::StringRef<fxt::RefType::kInline>("stack_sample"),
+          fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(sample.pid), fxt::Koid(sample.tid)),
+          sample.stack_memory.data(), sample.stack_memory.size());
+    } else {
+      fxt::WriteProfilerBacktraceRecord(
+          writer_.get(), sample.timestamp.get(),
+          fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(sample.pid), fxt::Koid(sample.tid)),
+          sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
+    }
+  };
+
   if (strategy == fuchsia_cpu_profiler::CallgraphStrategy::kDwarf) {
     sampler_ = fxl::MakeRefCounted<StackSampler>(dispatcher_, std::move(targets_),
-                                                 std::move(sample_specs_));
+                                                 std::move(sample_specs_), std::move(on_sample));
   } else if (strategy == fuchsia_cpu_profiler::CallgraphStrategy::kFramePointer) {
     if constexpr (kSamplerKernelSupport) {
       sampler_ = fxl::MakeRefCounted<KernelSampler>(dispatcher_, std::move(targets_),
-                                                    std::move(sample_specs_));
+                                                    std::move(sample_specs_), std::move(on_sample));
     } else {
       FX_LOGS(WARNING)
           << "Kernel assisted sampling is not enabled. Falling back to zx_process_read_memory based sampling.\n"
           << "Set the build arg \"experimental_thread_sampler_enabled = true\" to enable kernel assisted sampling";
-      sampler_ =
-          fxl::MakeRefCounted<Sampler>(dispatcher_, std::move(targets_), std::move(sample_specs_));
+      sampler_ = fxl::MakeRefCounted<Sampler>(dispatcher_, std::move(targets_),
+                                              std::move(sample_specs_), std::move(on_sample));
     }
   } else {
     FX_LOGS(ERROR) << "Unsupported callgraph strategy: "
@@ -473,19 +524,6 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     return;
   }
 
-  size_t num_samples{0};
-  for (const auto& [_pid, samples] : sampler_->GetSamples()) {
-    num_samples += samples.size();
-  }
-
-  zx::result<profiler::SymbolizationContext> modules = sampler_->GetContexts();
-  if (modules.is_error()) {
-    FX_PLOGS(ERROR, modules.status_value()) << "Failed to get modules";
-    Reset();
-    completer.Close(modules.status_value());
-    return;
-  }
-
   if (component_target_) {
     if (zx::result<> res = component_target_->Stop(); res.is_error()) {
       FX_PLOGS(WARNING, res.error_value()) << "Failed to stop launched components";
@@ -498,15 +536,23 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
 
   std::vector<zx::ticks> inspecting_durations = sampler_->SamplingDurations();
 
+  zx::result<profiler::SymbolizationContext> modules = sampler_->GetContexts();
+  if (modules.is_error()) {
+    FX_PLOGS(ERROR, modules.status_value()) << "Failed to get modules";
+    Reset();
+    completer.Close(modules.status_value());
+    return;
+  }
+
   fuchsia_cpu_profiler::SessionStopResponse stats{{
-      .samples_collected = num_samples,
+      .samples_collected = num_samples_,
       .missing_process_mappings = std::vector<zx_koid_t>(),
   }};
 
   // Verify that we were able to grab module information for each process we sampled. If we find any
   // processes without associated modules, report them back to the caller.
   std::set<zx_koid_t> pids_with_missing_modules;
-  for (const auto& [pid, _] : sampler_->GetSamples()) {
+  for (const auto& pid : pids_seen_) {
     if (!modules->process_contexts.contains(pid) && !pids_with_missing_modules.contains(pid)) {
       stats.missing_process_mappings()->push_back(pid);
       pids_with_missing_modules.insert(pid);
@@ -535,42 +581,12 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
   // full socket.
   completer.Reply(std::move(stats));
 
-  FX_LOGS(DEBUG) << "Sending samples.";
-  fxt::WriteMagicNumberRecord(writer_.get());
-  fxt::WriteInitializationRecord(writer_.get(), zx::ticks::per_second().get());
+  FX_LOGS(DEBUG) << "Sending modules.";
+  uint16_t next_module_id = 0;
+  zx::ticks process_timestamp = first_sample_timestamp_;
 
-  std::unordered_map<zx_koid_t, std::string> process_names = sampler_->GetProcessNames();
-  std::unordered_map<zx_koid_t, std::string> thread_names = sampler_->GetThreadNames();
-
-  for (const auto& [pid, samples] : sampler_->GetSamples()) {
-    if (samples.empty()) {
-      continue;
-    }
-
-    if (auto it = process_names.find(pid); it != process_names.end()) {
-      const std::string& name = it->second;
-      fxt::WriteKernelObjectRecord(
-          writer_.get(), fxt::Koid(pid), ZX_OBJ_TYPE_PROCESS,
-          fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
-    }
-
-    std::set<zx_koid_t> seen_threads;
-    for (const auto& sample : samples) {
-      if (seen_threads.insert(sample.tid).second) {
-        if (auto it = thread_names.find(sample.tid); it != thread_names.end()) {
-          const std::string& name = it->second;
-          fxt::WriteKernelObjectRecord(
-              writer_.get(), fxt::Koid(sample.tid), ZX_OBJ_TYPE_THREAD,
-              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
-        }
-      }
-    }
-
-    uint16_t next_module_id = 0;
-    // We'll use the timestamp from the first sample of this process for these records.
-    zx::ticks process_timestamp = samples[0].timestamp;
-
-    if (samples[0].stack_memory.empty() && modules->process_contexts.contains(pid)) {
+  for (const auto& pid : pids_seen_) {
+    if (modules->process_contexts.contains(pid)) {
       auto process_modules = modules->process_contexts[pid];
       for (const auto& [build_id, mod] : process_modules) {
         uint16_t module_id = next_module_id++;
@@ -590,22 +606,6 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
               mod.vaddr + segment.p_vaddr, segment.p_memsz, segment.p_vaddr,
               static_cast<uint8_t>(segment.p_flags));
         }
-      }
-    }
-
-    for (const Sample& sample : samples) {
-      if (!sample.stack_memory.empty()) {
-        fxt::WriteLargeBlobRecordWithMetadata(
-            writer_.get(), sample.timestamp.get(),
-            fxt::StringRef<fxt::RefType::kInline>("cpu_profiler"),
-            fxt::StringRef<fxt::RefType::kInline>("stack_sample"),
-            fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
-            sample.stack_memory.data(), sample.stack_memory.size());
-      } else {
-        fxt::WriteProfilerBacktraceRecord(
-            writer_.get(), sample.timestamp.get(),
-            fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
-            sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
       }
     }
   }

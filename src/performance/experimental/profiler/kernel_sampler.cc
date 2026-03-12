@@ -229,7 +229,9 @@ zx::result<> profiler::KernelSampler::Stop() {
     const zx_koid_t pid = blob_event.process_thread.process_koid();
     const zx_koid_t tid = blob_event.process_thread.thread_koid();
     if (profiled_threads.contains(tid)) {
-      samples_[pid].emplace_back(pid, tid, std::move(stack));
+      if (sample_cb_) {
+        sample_cb_({pid, tid, std::move(stack), zx::ticks::now(), {}});
+      }
     }
   };
   zx_status_t encountered_error = ZX_OK;

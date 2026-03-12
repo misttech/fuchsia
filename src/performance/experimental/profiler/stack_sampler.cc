@@ -25,7 +25,7 @@
 #include <src/lib/unwinder/unwind.h>
 
 namespace profiler {
-constexpr size_t kMaxUnwindDepth = 50;
+
 constexpr size_t kStackCaptureSize = 4096ul * 4;  // 16 kib
 
 zx::result<> StackSampler::Start(size_t buffer_size_mb) {
@@ -36,6 +36,7 @@ zx::result<> StackSampler::Start(size_t buffer_size_mb) {
                                                     const ProcessTarget& p) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "StackSampler::Start/ForEachProcess");
     std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
+    (void)RefreshMappings(p);
 
     auto process_watcher = std::make_unique<ProcessWatcher>(
         p.handle.borrow(),
@@ -85,6 +86,11 @@ void StackSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_
       ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
   if (res.is_error()) {
     FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
+  } else {
+    zx::result<ProcessTarget*> process_target = targets_.GetProcess(job_path, pid);
+    if (process_target.is_ok() && process_target.value() != nullptr) {
+      (void)RefreshMappings(*process_target.value());
+    }
   }
 }
 
@@ -149,6 +155,7 @@ void StackSampler::GetRestrictedSP(const zx_restricted_state_t& restricted_state
 
 void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task,
                                   zx_status_t status) {
+  zx::ticks start_time = zx::ticks::now();
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (status != ZX_OK) {
     return;
@@ -157,14 +164,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
   zx::result res = targets_.ForEachProcess([this](std::span<const zx_koid_t>,
                                                   const ProcessTarget& target) -> zx::result<> {
     TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/ForEachProcess");
-    // Get mappings once per process
-    if (zx::result<> res = RefreshMappings(target); res.is_error()) {
-      FX_PLOGS(WARNING, res.status_value()) << "Failed to get mappings for process: " << target.pid;
-      return zx::ok();
-    }
 
-    unwinder::Unwinder unwinder(target.unwinder_data->modules);
-    std::vector<Sample>& process_samples = samples_[target.pid];
     for (const auto& [tid, thread] : target.threads) {
       zx_info_thread_t thread_info;
       zx_status_t status = thread.handle.get_info(ZX_INFO_THREAD, &thread_info, sizeof(thread_info),
@@ -174,16 +174,24 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
                                 << ", skipping";
         continue;  // Skip this thread.
       }
+
       // Skip threads that are not actively running or blocked
       if (thread_info.state != ZX_THREAD_STATE_RUNNING) {
         continue;
+      }
+
+      if (!thread.restricted_state_addr.has_value()) {
+        if (zx::result<> res = RefreshMappings(target); res.is_error()) {
+          FX_PLOGS(WARNING, res.status_value()) << "Failed to refresh mappings for thread: " << tid;
+          return zx::ok();
+        }
       }
 
       // Suspend thread
       zx::suspend_token suspend_token;
       status = thread.handle.suspend(&suspend_token);
       if (status != ZX_OK) {
-        FX_PLOGS(ERROR, status) << "Failed to suspend thread: " << tid;
+        // skip terminited thread
         continue;
       }
 
@@ -231,33 +239,45 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
       }
       suspend_token.reset();
       zx::ticks tick_resume = zx::ticks::now();
-      std::vector<uint64_t> stack;
 
-      {
-        TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/Unwind");
+      // Group registers and memory chunks into a single chunk
+      zx::ticks sample_time = zx::ticks::now();
+      if (sample_cb_) {
+        std::vector<uint8_t> sample_memory;
 
-        std::vector<unwinder::Frame> frames =
-            unwinder.Unwind(&stack_memory, registers, kMaxUnwindDepth);
-        for (const unwinder::Frame& frame : frames) {
-          uint64_t pc;
-          if (!frame.regs.GetPC(pc).has_err() && pc != 0) {
-            stack.push_back(pc);
-          }
+        // Append registers headers
+        uint64_t regs_size = sizeof(regs);
+        sample_memory.insert(sample_memory.end(), reinterpret_cast<uint8_t*>(&regs_size),
+                             reinterpret_cast<uint8_t*>(&regs_size) + sizeof(regs_size));
+        sample_memory.insert(sample_memory.end(), reinterpret_cast<uint8_t*>(&regs),
+                             reinterpret_cast<uint8_t*>(&regs) + sizeof(regs));
+
+        // Append all memory chunks
+        for (const auto& chunk : stack_memory.GetChunks()) {
+          uint64_t base = chunk.base;
+          uint64_t size = chunk.data.size();
+          sample_memory.insert(sample_memory.end(), reinterpret_cast<uint8_t*>(&base),
+                               reinterpret_cast<uint8_t*>(&base) + sizeof(base));
+          sample_memory.insert(sample_memory.end(), reinterpret_cast<uint8_t*>(&size),
+                               reinterpret_cast<uint8_t*>(&size) + sizeof(size));
+          sample_memory.insert(sample_memory.end(), chunk.data.begin(), chunk.data.end());
         }
-      }
 
-      if (!stack.empty()) {
-        process_samples.push_back({.pid = target.pid,
-                                   .tid = tid,
-                                   .stack = std::move(stack),
-                                   .timestamp = zx::ticks::now(),
-                                   .stack_memory = {}});
+        sample_cb_({.pid = target.pid,
+                    .tid = tid,
+                    .stack = {},
+                    .timestamp = sample_time,
+                    .stack_memory = std::move(sample_memory)});
       }
 
       inspecting_durations_.push_back(tick_resume - tick_suspended);
     }
     return zx::ok();
   });
+
+  zx::time end_time = zx::clock::get_monotonic();
+  zx::duration total_dur = end_time - zx::time(start_time.get());
+  FX_LOGS(DEBUG) << "CollectSamples pass finished in " << total_dur.to_msecs() << " ms";
 
   if (res.is_error()) {
     FX_PLOGS(ERROR, res.status_value()) << "Stack Sampling Failed";

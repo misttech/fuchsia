@@ -42,11 +42,18 @@ pub struct ModuleWithMmapDetails {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BacktraceDetails(pub u64);
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RawSample {
+    pub timestamp: u64,
+    pub sample_memory: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ProfilingRecordHandler {
     pub process_name: Option<String>,
     pub module_with_mmap_records: HashMap<u16, ModuleWithMmapDetails>,
     pub backtrace_records: HashMap<Tid, Vec<Vec<BacktraceDetails>>>,
+    pub raw_samples: HashMap<Tid, Vec<RawSample>>,
 }
 
 pub enum MarkupLine {

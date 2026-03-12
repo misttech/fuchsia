@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::parse::{
-    BacktraceDetails, ModuleDetails, ModuleWithMmapDetails, Pid, SymbolizeError, Tid,
+    BacktraceDetails, ModuleDetails, ModuleWithMmapDetails, Pid, RawSample, SymbolizeError, Tid,
     UnsymbolizedSamples,
 };
 use ffx_symbolize::{MappingDetails, MappingFlags};
@@ -71,6 +71,20 @@ impl UnsymbolizedSamples {
                     } else if kernel_obj.ty == fxt::objects::KernelObjType::Thread {
                         let tid = Tid(kernel_obj.koid);
                         unsymbolized.thread_names.insert(tid, kernel_obj.name.to_string());
+                    }
+                }
+                TraceRecord::LargeBlob(blob) => {
+                    if blob.name == "stack_sample" && blob.category == "cpu_profiler" {
+                        if let Some(metadata) = blob.metadata {
+                            let pid = Pid(metadata.process.0);
+                            let tid = Tid(metadata.thread.0);
+                            let handler = unsymbolized.handlers.entry(pid).or_default();
+                            let samples = handler.raw_samples.entry(tid).or_default();
+                            let timestamp = metadata.timestamp as u64;
+                            samples.push(RawSample { timestamp, sample_memory: blob.bytes });
+                        }
+                    } else {
+                        return Err(SymbolizeError::NonProfilerFxtRecord);
                     }
                 }
                 _ => return Err(SymbolizeError::NonProfilerFxtRecord),

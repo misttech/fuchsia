@@ -17,6 +17,7 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -44,13 +45,17 @@ struct Sample {
   std::vector<uint8_t> stack_memory;
 };
 
+using SampleCallback = std::function<void(Sample)>;
+
 class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
  public:
   Sampler(async_dispatcher_t* dispatcher, TargetTree targets,
-          std::vector<fuchsia_cpu_profiler::SamplingConfig> sample_specs)
+          std::vector<fuchsia_cpu_profiler::SamplingConfig> sample_specs,
+          SampleCallback sample_cb = nullptr)
       : dispatcher_(dispatcher),
         targets_(std::move(targets)),
         sample_specs_(std::move(sample_specs)),
+        sample_cb_(std::move(sample_cb)),
         weak_factory_(this) {}
 
   virtual zx::result<> Start(size_t buffer_size_mb);
@@ -60,7 +65,6 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   zx::result<profiler::SymbolizationContext> GetContexts();
   fxl::WeakPtr<Sampler> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
-  std::unordered_map<zx_koid_t, std::vector<Sample>>& GetSamples() { return samples_; }
   std::unordered_map<zx_koid_t, std::string> GetProcessNames() {
     std::unordered_map<zx_koid_t, std::string> names;
     (void)targets_.ForEachProcess(
@@ -98,7 +102,7 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   TargetTree targets_;
   std::vector<fuchsia_cpu_profiler::SamplingConfig> sample_specs_;
   std::vector<zx::ticks> inspecting_durations_;
-  std::unordered_map<zx_koid_t, std::vector<Sample>> samples_;
+  SampleCallback sample_cb_;
 
   // Watchers cannot be moved, so we need to box them
   std::unordered_map<zx_koid_t, std::unique_ptr<ProcessWatcher>> process_watchers_;
