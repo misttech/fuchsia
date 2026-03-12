@@ -64,6 +64,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:test-case",
   ]
+
+  features = []
+  if (is_coverage) {
+    features += [ "variant_coverage" ]
+    test_deps += [ "//src/lib/fuchsia-fs" ]
+  }
 }
 
 fuchsia_cc_dso("simple_sync") {
@@ -151,10 +157,5 @@ fuchsia_unittest_package("dso_runner_tests") {
 
 group("tests") {
   testonly = true
-
-  # TODO(https://fxbug.dev/403545512): Enable in asan once the leaks are fixed
-  # and fix the test paths so the test can pass in coverage
-  if (!is_asan && !is_coverage) {
-    deps = [ ":dso_runner_tests" ]
-  }
+  deps = [ ":dso_runner_tests" ]
 }
