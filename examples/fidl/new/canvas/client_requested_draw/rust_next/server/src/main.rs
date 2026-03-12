@@ -79,7 +79,7 @@ impl InstanceServerHandler for CanvasServer {
 
             state.ready = true;
         }
-        responder.respond(fidl_next::Flexible::Ok(())).await.unwrap();
+        responder.respond(()).await.unwrap();
     }
 }
 

@@ -71,7 +71,7 @@ impl InstanceServerHandler for CanvasServer {
         // which syncs the flow rate between the client and server on this method,
         // thereby preventing the client from "flooding" the server with unacknowledged
         // work.
-        responder.respond(fidl_next::Flexible::Ok(())).await.unwrap();
+        responder.respond(()).await.unwrap();
         println!("AddLine response sent");
     }
 }

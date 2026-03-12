@@ -26012,10 +26012,10 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 
@@ -26072,10 +26072,10 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 
@@ -26099,10 +26099,10 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 
@@ -27244,10 +27244,10 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 
@@ -27304,10 +27304,10 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 
@@ -27331,10 +27331,10 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Flexible::Ok(response)
         }
     }
 

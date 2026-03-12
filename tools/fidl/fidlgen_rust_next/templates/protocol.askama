@@ -138,10 +138,20 @@ pub mod {{ module_name }} {
                     }
                 {% else %}
                     impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
-                        type Output = ___R;
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::Flexible<___R>
+                            {% else %}
+                                ___R
+                            {% endif %}
+                        ;
 
                         fn respond(response: ___R) -> Self::Output {
-                            response
+                            {% if !method.is_strict %}
+                                ::fidl_next::Flexible::Ok(response)
+                            {% else %}
+                                response
+                            {% endif %}
                         }
                     }
                 {% endif %}
