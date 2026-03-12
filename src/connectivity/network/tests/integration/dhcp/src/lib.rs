@@ -292,9 +292,7 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
     name: &str,
     remove_dhcp_address: bool,
 ) {
-    // TODO(https://github.com/rust-lang/libc/issues/3331): Use ETH_P_ALL from
-    // libc once it is made available.
-    const ETH_P_ALL: u16 = 0x0003;
+    const ETH_P_ALL_BE: u16 = (libc::ETH_P_ALL as u16).to_be();
     const ETH_P_IP_BE: u16 = (libc::ETH_P_IP as u16).to_be();
     const STATIC_ADDRESS: fidl_fuchsia_net::Ipv4AddressWithPrefix =
         fidl_ip_v4_with_prefix!("192.0.2.1/24");
@@ -387,7 +385,7 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
         .expect("get packet socket");
     let sockaddr = libc::sockaddr_ll {
         sll_family: u16::try_from(libc::AF_PACKET).unwrap(),
-        sll_protocol: ETH_P_ALL.to_be(), // Only ETH_P_ALL receives RX.
+        sll_protocol: ETH_P_ALL_BE, // Only ETH_P_ALL receives RX.
         sll_ifindex: i32::try_from(client_iface.id()).unwrap(),
         sll_hatype: 0,
         sll_pkttype: 0,
