@@ -168,5 +168,5 @@ xHCI (host controller) -> `usb-bus` -> `usb-device` (core USB device driver) ->
 ## Example USB request stack (DCI)
 
 `dwc2` (device-side controller) -> `usb-peripheral` (peripheral core driver) ->
-`usb-function` (core function driver) -> `cdc-eth-function` (ethernet
+`usb-function` (core function driver) -> `usb-cdc-netdev` (ethernet
 peripheral mode driver)

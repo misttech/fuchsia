@@ -56,7 +56,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "usb-phy-ffe09000.aml_usb_phy",
       "usb-phy-ffe09000.aml_usb_phy.dwc2",
       "usb-ff400000.dwc2",
-      "usb-ff400000.dwc2.usb-peripheral.function-000.cdc-eth-function",
+      "usb-ff400000.dwc2.usb-peripheral.function-000.usb-cdc-netdev.network-device",
       "usb-phy-ffe09000.aml_usb_phy.xhci",
       "power-controller.power-impl.power-core.power-0",
       "power-controller.power-impl.power-core.power-0.cpu-controller-0",

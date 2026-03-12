@@ -16,6 +16,7 @@
     },
     capabilities: [
         { service: "fuchsia.driver.compat.Service" },
+        { service: "fuchsia.hardware.network.driver.Service" },
     ],
     use: [
         { service: "fuchsia.hardware.usb.function.UsbFunctionService" },
@@ -24,6 +25,10 @@
         { service: "fuchsia.driver.compat.Service" },
     ],
     expose: [
+        {
+            service: "fuchsia.hardware.network.driver.Service",
+            from: "self",
+        },
         {
             service: "fuchsia.driver.compat.Service",
             from: "self",

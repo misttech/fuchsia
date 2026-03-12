@@ -6,25 +6,30 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fit/defer.h>
 #include <lib/trace/event.h>
 
+#include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/request-fidl.h>
-#include <usb/usb-request.h>
 
 namespace {
 
-// TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
-// initializing.
+// TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer
+// hangs while initializing.
 enum class InitState {
   kWaitingForAllocInterface1 = 0,
   kWaitingForAllocInterface2 = 1,
@@ -49,38 +54,6 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 namespace frequest = fuchsia_hardware_usb_request;
 
-typedef struct txn_info {
-  ethernet_netbuf_t netbuf;
-  ethernet_impl_queue_tx_callback completion_cb;
-  void* cookie;
-  list_node_t node;
-} txn_info_t;
-
-static void complete_txn(txn_info_t* txn, zx_status_t status) {
-  txn->completion_cb(txn->cookie, status, &txn->netbuf);
-}
-
-zx_status_t UsbCdcFunction::insert_usb_request(usb::FidlRequest&& req,
-                                               usb::EndpointClient<UsbCdcFunction>& ep) {
-  if (unbound_) {
-    return ZX_OK;
-  }
-  ep.PutRequest(std::move(req));
-  return ZX_OK;
-}
-
-void UsbCdcFunction::usb_request_queue(usb::FidlRequest&& req,
-                                       usb::EndpointClient<UsbCdcFunction>& ep) {
-  if (unbound_) {
-    return;
-  }
-
-  std::vector<frequest::Request> reqs;
-  reqs.emplace_back(req.take_request());
-  auto result = ep->QueueRequests({std::move(reqs)});
-  ZX_ASSERT(result.is_ok());
-}
-
 zx_status_t UsbCdcFunction::cdc_generate_mac_address() {
   zx::result result =
       fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
@@ -89,7 +62,7 @@ zx_status_t UsbCdcFunction::cdc_generate_mac_address() {
     return result.status_value();
   }
   if (result.value().has_value()) {
-    const auto& metadata = result.value().value();
+    const auto &metadata = result.value().value();
     if (!metadata.mac_address().has_value()) {
       fdf::error("MAC address metadata missing mac_address field");
       return ZX_ERR_INTERNAL;
@@ -106,144 +79,91 @@ zx_status_t UsbCdcFunction::cdc_generate_mac_address() {
   snprintf(buffer, sizeof(buffer), "%02X%02X%02X%02X%02X%02X", mac_addr_[0], mac_addr_[1],
            mac_addr_[2], mac_addr_[3], mac_addr_[4], mac_addr_[5]);
 
-  // Make the host and device addresses different so packets are routed correctly.
+  // Make the host and device addresses different so packets are routed
+  // correctly.
   mac_addr_[5] ^= 1;
 
   return function_.AllocStringDesc(buffer, &descriptors_.cdc_eth.iMACAddress);
 }
 
-zx_status_t UsbCdcFunction::EthernetImplQuery(uint32_t options, ethernet_info_t* out_info) {
-  // No options are supported
-  if (options) {
-    fdf::error("unexpected options (0x{:x}) to ethernet_impl_query", options);
-    return ZX_ERR_INVALID_ARGS;
+void UsbCdcFunction::DiscardPendingTxBuffers(zx_status_t status) {
+  std::array<fnetdev::wire::TxResult, kTxDepth> results;
+  auto results_iter = results.begin();
+  {
+    std::lock_guard<std::mutex> lock(tx_mutex_);
+    while (!tx_completion_queue_.empty()) {
+      uint32_t id = tx_completion_queue_.front();
+      *results_iter++ = {.id = id, .status = status};
+      tx_completion_queue_.pop();
+    }
+  }
+  if (results_iter == results.begin() || !netdevice_ifc_.is_valid()) {
+    return;
+  }
+  fdf::Arena arena(kArenaTag);
+  fidl::OneWayStatus fidl_status = netdevice_ifc_.buffer(arena)->CompleteTx(
+      fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+          results.data(), std::distance(results.begin(), results_iter)));
+  if (!fidl_status.ok()) {
+    fdf::error("Failed to complete tx: {}", fidl_status.FormatDescription());
+  }
+}
+
+void UsbCdcFunction::ReturnPendingRxSpace() {
+  fdf::Arena arena(kArenaTag);
+
+  std::array<fnetdev::wire::RxBuffer, kRxDepth> rx_buffers;
+  auto rx_buffers_iter = rx_buffers.begin();
+
+  std::array<fnetdev::wire::RxBufferPart, kRxDepth> rx_buffers_parts;
+  auto rx_buffers_parts_iter = rx_buffers_parts.begin();
+
+  {
+    std::lock_guard<std::mutex> rx(rx_mutex_);
+    while (!rx_space_buffers_.empty()) {
+      *rx_buffers_parts_iter = {
+          .id = rx_space_buffers_.front().id,
+          .offset = 0,
+          .length = 0,
+      };
+      rx_space_buffers_.pop();
+      *rx_buffers_iter++ = {
+          .meta =
+              {
+                  .port = kPortId,
+                  .frame_type = fuchsia_hardware_network::FrameType::kEthernet,
+              },
+          .data = fidl::VectorView<fnetdev::wire::RxBufferPart>::FromExternal(
+              &*rx_buffers_parts_iter, 1),
+      };
+      rx_buffers_parts_iter++;
+    }
   }
 
-  memset(out_info, 0, sizeof(*out_info));
-  out_info->mtu = ETH_MTU;
-  memcpy(out_info->mac, mac_addr_.data(), mac_addr_.size());
-  out_info->netbuf_size = sizeof(txn_info_t);
+  if (rx_buffers_iter == rx_buffers.begin() || !netdevice_ifc_.is_valid()) {
+    return;
+  }
 
-  return ZX_OK;
+  fidl::OneWayStatus fidl_status = netdevice_ifc_.buffer(arena)->CompleteRx(
+      fidl::VectorView<fnetdev::wire::RxBuffer>::FromExternal(
+          rx_buffers.data(), std::distance(rx_buffers.begin(), rx_buffers_iter)));
+  if (!fidl_status.ok()) {
+    fdf::error("Failed to complete rx: {}", fidl_status.error());
+  }
 }
 
-void UsbCdcFunction::EthernetImplStop() {
-  std::lock_guard<std::mutex> tx(tx_mutex_);
-  std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
-  ethernet_ifc_.clear();
-}
+void UsbCdcFunction::CdcIntrComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto &completion : completions) {
+    intr_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+  }
 
-zx_status_t UsbCdcFunction::EthernetImplStart(const ethernet_ifc_protocol_t* ifc) {
   if (unbound_) {
-    return ZX_ERR_BAD_STATE;
-  }
-  std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
-  if (ethernet_ifc_.is_valid()) {
-    return ZX_ERR_ALREADY_BOUND;
-  }
-  ethernet_ifc_ = ddk::EthernetIfcProtocolClient(ifc);
-  ethernet_ifc_.Status(online_ ? ETHERNET_STATUS_ONLINE : 0);
-  return ZX_OK;
-}
-
-zx_status_t UsbCdcFunction::cdc_send_locked(ethernet_netbuf_t* netbuf) {
-  {
-    std::lock_guard<std::mutex> _(ethernet_mutex_);
-    if (!ethernet_ifc_.is_valid()) {
-      return ZX_ERR_BAD_STATE;
-    }
-  }
-
-  const auto* byte_data = netbuf->data_buffer;
-  size_t length = netbuf->data_size;
-
-  // Make sure that we can get all of the tx buffers we need to use
-  std::optional<usb::FidlRequest> tx_req = bulk_in_ep_.GetRequest();
-  if (!tx_req.has_value()) {
-    return ZX_ERR_SHOULD_WAIT;
-  }
-
-  // Send data
-  tx_req->clear_buffers();
-  std::vector<size_t> actual = tx_req->CopyTo(0, byte_data, length, bulk_in_ep_.GetMappedLocked());
-
-  size_t actual_total = 0;
-  for (size_t i = 0; i < actual.size(); i++) {
-    // Fill in size of data.
-    (*tx_req)->data()->at(i).size(actual[i]);
-    actual_total += actual[i];
-  }
-
-  if (actual_total != length) {
-    insert_usb_request(std::move(tx_req.value()), bulk_in_ep_);
-    return ZX_ERR_INTERNAL;
-  }
-
-  zx_status_t status = tx_req->CacheFlush(bulk_in_ep_.GetMappedLocked());
-  if (status != ZX_OK) {
-    fdf::error("[bug] tx_req->CacheFlush(): {}", zx_status_get_string(status));
-    return status;
-  }
-  usb_request_queue(std::move(tx_req.value()), bulk_in_ep_);
-
-  return ZX_OK;
-}
-
-void UsbCdcFunction::EthernetImplQueueTx(uint32_t options, ethernet_netbuf_t* netbuf,
-                                         ethernet_impl_queue_tx_callback callback, void* cookie) {
-  size_t length = netbuf->data_size;
-  zx_status_t status;
-
-  txn_info_t* txn = containerof(netbuf, txn_info_t, netbuf);
-  txn->completion_cb = callback;
-  txn->cookie = cookie;
-
-  {
-    std::lock_guard<std::mutex> _(ethernet_mutex_);
-    if (!online_ || length > ETH_MTU || length == 0 || unbound_) {
-      complete_txn(txn, ZX_ERR_INVALID_ARGS);
-      return;
-    }
-  }
-
-  {
-    std::lock_guard<std::mutex> tx(tx_mutex_);
-    if (unbound_) {
-      status = ZX_ERR_IO_NOT_PRESENT;
-    } else {
-      status = cdc_send_locked(netbuf);
-      if (status == ZX_ERR_SHOULD_WAIT) {
-        // No buffers available, queue it up
-        txn_info_t* txn = containerof(netbuf, txn_info_t, netbuf);
-        list_add_tail(tx_pending_infos(), &txn->node);
-      }
-    }
-  }
-
-  if (status != ZX_ERR_SHOULD_WAIT) {
-    complete_txn(txn, status);
-  }
-}
-
-zx_status_t UsbCdcFunction::EthernetImplSetParam(uint32_t param, int32_t value,
-                                                 const uint8_t* data_buffer, size_t data_size) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-void UsbCdcFunction::cdc_intr_complete(std::vector<fendpoint::Completion> completions) {
-  for (auto& completion : completions) {
-    usb::FidlRequest req{std::move(completion.request().value())};
-
-    std::lock_guard<std::mutex> intr(intr_mutex_);
-    if (!unbound_) {
-      zx_status_t status = insert_usb_request(std::move(req), intr_ep_);
-      ZX_DEBUG_ASSERT(status == ZX_OK);
-    }
+    ContinueStop();
   }
 }
 
 void UsbCdcFunction::cdc_send_notifications() {
-  std::lock_guard<std::mutex> _(ethernet_mutex_);
+  std::lock_guard<std::mutex> _(state_mutex_);
 
   usb_cdc_notification_t network_notification = {
       .bmRequestType = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
@@ -289,15 +209,12 @@ void UsbCdcFunction::cdc_send_notifications() {
 
   size_t actual_total = 0;
   for (size_t i = 0; i < actual.size(); i++) {
-    // Fill in size of data.
-    (*req)->data()->at(i).size(actual[i]);
+    req.value()->data()->at(i).size(actual[i]);
     actual_total += actual[i];
   }
-
   ZX_ASSERT(actual_total == sizeof(network_notification));
 
   req->CacheFlush(intr_ep_.GetMapped());
-  usb_request_queue(std::move(req.value()), intr_ep_);
   std::optional<usb::FidlRequest> req2 = intr_ep_.GetRequest();
   if (!req2.has_value()) {
     fdf::error("[bug] intr_ep_.GetRequest(): no request available");
@@ -309,115 +226,204 @@ void UsbCdcFunction::cdc_send_notifications() {
 
   actual_total = 0;
   for (size_t i = 0; i < actual.size(); i++) {
-    // Fill in size of data.
-    (*req2)->data()->at(i).size(actual[i]);
+    req2.value()->data()->at(i).size(actual[i]);
     actual_total += actual[i];
   }
-
   ZX_ASSERT(actual_total == sizeof(speed_notification));
 
   req2->CacheFlush(intr_ep_.GetMapped());
-  usb_request_queue(std::move(req2.value()), intr_ep_);
+
+  std::vector<frequest::Request> requests;
+  requests.emplace_back(req->take_request());
+  requests.emplace_back(req2->take_request());
+  auto result = intr_ep_->QueueRequests({std::move(requests)});
+  if (result.is_error()) {
+    fdf::error("[bug] intr_ep_->QueueRequests(): {}", result.error_value().FormatDescription());
+  }
 }
 
-void UsbCdcFunction::cdc_rx_complete(std::vector<fendpoint::Completion> completions) {
-  for (auto& completion : completions) {
-    usb::FidlRequest req{std::move(completion.request().value())};
-    zx_status_t status = *completion.status();
+void UsbCdcFunction::CdcRxComplete(std::vector<fendpoint::Completion> completions) {
+  if (unbound_) {
+    for (auto &completion : completions) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+    }
+    ContinueStop();
+    return;
+  }
 
+  std::lock_guard<std::mutex> lock(rx_mutex_);
+  ProcessRxCompletions(std::move(completions));
+}
+
+void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> completions)
+    __TA_REQUIRES(rx_mutex_) {
+  FDF_ASSERT_MSG(completions.size() <= kRxDepth, "Too many rx completions {}", completions.size());
+  fdf::Arena arena(kArenaTag);
+
+  std::array<frequest::wire::Request, kRxDepth> reqs;
+  auto reqs_iter = reqs.begin();
+
+  std::array<fnetdev::wire::RxBuffer, kRxDepth> rx_buffers;
+  auto rx_buffers_iter = rx_buffers.begin();
+
+  std::array<fnetdev::wire::RxBufferPart, kRxDepth> rx_buffers_parts;
+  auto rx_buffers_parts_iter = rx_buffers_parts.begin();
+
+  auto reset_and_enqueue = [&](usb::FidlRequest req) {
+    req.reset_buffers(bulk_out_ep_.GetMappedLocked());
+    *reqs_iter++ = fidl::ToWire(arena, req.take_request());
+  };
+
+  for (auto &completion : completions) {
+    zx_status_t status = *completion.status();
     if (status == ZX_ERR_IO_NOT_PRESENT) {
-      std::lock_guard<std::mutex> rx(rx_mutex_);
-      zx_status_t status = insert_usb_request(std::move(req), bulk_out_ep_);
-      ZX_DEBUG_ASSERT(status == ZX_OK);
+      bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
       continue;
     }
+
     if (status != ZX_OK) {
       fdf::error("[bug] rx_completion: {}", zx_status_get_string(status));
+      reset_and_enqueue(usb::FidlRequest{std::move(completion.request().value())});
+      continue;
     }
 
-    if (status == ZX_OK) {
-      std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
-      if (ethernet_ifc_.is_valid()) {
-        std::optional<zx_vaddr_t> addr = bulk_out_ep_.GetMappedAddr(req.request(), 0);
-        if (addr.has_value()) {
-          ethernet_ifc_.Recv(reinterpret_cast<uint8_t*>(*addr), *completion.transfer_size(), 0);
-        }
-      }
+    if (rx_space_buffers_.empty()) {
+      rx_completion_queue_.push_back(std::move(completion));
+      continue;
     }
 
-    req.reset_buffers(bulk_out_ep_.GetMapped());
-    status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
+    usb::FidlRequest req(std::move(completion.request().value()));
+    const size_t request_length = completion.transfer_size().value();
+
+    fnetdev::wire::RxSpaceBuffer space = rx_space_buffers_.front();
+
+    status = req.CacheFlushInvalidate(bulk_out_ep_.GetMappedLocked());
     if (status != ZX_OK) {
       fdf::error("[bug] CacheFlushInvalidate(): {}", zx_status_get_string(status));
     }
 
-    usb_request_queue(std::move(req), bulk_out_ep_);
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      auto *stored_vmo = vmo_store_.GetVmo(space.region.vmo);
+      if (!stored_vmo) {
+        fdf::error("rx space with unknown vmo {}", space.region.vmo);
+        reset_and_enqueue(std::move(req));
+        continue;
+      }
+
+      if (request_length > space.region.length) {
+        fdf::error("rx buffer too small: {} < {}", space.region.length, request_length);
+        reset_and_enqueue(std::move(req));
+        continue;
+      }
+
+      req.CopyFrom(0, reinterpret_cast<void *>(stored_vmo->data().data() + space.region.offset),
+                   request_length, bulk_out_ep_.GetMappedLocked());
+    }
+
+    *rx_buffers_parts_iter = fnetdev::wire::RxBufferPart{
+        .id = space.id,
+        .offset = 0,
+        .length = static_cast<uint32_t>(request_length),
+    };
+    *rx_buffers_iter++ = {
+        .meta =
+            {
+                .port = kPortId,
+                .frame_type = fuchsia_hardware_network::FrameType::kEthernet,
+            },
+        .data =
+            fidl::VectorView<fnetdev::wire::RxBufferPart>::FromExternal(&*rx_buffers_parts_iter, 1),
+    };
+
+    rx_buffers_parts_iter++;
+    rx_space_buffers_.pop();
+
+    reset_and_enqueue(std::move(req));
+  }
+
+  if (reqs_iter != reqs.begin()) {
+    fidl::OneWayStatus queue_status = bulk_out_ep_.client().wire()->QueueRequests(
+        fidl::VectorView<frequest::wire::Request>::FromExternal(
+            reqs.data(), std::distance(reqs.begin(), reqs_iter)));
+    if (!queue_status.ok()) {
+      fdf::error("failed to queue rx requests: {}", queue_status.FormatDescription());
+      for (auto it = reqs.begin(); it != reqs_iter; it++) {
+        bulk_out_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(*it)));
+      }
+    }
+  }
+
+  if (rx_buffers_iter != rx_buffers.begin()) {
+    fidl::OneWayStatus queue_status = netdevice_ifc_.buffer(arena)->CompleteRx(
+        fidl::VectorView<fnetdev::wire::RxBuffer>::FromExternal(
+            rx_buffers.data(), std::distance(rx_buffers.begin(), rx_buffers_iter)));
+    if (!queue_status.ok()) {
+      fdf::error("failed to complete rx buffers: {}", queue_status.FormatDescription());
+    }
   }
 }
 
-void UsbCdcFunction::cdc_tx_complete(std::vector<fendpoint::Completion> completions) {
-  for (auto& completion : completions) {
-    usb::FidlRequest req{std::move(completion.request().value())};
-
-    if (unbound_) {
-      return;
+void UsbCdcFunction::CdcTxComplete(std::vector<fendpoint::Completion> completions) {
+  if (unbound_) {
+    for (auto &completion : completions) {
+      bulk_in_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
     }
-
-    std::optional additional_tx_queued =
-        [&]() -> std::optional<std::tuple<txn_info_t*, zx_status_t>> {
-      std::lock_guard<std::mutex> tx(tx_mutex_);
-      {
-        if (unbound_) {
-          return std::nullopt;
-        }
-        zx_status_t status = insert_usb_request(std::move(req), bulk_in_ep_);
-        ZX_DEBUG_ASSERT(status == ZX_OK);
+    ContinueStop();
+    return;
+  }
+  std::array<fnetdev::wire::TxResult, kTxDepth> results;
+  auto results_iter = results.begin();
+  {
+    std::lock_guard<std::mutex> lock(tx_mutex_);
+    for (auto &completion : completions) {
+      zx_status_t status = *completion.status();
+      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+      if (status != ZX_OK) {
+        fdf::debug("tx completion error: {}", zx_status_get_string(status));
       }
-
-      // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, as the underlying connection
-      // could be disconnected or USB_RESET is being processed. Calling cdc_send_locked in such
-      // scenario will deadlock and crash the driver (see https://fxbug.dev/42174506).
-      if (*completion.status() != ZX_ERR_IO_NOT_PRESENT) {
-        if (txn_info_t* txn = list_peek_head_type(tx_pending_infos(), txn_info_t, node);
-            txn != nullptr) {
-          if (zx_status_t send_status = cdc_send_locked(&txn->netbuf);
-              send_status != ZX_ERR_SHOULD_WAIT) {
-            list_remove_head(tx_pending_infos());
-            return std::make_tuple(txn, send_status);
-          }
-        }
+      if (tx_completion_queue_.empty()) {
+        fdf::error("received tx completion without pending tx");
+        continue;
       }
-      return std::nullopt;
-    }();
-
-    if (additional_tx_queued.has_value()) {
-      std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
-      auto [txn, send_status] = *additional_tx_queued;
-      complete_txn(txn, send_status);
+      const uint32_t tx_id = tx_completion_queue_.front();
+      *results_iter++ = {.id = tx_id, .status = status};
+      tx_completion_queue_.pop();
     }
+  }
+  if (results_iter == results.begin()) {
+    return;
+  }
+  fdf::Arena arena(kArenaTag);
+  fidl::OneWayStatus status = netdevice_ifc_.buffer(arena)->CompleteTx(
+      fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+          results.data(), std::distance(results.begin(), results_iter)));
+  if (status.status() != ZX_OK) {
+    fdf::error("CompleteTx() failed: {}", zx_status_get_string(status.status()));
   }
 }
 
 size_t UsbCdcFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptors_); }
 
-void UsbCdcFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
+void UsbCdcFunction::UsbFunctionInterfaceGetDescriptors(uint8_t *out_descriptors_buffer,
                                                         size_t descriptors_size,
-                                                        size_t* out_descriptors_actual) {
+                                                        size_t *out_descriptors_actual) {
   const size_t length = std::min(sizeof(descriptors_), descriptors_size);
   memcpy(out_descriptors_buffer, &descriptors_, length);
   *out_descriptors_actual = length;
 }
 
-zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
-                                                        const uint8_t* write_buffer,
-                                                        size_t write_size, uint8_t* out_read_buffer,
-                                                        size_t read_size, size_t* out_read_actual) {
+zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t *setup,
+                                                        const uint8_t *write_buffer,
+                                                        size_t write_size, uint8_t *out_read_buffer,
+                                                        size_t read_size, size_t *out_read_actual) {
   uint16_t w_value{le16toh(setup->w_value)};
   uint16_t w_index{le16toh(setup->w_index)};
   uint16_t w_length{le16toh(setup->w_length)};
 
   fdf::debug(
-      "bmRequestType={:02x} bRequest={:02x} wValue={:04x} ({}) wIndex={:04x} ({}) wLength={:04x} ({})",
+      "bmRequestType={:02x} bRequest={:02x} wValue={:04x} ({}) "
+      "wIndex={:04x} ({}) wLength={:04x} ({})",
       setup->bm_request_type, setup->b_request, w_value, w_value, w_index, w_index, w_length,
       w_length);
 
@@ -426,13 +432,9 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup
     *out_read_actual = 0;
   }
 
-  // The following control requests are currently unsupported, though non-criticial. To avoid
-  // hanging up bus-enumeration, reply with success.
-
   if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
       setup->b_request == USB_CDC_SET_ETHERNET_PACKET_FILTER) {
     fdf::debug("setting packet filter not supported");
-    // TODO(voydanoff) implement the requested packet filtering
     return ZX_OK;
   }
 
@@ -447,17 +449,19 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup
 
 zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
   TRACE_DURATION("cdc_eth", __func__, "configured", configured, "speed", speed);
+  // Prevent a race with teardown, don't do any work if we're going away.
+  if (unbound_) {
+    return ZX_OK;
+  }
 
   if (configured_ == configured) {
     return ZX_OK;
   }
 
   {
-    std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
+    std::lock_guard<std::mutex> lock(state_mutex_);
     online_ = false;
-    if (ethernet_ifc_.is_valid()) {
-      ethernet_ifc_.Status(0);
-    }
+    UpdatePortStatus();
   }
 
   fdf::info("configured = {}", configured);
@@ -475,7 +479,7 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, u
     function_.DisableEp(intr_addr_);
 
     // Everything is disabled, cancel pending transactions if we have any.
-    DiscardPendingTxInfos(ZX_ERR_CANCELED);
+    DiscardPendingTxBuffers(ZX_ERR_CANCELED);
 
     speed_ = USB_SPEED_UNDEFINED;
     configured_ = configured;
@@ -487,6 +491,10 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetConfigured(bool configured, u
 zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
                                                              uint8_t alt_setting) {
   TRACE_DURATION("cdc_eth", __func__, "interface", interface, "alt_setting", alt_setting);
+  // Prevent a race with teardown, don't do any work if we're going away.
+  if (unbound_) {
+    return ZX_OK;
+  }
 
   if (interface != descriptors_.cdc_intf_0.b_interface_number || alt_setting > 1) {
     return ZX_ERR_INVALID_ARGS;
@@ -494,7 +502,7 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
 
   // TODO(voydanoff) fullspeed and superspeed support
   if (alt_setting) {
-    for (const auto* ep : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
+    for (const auto *ep : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
       if (zx_status_t status = function_.ConfigEp(ep, nullptr); status != ZX_OK) {
         fdf::error("[bug] ConfigEp(): {}", zx_status_get_string(status));
         return status;
@@ -514,133 +522,51 @@ zx_status_t UsbCdcFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
     online = true;
 
     // queue our OUT reqs
-    std::lock_guard<std::mutex> rx(rx_mutex_);
-    while (!bulk_out_ep_.RequestsEmpty()) {
-      std::optional<usb::FidlRequest> req = bulk_out_ep_.GetRequest();
-      ZX_ASSERT(req.has_value());  // A given from the loop.
-      req->reset_buffers(bulk_out_ep_.GetMappedLocked());
-
-      if (zx_status_t status = req->CacheFlushInvalidate(bulk_out_ep_.GetMappedLocked());
-          status != ZX_OK) {
-        fdf::error("[bug] CacheFlushInvalidate(): {}", zx_status_get_string(status));
-        return status;
+    std::vector<frequest::Request> reqs;
+    {
+      std::lock_guard<std::mutex> lock(rx_mutex_);
+      while (!bulk_out_ep_.RequestsEmpty()) {
+        std::optional<usb::FidlRequest> req = bulk_out_ep_.GetRequest();
+        req->reset_buffers(bulk_out_ep_.GetMappedLocked());
+        ZX_ASSERT(req.has_value());  // A given from the loop.
+        reqs.emplace_back(req->take_request());
       }
-      usb_request_queue(std::move(req.value()), bulk_out_ep_);
+    }
+    fit::result<fidl::OneWayError> queue_status = bulk_out_ep_->QueueRequests(std::move(reqs));
+    if (queue_status.is_error()) {
+      fdf::error("Failed to queue rx requestys: {}",
+                 queue_status.error_value().FormatDescription());
     }
   } else {
     online = false;
-
-    // Everything is disabled, cancel pending transactions if we have any.
-    DiscardPendingTxInfos(ZX_ERR_CANCELED);
   }
 
   {
-    std::lock_guard<std::mutex> ethernet(ethernet_mutex_);
+    std::lock_guard<std::mutex> lock(state_mutex_);
     online_ = online;
-    if (ethernet_ifc_.is_valid()) {
-      ethernet_ifc_.Status(online ? ETHERNET_STATUS_ONLINE : 0);
-    }
+    UpdatePortStatus();
   }
 
-  // send status notifications on interrupt endpoint
+  // send status notifications on interrupt endpoint.
   cdc_send_notifications();
 
   return ZX_OK;
 }
 
-void UsbCdcFunction::DiscardPendingTxInfos(zx_status_t status) {
-  std::lock_guard<std::mutex> l(tx_mutex_);
-  txn_info_t* txn;
-  while ((txn = list_remove_head_type(tx_pending_infos(), txn_info_t, node)) != NULL) {
-    complete_txn(txn, status);
-  }
-}
-
+// NetworkDeviceImpl protocol:
 zx::result<> UsbCdcFunction::Start() {
   zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
   if (function.is_error()) {
     fdf::error("Failed to connect function: {}", function);
     return function.take_error();
   }
-  function_ = *function;
+  function_ = std::move(function.value());
 
-  list_initialize(&tx_pending_infos_);
-
-  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
-  // initializing.
-  std::atomic<InitState> state(InitState::kWaitingForAllocInterface1);
-
-  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
-  // initializing.
-  sync_completion_t state_dispatcher_shutdown;
-
-  // TODO(https://fxbug.dev/436378683): Remove once usb-cdc-function no longer hangs while
-  // initializing.
-  auto state_dispatcher = fdf::SynchronizedDispatcher::Create(
-      {}, "init-state-checker",
-      [&](fdf_dispatcher_t*) { sync_completion_signal(&state_dispatcher_shutdown); });
-  if (state_dispatcher.is_error()) {
-    fdf::error("Failed to create synchronized dispatcher: {}", state_dispatcher);
-    return state_dispatcher.take_error();
-  }
-
-  async::PostDelayedTask(
-      state_dispatcher.value().async_dispatcher(),
-      [start = zx::clock::get_monotonic(), &state]() {
-        auto now = zx::clock::get_monotonic();
-        const char* reason = "Unknown";
-        switch (state) {
-          case InitState::kWaitingForAllocInterface1:
-            reason = "Waiting for AllocInterface(1)";
-            break;
-          case InitState::kWaitingForAllocInterface2:
-            reason = "Waiting for AllocInterface(2)";
-            break;
-          case InitState::kWaitingForAllocEp1:
-            reason = "Waiting for AllocEp1(1)";
-            break;
-          case InitState::kWaitingForAllocEp2:
-            reason = "Waiting for AllocEp1(2)";
-            break;
-          case InitState::kWaitingForAllocEp3:
-            reason = "Waiting for AllocEp1(3)";
-            break;
-          case InitState::kWaitingForMacAddress:
-            reason = "Waiting for mac address";
-            break;
-          case InitState::kWaitingForInit1:
-            reason = "Waiting for Init(1)";
-            break;
-          case InitState::kWaitingForAddRequests1:
-            reason = "Waiting for AddRequests(1)";
-            break;
-          case InitState::kWaitingForInit2:
-            reason = "Waiting for Init(2)";
-            break;
-          case InitState::kWaitingForAddRequests2:
-            reason = "Waiting for AddRequests(2)";
-            break;
-          case InitState::kWaitingForInit3:
-            reason = "Waiting for Init(3)";
-            break;
-          case InitState::kWaitingForAddRequests3:
-            reason = "Waiting for AddRequests(3)";
-            break;
-          case InitState::kWaitingForSetInterface:
-            reason = "Waiting for SetInterface()";
-            break;
-        }
-        fdf::warn("Initialization still has not completed after {} seconds: {}",
-                  (now - start).to_secs(), reason);
-      },
-      zx::sec(20));
-
-  auto status = function_.AllocInterface(&descriptors_.comm_intf.b_interface_number);
+  zx_status_t status = function_.AllocInterface(&descriptors_.comm_intf.b_interface_number);
   if (status != ZX_OK) {
     fdf::error("[bug] AllocInterface(comm_intf): {}", zx_status_get_string(status));
     return zx::error(status);
   }
-  state = InitState::kWaitingForAllocInterface2;
   status = function_.AllocInterface(&descriptors_.cdc_intf_0.b_interface_number);
   if (status != ZX_OK) {
     fdf::error("[bug] AllocInterface(data_intf): {}", zx_status_get_string(status));
@@ -650,19 +576,16 @@ zx::result<> UsbCdcFunction::Start() {
   descriptors_.cdc_union.bControlInterface = descriptors_.comm_intf.b_interface_number;
   descriptors_.cdc_union.bSubordinateInterface = descriptors_.cdc_intf_0.b_interface_number;
 
-  state = InitState::kWaitingForAllocEp1;
   status = function_.AllocEp(USB_DIR_OUT, &bulk_out_addr_);
   if (status != ZX_OK) {
     fdf::error("[bug] AllocEp(bulk_out): {}", zx_status_get_string(status));
     return zx::error(status);
   }
-  state = InitState::kWaitingForAllocEp2;
   status = function_.AllocEp(USB_DIR_IN, &bulk_in_addr_);
   if (status != ZX_OK) {
     fdf::error("[bug] AllocEp(bulk_in): {}", zx_status_get_string(status));
     return zx::error(status);
   }
-  state = InitState::kWaitingForAllocEp3;
   status = function_.AllocEp(USB_DIR_IN, &intr_addr_);
   if (status != ZX_OK) {
     fdf::error("[bug] AllocEp(intr): {}", zx_status_get_string(status));
@@ -673,27 +596,30 @@ zx::result<> UsbCdcFunction::Start() {
   descriptors_.bulk_in_ep.b_endpoint_address = bulk_in_addr_;
   descriptors_.intr_ep.b_endpoint_address = intr_addr_;
 
-  state = InitState::kWaitingForMacAddress;
   status = cdc_generate_mac_address();
   if (status != ZX_OK) {
     return zx::error(status);
   }
 
-  auto dispatcher =
-      fdf::SynchronizedDispatcher::Create({}, "cdc-ep-dispatcher", [](fdf_dispatcher_t*) {});
-  if (dispatcher.is_error()) {
-    fdf::error("[bug] fdf::SynchronizedDispatcher::Create(): {}", dispatcher);
-    return zx::error(status);
+  auto ep_dispatcher =
+      fdf::SynchronizedDispatcher::Create({}, "cdc-ep-dispatcher", [this](fdf_dispatcher_t *) {
+        async::PostTask(dispatcher(), [this]() {
+          dispatcher_shutdown_ = true;
+          ContinueStop();
+        });
+      });
+  if (ep_dispatcher.is_error()) {
+    fdf::error("[bug] fdf::SynchronizedDispatcher::Create(): {}", ep_dispatcher);
+    return ep_dispatcher.take_error();
   }
-  dispatcher_ = std::move(dispatcher.value());
+  dispatcher_ = std::move(ep_dispatcher.value());
 
   auto result = incoming()->Connect<ffunction::UsbFunctionService::Device>();
   if (result.is_error()) {
     fdf::error("could not connect to UsbFunctionService: {}", result);
-    return zx::error(status);
+    return result.take_error();
   }
 
-  state = InitState::kWaitingForInit1;
   // allocate bulk out usb requests
   status = bulk_out_ep_.Init(bulk_out_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -701,15 +627,12 @@ zx::result<> UsbCdcFunction::Start() {
     return zx::error(status);
   }
 
-  state = InitState::kWaitingForAddRequests1;
-  size_t actual =
-      bulk_out_ep_.AddRequests(BULK_RX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
-  if (actual != BULK_RX_COUNT) {
-    fdf::error("[bug] bulk_out_ep_.AddRequests(): want {}, got {}", BULK_RX_COUNT, actual);
+  size_t actual = bulk_out_ep_.AddRequests(kRxDepth, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
+  if (actual != kRxDepth) {
+    fdf::error("[bug] bulk_out_ep_.AddRequests(): want {}, got {}", kRxDepth, actual);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  state = InitState::kWaitingForInit2;
   // allocate bulk in usb requests
   status = bulk_in_ep_.Init(bulk_in_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -717,14 +640,12 @@ zx::result<> UsbCdcFunction::Start() {
     return zx::error(status);
   }
 
-  state = InitState::kWaitingForAddRequests2;
-  actual = bulk_in_ep_.AddRequests(BULK_TX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
-  if (actual != BULK_TX_COUNT) {
-    fdf::error("[bug] bulk_in_ep_.AddRequests(): want {}, got {}", BULK_TX_COUNT, actual);
+  actual = bulk_in_ep_.AddRequests(kTxDepth, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
+  if (actual != kTxDepth) {
+    fdf::error("[bug] bulk_in_ep_.AddRequests(): want {}, got {}", kTxDepth, actual);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  state = InitState::kWaitingForInit3;
   // allocate interrupt requests
   status = intr_ep_.Init(intr_addr_, result.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
@@ -732,36 +653,52 @@ zx::result<> UsbCdcFunction::Start() {
     return zx::error(status);
   }
 
-  state = InitState::kWaitingForAddRequests3;
   actual = intr_ep_.AddRequests(INTR_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != INTR_COUNT) {
     fdf::error("[bug] intr_ep_.AddRequests(): want {}, got {}", INTR_COUNT, actual);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  state = InitState::kWaitingForSetInterface;
   status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
   if (status != ZX_OK) {
     fdf::error("[bug] function_.SetInterface(): {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
-  state_dispatcher.value().ShutdownAsync();
-  sync_completion_wait(&state_dispatcher_shutdown, ZX_TIME_INFINITE);
-
-  constexpr char kChildName[] = "cdc-eth-function";
   {
-    zx::result<> result = child_.Initialize(incoming(), outgoing(), node_name(), kChildName,
-                                            compat::ForwardMetadata::None(), get_banjo_config());
-    if (result.is_error()) {
-      return result.take_error();
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (zx_status_t status = vmo_store_.Reserve(fnetdev::wire::kMaxVmos); status != ZX_OK) {
+      fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
+      return zx::error(status);
     }
   }
 
-  zx::result controller =
-      AddChild(kChildName, {{banjo_server_.property()}}, child_.CreateOffers2());
+  // compat server for banning or other things if needed
+  if (zx::result result = child_.Initialize(incoming(), outgoing(), node_name(), "usb-cdc-netdev");
+      result.is_error()) {
+    fdf::error("Failed to initialize compat server: {}", result);
+    return result.take_error();
+  }
+
+  // NetworkDeviceImpl service handler
+  auto protocol = [this](fdf::ServerEnd<fnetdev::NetworkDeviceImpl> server_end) mutable {
+    fdf::BindServer(driver_dispatcher()->get(), std::move(server_end), this);
+  };
+  fnetdev::Service::InstanceHandler handler({.network_device_impl = std::move(protocol)});
+
+  if (auto status = outgoing()->AddService<fnetdev::Service>(std::move(handler));
+      status.is_error()) {
+    fdf::error("Failed to add service: {}", status);
+    return status.take_error();
+  }
+
+  std::vector offers = child_.CreateOffers2();
+  offers.push_back(fdf::MakeOffer2<fnetdev::Service>());
+
+  zx::result controller = AddChild(
+      "usb-cdc-netdev", cpp20::span<const fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (controller.is_error()) {
-    fdf::error("Failed to add child with error: {}", controller);
+    fdf::error("Failed to add child: {}", controller);
     return controller.take_error();
   }
   child_controller_ = std::move(controller.value());
@@ -770,38 +707,383 @@ zx::result<> UsbCdcFunction::Start() {
 }
 
 void UsbCdcFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
-  // Start the suspend process by setting unbound to true.
-  // When the pipeline tries to submit requests, they will be immediately free'd.
   unbound_ = true;
+  stop_completer_.emplace(std::move(completer));
 
-  // Disable endpoints to prevent new requests present in our
-  // pipeline from getting queued.
+  {
+    std::lock_guard<std::mutex> lock(rx_mutex_);
+    for (auto &c : rx_completion_queue_) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(c.request().value())));
+    }
+    rx_completion_queue_.clear();
+  }
+
   function_.DisableEp(bulk_out_addr_);
   function_.DisableEp(bulk_in_addr_);
   function_.DisableEp(intr_addr_);
 
-  // Cancel all requests in the pipeline -- the completion handler
-  // will free these requests as they come in.
-  function_.CancelAll(intr_addr_);
-  function_.CancelAll(bulk_out_addr_);
-  function_.CancelAll(bulk_in_addr_);
-
-  list_node_t list;
-  {
-    std::lock_guard<std::mutex> l(tx_mutex_);
-    list_move(tx_pending_infos(), &list);
-  }
-  txn_info_t* tx_txn;
-  while ((tx_txn = list_remove_head_type(&list, txn_info_t, node)) != NULL) {
-    complete_txn(tx_txn, ZX_ERR_PEER_CLOSED);
-  }
-
-  // Unregister from stack.
+  DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+  ReturnPendingRxSpace();
   function_.SetInterface(nullptr, nullptr);
 
-  dispatcher_.ShutdownAsync();
-  dispatcher_.release();
-  completer(zx::ok());
+  bool continue_stop = true;
+
+  if (!intr_ep_.RequestsFull()) {
+    intr_ep_->CancelAll().Then(
+        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
+          if (!result.is_ok()) {
+            fdf::warn("CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          ContinueStop();
+        });
+    continue_stop = false;
+  }
+  if (!bulk_out_ep_.RequestsFull()) {
+    bulk_out_ep_->CancelAll().Then(
+        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
+          if (!result.is_ok()) {
+            fdf::warn("CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          ContinueStop();
+        });
+    continue_stop = false;
+  }
+
+  if (!bulk_in_ep_.RequestsFull()) {
+    bulk_in_ep_->CancelAll().Then(
+        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
+          if (!result.is_ok()) {
+            fdf::warn("CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          ContinueStop();
+        });
+    continue_stop = false;
+  }
+
+  if (continue_stop) {
+    ContinueStop();
+  }
+}
+
+void UsbCdcFunction::ContinueStop() {
+  if (fdf::Dispatcher::GetCurrent()->async_dispatcher() != dispatcher()) {
+    async::PostTask(dispatcher(), [this]() { ContinueStop(); });
+    return;
+  }
+  if (!stop_completer_.has_value()) {
+    return;
+  }
+
+  if (!intr_ep_.RequestsFull()) {
+    fdf::info("Waiting for intr ep requests to be returned");
+    return;
+  }
+  if (!bulk_in_ep_.RequestsFull()) {
+    fdf::info("Waiting for bulk in ep requests to be returned");
+    return;
+  }
+  if (!bulk_out_ep_.RequestsFull()) {
+    fdf::info("Waiting for bulk out ep requests to be returned");
+    return;
+  }
+
+  bulk_out_ep_.Close();
+  bulk_in_ep_.Close();
+  intr_ep_.Close();
+  if (!dispatcher_shutdown_) {
+    dispatcher_.ShutdownAsync();
+    return;
+  }
+  stop_completer_.value()(zx::ok());
+  stop_completer_.reset();
+}
+
+void UsbCdcFunction::Init(fnetdev::wire::NetworkDeviceImplInitRequest *request, fdf::Arena &arena,
+                          InitCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  netdevice_ifc_.Bind(std::move(request->iface), dispatcher_.get());
+
+  auto [client, server] = fdf::Endpoints<fnetdev::NetworkPort>::Create();
+  fdf::BindServer(dispatcher_.get(), std::move(server), this);
+
+  // Add port 1
+  netdevice_ifc_.buffer(arena)
+      ->AddPort(kPortId, std::move(client))
+      // Then exactly once so we're sure to complete this transaction even if
+      // the dispatcher is shut down.
+      .ThenExactlyOnce(
+          [completer = completer.ToAsync()](
+              fdf::WireUnownedResult<fnetdev::NetworkDeviceIfc::AddPort> &result) mutable {
+            fdf::Arena arena(kArenaTag);
+            if (!result.ok()) {
+              fdf::error("AddPort failed: {}", result.FormatDescription());
+              completer.buffer(arena).Reply(result.status());
+              return;
+            }
+            completer.buffer(arena).Reply(result->status);
+          });
+}
+
+void UsbCdcFunction::Start(fdf::Arena &arena, StartCompleter::Sync &completer) {
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    UpdatePortStatus();
+  }
+  completer.buffer(arena).Reply(ZX_OK);
+}
+
+void UsbCdcFunction::Stop(fdf::Arena &arena, StopCompleter::Sync &completer) {
+  DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+  ReturnPendingRxSpace();
+  completer.buffer(arena).Reply();
+}
+
+void UsbCdcFunction::GetInfo(
+    fdf::Arena &arena,
+    fdf::WireServer<fnetdev::NetworkDeviceImpl>::GetInfoCompleter::Sync &completer) {
+  fnetdev::wire::DeviceImplInfo info = fnetdev::wire::DeviceImplInfo::Builder(arena)
+                                           .tx_depth(kTxDepth)
+                                           .rx_depth(kRxDepth)
+                                           .rx_threshold(kRxDepth / 2)
+                                           .max_buffer_parts(1)
+                                           .max_buffer_length(BULK_REQ_SIZE)
+                                           .buffer_alignment(1)
+                                           .min_rx_buffer_length(ETH_MTU)
+                                           .min_tx_buffer_length(0)
+                                           .Build();
+
+  completer.buffer(arena).Reply(info);
+}
+
+void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *request,
+                             fdf::Arena &arena, QueueTxCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(tx_mutex_);
+  std::array<frequest::wire::Request, kTxDepth> reqs;
+  auto reqs_iter = reqs.begin();
+  std::array<fnetdev::wire::TxResult, kTxDepth> results;
+  auto results_iter = results.begin();
+
+  FDF_ASSERT_MSG(request->buffers.size() <= kTxDepth, "Too many tx buffers {}",
+                 request->buffers.size());
+
+  bool online;
+  // We snapshot online here but we don't need to hold on to the state lock
+  // for the entire duration of this function. Racing with the online signal
+  // is acceptable but we don't want to keep sending data if we're offline.
+  {
+    std::lock_guard<std::mutex> state_lock(state_mutex_);
+    online = online_;
+  }
+
+  for (const auto &buffer : request->buffers) {
+    if (unbound_ || !online) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_BAD_STATE};
+      continue;
+    }
+    if (buffer.data.size() != 1) {
+      fdf::warn("Invalid buffer data size {} for id {}", buffer.data.size(), buffer.id);
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+      continue;
+    }
+    const auto &region = buffer.data[0];
+
+    std::optional<usb::FidlRequest> tx_req = bulk_in_ep_.GetRequest();
+
+    if (!tx_req.has_value()) {
+      // Given we're matching our request depth to the netdevice depth, this
+      // shouldn't happen.
+      fdf::warn("No USB request available for id {}", buffer.id);
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_NO_RESOURCES};
+      continue;
+    }
+    auto return_request = fit::defer([&]() { bulk_in_ep_.PutRequest(std::move(tx_req.value())); });
+
+    {
+      std::lock_guard<std::mutex> state_lock(state_mutex_);
+      auto *stored_vmo = vmo_store_.GetVmo(region.vmo);
+      if (!stored_vmo) {
+        fdf::warn("No VMO found for id {}", region.vmo);
+        *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+        continue;
+      }
+      auto data = stored_vmo->data();
+      if (region.length == 0) {
+        *results_iter++ = {.id = buffer.id, .status = ZX_OK};
+        continue;
+      }
+      if (region.offset + region.length > data.size()) {
+        fdf::warn("Invalid VMO region for id {}", region.vmo);
+        *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+        continue;
+      }
+
+      tx_req->clear_buffers();
+      std::vector<size_t> actual = tx_req->CopyTo(0, data.data() + region.offset, region.length,
+                                                  bulk_in_ep_.GetMappedLocked());
+      size_t actual_total = 0;
+      for (size_t i = 0; i < actual.size(); i++) {
+        (*tx_req)->data()->at(i).size(actual[i]);
+        actual_total += actual[i];
+      }
+      if (actual_total != region.length) {
+        fdf::warn("failed to copy all data {} {}", actual_total, region.length);
+        *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INTERNAL};
+        continue;
+      }
+    }
+
+    return_request.cancel();
+    tx_completion_queue_.push(buffer.id);
+    FDF_ASSERT_MSG(tx_completion_queue_.size() <= kTxDepth, "tx completion queue too large",
+                   tx_completion_queue_.size());
+    tx_req->CacheFlush(bulk_in_ep_.GetMappedLocked());
+    *reqs_iter++ = fidl::ToWire(arena, tx_req->take_request());
+  }
+
+  if (results_iter != results.begin()) {
+    fidl::OneWayStatus status = netdevice_ifc_.buffer(arena)->CompleteTx(
+        fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+            results.data(), std::distance(results.begin(), results_iter)));
+    if (!status.ok()) {
+      fdf::error("failed to complete tx: {}", status.FormatDescription());
+    }
+  }
+
+  if (reqs_iter != reqs.begin()) {
+    fidl::OneWayStatus queue_status = bulk_in_ep_.client().wire()->QueueRequests(
+        fidl::VectorView<frequest::wire::Request>::FromExternal(
+            reqs.data(), std::distance(reqs.begin(), reqs_iter)));
+
+    if (!queue_status.ok()) {
+      fdf::error("failed to queue tx requests: {}", queue_status.FormatDescription());
+      for (auto it = reqs.begin(); it != reqs_iter; it++) {
+        bulk_in_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(*it)));
+      }
+    }
+  }
+}
+
+void UsbCdcFunction::QueueRxSpace(fnetdev::wire::NetworkDeviceImplQueueRxSpaceRequest *request,
+                                  fdf::Arena &arena, QueueRxSpaceCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(rx_mutex_);
+  for (const auto &buffer : request->buffers) {
+    rx_space_buffers_.push(buffer);
+  }
+  FDF_ASSERT_MSG(rx_space_buffers_.size() <= kRxDepth, "rx space buffers too large",
+                 rx_space_buffers_.size());
+
+  if (rx_completion_queue_.empty()) {
+    return;
+  }
+  // Take over all pending completions and process them. We'll re-queue if
+  // not enough space available.
+  ProcessRxCompletions(std::move(rx_completion_queue_));
+}
+
+void UsbCdcFunction::PrepareVmo(fnetdev::wire::NetworkDeviceImplPrepareVmoRequest *request,
+                                fdf::Arena &arena, PrepareVmoCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  zx_status_t status = vmo_store_.RegisterWithKey(request->id, std::move(request->vmo));
+  if (status != ZX_OK) {
+    fdf::error("failed to register vmo {}: {}", request->id, zx_status_get_string(status));
+  }
+  completer.buffer(arena).Reply(status);
+}
+
+void UsbCdcFunction::ReleaseVmo(fnetdev::wire::NetworkDeviceImplReleaseVmoRequest *request,
+                                fdf::Arena &arena, ReleaseVmoCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  zx::result status = vmo_store_.Unregister(request->id);
+  if (!status.is_ok()) {
+    fdf::error("failed to unregister vmo {}: {}", request->id, status.status_string());
+  }
+  completer.buffer(arena).Reply();
+}
+
+void UsbCdcFunction::GetInfo(
+    fdf::Arena &arena, fdf::WireServer<fnetdev::NetworkPort>::GetInfoCompleter::Sync &completer) {
+  static constexpr fuchsia_hardware_network::wire::FrameType kRxTypes[] = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet};
+  static constexpr fuchsia_hardware_network::wire::FrameTypeSupport kTxTypes[] = {{
+      .type = fuchsia_hardware_network::wire::FrameType::kEthernet,
+      .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
+  }};
+
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(fuchsia_hardware_network::wire::PortClass::kEthernet)
+          .rx_types(fidl::VectorView<fuchsia_hardware_network::wire::FrameType>::FromExternal(
+              const_cast<fuchsia_hardware_network::wire::FrameType *>(kRxTypes), 1))
+          .tx_types(
+              fidl::VectorView<fuchsia_hardware_network::wire::FrameTypeSupport>::FromExternal(
+                  const_cast<fuchsia_hardware_network::wire::FrameTypeSupport *>(kTxTypes), 1))
+          .Build();
+
+  completer.buffer(arena).Reply(info);
+}
+
+void UsbCdcFunction::GetStatus(fdf::Arena &arena, GetStatusCompleter::Sync &completer) {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  completer.buffer(arena).Reply(fidl::ToWire(arena, ReadStatus()));
+}
+
+void UsbCdcFunction::SetActive(fnetdev::wire::NetworkPortSetActiveRequest *request,
+                               fdf::Arena &arena, SetActiveCompleter::Sync &completer) {}
+
+void UsbCdcFunction::GetMac(fdf::Arena &arena, GetMacCompleter::Sync &completer) {
+  auto [client, server] = fdf::Endpoints<fnetdev::MacAddr>::Create();
+  fdf::BindServer(dispatcher_.get(), std::move(server), this);
+  completer.buffer(arena).Reply(std::move(client));
+}
+
+void UsbCdcFunction::Removed(fdf::Arena &arena, RemovedCompleter::Sync &completer) {}
+
+void UsbCdcFunction::GetAddress(fdf::Arena &arena, GetAddressCompleter::Sync &completer) {
+  fuchsia_net::wire::MacAddress mac;
+  memcpy(mac.octets.data(), mac_addr_.data(), mac_addr_.size());
+  completer.buffer(arena).Reply(mac);
+}
+
+void UsbCdcFunction::GetFeatures(fdf::Arena &arena, GetFeaturesCompleter::Sync &completer) {
+  fnetdev::wire::Features features =
+      fnetdev::wire::Features::Builder(arena)
+          .multicast_filter_count(0)
+          .supported_modes(fnetdev::wire::SupportedMacFilterMode::kPromiscuous)
+          .Build();
+  completer.buffer(arena).Reply(features);
+}
+
+void UsbCdcFunction::SetMode(fnetdev::wire::MacAddrSetModeRequest *request, fdf::Arena &arena,
+                             SetModeCompleter::Sync &completer) {
+  completer.buffer(arena).Reply();
+}
+
+fuchsia_hardware_network::PortStatus UsbCdcFunction::ReadStatus() const {
+  fuchsia_hardware_network::PortStatus status;
+
+  status.mtu(ETH_MTU);
+  fuchsia_hardware_network::StatusFlags flags;
+  if (online_) {
+    flags |= fuchsia_hardware_network::StatusFlags::kOnline;
+  }
+  status.flags(flags);
+  return status;
+}
+
+void UsbCdcFunction::UpdatePortStatus() {
+  if (netdevice_ifc_.is_valid()) {
+    fdf::Arena arena(kArenaTag);
+    fidl::OneWayStatus status =
+        netdevice_ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, ReadStatus()));
+    if (!status.ok()) {
+      fdf::error("Failed to notify port status: {}", status.FormatDescription());
+    }
+  }
+}
+
+bool UsbCdcFunction::HasPendingRxCompletions() {
+  std::lock_guard<std::mutex> lock(rx_mutex_);
+  return !rx_completion_queue_.empty();
 }
 
 }  // namespace usb_cdc_function

@@ -69,7 +69,7 @@ fn get_mac_identifier_from_octets(
 // 00:14:0 following "/PCI0/bus/" represents BDF (Bus Device Function)
 //
 // USB over DWC:
-// "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/cdc-eth-function/netdevice-migration/network-device"
+// "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/usb-cdc-netdev/network-device"
 // 05:00:18 following "platform" represents
 // vid(vendor id):pid(product id):did(device id) and are defined in each board file
 //
@@ -947,7 +947,7 @@ mod tests {
         "pci_usb_match"
     )]
     #[test_case(
-        "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/cdc-eth-function/netdevice-migration/network-device",
+        "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/usb-cdc-netdev/network-device",
         vec![BusType::USB],
         BusType::USB,
         true,
@@ -1386,7 +1386,7 @@ mod tests {
         ],
         DeviceInfoRef {
             device_class: DeviceClass::Ethernet,
-            topological_path: "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/cdc-eth-function/netdevice-migration/network-device",
+            topological_path: "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/usb-cdc-netdev/network-device",
             ..default_device_info()
         },
         "ethu050018";
@@ -1406,7 +1406,7 @@ mod tests {
         vec![NameCompositionRule::Default],
         DeviceInfoRef {
             device_class: DeviceClass::Ethernet,
-            topological_path: "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/cdc-eth-function/netdevice-migration/network-device",
+            topological_path: "/dev/sys/platform/05:00:18/usb-phy-composite/aml_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/usb-cdc-netdev/network-device",
             mac: &fidl_fuchsia_net_ext::MacAddress { octets: [0x1, 0x1, 0x1, 0x1, 0x1, 0x3] },
         },
         "ethx3";
