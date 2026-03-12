@@ -1441,18 +1441,6 @@ alias(
 )
 
 alias(
-    name = "miniz_oxide-0.8.9",
-    actual = "//third_party/rust_crates/vendor/miniz_oxide-0.8.9:miniz_oxide",
-    tags = ["manual"],
-)
-
-alias(
-    name = "miniz_oxide",
-    actual = "//third_party/rust_crates/vendor/miniz_oxide-0.8.9:miniz_oxide",
-    tags = ["manual"],
-)
-
-alias(
     name = "mio-0.8.11",
     actual = "//third_party/rust_crates/vendor/mio-0.8.11:mio",
     tags = ["manual"],
