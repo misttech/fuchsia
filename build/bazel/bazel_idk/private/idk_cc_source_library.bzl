@@ -88,6 +88,7 @@ def _idk_cc_source_library_impl(
     # in the IDK. This is also consistent with prebuilt libraries where the IDK
     # only includes headers.
     hdrs_for_idk = hdrs + fuchsia_hdrs + hdrs_for_internal_use + fuchsia_hdrs_for_internal_use
+    srcs_for_idk = srcs + fuchsia_srcs
     hdrs_for_bazel_library = hdrs + select_for_fuchsia(fuchsia_hdrs)
     srcs_for_bazel_library = (
         srcs +
@@ -139,7 +140,7 @@ def _idk_cc_source_library_impl(
     # Everything below this point is for Fuchsia only.
     #
 
-    all_idk_source_files = hdrs_for_idk + srcs + fuchsia_srcs
+    all_idk_source_files = hdrs_for_idk + srcs_for_idk
 
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
@@ -162,7 +163,7 @@ def _idk_cc_source_library_impl(
 
     idk_files_map = dict(idk_header_files_map)
 
-    for source in srcs:
+    for source in srcs_for_idk:
         source_dest_path = idk_root_path + "/" + source.name
         idk_metadata_sources.append(source_dest_path)
         idk_files_map |= {source_dest_path: source}
@@ -181,7 +182,7 @@ def _idk_cc_source_library_impl(
             name = name,
             hdrs = hdrs + fuchsia_hdrs,
             hdrs_for_internal_use = hdrs_for_internal_use + fuchsia_hdrs_for_internal_use,
-            srcs = srcs + fuchsia_srcs,
+            srcs = srcs_for_idk,
             testonly = testonly,
             # Required for tests using `create_test_atom_info()`.
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],

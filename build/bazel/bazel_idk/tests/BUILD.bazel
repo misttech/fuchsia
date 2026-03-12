@@ -476,14 +476,12 @@ idk_cc_source_library(
     stable = True,
 )
 
-# TODO(https://fxbug.dev/417305295): Add "fuchsia_only_source.cc" to the list of
-# sources and files map after fixing the `fuchsia_srcs` bug.
 create_test_atom_info(
     name = "platform_dependent_source_library_golden_info",
     testonly = True,
     additional_prebuild_info = {
         "include_dir": '"pkg/platform_dependent_source_library/include"',
-        "sources": '["pkg/platform_dependent_source_library/platform_dependent_library.cc"]',
+        "sources": '["pkg/platform_dependent_source_library/platform_dependent_library.cc","pkg/platform_dependent_source_library/fuchsia_only_source.cc"]',
         "headers": '["pkg/platform_dependent_source_library/include/lib/test_lib/platform_dependent_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/test_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/fuchsia_only_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"]',
         "file_base": '"pkg/platform_dependent_source_library"',
     },
@@ -510,6 +508,7 @@ create_test_atom_info(
         "pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/internal_header_appears_in_api_file.h",
         "pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h",
         "pkg/platform_dependent_source_library/platform_dependent_library.cc": "//build/bazel/bazel_idk/tests:platform_dependent_library.cc",
+        "pkg/platform_dependent_source_library/fuchsia_only_source.cc": "//build/bazel/bazel_idk/tests:fuchsia_only_source.cc",
     },
     atoms_depset = depset([]),
     category = "partner",
