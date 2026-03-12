@@ -1247,6 +1247,13 @@
                 "GetSockOpt/GetSockOptRequiresCapNetAdminTest.Validate/*",
                 "GetSockOptRequiresCapNetAdminTests/GetSockOptRequiresCapNetAdminTest.*",
                 "SetSockOpt/SetSockOptRequiresCapNetAdminTest.*",
+
+                // Test behavior change by kernel version
+                "MemfdTest.SealWriteWithMmap",
+
+                // Failing new tests from gvisor.
+                "MountTest.BindMountDirectoryOntoFileFails",
+                "MountTest.BindMountFileOntoDirectoryFails",
             ],
         },
     ],
