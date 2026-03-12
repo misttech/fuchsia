@@ -72,13 +72,38 @@ pub enum SignedManifestError {
     InvalidManifest(#[from] OtaManifestError),
 }
 
-/// Parse and verify a `SignedManifest`.
+/// The parsed contents of a `SignedManifest`.
+pub struct RawManifest<'a> {
+    /// The signed manifest version.
+    pub version: u32,
+    /// The unparsed OTA manifest payload.
+    pub manifest_payload: &'a [u8],
+    /// The signatures found in the signed manifest.
+    pub signatures: Vec<Vec<u8>>,
+    /// The bytes that are signed: magic, version, manifest_size, and manifest_payload.
+    pub signed_bytes: &'a [u8],
+}
+
+impl<'a> RawManifest<'a> {
+    /// Verifies the signatures against the provided list of public keys.
+    /// Returns `Ok(())` if at least one signature is valid.
+    pub fn verify(
+        &self,
+        public_keys: &[UnparsedPublicKey<Vec<u8>>],
+    ) -> Result<(), SignedManifestError> {
+        if !self.signatures.iter().any(|signature| {
+            public_keys.iter().any(|key| key.verify(self.signed_bytes, signature).is_ok())
+        }) {
+            return Err(SignedManifestError::SignatureVerificationFailed);
+        }
+        Ok(())
+    }
+}
+
+/// Parse a `SignedManifest` without verifying its signatures or parsing its payload.
 ///
-/// Returns the parsed `OtaManifest` on success.
-pub fn parse_and_verify(
-    bytes: &[u8],
-    public_keys: &[UnparsedPublicKey<Vec<u8>>],
-) -> Result<OtaManifest, SignedManifestError> {
+/// Returns the `RawManifest` on success.
+pub fn parse_raw(bytes: &[u8]) -> Result<RawManifest<'_>, SignedManifestError> {
     let (header, rest) =
         Header::read_from_prefix(bytes).map_err(|_| SignedManifestError::Truncated {
             file_size: bytes.len(),
@@ -129,21 +154,30 @@ pub fn parse_and_verify(
             }
         })?;
 
-    // The signed portion comprises the magic, version, manifest_size, and manifest bytes.
-    let signed_bytes = &bytes[..std::mem::size_of::<Header>() + manifest_size];
-
     let signatures_msg = proto::Signatures::decode(signature_payload)
         .map_err(SignedManifestError::InvalidSignatures)?;
 
-    if !signatures_msg
-        .signatures
-        .iter()
-        .any(|signature| public_keys.iter().any(|key| key.verify(signed_bytes, signature).is_ok()))
-    {
-        return Err(SignedManifestError::SignatureVerificationFailed);
-    }
+    // The signed portion comprises the magic, version, manifest_size, and manifest bytes.
+    let signed_bytes = &bytes[..std::mem::size_of::<Header>() + manifest_size];
 
-    Ok(parse_ota_manifest(manifest_payload)?)
+    Ok(RawManifest {
+        version,
+        manifest_payload,
+        signatures: signatures_msg.signatures,
+        signed_bytes,
+    })
+}
+
+/// Parse and verify a `SignedManifest`.
+///
+/// Returns the parsed `OtaManifest` on success.
+pub fn parse_and_verify(
+    bytes: &[u8],
+    public_keys: &[UnparsedPublicKey<Vec<u8>>],
+) -> Result<OtaManifest, SignedManifestError> {
+    let raw = parse_raw(bytes)?;
+    let () = raw.verify(public_keys)?;
+    Ok(parse_ota_manifest(raw.manifest_payload)?)
 }
 
 /// Helper function to generate a valid `SignedManifest` bytes for testing.

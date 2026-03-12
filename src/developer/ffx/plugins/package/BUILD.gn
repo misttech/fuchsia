@@ -16,6 +16,7 @@ ffx_plugin("ffx_package") {
     "build:ffx_package_build",
     "far:ffx_package_far",
     "file-hash:ffx_package_file_hash",
+    "ota-manifest:ffx_package_ota_manifest",
   ]
 
   args_sources = [ "src/args.rs" ]
