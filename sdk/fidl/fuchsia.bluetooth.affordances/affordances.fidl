@@ -64,4 +64,12 @@ open protocol HostController {
     flexible GetHosts() -> (struct {
         hosts vector<sys.HostInfo>:MAX;
     }) error Error;
+
+    /// Set discoverability state.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible SetDiscoverability(table {
+        // Required. Set to true if making discoverable or false if revoking discoverability.
+        1: discoverable bool;
+    }) -> () error Error;
 };
