@@ -893,4 +893,143 @@ TEST(SeccompTest, BpfXStartsInitialized) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+TEST(SeccompTest, BpfModRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_ALU | BPF_MOD | BPF_K, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfUnknownCodeUpperBitsRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(0x0100 | BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfNegWithSourceXRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_ALU | BPF_NEG | BPF_X, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfLastInstNotRetRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        // Dead code, but it's the last instruction and NOT a RET.
+        // Linux explicitly requires the last instruction to be RET.
+        BPF_STMT(BPF_ALU | BPF_ADD | BPF_K, 1),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfJaWithSourceXRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // BPF_JA with BPF_X source bit set
+        BPF_STMT(BPF_JMP | BPF_JA | BPF_X, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    // Linux returns EINVAL. Fuchsia ignores the source bit for BPF_JA.
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfStWithSourceXRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // BPF_ST | BPF_X.
+        // Linux explicitly rejects BPF_ST | BPF_X (only BPF_ST is allowed, not BPF_X)
+        BPF_STMT(BPF_ST | BPF_X, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, PR_SET_SECCOMP, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfMiscWithSourceXRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_MISC | BPF_TAX | BPF_X, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
 }  // anonymous namespace

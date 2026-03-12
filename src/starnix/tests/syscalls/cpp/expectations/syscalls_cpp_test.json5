@@ -133,6 +133,15 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
+
+                // TODO(https://fxbug.dev/491941184)
+                "SeccompTest.BpfJaWithSourceXRejected",
+                "SeccompTest.BpfLastInstNotRetRejected",
+                "SeccompTest.BpfMiscWithSourceXRejected",
+                "SeccompTest.BpfModRejected",
+                "SeccompTest.BpfNegWithSourceXRejected",
+                "SeccompTest.BpfStWithSourceXRejected",
+                "SeccompTest.BpfUnknownCodeUpperBitsRejected",
             ],
         },
     ],
