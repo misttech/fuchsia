@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use component_debug::config::RawConfigEntry;
+use component_debug_fdomain::config::RawConfigEntry;
 use ffx_core::ffx_command;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
