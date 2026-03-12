@@ -405,16 +405,22 @@ fn symbolize_fidl_call<'a>(
 pub struct CategoryCounter {
     category_counter: HashMap<String, usize>,
     input_categories: Vec<String>,
+    wildcard_categories: Vec<String>,
 }
 
 impl CategoryCounter {
     pub fn new(input_categories: Vec<String>) -> Self {
         let mut category_counter = HashMap::new();
+        let mut wildcard_categories = Vec::new();
         for category in &input_categories {
             // Skip categories starting with '#' since they represent groups.
             // We don't check them because it's not explicitly specified.
             if !category.starts_with("#") {
                 category_counter.insert(category.clone(), 0);
+            }
+            // Handle wildcard categories.
+            if category.ends_with("*") {
+                wildcard_categories.push(category.clone());
             }
         }
         // "kernel:meta" and "kernel:sched" produces metadata which doesn't contain a category, so
@@ -423,11 +429,18 @@ impl CategoryCounter {
         category_counter.remove("kernel:sched");
         // "starnix:atrace" delivers events via Perfetto blobs, so the category check will fail.
         category_counter.remove("starnix:atrace");
-        Self { category_counter, input_categories }
+        Self { category_counter, input_categories, wildcard_categories }
     }
 
     fn increment_category(&mut self, category: &str) {
         *self.category_counter.entry(category.to_string()).or_insert(0) += 1;
+
+        // Handle wildcard categories.
+        for wildcard_category in &self.wildcard_categories {
+            if category.starts_with(&wildcard_category[..wildcard_category.len() - 1]) {
+                *self.category_counter.entry(wildcard_category.clone()).or_insert(0) += 1;
+            }
+        }
 
         // The "kernel" category is a special meta category that enables all "kernel:*" categories.
         // If we see any "kernel:" category, also consider "kernel" to be seen.
@@ -494,5 +507,19 @@ mod test {
         counter.increment_category("other");
         counter.increment_category("categories");
         assert!(counter.get_invalid_category_list().is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_wildcard_categories() {
+        let mut counter = CategoryCounter::new(vec![
+            "starnix:*".into(),
+            "some:*".into(),
+            "other:category".into(),
+        ]);
+        counter.increment_category("starnix:atrace");
+        counter.increment_category("some:ipc");
+        let missing = counter.get_invalid_category_list();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0], "other:category");
     }
 }
