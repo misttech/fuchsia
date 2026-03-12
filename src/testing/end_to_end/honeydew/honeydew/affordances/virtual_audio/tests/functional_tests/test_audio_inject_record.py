@@ -8,8 +8,7 @@ import os
 import time
 from datetime import timedelta
 
-import fuchsia_async_extension
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 
 from honeydew.affordances.virtual_audio.types import WaitForQuietResult
@@ -18,37 +17,36 @@ _AUDIO_FILE_INPUT = "audio_runtime_deps/sine_wave.wav"
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+class AudioAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Audio affordance tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `device` variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
 
-    def teardown_test(self) -> None:
-        super().teardown_test()
+    async def teardown_test(self) -> None:
+        await super().teardown_test()
 
-    def test_audio(self) -> None:
-        responseAudio = self.device.virtual_audio.capture()
-        inputResponse = self.device.virtual_audio.inject(_AUDIO_FILE_INPUT)
-
-        fuchsia_async_extension.get_loop().run_until_complete(
-            inputResponse.wait_until_injection_is_done()
+    async def test_audio(self) -> None:
+        responseAudio = await self.device.virtual_audio.capture()
+        inputResponse = await self.device.virtual_audio.inject(
+            _AUDIO_FILE_INPUT
         )
+
+        await inputResponse.wait_until_injection_is_done()
 
         time.sleep(5)
 
-        data = fuchsia_async_extension.get_loop().run_until_complete(
-            responseAudio.stop_and_extract_response()
-        )
+        data = await responseAudio.stop_and_extract_response()
+
         output_path = os.path.join(
             os.getenv("FUCHSIA_TEST_OUTDIR") or "", "response.wav"
         )
@@ -61,24 +59,26 @@ class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         ) as f:
             f.write(data)
 
-    def test_triggered_capture(self) -> None:
-        quiet_result = self.device.virtual_audio.wait_for_quiet(
+    async def test_triggered_capture(self) -> None:
+        quiet_result = await self.device.virtual_audio.wait_for_quiet(
             requested_quiet_period=timedelta(seconds=2),
             optional_maximum_time_to_wait_for_quiet=timedelta(seconds=60),
         )
         assert quiet_result == WaitForQuietResult.SUCCESS
 
-        self.device.virtual_audio.queue_triggered_capture(
+        await self.device.virtual_audio.queue_triggered_capture(
             maximum_time_to_capture_audio=timedelta(seconds=5),
             maximum_time_to_wait_for_sound=timedelta(seconds=5),
             optional_quiet_time_before_stopping_capture=timedelta(seconds=1),
         )
-        inputResponse = self.device.virtual_audio.inject(_AUDIO_FILE_INPUT)
-        fuchsia_async_extension.get_loop().run_until_complete(
-            inputResponse.wait_until_injection_is_done()
+        inputResponse = await self.device.virtual_audio.inject(
+            _AUDIO_FILE_INPUT
         )
+        await inputResponse.wait_until_injection_is_done()
 
-        capture_result = self.device.virtual_audio.wait_for_triggered_capture()
+        capture_result = (
+            await self.device.virtual_audio.wait_for_triggered_capture()
+        )
         data = b""
         if capture_result.audio_data is not None:
             _LOGGER.info("Retrieved audio data from the device")
