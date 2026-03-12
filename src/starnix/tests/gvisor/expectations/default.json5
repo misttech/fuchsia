@@ -1244,7 +1244,7 @@
                 "XattrTest.TrustedNamespaceWithCapSysAdminInNewUserns",
 
                 // TODO(https://fxbug.dev/487789159): Crashing somewhere in the forked process logic.
-                "GetSockOpt/GetSockOptRequiresCapNetAdminTest.Validate/.*",
+                "GetSockOpt/GetSockOptRequiresCapNetAdminTest.Validate/*",
                 "GetSockOptRequiresCapNetAdminTests/GetSockOptRequiresCapNetAdminTest.*",
                 "SetSockOpt/SetSockOptRequiresCapNetAdminTest.*",
             ],
