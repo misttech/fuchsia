@@ -709,14 +709,6 @@
             to: [ "#early_boot_instrumentation" ],
         },
 
-        // Tests of the media system change their behavior based on board
-        // TODO(https://fxbug.dev/42164198): Remove when specialized test realms are ready.
-        {
-            protocol: "fuchsia.sysinfo.SysInfo",
-            from: "parent",
-            to: [ "#system-tests" ],
-        },
-
         // System tests can capture a trace.
         {
             protocol: [ "fuchsia.tracing.controller.Controller" ],
