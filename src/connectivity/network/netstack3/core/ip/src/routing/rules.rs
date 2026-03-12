@@ -282,7 +282,7 @@ mod test {
         matcher.matches(&input)
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[test_case::test_matrix(
             [
                 None,

@@ -1735,7 +1735,7 @@ mod tests {
     }
 
     // Test handling of watcher events for routes in unmanaged tables.
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[fuchsia::test]
     async fn handles_route_watcher_event_unmanaged_route_table<
         I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
@@ -1792,7 +1792,7 @@ mod tests {
         );
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[fuchsia::test]
     #[should_panic(expected = "Netstack reported an unexpected route event")]
     async fn handles_unknown_route_watcher_event<
@@ -1822,7 +1822,7 @@ mod tests {
         );
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[fuchsia::test]
     #[should_panic(expected = "Netstack reported the addition of an existing route")]
     async fn handles_duplicate_route_watcher_event<
@@ -1863,7 +1863,7 @@ mod tests {
         }
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[fuchsia::test]
     #[should_panic(expected = "Netstack reported the removal of an unknown route")]
     async fn handles_remove_nonexisting_route_watcher_event<
@@ -5268,7 +5268,7 @@ mod tests {
         join_handle.await;
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[fuchsia::test]
     async fn process_stashed_routes<
         I: Ip + fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,

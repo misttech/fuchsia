@@ -728,7 +728,7 @@ mod tests {
         );
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[test_case::test_case(MarkDomain::Mark1; "mark_1")]
     #[test_case::test_case(MarkDomain::Mark2; "mark_2")]
     fn diagnostics_match_mark<I: TcpTestIpExt>(domain: MarkDomain)

@@ -9300,7 +9300,7 @@ mod tests {
         })
     }
 
-    #[ip_test(I)]
+    #[ip_test(I, test = false)]
     #[test_case::test_matrix(
         [MarkDomain::Mark1, MarkDomain::Mark2],
         [None, Some(0), Some(1)]
