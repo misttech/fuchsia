@@ -59,11 +59,8 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
         });
     });
     dir.subdir("dmabuf", dir_mode, |dir| {
-        dir.entry(
-            "buffers",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-            mode!(IFREG, 0o444),
-        );
+        // TODO(https://fxbug.dev/452096300"): Do not report any buffer for now.
+        dir.subdir("buffers", dir_mode, |_| {});
     });
     dir.subdir("ion", dir_mode, |dir| {
         dir.entry(
