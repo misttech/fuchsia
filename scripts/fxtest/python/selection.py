@@ -411,6 +411,7 @@ class _TestDistanceMeasurer:
                 *arg_suffix,
                 recorder=recorder,
                 parent=parent_id,
+                do_not_log_output=True,
             )
 
             if output is None:

@@ -8,6 +8,7 @@ from unittest import mock
 
 import args
 import environment
+import event
 import selection
 import selection_types
 import test_list_file
@@ -746,3 +747,29 @@ class SelectTestsTest(unittest.IsolatedAsyncioTestCase):
                 "host_x64/binary_test",
             ],
         )
+
+    async def test_logs_will_not_contain_dldist(self) -> None:
+        """Test that we omit process output from dldist in the logs"""
+
+        tests = [
+            self._make_host_test("src/other-tests", "binary_test"),
+        ]
+
+        exec_env = self._make_exec_env()
+
+        recorder = event.EventRecorder()
+
+        recorder.emit_init()
+
+        host_fuzzy = await selection.select_tests(
+            tests, ["binary"], exec_env, recorder=recorder
+        )
+
+        recorder.emit_end()
+
+        output_events = [
+            e
+            async for e in recorder.iter()
+            if e.payload is not None and e.payload.program_output is not None
+        ]
+        self.assertEqual(len(output_events), 0)

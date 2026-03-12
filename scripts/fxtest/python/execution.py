@@ -809,6 +809,7 @@ async def run_command(
     abort_signal: asyncio.Event | None = None,
     quiet_mode: bool = False,
     input_bytes: bytes | None = None,
+    do_not_log_output: bool = False,
 ) -> command.CommandOutput | None:
     """Utility method to run a test command asynchronously.
 
@@ -832,6 +833,9 @@ async def run_command(
         quiet_mode (bool, optional): If set, this command will run
             quietly in the background and will not announce cancellation or
             clutter the running task list.
+        do_not_log_output (bool, optional): If set, this command will not log its output.
+            This is useful for noisy programs whose output may be too much for
+            downstream processing.
 
     Returns:
         command.CommandOutput | None: The command output if it could
@@ -871,14 +875,20 @@ async def run_command(
         def handle_event(current_event: command.CommandEvent) -> None:
             if recorder is not None:
                 assert event_id is not None
-                if isinstance(current_event, command.StdoutEvent):
+                if (
+                    isinstance(current_event, command.StdoutEvent)
+                    and not do_not_log_output
+                ):
                     recorder.emit_program_output(
                         event_id,
                         current_event.text.decode(errors="replace"),
                         stream=event.ProgramOutputStream.STDOUT,
                         print_verbatim=print_verbatim,
                     )
-                if isinstance(current_event, command.StderrEvent):
+                if (
+                    isinstance(current_event, command.StderrEvent)
+                    and not do_not_log_output
+                ):
                     recorder.emit_program_output(
                         event_id,
                         current_event.text.decode(errors="replace"),
