@@ -159,6 +159,10 @@ config("compiler") {
 
   if (is_gcc) {
     configs += [ ":default-tls-dialect" ]
+
+    # Accept / as division rather than comment.  This is GCC's default for
+    # *-linux targets, but not for *-elf targets; Clang always does it.
+    cflags += [ "-Wa,--divide" ]
   } else {
     configs += [
       ":clang_defaults",
