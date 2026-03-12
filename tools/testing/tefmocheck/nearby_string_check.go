@@ -195,6 +195,7 @@ func NearbyStringsChecks() []FailureModeCheck {
 			String1:          "Suspend failed due to \"external wake source: nanohub-datachannel\".",
 			String2:          "Format: Log Type - Time(microsec) - Message - Optional Info",
 			MaxDistanceLines: 10,
+			Type:             serialLogType,
 		},
 		// LINT.ThenChange(//src/starnix/kernel/core/power/manager.rs:suspend_failed_tefmo)
 	}
