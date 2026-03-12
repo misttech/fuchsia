@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use component_debug::cli::show::ShowCmdInstance;
-use component_debug::cli::{show_cmd_print, show_cmd_serialized};
+use component_debug_fdomain::cli::show::ShowCmdInstance;
+use component_debug_fdomain::cli::{show_cmd_print, show_cmd_serialized};
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query_f;
 use ffx_component_show_args::ComponentShowCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 #[derive(FfxTool)]
 pub struct ShowTool {
     #[command]
@@ -25,7 +25,7 @@ impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<ShowCmdInstance>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = connect_to_realm_query(&self.rcs).await?;
+        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
 
         // All errors from component_debug library are user-visible.
         if writer.is_machine() {
