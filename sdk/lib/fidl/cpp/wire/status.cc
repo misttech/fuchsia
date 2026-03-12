@@ -49,6 +49,7 @@ bool IsFatalErrorUniversal(fidl::Reason error) {
     case Reason::kEncodeError:
     case Reason::kDecodeError:
     case Reason::kAbandonedAsyncReply:
+    case Reason::kReply:
       return false;
   }
 }
@@ -105,6 +106,8 @@ constexpr const char* DescribeReason(Reason reason) {
       return "unknown interaction";
     case Reason::kAbandonedAsyncReply:
       return "(server) async completer is discarded without a reply";
+    case Reason::kReply:
+      return "(server) reply failed";
   }
 }
 

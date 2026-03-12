@@ -454,7 +454,7 @@ TEST_F(WireCompleterTest, CallerAllocateInsufficientBufferSize) {
         completer.buffer(small_buf).Reply(request->value);
         fidl::Status result = completer.result_of_reply();
         EXPECT_STATUS(ZX_ERR_BUFFER_TOO_SMALL, result.status());
-        EXPECT_EQ(fidl::Reason::kEncodeError, result.reason());
+        EXPECT_EQ(fidl::Reason::kReply, result.reason());
       });
   fidl::WireClient client(std::move(client_end()), loop()->dispatcher());
   bool called = false;

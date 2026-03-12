@@ -220,7 +220,8 @@ class CompleterBase {
   void DropTransaction();
 
   Transaction* transaction_;
-  std::optional<fidl::Status> reply_result_;
+  static constexpr zx_status_t kReplyNotSent = std::numeric_limits<zx_status_t>::max();
+  zx_status_t reply_status_ = kReplyNotSent;
   bool owned_;
   bool needs_to_reply_;
 

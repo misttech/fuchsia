@@ -146,6 +146,9 @@ enum class Reason : uint16_t {
   // This error is used on the server to report when an async completer to a
   // two-way method is discarded without a reply.
   kAbandonedAsyncReply,
+
+  // This error occurred on the server when a reply was being sent.
+  kReply,
 };
 
 // |ErrorOrigin| indicates in which part of request/response processing did a
@@ -161,6 +164,7 @@ enum class ErrorOrigin {
 class Status;
 class OneWayStatus;
 class UnbindInfo;
+class CompleterBase;
 
 namespace internal {
 
@@ -424,6 +428,7 @@ class [[nodiscard]] Status {
   friend class UnbindInfo;
   friend std::ostream& operator<<(std::ostream& ostream, const Status& result);
   friend struct fidl::internal::DisplayError<fidl::Status>;
+  friend class fidl::CompleterBase;
 #if __FIDL_SUPPORT_FORMAT
   friend struct std::formatter<fidl::Status>;
 #endif

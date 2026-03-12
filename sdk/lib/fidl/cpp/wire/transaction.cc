@@ -45,11 +45,11 @@ void CompleterBase::EnableNextDispatch() {
 
 CompleterBase::CompleterBase(CompleterBase&& other) noexcept
     : transaction_(other.transaction_),
-      reply_result_(other.reply_result_),
+      reply_status_(other.reply_status_),
       owned_(other.owned_),
       needs_to_reply_(other.needs_to_reply_) {
   other.transaction_ = nullptr;
-  other.reply_result_.reset();
+  other.reply_status_ = kReplyNotSent;
   other.owned_ = false;
   other.needs_to_reply_ = false;
 }
@@ -74,10 +74,10 @@ std::unique_ptr<Transaction> CompleterBase::TakeOwnership() {
 }
 
 fidl::Status CompleterBase::result_of_reply() const {
-  if (!reply_result_.has_value()) {
+  if (reply_status_ == kReplyNotSent) {
     ZX_PANIC("Did not make a reply on this completer.");
   }
-  return reply_result_.value();
+  return fidl::Status(reply_status_, fidl::Reason::kReply, "Sending reply failed");
 }
 
 void CompleterBase::SendReply(::fidl::OutgoingMessage* message,
@@ -93,7 +93,7 @@ void CompleterBase::SendReply(::fidl::OutgoingMessage* message,
   needs_to_reply_ = false;
   if (!message->ok()) {
     transaction_->InternalError(fidl::UnbindInfo{*message}, fidl::ErrorOrigin::kSend);
-    reply_result_.emplace(*message);
+    reply_status_ = message->status();
     return;
   }
   fidl::WriteOptions write_options = {
@@ -103,10 +103,10 @@ void CompleterBase::SendReply(::fidl::OutgoingMessage* message,
   if (status != ZX_OK) {
     auto error = fidl::Status::TransportError(status);
     transaction_->InternalError(fidl::UnbindInfo{error}, fidl::ErrorOrigin::kSend);
-    reply_result_.emplace(error);
+    reply_status_ = status;
     return;
   }
-  reply_result_.emplace(fidl::Status::Ok());
+  reply_status_ = ZX_OK;
 }
 
 void CompleterBase::EnsureHasTransaction(ScopedLock* lock) {

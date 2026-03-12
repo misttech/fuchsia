@@ -177,7 +177,7 @@ TEST(CompleterResultOfReply, EncodeError) {
   EXPECT_FALSE(txn.error().has_value());
   completer.Reply(static_cast<fidl_test_coding_fuchsia::wire::TestEnum>(2));
   fidl::Status result = completer.result_of_reply();
-  EXPECT_EQ(fidl::Reason::kEncodeError, result.reason());
+  EXPECT_EQ(fidl::Reason::kReply, result.reason());
   EXPECT_STATUS(ZX_ERR_INVALID_ARGS, result.status());
 }
 
@@ -197,7 +197,7 @@ TEST(CompleterResultOfReply, TransportError) {
   SyncCompleter completer(&txn);
   completer.Reply("");
   fidl::Status result = completer.result_of_reply();
-  EXPECT_EQ(fidl::Reason::kTransportError, result.reason());
+  EXPECT_EQ(fidl::Reason::kReply, result.reason());
   EXPECT_STATUS(ZX_ERR_ACCESS_DENIED, result.status());
 }
 
