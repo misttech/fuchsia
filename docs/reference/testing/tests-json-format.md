@@ -195,6 +195,11 @@ a JSON file containing a list of file paths (relative to the output
 directory) to files that should be put in a place known to a host
 test for use at runtime. The format of the file is a JSON array
 of file path strings.
+- `list_cases_argument` - (Optional) The command line argument used to list
+individual test cases within the test suite. This is used by `fx test --list`
+to discover specific test cases for reporting and selection. Currently, this
+is supported for **host tests only**, specifically for Mobly tests and Python
+unit tests.
 
 **Device tests only**
 
