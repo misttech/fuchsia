@@ -4,19 +4,19 @@
 
 use async_trait::async_trait;
 use cm_types::{BorrowedLongName, BorrowedName};
-use component_debug::lifecycle::{DestroyError, destroy_instance_in_collection};
-use component_debug::query::get_cml_moniker_from_query;
+use component_debug_fdomain::lifecycle::{DestroyError, destroy_instance_in_collection};
+use component_debug_fdomain::query::get_cml_moniker_from_query;
+use fdomain_fuchsia_sys2 as fsys;
 use ffx_command_error::{Error, user_error};
-use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
+use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_query_f};
 use ffx_component_destroy_args::DestroyComponentCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct DestroyTool {
@@ -39,8 +39,8 @@ pub enum Output {
 impl FfxMain for DestroyTool {
     type Writer = VerifiedMachineWriter<Output>;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        let lifecycle_controller = connect_to_lifecycle_controller(&self.rcs).await?;
-        let realm_query = connect_to_realm_query(&self.rcs).await?;
+        let lifecycle_controller = connect_to_lifecycle_controller_f(&self.rcs).await?;
+        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
 
         destroy_cmd(
             &mut DefaultDestroyCmdImpl,
@@ -139,7 +139,6 @@ async fn destroy_cmd(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::Proxy;
 
     #[fuchsia::test]
     async fn test_delete() {
@@ -165,12 +164,10 @@ mod test {
             }
         }
 
-        let (ch, _) = fidl::Channel::create();
-        let ch = fidl::AsyncChannel::from_channel(ch);
-        let lifecycle_controller = fsys::LifecycleControllerProxy::from_channel(ch);
-        let (ch, _) = fidl::Channel::create();
-        let ch = fidl::AsyncChannel::from_channel(ch);
-        let realm_query = fsys::RealmQueryProxy::from_channel(ch);
+        let client = fdomain_local::local_client_empty();
+        let (lifecycle_controller, _) =
+            client.create_proxy_and_stream::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _) = client.create_proxy_and_stream::<fsys::RealmQueryMarker>();
 
         let buffers = ffx_writer::TestBuffers::default();
         let writer =
@@ -208,12 +205,10 @@ mod test {
             }
         }
 
-        let (ch, _) = fidl::Channel::create();
-        let ch = fidl::AsyncChannel::from_channel(ch);
-        let lifecycle_controller = fsys::LifecycleControllerProxy::from_channel(ch);
-        let (ch, _) = fidl::Channel::create();
-        let ch = fidl::AsyncChannel::from_channel(ch);
-        let realm_query = fsys::RealmQueryProxy::from_channel(ch);
+        let client = fdomain_local::local_client_empty();
+        let (lifecycle_controller, _) =
+            client.create_proxy_and_stream::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _) = client.create_proxy_and_stream::<fsys::RealmQueryMarker>();
 
         let buffers = ffx_writer::TestBuffers::default();
         let writer =
