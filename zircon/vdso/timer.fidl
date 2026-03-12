@@ -104,8 +104,9 @@ closed protocol Timer {
     /// pending, the previous timer is canceled and
     /// `ZX_TIMER_SIGNALED` is de-asserted as needed.
     ///
-    /// The *deadline* parameter specifies a deadline with respect to
-    /// `ZX_CLOCK_MONOTONIC`. To wait for a relative interval,
+    /// The *deadline* parameter specifies a deadline with respect to either
+    /// `ZX_CLOCK_MONOTONIC` or `ZX_CLOCK_BOOT`, depending on how the handle
+    /// was created with [`zx_timer_create()`]. To wait for a relative interval,
     /// use [`zx_deadline_after()`] returned value in *deadline*.
     ///
     /// To fire the timer immediately pass a *deadline* less than or equal to `0`.
