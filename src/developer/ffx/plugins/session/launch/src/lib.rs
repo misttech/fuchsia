@@ -4,15 +4,16 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
-use component_debug::config::RawConfigEntry;
+use component_debug_fdomain::config::RawConfigEntry;
 use errors::ffx_error;
+use fdomain_fuchsia_component_decl as fdecl;
+use fdomain_fuchsia_developer_remotecontrol as rc;
+use fdomain_fuchsia_session::{LaunchConfiguration, LauncherProxy};
 use ffx_session_launch_args::SessionLaunchCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session::{LaunchConfiguration, LauncherProxy};
 use moniker::Moniker;
-use target_holders::{RemoteControlProxyHolder, moniker};
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_developer_remotecontrol as rc};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 
 const SESSION_MANAGER_MONIKER: &str = "/core/session-manager";
 
@@ -68,10 +69,10 @@ async fn resolve_config_capabilities(
     if raw_capabilities.is_empty() {
         return Ok(vec![]);
     }
-    let realm_query = rcs::root_realm_query(rcs, std::time::Duration::from_secs(15))
+    let realm_query = rcs_fdomain::root_realm_query(rcs, std::time::Duration::from_secs(15))
         .await
         .map_err(|err| ffx_error!("Could not open RealmQuery: {err}"))?;
-    let resolved_capabilities = component_debug::config::resolve_raw_config_capabilities(
+    let resolved_capabilities = component_debug_fdomain::config::resolve_raw_config_capabilities(
         &realm_query,
         moniker,
         url,
@@ -84,14 +85,15 @@ async fn resolve_config_capabilities(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session::LauncherRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session::LauncherRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_launch_session() {
         const SESSION_URL: &str = "Session URL";
 
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client.clone(), |req| match req {
             LauncherRequest::Launch { configuration, responder } => {
                 assert!(configuration.session_url.is_some());
                 let session_url = configuration.session_url.unwrap();
@@ -99,7 +101,9 @@ mod test {
                 let _ = responder.send(Ok(()));
             }
         });
-        let rcs = fake_proxy::<rc::RemoteControlProxy>(|_req| unimplemented!()).into();
+
+        let (rcs_proxy, _) = client.create_proxy_and_stream::<rc::RemoteControlMarker>();
+        let rcs = rcs_proxy.into();
 
         let launch_cmd = SessionLaunchCommand { url: SESSION_URL.to_string(), config: vec![] };
         let result = launch_impl(proxy, rcs, launch_cmd, &mut std::io::stdout()).await;
