@@ -337,7 +337,6 @@ impl PartialEq for ThreadGroup {
     }
 }
 
-#[cfg(any(test, debug_assertions))]
 impl Drop for ThreadGroup {
     fn drop(&mut self) {
         let state = self.mutable_state.get_mut();
@@ -345,6 +344,7 @@ impl Drop for ThreadGroup {
         assert!(state.children.is_empty());
         assert!(state.zombie_children.is_empty());
         assert!(state.zombie_ptracees.is_empty());
+        #[cfg(any(test, debug_assertions))]
         assert!(
             state
                 .parent
