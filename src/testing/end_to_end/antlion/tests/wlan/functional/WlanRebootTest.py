@@ -459,6 +459,11 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 self.access_point.hard_power_cycle(self.pdu_devices)
             self.setup_ap(ssid, band, ip_version, security_mode, password)
 
+        # TODO(b/492147624): Remove this sleep and instead wait for the DUT to
+        # realize that it is disconnected from the AP. This is needed because
+        # synadhd takes a little longer (~5 seconds) to realize that it is
+        # disconnected from the AP.
+        time.sleep(10)
         self.prepare_dut_for_reconnection()
         uptime = time.time()
         try:
