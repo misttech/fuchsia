@@ -377,17 +377,7 @@ void DebugAgent::OnResume(const debug_ipc::ResumeRequest& request, debug_ipc::Re
     // Explicit list.
     for (const auto& id : request.ids) {
       if (DebuggedProcess* proc = GetDebuggedProcess(id.process)) {
-        if (id.thread) {
-          // Single thread in that process.
-          if (DebuggedThread* thread = proc->GetThread(id.thread)) {
-            thread->ClientResume(request);
-          } else {
-            LOGS(Warn) << "Could not find thread by koid: " << id.thread;
-          }
-        } else {
-          // All threads in the process.
-          proc->OnResume(request);
-        }
+        proc->OnResume(request);
       } else {
         LOGS(Warn) << "Could not find process by koid: " << id.process;
       }

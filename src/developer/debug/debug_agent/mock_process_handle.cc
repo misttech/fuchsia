@@ -6,6 +6,10 @@
 
 #include <string.h>
 
+#include <memory>
+
+#include "src/developer/debug/debug_agent/mock_exception_handle.h"
+#include "src/developer/debug/debug_agent/mock_thread_handle.h"
 #include "src/developer/debug/ipc/records.h"
 
 namespace debug_agent {
@@ -17,6 +21,15 @@ MockProcessHandle::MockProcessHandle(zx_koid_t process_koid, std::string name)
   // Tests could accidentally write to this handle since it's returned as a mutable value in some
   // cases. Catch accidents like that.
   FX_DCHECK(!null_handle_);
+}
+
+void MockProcessHandle::AddThreadAndSendEvent(MockThreadHandle thread) {
+  auto mock_exception = std::make_unique<MockExceptionHandle>(GetKoid(), thread.GetKoid());
+  threads_.push_back(std::move(thread));
+
+  if (observer_) {
+    observer_->OnThreadStarting(std::move(mock_exception));
+  }
 }
 
 std::vector<std::unique_ptr<ThreadHandle>> MockProcessHandle::GetChildThreads() const {
@@ -35,6 +48,7 @@ debug::Status MockProcessHandle::Attach(ProcessHandleObserver* observer, AttachC
   if (config.claim_exception_channel) {
     is_attached_ = true;
   }
+  observer_ = observer;
   return debug::Status();
 }
 

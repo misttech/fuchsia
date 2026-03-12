@@ -10,11 +10,13 @@
 #include "src/developer/debug/debug_agent/debug_agent.h"
 #include "src/developer/debug/debug_agent/hardware_breakpoint.h"
 #include "src/developer/debug/debug_agent/mock_debug_agent_harness.h"
+#include "src/developer/debug/debug_agent/mock_exception_handle.h"
 #include "src/developer/debug/debug_agent/mock_process.h"
 #include "src/developer/debug/debug_agent/mock_thread.h"
 #include "src/developer/debug/debug_agent/mock_thread_handle.h"
 #include "src/developer/debug/debug_agent/software_breakpoint.h"
 #include "src/developer/debug/debug_agent/test_utils.h"
+#include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 
 namespace debug_agent {
@@ -335,6 +337,55 @@ TEST(DebuggedProcess, ExceptionEnsuresThreadsAreSynced) {
   ASSERT_EQ(harness.stream_backend()->exceptions().size(), 1u);
   EXPECT_EQ(harness.stream_backend()->exceptions()[0].thread.id.process, kProcessKoid);
   EXPECT_EQ(harness.stream_backend()->exceptions()[0].thread.id.thread, kThreadKoid);
+}
+
+TEST(DebuggedProcessTest, ClientResumeUnsetsSuspendNewThreads) {
+  MockDebugAgentHarness harness;
+
+  constexpr uint64_t kThread1Koid = 1234;
+  constexpr uint64_t kThread2Koid = 1235;
+  constexpr uint64_t kThread3Koid = 1236;
+
+  auto* mock_process = harness.AddProcess(kProcessKoid);
+  mock_process->AddThread(kThread1Koid);
+
+  ASSERT_TRUE(mock_process);
+  ASSERT_EQ(mock_process->GetThreads().size(), 1u);
+
+  std::ignore = mock_process->ClientSuspendAllThreads();
+
+  auto* debugged_thread = mock_process->GetThread(kThread1Koid);
+  ASSERT_TRUE(debugged_thread);
+  EXPECT_TRUE(debugged_thread->is_client_suspended());
+
+  // Inject the thread starting notification. The thread should now be suspended. We have to inject
+  // the new thread into the MockProcessHandle so DebuggedProcess can re-populate its threads to
+  // find the new one.
+  MockThreadHandle thread2_handle(kThread2Koid);
+  mock_process->mock_process_handle().AddThreadAndSendEvent(std::move(thread2_handle));
+
+  auto* debugged_thread2 = mock_process->GetThread(kThread2Koid);
+  ASSERT_TRUE(debugged_thread2);
+  EXPECT_TRUE(debugged_thread2->is_client_suspended());
+
+  // Issue the resume as separate ProcessThreadIds, which simulates how zxdb does a "Process
+  // Continue".
+  debug_ipc::ResumeRequest resume_request;
+  resume_request.how = debug_ipc::ResumeRequest::How::kResolveAndContinue;
+  resume_request.ids = {
+      {.process = kProcessKoid, .thread = kThread1Koid},
+      {.process = kProcessKoid, .thread = kThread2Koid},
+  };
+  mock_process->OnResume(resume_request);
+
+  EXPECT_FALSE(debugged_thread->is_client_suspended());
+  EXPECT_FALSE(debugged_thread2->is_client_suspended());
+
+  MockThreadHandle thread3_handle(kThread3Koid);
+  mock_process->mock_process_handle().AddThreadAndSendEvent(std::move(thread3_handle));
+  auto* thread3 = mock_process->GetThread(kThread3Koid);
+  ASSERT_TRUE(thread3);
+  EXPECT_FALSE(thread3->is_client_suspended());
 }
 
 }  // namespace

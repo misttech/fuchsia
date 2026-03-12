@@ -1047,4 +1047,55 @@ TEST_F(DebugAgentTests, RecursiveJobOnlyFilterDoesNotCannibalizeChildComponents)
   EXPECT_EQ(status.filters[1].type, debug_ipc::Filter::Type::kComponentMonikerSuffix);
 }
 
+TEST_F(DebugAgentTests, OnResumeDoesNotSuspendNewThreads) {
+  MockDebugAgentHarness harness;
+
+  constexpr uint64_t kProcessKoid = 1233;
+  constexpr uint64_t kThread1Koid = 1234;
+  constexpr uint64_t kThread2Koid = 1235;
+  constexpr uint64_t kThread3Koid = 1236;
+
+  auto* mock_process = harness.AddProcess(kProcessKoid);
+  mock_process->AddThread(kThread1Koid);
+
+  ASSERT_TRUE(mock_process);
+  ASSERT_EQ(mock_process->GetThreads().size(), 1u);
+
+  std::ignore = mock_process->ClientSuspendAllThreads();
+
+  auto* debugged_thread = mock_process->GetThread(kThread1Koid);
+  ASSERT_TRUE(debugged_thread);
+  EXPECT_TRUE(debugged_thread->is_client_suspended());
+
+  // Inject the thread starting notification. The thread should now be suspended. We have to inject
+  // the new thread into the MockProcessHandle so DebuggedProcess can re-populate its threads to
+  // find the new one.
+  MockThreadHandle thread2_handle(kThread2Koid);
+  mock_process->mock_process_handle().AddThreadAndSendEvent(std::move(thread2_handle));
+
+  auto* debugged_thread2 = mock_process->GetThread(kThread2Koid);
+  ASSERT_TRUE(debugged_thread2);
+  EXPECT_TRUE(debugged_thread2->is_client_suspended());
+
+  // Issue the resume as separate ProcessThreadIds, which simulates how zxdb does a "Process
+  // Continue".
+  debug_ipc::ResumeRequest resume_request;
+  resume_request.how = debug_ipc::ResumeRequest::How::kResolveAndContinue;
+  resume_request.ids = {
+      {.process = kProcessKoid, .thread = kThread1Koid},
+      {.process = kProcessKoid, .thread = kThread2Koid},
+  };
+  debug_ipc::ResumeReply reply;
+  harness.debug_agent()->OnResume(resume_request, &reply);
+
+  EXPECT_FALSE(debugged_thread->is_client_suspended());
+  EXPECT_FALSE(debugged_thread2->is_client_suspended());
+
+  MockThreadHandle thread3_handle(kThread3Koid);
+  mock_process->mock_process_handle().AddThreadAndSendEvent(std::move(thread3_handle));
+  auto* thread3 = mock_process->GetThread(kThread3Koid);
+  ASSERT_TRUE(thread3);
+  EXPECT_FALSE(thread3->is_client_suspended());
+}
+
 }  // namespace debug_agent

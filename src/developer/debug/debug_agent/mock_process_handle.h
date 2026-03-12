@@ -12,6 +12,7 @@
 
 #include "src/developer/debug/debug_agent/mock_thread_handle.h"
 #include "src/developer/debug/debug_agent/process_handle.h"
+#include "src/developer/debug/debug_agent/process_handle_observer.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/mock_memory.h"
 
@@ -36,6 +37,11 @@ class MockProcessHandle final : public ProcessHandle {
   // Sets the threads. These will be copied since we need to return a new unique_ptr for each call
   // to GetChildThreads().
   void set_threads(std::vector<MockThreadHandle> threads) { threads_ = std::move(threads); }
+
+  // Instead of injecting the threads directly into the respective objects, this method takes the
+  // given thread handle, adds it to our list of threads, and then sends a
+  // ProcessHandleObserver::OnThreadStarting event to the registered |observer_|, if present.
+  void AddThreadAndSendEvent(MockThreadHandle thread);
 
   // Use to set mcoked memory values to read. The MockMemory is only used for ReadMemory calls.
   // WriteMemory calls come out in memory_writes().
@@ -82,6 +88,7 @@ class MockProcessHandle final : public ProcessHandle {
 
   bool is_attached_ = false;
 
+  ProcessHandleObserver* observer_;
   std::vector<MockThreadHandle> threads_;
 
   debug::MockMemory mock_memory_;
