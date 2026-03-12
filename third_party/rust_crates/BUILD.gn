@@ -1247,6 +1247,10 @@ group("vm-device") {
   public_deps = [ ":vm-device-v0_1_0" ]
 }
 
+group("vt100") {
+  public_deps = [ ":vt100-v0_16_2" ]
+}
+
 group("vte") {
   public_deps = [ ":vte-v0_15_0" ]
 }
@@ -2705,9 +2709,7 @@ rustc_library("base64-v0_13_0") {
     "--cfg=feature=\"std\"",
   ]
 
-  visibility = []
-  visibility += [ ":*" ]
-  visibility += [ "//*" ]
+  visibility = [ ":*" ]
 
   applicable_licenses = [ ":base64-v0_13_0.license" ]
 }
@@ -3014,9 +3016,7 @@ rustc_library("bitflags-v1_3_2") {
     "--cfg=feature=\"default\"",
   ]
 
-  visibility = []
-  visibility += [ ":*" ]
-  visibility += [ "//third_party/alacritty/alacritty_terminal:*" ]
+  visibility = [ ":*" ]
 
   applicable_licenses = [ ":bitflags-v1_3_2.license" ]
 }
@@ -20970,6 +20970,38 @@ rustc_library("vm-device-v0_1_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":vm-device-v0_1_0.license" ]
+}
+
+license("vt100-v0_16_2.license") {
+  public_package_name = "vt100"
+  license_files = [ "//third_party/rust_crates/forks/vt100-0.16.2/LICENSE" ]
+}
+
+rustc_library("vt100-v0_16_2") {
+  crate_name = "vt100"
+  source_root = "//third_party/rust_crates/forks/vt100-0.16.2/src/lib.rs"
+  output_name = "vt100-378aadb0ad2d57d3"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":unicode-width-v0_2_2" ]
+  deps += [ ":vte-v0_15_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=378aadb0ad2d57d3",
+    "-Cextra-filename=-378aadb0ad2d57d3",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":vt100-v0_16_2.license" ]
 }
 
 license("vte-v0_15_0.license") {

@@ -4,57 +4,31 @@
 
 use crate::colors::ColorScheme;
 use anyhow::Error;
-use carnelian::color::Color;
 use carnelian::Size;
 use pty::ServerPty;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
-use term_model::clipboard::Clipboard;
-use term_model::config::Config;
-use term_model::event::EventListener;
-use term_model::grid::Scroll;
-use term_model::term::color::Rgb;
-use term_model::term::{SizeInfo, TermMode};
-use term_model::Term;
-
-/// Empty type for term model config.
-#[derive(Default)]
-pub struct TermConfig;
-pub type TerminalConfig = Config<TermConfig>;
-
-fn make_term_color(color: &Color) -> Rgb {
-    Rgb { r: color.r, g: color.g, b: color.b }
-}
-
-impl From<ColorScheme> for TerminalConfig {
-    fn from(color_scheme: ColorScheme) -> Self {
-        let mut config = Self::default();
-        config.colors.primary.background = make_term_color(&color_scheme.back);
-        config.colors.primary.foreground = make_term_color(&color_scheme.front);
-        config
-    }
-}
+use terminal::{Scroll, SizeInfo, TerminalCallbacks};
+use vt100::Parser;
 
 /// Wrapper around a term model instance and its associated PTY fd.
-pub struct Terminal<T> {
-    term: Rc<RefCell<Term<T>>>,
+pub struct Terminal {
+    term: Rc<RefCell<Parser<TerminalCallbacks>>>,
     title: String,
     pty: Option<ServerPty>,
     /// Lazily initialized if `pty` is set.
     pty_fd: Option<File>,
 }
 
-impl<T> Terminal<T> {
+impl Terminal {
     pub fn new(
-        event_listener: T,
         title: String,
-        color_scheme: ColorScheme,
+        _color_scheme: ColorScheme,
         scrollback_rows: u32,
         pty: Option<ServerPty>,
     ) -> Self {
-        // Initial size info used before we know what the real size is.
         let cell_size = Size::new(8.0, 16.0);
         let size_info = SizeInfo {
             width: cell_size.width * 80.0,
@@ -65,20 +39,26 @@ impl<T> Terminal<T> {
             padding_y: 0.0,
             dpr: 1.0,
         };
-        let mut config: TerminalConfig = color_scheme.into();
-        config.scrolling.set_history(scrollback_rows);
-        let term =
-            Rc::new(RefCell::new(Term::new(&config, &size_info, Clipboard::new(), event_listener)));
+        let columns = (size_info.width / size_info.cell_width) as u16;
+        let rows = (size_info.height / size_info.cell_height) as u16;
+        let pty_fd = pty.as_ref().and_then(|p| p.try_clone_fd().ok());
+        let term_inner = Parser::new_with_callbacks(
+            rows,
+            columns,
+            scrollback_rows as usize,
+            TerminalCallbacks::new(pty_fd),
+        );
+        let term = Rc::new(RefCell::new(term_inner));
 
         Self { term: Rc::clone(&term), title, pty, pty_fd: None }
     }
 
     #[cfg(test)]
-    fn new_for_test(event_listener: T, pty: ServerPty) -> Self {
-        Self::new(event_listener, String::new(), ColorScheme::default(), 1024, Some(pty))
+    fn new_for_test(pty: ServerPty) -> Self {
+        Self::new(String::new(), ColorScheme::default(), 1024, Some(pty))
     }
 
-    pub fn clone_term(&self) -> Rc<RefCell<Term<T>>> {
+    pub fn clone_term(&self) -> Rc<RefCell<Parser<TerminalCallbacks>>> {
         Rc::clone(&self.term)
     }
 
@@ -92,7 +72,9 @@ impl<T> Terminal<T> {
 
     pub fn resize(&mut self, size_info: &SizeInfo) {
         let mut term = self.term.borrow_mut();
-        term.resize(size_info);
+        let columns = (size_info.width / size_info.cell_width) as u16;
+        let rows = (size_info.height / size_info.cell_height) as u16;
+        term.screen_mut().set_size(rows, columns);
     }
 
     pub fn title(&self) -> &str {
@@ -103,27 +85,24 @@ impl<T> Terminal<T> {
         self.pty.as_ref()
     }
 
-    pub fn scroll(&mut self, scroll: Scroll)
-    where
-        T: EventListener,
-    {
+    pub fn scroll(&mut self, scroll: Scroll) {
         let mut term = self.term.borrow_mut();
-        term.scroll_display(scroll);
+        scroll.scroll_screen(term.screen_mut());
     }
 
     pub fn history_size(&self) -> usize {
         let term = self.term.borrow();
-        term.grid().history_size()
+        term.screen().scrollback_len()
     }
 
     pub fn display_offset(&self) -> usize {
         let term = self.term.borrow();
-        term.grid().display_offset()
+        term.screen().scrollback()
     }
 
-    pub fn mode(&self) -> TermMode {
+    pub fn mode(&self) -> bool {
         let term = self.term.borrow();
-        *term.mode()
+        term.screen().application_cursor()
     }
 
     fn file(&mut self) -> Result<Option<&mut File>, std::io::Error> {
@@ -139,23 +118,15 @@ impl<T> Terminal<T> {
     }
 }
 
-impl<T> Write for Terminal<T> {
+impl Write for Terminal {
     fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
         let fd = self.file()?;
-        if let Some(fd) = fd {
-            fd.write(buf)
-        } else {
-            Ok(buf.len())
-        }
+        if let Some(fd) = fd { fd.write(buf) } else { Ok(buf.len()) }
     }
 
     fn flush(&mut self) -> Result<(), std::io::Error> {
         let fd = self.file()?;
-        if let Some(fd) = fd {
-            fd.flush()
-        } else {
-            Ok(())
-        }
+        if let Some(fd) = fd { fd.flush() } else { Ok(()) }
     }
 }
 
@@ -163,19 +134,11 @@ impl<T> Write for Terminal<T> {
 mod tests {
     use super::*;
     use fuchsia_async as fasync;
-    use term_model::event::Event;
-
-    #[derive(Default)]
-    struct TestListener;
-
-    impl EventListener for TestListener {
-        fn send_event(&self, _event: Event) {}
-    }
 
     #[fasync::run_singlethreaded(test)]
     async fn can_create_terminal() -> Result<(), Error> {
         let pty = ServerPty::new()?;
-        let _ = Terminal::new_for_test(TestListener::default(), pty);
+        let _ = Terminal::new_for_test(pty);
         Ok(())
     }
 }

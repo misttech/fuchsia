@@ -5,14 +5,9 @@
 use crate::terminal::Terminal;
 use anyhow::Error;
 use fuchsia_async::{self as fasync, OnSignals};
-use std::io::sink;
-use term_model::ansi::Processor;
-use term_model::event::EventListener;
 
 pub trait LogClient: 'static + Clone {
-    type Listener;
-
-    fn create_terminal(&self, id: u32, title: String) -> Result<Terminal<Self::Listener>, Error>;
+    fn create_terminal(&self, id: u32, title: String) -> Result<Terminal, Error>;
     fn request_update(&self, id: u32);
 }
 
@@ -24,9 +19,7 @@ impl Log {
         client: &T,
         id: u32,
     ) -> Result<(), Error>
-    where
-        <T as LogClient>::Listener: EventListener,
-    {
+where {
         let client = client.clone();
         let terminal =
             client.create_terminal(id, "debuglog".to_string()).expect("failed to create terminal");
@@ -37,9 +30,6 @@ impl Log {
             fuchsia_runtime::process_self().koid().expect("failed to get koid for process");
 
         fasync::Task::local(async move {
-            let mut sink = sink();
-            let mut parser = Processor::new();
-
             loop {
                 let on_signal = OnSignals::new(&read_only_debuglog, zx::Signals::LOG_READABLE);
                 on_signal.await.expect("failed to wait for log readable");
@@ -52,7 +42,7 @@ impl Log {
                                 continue;
                             }
 
-                            let mut term = term.borrow_mut();
+                            let mut parser = term.borrow_mut();
 
                             // Write prefix with time stamps and ids.
                             let prefix = format!(
@@ -63,7 +53,7 @@ impl Log {
                                 record.tid.raw_koid(),
                             );
                             for byte in prefix.as_bytes() {
-                                parser.advance(&mut *term, *byte, &mut sink);
+                                parser.process(&[*byte]);
                             }
 
                             // Ignore any trailing newline character.
@@ -74,12 +64,12 @@ impl Log {
 
                             // Write record data.
                             for byte in record_data.iter() {
-                                parser.advance(&mut *term, *byte, &mut sink);
+                                parser.process(&[*byte]);
                             }
 
                             // Write carriage return and newline.
                             for byte in "\r\n".as_bytes() {
-                                parser.advance(&mut *term, *byte, &mut sink);
+                                parser.process(&[*byte]);
                             }
 
                             // Request terminal update.
@@ -89,9 +79,9 @@ impl Log {
                             break;
                         }
                         Err(_) => {
-                            let mut term = term.borrow_mut();
+                            let mut parser = term.borrow_mut();
                             for byte in "\r\n<<LOG ERROR>>".as_bytes() {
-                                parser.advance(&mut *term, *byte, &mut sink);
+                                parser.process(&[*byte]);
                             }
 
                             // Request terminal update.
@@ -113,27 +103,13 @@ mod tests {
     use super::*;
     use crate::colors::ColorScheme;
     use fuchsia_async as fasync;
-    use term_model::event::Event;
-
-    #[derive(Default)]
-    struct TestListener;
-
-    impl EventListener for TestListener {
-        fn send_event(&self, _event: Event) {}
-    }
 
     #[derive(Default, Clone)]
     struct TestLogClient;
 
     impl LogClient for TestLogClient {
-        type Listener = TestListener;
-
-        fn create_terminal(
-            &self,
-            _id: u32,
-            title: String,
-        ) -> Result<Terminal<Self::Listener>, Error> {
-            Ok(Terminal::new(TestListener::default(), title, ColorScheme::default(), 1024, None))
+        fn create_terminal(&self, _id: u32, title: String) -> Result<Terminal, Error> {
+            Ok(Terminal::new(title, ColorScheme::default(), 1024, None))
         }
         fn request_update(&self, _id: u32) {}
     }

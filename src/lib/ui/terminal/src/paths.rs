@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::renderer::{CursorShape, CursorStyle};
+use carnelian::Size;
 use carnelian::drawing::TextGrid;
 use carnelian::render::{Context as RenderContext, Path};
-use carnelian::Size;
 use euclid::{point2, vec2};
-use term_model::ansi::CursorStyle;
-
 // Thickness of lines is determined by multiplying thickness factor
 // with the cell height. 1/16 has been chosen as that results in 1px
 // thick lines for a 16px cell height.
@@ -552,12 +551,12 @@ pub fn maybe_path_for_cursor_style(
     cursor_style: CursorStyle,
     cell_size: &Size,
 ) -> Option<Path> {
-    match cursor_style {
-        CursorStyle::Block => Some(path_for_block(cell_size, render_context)),
-        CursorStyle::Underline => Some(path_for_underline(cell_size, render_context, None)),
-        CursorStyle::Beam => Some(path_for_beam(cell_size, render_context)),
-        CursorStyle::HollowBlock => Some(path_for_hollow_block(cell_size, render_context)),
-        CursorStyle::Hidden => None,
+    match cursor_style.shape {
+        CursorShape::Block => Some(path_for_block(cell_size, render_context)),
+        CursorShape::Underline => Some(path_for_underline(cell_size, render_context, None)),
+        CursorShape::Beam => Some(path_for_beam(cell_size, render_context)),
+        CursorShape::HollowBlock => Some(path_for_hollow_block(cell_size, render_context)),
+        CursorShape::Hidden => None,
     }
 }
 
@@ -595,7 +594,7 @@ mod tests {
     use super::*;
     use anyhow::Error;
     use carnelian::drawing::{DisplayRotation, FontFace};
-    use carnelian::render::{generic, ContextInner};
+    use carnelian::render::{ContextInner, generic};
     use euclid::size2;
 
     // This font creation method isn't ideal. The correct method would be to ask the Fuchsia
@@ -609,10 +608,10 @@ mod tests {
     #[test]
     fn check_cursor_paths() -> Result<(), Error> {
         const SUPPORTED_CURSOR_STYLES: &[CursorStyle] = &[
-            CursorStyle::Block,
-            CursorStyle::Underline,
-            CursorStyle::Beam,
-            CursorStyle::HollowBlock,
+            CursorStyle { shape: CursorShape::Block, blinking: false },
+            CursorStyle { shape: CursorShape::Underline, blinking: false },
+            CursorStyle { shape: CursorShape::Beam, blinking: false },
+            CursorStyle { shape: CursorShape::HollowBlock, blinking: false },
         ];
         let size = size2(64, 64);
         let forma_context = generic::Forma::new_context_without_token(size, DisplayRotation::Deg0);

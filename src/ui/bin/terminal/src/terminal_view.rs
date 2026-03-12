@@ -4,8 +4,7 @@
 
 use crate::key_util::get_input_sequence_for_key_event;
 use crate::ui::{
-    PointerEventResponse, ScrollContext, TerminalConfig, TerminalFacet, TerminalMessages,
-    TerminalScene,
+    PointerEventResponse, ScrollContext, TerminalFacet, TerminalMessages, TerminalScene,
 };
 use anyhow::{Context as _, Error};
 use carnelian::color::Color;
@@ -19,7 +18,7 @@ use euclid::size2;
 use fidl_fuchsia_hardware_pty::WindowSize;
 use futures::channel::mpsc;
 use futures::io::AsyncReadExt;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use log::error;
 use pty::ServerPty;
 use std::any::Any;
@@ -29,14 +28,11 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::rc::Rc;
-use term_model::ansi::Processor;
-use term_model::clipboard::Clipboard;
-use term_model::event::{Event, EventListener};
-use term_model::grid::Scroll;
-use term_model::index::{Column, Line, Point};
-use term_model::term::{SizeInfo, TermMode};
-use term_model::Term;
-use terminal::{cell_size_from_cell_height, get_scale_factor, FontSet};
+use std::sync::{Arc, Mutex};
+use terminal::{
+    FontSet, Scroll, SizeInfo, TerminalCallbacks, cell_size_from_cell_height, get_scale_factor,
+};
+use vt100::Parser;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 // Font files.
@@ -140,22 +136,6 @@ impl Write for PtyContext {
     }
 }
 
-struct EventProxy {
-    app_sender: AppSenderWrapper,
-    view_key: ViewKey,
-}
-
-impl EventListener for EventProxy {
-    fn send_event(&self, event: Event) {
-        match event {
-            Event::MouseCursorDirty => {
-                self.app_sender.request_render(self.view_key);
-            }
-            _ => (),
-        }
-    }
-}
-
 trait PointerEventResponseHandler {
     /// Signals that the struct should queue a view update.
     fn update_view(&mut self);
@@ -165,7 +145,7 @@ trait PointerEventResponseHandler {
 
 struct PointerEventResponseHandlerImpl<'a> {
     ctx: &'a mut ViewAssistantContext,
-    term: Rc<RefCell<Term<EventProxy>>>,
+    parser: Rc<RefCell<Parser<TerminalCallbacks>>>,
 }
 
 impl PointerEventResponseHandler for PointerEventResponseHandlerImpl<'_> {
@@ -174,8 +154,8 @@ impl PointerEventResponseHandler for PointerEventResponseHandlerImpl<'_> {
     }
 
     fn scroll_term(&mut self, scroll: Scroll) {
-        let mut term = self.term.borrow_mut();
-        term.scroll_display(scroll);
+        let mut parser = self.parser.borrow_mut();
+        scroll.scroll_screen(parser.screen_mut());
     }
 }
 
@@ -188,8 +168,9 @@ pub struct TerminalViewAssistant {
     last_known_size: Size,
     last_known_size_info: SizeInfo,
     pty_context: Option<PtyContext>,
+    callbacks_fd: Arc<Mutex<Option<File>>>,
     terminal_scene: TerminalScene,
-    term: Rc<RefCell<Term<EventProxy>>>,
+    parser: Rc<RefCell<Parser<TerminalCallbacks>>>,
     app_sender: AppSenderWrapper,
     view_key: ViewKey,
     scroll_to_bottom_on_input: bool,
@@ -252,15 +233,20 @@ impl TerminalViewAssistant {
         let app_sender =
             AppSenderWrapper { app_sender: Some(app_sender.clone()), test_sender: None };
 
-        let event_proxy = EventProxy { app_sender: app_sender.clone(), view_key };
-
-        let term = Term::new(&TerminalConfig::default(), &size_info, Clipboard::new(), event_proxy);
+        let callbacks_fd = Arc::new(Mutex::new(None));
+        let parser = Parser::new_with_callbacks(
+            (size_info.height / size_info.cell_height) as u16,
+            (size_info.width / size_info.cell_width) as u16,
+            10000,
+            TerminalCallbacks::new_with_shared(Arc::clone(&callbacks_fd)),
+        );
 
         TerminalViewAssistant {
             last_known_size: Size::zero(),
             last_known_size_info: size_info,
             pty_context: None,
-            term: Rc::new(RefCell::new(term)),
+            callbacks_fd,
+            parser: Rc::new(RefCell::new(parser)),
             terminal_scene,
             app_sender,
             view_key,
@@ -334,10 +320,9 @@ impl TerminalViewAssistant {
                 dpr: 1.0,
             };
 
-            // we can safely call borrow_mut here because we are running the terminal
-            // in single threaded mode. If we do move to a multithreaded model we will
-            // get a compiler error since we are using spawn_local in our pty_loop.
-            self.term.borrow_mut().resize(&term_size_info);
+            let cols = (clamped_size.width / cell_size.width) as u16;
+            let rows = (clamped_size.height / cell_size.height) as u16;
+            self.parser.borrow_mut().screen_mut().set_size(rows, cols);
 
             // PTY window size (in character cells).
             let window_size = WindowSize {
@@ -364,12 +349,13 @@ impl TerminalViewAssistant {
 
         let pty = ServerPty::new()?;
         let mut pty_context = PtyContext::from_pty(&pty)?;
+        *self.callbacks_fd.lock().unwrap() = pty.try_clone_fd().ok();
         let mut resize_receiver = pty_context.take_resize_receiver();
 
         let app_sender = self.app_sender.clone();
         let view_key = self.view_key;
 
-        let term_clone = self.term.clone();
+        let parser_clone = self.parser.clone();
         let spawn_command = self.spawn_command.clone();
         let spawn_environ = self.spawn_environ.clone();
 
@@ -396,9 +382,6 @@ impl TerminalViewAssistant {
                 fasync::net::EventedFd::new(fd).expect("failed to create evented_fd for io_loop")
             };
 
-            let mut write_fd = process.pty.try_clone_fd().expect("unable to clone pty write fd");
-            let mut parser = Processor::new();
-
             let mut read_buf = [0u8; BYTE_BUFFER_MAX_SIZE];
             loop {
                 let mut read_fut = evented_fd.read(&mut read_buf).fuse();
@@ -412,11 +395,9 @@ impl TerminalViewAssistant {
                             0
                         });
                         ftrace::duration!("terminal", "parse_bytes", "len" => read_count as u32);
-                        let mut term = term_clone.borrow_mut();
+                        let mut parser = parser_clone.borrow_mut();
                         if read_count > 0 {
-                            for byte in &read_buf[0..read_count] {
-                                parser.advance(&mut *term, *byte, &mut write_fd);
-                            }
+                            parser.process(&read_buf[0..read_count]);
                             app_sender.request_render(view_key);
                         }
                     },
@@ -479,7 +460,7 @@ impl TerminalViewAssistant {
             return Ok(());
         }
 
-        let app_cursor = self.term.borrow().mode().contains(TermMode::APP_CURSOR);
+        let app_cursor = self.parser.borrow().screen().application_cursor();
         if let Some(string) = get_input_sequence_for_key_event(event, app_cursor) {
             // In practice these writes will contain a small amount of data
             // so we can use a synchronous write. If that proves to not be the
@@ -492,8 +473,8 @@ impl TerminalViewAssistant {
 
             // Scroll to bottom on input if enabled.
             if self.scroll_to_bottom_on_input {
-                let mut term = self.term.borrow_mut();
-                term.scroll_display(Scroll::Bottom);
+                let mut parser = self.parser.borrow_mut();
+                parser.screen_mut().set_scrollback(0);
             }
         }
 
@@ -543,7 +524,8 @@ impl TerminalViewAssistant {
                         };
 
                         if let Some(scroll) = maybe_scroll {
-                            self.term.borrow_mut().scroll_display(scroll);
+                            let mut parser = self.parser.borrow_mut();
+                            scroll.scroll_screen(parser.screen_mut());
                             // Show scroll thumb after scrolling.
                             self.terminal_scene.show_scroll_thumb();
                             return Ok(true);
@@ -609,33 +591,28 @@ impl ViewAssistant for TerminalViewAssistant {
                 self.view_key,
                 self.font_set.clone(),
                 &cell_size,
-                self.term.clone(),
+                self.parser.clone(),
             )));
 
             SceneDetails { scene: builder.build(), terminal }
         });
 
-        let term = self.term.borrow();
-        let grid = term.grid();
+        let parser = self.parser.borrow();
+        let screen = parser.screen();
 
         let scroll_context = ScrollContext {
-            history: grid.history_size(),
-            visible_lines: *grid.num_lines(),
-            display_offset: grid.display_offset(),
+            history: screen.scrollback_len().saturating_add(screen.size().0.into()),
+            visible_lines: screen.size().0.into(),
+            display_offset: screen.scrollback(),
         };
         self.terminal_scene.update_scroll_context(scroll_context);
 
         // Write the grid to inspect for e2e testing. The contents will trim all whitespace
         // from either end of the string which means that the trailing space after the prompt
         // will not be included.
-        let bottom = grid.display_offset();
-        let top = bottom + *grid.num_lines() - 1;
-
-        let txt = term.bounds_to_string(
-            Point::new(*Line(top), Column(0)),
-            Point::new(*Line(bottom), grid.num_cols()),
-        );
-        fuchsia_inspect::component::inspector().root().record_string("grid", txt.trim());
+        fuchsia_inspect::component::inspector()
+            .root()
+            .record_string("grid", screen.contents().trim());
 
         scene_details.scene.render(render_context, ready_event, context)?;
         self.scene_details = Some(scene_details);
@@ -660,7 +637,7 @@ impl ViewAssistant for TerminalViewAssistant {
         mouse_event: &input::mouse::Event,
     ) -> Result<(), Error> {
         if let Some(response) = self.terminal_scene.handle_mouse_event(mouse_event, ctx) {
-            let mut handler = PointerEventResponseHandlerImpl { ctx, term: self.term.clone() };
+            let mut handler = PointerEventResponseHandlerImpl { ctx, parser: self.parser.clone() };
             self.handle_pointer_event_response(response, &mut handler);
         }
         Ok(())
@@ -673,7 +650,7 @@ impl ViewAssistant for TerminalViewAssistant {
         touch_event: &input::touch::Event,
     ) -> Result<(), Error> {
         if let Some(response) = self.terminal_scene.handle_touch_event(touch_event, ctx) {
-            let mut handler = PointerEventResponseHandlerImpl { ctx, term: self.term.clone() };
+            let mut handler = PointerEventResponseHandlerImpl { ctx, parser: self.parser.clone() };
             self.handle_pointer_event_response(response, &mut handler);
         }
         Ok(())
@@ -739,8 +716,8 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn handle_pointer_event_response_does_not_update_view_for_scroll_lines(
-    ) -> Result<(), Error> {
+    async fn handle_pointer_event_response_does_not_update_view_for_scroll_lines()
+    -> Result<(), Error> {
         let mut view = TerminalViewAssistant::new_for_test();
 
         let mut handler = TestPointerEventResponder::new();
@@ -810,46 +787,6 @@ mod tests {
 
         assert!((size_info.width - 100.0).abs() <= 1.0, "size_info {size_info:?}");
         assert!((size_info.height - 100.0).abs() <= 1.0, "size_info {size_info:?}");
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn event_proxy_calls_view_update_on_dirty_mouse_cursor() -> Result<(), Error> {
-        let (sender, mut receiver) = mpsc::unbounded();
-        let app_sender = AppSenderWrapper { app_sender: None, test_sender: Some(sender) };
-
-        let event_proxy = EventProxy { app_sender, view_key: Default::default() };
-
-        event_proxy.send_event(Event::MouseCursorDirty);
-
-        wait_until_update_received_or_timeout(&mut receiver)
-            .await
-            .context(":event_proxy_calls_view_update_on_dirty_mouse_cursor failed to get update")?;
-
-        Ok(())
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn scroll_display_triggers_call_to_redraw() -> Result<(), Error> {
-        let (view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;
-
-        let event_proxy =
-            EventProxy { app_sender: view.app_sender.clone(), view_key: view.view_key };
-
-        let mut term = Term::new(
-            &TerminalConfig::default(),
-            &view.last_known_size_info,
-            Clipboard::new(),
-            event_proxy,
-        );
-
-        term.scroll_display(Scroll::Lines(1));
-
-        // No redraw will trigger a timeout and failure
-        wait_until_update_received_or_timeout(&mut receiver)
-            .await
-            .context(":resize_message_triggers_call_to_redraw after queue event")?;
-
-        Ok(())
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -929,18 +866,9 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn pty_message_reads_triggers_call_to_redraw() -> Result<(), Error> {
-        let (view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;
+        let (mut view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;
 
-        let mut fd = view
-            .pty_context
-            .as_ref()
-            .map(|ctx| ctx.file.try_clone().expect("attempt to clone fd failed"))
-            .unwrap();
-
-        fasync::Task::local(async move {
-            let () = fd.write_all(b"ls").unwrap();
-        })
-        .detach();
+        view.pty_context.as_mut().unwrap().write_all(b"ls").unwrap();
 
         // No redraw will trigger a timeout and failure
         wait_until_update_received_or_timeout(&mut receiver)
@@ -983,36 +911,27 @@ mod tests {
 
         // TODO: this variable triggered the `must_not_suspend` lint and may be held across an await
         // If this is the case, it is an error. See https://fxbug.dev/42168913 for more details
-        let term = view.term.borrow();
+        let parser = view.parser.borrow();
 
-        let col_pos_before = term.cursor().point.col;
-        drop(term);
+        let col_pos_before = parser.screen().cursor_position().1;
+        drop(parser);
 
-        let mut fd = view
-            .pty_context
-            .as_ref()
-            .map(|ctx| ctx.file.try_clone().expect("attempt to clone fd failed"))
-            .unwrap();
-
-        fasync::Task::local(async move {
-            let () = fd.write_all(b"A").unwrap();
-        })
-        .detach();
+        view.pty_context.as_mut().unwrap().write_all(b"A").unwrap();
 
         // Wait until we get a notice that the view is ready to redraw
         wait_until_update_received_or_timeout(&mut receiver)
             .await
             .context(":bytes_written_are_processed_by_term after write")?;
 
-        let term = view.term.borrow();
-        let col_pos_after = term.cursor().point.col;
+        let parser = view.parser.borrow();
+        let col_pos_after = parser.screen().cursor_position().1;
         assert_eq!(col_pos_before + 1, col_pos_after);
 
         Ok(())
     }
 
-    async fn make_test_view_with_spawned_pty_loop(
-    ) -> Result<(TerminalViewAssistant, mpsc::UnboundedReceiver<Message>), Error> {
+    async fn make_test_view_with_spawned_pty_loop()
+    -> Result<(TerminalViewAssistant, mpsc::UnboundedReceiver<Message>), Error> {
         let (sender, mut receiver) = mpsc::unbounded();
 
         let mut view = TerminalViewAssistant::new_for_test();

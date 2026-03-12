@@ -11,46 +11,20 @@ use crate::terminal::Terminal;
 use crate::view::{ViewMessages, VirtualConsoleViewAssistant};
 use anyhow::Error;
 use carnelian::app::Config;
-use carnelian::{make_message, AppAssistant, AppSender, MessageTarget, ViewAssistantPtr, ViewKey};
+use carnelian::{AppAssistant, AppSender, MessageTarget, ViewAssistantPtr, ViewKey, make_message};
 use fidl::prelude::*;
 use fidl_fuchsia_hardware_display::VirtconMode;
 use fidl_fuchsia_virtualconsole::SessionManagerMarker;
 use fuchsia_async as fasync;
 use pty::ServerPty;
 use std::collections::BTreeMap;
-use term_model::event::{Event, EventListener};
 
 const DEBUGLOG_ID: u32 = 0;
 const LOGO_ID: u32 = 1;
 const FIRST_SESSION_ID: u32 = 2;
 
-pub struct EventProxy {
-    app_sender: AppSender,
-    id: u32,
-}
-
-impl EventProxy {
-    pub fn new(app_sender: &AppSender, id: u32) -> Self {
-        Self { app_sender: app_sender.clone(), id }
-    }
-}
-
-impl EventListener for EventProxy {
-    fn send_event(&self, event: Event) {
-        match event {
-            Event::MouseCursorDirty => {
-                self.app_sender.queue_message(
-                    MessageTarget::Application,
-                    make_message(AppMessages::RequestTerminalUpdateMessage(self.id)),
-                );
-            }
-            _ => (),
-        }
-    }
-}
-
 enum AppMessages {
-    AddTerminalMessage(u32, Terminal<EventProxy>, bool),
+    AddTerminalMessage(u32, Terminal, bool),
     RequestTerminalUpdateMessage(u32),
 }
 
@@ -68,10 +42,8 @@ impl VirtualConsoleClient {
         title: String,
         make_active: bool,
         pty: Option<ServerPty>,
-    ) -> Result<Terminal<EventProxy>, Error> {
-        let event_proxy = EventProxy::new(&self.app_sender, id);
-        let terminal =
-            Terminal::new(event_proxy, title, self.color_scheme, self.scrollback_rows, pty);
+    ) -> Result<Terminal, Error> {
+        let terminal = Terminal::new(title, self.color_scheme, self.scrollback_rows, pty);
         let terminal_clone = terminal.try_clone()?;
         self.app_sender.queue_message(
             MessageTarget::Application,
@@ -89,9 +61,7 @@ impl VirtualConsoleClient {
 }
 
 impl LogClient for VirtualConsoleClient {
-    type Listener = EventProxy;
-
-    fn create_terminal(&self, id: u32, title: String) -> Result<Terminal<Self::Listener>, Error> {
+    fn create_terminal(&self, id: u32, title: String) -> Result<Terminal, Error> {
         VirtualConsoleClient::create_terminal(self, id, title, true, None)
     }
 
@@ -101,15 +71,13 @@ impl LogClient for VirtualConsoleClient {
 }
 
 impl SessionManagerClient for VirtualConsoleClient {
-    type Listener = EventProxy;
-
     fn create_terminal(
         &self,
         id: u32,
         title: String,
         make_active: bool,
         pty: ServerPty,
-    ) -> Result<Terminal<Self::Listener>, Error> {
+    ) -> Result<Terminal, Error> {
         VirtualConsoleClient::create_terminal(self, id, title, make_active, Some(pty))
     }
 
@@ -123,7 +91,7 @@ pub struct VirtualConsoleAppAssistant {
     args: VirtualConsoleArgs,
     read_only_debuglog: Option<zx::DebugLog>,
     session_manager: SessionManager,
-    terminals: BTreeMap<u32, (Terminal<EventProxy>, bool)>,
+    terminals: BTreeMap<u32, (Terminal, bool)>,
     first_view: Option<ViewKey>,
 }
 
