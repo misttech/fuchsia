@@ -1,14 +1,15 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use fdomain_client::fidl::Proxy as _;
+use fdomain_fuchsia_dash as fdash;
 use ffx_target_package_explore_args::ExploreCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxContext as _, FfxMain, FfxTool, Result, bug, exit_with_code, user_error};
-use fidl_fuchsia_dash as fdash;
 use futures::stream::StreamExt as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -56,7 +57,7 @@ impl FfxMain for ExploreTool {
 async fn explore_cmd(cmd: ExploreCommand, dash_launcher: fdash::LauncherProxy) -> Result<()> {
     let ExploreCommand { url, subpackages, tools, command, fuchsia_pkg_resolver } = cmd;
 
-    let (client, server) = fidl::Socket::create_stream();
+    let (client, server) = dash_launcher.domain().create_stream_socket();
     let stdout = if command.is_some() {
         socket_to_stdio::Stdout::buffered()
     } else {
@@ -82,7 +83,7 @@ async fn explore_cmd(cmd: ExploreCommand, dash_launcher: fdash::LauncherProxy) -
         })?;
 
     #[allow(clippy::large_futures)]
-    let () = socket_to_stdio::connect_socket_to_stdio(client, stdout).await?;
+    let () = socket_to_stdio::connect_fdomain_socket_to_stdio(client, stdout).await?;
 
     let exit_code = wait_for_shell_exit(&dash_launcher).await?;
     exit_with_code!(exit_code);

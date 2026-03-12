@@ -10,11 +10,11 @@ ffx_plugin("ffx_target_package_explore") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust",
+    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/client",
     "//src/sys/lib/socket-to-stdio",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
@@ -22,7 +22,7 @@ ffx_plugin("ffx_target_package_explore") {
     "//third_party/rust_crates:serde",
   ]
   args_deps = [
-    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust",
+    "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust_fdomain",
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
   ]
