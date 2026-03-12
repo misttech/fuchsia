@@ -11,20 +11,21 @@ rustc_library("terminal") {
 
   deps = [
     "//src/lib/ui/carnelian",
+    "//third_party/alacritty/alacritty_terminal:term_model",
     "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:rustc-hash",
     "//third_party/rust_crates:ttf-parser",
-    "//third_party/rust_crates:vt100",
   ]
 
-  test_deps = [ "//third_party/rust_crates:anyhow" ]
+  test_deps = [
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
+  ]
 
   sources = [
     "src/lib.rs",
     "src/paths.rs",
     "src/renderer.rs",
-    "src/terminal_callbacks.rs",
-    "src/types.rs",
   ]
 
   inputs = [ "//prebuilt/third_party/fonts/robotomono/RobotoMono-Regular.ttf" ]
