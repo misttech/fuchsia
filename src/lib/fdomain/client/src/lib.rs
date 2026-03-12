@@ -62,6 +62,8 @@ pub use Handle as Thread;
 pub use Handle as Vmar;
 #[rustfmt::skip]
 pub use Handle as Vmo;
+#[rustfmt::skip]
+pub use Handle as Counter;
 
 use proto::f_domain_ordinals as ordinals;
 
