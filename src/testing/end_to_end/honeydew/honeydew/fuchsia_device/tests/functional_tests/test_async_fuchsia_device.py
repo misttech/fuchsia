@@ -8,11 +8,10 @@ import os
 import tempfile
 from typing import Any
 
+import fuchsia_base_test
 import fuchsia_inspect
-from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -43,10 +42,10 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # pylint: disable=pointless-statement
-class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
+class AsyncFuchsiaDeviceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """AsyncFuchsiaDevice tests"""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
@@ -56,12 +55,11 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns device_config variable with testbed config associated with
               this device
         """
-        super().setup_class()
+        await super().setup_class()
         fd = self.fuchsia_devices[0]
-        assert isinstance(fd, FuchsiaDevice)
-        self.device = fd.as_async()
+        self.device = fd
 
-    def test_board(self) -> None:
+    async def test_board(self) -> None:
         """Test case for board"""
         board: str = self.device.board
         # Note - If "board" is specified in "expected_values" in
@@ -90,7 +88,7 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             self.user_params["expected_values"]["model"],
         )
 
-    def test_product(self) -> None:
+    async def test_product(self) -> None:
         """Test case for product"""
         product: str = self.device.product
         asserts.assert_is_not_none(product)
@@ -135,15 +133,17 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         # a string reboot reason should always be available.
         asserts.assert_is_instance(await self.device.last_reboot_reason(), str)
 
-    def test_is_starnix_device(self) -> None:
+    async def test_is_starnix_device(self) -> None:
         """Test case for is_starnix_device"""
         asserts.assert_is_instance(self.device.is_starnix_device(), bool)
 
-    def test_health_check(self) -> None:
+    async def test_health_check(self) -> None:
         """Test case for health_check()"""
         self.device.health_check()
 
-    def test_get_inspect_data_without_selectors_and_monikers(self) -> None:
+    async def test_get_inspect_data_without_selectors_and_monikers(
+        self,
+    ) -> None:
         inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
             self.device.get_inspect_data()
         )
@@ -157,7 +157,9 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
                 fuchsia_inspect.InspectData,
             )
 
-    def test_get_inspect_data_with_one_selector_validate_schema(self) -> None:
+    async def test_get_inspect_data_with_one_selector_validate_schema(
+        self,
+    ) -> None:
         class _AnyUnsignedInteger:
             def __eq__(self, other: object) -> bool:
                 return isinstance(other, int) and other >= 0
@@ -186,7 +188,7 @@ class AsyncFuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
             f"received payload: ####{fuchsia_inspect_health_data.payload}####",
         )
 
-    def test_get_inspect_data_with_multiple_selectors(self) -> None:
+    async def test_get_inspect_data_with_multiple_selectors(self) -> None:
         selectors: list[str] = [
             "bootstrap/fshost",
             "bootstrap/archivist",
