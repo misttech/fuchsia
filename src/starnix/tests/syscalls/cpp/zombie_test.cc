@@ -85,7 +85,8 @@ class ZombieProcTest : public ProcTestBase {
     return files::ReadFileToString(path, &contents);
   }
 
-  void AssertZombieProcFileOpenError(const char* name, int expected_errno) const {
+  testing::AssertionResult AssertZombieProcFileOpenError(const char* name,
+                                                         int expected_errno) const {
     std::string path = ProcFilePath(leader_pid_, name);
     fbl::unique_fd fd(open(path.c_str(), O_RDONLY));
     // Being able to open the file is an error. For debugging purposes, log the contents of the file
@@ -93,49 +94,87 @@ class ZombieProcTest : public ProcTestBase {
     if (fd) {
       std::string contents;
       if (files::ReadFileDescriptorToString(fd.get(), &contents)) {
-        GTEST_FAIL() << path << " could be opened, contents: " << contents;
+        return testing::AssertionFailure()
+               << "Opening " << path
+               << " succeeded, expected failure, but got contents: " << contents;
       }
-      GTEST_FAIL() << path << " could be opened, but could not be read";
+      return testing::AssertionFailure()
+             << "Opening " << path << " succeeded, expected failure, but could not read contents";
     }
-    ASSERT_FALSE(fd);
-    ASSERT_EQ(errno, expected_errno);
+    if (errno != expected_errno) {
+      return testing::AssertionFailure() << "Expected open(" << path << ") to fail with "
+                                         << expected_errno << ", but got " << errno;
+    }
+    return testing::AssertionSuccess();
   }
 
-  void AssertZombieProcFileReadError(const char* name, int expected_errno) const {
+  testing::AssertionResult AssertZombieProcFileReadError(const char* name,
+                                                         int expected_errno) const {
     std::string path = ProcFilePath(leader_pid_, name);
     fbl::unique_fd fd(open(path.c_str(), O_RDONLY));
-    ASSERT_TRUE(fd);
+    if (!fd) {
+      return testing::AssertionFailure() << "Failed to open " << path << ": " << errno;
+    }
 
     char buf[1];
     ssize_t res = read(fd.get(), buf, sizeof(buf));
-    ASSERT_LT(res, 0);
-    ASSERT_EQ(errno, expected_errno);
+    if (res >= 0) {
+      return testing::AssertionFailure() << "Read from " << path << " succeeded, expected failure";
+    }
+    if (errno != expected_errno) {
+      return testing::AssertionFailure() << "Expected read(" << path << ") to fail with "
+                                         << expected_errno << ", but got " << errno;
+    }
+    return testing::AssertionSuccess();
   }
 
-  void AssertZombieProcFileEmpty(const char* name) const {
+  testing::AssertionResult AssertZombieProcFileEmpty(const char* name) const {
     std::string contents;
-    ASSERT_TRUE(ReadZombieProcFile(name, contents));
-    ASSERT_EQ(contents, "");
+    if (!ReadZombieProcFile(name, contents)) {
+      return testing::AssertionFailure() << "Failed to read file " << name;
+    }
+    if (!contents.empty()) {
+      return testing::AssertionFailure()
+             << "Expected file " << name << " to be empty, but got contents: " << contents;
+    }
+    return testing::AssertionSuccess();
   }
 
-  void AssertZombieProcFileNotEmpty(const char* name) const {
+  testing::AssertionResult AssertZombieProcFileNotEmpty(const char* name) const {
     std::string contents;
-    ASSERT_TRUE(ReadZombieProcFile(name, contents));
-    ASSERT_FALSE(contents.empty());
+    if (!ReadZombieProcFile(name, contents)) {
+      return testing::AssertionFailure() << "Failed to read file " << name;
+    }
+    if (contents.empty()) {
+      return testing::AssertionFailure() << "Expected file " << name << " to be non-empty";
+    }
+    return testing::AssertionSuccess();
   }
 
-  void AssertZombieProcDirEmpty(const char* name) const {
+  testing::AssertionResult AssertZombieProcDirEmpty(const char* name) const {
     std::string path = ProcFilePath(leader_pid_, name);
     std::vector<std::string> contents;
-    ASSERT_TRUE(files::ReadDirContents(path, &contents));
-    ASSERT_EQ(contents, (std::vector<std::string>{".", ".."}));
+    if (!files::ReadDirContents(path, &contents)) {
+      return testing::AssertionFailure() << "Failed to read directory " << path;
+    }
+    const std::vector<std::string> empty_contents = {".", ".."};
+    if (contents != empty_contents) {
+      return testing::AssertionFailure() << "Expected directory " << path << " to be empty";
+    }
+    return testing::AssertionSuccess();
   }
 
-  void AssertZombieProcDirNotEmpty(const char* name) const {
+  testing::AssertionResult AssertZombieProcDirNotEmpty(const char* name) const {
     std::string path = ProcFilePath(leader_pid_, name);
     std::vector<std::string> contents;
-    ASSERT_TRUE(files::ReadDirContents(path, &contents));
-    ASSERT_NE(contents, (std::vector<std::string>{".", ".."}));
+    if (!files::ReadDirContents(path, &contents)) {
+      return testing::AssertionFailure() << "Failed to read directory " << path;
+    }
+    std::vector<std::string> empty_contents = {".", ".."};
+    if (contents == empty_contents) {
+      return testing::AssertionFailure() << "Expected directory " << path << " to be non-empty";
+    }
+    return testing::AssertionSuccess();
   }
 
   test_helper::ForkHelper fork_helper_;
@@ -144,25 +183,37 @@ class ZombieProcTest : public ProcTestBase {
 };
 
 // Nodes that fail with ENOENT on open()
-TEST_F(ZombieProcTest, Cwd) { AssertZombieProcFileOpenError("cwd", ENOENT); }
-TEST_F(ZombieProcTest, Exe) { AssertZombieProcFileOpenError("exe", ENOENT); }
-TEST_F(ZombieProcTest, Root) { AssertZombieProcFileOpenError("root", ENOENT); }
+TEST_F(ZombieProcTest, Cwd) { ASSERT_TRUE(AssertZombieProcFileOpenError("cwd", ENOENT)); }
+TEST_F(ZombieProcTest, Exe) { ASSERT_TRUE(AssertZombieProcFileOpenError("exe", ENOENT)); }
+TEST_F(ZombieProcTest, Root) { ASSERT_TRUE(AssertZombieProcFileOpenError("root", ENOENT)); }
 
 // Nodes that fail with EINVAL on open()
-TEST_F(ZombieProcTest, MountInfo) { AssertZombieProcFileOpenError("mountinfo", EINVAL); }
-TEST_F(ZombieProcTest, Mounts) { AssertZombieProcFileOpenError("mounts", EINVAL); }
+TEST_F(ZombieProcTest, MountInfo) {
+  ASSERT_TRUE(AssertZombieProcFileOpenError("mountinfo", EINVAL));
+}
+TEST_F(ZombieProcTest, Mounts) { ASSERT_TRUE(AssertZombieProcFileOpenError("mounts", EINVAL)); }
 
 // Nodes that succeed on open() but fail with EINVAL on read()
-TEST_F(ZombieProcTest, AttrExec) { AssertZombieProcFileReadError("attr/exec", EINVAL); }
-TEST_F(ZombieProcTest, AttrFscreate) { AssertZombieProcFileReadError("attr/fscreate", EINVAL); }
-TEST_F(ZombieProcTest, AttrKeycreate) { AssertZombieProcFileReadError("attr/keycreate", EINVAL); }
-TEST_F(ZombieProcTest, AttrPrev) { AssertZombieProcFileReadError("attr/prev", EINVAL); }
-TEST_F(ZombieProcTest, AttrSockcreate) { AssertZombieProcFileReadError("attr/sockcreate", EINVAL); }
+TEST_F(ZombieProcTest, AttrExec) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("attr/exec", EINVAL));
+}
+TEST_F(ZombieProcTest, AttrFscreate) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("attr/fscreate", EINVAL));
+}
+TEST_F(ZombieProcTest, AttrKeycreate) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("attr/keycreate", EINVAL));
+}
+TEST_F(ZombieProcTest, AttrPrev) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("attr/prev", EINVAL));
+}
+TEST_F(ZombieProcTest, AttrSockcreate) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("attr/sockcreate", EINVAL));
+}
 TEST_F(ZombieProcTest, ClearRefs) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileReadError("clear_refs", EINVAL);
+  ASSERT_TRUE(AssertZombieProcFileReadError("clear_refs", EINVAL));
 }
 
 // Nodes that are readable and contain no data
@@ -170,67 +221,67 @@ TEST_F(ZombieProcTest, Auxv) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileEmpty("auxv");
+  ASSERT_TRUE(AssertZombieProcFileEmpty("auxv"));
 }
-TEST_F(ZombieProcTest, Cmdline) { AssertZombieProcFileEmpty("cmdline"); }
+TEST_F(ZombieProcTest, Cmdline) { ASSERT_TRUE(AssertZombieProcFileEmpty("cmdline")); }
 TEST_F(ZombieProcTest, Environ) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileEmpty("environ");
+  ASSERT_TRUE(AssertZombieProcFileEmpty("environ"));
 }
 TEST_F(ZombieProcTest, Fd) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcDirEmpty("fd");
+  ASSERT_TRUE(AssertZombieProcDirEmpty("fd"));
 }
-TEST_F(ZombieProcTest, FdInfo) { AssertZombieProcDirEmpty("fdinfo"); }
-TEST_F(ZombieProcTest, Maps) { AssertZombieProcFileEmpty("maps"); }
+TEST_F(ZombieProcTest, FdInfo) { ASSERT_TRUE(AssertZombieProcDirEmpty("fdinfo")); }
+TEST_F(ZombieProcTest, Maps) { ASSERT_TRUE(AssertZombieProcFileEmpty("maps")); }
 TEST_F(ZombieProcTest, Mem) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileEmpty("mem");
+  ASSERT_TRUE(AssertZombieProcFileEmpty("mem"));
 }
 TEST_F(ZombieProcTest, PageMap) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileEmpty("pagemap");
+  ASSERT_TRUE(AssertZombieProcFileEmpty("pagemap"));
 }
-TEST_F(ZombieProcTest, Smaps) { AssertZombieProcFileEmpty("smaps"); }
+TEST_F(ZombieProcTest, Smaps) { ASSERT_TRUE(AssertZombieProcFileEmpty("smaps")); }
 
 // Nodes that are readable and contain general data
-TEST_F(ZombieProcTest, AttrCurrent) { AssertZombieProcFileNotEmpty("attr/current"); }
-TEST_F(ZombieProcTest, Cgroup) { AssertZombieProcFileNotEmpty("cgroup"); }
-TEST_F(ZombieProcTest, Comm) { AssertZombieProcFileNotEmpty("comm"); }
+TEST_F(ZombieProcTest, AttrCurrent) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("attr/current")); }
+TEST_F(ZombieProcTest, Cgroup) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("cgroup")); }
+TEST_F(ZombieProcTest, Comm) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("comm")); }
 TEST_F(ZombieProcTest, Io) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileNotEmpty("io");
+  ASSERT_TRUE(AssertZombieProcFileNotEmpty("io"));
 }
-TEST_F(ZombieProcTest, Limits) { AssertZombieProcFileNotEmpty("limits"); }
+TEST_F(ZombieProcTest, Limits) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("limits")); }
 TEST_F(ZombieProcTest, Ns) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcDirNotEmpty("ns");
+  ASSERT_TRUE(AssertZombieProcDirNotEmpty("ns"));
 }
-TEST_F(ZombieProcTest, OomAdj) { AssertZombieProcFileNotEmpty("oom_adj"); }
-TEST_F(ZombieProcTest, OomScore) { AssertZombieProcFileNotEmpty("oom_score"); }
-TEST_F(ZombieProcTest, OomScoreAdj) { AssertZombieProcFileNotEmpty("oom_score_adj"); }
-TEST_F(ZombieProcTest, Sched) { AssertZombieProcFileNotEmpty("sched"); }
-TEST_F(ZombieProcTest, Schedstat) { AssertZombieProcFileNotEmpty("schedstat"); }
-TEST_F(ZombieProcTest, Statm) { AssertZombieProcFileNotEmpty("statm"); }
+TEST_F(ZombieProcTest, OomAdj) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("oom_adj")); }
+TEST_F(ZombieProcTest, OomScore) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("oom_score")); }
+TEST_F(ZombieProcTest, OomScoreAdj) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("oom_score_adj")); }
+TEST_F(ZombieProcTest, Sched) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("sched")); }
+TEST_F(ZombieProcTest, Schedstat) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("schedstat")); }
+TEST_F(ZombieProcTest, Statm) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("statm")); }
 TEST_F(ZombieProcTest, TimerslackNs) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Requires CAP_SYS_ADMIN";
   }
-  AssertZombieProcFileNotEmpty("timerslack_ns");
+  ASSERT_TRUE(AssertZombieProcFileNotEmpty("timerslack_ns"));
 }
-TEST_F(ZombieProcTest, Wchan) { AssertZombieProcFileNotEmpty("wchan"); }
+TEST_F(ZombieProcTest, Wchan) { ASSERT_TRUE(AssertZombieProcFileNotEmpty("wchan")); }
 
 // Nodes that are readable and contain specific data
 TEST_F(ZombieProcTest, Stat) {
