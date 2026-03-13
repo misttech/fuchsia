@@ -159,6 +159,69 @@ class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
             ) from status
 
 
+class AsyncMouseDeviceUsingFc(user_input.AsyncMouseDevice, AsyncLazyReady):
+    """Virtual MouseDevice for testing using FuchsiaController.
+
+    Args:
+        device_name: name of testing device.
+        fuchsia_controller: FuchsiaController transport.
+
+    Raises:
+        UserInputError: if failed to create virtual mouse device.
+    """
+
+    def __init__(
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+    ) -> None:
+        super().__init__()
+        self._device_name = device_name
+        self._fuchsia_controller = fuchsia_controller
+        self._mouse_proxy: f_test_input.MouseClient | None = None
+
+    async def make_ready(self) -> None:
+        await super().make_ready()
+        (
+            channel_server,
+            channel_client,
+        ) = self._fuchsia_controller.channel_create()
+
+        try:
+            input_registry_proxy = f_test_input.RegistryClient(
+                self._fuchsia_controller.connect_device_proxy(
+                    _FcProxies.INPUT_REGISTRY
+                )
+            )
+            await input_registry_proxy.register_mouse(
+                device=channel_server.take(),
+            )
+        except fcp.FcTransportStatus as status:
+            raise user_input_errors.UserInputError(
+                f"Failed to initialize mouse device on {self._device_name}"
+            ) from status
+
+        self._mouse_proxy = f_test_input.MouseClient(channel_client)
+
+    @ensure_ready
+    async def scroll(
+        self,
+        scroll_v_detent: int = 0,
+        scroll_h_detent: int = 0,
+    ) -> None:
+        """Instantiates a scroll event."""
+        assert self._mouse_proxy is not None
+        try:
+            await self._mouse_proxy.simulate_mouse_event(
+                scroll_v_detent=scroll_v_detent,
+                scroll_h_detent=scroll_h_detent,
+            )
+        except fcp.FcTransportStatus as status:
+            raise user_input_errors.UserInputError(
+                f"scroll operation failed on {self._device_name}"
+            ) from status
+
+
 class TouchDeviceUsingFc(user_input.TouchDevice):
     """Virtual TouchDevice wrapper."""
 
@@ -306,6 +369,38 @@ class KeyboardDeviceUsingFc(user_input.KeyboardDevice):
         return self._inner
 
 
+class MouseDeviceUsingFc(user_input.MouseDevice):
+    """Virtual MouseDevice wrapper."""
+
+    def __init__(
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        inner: AsyncMouseDeviceUsingFc | None = None,
+    ) -> None:
+        self._inner = inner or AsyncMouseDeviceUsingFc(
+            device_name=device_name, fuchsia_controller=fuchsia_controller
+        )
+        if not self._inner._ready:  # pylint: disable=protected-access
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self._inner.make_ready()
+            )
+
+    def scroll(
+        self,
+        scroll_v_detent: int = 0,
+        scroll_h_detent: int = 0,
+    ) -> None:
+        """Instantiates a scroll event."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.scroll(scroll_v_detent, scroll_h_detent)
+        )
+
+    def as_async(self) -> AsyncMouseDeviceUsingFc:
+        """Returns the async version of MouseDevice."""
+        return self._inner
+
+
 class AsyncUserInputUsingFc(user_input.AsyncUserInput):
     """Async UserInput affordance implementation using FuchsiaController."""
 
@@ -356,6 +451,12 @@ class AsyncUserInputUsingFc(user_input.AsyncUserInput):
             device_name=self._device_name, fuchsia_controller=self._fc_transport
         )
 
+    def create_mouse_device(self) -> AsyncMouseDeviceUsingFc:
+        """Create a virtual mouse device for testing mouse input."""
+        return AsyncMouseDeviceUsingFc(
+            device_name=self._device_name, fuchsia_controller=self._fc_transport
+        )
+
 
 class UserInputUsingFc(user_input.UserInput):
     """UserInput affordance implementation using FuchsiaController."""
@@ -395,6 +496,15 @@ class UserInputUsingFc(user_input.UserInput):
         """Create a virtual keyboard device wrapper."""
         async_device = self._inner.create_keyboard_device()
         return KeyboardDeviceUsingFc(
+            device_name=self._inner._device_name,  # pylint: disable=protected-access
+            fuchsia_controller=self._inner._fc_transport,  # pylint: disable=protected-access
+            inner=async_device,
+        )
+
+    def create_mouse_device(self) -> MouseDeviceUsingFc:
+        """Create a virtual mouse device wrapper."""
+        async_device = self._inner.create_mouse_device()
+        return MouseDeviceUsingFc(
             device_name=self._inner._device_name,  # pylint: disable=protected-access
             fuchsia_controller=self._inner._fc_transport,  # pylint: disable=protected-access
             inner=async_device,

@@ -140,6 +140,18 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # after = self.device.screenshot.take()
         # asserts.assert_not_equal(before.data[0:4], after.data[0:4])
 
+    def test_user_input_scroll(self) -> None:
+        self.dut.session.add_component(TOUCH_APP)
+
+        # TODO(b/492192785): Add test assertions once the example app
+        # supports and reacts to mouse input.
+
+        mouse_device = self.dut.user_input.create_mouse_device()
+
+        # Simulate a scroll event. If the underlying FIDL connection or
+        # registry fails, this will raise a UserInputError and fail the test.
+        mouse_device.scroll(scroll_v_detent=10)
+
 
 if __name__ == "__main__":
     test_runner.main()

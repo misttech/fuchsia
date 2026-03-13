@@ -330,6 +330,55 @@ class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
+    @mock.patch.object(
+        f_test_input.RegistryClient,
+        "register_mouse",
+        new_callable=mock.AsyncMock,
+        return_value=None,
+    )
+    async def test_create_mouse_device(self, register_mouse) -> None:  # type: ignore[no-untyped-def]
+        """Test for UserInput.create_mouse_device() method."""
+
+        mouse_device = self.user_input().create_mouse_device()
+        await mouse_device.make_ready()
+
+        self.fc_transport_obj.connect_device_proxy.assert_called_once_with(
+            custom_types.FidlEndpoint(
+                "/core/ui", "fuchsia.ui.test.input.Registry"
+            )
+        )
+        register_mouse.assert_called_once()
+
+        self.assertIsNotNone(mouse_device._mouse_proxy)
+
+    @mock.patch.object(
+        f_test_input.MouseClient,
+        "simulate_mouse_event",
+        new_callable=mock.AsyncMock,
+    )
+    @mock.patch.object(
+        f_test_input.RegistryClient,
+        "register_mouse",
+        new_callable=mock.AsyncMock,
+        return_value=None,
+    )
+    async def test_scroll(self, unused_register_mouse, simulate_mouse_event) -> None:  # type: ignore[no-untyped-def]
+        """Test for UserInput.scroll() method."""
+
+        mouse_device = self.user_input().create_mouse_device()
+        await mouse_device.scroll(
+            scroll_v_detent=1,
+            scroll_h_detent=0,
+        )
+        simulate_mouse_event.assert_has_calls(
+            [
+                mock.call(
+                    scroll_v_detent=1,
+                    scroll_h_detent=0,
+                ),
+            ]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

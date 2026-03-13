@@ -93,6 +93,26 @@ class AsyncKeyboardDevice(abc.ABC):
         """
 
 
+class AsyncMouseDevice(abc.ABC):
+    """Abstract base class for an async UserInput Mouse."""
+
+    @abc.abstractmethod
+    async def scroll(
+        self,
+        scroll_v_detent: int = 0,
+        scroll_h_detent: int = 0,
+    ) -> None:
+        """Instantiates a scroll event.
+
+        Args:
+            scroll_v_detent: Relative vertical scrolling displacement by detent.
+            scroll_h_detent: Relative horizontal scrolling displacement by detent.
+
+        Raises:
+            UserInputError: if failed scroll operation.
+        """
+
+
 class AsyncUserInput(abc.ABC):
     """Abstract base class for an async UserInput affordance."""
 
@@ -123,6 +143,17 @@ class AsyncUserInput(abc.ABC):
 
         Raises:
             UserInputError: if failed to create virtual keyboard device.
+        """
+
+    @abc.abstractmethod
+    def create_mouse_device(self) -> AsyncMouseDevice:
+        """Create a virtual mouse device for testing mouse input.
+
+        Returns:
+            AsyncMouseDevice object.
+
+        Raises:
+            UserInputError: if failed to create virtual mouse device.
         """
 
 
@@ -209,6 +240,30 @@ class KeyboardDevice(abc.ABC):
         """Returns the async version of KeyboardDevice."""
 
 
+class MouseDevice(abc.ABC):
+    """Abstract base class for UserInput Mouse."""
+
+    @abc.abstractmethod
+    def scroll(
+        self,
+        scroll_v_detent: int = 0,
+        scroll_h_detent: int = 0,
+    ) -> None:
+        """Instantiates a scroll event.
+
+        Args:
+            scroll_v_detent: Relative vertical scrolling displacement by detent.
+            scroll_h_detent: Relative horizontal scrolling displacement by detent.
+
+        Raises:
+            UserInputError: if failed scroll operation.
+        """
+
+    @abc.abstractmethod
+    def as_async(self) -> AsyncMouseDevice:
+        """Returns the async version of MouseDevice."""
+
+
 class UserInput(affordance.Affordance):
     """Abstract base class for UserInput affordance."""
 
@@ -233,6 +288,14 @@ class UserInput(affordance.Affordance):
 
         Raises:
             UserInputError: if failed to create virtual keyboard device.
+        """
+
+    @abc.abstractmethod
+    def create_mouse_device(self) -> MouseDevice:
+        """Create a virtual mouse device for testing mouse input.
+
+        Raises:
+            UserInputError: if failed to create virtual mouse device.
         """
 
     @abc.abstractmethod
