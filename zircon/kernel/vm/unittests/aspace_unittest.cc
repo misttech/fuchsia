@@ -2606,16 +2606,17 @@ class EnumeratorTestHelper {
       }
       // Create either a mapping or vmar as requested.
       const size_t size = (region.page_offset_end - region.page_offset_begin) * kPageSize;
+      const size_t relative_offset = vaddr - vmar->base();
       zx_status_t status;
       if (region.mapping) {
-        auto new_mapping_result =
-            vmar->CreateVmMapping(offset, size, 0, VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_SPECIFIC,
-                                  vmo_, 0, ARCH_MMU_FLAG_PERM_READ, "mapping");
+        auto new_mapping_result = vmar->CreateVmMapping(
+            relative_offset, size, 0, VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_SPECIFIC, vmo_, 0,
+            ARCH_MMU_FLAG_PERM_READ, "mapping");
         status = new_mapping_result.status_value();
       } else {
         fbl::RefPtr<VmAddressRegion> new_vmar;
         status = vmar->CreateSubVmar(
-            offset, size, 0,
+            relative_offset, size, 0,
             VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_SPECIFIC | VMAR_FLAG_CAN_MAP_SPECIFIC, "vmar",
             &new_vmar);
       }
