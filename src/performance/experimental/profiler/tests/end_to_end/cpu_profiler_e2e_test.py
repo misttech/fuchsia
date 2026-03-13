@@ -4,13 +4,13 @@
 
 import json
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 
-class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_test(self) -> None:
-        super().setup_test()
+class CpuProfilerEndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.device = self.fuchsia_devices[0]
 
     def test_launch_component(self) -> None:

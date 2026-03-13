@@ -11,7 +11,7 @@ operational.
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _TIMEOUT = 20.0  # seconds(?)
 
 
-class TimekeeperTest(fuchsia_base_test.FuchsiaBaseTest):
+class TimekeeperTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     def test_check_timekeeper_present(self) -> None:
         for fuchsia_device in self.fuchsia_devices:
             _LOGGER.info("%s says hello!", fuchsia_device.device_name)

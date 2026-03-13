@@ -8,13 +8,13 @@ import json
 import os
 import random
 
+import fuchsia_base_test
 import perf_publish.publish as publish
 import test_data
-from fuchsia_base_test import fuchsia_base_test
 from mobly import test_runner
 
 
-class ExampleMetricPublishing(fuchsia_base_test.FuchsiaBaseTest):
+class ExampleMetricPublishing(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Example perf metric publishing tests"""
 
     def test_example_metric_publishing(self) -> None:

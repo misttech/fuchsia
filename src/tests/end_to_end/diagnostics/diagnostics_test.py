@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 from perf import action_timer
 
@@ -19,9 +19,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _TEST_SUITE = "fuchsia.test.diagnostics"
 
 
-class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
-        super().setup_class()
+class DiagnosticsTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self._fuchsia_device = self.fuchsia_devices[0]
         self._repeat_count: int = self.user_params["repeat_count"]
 

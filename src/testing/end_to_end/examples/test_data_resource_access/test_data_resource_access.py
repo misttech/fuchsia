@@ -11,14 +11,14 @@ import logging
 import subprocess
 from importlib.resources import as_file, files
 
+import fuchsia_base_test
 import my_resources
-from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class DataResourceAccessTest(fuchsia_base_test.FuchsiaBaseTest):
+class DataResourceAccessTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     def test_data_resource_access_as_data(self) -> None:
         """Read data directly from file resource and log it."""
         with files(my_resources).joinpath("test_data.json").open("rb") as f:
