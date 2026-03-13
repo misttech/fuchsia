@@ -67,6 +67,8 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
                 return "//sdk/fidl:partner_idk_fidl_library_allowlist"
             else:
                 return "//sdk/fidl:partner_idk_unstable_fidl_library_allowlist"
+        elif category == "host_tool":
+            return "//sdk/fidl:host_tool_fidl_library_allowlist"
         elif category == "":
             return "//sdk/fidl:no_category_fidl_library_allowlist"
     elif type == "host_tool":

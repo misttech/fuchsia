@@ -26,14 +26,24 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: end
 ]
 
+_host_tool_fidl_libraries_targets_list = [
+    # keep-sorted: begin
+    "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain",
+    # keep-sorted: end
+]
+
 idk_molecule(
     name = "fidl",
     visibility = ["//sdk:__pkg__"],
     deps = [
         target + "_idk"
-        for target in (_partner_idk_stable_fidl_libraries_targets_list + _partner_idk_unstable_fidl_libraries_targets_list)
+        for target in (_partner_idk_stable_fidl_libraries_targets_list +
+                       _partner_idk_unstable_fidl_libraries_targets_list)
     ],
 )
+# TODO(https://fxbug.dev/428285014): Ensure libraries in
+# `_host_tool_fidl_libraries_targets_list` are built and validated, possibly
+# using something like the GN target "compatibility_tests".
 
 # TODO(https://fxbug.dev/428285014): Figure out how to base the allowlists on
 # the same lists used for the molecule. This will help ensure that libraries
@@ -58,6 +68,13 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/fidl/fuchsia.hardware.spi.businfo:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "host_tool_fidl_library_allowlist",
+    visibility = [
+        "//sdk/fidl/fuchsia.fdomain:__pkg__",
     ],
 )
 
