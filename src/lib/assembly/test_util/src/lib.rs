@@ -27,9 +27,9 @@ pub fn generate_fake_tool(path: impl AsRef<Path>, contents: impl AsRef<str>) {
     tool.sync_all().unwrap();
 }
 
-// Generates a package manifest to be used for testing. The `name` is used in the blob file
-// names to make each manifest somewhat unique. If supplied, `file_path` will be used as the
-// non-meta-far blob source path, which allows the tests to use a real file.
+/// Generates a package manifest to be used for testing. The `name` is used in the blob file
+/// names to make each manifest somewhat unique. If supplied, `file_path` will be used as the
+/// non-meta-far blob source path, which allows the tests to use a real file.
 pub fn generate_test_manifest(name: &str, file_path: Option<&Path>) -> PackageManifest {
     let meta_source = format!("path/to/{}/meta.far", name);
     let file_source = match file_path {
@@ -51,6 +51,19 @@ pub fn generate_test_manifest(name: &str, file_path: Option<&Path>) -> PackageMa
         merkle: "1111111111111111111111111111111111111111111111111111111111111111".parse().unwrap(),
         size: 1,
     });
+    builder.build()
+}
+
+/// Generates a package manifest to be used for testing with specific blobs.
+pub fn generate_test_manifest_with_blobs(
+    name: &str,
+    blobs: impl IntoIterator<Item = BlobInfo>,
+) -> PackageManifest {
+    let meta_package = MetaPackage::from_name_and_variant_zero(name.parse().unwrap());
+    let mut builder = PackageManifestBuilder::new(meta_package);
+    for blob in blobs {
+        builder = builder.add_blob(blob);
+    }
     builder.build()
 }
 

@@ -203,6 +203,7 @@ mod tests {
     use super::*;
     use assembly_partitions_config::{BootloaderPartition, Partition, Slot as PartitionSlot};
     use assembly_release_info::SystemReleaseInfo;
+    use assembly_test_util::generate_test_manifest_with_blobs;
     use camino::Utf8Path;
     use fuchsia_pkg::{
         BlobInfo, MetaPackage, PackageManifest, PackageManifestBuilder, SubpackageInfo,
@@ -211,15 +212,6 @@ mod tests {
     use ring::signature::KeyPair as _;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
-
-    fn make_package(name: &str, blobs: impl IntoIterator<Item = BlobInfo>) -> PackageManifest {
-        let meta_package = MetaPackage::from_name_and_variant_zero(name.parse().unwrap());
-        let mut builder = PackageManifestBuilder::new(meta_package);
-        for blob in blobs {
-            builder = builder.add_blob(blob);
-        }
-        builder.build()
-    }
 
     fn create_private_key() -> (NamedTempFile, ring::signature::UnparsedPublicKey<Vec<u8>>) {
         let rng = ring::rand::SystemRandom::new();
@@ -286,7 +278,7 @@ mod tests {
             source_path: "src_path1".into(),
         };
 
-        let pkg1 = make_package("pkg1", [meta_far, blob1]);
+        let pkg1 = generate_test_manifest_with_blobs("pkg1", [meta_far, blob1]);
 
         let manifest_file = NamedTempFile::new().unwrap();
 
@@ -454,7 +446,8 @@ mod tests {
             path: PackageManifest::META_FAR_BLOB_PATH.into(),
             source_path: subpackage_manifest_path.clone(),
         };
-        let subpackage_manifest = make_package("subpkg", [subpackage_metafar, blob2]);
+        let subpackage_manifest =
+            generate_test_manifest_with_blobs("subpkg", [subpackage_metafar, blob2]);
         serde_json::to_writer(&mut subpackage_manifest_file, &subpackage_manifest).unwrap();
 
         let meta_package = MetaPackage::from_name_and_variant_zero("pkg1".parse().unwrap());
