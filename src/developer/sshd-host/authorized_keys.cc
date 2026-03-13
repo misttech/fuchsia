@@ -42,9 +42,10 @@ zx_status_t provision_authorized_keys_from_bootloader_file(
   zx::vmo vmo = std::move(result->payload());
 
   if (!vmo.is_valid()) {
-    FX_LOGS(INFO) << "Provisioning keys from boot item: bootloader file not found: "
-                  << kAuthorizedKeysBootloaderFileName;
-    return ZX_ERR_NOT_FOUND;
+    // This is the common case, it just means the bootloader didn't pass keys on this boot. Give
+    // an info message but report success to the caller.
+    FX_LOGS(INFO) << "No keys were passed from the bootloader on this boot";
+    return ZX_OK;
   }
 
   uint64_t size;

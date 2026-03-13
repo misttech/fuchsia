@@ -130,7 +130,7 @@ TEST_F(SshdHostBootItemTest, TestNoKeyFileNoBootloaderFile) {
   remove_authorized_keys();
 
   zx_status_t status = provision_authorized_keys_from_bootloader_file(items_client_);
-  ASSERT_EQ(status, ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(status, ZX_OK);
 
   ASSERT_EQ(opendir(kSshDirectory), nullptr);
   ASSERT_EQ(errno, ENOENT);
@@ -142,7 +142,7 @@ TEST_F(SshdHostBootItemTest, TestKeyFileExistsNoBootloaderFile) {
   write_authorized_keys(kAuthorizedKeysPayload, strlen(kAuthorizedKeysPayload));
 
   zx_status_t status = provision_authorized_keys_from_bootloader_file(items_client_);
-  ASSERT_EQ(status, ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(status, ZX_OK);
 
   verify_authorized_keys(kAuthorizedKeysPayload, strlen(kAuthorizedKeysPayload));
 }

@@ -15,6 +15,12 @@ namespace sshd_host {
 // when this is the case.
 void check_authorized_keys();
 
+// Looks for an authorized_keys file passed from the bootloader, and if found persists it to disk.
+//
+// If keys already exist on disk, this is a no-op and will not overwrite them.
+//
+// Returns `ZX_OK` on the normal cases: no authorized_keys were passed from the bootloader, or the
+// keys were passed and were successfully written to disk.
 zx_status_t provision_authorized_keys_from_bootloader_file(
     fidl::SyncClient<fuchsia_boot::Items>& boot_items);
 
