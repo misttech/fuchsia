@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+import abc
 import enum
 import ipaddress
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Any, Self, TypeVar
 
 AnyString = TypeVar("AnyString", str, bytes)
 
@@ -21,8 +22,63 @@ class LEVEL(enum.StrEnum):
     ERROR = "Error"
 
 
+class TargetAddr(abc.ABC):
+    """Abstract base class representing a generic Fuchsia Target Address."""
+
+    @property
+    @abc.abstractmethod
+    def ip_str(self) -> str:
+        """Gets a formatted string representation of the IP/identifier without a port."""
+
+    @classmethod
+    def from_str(cls, query: str) -> "TargetAddr":
+        """Attempts to parse a string query into a TargetAddr.
+
+        Args:
+            query: The string representation of a target address (e.g. 'usb:123', '127.0.0.1:8022')
+
+        Returns:
+            A TargetAddr subclass instance.
+
+        Raises:
+            ValueError: If the query cannot be cleanly parsed as a valid resolved address
+                (e.g., if it's just a hostname).
+        """
+        if cls is TargetAddr:
+            for subclass in TargetAddr.__subclasses__():
+                try:
+                    return subclass.from_str(query)
+                except ValueError:
+                    continue
+            raise ValueError(f"Could not parse '{query}' as TargetAddr")
+        raise NotImplementedError("Subclasses must implement from_str")
+
+    @classmethod
+    def from_json(cls, obj: dict[str, Any]) -> "TargetAddr":
+        """Parses a FFX target address JSON object into a TargetAddr.
+
+        Args:
+            obj: The dictionary parsed from 'ffx --machine json target list'.
+
+        Returns:
+            A TargetAddr subclass instance.
+
+        Raises:
+            ValueError: If the object type is not supported or missing required fields.
+        """
+        if cls is TargetAddr:
+            for subclass in TargetAddr.__subclasses__():
+                try:
+                    return subclass.from_json(obj)
+                except ValueError:
+                    continue
+
+            raise ValueError(f"Unable to create TargetAddr for {obj}")
+        raise NotImplementedError("Subclasses must implement from_json")
+
+
 @dataclass(frozen=True)
-class IpPort:
+class IpPort(TargetAddr):
     """Dataclass that holds IP Address and Port
 
     Args:
@@ -52,6 +108,48 @@ class IpPort:
             return f"{host}:{self.port}"
         else:
             return f"{host}"
+
+    @classmethod
+    def from_str(cls, query: str) -> "IpPort":
+        """Attempts to parse a string query into a IpPort.
+
+        Args:
+            query: The string representation of a target address (e.g. '127.0.0.1:8022')
+
+        Returns:
+            An IpPort.
+
+        Raises:
+            ValueError: If the query cannot be cleanly parsed as a valid address
+                (e.g., if it's just a hostname).
+        """
+        # If it's wrapped in brackets, it must be an IP or [IP]:PORT
+        if query.startswith("["):
+            try:
+                return cls.create_using_ip_and_port(query)
+            except ValueError:
+                pass
+            try:
+                return cls.create_using_ip(query)
+            except ValueError:
+                pass
+        else:
+            # No brackets.
+            # An unbracketed string is first tested as a standalone IP address
+            # (v4 or v6). If that fails, it's then tested as an address with a
+            # port (e.g. "1.2.3.4:8022"). This resolves the ambiguity for some
+            # valid IPv6 addresses that contain colons. Users can use
+            # brackets for IPv6 (e.g. "[::1]:8022") to force port parsing.
+            try:
+                return cls.create_using_ip(query)
+            except ValueError:
+                pass
+            try:
+                return cls.create_using_ip_and_port(query)
+            except ValueError:
+                pass
+
+        raise ValueError(f"Could not parse '{query}' as IpPort")
 
     @staticmethod
     def create_using_ip_and_port(ip_port: str) -> IpPort:
@@ -123,6 +221,34 @@ class IpPort:
             return IpPort(ipaddress.ip_address(ip), None)
         except ValueError as e:
             raise e
+
+    @classmethod
+    def from_json(cls, obj: dict[str, Any]) -> Self:
+        """Parses a FFX target address JSON object into an IpPort.
+
+        Args:
+            obj: The dictionary parsed from 'ffx --machine json target list'.
+
+        Returns:
+            An IpPort.
+
+        Raises:
+            ValueError: If the object is missing required fields.
+        """
+        addr_type = obj.get("type")
+        if addr_type != "Ip":
+            raise ValueError(f"type not Ip in {obj}")
+        ssh_ip = obj.get("ip")
+        if ssh_ip is None:
+            raise ValueError(f"Missing ip address in {obj}")
+        ssh_port = obj.get("ssh_port")
+        if ssh_port == 0:
+            ssh_port = None
+
+        return cls(
+            ip=ipaddress.ip_address(ssh_ip),
+            port=ssh_port,
+        )
 
     @property
     def ip_str(self) -> str:

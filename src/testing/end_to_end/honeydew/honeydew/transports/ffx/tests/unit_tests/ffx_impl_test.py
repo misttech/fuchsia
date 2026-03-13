@@ -161,7 +161,7 @@ _MOCK_ADDRESS = json.dumps(
             "target_type": "core.x64",
             "target_state": "Product",
             "addresses": [
-                {"type": "Ip", "ip": str(_SSH_ADDRESS), "ssh_port": _SSH_PORT}
+                {"type": "Ip", "ip": f"{_IPV6}", "ssh_port": _SSH_PORT}
             ],
             "is_default": False,
             "is_manual": False,

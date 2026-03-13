@@ -288,14 +288,8 @@ class FfxImpl(ffx_interface.FFX):
                 f"No addresses found for target '{self._target_name}'"
             )
         address = target["addresses"][0]
-        ssh_ip = address["ip"]
-        ssh_port = address["ssh_port"]
-        if ssh_port == 0:
-            ssh_port = None
 
-        return custom_types.TargetSshAddress(
-            ip=ipaddress.ip_address(ssh_ip), port=ssh_port
-        )
+        return custom_types.TargetSshAddress.from_json(address)
 
     def get_target_board(self) -> str:
         """Returns the target's board.
