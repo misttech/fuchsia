@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 
-	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
@@ -43,18 +42,6 @@ func LoadTestSummary(path string) (*runtests.TestSummary, error) {
 		return nil, fmt.Errorf("failed to unmarshal test summary: %w", err)
 	}
 	return &ret, nil
-}
-
-func IgnoreTestsForFlakeAnalysis(tests []runtests.TestDetails, checkTests []runtests.TestDetails) []runtests.TestDetails {
-	if len(checkTests) == 0 || !hasFailingTest(checkTests) {
-		return tests
-	}
-	for i, test := range tests {
-		if runtests.IsFailure(test.Status) {
-			tests[i].Tags = append(tests[i].Tags, build.TestTag{Key: "flake_analysis_ignore", Value: "true"})
-		}
-	}
-	return tests
 }
 
 func hasFailingTest(tests []runtests.TestDetails) bool {
