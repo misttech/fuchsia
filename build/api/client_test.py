@@ -590,6 +590,14 @@ class ClientTest(ClientTestBase):
                 ["//tools:hammer(//build/toolchain:host_y64)"],
                 "WARNING: Use '--host //tools:hammer' instead of Ninja target 'hammer'\n",
             ),
+            (
+                [
+                    "--args",
+                    "foo:foo",
+                ],
+                ["//foo:foo"],
+                "WARNING: Use '//foo' instead of 'foo:foo' for GN targets\n",
+            ),
         ]
         for args, expected_list, expected_err in _WARNING_CASES:
             expected_out = "\n".join(expected_list) + "\n"

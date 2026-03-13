@@ -912,6 +912,18 @@ class FxBuildArgsToLabelsCommand(ScriptCommandBase):
                 else:
                     error_msg = f"Unknown Ninja target: {path}"
 
+            # Try to fall back to a GN label by prepending //
+            fallback_label = "//" + path
+            fallback_label_qualified = qualifier.qualify_label(fallback_label)
+            if outputs.gn_label_to_paths(fallback_label_qualified):
+                label_args = qualifier.label_to_build_args(
+                    fallback_label_qualified
+                )
+                _warning(
+                    f"Use '{' '.join(label_args)}' instead of '{path}' for GN targets"
+                )
+                return fallback_label_qualified
+
             _error(error_msg)
             nonlocal failure
             failure = True
