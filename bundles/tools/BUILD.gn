@@ -49,7 +49,7 @@ _host_tools = [
   "//src/sys/pkg/bin/far:host",
   "//tools",
   "//tools/check-licenses:host",
-  "//tools/whereiscl:host",
+  "//build/bazel/host:bazel_root_host_tools.whereiscl.host_tool",
 ]
 group("host_tools") {
   testonly = true

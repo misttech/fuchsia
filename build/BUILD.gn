@@ -125,6 +125,7 @@ if (is_host) {
       "//tools/net/netboot:verify_bazel2gn",
       "//tools/pretty_serial:verify_bazel2gn",
       "//tools/update_crates:verify_bazel2gn",
+      "//tools/whereiscl:verify_bazel2gn",
       "//zircon/system/ulib/cmdline:verify_bazel2gn",
       "//zircon/system/ulib/sync:verify_bazel2gn",
       "//zircon/system/ulib/zircon-internal:verify_bazel2gn",
