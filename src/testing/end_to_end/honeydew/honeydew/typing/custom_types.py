@@ -25,11 +25,6 @@ class LEVEL(enum.StrEnum):
 class TargetAddr(abc.ABC):
     """Abstract base class representing a generic Fuchsia Target Address."""
 
-    @property
-    @abc.abstractmethod
-    def ip_str(self) -> str:
-        """Gets a formatted string representation of the IP/identifier without a port."""
-
     @classmethod
     def from_str(cls, query: str) -> "TargetAddr":
         """Attempts to parse a string query into a TargetAddr.
@@ -38,7 +33,7 @@ class TargetAddr(abc.ABC):
             query: The string representation of a target address (e.g. 'usb:123', '127.0.0.1:8022')
 
         Returns:
-            A TargetAddr subclass instance.
+            A TargetAddr subclass instance (like TargetUsb or IpPort).
 
         Raises:
             ValueError: If the query cannot be cleanly parsed as a valid resolved address
@@ -61,7 +56,7 @@ class TargetAddr(abc.ABC):
             obj: The dictionary parsed from 'ffx --machine json target list'.
 
         Returns:
-            A TargetAddr subclass instance.
+            A TargetAddr subclass instance (like TargetUsb or IpPort).
 
         Raises:
             ValueError: If the object type is not supported or missing required fields.
@@ -75,6 +70,79 @@ class TargetAddr(abc.ABC):
 
             raise ValueError(f"Unable to create TargetAddr for {obj}")
         raise NotImplementedError("Subclasses must implement from_json")
+
+
+@dataclass(frozen=True)
+class TargetUsb(TargetAddr):
+    """Dataclass that holds a USB Target Address
+
+    Args:
+        target_id: USB Target ID
+    """
+
+    target_id: int
+
+    def __post_init__(self) -> None:
+        """Validates target_id arg.
+
+        Raises:
+            ValueError
+        """
+        if self.target_id < 0:
+            raise ValueError(f"target_id: {self.target_id} was negative")
+
+    @classmethod
+    def from_str(cls, query: str) -> "TargetUsb":
+        """Attempts to parse a string query into a TargetUsb.
+
+        Args:
+            query: The string representation of a target address (e.g. 'usb:12345')
+
+        Returns:
+            A TargetUsb.
+
+        Raises:
+            ValueError: If the query cannot be cleanly parsed as a valid USB address
+        """
+        if query.startswith("usb:"):
+            usb_id_str = query.removeprefix("usb:")
+            try:
+                usb_id = int(usb_id_str)
+            except ValueError as e:
+                raise ValueError(f"Invalid USB id in '{query}'") from e
+            return cls(usb_id)
+        raise ValueError(f"Invalid USB address '{query}': no 'usb:' prefix")
+
+    @classmethod
+    def from_json(cls, obj: dict[str, Any]) -> "TargetUsb":
+        """Parses a FFX target address JSON object into a TargetUsb.
+
+        Args:
+            obj: The dictionary parsed from 'ffx --machine json target list'.
+
+        Returns:
+            A TargetUsb.
+
+        Raises:
+            ValueError: If cid is missing or invalid.
+        """
+        # For USB, the field is "cid" -> int
+        cid = obj.get("cid")
+        if type(cid) is not int:
+            raise ValueError(f"USB address has invalid or missing 'cid': {obj}")
+        return cls(cid)
+
+    def __str__(self) -> str:
+        return f"usb:{self.target_id}"
+
+    @property
+    def ip_str(self) -> str:
+        """USB targets do not have an IP string.
+
+        Raises:
+            ValueError
+        """
+        raise ValueError(f"USB targets do not have an IP string: {self}")
 
 
 @dataclass(frozen=True)

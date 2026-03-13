@@ -166,6 +166,11 @@ class CustomTypesTests(unittest.TestCase):
     @parameterized.expand(
         [
             (
+                "usb_valid",
+                "usb:12345",
+                custom_types.TargetUsb(12345),
+            ),
+            (
                 "ip_port_valid",
                 "192.168.1.1:8022",
                 custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), 8022),
@@ -196,6 +201,9 @@ class CustomTypesTests(unittest.TestCase):
 
     @parameterized.expand(
         [
+            ("invalid_usb", "usb:notanint"),
+            ("invalid_usb_format", "usb123"),
+            ("negative_usb", "usb:-1"),
             ("invalid_ip", "256.256.256.256"),
             ("invalid_symbolic_scope", "fe80::1%eth0"),
             ("random_string", "my-fuchsia-device"),
@@ -233,6 +241,11 @@ class CustomTypesTests(unittest.TestCase):
                 {"type": "Ip", "ip": "fe80::1%1"},
                 custom_types.IpPort(ipaddress.ip_address("fe80::1%1"), None),
             ),
+            (
+                "usb_valid",
+                {"type": "Usb", "cid": 12345},
+                custom_types.TargetUsb(12345),
+            ),
         ]
     )
     def test_target_addr_from_json(
@@ -247,6 +260,9 @@ class CustomTypesTests(unittest.TestCase):
             ("invalid_ip", {"type": "Ip", "ip": "256.256.256.256"}),
             ("missing_ip", {"type": "Ip"}),
             ("invalid_symbolic_scope", {"type": "Ip", "ip": "fe80::1%eth0"}),
+            ("usb_missing_cid", {"type": "Usb"}),
+            ("usb_negative_cid", {"type": "Usb", "cid": -1}),
+            ("usb_bool_cid", {"type": "Usb", "cid": True}),
             ("unsupported_type", {"type": "Unknown"}),
         ]
     )
@@ -256,6 +272,16 @@ class CustomTypesTests(unittest.TestCase):
         """Test cases for TargetAddr.from_json() raising ValueError."""
         with self.assertRaises(ValueError):
             custom_types.TargetAddr.from_json(obj)
+
+    def test_target_usb_str(self) -> None:
+        """Test cases for TargetUsb.__str__."""
+        got = str(custom_types.TargetUsb(12345))
+        self.assertEqual(got, "usb:12345")
+
+    def test_target_usb_ip_str_raises(self) -> None:
+        """Test cases for TargetUsb.ip_str."""
+        with self.assertRaises(ValueError):
+            custom_types.TargetUsb(12345).ip_str
 
 
 if __name__ == "__main__":
