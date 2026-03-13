@@ -6,6 +6,7 @@
 #define SRC_DEVICES_USB_LIB_USB_ENDPOINT_TESTING_FAKE_USB_ENDPOINT_SERVER_H_
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -167,26 +168,11 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   std::queue<std::pair<zx_status_t, size_t>> completions_ __TA_GUARDED(lock_);
 };
 
-// FakeUsbFidlProvider is, as its name suggests, a fake USB FIDL server for testing.
-//
-// ProtocolType must be one of fuchsia_hardware_usb_dci::UsbDci,
-// fuchsia_usb_hardware_function::UsbFunction, or fuchsia_hardware_usb::Usb. In other words,
-// ProtocolType is expected to have one function to override--void
-// ConnectToEndpoint(ConnectToEndpointRequest& request, ConnectToEndpointCompleter::Sync&
-// completer).
-//
-// fuchsia_hardware_usb_hci::UsbHci may also use this fake USB FIDL server, but will
-// have to override the ConnectToEndpoint and write a new ExpectConnectToEndpoint method to
-// accommodate device_id.
-//
-// It provides connections to several FakeEndpoints as requested. FakeEndpointType must be
-// FakeEndpoint or an inherited class of FakeEndpoint, defaulting to FakeEndpoint if not
-// specified.
-template <typename ProtocolType, typename FakeEndpointType = FakeEndpoint>
-class FakeUsbFidlProvider : public fidl::Server<ProtocolType> {
+template <typename ProtocolType, typename FakeEndpointType>
+class FakeUsbFidlProviderBase : public fidl::Server<ProtocolType> {
  public:
-  explicit FakeUsbFidlProvider(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
-  ~FakeUsbFidlProvider() { EXPECT_TRUE(expected_connect_to_endpoint_.empty()); }
+  explicit FakeUsbFidlProviderBase(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  virtual ~FakeUsbFidlProviderBase() { EXPECT_TRUE(expected_connect_to_endpoint_.empty()); }
 
   virtual void ExpectConnectToEndpoint(uint8_t ep_addr) {
     expected_connect_to_endpoint_.push(ep_addr);
@@ -194,7 +180,6 @@ class FakeUsbFidlProvider : public fidl::Server<ProtocolType> {
 
   FakeEndpointType& fake_endpoint(uint8_t ep_addr) { return fake_endpoints_[ep_addr]; }
 
- private:
   void ConnectToEndpoint(
       fidl::Request<typename ProtocolType::ConnectToEndpoint>& request,
       typename fidl::internal::NaturalCompleter<typename ProtocolType::ConnectToEndpoint>::Sync&
@@ -209,11 +194,52 @@ class FakeUsbFidlProvider : public fidl::Server<ProtocolType> {
     completer.Reply(fit::ok());
   }
 
+ private:
   async_dispatcher_t* dispatcher_;
 
   std::queue<uint8_t> expected_connect_to_endpoint_;
 
   std::map<uint8_t, FakeEndpointType> fake_endpoints_;
+};
+
+// FakeUsbFidlProvider is, as its name suggests, a fake USB FIDL server for testing.
+//
+// ProtocolType must be one of fuchsia_hardware_usb_dci::UsbDci,
+// fuchsia_usb_hardware_function::UsbFunction, or fuchsia_hardware_usb::Usb. In other words,
+// ProtocolType is expected to have one function to override--void
+// ConnectToEndpoint(ConnectToEndpointRequest& request, ConnectToEndpointCompleter::Sync&
+// completer).
+//
+// fuchsia_hardware_usb_hci::UsbHci may also use this fake USB FIDL server, but will
+// have to override the ConnectToEndpoint and write a new ExpectConnectToEndpoint method to
+// accommodate device_id.
+//
+// A specialization is provided for fuchsia_hardware_usb_function::UsbFunction
+// that stubs all calls.
+//
+// It provides connections to several FakeEndpoints as requested. FakeEndpointType must be
+// FakeEndpoint or an inherited class of FakeEndpoint, defaulting to FakeEndpoint if not
+// specified.
+template <typename ProtocolType, typename FakeEndpointType = FakeEndpoint>
+class FakeUsbFidlProvider : public FakeUsbFidlProviderBase<ProtocolType, FakeEndpointType> {
+ public:
+  using FakeUsbFidlProviderBase<ProtocolType, FakeEndpointType>::FakeUsbFidlProviderBase;
+};
+
+template <typename FakeEndpointType>
+class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpointType>
+    : public FakeUsbFidlProviderBase<fuchsia_hardware_usb_function::UsbFunction, FakeEndpointType> {
+ public:
+  using Base =
+      FakeUsbFidlProviderBase<fuchsia_hardware_usb_function::UsbFunction, FakeEndpointType>;
+  using Base::Base;
+
+  void Configure(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb_function::UsbFunction::Configure>::Sync&
+          completer) override {
+    completer.Reply(fit::ok());
+  }
 };
 
 }  // namespace fake_usb_endpoint

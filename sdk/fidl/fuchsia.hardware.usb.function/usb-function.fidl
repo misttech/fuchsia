@@ -6,6 +6,7 @@ library fuchsia.hardware.usb.function;
 
 using zx;
 using fuchsia.hardware.usb.endpoint;
+using fuchsia.hardware.usb.descriptor;
 
 @discoverable
 closed protocol UsbFunction {
@@ -17,9 +18,72 @@ closed protocol UsbFunction {
         ep server_end:fuchsia.hardware.usb.endpoint.Endpoint;
     }) -> () error zx.Status;
 
+    /// Configures the function with the given descriptors.
+    ///
+    /// `configuration` is a vector of USB descriptors to configure the function
+    /// with. The descriptors are concatenated together following the USB
+    /// specification to form the configuration.
+    /// `iface` provides the control-plane callbacks for the function.
+    ///
+    /// The function is *unregistered* from the USB function manager when
+    /// `iface` is closed.
+    ///
+    /// Any resource address and numbers referenced in `configuration` *must* have
+    /// been allocated by a previous call to `AllocResources`.
+    ///
+    /// Returns `ZX_ERR_INVALID_ARGS` if the configuration is invalid.
+    strict Configure(resource struct {
+        configuration vector<uint8>:MAX;
+        iface client_end:UsbFunctionInterface;
+    }) -> () error zx.Status;
+
     // TODO(https://fxbug.dev/42178882): More functions to come. Equivalents to
     // //sdk/banjo/fuchsia.hardware.usb.function/usb-function.fidl
 };
+
+/// Protocol offered to [`UsbFunction`] instances to handle host-initiated
+/// requests.
+open protocol UsbFunctionInterface {
+    /// Callback for handling ep0 control requests.
+    ///
+    /// `setup` is the control request to handle.
+    /// `write` is the data to write to the endpoint.
+    /// `read` is the data to read from the endpoint.
+    flexible Control(struct {
+        setup fuchsia.hardware.usb.descriptor.UsbSetup;
+        write vector<uint8>:MAX;
+    }) -> (struct {
+        read vector<uint8>:MAX;
+    }) error zx.Status;
+
+
+    /// Inform the function driver when the USB device configured state changes.
+    ///
+    /// Called with `configured == true` in response to a `SET_CONFIGURATION`
+    /// control request that selects a configuration that contains this
+    /// function. In this case, the function driver should use
+    /// [`fuchsia.hardware.usb.endpoint/Endpoint`] to configure its endpoints.
+    ///
+    /// Called with `configured == false` when configuration is disabled or USB
+    /// is disconnected. The function driver should then use
+    /// [`fuchsia.hardware.usb.endpoint/Endpoint`] to disable its endpoints.
+    flexible SetConfigured(struct {
+        configured bool;
+        speed fuchsia.hardware.usb.descriptor.UsbSpeed;
+    }) -> () error zx.Status;
+
+    /// Called to set an alternate setting for an interface due to a
+    /// `SET_INTERFACE` control request.
+    ///
+    /// The function driver should use
+    /// [`fuchsia.hardware.usb.endpoint/Endpoint`] to configure or disable the
+    /// interface's endpoints as appropriate.
+    flexible SetInterface(struct {
+        interface uint8;
+        alt_setting uint8;
+    }) -> () error zx.Status;
+};
+
 
 service UsbFunctionService {
     device client_end:UsbFunction;

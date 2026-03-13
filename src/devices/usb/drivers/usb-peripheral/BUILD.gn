@@ -106,6 +106,7 @@ test("usb-peripheral-unittest-bin") {
     ":common",
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp_testing",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

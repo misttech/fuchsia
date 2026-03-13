@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/fidl.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -74,12 +75,13 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   // fuchsia_hardware_usb_function.UsbFunction protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
+  void Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) override;
 
   zx::result<> AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                         const std::string& child_node_name,
                         const std::shared_ptr<fdf::Namespace>& incoming,
                         const std::shared_ptr<fdf::OutgoingDirectory>& outgoing);
-  bool registered() const { return function_intf_.is_valid(); }
+  bool registered() const { return function_intf_.is_valid() || function_intf_fidl_.is_valid(); }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbFunction);
@@ -88,6 +90,11 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   uint8_t configuration_;
   UsbPeripheral* peripheral_;
   ddk::UsbFunctionInterfaceProtocolClient function_intf_;
+  // TODO(https://fxbug.dev/492519815): We're assuming a synchronous call into
+  // functions is okay as a first step as part of the Banjo to FIDL migration.
+  // We should revisit and prefer an async client here.
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
+  std::optional<async::WaitOnce> function_intf_fidl_closed_;
   thrd_t thread_;
   int CompletionThread();
   const fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor function_descriptor_;
