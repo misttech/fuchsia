@@ -22,7 +22,7 @@ use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use zx::{Duration, Peered};
+use zx::{Duration, HandleBased, Peered};
 
 use crate::broker::{Broker, CurrentLevelSubscriber, LeaseID};
 use crate::topology::{ElementID, IndexedPowerLevel};
@@ -191,10 +191,6 @@ impl BrokerSvc {
         dependencies: Vec<fpb::LeaseDependency>,
         should_return_pending_lease: bool,
     ) -> Result<(), fpb::LeaseError> {
-        use zx::HandleBased;
-        let lease_token_2 = lease_token
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .map_err(|_| fpb::LeaseError::Internal)?;
         let lease_token_koid = lease_token.as_handle_ref().koid().unwrap();
         let resp = {
             let mut broker = self.broker.borrow_mut();
@@ -203,57 +199,11 @@ impl BrokerSvc {
         match resp {
             Ok(lease) => {
                 log::debug!("Direct lease granted: {lease:?}");
+                if let Err(err) = self.clone().monitor_lease(lease.id.clone(), lease_token) {
+                    log::error!("monitor_lease failed: {:?}", err);
+                    return Err(fpb::LeaseError::Internal);
+                }
                 let lease_id = lease.id.clone();
-                // Task to drop the lease when the token is closed.
-                Task::local({
-                    let svc = self.clone();
-                    let lease_id = lease_id.clone();
-                    async move {
-                        let _ = fuchsia_async::OnSignals::new(
-                            &lease_token,
-                            zx::Signals::EVENTPAIR_PEER_CLOSED,
-                        )
-                        .await;
-                        log::debug!("LeaseToken closed, dropping lease {lease_id}");
-                        let mut broker = svc.broker.borrow_mut();
-                        if let Err(err) = broker.drop_lease(&lease_id) {
-                            log::error!("drop_lease {lease_id} failed: {:?}", err);
-                        }
-                    }
-                })
-                .detach();
-
-                // Task to signal LEASE_SIGNAL_SATISFIED when satisfied.
-                Task::local({
-                    let lease_id = lease_id.clone();
-                    let lease_token = lease_token_2;
-                    let broker = self.broker.clone();
-                    async move {
-                        let mut receiver = {
-                            let mut broker = broker.borrow_mut();
-                            broker.watch_lease_status(&lease_id)
-                        };
-                        while let Some(next) = receiver.next().await {
-                            let (clear_mask, set_mask) = if let Some(LeaseStatus::Satisfied) = next
-                            {
-                                (
-                                    zx::Signals::NONE,
-                                    zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
-                                )
-                            } else {
-                                (
-                                    zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
-                                    zx::Signals::NONE,
-                                )
-                            };
-                            if let Err(err) = lease_token.signal_peer(clear_mask, set_mask) {
-                                log::debug!("signal_peer failed for lease {lease_id}: {:?}", err);
-                                break;
-                            }
-                        }
-                    }
-                })
-                .detach();
 
                 if !should_return_pending_lease {
                     let mut receiver = {
@@ -336,6 +286,65 @@ impl BrokerSvc {
         }
     }
 
+    /// Spawns background tasks to monitor a lease token for two events:
+    /// 1. If the client closes their end of the token, the lease should be dropped.
+    /// 2. When the lease is satisfied, `LEASE_SIGNAL_SATISFIED` should be signaled.
+    fn monitor_lease(
+        self: Rc<Self>,
+        lease_id: LeaseID,
+        lease_token: zx::EventPair,
+    ) -> Result<(), Error> {
+        let lease_token_signal =
+            lease_token.duplicate_handle(zx::Rights::SAME_RIGHTS).context("dup handle failed")?;
+        // Task to drop the lease when the token is closed.
+        Task::local({
+            let svc = self.clone();
+            let lease_id = lease_id.clone();
+            async move {
+                let _ =
+                    fuchsia_async::OnSignals::new(&lease_token, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                        .await;
+                log::debug!("LeaseToken closed, dropping lease {lease_id}");
+                let mut broker = svc.broker.borrow_mut();
+                if let Err(err) = broker.drop_lease(&lease_id) {
+                    log::error!("drop_lease {lease_id} failed: {:?}", err);
+                }
+            }
+        })
+        .detach();
+
+        // Task to signal LEASE_SIGNAL_SATISFIED when satisfied.
+        Task::local({
+            let lease_id = lease_id.clone();
+            let broker = self.broker.clone();
+            async move {
+                let mut receiver = {
+                    let mut broker = broker.borrow_mut();
+                    broker.watch_lease_status(&lease_id)
+                };
+                while let Some(next) = receiver.next().await {
+                    let (clear_mask, set_mask) = if let Some(LeaseStatus::Satisfied) = next {
+                        (
+                            zx::Signals::NONE,
+                            zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                        )
+                    } else {
+                        (
+                            zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                            zx::Signals::NONE,
+                        )
+                    };
+                    if let Err(err) = lease_token_signal.signal_peer(clear_mask, set_mask) {
+                        log::debug!("signal_peer failed for lease {lease_id}: {:?}", err);
+                        break;
+                    }
+                }
+            }
+        })
+        .detach();
+        Ok(())
+    }
+
     fn validate_and_unpack_add_element_payload(
         payload: ElementSchema,
     ) -> Result<
@@ -347,6 +356,7 @@ impl BrokerSvc {
             Option<ServerEnd<fpb::LessorMarker>>,
             Option<ServerEnd<fpb::ElementControlMarker>>,
             ClientEnd<fpb::ElementRunnerMarker>,
+            Option<fpb::LeaseToken>,
         ),
         fpb::AddElementError,
     > {
@@ -371,6 +381,7 @@ impl BrokerSvc {
             payload.lessor_channel,
             payload.element_control,
             element_runner,
+            payload.initial_lease_token,
         ))
     }
 
@@ -408,6 +419,7 @@ impl BrokerSvc {
                             lessor_channel,
                             element_control,
                             element_runner,
+                            initial_lease_token,
                         )) = Self::validate_and_unpack_add_element_payload(payload)
                         else {
                             return responder
@@ -429,17 +441,7 @@ impl BrokerSvc {
                                 self.element_handlers
                                     .borrow_mut()
                                     .insert(element_id.clone(), ElementHandlers::new());
-                                let mut runner = ElementRunnerHandler::new(
-                                    element_id.clone(),
-                                    element_name.clone(),
-                                );
-                                runner.start(self.broker.clone(), element_runner.into_proxy());
-                                self.element_handlers
-                                    .borrow_mut()
-                                    .entry(element_id.clone())
-                                    .and_modify(|e| {
-                                        e.runner = Some(runner);
-                                    });
+
                                 if let Some(element_control) = element_control {
                                     let element_control_stream = element_control.into_stream();
                                     log::debug!(
@@ -468,6 +470,7 @@ impl BrokerSvc {
                                 if let Some(lessor_channel) = lessor_channel {
                                     log::debug!("Spawning lessor task for {:?}", &element_id);
                                     let lessor_stream = lessor_channel.into_stream();
+                                    let element_name = element_name.clone();
                                     Task::local({
                                         let svc = self.clone();
                                         let element_id = element_id.clone();
@@ -475,7 +478,7 @@ impl BrokerSvc {
                                             if let Err(err) = svc
                                                 .run_lessor(
                                                     element_id.clone(),
-                                                    element_name.clone(),
+                                                    element_name,
                                                     lessor_stream,
                                                 )
                                                 .await
@@ -489,6 +492,82 @@ impl BrokerSvc {
                                     })
                                     .detach();
                                 }
+
+                                let runner_lease_token: Option<fpb::LeaseToken> = {
+                                    initial_lease_token
+                                        .as_ref()
+                                        .and_then(|t| t.duplicate_handle(zx::Rights::SAME_RIGHTS).ok())
+                                };
+
+                                if let Some(lease_token) = initial_lease_token {
+                                    let lease_token_koid =
+                                        lease_token.as_handle_ref().koid().unwrap();
+
+                                    let resp = {
+                                        let mut broker = self.broker.borrow_mut();
+                                        match broker.get_level_index(&element_id, &initial_current_level) {
+                                            Some(lvl) => {
+                                                let level = lvl.clone();
+                                                broker
+                                                    .acquire_lease(&element_id, level, lease_token_koid)
+                                                    .map_err(|e| match e {
+                                                        fpb::LeaseError::NotAuthorized => {
+                                                            fpb::AddElementError::NotAuthorized
+                                                        }
+                                                        _ => fpb::AddElementError::Invalid,
+                                                    })
+                                            }
+                                            None => Err(fpb::AddElementError::Invalid),
+                                        }
+                                    };
+
+                                    match resp {
+                                        Ok(lease) => {
+                                            log::debug!(
+                                                "Initial lease granted for {element_id:?}: {lease:?}"
+                                            );
+                                            if let Err(err) = self.clone().monitor_lease(
+                                                lease.id.clone(),
+                                                lease_token,
+                                            ) {
+                                                log::error!("Failed to monitor lease: {err:?}");
+                                                return responder
+                                                    .send(Err(fpb::AddElementError::Invalid))
+                                                    .context("send failed");
+                                            }
+                                        }
+                                        Err(err) => {
+                                            log::error!("Failed to lease element {element_id}: {err:?}");
+                                            return responder
+                                                .send(Err(err))
+                                                .context("send failed");
+                                        }
+                                    }
+                                }
+
+                                let wait_for_level = if runner_lease_token.is_some() {
+                                    self.broker
+                                        .borrow()
+                                        .get_level_index(&element_id, &initial_current_level)
+                                        .cloned()
+                                } else {
+                                    None
+                                };
+
+                                let mut runner = ElementRunnerHandler::new(
+                                    element_id.clone(),
+                                    element_name,
+                                    wait_for_level,
+                                    runner_lease_token,
+                                );
+                                runner.start(self.broker.clone(), element_runner.into_proxy());
+                                self.element_handlers
+                                    .borrow_mut()
+                                    .entry(element_id.clone())
+                                    .and_modify(|e| {
+                                        e.runner = Some(runner);
+                                    });
+
                                 responder.send(Ok(())).context("send failed")
                             }
                             Err(err) => responder.send(Err(err.into())).context("send failed"),
@@ -549,11 +628,24 @@ struct ElementRunnerHandler {
     element_id: ElementID,
     element_name: String,
     shutdown: Event,
+    wait_for_level: Option<IndexedPowerLevel>,
+    initial_lease_token: Option<zx::EventPair>,
 }
 
 impl ElementRunnerHandler {
-    fn new(element_id: ElementID, element_name: String) -> Self {
-        Self { element_id, element_name, shutdown: Event::new() }
+    fn new(
+        element_id: ElementID,
+        element_name: String,
+        wait_for_level: Option<IndexedPowerLevel>,
+        initial_lease_token: Option<zx::EventPair>,
+    ) -> Self {
+        Self {
+            element_id,
+            element_name,
+            shutdown: Event::new(),
+            wait_for_level,
+            initial_lease_token,
+        }
     }
 
     fn start(&mut self, broker: Rc<RefCell<Broker>>, element_runner: fpb::ElementRunnerProxy) {
@@ -564,16 +656,59 @@ impl ElementRunnerHandler {
         // before terminating the task.
         let mut shutdown = self.shutdown.wait_or_dropped();
         let mut receiver = broker.borrow_mut().watch_required_level(&element_id);
+        let mut wait_for_level = self.wait_for_level.clone();
+        let mut suppressed_level: Option<IndexedPowerLevel> = None;
+        let initial_lease_token = self.initial_lease_token.take();
         log::debug!("{debug_info} starting.");
         Task::local(async move {
+            let mut initial_lease_fut = match &initial_lease_token {
+                Some(token) => futures::future::Either::Left(
+                    fuchsia_async::OnSignals::new(token, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                ),
+                None => futures::future::Either::Right(futures::future::pending()),
+            }.fuse();
+
+            // Listen for updates from the broker on the Element's required level, and issue
+            // corresponding SetLevel calls to the ElementRunner. Continues until shutdown is
+            // signaled, presumably because the Element has been removed from the topology.
             loop {
                 select! {
                     _ = shutdown => {
                         break;
                     }
+                    // If an initial lease is dropped before being satisfied, we need to send a
+                    // SetLevel call for the most recent required level that we suppressed.
+                    _ = &mut initial_lease_fut => {
+                        log::debug!("{debug_info}: initial lease dropped by client. Clearing wait_for_level.");
+                        wait_for_level = None;
+                        if let Some(level) = suppressed_level.take() {
+                            log::debug!("{debug_info}: emitting previously suppressed level {:?}", level);
+                            if let Err(err) = element_runner.set_level(level.level).await {
+                                log::warn!("{debug_info}: set_level error during suppressed level: {:?}", err);
+                            } else {
+                                broker.borrow_mut().update_current_level(&element_id, level);
+                            }
+                        }
+                    }
                     required_level = receiver.next() => {
                         match required_level {
                             Some(Some(required_level)) => {
+                                // While an initial_lease is pending, suppress any SetLevel calls
+                                // that are for a lower power level than the one we are waiting for.
+                                // This allows us to support adding an element with an
+                                // initial_current_level above the minimum level.
+                                if let Some(wait) = &wait_for_level {
+                                    if required_level.level < wait.level {
+                                       // We must update the broker state to complete the transition,
+                                       // otherwise the broker will block future updates (like going back to 1).
+                                       suppressed_level = Some(required_level.clone());
+                                       broker.borrow_mut().update_current_level(&element_id, required_level.clone());
+                                       continue;
+                                    } else {
+                                        wait_for_level = None;
+                                        suppressed_level = None;
+                                    }
+                                }
                                 log::debug!("{debug_info} calling set_level({required_level:?})");
                                 let debug_info_copy = debug_info.clone();
                                 let _warn_task = Task::local(async move {

@@ -83,6 +83,7 @@ type ElementSchema = resource table {
     /// Human-readable name for logging and debug purposes.
     1: element_name string:MAX_ELEMENT_NAME_LEN;
     /// The initial current power level of the element.
+    /// To be used with `initial_lease_token`, see note below.
     2: initial_current_level PowerLevel;
     /// All power levels that are valid for this element. Any level not
     /// specified here will be treated as invalid.
@@ -110,6 +111,19 @@ type ElementSchema = resource table {
     /// The server_end of this should be retained and the ElementRunner
     /// protocol implemented by the element's runner.
     10: element_runner client_end:ElementRunner;
+    /// If `initial_lease_token` is set, a lease will be immediately taken at
+    /// `initial_current_level` and all SetLevel calls prior to reaching
+    /// `initial_current_level` will be suppressed. The first SetLevel call
+    /// will be for `initial_current_level`.
+    /// The client should pass here the half of an eventpair to be held by
+    /// Power Broker. The other half of the pair should be retained by the
+    /// client.
+    /// Note: this lease will likely not be SATISFIED when returned, as that
+    /// would require the ElementRunner server to already have received and
+    /// responded to a SetLevel request from Power Broker.
+    /// Clients can listen for `LEASE_SIGNAL_SATISFIED` to know when the
+    /// lease has been `SATISFIED`.
+    11: initial_lease_token LeaseToken;
 };
 
 /// Passed to Topology.Lease.
@@ -157,8 +171,9 @@ type LeaseDependency = resource table {
 /// dropped to indicate the lease should be closed. This handle may be
 /// duplicated if the lease will be shared; the lease will remain open
 /// until the last handle is dropped.
-alias LeaseToken
-        = zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT | zx.Rights.SIGNAL_PEER>;
+const LEASE_TOKEN_RIGHTS zx.Rights
+        = zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT | zx.Rights.SIGNAL_PEER;
+alias LeaseToken = zx.Handle:<EVENTPAIR, LEASE_TOKEN_RIGHTS>;
 
 /// Signal sent by Power Broker on the LeaseToken when the lease is satisfied.
 const LEASE_SIGNAL_SATISFIED zx.Signals = 0x01000000; // Maps to ZX_USER_SIGNAL_0

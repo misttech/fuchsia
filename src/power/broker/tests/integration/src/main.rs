@@ -1566,4 +1566,141 @@ mod tests {
 
         Ok(())
     }
+
+    #[fuchsia::test]
+    fn test_add_element_initial_lease() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // Create a topology with only two elements and a single dependency:
+        // A -> B
+        // Setup Dependency "B"
+        let element_b_token = zx::Event::create();
+        let (element_b_runner_client, element_b_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut element_b_runner = element_b_runner_server.into_stream();
+        let (element_b_control, element_b_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("B".into()),
+                    initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                    valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                    element_control: Some(element_b_control_server),
+                    element_runner: Some(element_b_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .expect("AddElement B failed")
+                .expect("AddElement B error");
+
+            element_b_control
+                .register_dependency_token(
+                    element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                )
+                .await
+                .expect("register_dependency_token failed")
+                .expect("register_dependency_token error");
+        });
+
+        // Initialize B to OFF
+        executor.run_singlethreaded(async {
+            let responder = assert_set_level_required_eq_and_return_responder(
+                element_b_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            responder.send().expect("send failed");
+        });
+
+        // Setup Dependent "A" with initial_lease_token
+        let (element_a_runner_client, element_a_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let (_element_a_control, element_a_control_server) = create_proxy::<ElementControlMarker>();
+
+        let (lease_token_client, lease_token_server) = zx::EventPair::create();
+
+        // We run AddElement for A. B is currently OFF, so it will need to be turned ON.
+        let add_a_fut = Box::pin(topology.add_element(ElementSchema {
+            element_name: Some("A".into()),
+            initial_current_level: Some(BinaryPowerLevel::On.into_primitive()), // Initialized to ON
+            valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+            dependencies: Some(vec![LevelDependency {
+                dependent_level: BinaryPowerLevel::On.into_primitive(),
+                requires_token:
+                    element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                requires_level_by_preference: vec![BinaryPowerLevel::On.into_primitive()],
+            }]),
+            element_control: Some(element_a_control_server),
+            element_runner: Some(element_a_runner_client),
+            initial_lease_token: Some(lease_token_server), // Request Lease at Initial Level (ON)
+            ..Default::default()
+        }));
+
+        // AddElement should return immediately with the lease granted (but not yet satisfied).
+        executor.run_singlethreaded(async {
+            add_a_fut.await.unwrap().unwrap();
+        });
+
+        // B should receive SetLevel(ON).
+        let element_b_current = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                element_b_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+
+        // Lease is not yet satisfied, because B is not ON.
+        assert_matches!(
+            lease_token_client.wait_one(
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(_)
+        );
+
+        // 6. Turn B ON
+        executor.run_singlethreaded(async {
+            element_b_current.send().expect("send failed");
+        });
+
+        // Lease is still not satisfied, because A is not ON.
+        assert_matches!(
+            lease_token_client.wait_one(
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(_)
+        );
+
+        // A should receive SetLevel(ON).
+        executor.run_singlethreaded(async {
+            let mut stream = element_a_runner_server.into_stream();
+            if let Ok(Some(fpb::ElementRunnerRequest::SetLevel { level, responder })) =
+                stream.try_next().await
+            {
+                assert_eq!(
+                    level,
+                    BinaryPowerLevel::On.into_primitive(),
+                    "First SetLevel must be ON"
+                );
+                responder.send().expect("responder failed");
+            }
+        });
+
+        // The lease should now be SATISFIED.
+        executor.run_singlethreaded(async {
+            fasync::OnSignals::new(
+                &lease_token_client,
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+            )
+            .await
+            .unwrap();
+        });
+
+        Ok(())
+    }
 }
