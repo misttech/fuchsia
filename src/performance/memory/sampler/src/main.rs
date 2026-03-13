@@ -15,12 +15,15 @@ mod profile_builder;
 mod sampler_service;
 
 use anyhow::Error;
+use fidl_fuchsia_feedback::CrashReporterMarker;
+use fuchsia_component::client::connect_to_protocol;
 use futures::try_join;
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
     crash_reporter::register_crash_product().await?;
-    let (tx, crash_reporter_service) = crash_reporter::setup_crash_reporter();
+    let crash_reporter = connect_to_protocol::<CrashReporterMarker>()?;
+    let (tx, crash_reporter_service) = crash_reporter::setup_crash_reporter_task(crash_reporter);
     let sampler_service = sampler_service::setup_sampler_service(tx)?;
     try_join!(crash_reporter_service, sampler_service)?;
     Ok(())

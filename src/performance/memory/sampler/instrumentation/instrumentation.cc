@@ -24,6 +24,10 @@ extern "C" {
 // Scudo's contract. We use a `ScopedReentrancyGuard` to prevent
 // unbounded recursion when allocating, which seems sufficient in
 // practice.
+//
+// Also disable name lint because the symbol name is load-bearing and is imposed by
+// the allocator.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 __attribute__((visibility("default"))) void __scudo_allocate_hook(void* ptr, size_t size) {
   if (memory_sampler::ScopedReentrancyGuard::WouldReenter())
     return;
@@ -40,6 +44,10 @@ __attribute__((visibility("default"))) void __scudo_allocate_hook(void* ptr, siz
 // Note: this function is technically forbidden to allocate per
 // Scudo's contract. We use a `ScopedReentrancyGuard` to prevent
 // unbounded recursion, which seems sufficient in practice.
+//
+// Also disable name lint because the symbol name is load-bearing and is imposed by
+// the allocator.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 __attribute__((visibility("default"))) void __scudo_deallocate_hook(void* ptr) {
   if (memory_sampler::ScopedReentrancyGuard::WouldReenter())
     return;

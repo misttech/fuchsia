@@ -5,25 +5,25 @@
 //! This module provides an asynchronous service that can be used to
 //! regularly file crash reports via the `CrashReporter` FIDL API.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_fuchsia_feedback::{
-    Attachment, CrashReport, CrashReporterMarker, CrashReporterProxy,
-    CrashReportingProductRegisterMarker, MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT,
+    Attachment, CrashReport, CrashReporterProxy, CrashReportingProductRegisterMarker,
+    MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT,
 };
 use fidl_fuchsia_mem::Buffer;
-use fuchsia_async::{Interval, Task};
+use fuchsia_async::{Task, Timer};
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
-use futures::stream::once;
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
-use zx::{MonotonicDuration, Vmo};
+use zx::Vmo;
 
 const CRASH_PRODUCT_NAME: &str = "FuchsiaHeapProfile";
 const CRASH_PROGRAM_NAME: &str = "memory_sampler";
 const CRASH_SIGNATURE: &str = "fuchsia-memory-profile";
 const MAX_CONCURRENT_PROFILES: usize = 10;
-const MAX_SNAPSHOT_RATE_PER_HOUR: i64 = 1;
+const MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS: zx::MonotonicDuration =
+    zx::MonotonicDuration::from_hours(1);
 
 #[derive(PartialEq, Debug)]
 pub enum ProfileReport {
@@ -107,25 +107,28 @@ pub async fn register_crash_product() -> Result<(), Error> {
 }
 
 /// Returns a channel `Sender`, and a task that, when run, will file
-/// crash reports pushed to this channel at most
-/// `MAX_SNAPSHOT_RATE_PER_HOUR` every hour.
+/// crash reports pushed to this channel at most once every
+/// `MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS` hour.
 ///
 /// Note: the returned `Sender` is bounded: trying to queue a message
 /// when it is full will cause an error.
-pub fn setup_crash_reporter() -> (mpsc::Sender<ProfileReport>, Task<Result<(), Error>>) {
-    let throttler_stream = once(std::future::ready(()))
-        .chain(Interval::new(MonotonicDuration::from_hours(MAX_SNAPSHOT_RATE_PER_HOUR)));
+pub fn setup_crash_reporter_task(
+    crash_reporter: CrashReporterProxy,
+) -> (mpsc::Sender<ProfileReport>, Task<Result<(), Error>>) {
     let (tx, rx) = mpsc::channel::<ProfileReport>(MAX_CONCURRENT_PROFILES);
-    let crash_reporter_task = Task::spawn({
-        rx.ready_chunks(MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize)
-            .zip(throttler_stream)
-            .map(|(chunked_profiles, _)| Ok(chunked_profiles))
-            .try_for_each(|profiles| async move {
-                let crash_reporter = connect_to_protocol::<CrashReporterMarker>()?;
-                file_report(profiles, &crash_reporter)
-                    .inspect_err(|e| log::error!("Filing report: {}", e))
-                    .await
-            })
+    let crash_reporter_task = Task::spawn(async move {
+        let mut rx = rx.ready_chunks(MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize);
+        while let Some(profiles) = rx.next().await {
+            file_report(profiles, &crash_reporter)
+                .inspect_err(|e| log::error!("Filing report: {}", e))
+                .await?;
+
+            Timer::new(fuchsia_async::MonotonicInstant::after(
+                MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS,
+            ))
+            .await;
+        }
+        return Ok(());
     });
     (tx, crash_reporter_task)
 }
@@ -134,8 +137,8 @@ pub fn setup_crash_reporter() -> (mpsc::Sender<ProfileReport>, Task<Result<(), E
 mod test {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_feedback::CrashReporterRequest;
-    use futures::{try_join, FutureExt};
+    use fidl_fuchsia_feedback::{CrashReporterMarker, CrashReporterRequest};
+    use futures::{FutureExt, try_join};
     use itertools::assert_equal;
 
     fn handle_crash_reporter_request(request: CrashReporterRequest) -> CrashReport {
@@ -314,5 +317,112 @@ mod test {
                 },
             ),
         );
+    }
+
+    #[test]
+    fn test_crash_reporter_task_rate_limiting() {
+        use std::task::Poll;
+        let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
+        // Setup the crash reporter task.
+        let (client, mut request_stream) = create_proxy_and_stream::<CrashReporterMarker>();
+        let (mut sender, mut task) = setup_crash_reporter_task(client);
+
+        let size = 42;
+        let profile1 = ProfileReport::Final {
+            process_name: "test_process_1".to_string(),
+            size,
+            profile: create_vmo_with_some_data(size as usize),
+        };
+        sender.try_send(profile1).unwrap();
+
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => {
+                handle_crash_reporter_request(request);
+            }
+            _ => panic!("Expected profile to be processed immediately"),
+        };
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        // Send a second profile and assert it is NOT processed immediately.
+        let profile2 = ProfileReport::Final {
+            process_name: "test_process_2".to_string(),
+            size,
+            profile: create_vmo_with_some_data(size as usize),
+        };
+        sender.try_send(profile2).unwrap();
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        assert!(executor.run_until_stalled(&mut request_stream.next()).is_pending());
+
+        // Advance time by 30 minutes, less than the 1 hour minimum.
+        executor.set_fake_time(executor.now() + zx::MonotonicDuration::from_minutes(30));
+        assert!(!executor.wake_expired_timers());
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        assert!(
+            executor.run_until_stalled(&mut request_stream.next()).is_pending(),
+            "Expected profile to NOT be processed yet"
+        );
+
+        // Advance time by another 35 minutes, exceeding the 1 hour minimum.
+        executor.set_fake_time(executor.now() + zx::MonotonicDuration::from_minutes(35));
+        assert!(executor.wake_expired_timers());
+
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => {
+                handle_crash_reporter_request(request);
+            }
+            _ => panic!("Expected profile to be processed after 1 hour elapsed"),
+        }
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        // Check that following a long period of inactivity, rate limiting still strictly
+        // limits subsequent reports to 1 per hour.
+        executor.set_fake_time(executor.now() + zx::MonotonicDuration::from_hours(5));
+        assert!(executor.wake_expired_timers());
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        let profile3 = ProfileReport::Final {
+            process_name: "test_process_3".to_string(),
+            size,
+            profile: create_vmo_with_some_data(size as usize),
+        };
+        sender.try_send(profile3).unwrap();
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        // First profile after 5h should be processed immediately.
+        match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => {
+                handle_crash_reporter_request(request);
+            }
+            _ => panic!("Expected profile to be processed immediately after 5h of inactivity"),
+        }
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        // A second profile immediately after should NOT be processed.
+        let profile4 = ProfileReport::Final {
+            process_name: "test_process_4".to_string(),
+            size,
+            profile: create_vmo_with_some_data(size as usize),
+        };
+        sender.try_send(profile4).unwrap();
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        assert!(
+            executor.run_until_stalled(&mut request_stream.next()).is_pending(),
+            "Expected profile to NOT be processed yet"
+        );
+
+        // Advance time by 1 hour and verify it gets processed.
+        executor.set_fake_time(executor.now() + zx::MonotonicDuration::from_hours(1));
+        assert!(executor.wake_expired_timers());
+
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => {
+                handle_crash_reporter_request(request);
+            }
+            _ => panic!("Expected profile to be processed after another 1 hour elapsed"),
+        }
+        assert!(executor.run_until_stalled(&mut task).is_pending());
     }
 }
