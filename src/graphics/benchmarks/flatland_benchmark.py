@@ -4,14 +4,14 @@
 # found in the LICENSE file.
 """Flatland Benchmark."""
 
+import asyncio
 import itertools
 import logging
 import os
-import time
 from pathlib import Path
 
+import fuchsia_base_test
 import test_data
-from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 from perf_publish import publish
 from reporting import metrics
@@ -26,7 +26,7 @@ TEST_NAME: str = "fuchsia.app_render_latency"
 LOGGER = logging.getLogger(__name__)
 
 
-class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
+class FlatlandBenchmark(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Flatland Benchmark.
 
     Attributes:
@@ -37,22 +37,22 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     (src/ui/examples/flatland-rainbow).
     """
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
 
         self.dut = self.fuchsia_devices[0]
 
         self.dut.session.ensure_started()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         self.dut.session.cleanup()
-        super().teardown_test()
+        await super().teardown_test()
 
-    def test_flatland(self) -> None:
+    async def test_flatland(self) -> None:
         # Add flatland-rainbow tile
         self.dut.session.add_component(TILE_URL)
 
-        with self.dut.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[
                 "input",
                 "gfx",
@@ -66,7 +66,7 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
             directory=self.log_path,
             trace_file="trace.fxt",
         ):
-            time.sleep(BENCHMARK_DURATION_SEC)
+            await asyncio.sleep(BENCHMARK_DURATION_SEC)
 
         expected_trace_filename: str = os.path.join(self.log_path, "trace.fxt")
 
