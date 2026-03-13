@@ -164,7 +164,10 @@ fn write_summary_kernel_stats(
     let kernel_total = memory_statistics.wired_bytes.unwrap()
         + memory_statistics.total_heap_bytes.unwrap()
         + memory_statistics.mmu_overhead_bytes.unwrap()
-        + memory_statistics.ipc_bytes.unwrap();
+        + memory_statistics.ipc_bytes.unwrap()
+        + memory_statistics.other_bytes.unwrap()
+        + memory_statistics.slab_bytes.unwrap()
+        + memory_statistics.cache_bytes.unwrap();
     writeln!(w, "Kernel:    {}", format_bytes(kernel_total as f64))?;
     writeln!(w, "    wired: {}", format_bytes(memory_statistics.wired_bytes.unwrap() as f64))?;
     writeln!(w, "    vmo:   {}", format_bytes(memory_statistics.vmo_bytes.unwrap() as f64))?;
@@ -178,6 +181,8 @@ fn write_summary_kernel_stats(
     if let Some(zram_bytes) = memory_statistics.zram_bytes {
         writeln!(w, "    zram:  {}", format_bytes(zram_bytes as f64))?;
     }
+    writeln!(w, "    slab:  {}", format_bytes(memory_statistics.slab_bytes.unwrap() as f64))?;
+    writeln!(w, "    cache: {}", format_bytes(memory_statistics.cache_bytes.unwrap() as f64))?;
     writeln!(w, "    other: {}", format_bytes(memory_statistics.other_bytes.unwrap() as f64))?;
     writeln!(w, "  including:")?;
     writeln!(
@@ -472,13 +477,15 @@ mod tests {
 
         let expected_output = r#"Total memory: 42.00 MiB
 Free memory: 1.00 KiB
-Kernel:    18.00 KiB
+Kernel:    47.00 KiB
     wired: 2.00 KiB
     vmo:   5.00 KiB
     heap:  3.00 KiB
     mmu:   6.00 KiB
     ipc:   7.00 KiB
     zram:  12.00 KiB
+    slab:  11.00 KiB
+    cache: 10.00 KiB
     other: 8.00 KiB
   including:
     vmo_reclaim_total_bytes:        13.00 KiB

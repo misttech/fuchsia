@@ -936,8 +936,8 @@ mod tests {
                     },
                     digest::Bucket {
                         name: "Kernel".to_string(),
-                        populated_size: 39,
-                        committed_size: 39,
+                        populated_size: 60,
+                        committed_size: 60,
                         vmos: None
                     },
                     digest::Bucket {

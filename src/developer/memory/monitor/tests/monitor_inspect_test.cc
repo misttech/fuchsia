@@ -25,6 +25,21 @@
 #include "third_party/rapidjson/include/rapidjson/rapidjson.h"
 
 using ::diagnostics::reader::InspectData;
+namespace rapidjson {
+// Teach the testing framework to pretty print Json values.
+extern void PrintTo(const Value& value, ::std::ostream* os) {
+  OStreamWrapper osw(*os);
+  PrettyWriter<OStreamWrapper> writer(osw);
+  value.Accept(writer);
+}
+
+extern void PrintTo(const Document& value, ::std::ostream* os) {
+  OStreamWrapper osw(*os);
+  PrettyWriter<OStreamWrapper> writer(osw);
+  value.Accept(writer);
+}
+}  // namespace rapidjson
+
 namespace {
 constexpr char kTestCollectionName[] = "test_apps";
 constexpr char kTestChildUrl[] = "#meta/memory_monitor_test_app.cm";
@@ -165,22 +180,6 @@ MATCHER_P(IsNumber, matcher,
   return ExplainMatchResult(testing::Eq(rapidjson::kNumberType), arg.GetType(), result_listener) &&
          ExplainMatchResult(matcher, arg.GetInt64(), result_listener);
 }
-}  // namespace
-
-namespace rapidjson {
-// Teach the testing framework to pretty print Json values.
-extern void PrintTo(const Value& value, ::std::ostream* os) {
-  OStreamWrapper osw(*os);
-  PrettyWriter<OStreamWrapper> writer(osw);
-  value.Accept(writer);
-}
-
-extern void PrintTo(const Document& value, ::std::ostream* os) {
-  OStreamWrapper osw(*os);
-  PrettyWriter<OStreamWrapper> writer(osw);
-  value.Accept(writer);
-}
-}  // namespace rapidjson
 
 TEST_F(InspectTest, FirstLaunch) {
   auto result = GetInspect();
@@ -227,15 +226,15 @@ TEST_F(InspectTest, SecondLaunch) {
     "Time: 0 VMO: 46B Free: 41B\nkernel<1> 280B\n other 52B\n ipc 48B\n mmu 47B\n vmo 46B\n heap 44B\n wired 43B\n"
   )json"));
   EXPECT_THAT(data.GetByPath({"root", "current_digest"}), EqJson(R"json(
-    "Kernel: 234B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
+    "Kernel: 333B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
   )json"));
   EXPECT_THAT(data.GetByPath({"root", "high_water_digest"}), EqJson(R"json(
-    "Kernel: 234B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
+    "Kernel: 333B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
   )json"));
   EXPECT_THAT(
       data.GetByPath({"root", "high_water_digest_previous_boot"}),
       EqJson(
-          R"json("Kernel: 234B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
+          R"json("Kernel: 333B\n[Addl]ZramCompressedBytes: 61B\n[Addl]DiscardableUnlocked: 58B\n[Addl]DiscardableLocked: 57B\n[Addl]PagerOldest: 55B\n[Addl]PagerNewest: 54B\n[Addl]PagerTotal: 53B\nOrphaned: 46B\nFree: 41B\nUndigested: 0B\n"
   )json"));
 
   EXPECT_THAT(data.GetByPath({"root", "values"}), EqJson(R"json(
@@ -296,3 +295,4 @@ TEST_F(InspectTest, SecondLaunch) {
     }
   )json"));
 }
+}  // namespace

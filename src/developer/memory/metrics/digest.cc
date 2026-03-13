@@ -75,7 +75,7 @@ void Digester::Digest(const Capture& capture, class Digest* digest) {
       kOrphaned, std::clamp(kmem.vmo_bytes - vmo_size.integral, 0ul, kmem.vmo_bytes));
   digest->buckets_.emplace_back(kKernel, kmem.wired_bytes + kmem.total_heap_bytes +
                                              kmem.mmu_overhead_bytes + kmem.ipc_bytes +
-                                             kmem.other_bytes);
+                                             kmem.other_bytes + kmem.slab_bytes + kmem.cache_bytes);
   digest->buckets_.emplace_back(kFree, kmem.free_bytes);
   const auto& kmem_ext =
       capture.kmem_extended() ? capture.kmem_extended().value() : zx_info_kmem_stats_extended_t{};

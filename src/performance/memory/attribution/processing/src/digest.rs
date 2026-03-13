@@ -305,7 +305,9 @@ impl Digest {
                             + kmem_stats.total_heap_bytes?
                             + kmem_stats.mmu_overhead_bytes?
                             + kmem_stats.ipc_bytes?
-                            + kmem_stats.other_bytes?,
+                            + kmem_stats.other_bytes?
+                            + kmem_stats.slab_bytes?
+                            + kmem_stats.cache_bytes?,
                     )
                 })()
                 .unwrap_or(0);
@@ -579,8 +581,8 @@ mod tests {
                 committed_size: 8976,
                 vmos: None,
             },
-            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), populated_size: 31, committed_size: 31, vmos: None },
+            // wired + heap + mmu + ipc + other + slab + cache => 3 + 4 + 7 + 8 + 9 + 12 + 11 = 54
+            Bucket { name: KERNEL.to_string(), populated_size: 54, committed_size: 54, vmos: None },
             Bucket { name: FREE.to_string(), populated_size: 2, committed_size: 2, vmos: None },
             Bucket {
                 name: PAGER_TOTAL.to_string(),
@@ -682,8 +684,8 @@ mod tests {
                 committed_size: 8976,
                 vmos: None,
             },
-            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), populated_size: 31, committed_size: 31, vmos: None },
+            // wired + heap + mmu + ipc + other + slab + cache => 3 + 4 + 7 + 8 + 9 + 12 + 11 = 54
+            Bucket { name: KERNEL.to_string(), populated_size: 54, committed_size: 54, vmos: None },
             Bucket { name: FREE.to_string(), populated_size: 2, committed_size: 2, vmos: None },
             Bucket {
                 name: PAGER_TOTAL.to_string(),
@@ -789,8 +791,8 @@ mod tests {
                 committed_size: 8976,
                 vmos: None,
             },
-            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), populated_size: 31, committed_size: 31, vmos: None },
+            // wired + heap + mmu + ipc + other + slab + cache => 3 + 4 + 7 + 8 + 9 + 12 + 11 = 54
+            Bucket { name: KERNEL.to_string(), populated_size: 54, committed_size: 54, vmos: None },
             Bucket { name: FREE.to_string(), populated_size: 2, committed_size: 2, vmos: None },
             Bucket {
                 name: PAGER_TOTAL.to_string(),
@@ -893,8 +895,8 @@ mod tests {
                 committed_size: 8976,
                 vmos: None,
             },
-            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), populated_size: 31, committed_size: 31, vmos: None },
+            // wired + heap + mmu + ipc + other + slab + cache => 3 + 4 + 7 + 8 + 9 + 12 + 11 = 54
+            Bucket { name: KERNEL.to_string(), populated_size: 54, committed_size: 54, vmos: None },
             Bucket { name: FREE.to_string(), populated_size: 2, committed_size: 2, vmos: None },
             Bucket {
                 name: PAGER_TOTAL.to_string(),
@@ -997,8 +999,8 @@ mod tests {
                 committed_size: 8976,
                 vmos: None,
             },
-            // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), populated_size: 31, committed_size: 31, vmos: None },
+            // wired + heap + mmu + ipc + other + slab + cache => 3 + 4 + 7 + 8 + 9 + 12 + 11 = 54
+            Bucket { name: KERNEL.to_string(), populated_size: 54, committed_size: 54, vmos: None },
             Bucket { name: FREE.to_string(), populated_size: 2, committed_size: 2, vmos: None },
             Bucket {
                 name: PAGER_TOTAL.to_string(),

@@ -363,7 +363,7 @@ mod tests {
                             // Orphaned: vmo_bytes reported by the kernel but not covered by any
                             // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
                             0u64,
-                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            54u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other + 12 slab + 11 cache = 54
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal
                             15u64,   // [Addl]PagerNewest
@@ -378,7 +378,7 @@ mod tests {
                             // Orphaned: vmo_bytes reported by the kernel but not covered by any
                             // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
                             0u64,
-                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            54u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other + 12 slab + 11 cache = 54
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal
                             15u64,   // [Addl]PagerNewest
@@ -402,7 +402,7 @@ mod tests {
                             // Orphaned: vmo_bytes reported by the kernel but not covered by any
                             // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
                             0u64,
-                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            54u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other + 12 slab + 11 cache = 54
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal
                             15u64,   // [Addl]PagerNewest
@@ -417,7 +417,7 @@ mod tests {
                             // Orphaned: vmo_bytes reported by the kernel but not covered by any
                             // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
                             0u64,
-                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            54u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other + 12 slab + 11 cache = 54
                             2u64,    // Free
                             14u64,   // [Addl]PagerTotal
                             15u64,   // [Addl]PagerNewest

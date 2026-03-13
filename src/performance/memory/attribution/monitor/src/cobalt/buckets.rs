@@ -491,7 +491,7 @@ mod tests {
                             fmetrics::MetricEvent {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
                                 event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Kernel.as_event_code()],
-                                payload: fmetrics::MetricEventPayload::IntegerValue(31)
+                                payload: fmetrics::MetricEventPayload::IntegerValue(54)
                             },
                             fmetrics::MetricEvent {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
