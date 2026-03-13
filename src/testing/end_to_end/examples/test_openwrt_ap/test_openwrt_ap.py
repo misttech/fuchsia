@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 """OpenWRT AP test for Lacewing."""
 
+import asyncio
 import logging
 
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from mobly import asserts, signals, test_runner
 from mobly_controller import openwrt_access_point
@@ -20,19 +21,19 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.log = logging.getLogger()
 
         if not self.fuchsia_devices:
             raise signals.TestAbortClass(
                 "At least one Fuchsia device is required"
             )
-        self.openwrt_aps: list[OpenWrtAP] | None = self.register_controller(
-            openwrt_access_point
-        )
+        self.openwrt_aps: list[
+            OpenWrtAP
+        ] | None = await self.register_controller(openwrt_access_point)
         if not self.fuchsia_devices:
             raise signals.TestAbortClass(
                 "At least one Fuchsia device is required"
@@ -66,7 +67,6 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
             self.log.info(
                 f"SSID {wifi_config.ssid} not found on attempt {attempt + 1}, retrying..."
             )
-            import asyncio
 
             await asyncio.sleep(2)
 
