@@ -1258,7 +1258,7 @@ impl TimerOps for HrTimerHandle {
 }
 
 /// Represents a node of `HrTimer`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct HrTimerNode {
     /// The deadline of the associated `HrTimer`.
     deadline: TargetTime,

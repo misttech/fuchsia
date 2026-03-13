@@ -8,6 +8,7 @@
 #include <sys/poll.h>
 #include <sys/timerfd.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <format>
@@ -25,6 +26,9 @@
 using testing::IsSupersetOf;
 
 namespace {
+
+const int kMaxRetries = 100;
+const int kRetryDelayUs = 10 * 1000;
 
 bool ReadFileToStringNonBlocking(const std::string& path, std::string* content) {
   int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
@@ -55,9 +59,18 @@ void VerifyReadOutOfBound(const std::string& path) {
   EXPECT_EQ(0, preadv(fd, iov, std::size(iov), kOffset)) << "preadv failed: " << errno;
 }
 
-bool attempt_suspend(const std::string& suspend_type) {
+bool attempt_suspend(const std::string& suspend_type, bool retry = true) {
   GTEST_LOG_(INFO) << "attempt_suspend: " << suspend_type;
-  return files::WriteFile("/sys/power/state", suspend_type);
+  for (int i = 0; i < kMaxRetries; ++i) {
+    if (files::WriteFile("/sys/power/state", suspend_type)) {
+      return true;
+    }
+    if (!retry || (errno != EINVAL && errno != EBUSY)) {
+      return false;
+    }
+    usleep(kRetryDelayUs);
+  }
+  return false;
 }
 
 timer_t start_interval_timer() {
@@ -189,7 +202,7 @@ TEST_F(SysfsPowerTest, SuspendStatsFilesUpdateAfterFailedSuspend) {
   }
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
 
   std::string new_success_str;
   std::string new_fail_str;
@@ -306,7 +319,7 @@ TEST_F(SysfsPowerTest, SuspendStateFileWriteFailsWaitAgain) {
   }
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
 
   // Wait on the events again, which should clear the EPOLLWAKEUP when
   // no events are returned.
@@ -352,7 +365,7 @@ TEST_F(SysfsPowerTest, SuspendStateFileWriteFailsCloseFD) {
   }
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
 
   // Closing the epoll file descriptor should remove the wake lock.
   timer_fd.reset();
@@ -392,8 +405,7 @@ TEST_F(SysfsPowerTest, SuspendStateFileWriteFailsCloseEpollFD) {
   }
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
-
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
   // Closing the epoll file descriptor should remove the wake lock.
   epoll_fd.reset();
 
@@ -432,7 +444,7 @@ TEST_F(SysfsPowerTest, SuspendStateFileWriteFailsEpollDelete) {
   }
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
 
   // Deleting the epoll file descriptor should remove the wake lock.
   EXPECT_EQ(0, epoll_ctl(epoll_fd.get(), EPOLL_CTL_DEL, timer_fd.get(), &ev));
@@ -503,7 +515,7 @@ TEST_F(SysfsPowerTest, WakeLockBlocksSuspend) {
   EXPECT_TRUE(files::WriteFile("/sys/power/wake_lock", test_wake_lock_str));
 
   // This should fail due to the implicit wake lock.
-  ASSERT_FALSE(attempt_suspend("mem"));
+  ASSERT_FALSE(attempt_suspend("mem", /*retry=*/false));
 
   std::string wake_unlocks_str;
   EXPECT_TRUE(files::WriteFile("/sys/power/wake_unlock", test_wake_lock_str));

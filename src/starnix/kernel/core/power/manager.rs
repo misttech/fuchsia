@@ -11,7 +11,11 @@ use std::sync::{Arc, Weak};
 
 use anyhow::{Context, anyhow};
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_session_power as fpower;
+use fidl_fuchsia_starnix_runner as frunner;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::ArrayProperty;
 use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
@@ -26,10 +30,6 @@ use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::fmt;
 use zx::{HandleBased, Peered};
-use {
-    fidl_fuchsia_power_observability as fobs, fidl_fuchsia_session_power as fpower,
-    fidl_fuchsia_starnix_runner as frunner, fuchsia_inspect as inspect,
-};
 
 /// Wake source persistent info, exposed in inspect diagnostics.
 #[derive(Debug, Default)]
@@ -477,11 +477,11 @@ impl SuspendResumeManager {
     }
 
     pub fn add_message_counter(
-        &self,
+        self: &Arc<Self>,
         name: &str,
         counter: Option<zx::Counter>,
     ) -> OwnedMessageCounterHandle {
-        let container_counter = OwnedMessageCounter::new(name, counter);
+        let container_counter = OwnedMessageCounter::new(name, counter, self);
         let mut message_counters = self.message_counters.lock();
         message_counters.insert(WeakKey::from(&container_counter));
         message_counters.retain(|c| c.0.upgrade().is_some());
@@ -816,7 +816,7 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
 /// can pass a `SharedMessageCounter` to each other to ensure that once the work is done, the lock
 /// goes out of scope as well. This allows for precise accounting of remaining work, and should
 /// give us control over container suspension which is guarded by the compiler, not conventions.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SharedMessageCounter(Weak<OwnedMessageCounter>);
 
 impl Drop for SharedMessageCounter {
@@ -834,6 +834,7 @@ impl Drop for SharedMessageCounter {
 pub struct OwnedMessageCounter {
     name: String,
     counter: Option<zx::Counter>,
+    manager: Weak<SuspendResumeManager>,
 }
 pub type OwnedMessageCounterHandle = Arc<OwnedMessageCounter>;
 
@@ -843,13 +844,29 @@ impl Drop for OwnedMessageCounter {
     /// This ensures that all pending messages are marked as handled, allowing the system to suspend
     /// if no other wake locks are held.
     fn drop(&mut self) {
-        self.counter.as_ref().map(mark_all_proxy_messages_handled);
+        if let Some(counter) = self.counter.take() {
+            mark_all_proxy_messages_handled(&counter);
+            if let Some(manager) = self.manager.upgrade() {
+                let _ = manager.remove_external_wake_source(counter.into_handle());
+            }
+        }
     }
 }
 
 impl OwnedMessageCounter {
-    pub fn new(name: &str, counter: Option<zx::Counter>) -> OwnedMessageCounterHandle {
-        Arc::new(Self { name: name.to_string(), counter })
+    pub fn new(
+        name: &str,
+        counter: Option<zx::Counter>,
+        manager: &Arc<SuspendResumeManager>,
+    ) -> OwnedMessageCounterHandle {
+        if let Some(counter) = &counter {
+            let _ = manager.add_external_wake_source(
+                counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+                zx::Signals::COUNTER_POSITIVE,
+                name.to_string(),
+            );
+        }
+        Arc::new(Self { name: name.to_string(), counter, manager: Arc::downgrade(manager) })
     }
 
     /// Decrements the counter, signaling that a pending message or operation has been handled.
@@ -956,9 +973,10 @@ mod test {
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_test_placeholders::{EchoMarker, EchoRequest};
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use futures::StreamExt;
     use zx::{self, HandleBased};
-    use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
     #[::fuchsia::test]
     fn test_counter_zero_initialization() {
@@ -992,10 +1010,12 @@ mod test {
         counter.add(5).unwrap();
         assert_eq!(counter.read(), Ok(5));
 
+        let manager = Arc::new(SuspendResumeManager::default());
         let waking_proxy = ContainerWakingProxy {
             counter: OwnedMessageCounter::new(
                 "test_proxy",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                &manager,
             ),
             proxy,
         };
@@ -1027,10 +1047,12 @@ mod test {
         counter.add(5).unwrap();
         assert_eq!(counter.read(), Ok(5));
 
+        let manager = Arc::new(SuspendResumeManager::default());
         let mut waking_stream = ContainerWakingStream {
             counter: OwnedMessageCounter::new(
                 "test_stream",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                &manager,
             ),
             stream,
         };
@@ -1057,7 +1079,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_message_counters_inspect() {
-        let power_manager = SuspendResumeManager::default();
+        let power_manager = Arc::new(SuspendResumeManager::default());
         let inspector = inspect::component::inspector();
 
         let zx_counter = zx::Counter::create();
@@ -1087,9 +1109,11 @@ mod test {
     fn test_shared_message_counter() {
         // Create an owned counter and set its value.
         let zx_counter = zx::Counter::create();
+        let manager = Arc::new(SuspendResumeManager::default());
         let owned_counter = OwnedMessageCounter::new(
             "test_shared_counter",
             Some(zx_counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            &manager,
         );
         zx_counter.add(5).unwrap();
         assert_eq!(zx_counter.read(), Ok(5));
@@ -1129,10 +1153,12 @@ mod test {
         let counter = zx::Counter::create();
         counter.add(2).unwrap();
         assert_eq!(counter.read(), Ok(2));
+        let manager = Arc::new(SuspendResumeManager::default());
         let mut waking_stream = ContainerWakingStream {
             counter: OwnedMessageCounter::new(
                 "test_stream",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                &manager,
             ),
             stream,
         };
