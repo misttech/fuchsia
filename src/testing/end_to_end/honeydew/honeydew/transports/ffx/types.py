@@ -208,8 +208,13 @@ class MonitorTargetInfo:
 class MachineFormat(enum.StrEnum):
     """Supported machine formats"""
 
-    # Note: use this only for ffx commands that do not support --machine flag.
-    DISABLE = "lacewing-disable-machine-flag"
+    # All ffx subtools support "--machine raw", so that should be used
+    # if the tool does not support structured output. Best practice is
+    # to add a comment above uses of MachineFormat.RAW, such as:
+    # * the command has not yet been ported (provide a TODO(bug))
+    # * it makes no sense to provide structured output (e.g. a command
+    #   such as "ffx target shell" that cannot have a useful schema)
+    # * inspecting the structured output requires too much complexity
     RAW = "raw"
     JSON = "json"
     JSON_PRETTY = "json-pretty"

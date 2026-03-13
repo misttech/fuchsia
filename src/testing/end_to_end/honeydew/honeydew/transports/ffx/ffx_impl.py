@@ -700,7 +700,7 @@ class FfxImpl(ffx_interface.FFX):
         # To run FFX in isolation mode
         ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
         # Don't add "--machine" if the machine type is already specified
-        if "--machine" not in cmd and machine != MachineFormat.DISABLE:
+        if "--machine" not in cmd:
             ffx_args.extend(["--machine", str(machine)])
 
         # Add log file path

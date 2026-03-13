@@ -103,9 +103,10 @@ def suspend_resume(
     if deadline is None:
         deadline = Deadline.from_timeout(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
+    # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
     device.ffx.run(
         ["session", "drop-power-lease", "--allow-missing"],
-        machine=ffx_types.MachineFormat.DISABLE,
+        machine=ffx_types.MachineFormat.RAW,
     )
 
     attempt = -1

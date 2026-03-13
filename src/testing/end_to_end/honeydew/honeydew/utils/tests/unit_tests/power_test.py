@@ -145,7 +145,8 @@ class PowerTests(unittest.TestCase):
         self.mock_device.resume.assert_called_once()
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
@@ -178,7 +179,8 @@ class PowerTests(unittest.TestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
         self.mock_device.suspend.assert_called_once()
         mock_sleep.assert_called_once()
@@ -231,7 +233,8 @@ class PowerTests(unittest.TestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
         self.assertEqual(self.mock_device.suspend.call_count, 2)
         self.assertEqual(mock_sleep.call_count, 2)
@@ -278,7 +281,8 @@ class PowerTests(unittest.TestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
         self.mock_device.suspend.assert_called_once()
         mock_sleep.assert_called_once()
@@ -305,7 +309,8 @@ class PowerTests(unittest.TestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
@@ -337,7 +342,8 @@ class PowerTests(unittest.TestCase):
 
         self.mock_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
-            machine=ffx_types.MachineFormat.DISABLE,
+            # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
+            machine=ffx_types.MachineFormat.RAW,
         )
 
 
