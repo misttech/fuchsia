@@ -20,30 +20,20 @@ TOUCH_APP = (
 )
 
 
-class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
-    """UserInput affordance tests"""
+class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
+    """Test logic for UserInput affordance."""
 
-    def reset_screenshot_attempt_count(self) -> None:
+    def __init__(self, mobly_test: fuchsia_base_test.FuchsiaBaseTest):
+        super().__init__(mobly_test)
+
         self.screenshot_attempt_count = 0
-
-    def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `dut` variable with FuchsiaDevice object
-        """
-        super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     def setup_test(self) -> None:
         super().setup_test()
-        self.dut.session.ensure_started()
-        # Reset screenshot attempt count for each test
-        self.reset_screenshot_attempt_count()
 
-    def teardown_test(self) -> None:
-        self.dut.session.cleanup()
-        super().teardown_test()
+        self.dut = self.mobly_test.fuchsia_devices[0]
+        self.test_case_path = self.mobly_test.test_case_path
+        self.screenshot_attempt_count = 0
 
     def _take_and_save_screenshot(
         self, name_prefix: str, attempt_num: Optional[int] = None
@@ -151,6 +141,29 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # Simulate a scroll event. If the underlying FIDL connection or
         # registry fails, this will raise a UserInputError and fail the test.
         mouse_device.scroll(scroll_v_detent=10)
+
+
+class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+    """UserInput affordance tests"""
+
+    TEST_CASES = [UserInputTestCases]
+
+    def setup_class(self) -> None:
+        """setup_class is called once before running tests.
+
+        It does the following things:
+            * Assigns `dut` variable with FuchsiaDevice object
+        """
+        super().setup_class()
+        self.dut = self.fuchsia_devices[0]
+
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.dut.session.ensure_started()
+
+    def teardown_test(self) -> None:
+        self.dut.session.cleanup()
+        super().teardown_test()
 
 
 if __name__ == "__main__":
