@@ -69,6 +69,8 @@ class Display {
   uint32_t vertical_size_mm_;
   // flag used to indicate whether the values are actual values or fallback
   bool using_fallback_sizes_;
+
+  uint32_t max_layer_count_;
 };
 
 }  // namespace display_test

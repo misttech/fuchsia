@@ -68,6 +68,8 @@ struct TestDisplayInfo {
 
   // Represents an image that covers the entire display.
   display::ImageMetadata fullscreen_image_metadata;
+
+  uint32_t max_layer_count;
 };
 
 // static
@@ -88,6 +90,7 @@ TestDisplayInfo TestDisplayInfo::From(
   return TestDisplayInfo{
       .id = display_id,
       .fullscreen_image_metadata = fullscreen_image_metadata,
+      .max_layer_count = fidl_display_info.max_layer_count,
   };
 }
 
@@ -120,6 +123,11 @@ class TestClientState {
   //
   // Crashes if no display is connected.
   display::ImageMetadata FullscreenImageMetadata() const;
+
+  // Returns the cached information for the first connected display.
+  //
+  // Crashes if no display is connected.
+  const TestDisplayInfo& GetDisplayInfo() const;
 
   // MockCoordinatorListener implementation
   void OnDisplaysChanged(std::span<const fuchsia_hardware_display::wire::Info> added_displays,
@@ -176,6 +184,12 @@ display::ImageMetadata TestClientState::FullscreenImageMetadata() const {
   std::lock_guard lock(mutex_);
   ZX_ASSERT(!connected_displays_.empty());
   return connected_displays_[0].fullscreen_image_metadata;
+}
+
+const TestDisplayInfo& TestClientState::GetDisplayInfo() const {
+  std::lock_guard lock(mutex_);
+  ZX_ASSERT(!connected_displays_.empty());
+  return connected_displays_[0];
 }
 
 void TestClientState::OnDisplaysChanged(
@@ -1194,6 +1208,22 @@ TEST_F(IntegrationTest, MustUseUniqueEventIDs) {
   // TODO: Use LLCPP epitaphs when available to detect ZX_ERR_PEER_CLOSED.
 }
 
+TEST_F(IntegrationTest, MaxLayerCountPropagatedToClient) {
+  std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), ClientPriority::kPrimary);
+
+  // The integration test uses a fake display engine. In the test setup,
+  // the fake engine reports its max_layer_count (currently 1 in
+  // testing/base.cc).
+  static constexpr uint32_t kEngineMaxLayerCount = 1;
+
+  ASSERT_TRUE(PollUntilOnLoop([&]() { return client->state().HasConnectedDisplay(); }));
+  const TestDisplayInfo& display_info = client->state().GetDisplayInfo();
+
+  // Verify that the max_layer_count field we added in Part 1 is correctly
+  // propagated from the engine driver to the FIDL client.
+  EXPECT_EQ(display_info.max_layer_count, kEngineMaxLayerCount);
+}
 TEST_F(IntegrationTest, VsyncEventForImageConfig) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), ClientPriority::kPrimary);

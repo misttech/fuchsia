@@ -112,9 +112,8 @@ impl MockCoordinator {
 ///
 /// NOTE: This function instantiates FIDL bindings and thus requires a fuchsia-async executor to
 /// have been created beforehand.
-pub fn create_proxy_and_mock(
-) -> Result<(display::CoordinatorProxy, display::CoordinatorListenerRequestStream, MockCoordinator)>
-{
+pub fn create_proxy_and_mock()
+-> Result<(display::CoordinatorProxy, display::CoordinatorListenerRequestStream, MockCoordinator)> {
     let (coordinator_proxy, coordinator_server) =
         fidl::endpoints::create_proxy::<CoordinatorMarker>();
     let (listener_client, listener_requests) =
@@ -131,7 +130,7 @@ mod tests {
     use super::*;
     use anyhow::{Context, Result};
     use fidl_fuchsia_hardware_display as display;
-    use futures::{future, TryStreamExt};
+    use futures::{TryStreamExt, future};
 
     async fn wait_for_displays_changed_event(
         listener_requests: &mut display::CoordinatorListenerRequestStream,
@@ -160,6 +159,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
             display::Info {
                 id: display_types::DisplayId { value: 1 },
@@ -171,6 +171,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
         ];
 
@@ -193,6 +194,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
             display::Info {
                 id: display_types::DisplayId { value: 2 },
@@ -204,6 +206,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
         ];
 
@@ -230,6 +233,7 @@ mod tests {
             horizontal_size_mm: 0,
             vertical_size_mm: 0,
             using_fallback_size: false,
+            max_layer_count: 1,
         }];
 
         let (_proxy, mut listener_requests, mut mock) =

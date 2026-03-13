@@ -74,6 +74,10 @@ type Info = struct {
 
     /// True if the driver does not have the display's physical sizing info.
     using_fallback_size bool;
+
+    /// The maximum number of layers that the display engine can composite
+    /// onto this display.
+    max_layer_count uint32;
 };
 
 const IDENTIFIER_MAX_LEN uint32 = 128;

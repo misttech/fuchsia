@@ -8,12 +8,11 @@ use std::str::FromStr;
 use crate::utils;
 use anyhow::{Context as _, Error, anyhow, bail};
 use argh::FromArgs;
+use fidl_fuchsia_hardware_display as display;
+use fidl_fuchsia_hardware_display_types as display_types;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::Service;
 use futures::{TryStreamExt, future};
-use {
-    fidl_fuchsia_hardware_display as display, fidl_fuchsia_hardware_display_types as display_types,
-};
 
 #[derive(Clone, Debug, PartialEq)]
 enum DisplayPowerMode {
@@ -234,6 +233,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             }];
             let coordinator_listener_proxy = coordinator_listener_client.into_proxy();
             coordinator_listener_proxy.on_displays_changed(added_displays, &[]).unwrap();

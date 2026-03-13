@@ -1333,6 +1333,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
 
     fhd::wire::Info fidl_display_info;
     fidl_display_info.id = display_config.id().ToFidl();
+    fidl_display_info.max_layer_count = controller_.engine_info().max_layer_count();
 
     zx::result<std::span<const display::ModeAndId>> display_preferred_modes_result =
         controller_.GetDisplayPreferredModes(display_config.id());

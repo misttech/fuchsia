@@ -40,10 +40,12 @@ Display::Display(const fhd::wire::Info& info) {
   horizontal_size_mm_ = info.horizontal_size_mm;
   vertical_size_mm_ = info.vertical_size_mm;
   using_fallback_sizes_ = info.using_fallback_size;
+  max_layer_count_ = info.max_layer_count;
 }
 
 void Display::Dump() {
   printf("Display id = %ld\n", id_.value());
+  printf("\tMax layer count = %u\n", max_layer_count_);
   printf("\tManufacturer name = \"%s\"\n", manufacturer_name_.c_str());
   printf("\tMonitor name = \"%s\"\n", monitor_name_.c_str());
   printf("\tMonitor serial = \"%s\"\n", monitor_serial_.c_str());

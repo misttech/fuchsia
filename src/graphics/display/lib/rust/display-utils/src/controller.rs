@@ -501,6 +501,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
             display::Info {
                 id: display_types::DisplayId { value: 2 },
@@ -512,6 +513,7 @@ mod tests {
                 horizontal_size_mm: 0,
                 vertical_size_mm: 0,
                 using_fallback_size: false,
+                max_layer_count: 1,
             },
         ]
         .to_vec();
