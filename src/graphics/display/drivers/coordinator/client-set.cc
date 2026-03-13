@@ -18,7 +18,6 @@
 #include <fbl/string_printf.h>
 
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
-#include "src/graphics/display/drivers/coordinator/client-proxy.h"
 #include "src/graphics/display/drivers/coordinator/client.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -112,23 +111,23 @@ zx::result<ClientId> ClientSet::ConnectClient(
 
   ClientId client_id = next_client_id_;
   ++next_client_id_;
-  auto client = std::make_unique<ClientProxy>(controller, client_priority, client_id);
+  auto client = std::make_unique<Client>(controller, client_priority, client_id);
 
   inspect::Node client_inspect_node =
       root_node_.CreateChild(fbl::StringPrintf("client-%" PRIu64, client_id.value()));
   zx_status_t status =
-      client->Init(std::move(client_inspect_node), std::move(coordinator_server_end),
+      client->Bind(std::move(client_inspect_node), std::move(coordinator_server_end),
                    std::move(coordinator_listener_client_end));
   if (status != ZX_OK) {
     fdf::warn("Failed to initialize client: {}", status);
     return zx::error(status);
   }
 
-  ClientProxy* client_ptr = client.get();
+  Client* client_ptr = client.get();
   clients_.push_back(std::move(client));
 
   fdf::info("Client connected at priority {} with ID {}",
-            DebugStringFromClientPriority(client_priority), client_ptr->client_id().value());
+            DebugStringFromClientPriority(client_priority), client_ptr->id().value());
 
   switch (client_priority) {
     case ClientPriority::kVirtcon:
@@ -148,23 +147,23 @@ zx::result<ClientId> ClientSet::ConnectClient(
 
 void ClientSet::SendInitialState(ClientId client_id,
                                  std::span<const display::DisplayId> current_display_ids) {
-  ClientProxy* client_proxy;
-  if (virtcon_client_ != nullptr && virtcon_client_->client_id() == client_id) {
-    client_proxy = virtcon_client_;
-  } else if (primary_client_ != nullptr && primary_client_->client_id() == client_id) {
-    client_proxy = primary_client_;
+  Client* client;
+  if (virtcon_client_ != nullptr && virtcon_client_->id() == client_id) {
+    client = virtcon_client_;
+  } else if (primary_client_ != nullptr && primary_client_->id() == client_id) {
+    client = primary_client_;
   } else {
     return;
   }
 
   std::span<const display::DisplayId> removed_display_ids = {};
-  client_proxy->OnDisplaysChanged(current_display_ids, removed_display_ids);
+  client->OnDisplaysChanged(current_display_ids, removed_display_ids);
 
-  if (virtcon_client_ == client_proxy) {
+  if (virtcon_client_ == client) {
     ZX_DEBUG_ASSERT(!virtcon_client_ready_);
     virtcon_client_ready_ = true;
   } else {
-    ZX_DEBUG_ASSERT(primary_client_ == client_proxy);
+    ZX_DEBUG_ASSERT(primary_client_ == client);
     ZX_DEBUG_ASSERT(!primary_client_ready_);
     primary_client_ready_ = true;
   }
@@ -172,28 +171,28 @@ void ClientSet::SendInitialState(ClientId client_id,
 
 std::optional<ClientPriority> ClientSet::FindConfigStampSource(
     display::DriverConfigStamp driver_config_stamp) {
-  for (const std::unique_ptr<ClientProxy>& client_proxy : clients_) {
-    const std::list<ClientProxy::ConfigStampPair>& pending_stamps =
-        client_proxy->pending_displayed_config_stamps();
-    auto pending_stamps_it = std::ranges::find_if(
-        pending_stamps, [&](const ClientProxy::ConfigStampPair& pending_stamp) {
+  for (const std::unique_ptr<Client>& client : clients_) {
+    const std::list<Client::ConfigStampPair>& pending_stamps =
+        client->pending_displayed_config_stamps();
+    auto pending_stamps_it =
+        std::ranges::find_if(pending_stamps, [&](const Client::ConfigStampPair& pending_stamp) {
           return pending_stamp.driver_stamp >= driver_config_stamp;
         });
     if (pending_stamps_it == pending_stamps.end()) {
       continue;
     }
     if (pending_stamps_it->driver_stamp == driver_config_stamp) {
-      return std::make_optional(client_proxy->client_priority());
+      return std::make_optional(client->priority());
     }
   }
   return std::nullopt;
 }
 
-void ClientSet::OnClientDisconnected(ClientProxy* client) {
+void ClientSet::OnClientDisconnected(Client* client) {
   ZX_DEBUG_ASSERT(client != nullptr);
 
   fdf::info("Client at priority {} with ID {} disconnected",
-            DebugStringFromClientPriority(client->client_priority()), client->client_id().value());
+            DebugStringFromClientPriority(client->priority()), client->id().value());
 
   if (client == virtcon_client_) {
     virtcon_client_ = nullptr;
@@ -210,13 +209,13 @@ void ClientSet::OnClientDisconnected(ClientProxy* client) {
   }
 
   clients_.remove_if(
-      [client](std::unique_ptr<ClientProxy>& list_client) { return list_client.get() == client; });
+      [client](std::unique_ptr<Client>& list_client) { return list_client.get() == client; });
 
   HandleClientOwnershipChanges();
 }
 
 void ClientSet::HandleClientOwnershipChanges() {
-  ClientProxy* new_client_owning_displays;
+  Client* new_client_owning_displays;
   if (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kForced ||
       (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kFallback &&
        primary_client_ == nullptr)) {
@@ -237,12 +236,13 @@ void ClientSet::HandleClientOwnershipChanges() {
 }
 
 void ClientSet::CloseAll() {
-  for (const std::unique_ptr<ClientProxy>& client_proxy : clients_) {
-    client_proxy->TearDown();
+  for (const std::unique_ptr<Client>& client : clients_) {
+    client->TearDown(ZX_ERR_CONNECTION_ABORTED);
   }
+
   // TODO(costan): Find a better workaround.
   //
-  // We do not clear `clients_` here. `ClientProxy::TearDown()` will trigger
+  // We do not clear `clients_` here. `Client::TearDown()` will trigger
   // `OnClientDead()` which will call `OnClientDisconnected()` to remove the
   // client from the list.
   client_owning_displays_ = nullptr;
@@ -252,6 +252,6 @@ void ClientSet::CloseAll() {
   virtcon_client_ready_ = false;
 }
 
-ClientProxy* ClientSet::GetClientOwningDisplays() const { return client_owning_displays_; }
+Client* ClientSet::GetClientOwningDisplays() const { return client_owning_displays_; }
 
 }  // namespace display_coordinator

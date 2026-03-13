@@ -42,7 +42,7 @@
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
-#include "src/graphics/display/drivers/coordinator/client-proxy.h"
+#include "src/graphics/display/drivers/coordinator/client-vsync-queue.h"
 #include "src/graphics/display/drivers/coordinator/engine-driver-client.h"
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
@@ -167,7 +167,7 @@ zx_status_t Client::ImportImageForDisplay(const display::ImageMetadata& image_me
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<Image> image = fbl::AdoptRef(new (&alloc_checker) Image(
-      &controller_, image_metadata, image_id, driver_image_id, &proxy_.node(), id_));
+      &controller_, image_metadata, image_id, driver_image_id, &node(), id_));
   if (!alloc_checker.check()) {
     fdf::debug("Alloc checker failed while constructing Image.\n");
     return ZX_ERR_NO_MEMORY;
@@ -911,7 +911,7 @@ zx_status_t Client::ImportImageForCapture(const display::ImageMetadata& image_me
 
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<CaptureImage> capture_image = fbl::AdoptRef(new (&alloc_checker) CaptureImage(
-      &controller_, image_id, driver_capture_image_id, &proxy_.node(), id_));
+      &controller_, image_id, driver_capture_image_id, &node(), id_));
   if (!alloc_checker.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -961,7 +961,7 @@ void Client::StartCapture(StartCaptureRequestView request, StartCaptureCompleter
     return;
   }
 
-  proxy_.EnableCapture(true);
+  enable_capture_ = true;
   completer.ReplySuccess();
 
   // Keep track of currently active capture image.
@@ -1203,6 +1203,7 @@ void Client::SubmitConfig() {
 
 void Client::SetOwnership(bool is_owner) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+  is_owner_property_.Set(is_owner);
   is_owner_ = is_owner;
 
   NotifyOwnershipChange(/*client_has_ownership=*/is_owner);
@@ -1308,7 +1309,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
     };
     display_config->draft_ = display_config->committed_;
 
-    display_config->InitializeInspect(&proxy_.node());
+    display_config->InitializeInspect(&node());
 
     display_configs_.insert(std::move(display_config));
   }
@@ -1586,7 +1587,10 @@ void Client::AcknowledgeVsync(AcknowledgeVsyncRequestView request,
     return;
   }
 
-  proxy_.AcknowledgeVsync(ack_cookie);
+  if (!vsync_queue_.Acknowledge(ack_cookie)) {
+    fdf::error("Client passed incorrect VSync ack cookie: {}", ack_cookie.value());
+  }
+  DrainVsyncQueue();
   fdf::trace("Cookie {} Acked\n", ack_cookie.value());
 }
 
@@ -1607,15 +1611,12 @@ void Client::Bind(
                              controller_.driver_dispatcher()->async_dispatcher());
 }
 
-Client::Client(Controller* controller, ClientProxy* proxy, ClientPriority priority,
-               ClientId client_id)
+Client::Client(Controller* controller, ClientPriority priority, ClientId client_id)
     : controller_(*controller),
-      proxy_(*proxy),
       priority_(priority),
       id_(client_id),
       fences_(this, controller->driver_dispatcher()->borrow()) {
   ZX_DEBUG_ASSERT(controller != nullptr);
-  ZX_DEBUG_ASSERT(proxy != nullptr);
   ZX_DEBUG_ASSERT(client_id != kInvalidClientId);
 }
 
@@ -1623,6 +1624,121 @@ Client::~Client() {
   ZX_DEBUG_ASSERT(!valid_);
 
   ZX_DEBUG_ASSERT(layers_.size() == 0);
+}
+
+void Client::SubmitSpecialConfigs() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  zx::result<> result = controller_.engine_driver_client()->SetMinimumRgb(GetMinimumRgb());
+  if (!result.is_ok()) {
+    fdf::error("Failed to submit minimum RGB value: {}", result);
+  }
+}
+
+void Client::OnCaptureComplete() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  if (enable_capture_) {
+    CaptureCompleted();
+  }
+  enable_capture_ = false;
+}
+
+void Client::OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_t timestamp,
+                            display::DriverConfigStamp driver_config_stamp) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  display::ConfigStamp client_stamp = {};
+  auto it =
+      std::find_if(pending_displayed_config_stamps_.begin(), pending_displayed_config_stamps_.end(),
+                   [driver_config_stamp](const ConfigStampPair& stamp) {
+                     return stamp.driver_stamp >= driver_config_stamp;
+                   });
+
+  if (it == pending_displayed_config_stamps_.end() || it->driver_stamp != driver_config_stamp) {
+    client_stamp = display::kInvalidConfigStamp;
+  } else {
+    client_stamp = it->client_stamp;
+    pending_displayed_config_stamps_.erase(pending_displayed_config_stamps_.begin(), it);
+  }
+
+  vsync_queue_.Push(ClientVsyncQueue::Message{.display_id = display_id,
+                                              .timestamp = zx::time_monotonic(timestamp),
+                                              .config_stamp = client_stamp});
+  DrainVsyncQueue();
+}
+
+void Client::DrainVsyncQueue() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  vsync_queue_.DrainUntilThrottled(
+      [&](const ClientVsyncQueue::Message& message, display::VsyncAckCookie ack_cookie) {
+        NotifyVsync(message.display_id, message.timestamp, message.config_stamp, ack_cookie);
+      });
+}
+
+void Client::OnClientDead() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  // Deletes `this`.
+  controller_.OnClientDead(this);
+}
+
+void Client::UpdateConfigStampMapping(ConfigStampPair stamps) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+  ZX_DEBUG_ASSERT(pending_displayed_config_stamps_.empty() ||
+                  pending_displayed_config_stamps_.back().driver_stamp < stamps.driver_stamp);
+
+  pending_displayed_config_stamps_.push_back({
+      .driver_stamp = stamps.driver_stamp,
+      .client_stamp = stamps.client_stamp,
+  });
+}
+
+zx_status_t Client::Bind(
+    inspect::Node client_node,
+    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+        coordinator_listener_client_end) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  node_ = std::move(client_node);
+  node_.RecordString("priority", DebugStringFromClientPriority(priority()));
+  is_owner_property_ = node_.CreateBool("is_owner", false);
+
+  fidl::OnUnboundFn<Client> unbound_callback =
+      [this](Client* client, fidl::UnbindInfo info,
+             fidl::ServerEnd<fuchsia_hardware_display::Coordinator> ch) {
+        ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+        // Make sure we `TearDown()` so that no further tasks are scheduled on
+        // the driver dispatcher.
+        client->TearDown(ZX_OK);
+
+        // The client has died. Notify the controller, which will free the Client
+        // instance.
+        OnClientDead();
+      };
+
+  Bind(std::move(coordinator_server_end), std::move(coordinator_listener_client_end),
+       std::move(unbound_callback));
+  return ZX_OK;
+}
+
+zx::result<> Client::BindForTesting(
+    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+        coordinator_listener_client_end) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
+  // `Client` created by tests may not have a full-fledged display engine.
+  // The production client teardown logic doesn't work here so we replace it with a no-op unbound
+  // callback instead.
+  fidl::OnUnboundFn<Client> unbound_callback =
+      [](Client*, fidl::UnbindInfo, fidl::ServerEnd<fuchsia_hardware_display::Coordinator>) {};
+  Bind(std::move(coordinator_server_end), std::move(coordinator_listener_client_end),
+       std::move(unbound_callback));
+  return zx::ok();
 }
 
 }  // namespace display_coordinator

@@ -50,7 +50,7 @@
 
 namespace display_coordinator {
 
-class ClientProxy;
+class Client;
 class DisplayConfig;
 
 // Multiplexes between display controller clients and display engine drivers.
@@ -100,7 +100,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                       display::DriverConfigStamp driver_config_stamp) override;
 
-  void OnClientDead(ClientProxy* client);
+  void OnClientDead(Client* client);
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
   void SubmitConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,

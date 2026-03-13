@@ -21,7 +21,6 @@
 namespace display_coordinator {
 
 class Client;
-class ClientProxy;
 
 // Almost-POD used by Client to manage display configuration. Public state is used by Controller.
 class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display::DisplayId> {
@@ -91,7 +90,6 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, display:
   bool has_draft_nonlayer_config_change_ = false;
 
   friend Client;
-  friend ClientProxy;
 
   inspect::Node node_;
   // Reflects `draft_has_layer_list_change_`.

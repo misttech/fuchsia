@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/coordinator/client-proxy.h"
+#include "src/graphics/display/drivers/coordinator/client.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
@@ -87,7 +87,7 @@ class MockCoordinatorListener
   display::ConfigStamp latest_displayed_config_stamp_ = display::kInvalidConfigStamp;
 };
 
-class ClientProxyTest : public ::testing::Test {
+class ClientTest : public ::testing::Test {
  public:
   void SetUp() override {
     auto [engine_client_end, engine_server_end] =
@@ -106,13 +106,13 @@ class ClientProxyTest : public ::testing::Test {
 
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
 
-    client_proxy_.emplace(&controller_.value(), ClientPriority::kPrimary, ClientId(1));
-    ASSERT_OK(client_proxy_->InitForTesting(std::move(coordinator_server_end),
-                                            std::move(listener_client_end)));
+    client_.emplace(&controller_.value(), ClientPriority::kPrimary, ClientId(1));
+    ASSERT_OK(
+        client_->BindForTesting(std::move(coordinator_server_end), std::move(listener_client_end)));
   }
 
   void TearDown() override {
-    client_proxy_->TearDown();
+    client_->TearDown(ZX_ERR_CONNECTION_ABORTED);
 
     driver_runtime_.ShutdownAllDispatchers(/*dut_initial_dispatcher=*/nullptr);
   }
@@ -128,47 +128,47 @@ class ClientProxyTest : public ::testing::Test {
       listener_server_binding_;
 
   std::optional<Controller> controller_;
-  std::optional<ClientProxy> client_proxy_;
+  std::optional<Client> client_;
 };
 
-TEST_F(ClientProxyTest, ClientVSyncDelivery) {
+TEST_F(ClientTest, ClientVSyncDelivery) {
   constexpr display::DriverConfigStamp kDriverStampValue(1);
   constexpr display::ConfigStamp kClientStampValue(2);
 
-  client_proxy_->UpdateConfigStampMapping({
+  client_->UpdateConfigStampMapping({
       .driver_stamp = kDriverStampValue,
       .client_stamp = kClientStampValue,
   });
 
-  client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0, kDriverStampValue);
+  client_->OnDisplayVsync(display::kInvalidDisplayId, 0, kDriverStampValue);
 
   driver_runtime_.RunUntilIdle();
   EXPECT_EQ(mock_coordinator_listener.latest_displayed_config_stamp(), kClientStampValue);
 }
 
-TEST_F(ClientProxyTest, ClientVSyncPeerClosed) {
+TEST_F(ClientTest, ClientVSyncPeerClosed) {
   listener_server_binding_->Close(ZX_OK);
 
-  client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0, display::kInvalidDriverConfigStamp);
+  client_->OnDisplayVsync(display::kInvalidDisplayId, 0, display::kInvalidDriverConfigStamp);
 }
 
-TEST_F(ClientProxyTest, ClientMustDrainUntilThrottledPendingStamps) {
+TEST_F(ClientTest, ClientMustDrainUntilThrottledPendingStamps) {
   constexpr size_t kNumPendingStamps = 5;
   constexpr std::array<uint64_t, kNumPendingStamps> kDriverStampValues = {1u, 2u, 3u, 4u, 5u};
   constexpr std::array<uint64_t, kNumPendingStamps> kClientStampValues = {2u, 3u, 4u, 5u, 6u};
 
   for (size_t i = 0; i < kNumPendingStamps; i++) {
-    client_proxy_->UpdateConfigStampMapping({
+    client_->UpdateConfigStampMapping({
         .driver_stamp = display::DriverConfigStamp(kDriverStampValues[i]),
         .client_stamp = display::ConfigStamp(kClientStampValues[i]),
     });
   }
 
-  client_proxy_->OnDisplayVsync(display::kInvalidDisplayId, 0,
-                                display::DriverConfigStamp(kDriverStampValues.back()));
+  client_->OnDisplayVsync(display::kInvalidDisplayId, 0,
+                          display::DriverConfigStamp(kDriverStampValues.back()));
 
-  EXPECT_EQ(client_proxy_->pending_displayed_config_stamps().size(), 1u);
-  EXPECT_EQ(client_proxy_->pending_displayed_config_stamps().front().driver_stamp,
+  EXPECT_EQ(client_->pending_displayed_config_stamps().size(), 1u);
+  EXPECT_EQ(client_->pending_displayed_config_stamps().front().driver_stamp,
             display::DriverConfigStamp(kDriverStampValues.back()));
 }
 

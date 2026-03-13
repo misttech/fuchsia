@@ -42,8 +42,9 @@
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
-#include "src/graphics/display/drivers/coordinator/client-proxy.h"
-#include "src/graphics/display/drivers/coordinator/display-info.h"
+#include "src/graphics/display/drivers/coordinator/client-set.h"
+#include "src/graphics/display/drivers/coordinator/client.h"
+#include "src/graphics/display/drivers/coordinator/display-config.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/drivers/coordinator/layer.h"
 #include "src/graphics/display/drivers/coordinator/post-display-task.h"
@@ -390,7 +391,7 @@ void Controller::SubmitConfig(DisplayConfig& display_config,
 
     applied_client_id_ = client_id;
 
-    ClientProxy* client_owning_displays = clients_.GetClientOwningDisplays();
+    Client* client_owning_displays = clients_.GetClientOwningDisplays();
     if (client_owning_displays != nullptr) {
       if (switching_client) {
         client_owning_displays->SubmitSpecialConfigs();
@@ -441,11 +442,11 @@ void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virt
   clients_.SetVirtconMode(virtcon_mode);
 }
 
-void Controller::OnClientDead(ClientProxy* client) {
+void Controller::OnClientDead(Client* client) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(client != nullptr);
 
-  fdf::info("Client {} dead", client->client_id().value());
+  fdf::info("Client {} dead", client->id().value());
 
   if (unbinding_) {
     return;

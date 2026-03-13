@@ -21,7 +21,7 @@
 
 namespace display_coordinator {
 
-class ClientProxy;
+class Client;
 class Controller;
 
 // Manages all of a Display Coordinator's client connections.
@@ -77,7 +77,7 @@ class ClientSet {
   // `client` must point to a proxy associated with a client in this set.
   //
   // This method must be called at most once for a client.
-  void OnClientDisconnected(ClientProxy* client);
+  void OnClientDisconnected(Client* client);
 
   // Returns the priority of the client that applied the display configuration.
   //
@@ -94,12 +94,12 @@ class ClientSet {
   void CloseAll();
 
   // Returns null if no client owns the displays.
-  ClientProxy* GetClientOwningDisplays() const;
+  Client* GetClientOwningDisplays() const;
 
  private:
   void HandleClientOwnershipChanges();
 
-  std::list<std::unique_ptr<ClientProxy>> clients_;
+  std::list<std::unique_ptr<Client>> clients_;
 
   ClientId next_client_id_ = ClientId(1);
 
@@ -107,9 +107,9 @@ class ClientSet {
   inspect::Node root_node_;
 
   // Pointers to instances owned by `clients_`.
-  ClientProxy* client_owning_displays_ = nullptr;
-  ClientProxy* virtcon_client_ = nullptr;
-  ClientProxy* primary_client_ = nullptr;
+  Client* client_owning_displays_ = nullptr;
+  Client* virtcon_client_ = nullptr;
+  Client* primary_client_ = nullptr;
 
   // True iff the corresponding client can dispatch FIDL events.
   bool virtcon_client_ready_ = false;

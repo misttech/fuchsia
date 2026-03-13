@@ -54,8 +54,6 @@ source_set("shared") {
     "client-id.h",
     "client-priority.cc",
     "client-priority.h",
-    "client-proxy.cc",
-    "client-proxy.h",
     "client-set.cc",
     "client-set.h",
     "client-vsync-queue.cc",
@@ -135,7 +133,7 @@ source_set("preferred-scanout-image-type") {
 test("display-coordinator-unittests") {
   sources = [
     "added-display-info-test.cc",
-    "client-proxy-test.cc",
+    "client-test.cc",
     "client-vsync-queue-test.cc",
     "display-info-test.cc",
     "engine-driver-client-fidl-test.cc",

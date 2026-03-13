@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
+#include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zx/time.h>
 #include <zircon/types.h>
 
@@ -24,6 +25,7 @@
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
+#include "src/graphics/display/drivers/coordinator/client-vsync-queue.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/drivers/coordinator/display-config.h"
 #include "src/graphics/display/drivers/coordinator/fence.h"
@@ -42,8 +44,6 @@
 
 namespace display_coordinator {
 
-class ClientProxy;
-
 // Manages the state associated with a display coordinator client connection.
 //
 // This class is not thread-safe. The constructor, destructor and all methods
@@ -51,13 +51,41 @@ class ClientProxy;
 class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinator>,
                      public FenceListener {
  public:
-  // `controller` must outlive both this client and `proxy`.
-  Client(Controller* controller, ClientProxy* proxy, ClientPriority priority, ClientId client_id);
+  // `controller` must outlive the newly created client.
+  Client(Controller* controller, ClientPriority priority, ClientId client_id);
 
   Client(const Client&) = delete;
   Client& operator=(const Client&) = delete;
 
   ~Client() override;
+
+  zx_status_t Bind(inspect::Node client_node,
+                   fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end,
+                   fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+                       coordinator_listener_client_end);
+
+  zx::result<> BindForTesting(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end,
+                              fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+                                  coordinator_listener_client_end);
+
+  void OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_t timestamp,
+                      display::DriverConfigStamp driver_config_stamp);
+  void OnCaptureComplete();
+  void OnClientDead();
+  void SubmitSpecialConfigs();
+
+  inspect::Node& node() { return node_; }
+
+  struct ConfigStampPair {
+    display::DriverConfigStamp driver_stamp;
+    display::ConfigStamp client_stamp;
+  };
+  std::list<ConfigStampPair>& pending_displayed_config_stamps() {
+    return pending_displayed_config_stamps_;
+  }
+  void UpdateConfigStampMapping(ConfigStampPair stamps);
+
+  static constexpr uint32_t kMaxImageHandles = 8;
 
   // Binds the `Client` to the server-side channel of the `Coordinator`
   // protocol.
@@ -211,8 +239,15 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void SetLayerImageImpl(display::LayerId layer_id, display::ImageId image_id,
                          display::EventId wait_event_id);
 
+  void DrainVsyncQueue();
+
+  ClientVsyncQueue vsync_queue_;
+  bool enable_capture_ = false;
+  std::list<ConfigStampPair> pending_displayed_config_stamps_;
+  inspect::Node node_;
+  inspect::BoolProperty is_owner_property_;
+
   Controller& controller_;
-  ClientProxy& proxy_;
   const ClientPriority priority_;
   const ClientId id_;
   bool valid_ = false;
@@ -253,9 +288,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   FenceCollection fences_;
 
   Layer::Map layers_;
-
-  void NotifyDisplaysChanged(const int32_t* displays_added, uint32_t added_count,
-                             const int32_t* displays_removed, uint32_t removed_count);
 
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_display::Coordinator>> binding_;
   fidl::WireSharedClient<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_;
