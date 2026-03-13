@@ -30,7 +30,7 @@ from honeydew.utils import host_shell
 # pylint: disable=protected-access
 _TARGET_NAME: str = "fuchsia-emulator"
 
-_IPV6: str = "fe80::4fce:3102:ef13:888c%qemu"
+_IPV6: str = "fe80::4fce:3102:ef13:888c%1"
 _IPV6_OBJ: ipaddress.IPv6Address = ipaddress.IPv6Address(_IPV6)
 
 _SSH_ADDRESS: ipaddress.IPv6Address = _IPV6_OBJ
@@ -102,7 +102,7 @@ _FFX_TARGET_SHOW_INFO = TargetInfoData(**_FFX_TARGET_SHOW_JSON)
 _FFX_TARGET_LIST_OUTPUT: str = (
     '[{"nodename":"fuchsia-emulator","rcs_state":"Y","serial":"<unknown>",'
     '"target_type":"workstation_eng.x64","target_state":"Product",'
-    '"addresses":["fe80::6a47:a931:1e84:5077%qemu"],"is_default":true}]\n'
+    '"addresses":["fe80::6a47:a931:1e84:5077%1"],"is_default":true}]\n'
 )
 
 _FFX_TARGET_INFO: dict[str, Any] = {
@@ -111,7 +111,7 @@ _FFX_TARGET_INFO: dict[str, Any] = {
     "serial": "<unknown>",
     "target_type": "workstation_eng.x64",
     "target_state": "Product",
-    "addresses": ["fe80::6a47:a931:1e84:5077%qemu"],
+    "addresses": ["fe80::6a47:a931:1e84:5077%1"],
     "is_default": True,
 }
 
@@ -127,7 +127,7 @@ _FFX_TARGET_STATUS_OUTPUT: str = (
 
 _FFX_TARGET_STATUS_FULL_OUTPUT: str = (
     '[✓] Device resolved to node: "fuchsia-emulator" in product '
-    "state (addrs: [fe80::6bab:2908:a0c9:7e6d%brqemu])\n"
+    "state (addrs: [fe80::6bab:2908:a0c9:7e6d%2])\n"
     "[✓] Connected\n"
     "[✓] Success\n"
     "[✓] All checks passed.\n"
@@ -749,7 +749,7 @@ class FfxImplTests(unittest.TestCase):
             cmd=[
                 "ffx",
                 "-t",
-                "[fe80::4fce:3102:ef13:888c%qemu]:8022",
+                "[fe80::4fce:3102:ef13:888c%1]:8022",
                 "--isolate-dir",
                 "/tmp/isolate",
                 "--machine",

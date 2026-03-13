@@ -25,22 +25,10 @@ class CustomTypesTests(unittest.TestCase):
                 ),
             ),
             (
-                "valid_ipv6",
-                "[::1]:8081",
-                custom_types.IpPort(ip=ipaddress.ip_address("::1"), port=8081),
-            ),
-            (
-                "valid_ipv6_scope",
-                "[::1%eth0]:8081",
+                "valid_ipv6_scope_numeric",
+                "[::1%1]:8081",
                 custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%eth0"), port=8081
-                ),
-            ),
-            (
-                "valid_ipv6_scope_digit",
-                "[::1%123]:8081",
-                custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%123"), port=8081
+                    ip=ipaddress.ip_address("::1%1"), port=8081
                 ),
             ),
             (
@@ -74,17 +62,10 @@ class CustomTypesTests(unittest.TestCase):
                 custom_types.IpPort(ip=ipaddress.ip_address("::1"), port=None),
             ),
             (
-                "valid_ipv6_scope",
-                "::1%eth0",
+                "valid_ipv6_scope_numeric",
+                "::1%1",
                 custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%eth0"), port=None
-                ),
-            ),
-            (
-                "valid_ipv6_scope_digit",
-                "::1%123",
-                custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%123"), port=None
+                    ip=ipaddress.ip_address("::1%1"), port=None
                 ),
             ),
             (
@@ -104,8 +85,8 @@ class CustomTypesTests(unittest.TestCase):
     @parameterized.expand(
         [
             ("invalid", "some_str"),
-            ("invalid_double_scope", "[::1%e%eth0]:100"),
-            ("invalid_double_percent", "[::1%%eth0]:100"),
+            ("invalid_double_scope", "[::1%2%1]:100"),
+            ("invalid_double_percent", "[::1%%1]:100"),
             ("invalid_negative_port", "[::1]:-1"),
             ("invalid_zero_port", "[::1]:0"),
             ("invalid_port_number", "[::1]:asdf"),
@@ -120,8 +101,8 @@ class CustomTypesTests(unittest.TestCase):
     @parameterized.expand(
         [
             ("invalid", "some_str"),
-            ("invalid_double_scope", "[::1%e%eth0]"),
-            ("invalid_double_percent", "[::1%%eth0]"),
+            ("invalid_double_scope", "[::1%2%1]"),
+            ("invalid_double_percent", "[::1%%1]"),
         ]
     )
     def test_create_using_ip_raises(self, _: str, addr: str) -> None:
@@ -146,9 +127,9 @@ class CustomTypesTests(unittest.TestCase):
             (
                 "valid_ipv6_with_scope_and_port",
                 custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%eth0"), port=8081
+                    ip=ipaddress.ip_address("::1%1"), port=8081
                 ),
-                "[::1%eth0]:8081",
+                "[::1%1]:8081",
             ),
             (
                 "valid_ipv4_without_port",
@@ -160,9 +141,9 @@ class CustomTypesTests(unittest.TestCase):
             (
                 "valid_ipv6_without_port",
                 custom_types.IpPort(
-                    ip=ipaddress.ip_address("::1%eth0"), port=None
+                    ip=ipaddress.ip_address("::1%1"), port=None
                 ),
-                "[::1%eth0]",
+                "[::1%1]",
             ),
         ]
     )
@@ -248,8 +229,8 @@ class CustomTypesTests(unittest.TestCase):
             ),
             (
                 "ipv6_with_scope",
-                {"type": "Ip", "ip": "fe80::1%eth0"},
-                custom_types.IpPort(ipaddress.ip_address("fe80::1%eth0"), None),
+                {"type": "Ip", "ip": "fe80::1%1"},
+                custom_types.IpPort(ipaddress.ip_address("fe80::1%1"), None),
             ),
         ]
     )

@@ -18,7 +18,7 @@ from honeydew.typing import custom_types
 
 _TARGET_NAME: str = "fuchsia-emulator"
 
-_IPV6: str = "fe80::4fce:3102:ef13:888c%qemu"
+_IPV6: str = "fe80::4fce:3102:ef13:888c%1"
 _IPV6_OBJ: ipaddress.IPv6Address = ipaddress.IPv6Address(_IPV6)
 
 _SSH_ADDRESS: ipaddress.IPv6Address = _IPV6_OBJ

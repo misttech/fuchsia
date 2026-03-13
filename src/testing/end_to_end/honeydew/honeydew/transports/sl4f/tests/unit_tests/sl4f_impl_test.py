@@ -24,7 +24,7 @@ from honeydew.utils import http_utils
 _IPV4: str = "11.22.33.44"
 _IPV4_OBJ: ipaddress.IPv4Address = ipaddress.IPv4Address(_IPV4)
 
-_IPV6: str = "fe80::4fce:3102:ef13:888c%qemu"
+_IPV6: str = "fe80::4fce:3102:ef13:888c%1"
 _IPV6_OBJ: ipaddress.IPv6Address = ipaddress.IPv6Address(_IPV6)
 
 _DEVICE_NAME: str = "fuchsia-emulator"
