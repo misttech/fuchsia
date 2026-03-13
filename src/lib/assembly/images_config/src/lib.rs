@@ -17,13 +17,13 @@ pub use images_config::{
 };
 
 pub use board_filesystem_config::{
-    BoardFilesystemConfig, FxfsBlobFormat, GptMode, PostProcessingScript, VBMetaDescriptor,
-    VBMetaStyle, ZbiCompression,
+    BoardFilesystemConfig, BuildSpecificSize, FlexibleSize, FxfsBlobFormat, GptMode,
+    PostProcessingScript, VBMetaDescriptor, VBMetaStyle, ZbiCompression,
 };
 
 pub use product_filesystem_config::{
     BlobFvmVolumeConfig, BlobfsLayout, DataFilesystemFormat, DataFvmVolumeConfig,
-    FilesystemImageMode, FvmVolumeConfig, ImageName, ProductFilesystemConfig, VolumeConfig,
+    FilesystemImageMode, FvmConfig, ImageName, ProductFilesystemConfig, VolumeConfig,
 };
 
 /// Returns true if the value is equal to its default.

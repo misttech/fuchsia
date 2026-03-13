@@ -102,13 +102,13 @@ pub enum VolumeConfig {
     Fxfs,
     /// A fvm volume.
     #[serde(rename = "fvm")]
-    Fvm(FvmVolumeConfig),
+    Fvm(FvmConfig),
 }
 
-/// A FVM volume.
+/// An FVM container.
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct FvmVolumeConfig {
+pub struct FvmConfig {
     /// Configures the data filesystem which will be used for this product.
     #[serde(default)]
     pub data: DataFvmVolumeConfig,

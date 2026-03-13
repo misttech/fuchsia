@@ -366,6 +366,40 @@ pub enum FxfsBlobFormat {
     Lz4,
 }
 
+/// Build-type specific size configurations.
+#[derive(Serialize, Deserialize, Debug, Default, PartialEq, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct BuildSpecificSize {
+    /// Limit applied to 'eng' builds.
+    pub eng: Option<u64>,
+    /// Limit applied to 'userdebug' builds.
+    pub userdebug: Option<u64>,
+    /// Limit applied to 'user' builds.
+    pub user: Option<u64>,
+}
+
+/// A flexible size definition that can be either uniform or build-specific.
+///
+/// Example:
+///
+/// ```json
+/// "size_uniform": 1048576
+///
+/// "size_build_specific": {
+///   "eng": 1048576,
+///   "userdebug": 2097152,
+///   "user": 4194304
+/// }
+/// ```
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(untagged)]
+pub enum FlexibleSize {
+    /// A single size applied universally.
+    Uniform(u64),
+    /// Granular overrides based on the build type.
+    BuildSpecific(BuildSpecificSize),
+}
+
 /// The parameters describing how to create an Fxfs image.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields, default)]
@@ -383,10 +417,10 @@ pub struct Fxfs {
     pub size_checker_maximum_bytes: Option<u64>,
 
     /// Maximum number of bytes that the blob volume can consume at runtime.
-    pub blob_maximum_bytes: Option<u64>,
+    pub blob_maximum_bytes: Option<FlexibleSize>,
 
     /// Maximum number of bytes that the data volume can consume at runtime.
-    pub data_maximum_bytes: Option<u64>,
+    pub data_maximum_bytes: Option<FlexibleSize>,
 
     /// Whether blobs in fxblob should be compressed during assembly. Defaults to true.
     ///
@@ -667,6 +701,34 @@ mod tests {
                 "data_maximum_bytes": null,
                 "size_bytes": null,
                 "size_checker_maximum_bytes": null,
+            })
+        );
+    }
+
+    #[test]
+    fn test_fxfs_build_specific_size_serialization() {
+        let fxfs = Fxfs {
+            blob_maximum_bytes: Some(FlexibleSize::BuildSpecific(BuildSpecificSize {
+                eng: Some(1048576),
+                userdebug: Some(2097152),
+                user: Some(4194304),
+            })),
+            data_maximum_bytes: Some(FlexibleSize::Uniform(1048576)),
+            size_bytes: Some(1048576),
+            size_checker_maximum_bytes: Some(1048576),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(fxfs).unwrap(),
+            serde_json::json!({
+                "blob_maximum_bytes": {
+                    "eng": 1048576,
+                    "userdebug": 2097152,
+                    "user": 4194304,
+                },
+                "data_maximum_bytes": 1048576,
+                "size_bytes": 1048576,
+                "size_checker_maximum_bytes": 1048576,
             })
         );
     }

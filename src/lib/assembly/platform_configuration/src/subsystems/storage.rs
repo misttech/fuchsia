@@ -10,7 +10,8 @@ use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
 use assembly_config_schema::platform_settings::storage_config::StorageConfig;
 use assembly_constants::{BootfsDestination, FileEntry};
 use assembly_images_config::{
-    BlobfsLayout, DataFilesystemFormat, FilesystemImageMode, FvmVolumeConfig, GptMode, VolumeConfig,
+    BlobfsLayout, DataFilesystemFormat, FilesystemImageMode, FlexibleSize, FvmConfig, GptMode,
+    VolumeConfig,
 };
 
 pub(crate) struct StorageSubsystemConfig;
@@ -115,17 +116,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         // Collect the arguments from the board.
-        let (blob_max_bytes, data_max_bytes) = match &storage_config.filesystems.volume {
-            VolumeConfig::Fxfs => (
-                context.board_config.filesystems.fxfs.blob_maximum_bytes.unwrap_or(0),
-                context.board_config.filesystems.fxfs.data_maximum_bytes.unwrap_or(0),
-            ),
-            VolumeConfig::Fvm(_) => (
-                context.board_config.filesystems.fvm.blobfs.maximum_bytes.unwrap_or(0),
-                context.board_config.filesystems.fvm.minfs.maximum_bytes.unwrap_or(0),
-            ),
-        };
-
         let blobfs_initial_inodes =
             context.board_config.filesystems.fvm.blobfs.minimum_inodes.unwrap_or(0);
         let fvm_slice_size = context.board_config.filesystems.fvm.slice_size.0;
@@ -148,6 +138,33 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             );
         }
 
+        // Apply limits.
+        let (blob_max_bytes, data_max_bytes) = match &storage_config.filesystems.volume {
+            VolumeConfig::Fxfs => {
+                let resolve_size = |flexible_size: &Option<FlexibleSize>| -> u64 {
+                    flexible_size
+                        .as_ref()
+                        .map(|size| match size {
+                            FlexibleSize::Uniform(u) => *u,
+                            FlexibleSize::BuildSpecific(b) => match context.build_type {
+                                BuildType::Eng => b.eng.unwrap_or(0),
+                                BuildType::UserDebug => b.userdebug.unwrap_or(0),
+                                BuildType::User => b.user.unwrap_or(0),
+                            },
+                        })
+                        .unwrap_or(0)
+                };
+                (
+                    resolve_size(&context.board_config.filesystems.fxfs.blob_maximum_bytes),
+                    resolve_size(&context.board_config.filesystems.fxfs.data_maximum_bytes),
+                )
+            }
+            VolumeConfig::Fvm(_) => (
+                context.board_config.filesystems.fvm.blobfs.maximum_bytes.unwrap_or(0),
+                context.board_config.filesystems.fvm.minfs.maximum_bytes.unwrap_or(0),
+            ),
+        };
+
         // Prepare some default arguments that may get overridden by the product config.
         let mut blob_deprecated_padded = false;
         let mut use_disk_migration = false;
@@ -167,7 +184,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                         builder.platform_bundle("fshost_provision_fxfs")?;
                     }
                 }
-                VolumeConfig::Fvm(FvmVolumeConfig { blob, data, .. }) => {
+                VolumeConfig::Fvm(FvmConfig { blob, data, .. }) => {
                     blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
                     match data.data_filesystem_format {
                         DataFilesystemFormat::Fxfs => {
@@ -212,7 +229,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                     fxfs_blob = true;
                     builder.platform_bundle("fshost_fxfs")?;
                 }
-                VolumeConfig::Fvm(FvmVolumeConfig { blob, data, .. }) => {
+                VolumeConfig::Fvm(FvmConfig { blob, data, .. }) => {
                     builder.platform_bundle("fshost_fvm")?;
                     blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
                     match data.data_filesystem_format {
