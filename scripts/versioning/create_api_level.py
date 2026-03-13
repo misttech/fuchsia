@@ -13,6 +13,7 @@ import json
 import os
 import pathlib
 import secrets
+import shutil
 import sys
 
 
@@ -128,9 +129,18 @@ def create_sdk_history(root_source_dir: str, new_level: int) -> None:
 
     _create_owners_file(level_dir_path)
 
+    next_dir_path = os.path.join(root_source_dir, "sdk", "history", "NEXT")
+
+    # The BUILD.bazel file just exposes the golden files in the directory to
+    # Bazel targets, so the same file can be used for every level.
+    shutil.copy(
+        os.path.join(next_dir_path, "BUILD.bazel"),
+        os.path.join(level_dir_path, "BUILD.bazel"),
+    )
+
     ifs_files = glob.glob(
         "*.ifs",
-        root_dir=os.path.join(root_source_dir, "sdk", "history", "NEXT"),
+        root_dir=next_dir_path,
     )
 
     # The .ifs files cannot be generated from scratch because they are also used as source files.
