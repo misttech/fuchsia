@@ -260,6 +260,7 @@ utf8parse = "0.2.2"
 uuid = { version = "1.1.2", features = ["serde", "v4"] } # move ?
 valico = "2.4.2"
 vm-device = "0.1.0"
+vt100 = "0.16.2"
 vte = "0.15"
 walkdir = "2.5.0"
 which = "4.0.2"
@@ -441,6 +442,7 @@ rustyline = { path = "forks/rustyline" }
 security-framework = { path = "forks/security-framework" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
+vt100 = { path = "forks/vt100-0.16.2" }
 zeroize = { path = "forks/zeroize" }
 zstd-sys = { path = "forks/zstd-sys" }
 # keep-sorted end
@@ -538,11 +540,6 @@ configs = [
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
 ]
 
-[gn.package.base64."0.13.0"]
-#visibility = [":*", "//third_party/alacritty/alacritty_terminal:*" ]
-# FIXME: temporarily allow anyone to depend on 0.13.0 to enable a soft migration.
-visibility = [":*", "//*"]
-
 [gn.package.basic-toml."0.1.10"]
 env_vars = [
   "CARGO_PKG_VERSION_MAJOR=0",
@@ -554,7 +551,6 @@ env_vars = [
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "bincode_visibility" }
 
 [gn.package.bitflags."1.3.2"]
-visibility = [":*", "//third_party/alacritty/alacritty_terminal:*" ]
 reviewed_features = ["default"]
 
 [gn.package.bitflags."2.9.1"]

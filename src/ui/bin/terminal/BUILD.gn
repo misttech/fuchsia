@@ -10,10 +10,7 @@ import("//src/ui/bin/terminal/terminal_args.gni")
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":term_model_tests",
-    ":terminal_tests",
-  ]
+  public_deps = [ ":terminal_tests" ]
 }
 
 rustc_library("lib") {
@@ -30,11 +27,11 @@ rustc_library("lib") {
     "//src/lib/trace/rust:trace",
     "//src/lib/ui/carnelian",
     "//src/lib/ui/terminal",
-    "//third_party/alacritty/alacritty_terminal:term_model",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:vt100",
   ]
 
   sources = [
@@ -155,8 +152,4 @@ fuchsia_test_component("terminal_tests_component") {
 fuchsia_test_package("terminal_tests") {
   test_components = [ ":terminal_tests_component" ]
   subpackages = [ "//src/bringup/bin/ptysvc:package" ]
-}
-
-fuchsia_unittest_package("term_model_tests") {
-  deps = [ "//third_party/alacritty/alacritty_terminal:term-model_test" ]
 }
