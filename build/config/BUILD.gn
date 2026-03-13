@@ -982,11 +982,6 @@ config("Wno-vla-cxx-extension") {
   ]
 }
 
-# TODO(https://fxbug.dev/353575163): Remove this when instances have been resolved.
-config("Wno-gnu-folding-constant") {
-  cflags = [ "-Wno-gnu-folding-constant" ]
-}
-
 config("Wno-nullability-completeness") {
   cflags = [ "-Wno-nullability-completeness" ]
 }
