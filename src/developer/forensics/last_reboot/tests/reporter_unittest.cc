@@ -108,9 +108,9 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   void SetAsFdr() { not_a_fdr_ = false; }
 
   void ReportOnRebootLog() {
-    const auto reboot_log =
-        feedback::RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
-                                            legacy_graceful_reboot_log_path_, not_a_fdr_);
+    const auto reboot_log = feedback::RebootLog::ParseRebootLog(
+        zircon_reboot_log_path_, graceful_shutdown_info_path_, legacy_graceful_reboot_log_path_,
+        /*previous_system_time_path=*/"", not_a_fdr_);
     ReportOn(reboot_log);
   }
 

@@ -61,6 +61,7 @@ int main() {
     MoveFile(/*from=*/kLegacyCurrentGracefulRebootReasonFile,
              /*to=*/kLegacyPreviousGracefulRebootReasonFile);
     MoveFile(/*from=*/kCurrentGracefulShutdownInfoFile, /*to=*/kPreviousGracefulShutdownInfoFile);
+    MoveFile(/*from=*/kCurrentSystemTimePath, /*to=*/kPreviousSystemTimePath);
     CreatePreviousLogsFile(cobalt.get(), kPersistedLogsTotalSize);
     MoveAndRecordBootId(uuid::Generate());
     if (std::string build_version; files::ReadFileToString(kBuildVersionPath, &build_version)) {
@@ -82,9 +83,9 @@ int main() {
 
   ExposeConfig(*component.InspectRoot(), *feedback_config);
 
-  RebootLog reboot_log =
-      RebootLog::ParseRebootLog("/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
-                                kLegacyPreviousGracefulRebootReasonFile, TestAndSetNotAFdr());
+  RebootLog reboot_log = RebootLog::ParseRebootLog(
+      "/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
+      kLegacyPreviousGracefulRebootReasonFile, kPreviousSystemTimePath, TestAndSetNotAFdr());
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
   if (feedback_config->remote_device_id_provider) {
@@ -110,7 +111,7 @@ int main() {
       dlog,
       MainService::Options{
           feedback_config->build_type_config, local_device_id_path,
-          kCurrentGracefulShutdownInfoFile,
+          kCurrentGracefulShutdownInfoFile, kCurrentSystemTimePath,
           LastReboot::Options{
               .is_first_instance = component.IsFirstInstance(),
               .reboot_log = std::move(reboot_log),

@@ -86,6 +86,7 @@ source_set("main_service") {
     ":namespace_init",
     ":network_watcher",
     ":stop_signals",
+    ":system_time_tracker",
     "reboot_log",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
@@ -202,5 +203,25 @@ source_set("stop_signals") {
     "//sdk/lib/fit",
     "//src/developer/forensics/utils:errors",
     "//zircon/system/ulib/zx",
+  ]
+}
+
+source_set("system_time_tracker") {
+  sources = [
+    "system_time_tracker.cc",
+    "system_time_tracker.h",
+  ]
+
+  public_deps = [
+    "//sdk/lib/async:async-cpp",
+    "//src/lib/timekeeper",
+  ]
+
+  deps = [
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/feedback:constants",
+    "//src/lib/files",
+    "//src/lib/fxl",
+    "//third_party/rapidjson",
   ]
 }

@@ -9,10 +9,10 @@
 
 #include <utility>
 
-#include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
+#include "src/developer/forensics/feedback/system_time_tracker.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/join_strings.h"
@@ -303,6 +303,7 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
 RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
                                     const std::string& graceful_shutdown_info_path,
                                     const std::string& legacy_graceful_reboot_log_path,
+                                    const std::string& previous_system_time_path,
                                     const bool not_a_fdr) {
   std::optional<std::string> zircon_reboot_log;
   std::optional<zx::duration> last_boot_uptime;
@@ -312,6 +313,19 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   ZirconShutdownReason zircon_reason = ZirconShutdownReason::kNotSet;
   ExtractZirconRebootInfo(zircon_reboot_log_path, &hw_reason, &zircon_reason, &zircon_reboot_log,
                           &last_boot_uptime, &last_boot_runtime, &critical_process);
+
+  if (!last_boot_uptime.has_value() || !last_boot_runtime.has_value()) {
+    if (const std::optional<SystemTime> system_time =
+            GetPreviousSystemTime(previous_system_time_path);
+        system_time.has_value()) {
+      if (!last_boot_uptime.has_value()) {
+        last_boot_uptime = system_time->uptime;
+      }
+      if (!last_boot_runtime.has_value()) {
+        last_boot_runtime = system_time->runtime;
+      }
+    }
+  }
 
   const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);

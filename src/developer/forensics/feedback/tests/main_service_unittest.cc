@@ -37,6 +37,7 @@ class MainServiceTest : public UnitTestFixture {
                           BuildTypeConfig{},
                           "",
                           "",
+                          "",
                           LastReboot::Options{
                               .is_first_instance = kIsFirstInstance,
                               .reboot_log = RebootLog(

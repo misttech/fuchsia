@@ -501,6 +501,23 @@ cc_test_executable("system_log_unittest_exe") {
   ]
 }
 
+cc_test_executable("system_time_tracker_unittest_exe") {
+  testonly = true
+
+  sources = [ "system_time_tracker_unittest.cc" ]
+
+  deps = [
+    "//src/developer/forensics/feedback:constants",
+    "//src/developer/forensics/feedback:system_time_tracker",
+    "//src/developer/forensics/testing:unit_test_fixture",
+    "//src/lib/files",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/timekeeper:testing",
+    "//third_party/googletest:gtest",
+    "//third_party/rapidjson",
+  ]
+}
+
 cc_test_executable("target_channel_provider_unittest_exe") {
   testonly = true
 
@@ -711,6 +728,13 @@ fuchsia_unittest_component("system_log_unittest") {
   ]
 }
 
+fuchsia_unittest_component("system_time_tracker_unittest") {
+  deps = [
+    ":system_time_tracker_unittest_exe",
+    "//src/sys/test_runners:tmp_storage",
+  ]
+}
+
 fuchsia_unittest_component("target_channel_provider_unittest") {
   deps = [ ":target_channel_provider_unittest_exe" ]
 }
@@ -754,6 +778,7 @@ fuchsia_test_package("feedback-tests") {
     ":startup_annotations_unittest",
     ":stop_signals_unittest",
     ":system_log_unittest",
+    ":system_time_tracker_unittest",
     ":target_channel_provider_unittest",
     ":time_provider_unittest",
     ":ui_state_provider_unittest",

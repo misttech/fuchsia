@@ -31,6 +31,7 @@ source_set("reboot_log") {
   ]
 
   deps = [
+    "//src/developer/forensics/feedback:system_time_tracker",
     "//src/developer/forensics/feedback_data:constants",
     "//src/lib/files",
     "//src/lib/fxl",

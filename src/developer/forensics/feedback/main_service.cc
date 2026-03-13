@@ -18,6 +18,7 @@
 
 #include "src/developer/forensics/feedback/annotations/device_id_provider.h"
 #include "src/developer/forensics/feedback/annotations/provider.h"
+#include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/redactor_factory.h"
 #include "src/developer/forensics/feedback/stop_signals.h"
@@ -84,6 +85,8 @@ MainService::MainService(
                      options.crash_reports_options),
       last_reboot_(dispatcher_, cobalt_, redactor_.get(), crash_reports_.CrashReporter(),
                    std::move(options.last_reboot_options)),
+      system_time_tracker_(dispatcher_, clock_, kSystemTimeTrackerWritePeriod,
+                           std::move(options.current_system_time_write_path)),
       component_data_register_bindings_(dispatcher_, annotations_.ComponentDataRegister(),
                                         &inspect_node_manager_,
                                         "/fidl/fuchsia.feedback.ComponentDataRegister"),
@@ -138,6 +141,8 @@ MainService::MainService(
 
   network_watcher_.Register(
       fit::bind_member(&crash_reports_, &CrashReports::SetNetworkIsReachable));
+
+  system_time_tracker_.Start();
 }
 
 template <>

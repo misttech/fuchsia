@@ -101,6 +101,8 @@ constexpr char kCurrentLogsDir[] = "/cache/current_system_logs";
 constexpr char kPreviousLogsFilePath[] = "/tmp/log.system.previous_boot.txt";
 constexpr char kPreviousBootIdPath[] = "/tmp/boot_id.txt";
 constexpr char kCurrentBootIdPath[] = "/data/boot_id.txt";
+constexpr char kPreviousSystemTimePath[] = "/tmp/system_time.json";
+constexpr char kCurrentSystemTimePath[] = "/cache/system_time.json";
 constexpr char kBootIdTimelinePath[] = "/data/boot_id_timeline.txt";
 constexpr char kPreviousBuildVersionPath[] = "/tmp/build_version.txt";
 constexpr char kCurrentBuildVersionPath[] = "/data/build_version.txt";
@@ -110,6 +112,8 @@ constexpr char kPreviousBuildProductVersionPath[] = "/tmp/build_product_version.
 constexpr char kCurrentBuildProductVersionPath[] = "/data/build_product_version.txt";
 constexpr char kDataRegisterPath[] = "/tmp/data_register.json";
 constexpr char kKernelBootOptionsPath[] = "/boot/kernel/boot-options.txt";
+
+constexpr zx::duration kSystemTimeTrackerWritePeriod = zx::sec(1);
 
 constexpr size_t kRedactionIdCacheCapacity = 1500;
 

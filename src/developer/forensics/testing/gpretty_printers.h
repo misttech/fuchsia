@@ -240,4 +240,12 @@ inline void PrintTo(const Buffer& vmo, std::ostream* os) {
 }  // namespace mem
 }  // namespace fuchsia
 
+namespace zx {
+
+inline void PrintTo(const zx::duration& duration, std::ostream* os) {
+  *os << duration.to_nsecs() << "ns";
+}
+
+}  // namespace zx
+
 #endif  // SRC_DEVELOPER_FORENSICS_TESTING_GPRETTY_PRINTERS_H_

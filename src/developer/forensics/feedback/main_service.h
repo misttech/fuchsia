@@ -25,6 +25,7 @@
 #include "src/developer/forensics/feedback/feedback_data.h"
 #include "src/developer/forensics/feedback/last_reboot.h"
 #include "src/developer/forensics/feedback/network_watcher.h"
+#include "src/developer/forensics/feedback/system_time_tracker.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/inspect_node_manager.h"
 #include "src/developer/forensics/utils/instrumented_binding_set.h"
@@ -39,6 +40,7 @@ class MainService {
     BuildTypeConfig build_type_config;
     std::optional<std::string> local_device_id_path;
     std::string graceful_shutdown_info_write_path;
+    std::string current_system_time_write_path;
     LastReboot::Options last_reboot_options;
     CrashReports::Options crash_reports_options;
     FeedbackData::Options feedback_data_options;
@@ -70,6 +72,7 @@ class MainService {
   FeedbackData feedback_data_;
   CrashReports crash_reports_;
   LastReboot last_reboot_;
+  SystemTimeTracker system_time_tracker_;
 
   InstrumentedBindingSet<fuchsia::feedback::ComponentDataRegister>
       component_data_register_bindings_;
