@@ -1812,4 +1812,105 @@ TEST_F(PokeInKernelMappingTest, VVAR) {
               SyscallFailsWithErrno(EIO));
 }
 
+TEST(PtraceTest, MaskedSignalDelivery) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t pid = helper.RunInForkedProcess([] {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGSTOP);  // SIGSTOP cannot be blocked.
+    sigaddset(&mask, SIGTRAP);  // SIGTRAP can be blocked.
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    // Signal with SIGSTOP, expecting that it is not blocked.
+    // This should stop this process.
+    raise(SIGSTOP);
+
+    // Signal with SIGTRAP, expecting that it is blocked.
+    // This should not stop this process, and should remain in the signal queue.
+    raise(SIGTRAP);
+
+    sigset_t pending;
+    sigemptyset(&pending);
+    SAFE_SYSCALL(sigpending(&pending));
+    ASSERT_FALSE(sigismember(&pending, SIGSTOP));
+    ASSERT_TRUE(sigismember(&pending, SIGTRAP));
+  });
+
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP) << "status: " << std::hex << status;
+
+  SAFE_SYSCALL(ptrace(PTRACE_CONT, pid, nullptr, nullptr));
+
+  // Child should exit, i.e. not stop at SIGTRAP.
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(PtraceTest, PtraceEventStopWithMaskedSigtrap) {
+  // Pipe for synchronization, so that the parent can seize the child.
+  int pipefds[2];
+  ASSERT_THAT(pipe2(pipefds, O_CLOEXEC), SyscallSucceeds());
+  fbl::unique_fd pipe_read(pipefds[0]);
+  fbl::unique_fd pipe_write(pipefds[1]);
+
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t child_pid = helper.RunInForkedProcess([&] {
+    pipe_write.reset();
+
+    // Block SIGTRAP signal.
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTRAP);
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    // Wait for parent to seize this process.
+    char c;
+    ASSERT_THAT(read(pipe_read.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+    // Fork a grandchild process.
+    pid_t grandchild_pid = fork();
+    ASSERT_GE(grandchild_pid, 0);
+
+    // Exit immediately. The tracer (test process) will reap the grandchild.
+    _exit(0);
+  });
+
+  pipe_read.reset();
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, 0, PTRACE_O_TRACEFORK), SyscallSucceeds());
+  ASSERT_THAT(write(pipe_write.get(), "a", 1), SyscallSucceedsWithValue(1));
+
+  int status;
+  ASSERT_EQ(HANDLE_EINTR(waitpid(child_pid, &status, 0)), child_pid);
+  EXPECT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_FORK << 8))) << "status: " << std::hex << status;
+
+  pid_t grandchild_pid = 0;
+  ASSERT_THAT(ptrace(PTRACE_GETEVENTMSG, child_pid, 0, &grandchild_pid), SyscallSucceeds());
+  ASSERT_GT(grandchild_pid, 0);
+
+  ASSERT_EQ(HANDLE_EINTR(waitpid(grandchild_pid, &status, 0)), grandchild_pid);
+  EXPECT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_STOP << 8))) << "status: " << std::hex << status;
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, grandchild_pid, 0, 0), SyscallSucceeds());
+
+  ASSERT_EQ(HANDLE_EINTR(waitpid(child_pid, &status, 0)), child_pid);
+  EXPECT_TRUE(WIFEXITED(status)) << "Child exit status: " << std::hex << status;
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  ASSERT_EQ(HANDLE_EINTR(waitpid(grandchild_pid, &status, 0)), grandchild_pid);
+  EXPECT_TRUE(WIFEXITED(status)) << "Grandchild exit status: " << std::hex << status;
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  ptrace(PTRACE_DETACH, grandchild_pid, 0, 0);
+  ptrace(PTRACE_DETACH, child_pid, 0, 0);
+}
+
 }  // namespace

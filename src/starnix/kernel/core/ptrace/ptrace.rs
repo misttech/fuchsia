@@ -1133,9 +1133,11 @@ where
         if let Some(ptrace) = &mut state.ptrace {
             ptrace.set_last_event(Some(PtraceEventData::new_from_event(PtraceEvent::Stop, 0)));
         }
-        SignalInfo::kernel(SIGTRAP)
+        // Ptrace-emitted SIGTRAP signal cannot be blocked.
+        SignalInfo::forced(SIGTRAP)
     } else {
-        SignalInfo::kernel(SIGSTOP)
+        // Note, SIGSTOP can never be blocked, but we use `forced` anyway to be consistent.
+        SignalInfo::forced(SIGSTOP)
     };
     send_signal_first(locked, tracee_task, state, signal);
 
