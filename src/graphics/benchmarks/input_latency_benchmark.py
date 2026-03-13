@@ -7,8 +7,8 @@
 import os
 from pathlib import Path
 
+import fuchsia_base_test
 import test_data
-from fuchsia_base_test import fuchsia_base_test
 from honeydew.affordances.ui.user_input import types as ui_custom_types
 from mobly import test_runner
 from perf_publish import publish
@@ -23,7 +23,7 @@ TOUCH_APP = (
 TEST_NAME: str = "fuchsia.input_latency.simplest_app"
 
 
-class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
+class InputBenchmark(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Input Benchmarks.
 
     Attributes:
@@ -33,23 +33,23 @@ class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     ui/examples/simplest-app-flatland-session.
     """
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.dut = self.fuchsia_devices[0]
 
         self.dut.session.ensure_started()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         self.dut.session.cleanup()
-        super().teardown_test()
+        await super().teardown_test()
 
-    def test_logic(self) -> None:
+    async def test_logic(self) -> None:
         # Add simplest-input-flatland-session-app to session.
         self.dut.session.add_component(TOUCH_APP)
 
         touch_device = self.dut.user_input.create_touch_device()
 
-        with self.dut.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[
                 "gfx",
                 "input",
@@ -64,7 +64,7 @@ class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
             # Each tap will be 33.5ms apart, drifting 0.166ms against regular 60
             # fps vsync interval. 100 taps span the entire vsync interval 1 time at
             # 100 equidistant points.
-            touch_device.tap(
+            await touch_device.tap(
                 location=ui_custom_types.Coordinate(x=500, y=500),
                 tap_event_count=100,
                 duration_ms=3350,
