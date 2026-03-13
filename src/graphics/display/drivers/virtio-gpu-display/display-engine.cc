@@ -141,7 +141,7 @@ zx::result<display::DriverImageId> DisplayEngine::ImportImage(
 
   zx::result<ImportedImage> imported_image_result = ImportedImage::Create(
       gpu_device_->bti(), sysmem_buffer_info->image_vmo, sysmem_buffer_info->image_vmo_offset,
-      image_size, *maybe_format, sysmem_buffer_info->minimum_bytes_per_row);
+      image_size, *maybe_format, static_cast<uint32_t>(min_bytes_per_row));
   if (imported_image_result.is_error()) {
     // Create() already logged the error.
     return imported_image_result.take_error();

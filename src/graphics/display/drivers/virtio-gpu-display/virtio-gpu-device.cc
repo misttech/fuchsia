@@ -32,7 +32,7 @@ std::optional<virtio_abi::ResourceFormat> PixelFormatToVirtioResourceFormat(
     return virtio_abi::ResourceFormat::kBgra32;
   }
   if (pixel_format == display::PixelFormat::kR8G8B8A8) {
-    return virtio_abi::ResourceFormat::kBgra32;  // kR8g8b8a8;
+    return virtio_abi::ResourceFormat::kR8g8b8a8;
   }
 
   return std::nullopt;
@@ -189,7 +189,7 @@ zx::result<uint32_t> VirtioGpuDevice::Create2DResource(uint32_t width, uint32_t 
   const virtio_abi::Create2DResourceCommand command = {
       .header = {.type = virtio_abi::ControlType::kCreate2DResourceCommand},
       .resource_id = next_resource_id_++,
-      .format = virtio_abi::ResourceFormat::kBgra32,
+      .format = *resource_format,
       .width = width,
       .height = height,
   };
