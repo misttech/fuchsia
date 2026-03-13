@@ -367,14 +367,17 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                         )
                     }
                     AddOrRemoveRoute::Removed(r) => {
-                        assert!(
-                            self.stashed_routes
-                                .get_mut(&r.table_id)
-                                .expect("table not found")
-                                .remove(&r),
-                            "route {:?} not stashed",
-                            r,
-                        )
+                        match self.stashed_routes.get_mut(&r.table_id) {
+                            Some(table) => {
+                                assert!(table.remove(&r), "route {:?} not stashed", r,);
+                            }
+                            None => {
+                                log_info!(
+                                    "netlink route table for {:?} already removed",
+                                    r.table_id
+                                );
+                            }
+                        }
                     }
                 }
                 None
@@ -5357,5 +5360,70 @@ mod tests {
         // Verify it is in the FIDL map.
         // We need to iterate messages for the new table.
         assert_eq!(worker.fidl_route_map.iter_messages(&route_table, netlink_table_id).count(), 1);
+    }
+
+    #[ip_test(I, test = false)]
+    #[fuchsia::test]
+    async fn remove_non_empty_table<
+        I: Ip + fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
+    >() {
+        let (subnet, next_hop) =
+            I::map_ip((), |()| (V4_SUB1, V4_NEXTHOP1), |()| (V6_SUB1, V6_NEXTHOP1));
+        let table_id = OTHER_FIDL_TABLE_ID;
+        let installed_route =
+            create_installed_route(subnet, Some(next_hop), DEV1.into(), METRIC1, table_id);
+
+        let (route_table_proxy, _route_table_server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableMarker>();
+        let (unmanaged_route_set_proxy, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        let (route_table_provider, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableProviderMarker>();
+        let mut route_table = RouteTableMap::new(
+            route_table_proxy.clone(),
+            MAIN_FIDL_TABLE_ID,
+            unmanaged_route_set_proxy,
+            route_table_provider,
+        );
+        let route_clients: ClientTable<NetlinkRoute, FakeSender<_>> = ClientTable::default();
+
+        let mut worker = RoutesWorker {
+            fidl_route_map: FidlRouteMap::<I>::default(),
+            stashed_routes: HashMap::new(),
+        };
+
+        let netlink_table_id = NetlinkRouteTableIndex::new(123);
+        let (route_set_proxy, _) = fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+
+        // Create a non-empty netlink table.
+        let table = RouteTable::Unmanaged(UnmanagedTable {
+            route_table_proxy: route_table_proxy.clone(),
+            route_set_proxy,
+            fidl_table_id: table_id,
+            rule_set_authenticated: false,
+        });
+
+        route_table.insert(netlink_table_id, table);
+        assert_eq!(
+            worker.handle_route_watcher_event(
+                &mut route_table,
+                &route_clients,
+                fnet_routes_ext::Event::Added(installed_route.clone()),
+            ),
+            None
+        );
+
+        // Remove the table.
+        assert_matches!(route_table.remove_table_by_fidl_id(table_id), Some(Ok(_)));
+        // Asynchronously, netstack will generate a remove event for the route
+        // in that table.
+        assert_eq!(
+            worker.handle_route_watcher_event(
+                &mut route_table,
+                &route_clients,
+                fnet_routes_ext::Event::Removed(installed_route.clone()),
+            ),
+            None
+        );
     }
 }
