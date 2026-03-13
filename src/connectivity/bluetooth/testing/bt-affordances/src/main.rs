@@ -67,6 +67,19 @@ async fn handle_peer_request(
                             }
                         }
                     }
+                    PeerControllerRequest::Pair { id, options, responder } => {
+                        match worker.pair(id, options).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("Pair encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
                     PeerControllerRequest::ForgetPeer { id, responder } => {
                         match worker.forget_peer(id).await {
                             Ok(_) => {

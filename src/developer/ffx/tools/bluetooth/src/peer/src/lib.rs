@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use ::async_trait::async_trait;
-use ::ffx_bluetooth_peer_args::{PeerCommand, PeerSubCommand};
-use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
+use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Transport};
+use ::fho::{AvailabilityFlag, Error, FfxMain, FfxTool, Result};
 use ffx_bluetooth_common::PeerIdOrAddr;
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fidl_fuchsia_bluetooth::PeerId as FidlPeerId;
 use fidl_fuchsia_bluetooth_affordances::PeerControllerProxy;
+use fidl_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use prettytable::{Row, Table, cell, format, row};
 use std::cmp::Ordering;
@@ -82,6 +83,61 @@ impl FfxMain for PeerTool {
                 self.forget_peer(peer_id).await?;
                 writer.line(format!("Successfully forgot peer {peer_id}"))?;
             }
+            // ffx bluetooth peer pair
+            PeerSubCommand::Pair(ref cmd) => {
+                let Some(peer_id) = to_identifier(&peers, &cmd.id_or_addr) else {
+                    return Err(fho::Error::User(anyhow::anyhow!(
+                        "Unable to forget: Unknown address {}",
+                        cmd.id_or_addr
+                    )));
+                };
+
+                // Check for invalid args
+                if cmd.transport == Transport::Classic {
+                    match (cmd.le_security_level.is_some(), cmd.non_bondable) {
+                        (true, true) => {
+                            return Err(fho::Error::User(anyhow::anyhow!(
+                                "Unable to pair: Both --le-security-level and --non-bondable are \
+not supported with the 'classic' transport"
+                            )));
+                        }
+                        (true, false) => {
+                            return Err(fho::Error::User(anyhow::anyhow!(
+                                "Unable to pair: The --le-security-level option is not supported \
+with the 'classic' transport"
+                            )));
+                        }
+                        (false, true) => {
+                            return Err(fho::Error::User(anyhow::anyhow!(
+                                "Unable to pair: The --non-bondable option is not supported with \
+the 'classic' transport"
+                            )));
+                        }
+                        _ => {}
+                    }
+                }
+
+                let le_security_level =
+                    match cmd.le_security_level.as_ref().unwrap_or(&LeSecurityLevel::Authenticated)
+                    {
+                        LeSecurityLevel::Encrypted => PairingSecurityLevel::Encrypted,
+                        LeSecurityLevel::Authenticated => PairingSecurityLevel::Authenticated,
+                    };
+                let bondable_mode = match cmd.non_bondable {
+                    false => BondableMode::Bondable,
+                    true => BondableMode::NonBondable,
+                };
+                let transport = cmd.transport.clone().into();
+                let options = PairingOptions {
+                    le_security_level: Some(le_security_level),
+                    bondable_mode: Some(bondable_mode),
+                    transport: Some(transport),
+                    ..Default::default()
+                };
+
+                self.pair(peer_id, options).await?;
+                writer.line(format!("Successfully paired with peer {peer_id}"))?;
+            }
         }
         Ok(())
     }
@@ -137,6 +193,20 @@ impl PeerTool {
         Ok(self
             .peer_controller
             .forget_peer(&fidl_peer_id)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                ))
+            })?)
+    }
+
+    async fn pair(&self, id: PeerId, options: PairingOptions) -> Result<(), Error> {
+        let fidl_peer_id: FidlPeerId = id.into();
+        Ok(self
+            .peer_controller
+            .pair(&fidl_peer_id, &options)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
@@ -231,9 +301,10 @@ fn to_identifier(peers: &Vec<Peer>, key: &PeerIdOrAddr) -> Option<PeerId> {
 mod tests {
     use super::*;
     use ffx_bluetooth_common::{BdAddr, PeerIdOrAddr};
+    use fidl_fuchsia_bluetooth as fbt;
+    use fidl_fuchsia_bluetooth_sys as fsys;
     use fuchsia_bluetooth::types::Address;
     use regex::Regex;
-    use {fidl_fuchsia_bluetooth as fbt, fidl_fuchsia_bluetooth_sys as fsys};
 
     fn named_peer(id: PeerId, address: Address, name: Option<String>) -> Peer {
         Peer {

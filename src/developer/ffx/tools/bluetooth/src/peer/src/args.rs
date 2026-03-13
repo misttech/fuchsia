@@ -4,6 +4,8 @@
 
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
+use fidl_fuchsia_bluetooth_sys::TechnologyType;
+use std::str::FromStr;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -26,6 +28,7 @@ pub enum PeerSubCommand {
     Connect(ConnectCommand),
     Disconnect(DisconnectCommand),
     Forget(ForgetCommand),
+    Pair(PairCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -91,4 +94,93 @@ pub struct DisconnectCommand {
 pub struct ForgetCommand {
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
+}
+
+/// ffx bluetooth peer pair
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "pair",
+    description = "Pair to a peer.",
+    example = "Basic usage:
+
+    $ ffx bluetooth peer pair <id|addr>
+
+To set LE security level, specify `--le-security-level`. To disable bonding, use `--non-bondable`. \
+To set the transport technology to use, specify `--transport` or `-t`.
+
+    $ ffx bluetooth peer pair <id|addr> --le-security-level auth --non-bondable -t dm"
+)]
+pub struct PairCommand {
+    /// specify peer by id or address
+    #[argh(positional)]
+    pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
+
+    /// only relevant for LE. Setting this option when transport is "classic" will throw an error.
+    /// Specify the Security Manager security level to pair with. Allowed values are
+    /// "encrypted"/"enc" and "authenticated"/"auth". Default value is "authenticated"
+    #[argh(option, long = "le-security-level")]
+    pub le_security_level: Option<LeSecurityLevel>,
+
+    /// prevent the device from forming a bond during pairing. Bonding is enabled by default. If
+    /// transport is "classic", this option must be absent or an error will be thrown (non bondable
+    /// mode is not currently supported for the "classic" transport)
+    // TODO(https://fxbug.dev/42118593): Support NON_BONDABLE for the CLASSIC transport.
+    #[argh(switch, long = "non-bondable")]
+    pub non_bondable: bool,
+
+    /// specify the technology type to pair over. Allowed values are "lowenergy"/"le",
+    /// "classic"/"bredr"/"c", and "dualmode"/"both"/"dual"/"dm". Default value is "dualmode"
+    #[argh(option, long = "transport", short = 't', default = "Transport::DualMode")]
+    pub transport: Transport,
+}
+
+/// only relevant for LE. Determines the Security Manager security level to pair with
+#[derive(Debug, PartialEq, Clone)]
+pub enum LeSecurityLevel {
+    Encrypted,
+    Authenticated,
+}
+
+impl FromStr for LeSecurityLevel {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "enc" | "encrypted" => Ok(LeSecurityLevel::Encrypted),
+            "auth" | "authenticated" => Ok(LeSecurityLevel::Authenticated),
+            _ => Err("security level should be 'encrypted' or 'authenticated'"),
+        }
+    }
+}
+
+/// determines the technology type to pair over
+#[derive(Debug, PartialEq, Clone)]
+pub enum Transport {
+    LowEnergy,
+    Classic,
+    DualMode,
+}
+
+impl FromStr for Transport {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().replace("_", "").replace("-", "").as_str() {
+            "le" | "lowenergy" => Ok(Transport::LowEnergy),
+            "c" | "classic" | "bredr" => Ok(Transport::Classic),
+            "dm" | "dualmode" | "both" | "dual" => Ok(Transport::DualMode),
+            _ => Err("transport should be 'lowenergy', 'classic', or 'dualmode'"),
+        }
+    }
+}
+
+impl From<Transport> for TechnologyType {
+    fn from(transport: Transport) -> Self {
+        match transport {
+            Transport::LowEnergy => TechnologyType::LowEnergy,
+            Transport::Classic => TechnologyType::Classic,
+            Transport::DualMode => TechnologyType::DualMode,
+        }
+    }
 }
