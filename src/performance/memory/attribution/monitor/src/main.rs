@@ -37,6 +37,7 @@ mod attribution_data;
 mod common;
 mod resources;
 mod snapshot;
+mod thrashing;
 
 /// All FIDL services that are exposed by this component's ServiceFs.
 enum Service {
@@ -155,6 +156,30 @@ async fn main() -> Result<()> {
     })
     .fuse();
     let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
+
+    let thrashing_config = thrashing::read_thrashing_config();
+    let mut thrashing_detector = thrashing::ThrashingDetector::new(
+        thrashing_config.clone(),
+        root_node.create_child("thrashing"),
+        page_refault_tracker.clone(),
+    );
+    let mut thrashing_loop = fuchsia_async::Task::spawn(async move {
+        // Default to configured interval, or the default constant if 0/invalid.
+        let seconds = if thrashing_config.polling_interval_seconds > 0 {
+            thrashing_config.polling_interval_seconds as i64
+        } else {
+            thrashing::DEFAULT_POLLING_INTERVAL_SECONDS as i64
+        };
+        let mut interval = fuchsia_async::Interval::new(zx::Duration::from_seconds(seconds));
+        while let Some(_) = interval.next().await {
+            if let Err(e) = thrashing_detector.run_one_iteration().await {
+                warn!("Thrashing detector failure: {:?}", e);
+            }
+        }
+    })
+    .fuse();
+    let thrashing_health = task_health_node.create_string("thrashing_loop", "ok");
+
     let mut services = {
         let mut service_fs = ServiceFs::new();
         service_fs
@@ -205,6 +230,10 @@ async fn main() -> Result<()> {
             result = collect_stalls_task => {
                 collect_stalls_health.set(&(result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err))));
                 error!("Stopped collecting stalls");
+            },
+            _ = thrashing_loop => {
+                 thrashing_health.set("stopped");
+                 error!("Stopped thrashing loop");
             },
             complete => break,
         };
