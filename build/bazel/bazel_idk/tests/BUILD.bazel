@@ -840,8 +840,10 @@ cc_binary(
     testonly = True,
     srcs = ["fidl_test.cc"],
     deps = [
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
     ] + select(
         {
             "@platforms//os:fuchsia": ["//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing"],
@@ -918,9 +920,11 @@ filegroup(
         "//examples/fidl/fuchsia.examples.docs",
         "//examples/fidl/fuchsia.examples.docs:versioning",
         # Bindings for a library with dependencies.
-        # It also depends on "zx", which is handled uniquely.
+        # It also depends on "zx", which is handled uniquely and does not support HLCPP.
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
         # A library with indirect dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",
         # TODO(https://fxbug.dev/454977301): Uncomment once FIDL for drivers is supported.
@@ -959,6 +963,8 @@ genrule(
         # Exercise FIDL bindings.
         # Bindings for a library with dependencies.
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
 
         # Other libraries.
         "//sdk/lib/fidl",

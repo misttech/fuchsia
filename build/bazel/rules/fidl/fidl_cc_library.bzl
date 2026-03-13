@@ -14,6 +14,7 @@ _FidlCcCodegenInfo = provider(
         "headers": "A depset of generated header files.",
         "sources": "A depset of generated source files.",
         "testing_headers": "A depset of generated testing header files.",
+        "conversion_headers": "A depset of generated HLCPP conversion header files.",
     },
 )
 
@@ -30,6 +31,10 @@ def _get_deps_with_suffix(deps, dep_suffix):
     """
     result = []
     for dep in deps:
+        # Skip deps on the "zx" library, for which bindings are not generated
+        # with C++ fidlgens. Normalize the dep when comparing.
+        if Label(dep) == Label("//zircon/vdso/zx"):
+            continue
         dep_label = _get_name_with_suffix(dep.name, dep_suffix)
         dep_with_binding = "//%s:%s" % (dep.package, dep_label)
         result.append(dep_with_binding)
@@ -78,6 +83,7 @@ def fidl_cpp_family(
         contains_drivers,
         enable_cpp,
         enable_hlcpp,
+        hlcpp_lib_deps,
         testonly,
         visibility):
     """Generates instances of `cc_library()` providing the generated C++ bindings for a given FIDL library.
@@ -97,6 +103,9 @@ def fidl_cpp_family(
     """
     if not enable_cpp and not enable_hlcpp:
         fail("At least one of `enable_cpp` or `enable_hlcpp` must be true.")
+
+    hlcpp_bindings_flavor = "hlcpp"
+    hlcpp_lib_name = _get_fidl_cc_lib_name(name, hlcpp_bindings_flavor)
 
     if enable_cpp:
         cpp_bindings_flavor = "cpp"
@@ -174,7 +183,9 @@ def fidl_cpp_family(
                 "//sdk/lib/fidl_driver:fidl_driver_natural",
             ]
 
-        # TODO(https://fxbug.dev/454977301): Output "hlcpp_conversion.h" when `enable_hlcpp` is true.
+        generated_hlcpp_conversion_header_files = []
+        if enable_hlcpp:
+            generated_hlcpp_conversion_header_files = ["hlcpp_conversion.h"]
 
         _generate_fidl_cc_bindings(
             name = cpp_codegen_name,
@@ -182,9 +193,12 @@ def fidl_cpp_family(
             fidl_ir_json = fidl_ir_json,
             bindings_flavor = cpp_bindings_flavor,
             contains_drivers = contains_drivers,
+            generated_files_base = "fidl/" + fidl_library_name + "/cpp",
             generated_header_files = generated_header_files,
             generated_source_files = generated_source_files,
             generated_testing_header_files = generated_testing_header_files,
+            generated_conversion_header_files = generated_hlcpp_conversion_header_files,
+            fidlgen_tool = "@//tools/fidl/fidlgen_cpp:fidlgen_cpp_tool",
             testonly = testonly,
         )
 
@@ -228,13 +242,81 @@ def fidl_cpp_family(
         )
 
         if enable_hlcpp:
-            # TODO(https://fxbug.dev/454977301): Implement "hlcpp_conversion" target
-            # once the HLCPP bindings target is available.
-            pass
+            cpp_hlcpp_conversion_headers_name = "%s_hlcpp_conversion_headers" % cpp_lib_name
+            _conversion_headers_wrapper(
+                name = cpp_hlcpp_conversion_headers_name,
+                generated_fidl_cc_bindings = ":%s" % cpp_codegen_name,
+                testonly = testonly,
+            )
+
+            cpp_hlcpp_conversion_suffix = "hlcpp_conversion"
+            _fidl_cc_library(
+                name = _get_name_with_suffix(cpp_lib_name, cpp_hlcpp_conversion_suffix),
+                fidl_library_name = fidl_library_name,
+                fidl_deps = deps,
+                bindings_flavor = cpp_bindings_flavor,
+                hdrs = [":%s" % cpp_hlcpp_conversion_headers_name],
+                srcs = [],
+                additional_deps = [
+                    ":%s" % cpp_lib_name,
+                    ":%s" % hlcpp_lib_name,
+                    "//sdk/lib/fidl/cpp:hlcpp_conversion",
+                ],
+                extra_dep_suffix = cpp_hlcpp_conversion_suffix,
+                testonly = testonly,
+                visibility = visibility,
+            )
 
     if enable_hlcpp:
-        # TODO(https://fxbug.dev/454977301): Implement HLCPP bindings.
-        print("HLCPP bindings are not yet supported (https://fxbug.dev/454977301): %s." % fidl_library_name)
+        hlcpp_codegen_name = "%s_generated_fidl_cc_bindings" % hlcpp_lib_name
+        hlcpp_sources_name = "%s_sources" % hlcpp_lib_name
+
+        library_name_slashes = fidl_library_name.replace(".", "/")
+
+        generated_files_base = library_name_slashes + "/cpp"
+        generated_header_files = [
+            "fidl.h",
+            "fidl_test_base.h",
+        ]
+        generated_source_files = [
+            "fidl.cc",
+            "tables.c",
+        ]
+        additional_deps = ["//sdk/lib/fidl_base"] + hlcpp_lib_deps
+
+        _generate_fidl_cc_bindings(
+            name = hlcpp_codegen_name,
+            fidl_library_name = fidl_library_name,
+            fidl_ir_json = fidl_ir_json,
+            bindings_flavor = hlcpp_bindings_flavor,
+            contains_drivers = contains_drivers,
+            generated_files_base = library_name_slashes + "/cpp",
+            generated_header_files = generated_header_files,
+            generated_source_files = generated_source_files,
+            fidlgen_tool = "@//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_tool",
+            testonly = testonly,
+        )
+
+        _sources_wrapper(
+            name = hlcpp_sources_name,
+            generated_fidl_cc_bindings = ":%s" % hlcpp_codegen_name,
+            testonly = testonly,
+        )
+
+        # TODO(https://fxbug.dev/454977301): Implement `hlcpp_visibility`.
+        hlcpp_visibility = visibility
+
+        _fidl_cc_library(
+            name = hlcpp_lib_name,
+            fidl_library_name = fidl_library_name,
+            fidl_deps = deps,
+            bindings_flavor = hlcpp_bindings_flavor,
+            hdrs = [":%s" % hlcpp_codegen_name],
+            srcs = [":%s" % hlcpp_sources_name],
+            additional_deps = additional_deps,
+            testonly = testonly,
+            visibility = hlcpp_visibility,
+        )
 
 def _fidl_cc_library(
         name,
@@ -298,20 +380,23 @@ def _generate_fidl_cc_bindings_impl(ctx):
     fidl_library_name = ctx.attr.fidl_library_name
 
     root_path = _get_root_path(ctx.attr.bindings_flavor)
-    dir = root_path + "/fidl/" + fidl_library_name + "/cpp"
+    dir = root_path + "/" + ctx.attr.generated_files_base
 
     headers = []
     sources = []
     testing_headers = []
+    conversion_headers = []
     for header in ctx.attr.generated_header_files:
         headers.append(ctx.actions.declare_file(dir + "/" + header))
     for source in ctx.attr.generated_source_files:
         sources.append(ctx.actions.declare_file(dir + "/" + source))
     for testing_header in ctx.attr.generated_testing_header_files:
         testing_headers.append(ctx.actions.declare_file(dir + "/" + testing_header))
+    for conversion_header in ctx.attr.generated_conversion_header_files:
+        conversion_headers.append(ctx.actions.declare_file(dir + "/" + conversion_header))
 
     ctx.actions.run(
-        executable = ctx.executable._fidlgen_cpp,
+        executable = ctx.executable.fidlgen_tool,
         arguments = [
             "--json",
             ir.path,
@@ -331,7 +416,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
             # }
         ],
         inputs = [ir, ctx.executable._clang_format],
-        outputs = headers + sources + testing_headers,
+        outputs = headers + sources + testing_headers + conversion_headers,
         mnemonic = "FidlGenCc",
     )
 
@@ -340,6 +425,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
             headers = depset(headers),
             sources = depset(sources),
             testing_headers = depset(testing_headers),
+            conversion_headers = depset(conversion_headers),
         ),
         DefaultInfo(files = depset(headers)),
     ]
@@ -362,11 +448,16 @@ _generate_fidl_cc_bindings = rule(
         "bindings_flavor": attr.string(
             doc = "The flavor of bindings to generate.",
             mandatory = True,
-            values = ["cpp"],
+            values = ["cpp", "hlcpp"],
         ),
         "contains_drivers": attr.bool(
             doc = "Indicates if any of the FIDL files contain the driver transport or " +
                   "references to the driver transport.",
+            mandatory = True,
+        ),
+        "generated_files_base": attr.string(
+            doc = "Base path for generated files. The files will be generated" +
+                  " at this path under the root path for the bindings flavor",
             mandatory = True,
         ),
         "generated_header_files": attr.string_list(
@@ -381,9 +472,13 @@ _generate_fidl_cc_bindings = rule(
             doc = "List of header files for testing that will be generated.",
             default = [],
         ),
-        "_fidlgen_cpp": attr.label(
-            doc = "fidlgen cpp tool.",
-            default = "@//tools/fidl/fidlgen_cpp:fidlgen_cpp_tool",
+        "generated_conversion_header_files": attr.string_list(
+            doc = "List of header files for HLCPP conversion that will be generated.",
+            default = [],
+        ),
+        "fidlgen_tool": attr.label(
+            doc = "fidlgen tool.",
+            mandatory = True,
             executable = True,
             cfg = "exec",
         ),
@@ -428,6 +523,26 @@ _testing_headers_wrapper = rule(
     attrs = {
         "generated_fidl_cc_bindings": attr.label(
             doc = "The `_generate_fidl_cc_bindings` target generating the testing header files.",
+            mandatory = True,
+            allow_files = False,
+            providers = [_FidlCcCodegenInfo],
+        ),
+    },
+)
+
+def _conversion_headers_wrapper_impl(ctx):
+    return [DefaultInfo(
+        files = ctx.attr.generated_fidl_cc_bindings[_FidlCcCodegenInfo].conversion_headers,
+    )]
+
+_conversion_headers_wrapper = rule(
+    doc = "Simply declares the HLCPP conversion header files generated by the " +
+          "`_generate_fidl_cc_bindings` target as outputs. This allows the " +
+          "HLCPP conversion header files to be exposed as sources in their own rule.",
+    implementation = _conversion_headers_wrapper_impl,
+    attrs = {
+        "generated_fidl_cc_bindings": attr.label(
+            doc = "The `_generate_fidl_cc_bindings` target generating the HLCPP conversion header files.",
             mandatory = True,
             allow_files = False,
             providers = [_FidlCcCodegenInfo],

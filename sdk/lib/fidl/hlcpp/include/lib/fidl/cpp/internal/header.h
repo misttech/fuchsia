@@ -56,13 +56,13 @@
 #include "lib/fidl/cpp/unknown_interactions_hlcpp.h"
 
 #ifdef __Fuchsia__
-#include "lib/fidl/cpp/interface_ptr.h"
-#include "lib/fidl/cpp/internal/proxy_controller.h"
-#include "lib/fidl/cpp/internal/stub_controller.h"
-#include "lib/fidl/cpp/internal/synchronous_proxy.h"
-#include "lib/fidl/cpp/member_connector.h"
-#include "lib/fidl/cpp/service_handler_base.h"
-#include "lib/fidl/cpp/synchronous_interface_ptr.h"
+#include "lib/fidl/cpp/interface_ptr.h"               // nogncheck
+#include "lib/fidl/cpp/internal/proxy_controller.h"   // nogncheck
+#include "lib/fidl/cpp/internal/stub_controller.h"    // nogncheck
+#include "lib/fidl/cpp/internal/synchronous_proxy.h"  // nogncheck
+#include "lib/fidl/cpp/member_connector.h"            // nogncheck
+#include "lib/fidl/cpp/service_handler_base.h"        // nogncheck
+#include "lib/fidl/cpp/synchronous_interface_ptr.h"   // nogncheck
 #endif
 
 #endif  // LIB_FIDL_CPP_INTERNAL_HEADER_H_

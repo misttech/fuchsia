@@ -13,6 +13,10 @@ idk_go_binary_host_tool(
     category = "partner",
     idk_name = "fidlgen_hlcpp",
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        "//visibility:public",  # For bazel2gn.
+    ],
     deps = [
         "//tools/fidl/fidlgen_hlcpp/codegen",
         "//tools/fidl/fidlgen_hlcpp/coding_tables",

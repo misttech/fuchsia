@@ -247,6 +247,7 @@ def _fidl_library_impl(
         non_fidl_deps,  # buildifier: disable=unused-variable - For GN conversion only.
         atom_type,
         allowlist,
+        hlcpp_lib_deps,
         testonly,
         visibility):
     """Implementation of the fidl_library() macro."""
@@ -320,6 +321,7 @@ def _fidl_library_impl(
             contains_drivers = contains_drivers,
             enable_cpp = enable_cpp,
             enable_hlcpp = enable_hlcpp,
+            hlcpp_lib_deps = hlcpp_lib_deps,
             testonly = testonly,
             visibility = visibility,
         )
@@ -613,6 +615,10 @@ If not specified, appropriate values will be determined based on the target API 
             mandatory = True,
             configurable = False,
         ),
+        "hlcpp_lib_deps": attr.label_list(
+            doc = "Additional dependencies for HLCPP bindings. Set by the wrapper macro.",
+            default = [],
+        ),
     },
 )
 
@@ -637,5 +643,11 @@ def fidl_library(name, library_name = "", category = "", stable = False, api_fil
         api_file_path = get_api_file_path(library_name, stable, api_file_path),
         atom_type = atom_type,
         allowlist = get_allowlist_target(atom_type, category, stable),
+        # This must be set here because they have an allowlist that must be evaluated where the
+        # target is defined.
+        hlcpp_lib_deps = select({
+            "@platforms//os:fuchsia": ["//sdk/lib/fidl/hlcpp"],
+            "//conditions:default": ["//sdk/lib/fidl/hlcpp:hlcpp_base"],
+        }),
         **kwargs
     )
