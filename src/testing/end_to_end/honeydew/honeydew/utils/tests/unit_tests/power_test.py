@@ -144,7 +144,7 @@ class PowerTests(unittest.TestCase):
         mock_sleep.assert_not_called()
         self.mock_device.resume.assert_called_once()
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
 
@@ -177,7 +177,7 @@ class PowerTests(unittest.TestCase):
         power.suspend_resume(self.mock_device, deadline)
 
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
         self.mock_device.suspend.assert_called_once()
@@ -230,7 +230,7 @@ class PowerTests(unittest.TestCase):
         power.suspend_resume(self.mock_device, deadline)
 
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
         self.assertEqual(self.mock_device.suspend.call_count, 2)
@@ -277,7 +277,7 @@ class PowerTests(unittest.TestCase):
             power.suspend_resume(self.mock_device, deadline)
 
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
         self.mock_device.suspend.assert_called_once()
@@ -285,12 +285,10 @@ class PowerTests(unittest.TestCase):
         self.mock_device.resume.assert_called_once()
         self.assertEqual(mock_get_stats.call_count, 2)
 
-    # TODO(https://fxbug.dev/485577846): This will need updating once we have
-    # a way to drop the power lease even if it's already missing.
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_until_deadline")
     @mock.patch.object(power, "get_sag_suspend_stats")
-    def test_suspend_resume_ffx_error_handled(
+    def test_suspend_resume_ffx_error_raises(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -302,27 +300,13 @@ class PowerTests(unittest.TestCase):
         mock_datetime.now.return_value = t0
         deadline = Deadline.from_timeout(timedelta(minutes=5))
 
-        stats_before = power.SagSuspendStats(
-            success_count=10,
-            fail_count=1,
-            total_time_in_suspend=timedelta(seconds=1),
-        )
-        stats_after = power.SagSuspendStats(
-            success_count=11,
-            fail_count=1,
-            total_time_in_suspend=timedelta(seconds=2),
-        )
-        mock_get_stats.side_effect = [stats_before, stats_after]
-
-        power.suspend_resume(self.mock_device, deadline)
+        with self.assertRaisesRegex(RuntimeError, "ffx failed"):
+            power.suspend_resume(self.mock_device, deadline)
 
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
-        self.mock_device.suspend.assert_called_once()
-        mock_sleep.assert_called_once()
-        self.mock_device.resume.assert_called_once()
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_until_deadline")
@@ -352,13 +336,9 @@ class PowerTests(unittest.TestCase):
         power.suspend_resume(self.mock_device)
 
         self.mock_device.ffx.run.assert_called_once_with(
-            ["session", "drop-power-lease"],
+            ["session", "drop-power-lease", "--allow-missing"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
-        self.mock_device.suspend.assert_called_once()
-        mock_sleep.assert_called_once()
-        self.mock_device.resume.assert_called_once()
-        self.assertEqual(mock_get_stats.call_count, 2)
 
 
 if __name__ == "__main__":

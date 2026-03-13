@@ -15,7 +15,7 @@ Example:
 ```
 # Include cli-goldens in your build configuration
 
-$ fx set minimal.x64 --with-host //src/developer/ffx/tests/cli-goldens:test
+$ fx set minimal.x64 --with-host //src/developer/ffx/tests/cli-goldens:tests
 
 # Edit your args.gn via fx args and include `update_goldens=true`
 
@@ -24,7 +24,7 @@ $ fx args # Add updated_goldens=true
 # Since these are golden file tests implemented as GN actions, they are
 # executed during the build process. You "run" them by building the target:
 
-$ fx build
+$ fx build --host //src/developer/ffx/tests/cli-goldens:tests
 ```
 
 You will see some messages indicating the goldens need to be updated but since

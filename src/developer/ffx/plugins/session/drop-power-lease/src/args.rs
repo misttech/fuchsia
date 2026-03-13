@@ -16,4 +16,8 @@ use ffx_core::ffx_command;
     If no other components on the system hold a power lease on the execution state, this will \
     suspend the system."
 )]
-pub struct SessionDropPowerLeaseCommand {}
+pub struct SessionDropPowerLeaseCommand {
+    /// if true, the tool will not return an error if the lease has already been dropped
+    #[argh(switch)]
+    pub allow_missing: bool,
+}

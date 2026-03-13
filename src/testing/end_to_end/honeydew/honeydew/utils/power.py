@@ -103,17 +103,10 @@ def suspend_resume(
     if deadline is None:
         deadline = Deadline.from_timeout(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
-    try:
-        device.ffx.run(
-            ["session", "drop-power-lease"],
-            machine=ffx_types.MachineFormat.DISABLE,
-        )
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        # TODO(https://fxbug.dev/485577846): Don't swallow this error.
-        # We should have a way to
-        # drop the power lease even if it's already missing, e.g.,
-        # `ffx session drop-power-lease --allow-missing`.
-        _LOGGER.warning("Failed to drop power lease: %s", e)
+    device.ffx.run(
+        ["session", "drop-power-lease", "--allow-missing"],
+        machine=ffx_types.MachineFormat.DISABLE,
+    )
 
     attempt = -1
     while True:
