@@ -6,7 +6,6 @@ group("tools") {
   testonly = true
 
   public_deps = [
-    "//build/bazel/host:bazel_root_host_tools.debroot",
     "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool($host_toolchain)",
     "//tools/auto_owners($host_toolchain)",
@@ -19,6 +18,7 @@ group("tools") {
     "//tools/component_manager_config($host_toolchain)",
     "//tools/configc:install($host_toolchain)",
     "//tools/create:install($host_toolchain)",
+    "//tools/debroot($host_toolchain)",
     "//tools/doc_checker($host_toolchain)",
     "//tools/dupefinder($host_toolchain)",
     "//tools/fidl($host_toolchain)",
