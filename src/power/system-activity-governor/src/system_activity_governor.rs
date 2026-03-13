@@ -10,6 +10,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
 use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_power_suspend as fsuspend;
 use fidl_fuchsia_power_system::{
     self as fsystem, ApplicationActivityLevel, CpuLevel, ExecutionStateLevel,
 };
@@ -28,10 +31,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use zx::HandleBased;
-use {
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_observability as fobs,
-    fidl_fuchsia_power_suspend as fsuspend,
-};
 
 // TODO(fxbug.dev/491840509): Allow configurable timeouts when needed.
 const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
@@ -197,6 +196,8 @@ struct LeaseManager {
     application_activity_assertive_dependency_token: fbroker::DependencyToken,
     /// Used to block suspension in CpuManager while a lease is in-flight but not yet satisfied.
     suspend_block_manager: Rc<SuspendBlockManager>,
+    /// The maximum lease ID that has been assigned.
+    max_lease_id: AtomicU64,
 }
 
 impl LeaseManager {
@@ -216,6 +217,7 @@ impl LeaseManager {
             execution_state_suspending_lease: Rc::new(Mutex::new(std::rc::Weak::new())),
             application_activity_assertive_dependency_token,
             suspend_block_manager: suspend_blocker,
+            max_lease_id: AtomicU64::new(0),
         }
     }
 
@@ -226,7 +228,8 @@ impl LeaseManager {
 
         log::debug!("Acquiring lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
-        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone() });
+        let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
+        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
 
         self.topology
             .lease(fbroker::LeaseSchema {
@@ -247,12 +250,13 @@ impl LeaseManager {
             .map_err(|e| {
                 sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
                     name: name.clone(),
+                    id: lease_id,
                     error: format!("{e:?}"),
                 });
                 anyhow::anyhow!("Lease error while leasing application activity: {e:?}")
             })?;
 
-        sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
+        sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone(), id: lease_id });
 
         let token_info = server_token.basic_info()?;
         let inspect_lease_node =
@@ -265,6 +269,7 @@ impl LeaseManager {
             fobs::WAKE_LEASE_ITEM_TYPE_APPLICATION_ACTIVITY,
         );
         inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
+        inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, lease_id);
         NodeTimeExt::<zx::BootTimeline>::record_time(
             &inspect_lease_node,
             fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
@@ -276,7 +281,7 @@ impl LeaseManager {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
             log::debug!("Dropping lease for '{}'", name);
-            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
+            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
             drop(inspect_lease_node);
         })
         .detach();
@@ -305,7 +310,8 @@ impl LeaseManager {
         let execution_state_lessor = self.execution_state_lessor.clone();
 
         let sag_event_logger = self.sag_event_logger.clone();
-        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone() });
+        let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
+        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
 
         fasync::Task::local(async move {
             let token_info = server_token.basic_info().expect("zx_object_get_info failed");
@@ -321,6 +327,7 @@ impl LeaseManager {
             inspect_lease_node
                 .record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
             inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
+            inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, lease_id);
             let lease_status_property = inspect_lease_node.create_string(
                 fobs::WAKE_LEASE_ITEM_STATUS,
                 fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
@@ -345,7 +352,8 @@ impl LeaseManager {
             match &lease.1 {
                 Ok(_) => {
                     lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
-                    sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
+                    sag_event_logger
+                        .log(SagEvent::WakeLeaseSatisfied { name: name.clone(), id: lease_id });
                 }
                 // If there is an error while waiting for lease satisfaction, `suspend_blocker`
                 // will still prevent suspension until the client drops its token.
@@ -361,6 +369,7 @@ impl LeaseManager {
                     inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, e.to_string());
                     sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
                         name: name.clone(),
+                        id: lease_id,
                         error: e.to_string(),
                     });
                 }
@@ -372,7 +381,7 @@ impl LeaseManager {
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
 
             log::debug!("Dropping wake lease for '{}'", name);
-            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
+            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
             drop(lease_status_property);
             drop(inspect_lease_node);
 

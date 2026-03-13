@@ -43,13 +43,13 @@ pub enum SagEvent {
     /// A suspend lock has been dropped, so a suspend attempt has completed.
     SuspendLockDropped,
     /// A wake lease was created.
-    WakeLeaseCreated { name: String },
+    WakeLeaseCreated { name: String, id: u64 },
     /// The underlying power broker lease for a wake lease failed to be satisfied.
-    WakeLeaseSatisfactionFailed { name: String, error: String },
+    WakeLeaseSatisfactionFailed { name: String, id: u64, error: String },
     /// The underlying power broker lease for a wake lease was satisfied.
-    WakeLeaseSatisfied { name: String },
+    WakeLeaseSatisfied { name: String, id: u64 },
     /// A wake lease was dropped and is no longer active.
-    WakeLeaseDropped { name: String },
+    WakeLeaseDropped { name: String, id: u64 },
     /// Reported reasons of the last wake, or prevented sleep.
     WakeReasons { reasons: Vec<String> },
     /// Suspend callback processing started.
@@ -188,21 +188,25 @@ impl SagEventLogger {
                 SagEvent::SuspendLockDropped => {
                     node.record_int(fobs::SUSPEND_LOCK_DROPPED_AT, time);
                 }
-                SagEvent::WakeLeaseCreated { name } => {
+                SagEvent::WakeLeaseCreated { name, id } => {
                     node.record_int(fobs::WAKE_LEASE_CREATED_AT, time);
+                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
                     node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
                 }
-                SagEvent::WakeLeaseSatisfactionFailed { name, error } => {
+                SagEvent::WakeLeaseSatisfactionFailed { name, id, error } => {
                     node.record_int(fobs::WAKE_LEASE_SATISFACTION_FAILED_AT, time);
+                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
                     node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
                     node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, error);
                 }
-                SagEvent::WakeLeaseSatisfied { name } => {
+                SagEvent::WakeLeaseSatisfied { name, id } => {
                     node.record_int(fobs::WAKE_LEASE_SATISFIED_AT, time);
+                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
                     node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
                 }
-                SagEvent::WakeLeaseDropped { name } => {
+                SagEvent::WakeLeaseDropped { name, id } => {
                     node.record_int(fobs::WAKE_LEASE_DROPPED_AT, time);
+                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
                     node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
                 }
                 SagEvent::SuspendCallbackPhaseStarted => {

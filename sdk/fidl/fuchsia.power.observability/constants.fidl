@@ -117,6 +117,9 @@ const WAKE_LEASES_NODE string = "wake_leases";
 /// The name of the wake lease as requested by the client.
 const WAKE_LEASE_ITEM_NAME string = "wake_lease_name";
 
+/// The ID of the wake lease, as tracked by SAG.
+const WAKE_LEASE_ITEM_ID string = "wake_lease_id";
+
 /// The time since boot when the wake lease was created in nanoseconds.
 const WAKE_LEASE_ITEM_NODE_CREATED_AT string = "wake_lease_created_at";
 

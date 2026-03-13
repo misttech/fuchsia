@@ -9,8 +9,16 @@ use diagnostics_assertions::{
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
+use fidl_fuchsia_hardware_power_suspend as fhsuspend;
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_power_suspend as fsuspend;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_test_suspendcontrol as tsc;
+use fidl_test_systemactivitygovernor as ftest;
 use fidl_test_systemactivitygovernor::RealmOptions;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
@@ -20,13 +28,6 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use test_util::assert_leq;
-use {
-    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol,
-    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_observability as fobs,
-    fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
-    fidl_test_suspendcontrol as tsc, fidl_test_systemactivitygovernor as ftest,
-    fuchsia_async as fasync,
-};
 
 const REALM_FACTORY_CHILD_NAME: &str = "test_realm_factory";
 
@@ -902,6 +903,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 "4": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
             }
         }
@@ -951,14 +953,17 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 "3": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "4": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "5": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "6": {
                     ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
@@ -1516,6 +1521,7 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
                     ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
                 }
@@ -1595,6 +1601,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
                     ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
                 }
@@ -1676,6 +1683,7 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
                     ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
                 }
@@ -1690,10 +1698,12 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
                 "2": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "3": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
             }
         }
@@ -1752,7 +1762,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
     let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
     let mut wake_leases = Vec::new();
 
-    for i in 0..1000 {
+    for i in 0..1000u64 {
         let wake_lease_name = format!("wake_lease{}", i);
         let wake_lease = activity_governor.take_wake_lease(&wake_lease_name).await?;
 
@@ -1771,6 +1781,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
         );
         wake_lease_child
             .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
+        wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
         wake_lease_child
             .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
         wake_lease_child
@@ -1815,7 +1826,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
     let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
     let mut wake_leases = Vec::new();
 
-    for i in 0..1000 {
+    for i in 0..1000u64 {
         let wake_lease_name = format!("wake_lease{}", i);
         let wake_lease = activity_governor.acquire_wake_lease(&wake_lease_name).await?.unwrap();
 
@@ -1834,6 +1845,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
         );
         wake_lease_child
             .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
+        wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
         wake_lease_child
             .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
         wake_lease_child
@@ -2241,6 +2253,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
                 "9": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "some_wake_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "10": {
                     ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
@@ -2251,10 +2264,12 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
                 "12": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "some_wake_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "13": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "some_wake_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "14": {
                     ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
@@ -2325,6 +2340,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 "3": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 // Events 2-4 cover the creation and satisfaction of the two
                 // wake leases. These events could occur in any order.
@@ -2352,6 +2368,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             ref fobs::WAKE_LEASES_NODE: {
                 var last_token_koid: contains {
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
@@ -2360,6 +2377,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 "7": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease1",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
                 },
             },
             "suspend_events_stats": contains {},
@@ -2386,6 +2404,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 "8": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "9": {
                     ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
@@ -2476,6 +2495,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 "3": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 // Events 4-6 cover the creation and satisfaction of the two
                 // wake leases. These events could occur in any order.
@@ -2503,12 +2523,14 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             ref fobs::WAKE_LEASES_NODE: {
                 var last_token_koid: contains {
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease1",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
                 },
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
                 "7": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
             },
             "suspend_events_stats": contains {},
@@ -2535,6 +2557,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 "8": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease1",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
                 },
                 "9": {
                     ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
@@ -3041,6 +3064,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 "4": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
             }
         }
@@ -3089,14 +3113,17 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 "3": {
                     ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "4": {
                     ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "5": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
                     ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
                 "6": {
                     ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
