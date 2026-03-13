@@ -29,7 +29,12 @@ from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 
 # Import enums from the synchronous base test to maintain compatibility
-from .fuchsia_base_test import FuchsiaTestCases, SnapshotOn, TracingOn
+from .fuchsia_base_test import (
+    HEALTH_CHECK_FAILURE_MESSAGE,
+    FuchsiaTestCases,
+    SnapshotOn,
+    TracingOn,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -83,6 +88,9 @@ class AsyncFuchsiaTestCases:
                 )
 
 
+# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/fuchsia_base_test.py)
+
+
 class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     """Async Fuchsia-specific base test class
 
@@ -124,9 +132,12 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        fuchsia_devices_sync = await self.register_controller(
-            fuchsia_device_mobly_controller
-        )
+        res = self.register_controller(fuchsia_device_mobly_controller)
+        if inspect.isawaitable(res):
+            fuchsia_devices_sync = await res
+        else:
+            fuchsia_devices_sync = res
+
         self.fuchsia_devices: list[async_fuchsia_device.AsyncFuchsiaDevice] = [
             device.as_async() for device in fuchsia_devices_sync
         ]
@@ -153,7 +164,8 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             f"{self.log_path}/{self.current_test_info.name}"
         )
         os.mkdir(self.test_case_path)
-        await self._log_message_to_devices(
+        await AsyncFuchsiaBaseTest._log_message_to_devices(
+            self,
             message=f"Started executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
             level=custom_types.LEVEL.INFO,
@@ -179,10 +191,12 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
               "teardown_test"
             * Logs a info message onto device that test case has ended.
         """
-        await self._health_check_and_recover()
+        await AsyncFuchsiaBaseTest._health_check_and_recover(self)
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST:
-            await self._collect_snapshot(directory=self.test_case_path)
+            await AsyncFuchsiaBaseTest._collect_snapshot(
+                self, directory=self.test_case_path
+            )
 
         _LOGGER.info("Closing any active tracing sessions.")
         for device in self.fuchsia_devices:
@@ -197,7 +211,8 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     )
 
         _LOGGER.info("Completed closing active tracing sessions.")
-        await self._log_message_to_devices(
+        await AsyncFuchsiaBaseTest._log_message_to_devices(
+            self,
             message=f"Finished executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
             level=custom_types.LEVEL.INFO,
@@ -206,12 +221,8 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             os.rmdir(self.test_case_path)
 
         if self._devices_not_healthy:
-            message: str = (
-                "One or more FuchsiaDevice's health check failed in "
-                "teardown_test. So failing the test case..."
-            )
-            _LOGGER.warning(message)
-            raise signals.TestFailure(message)
+            _LOGGER.warning(HEALTH_CHECK_FAILURE_MESSAGE)
+            raise signals.TestFailure(HEALTH_CHECK_FAILURE_MESSAGE)
 
     async def teardown_class(self) -> None:
         """teardown_class is called once after running all tests.
@@ -245,8 +256,8 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_CLASS:
             self._teardown_class_artifacts = f"{self.log_path}/teardown_class"
-            await self._collect_snapshot(
-                directory=self._teardown_class_artifacts
+            await AsyncFuchsiaBaseTest._collect_snapshot(
+                self, directory=self._teardown_class_artifacts
             )
         elif (
             self.snapshot_on == SnapshotOn.TEARDOWN_CLASS_ON_FAIL
@@ -255,8 +266,8 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             self._teardown_class_artifacts = (
                 f"{self.log_path}/teardown_class_on_fail"
             )
-            await self._collect_snapshot(
-                directory=self._teardown_class_artifacts
+            await AsyncFuchsiaBaseTest._collect_snapshot(
+                self, directory=self._teardown_class_artifacts
             )
 
     async def on_fail(self, record: TestResultRecord) -> None:
@@ -269,7 +280,9 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         """
         self._any_test_failed = True
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST_ON_FAIL:
-            await self._collect_snapshot(directory=self.test_case_path)
+            await AsyncFuchsiaBaseTest._collect_snapshot(
+                self, directory=self.test_case_path
+            )
 
         for device in self.fuchsia_devices:
             if (
@@ -383,7 +396,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     fx_device.device_name,
                     err,
                 )
-                await self._recover_device(fx_device)
+                await AsyncFuchsiaBaseTest._recover_device(self, fx_device)
 
         _LOGGER.info(
             "Successfully performed health checks and/or recoveries on all the "
@@ -524,6 +537,3 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             self.tracing_on: TracingOn = TracingOn(tracing_on)
         except ValueError as e:
             raise signals.TestAbortClass("invalid metric user_param") from e
-
-
-# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/fuchsia_base_test.py)
