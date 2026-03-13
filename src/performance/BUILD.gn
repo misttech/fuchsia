@@ -17,6 +17,7 @@ group("tests") {
     "lib:tests",
     "memory:tests",
     "perfetto-bridge:tests",
+    "profiler_session_manager:tests",
     "trace/tests",
     "trace2json:trace2json_tests($host_toolchain)",
     "trace_bench:tests",

@@ -176,24 +176,84 @@ closed protocol Session {
 
     /// End the profiling session and write out data to the earlier
     /// configured socket if not already writing.
-    strict Stop() -> (table {
-        1: samples_collected uint64;
-        2: mean_sample_time uint64;
-        3: median_sample_time uint64;
-        4: min_sample_time uint64;
-        5: max_sample_time uint64;
-        // The session may be unable to extract information about where symbols
-        // are in a process's address space due to the process being too short
-        // lived, or otherwise unable to be read. In this case, functions
-        // sampled from this process may not be able to be fully symbolized.
-        //
-        // missing_process_mappings contains processes for which this occurred
-        // during the run.
-        6: missing_process_mappings vector<zx.Koid>:MAX;
-    });
+    strict Stop() -> (SessionResult);
 
     /// Clean up and unconfigure the profiler. Flushes the remaining data and
     /// closes the provided socket. Doesn't return until all data has been
     /// successfully written.
     strict Reset() -> ();
+};
+
+/// The result returned after stopping a profiling session.
+type SessionResult = table {
+    1: samples_collected uint64;
+    2: mean_sample_time uint64;
+    3: median_sample_time uint64;
+    4: min_sample_time uint64;
+    5: max_sample_time uint64;
+    // The session may be unable to extract information about where symbols
+    // are in a process's address space due to the process being too short
+    // lived, or otherwise unable to be read. In this case, functions
+    // sampled from this process may not be able to be fully symbolized.
+    //
+    // missing_process_mappings contains processes for which this occurred
+    // during the run.
+    6: missing_process_mappings vector<zx.Koid>:MAX;
+};
+
+/// Error codes for SessionManager operations.
+type ManagerError = flexible enum : uint32 {
+    /// A general error when starting a profile.
+    START = 1;
+
+    /// The requested task_id does not exist or is no longer running.
+    NO_SUCH_TASK = 2;
+
+    /// The configuration provided was invalid.
+    INVALID_CONFIGURATION = 3;
+
+    /// The device cannot support more concurrent sessions.
+    TOO_MANY_SESSIONS = 4;
+
+    /// A general error when stopping a profile.
+    STOP = 5;
+};
+
+/// Status of the profiling session managed by SessionManager.
+type ProfilerStatus = table {
+    /// Unique id of this profiling session.
+    1: task_id uint64;
+};
+
+@discoverable
+closed protocol SessionManager {
+    compose Session;
+    /// Starts a standalone profiling session. This session runs independently
+    /// of the client connection and buffers data internally.
+    strict StartSession(resource table {
+        /// The profiling configuration.
+        1: config Config;
+    }) -> (table {
+        /// Unique identifier for this background session.
+        1: task_id uint64;
+    }) error ManagerError;
+
+    /// Ends the profiling session and writes out the buffered data.
+    strict StopSession(resource table {
+        /// The ID of the session to retrieve.
+        1: task_id uint64;
+        /// The socket to write the profile data into.
+        2: output zx.Handle:SOCKET;
+    }) -> (SessionResult) error ManagerError;
+
+    /// Aborts an ongoing trace session without saving results.
+    strict AbortSession(table {
+        1: task_id uint64;
+    }) -> () error ManagerError;
+
+    /// Returns the active profiling sessions. Currently assuming 1 active max,
+    /// but returns a vector for future-proofing.
+    strict Status() -> (table {
+        1: sessions vector<ProfilerStatus>:MAX;
+    }) error ManagerError;
 };

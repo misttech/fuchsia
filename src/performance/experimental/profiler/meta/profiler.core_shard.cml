@@ -36,6 +36,11 @@
             from: "parent",
             to: "#profiler",
         },
+        {
+            storage: [ "cache" ],
+            from: "self",
+            to: "#profiler",
+        },
     ],
     expose: [
         {

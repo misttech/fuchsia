@@ -14,16 +14,18 @@ pub struct ProfilerCommand {
     pub sub_cmd: ProfilerSubCommand,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 #[argh(subcommand)]
 pub enum ProfilerSubCommand {
     Attach(Attach),
     Launch(Launch),
     Symbolize(Symbolize),
     DownloadAndroidSymbols(DownloadAndroidSymbols),
+    Stop(Stop),
+    Status(Status),
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Profile a running task or component
 #[argh(subcommand, name = "attach")]
 #[derive(Default)]
@@ -86,9 +88,13 @@ pub struct Attach {
     /// detected, else false
     #[argh(option, default = "std::io::stdout().is_terminal()")]
     pub color_output: bool,
+
+    /// run the profiler session in the background
+    #[argh(switch)]
+    pub background: bool,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Record a profile.
 #[argh(subcommand, name = "launch")]
 #[derive(Default)]
@@ -144,9 +150,13 @@ pub struct Launch {
     /// detected, else false
     #[argh(option, default = "std::io::stdout().is_terminal()")]
     pub color_output: bool,
+
+    /// run the profiler session in the background
+    #[argh(switch)]
+    pub background: bool,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Symbolize a previously-recorded profile that was not symbolized.
 #[argh(subcommand, name = "symbolize")]
 #[derive(Default)]
@@ -165,7 +175,7 @@ pub struct Symbolize {
     pub pprof_conversion: bool,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Download Android debug symbols from Android Build using fetch_artifact.
 #[argh(subcommand, name = "download-android-symbols")]
 #[derive(Default)]
@@ -179,3 +189,40 @@ pub struct DownloadAndroidSymbols {
     #[argh(option)]
     pub target: String,
 }
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
+/// Stop a background profiling session and download results.
+#[argh(subcommand, name = "stop")]
+#[derive(Default)]
+pub struct Stop {
+    /// path to save the profile
+    #[argh(option, default = "String::from(\"profile\")")]
+    pub output: String,
+
+    /// abort the session without saving the profile data
+    #[argh(switch)]
+    pub abort: bool,
+
+    /// whether to try to symbolize the profile using the debug symbol index
+    #[argh(option, default = "true")]
+    pub symbolize: bool,
+
+    /// if false, output the raw symbolized sample file instead of attempting to convert to the
+    /// pprof format.
+    #[argh(option, default = "true")]
+    pub pprof_conversion: bool,
+
+    /// if true, include color codes in output. Defaults to true if terminal output is
+    /// detected, else false
+    #[argh(option, default = "std::io::stdout().is_terminal()")]
+    pub color_output: bool,
+
+    /// print stats to stdout
+    #[argh(switch)]
+    pub print_stats: bool,
+}
+
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
+/// List active profiling sessions.
+#[argh(subcommand, name = "status")]
+#[derive(Default)]
+pub struct Status {}

@@ -83,6 +83,7 @@ fuchsia_component("profiler_component") {
 fuchsia_package("profiler") {
   testonly = true
   deps = [ ":profiler_component" ]
+  subpackages = [ "//src/performance/profiler_session_manager" ]
 }
 
 group("tests") {

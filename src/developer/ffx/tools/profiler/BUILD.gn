@@ -38,6 +38,8 @@ rustc_library("lib") {
     "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:termion",
   ]
+
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 ffx_tool("ffx_profiler") {

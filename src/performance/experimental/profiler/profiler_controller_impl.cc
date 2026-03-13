@@ -544,7 +544,7 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     return;
   }
 
-  fuchsia_cpu_profiler::SessionStopResponse stats{{
+  fuchsia_cpu_profiler::SessionResult stats{{
       .samples_collected = num_samples_,
       .missing_process_mappings = std::vector<zx_koid_t>(),
   }};

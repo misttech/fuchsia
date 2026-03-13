@@ -11,6 +11,12 @@
         binary: "bin/profiler",
         use_next_vdso: "true",
     },
+    children: [
+        {
+            name: "profiler_session_manager",
+            url: "profiler_session_manager#meta/profiler_session_manager.cm",
+        },
+    ],
     capabilities: [
         {
             protocol: [
@@ -42,10 +48,29 @@
             from: "parent",
         },
     ],
+    offer: [
+        {
+            protocol: [
+                "fuchsia.cpu.profiler.Session",
+                "fuchsia.profiling.Controller",
+            ],
+            from: "self",
+            to: [ "#profiler_session_manager" ],
+        },
+        {
+            storage: "cache",
+            from: "parent",
+            to: "#profiler_session_manager",
+        },
+    ],
     expose: [
         {
             protocol: "fuchsia.cpu.profiler.Session",
             from: "self",
+        },
+        {
+            protocol: "fuchsia.cpu.profiler.SessionManager",
+            from: "#profiler_session_manager",
         },
     ],
 }

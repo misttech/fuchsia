@@ -10,13 +10,14 @@ use core::fmt;
 use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{FfxMain, FfxTool, deferred};
+use fho::{FfxMain, FfxTool, bug, deferred, return_user_error, user_error};
 use fidl_fuchsia_cpu_profiler as profiler;
+use fidl_fuchsia_cpu_profiler::SessionResult;
 use fidl_fuchsia_test_manager as test_manager;
 use log::info;
 use schemars::JsonSchema;
 use serde::Serialize;
-use std::io::{BufRead, stdin};
+use std::io::{BufRead, IsTerminal, stdin};
 use std::time::Duration;
 use target_holders::moniker;
 use tempfile::Builder;
@@ -62,6 +63,8 @@ type Writer = MachineWriter<ShowCpuProfilerCmd>;
 pub struct ProfilerTool {
     #[with(deferred(moniker("/core/profiler")))]
     controller: fho::Deferred<profiler::SessionProxy>,
+    #[with(deferred(moniker("/core/profiler/profiler_session_manager")))]
+    session_manager: fho::Deferred<profiler::SessionManagerProxy>,
     #[command]
     cmd: ProfilerCommand,
     context: EnvironmentContext,
@@ -73,7 +76,7 @@ impl FfxMain for ProfilerTool {
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         info!(cmd:? = self.cmd; "Running profiler... ");
-        Ok(profiler(&self.context, self.controller, writer, self.cmd).await?)
+        self.profiler(writer).await
     }
 }
 
@@ -120,7 +123,7 @@ fn gather_targets(opts: &args::Attach) -> Result<fidl_fuchsia_cpu_profiler::Targ
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct SessionOpts {
     symbolize: bool,
     buffer_size_mb: Option<u64>,
@@ -131,47 +134,328 @@ struct SessionOpts {
     color_output: bool,
 }
 
+fn check_background_args(
+    duration: Option<u64>,
+    output: &str,
+    print_stats: bool,
+    symbolize: bool,
+    pprof_conversion: bool,
+    color_output: bool,
+) -> fho::Result<()> {
+    if duration.is_some() {
+        ffx_bail!("Cannot specify a duration when starting a background profiling session.");
+    }
+
+    // Check for non-default values for the other arguments.
+    if output != "profile"
+        || print_stats
+        || !symbolize
+        || !pprof_conversion
+        || color_output != std::io::stdout().is_terminal()
+    {
+        let message: &str = "The options --output, --print-stats, --symbolize, --pprof-conversion, \
+            and --color-output should be specified when calling `ffx profiler stop` when using \
+            a background profiling session.";
+        ffx_bail!("{message}");
+    }
+    Ok(())
+}
+
+fn default_sampling_config(sample_period_us: u64) -> profiler::SamplingConfig {
+    profiler::SamplingConfig {
+        period: Some(sample_period_us * 1000),
+        timebase: Some(profiler::Counter::PlatformIndependent(profiler::CounterId::Nanoseconds)),
+        sample: Some(profiler::Sample {
+            callgraph: Some(profiler::CallgraphConfig {
+                strategy: Some(profiler::CallgraphStrategy::FramePointer),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+fn create_session_opts(
+    symbolize: bool,
+    buffer_size_mb: Option<u64>,
+    print_stats: bool,
+    output: String,
+    duration: Option<u64>,
+    pprof_conversion: bool,
+    color_output: bool,
+) -> SessionOpts {
+    let extension = if symbolize { "pb" } else { "fxt" };
+    SessionOpts {
+        symbolize,
+        buffer_size_mb,
+        print_stats,
+        output: format!("{}.{}", output, extension),
+        duration,
+        pprof_conversion,
+        color_output,
+    }
+}
+
+fn print_stop_stats(
+    writer: &mut Writer,
+    stats: &ShowCpuProfilerCmd,
+    color_output: bool,
+    print_stats: bool,
+) -> fho::Result<()> {
+    if let Some(pids) = &stats.missing_process_mappings {
+        if !pids.is_empty() {
+            writeln!(
+                writer.stderr(),
+                "{}[WARNING] Failed to get symbols for some processes: {:?}\n\
+                This can occur when processes exit before the profiler is able to read their modules.{}",
+                if color_output {
+                    format!("{}", color::Fg(color::Red))
+                } else {
+                    String::from("")
+                },
+                pids,
+                if color_output { format!("{}", style::Reset) } else { String::from("") },
+            ).map_err(|e| anyhow::anyhow!(e))?;
+        }
+    }
+    if print_stats {
+        writer.machine(stats)?;
+        writer.line(format!("\n{stats}"))?;
+    }
+    Ok(())
+}
+
+pub enum ProfilerSessionManagerProxy {
+    Controller(profiler::SessionProxy),
+    SessionManager(profiler::SessionManagerProxy),
+}
+
+impl From<profiler::SessionProxy> for ProfilerSessionManagerProxy {
+    fn from(proxy: profiler::SessionProxy) -> Self {
+        Self::Controller(proxy)
+    }
+}
+
+impl From<profiler::SessionManagerProxy> for ProfilerSessionManagerProxy {
+    fn from(proxy: profiler::SessionManagerProxy) -> Self {
+        Self::SessionManager(proxy)
+    }
+}
+
+impl ProfilerSessionManagerProxy {
+    pub async fn configure(
+        &self,
+        req: profiler::SessionConfigureRequest,
+    ) -> Result<Result<(), profiler::SessionConfigureError>, fidl::Error> {
+        match self {
+            Self::Controller(c) => c.configure(req).await,
+            Self::SessionManager(mgr) => mgr.configure(req).await,
+        }
+    }
+
+    pub async fn start(
+        &self,
+        req: &profiler::SessionStartRequest,
+    ) -> Result<Result<(), profiler::SessionStartError>, fidl::Error> {
+        match self {
+            Self::Controller(c) => c.start(req).await,
+            Self::SessionManager(mgr) => mgr.start(req).await,
+        }
+    }
+
+    pub async fn stop(&self) -> Result<profiler::SessionResult, fidl::Error> {
+        match self {
+            Self::Controller(c) => c.stop().await,
+            Self::SessionManager(mgr) => mgr.stop().await,
+        }
+    }
+
+    pub async fn reset(&self) -> Result<(), fidl::Error> {
+        match self {
+            Self::Controller(c) => c.reset().await,
+            Self::SessionManager(mgr) => mgr.reset().await,
+        }
+    }
+
+    pub async fn start_session(
+        &self,
+        req: profiler::SessionManagerStartSessionRequest,
+    ) -> Result<
+        Result<profiler::SessionManagerStartSessionResponse, profiler::ManagerError>,
+        fidl::Error,
+    > {
+        match self {
+            Self::Controller(_) => Ok(Err(profiler::ManagerError::Start)),
+            Self::SessionManager(mgr) => mgr.start_session(req).await,
+        }
+    }
+
+    pub async fn stop_session(
+        &self,
+        req: profiler::SessionManagerStopSessionRequest,
+    ) -> Result<Result<profiler::SessionResult, profiler::ManagerError>, fidl::Error> {
+        match self {
+            Self::Controller(_) => Ok(Err(profiler::ManagerError::Stop)),
+            Self::SessionManager(mgr) => mgr.stop_session(req).await,
+        }
+    }
+
+    pub async fn status(
+        &self,
+    ) -> Result<Result<profiler::SessionManagerStatusResponse, profiler::ManagerError>, fidl::Error>
+    {
+        match self {
+            Self::Controller(_) => Ok(Err(profiler::ManagerError::NoSuchTask)),
+            Self::SessionManager(mgr) => mgr.status().await,
+        }
+    }
+
+    pub async fn abort_session(
+        &self,
+        req: &profiler::SessionManagerAbortSessionRequest,
+    ) -> Result<Result<(), profiler::ManagerError>, fidl::Error> {
+        match self {
+            Self::Controller(_) => Ok(Err(profiler::ManagerError::Stop)),
+            Self::SessionManager(mgr) => mgr.abort_session(req).await,
+        }
+    }
+}
+
+async fn finalize_profile_session(
+    proxy: &ProfilerSessionManagerProxy,
+    writer: &mut Writer,
+    options: &SessionOpts,
+    copy_task: Option<fuchsia_async::Task<std::io::Result<u64>>>,
+    unsymbolized_path: &std::path::PathBuf,
+    context: &EnvironmentContext,
+    is_background: bool,
+) -> Result<()> {
+    info!("Stopping profiler...");
+    let mut copy_task = copy_task;
+
+    let stats = if is_background {
+        let (client, server) = fidl::Socket::create_stream();
+        let client = fidl::AsyncSocket::from_socket(client);
+
+        let req = profiler::SessionManagerStopSessionRequest {
+            output: Some(server),
+            ..Default::default()
+        };
+
+        let mut output = async_fs::File::create(&unsymbolized_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create output file: {:?}", e))?;
+
+        copy_task = Some(fuchsia_async::Task::local(async move {
+            futures::io::copy(client, &mut output).await
+        }));
+
+        match proxy.stop_session(req).await? {
+            Ok(stats) => SessionResult {
+                samples_collected: stats.samples_collected,
+                mean_sample_time: stats.mean_sample_time,
+                median_sample_time: stats.median_sample_time,
+                min_sample_time: stats.min_sample_time,
+                max_sample_time: stats.max_sample_time,
+                missing_process_mappings: stats.missing_process_mappings,
+                ..Default::default()
+            },
+            Err(e) => anyhow::bail!("Failed to stop session: {:?}", e),
+        }
+    } else {
+        proxy.stop().await?
+    };
+
+    let out_stats = ShowCpuProfilerCmd {
+        samples_collected: stats.samples_collected,
+        median_sample_time: stats.median_sample_time,
+        mean_sample_time: stats.mean_sample_time,
+        max_sample_time: stats.max_sample_time,
+        min_sample_time: stats.min_sample_time,
+        missing_process_mappings: stats.missing_process_mappings,
+    };
+
+    print_stop_stats(writer, &out_stats, options.color_output, options.print_stats)?;
+
+    info!("Profiler stopped, waiting for copy to complete...");
+    if let Some(task) = copy_task {
+        task.await.map_err(|e| anyhow::anyhow!(e))?;
+    }
+
+    info!("Copy from profiler completed, resetting profiler...");
+    proxy.reset().await?;
+
+    let unsymbolized_samples =
+        ffx_profiler::symbolize::create_unsymbolized_samples(unsymbolized_path)?;
+
+    if !options.symbolize {
+        std::fs::write(unsymbolized_path, format!("{unsymbolized_samples:#?}\n"))?;
+        return Ok(());
+    }
+
+    if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
+        &options.output.to_string().into(),
+        options.pprof_conversion,
+        context,
+    ) {
+        return ffx_profiler::pprof::samples_to_pprof(
+            symbolized_record,
+            options.output.as_str().into(),
+        );
+    } else {
+        anyhow::bail!("Failed to symbolize profile");
+    }
+}
+
 async fn run_session(
     context: &EnvironmentContext,
-    controller: fho::Deferred<profiler::SessionProxy>,
+    session_proxy: &ProfilerSessionManagerProxy,
     mut writer: Writer,
     config: profiler::Config,
     opts: SessionOpts,
-) -> Result<()> {
+) -> fho::Result<()> {
     info!(config:? = config, opts:? = opts; "Running profiler session...");
     let (client, server) = fidl::Socket::create_stream();
     let client = fidl::AsyncSocket::from_socket(client);
-    let controller = controller.await?;
-    controller
+
+    // run_session is running the profiling session in the foreground
+    session_proxy
         .configure(profiler::SessionConfigureRequest {
             output: Some(server),
             config: Some(config),
             ..Default::default()
         })
-        .await?
-        .map_err(|e| ffx_error!("Failed to start: {:?}", e))?;
+        .await
+        .map_err(|e| bug!("{e}"))?
+        .map_err(|e| user_error!("Failed to start: {:?}", e))?;
     info!("Profiler session is configured.");
 
-    let tmp_dir = Builder::new().prefix("fuchsia_cpu_profiler_").tempdir()?;
-
+    let tmp_dir = Builder::new()
+        .prefix("fuchsia_cpu_profiler_")
+        .tempdir()
+        .map_err(|e| user_error!("Failed to create temporary directory: {e}"))?;
     let unsymbolized_path = if opts.symbolize {
         tmp_dir.path().join("unsymbolized.txt")
     } else {
         std::path::PathBuf::from(&opts.output)
     };
 
-    let mut output = File::create(&unsymbolized_path).await?;
+    let mut output = File::create(&unsymbolized_path)
+        .await
+        .map_err(|e| user_error!("Failed to create output file: {e}"))?;
     let copy_task =
         fuchsia_async::Task::local(async move { futures::io::copy(client, &mut output).await });
 
     info!("Starting profiler...");
-    controller
+    session_proxy
         .start(&profiler::SessionStartRequest {
             buffer_results: Some(true),
             buffer_size_mb: opts.buffer_size_mb,
             ..Default::default()
         })
-        .await?
+        .await
+        .map_err(|e| bug!(e))?
         .map_err(|e| ffx_error!("Failed to start: {:?}", e))?;
     info!("Profiler started.");
 
@@ -185,59 +469,19 @@ async fn run_session(
         })
         .await;
     }
-    info!("Stopping profiler...");
-    let stats = controller.stop().await?;
-    if let Some(pids) = &stats.missing_process_mappings {
-        if !pids.is_empty() {
-            writeln!(
-                writer.stderr(),
-                "{}[WARNING] Failed to get symbols for some processes: {:?}\n\
-                This can occur when processes exit before the profiler is able to read their modules.{}",
-                if opts.color_output {
-                    format!("{}", color::Fg(color::Red))
-                } else {
-                    String::from("")
-                },
-                pids,
-                if opts.color_output { format!("{}", style::Reset) } else { String::from("") },
-            )?;
-        }
-    }
-    if opts.print_stats {
-        let output = ShowCpuProfilerCmd {
-            samples_collected: stats.samples_collected,
-            median_sample_time: stats.median_sample_time,
-            mean_sample_time: stats.mean_sample_time,
-            max_sample_time: stats.max_sample_time,
-            min_sample_time: stats.min_sample_time,
-            missing_process_mappings: stats.missing_process_mappings,
-        };
-        writer.machine(&output)?;
-        writer.line(format!("\n{output}"))?;
-    }
-    info!("Profiler stopped, waiting for copy to complete...");
-    copy_task.await?;
-    info!("Copy from profiler completed, resetting profiler...");
-    controller.reset().await?;
-    info!("Profiler state reset.");
 
-    let unsymbolized_samples =
-        ffx_profiler::symbolize::create_unsymbolized_samples(&unsymbolized_path)?;
-
-    if !opts.symbolize {
-        std::fs::write(&unsymbolized_path, format!("{unsymbolized_samples:#?}\n"))?;
-        return Ok(());
-    }
-
-    if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
-        &opts.output.clone().into(),
-        opts.pprof_conversion,
+    finalize_profile_session(
+        session_proxy,
+        &mut writer,
+        &opts,
+        Some(copy_task),
+        &unsymbolized_path,
         context,
-    ) {
-        return ffx_profiler::pprof::samples_to_pprof(symbolized_record, opts.output.into());
-    } else {
-        anyhow::bail!("Failed to symbolize profile");
-    }
+        false,
+    )
+    .await?;
+
+    Ok(())
 }
 
 async fn download_android_symbols(opts: args::DownloadAndroidSymbols) -> Result<()> {
@@ -350,111 +594,244 @@ async fn download_android_symbols(opts: args::DownloadAndroidSymbols) -> Result<
     Ok(())
 }
 
-pub async fn profiler(
-    context: &EnvironmentContext,
-    controller: fho::Deferred<profiler::SessionProxy>,
-    writer: Writer,
-    cmd: ProfilerCommand,
-) -> Result<()> {
-    let (targets, config, session_opts) = match cmd.sub_cmd {
-        ProfilerSubCommand::Attach(opts) => {
-            let target = gather_targets(&opts)?;
-            let config = profiler::SamplingConfig {
-                period: Some(opts.sample_period_us * 1000),
-                timebase: Some(profiler::Counter::PlatformIndependent(
-                    profiler::CounterId::Nanoseconds,
-                )),
-                sample: Some(profiler::Sample {
-                    callgraph: Some(profiler::CallgraphConfig {
-                        strategy: Some(profiler::CallgraphStrategy::FramePointer),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            let extension = if opts.symbolize { "pb" } else { "txt" };
-            let session_opts = SessionOpts {
-                symbolize: opts.symbolize,
-                buffer_size_mb: opts.buffer_size_mb,
-                print_stats: opts.print_stats,
-                output: format!("{}.{}", opts.output, extension),
-                duration: opts.duration,
-                pprof_conversion: opts.pprof_conversion,
-                color_output: opts.color_output,
-            };
-            (target, config, session_opts)
-        }
-        ProfilerSubCommand::Launch(opts) => {
-            let component_config = if opts.test {
-                profiler::AttachConfig::LaunchTest(profiler::LaunchTest {
-                    url: Some(opts.url.clone()),
-                    options: Some(test_manager::RunSuiteOptions {
-                        test_case_filters: Some(opts.test_filters),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                })
-            } else {
-                profiler::AttachConfig::LaunchComponent(profiler::LaunchComponent {
-                    url: Some(opts.url.clone()),
-                    moniker: opts.moniker.clone(),
-                    ..Default::default()
-                })
-            };
-            let target = profiler::TargetConfig::Component(component_config);
-            let config = profiler::SamplingConfig {
-                period: Some(opts.sample_period_us * 1000),
-                timebase: Some(profiler::Counter::PlatformIndependent(
-                    profiler::CounterId::Nanoseconds,
-                )),
-                sample: Some(profiler::Sample {
-                    callgraph: Some(profiler::CallgraphConfig {
-                        strategy: Some(profiler::CallgraphStrategy::FramePointer),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            let extension = if opts.symbolize { "pb" } else { "txt" };
-            let session_opts = SessionOpts {
-                symbolize: opts.symbolize,
-                buffer_size_mb: opts.buffer_size_mb,
-                print_stats: opts.print_stats,
-                output: format!("{}.{}", opts.output, extension),
-                duration: opts.duration,
-                pprof_conversion: opts.pprof_conversion,
-                color_output: opts.color_output,
-            };
-            (target, config, session_opts)
-        }
-        ProfilerSubCommand::Symbolize(opts) => {
-            let unsymbolized_samples =
-                ffx_profiler::symbolize::create_unsymbolized_samples(&opts.input)?;
-            if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
-                &opts.output.clone().into(),
-                opts.pprof_conversion,
-                context,
-            ) {
-                return ffx_profiler::pprof::samples_to_pprof(
-                    symbolized_record,
-                    opts.output.into(),
+impl ProfilerTool {
+    async fn get_session_proxy(self) -> Result<ProfilerSessionManagerProxy> {
+        match self.session_manager.await {
+            Ok(p) => Ok(p.into()),
+            Err(e) => {
+                log::warn!(
+                    "Cannot connect to SessionManagerProxy, falling back to basic profiler controller: {e:?}."
                 );
-            } else {
-                anyhow::bail!("Failed to symbolize profile");
+                Ok(self.controller.await?.into())
             }
         }
-        ProfilerSubCommand::DownloadAndroidSymbols(opts) => {
-            return download_android_symbols(opts).await;
+    }
+
+    pub async fn profiler(self, mut writer: Writer) -> fho::Result<()> {
+        let context = self.context.clone();
+        let sub_command = self.cmd.sub_cmd.clone();
+        let session_proxy = self.get_session_proxy().await?;
+
+        let (targets, config, session_opts, background) = match sub_command {
+            ProfilerSubCommand::Attach(opts) => {
+                if opts.background {
+                    check_background_args(
+                        opts.duration,
+                        &opts.output,
+                        opts.print_stats,
+                        opts.symbolize,
+                        opts.pprof_conversion,
+                        opts.color_output,
+                    )?;
+                }
+                let target = gather_targets(&opts)?;
+                let config = default_sampling_config(opts.sample_period_us);
+                let session_opts = create_session_opts(
+                    opts.symbolize,
+                    opts.buffer_size_mb,
+                    opts.print_stats,
+                    opts.output,
+                    opts.duration,
+                    opts.pprof_conversion,
+                    opts.color_output,
+                );
+                (target, config, session_opts, opts.background)
+            }
+            ProfilerSubCommand::Launch(opts) => {
+                if opts.background {
+                    check_background_args(
+                        opts.duration,
+                        &opts.output,
+                        opts.print_stats,
+                        opts.symbolize,
+                        opts.pprof_conversion,
+                        opts.color_output,
+                    )?;
+                }
+                let component_config = if opts.test {
+                    profiler::AttachConfig::LaunchTest(profiler::LaunchTest {
+                        url: Some(opts.url.clone()),
+                        options: Some(test_manager::RunSuiteOptions {
+                            test_case_filters: Some(opts.test_filters),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                } else {
+                    profiler::AttachConfig::LaunchComponent(profiler::LaunchComponent {
+                        url: Some(opts.url.clone()),
+                        moniker: opts.moniker.clone(),
+                        ..Default::default()
+                    })
+                };
+                let target = profiler::TargetConfig::Component(component_config);
+                let config = default_sampling_config(opts.sample_period_us);
+                let session_opts = create_session_opts(
+                    opts.symbolize,
+                    opts.buffer_size_mb,
+                    opts.print_stats,
+                    opts.output,
+                    opts.duration,
+                    opts.pprof_conversion,
+                    opts.color_output,
+                );
+                (target, config, session_opts, opts.background)
+            }
+            ProfilerSubCommand::Symbolize(opts) => {
+                let unsymbolized_samples =
+                    ffx_profiler::symbolize::create_unsymbolized_samples(&opts.input)
+                        .map_err(|e| bug!("Failed to create unsymbolized samples: {:?}", e))?;
+                match unsymbolized_samples.process_unsymbolized_samples(
+                    &opts.output,
+                    opts.pprof_conversion,
+                    &context,
+                ) {
+                    Ok(symbolized_record) => {
+                        return ffx_profiler::pprof::samples_to_pprof(
+                            symbolized_record,
+                            opts.output.into(),
+                        )
+                        .map_err(|e| user_error!("Failed to convert to pprof: {:?}", e));
+                    }
+                    Err(e) => return_user_error!("Failed to symbolize profile: {:?}", e),
+                }
+            }
+            ProfilerSubCommand::DownloadAndroidSymbols(opts) => {
+                return download_android_symbols(opts)
+                    .await
+                    .map_err(|e| user_error!("Failed to download Android symbols: {e:?}"));
+            }
+            ProfilerSubCommand::Stop(stop_options) => {
+                if let ProfilerSessionManagerProxy::SessionManager(mgr) = &session_proxy {
+                    if stop_options.abort {
+                        let req = profiler::SessionManagerAbortSessionRequest::default();
+                        info!("Aborting background session");
+
+                        match mgr
+                            .abort_session(&req)
+                            .await
+                            .map_err(|e| bug!("Failed to abort session: {:?}", e))?
+                        {
+                            Ok(_) => writer.line("Session aborted successfully.")?,
+                            Err(e) => ffx_bail!("Failed to abort background session: {:?}", e),
+                        }
+                        return Ok(());
+                    }
+
+                    let extension = if stop_options.symbolize { "pb" } else { "txt" };
+
+                    let session_opts = SessionOpts {
+                        symbolize: stop_options.symbolize,
+                        buffer_size_mb: None,
+                        print_stats: stop_options.print_stats,
+                        pprof_conversion: stop_options.pprof_conversion,
+                        output: format!("{}.{}", stop_options.output, extension),
+                        duration: None,
+                        color_output: stop_options.color_output,
+                    };
+
+                    info!("Stopping background session");
+
+                    // The temp dir needs to stay in scope until symbolization is completed.
+                    let tmp_dir = Builder::new()
+                        .prefix("fuchsia_cpu_profiler_")
+                        .tempdir()
+                        .map_err(|e| bug!("Failed to create temp dir: {:?}", e))?;
+
+                    let unsymbolized_path = if stop_options.symbolize {
+                        tmp_dir.path().join("unsymbolized.txt")
+                    } else {
+                        std::path::PathBuf::from(&session_opts.output)
+                    };
+
+                    finalize_profile_session(
+                        &session_proxy,
+                        &mut writer,
+                        &session_opts,
+                        None,
+                        &unsymbolized_path,
+                        &context,
+                        true,
+                    )
+                    .await
+                    .map_err(|e| user_error!("Failed to finalize session: {:?}", e))?;
+
+                    writer.line(format!("Wrote profile to {}", session_opts.output))?;
+                } else {
+                    ffx_bail!("Connecting to SessionManager is required for background profiling.");
+                }
+                return Ok(());
+            }
+            ProfilerSubCommand::Status(_) => {
+                if let ProfilerSessionManagerProxy::SessionManager(mgr) = session_proxy {
+                    let response = mgr
+                        .status()
+                        .await
+                        .map_err(|e| bug!("Failed to get background session status: {:?}", e))?;
+                    match response {
+                        Ok(resp) => {
+                            if let Some(sessions) = resp.sessions {
+                                if sessions.is_empty() {
+                                    writer.line("No background profiling sessions active.")?;
+                                } else {
+                                    writer.line("Active background sessions:")?;
+                                    for session in sessions {
+                                        writer.line(format!(
+                                            "  - task_id: {}",
+                                            session.task_id.unwrap_or(0)
+                                        ))?;
+                                    }
+                                }
+                            } else {
+                                writer.line("No background profiling sessions active.")?;
+                            }
+                        }
+                        Err(e) => {
+                            ffx_bail!("Failed to get background session status: {:?}", e);
+                        }
+                    }
+                } else {
+                    ffx_bail!("Connecting to SessionManager is required for background profiling.");
+                }
+                return Ok(());
+            }
+        };
+        let config = profiler::Config {
+            configs: Some(vec![config]),
+            target: Some(targets),
+            ..Default::default()
+        };
+
+        if background {
+            if let ProfilerSessionManagerProxy::SessionManager(mgr) = &session_proxy {
+                info!(config:? = config; "Starting background profiler session...");
+
+                let req = profiler::SessionManagerStartSessionRequest {
+                    config: Some(config),
+                    ..Default::default()
+                };
+                let response = mgr.start_session(req).await.map_err(|e| bug!(e))?;
+                match response {
+                    Ok(resp) => {
+                        writer.line(format!(
+                            "Background session started. task_id: {}",
+                            resp.task_id.unwrap_or(0)
+                        ))?;
+                    }
+                    Err(e) => {
+                        ffx_bail!("Failed to start background session: {:?}", e);
+                    }
+                }
+                Ok(())
+            } else {
+                ffx_bail!(
+                    "Background profiling requires a SessionManager connection, but none could be established."
+                );
+            }
+        } else {
+            run_session(&context, &session_proxy, writer, config, session_opts).await
         }
-    };
-    let config = profiler::Config {
-        configs: Some(vec![config]),
-        target: Some(targets),
-        ..Default::default()
-    };
-    run_session(context, controller, writer, config, session_opts).await
+    }
 }
 
 #[cfg(test)]
@@ -534,5 +911,141 @@ mod tests {
         assert!(invalid_targets2.is_err());
         let invalid_targets3 = gather_targets(&invalid_args3);
         assert!(invalid_targets3.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_valid() {
+        let result = check_background_args(
+            None,
+            "profile",
+            false,
+            true,
+            true,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_background_args_with_duration() {
+        let result = check_background_args(
+            Some(10),
+            "profile",
+            false,
+            true,
+            true,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_invalid_output() {
+        let result = check_background_args(
+            None,
+            "custom_profile",
+            false,
+            true,
+            true,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_print_stats() {
+        let result = check_background_args(
+            None,
+            "profile",
+            true,
+            true,
+            true,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_no_symbolize() {
+        let result = check_background_args(
+            None,
+            "profile",
+            false,
+            false,
+            true,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_no_pprof() {
+        let result = check_background_args(
+            None,
+            "profile",
+            false,
+            true,
+            false,
+            std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_invalid_color() {
+        let result = check_background_args(
+            None,
+            "profile",
+            false,
+            true,
+            true,
+            !std::io::stdout().is_terminal(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_no_active_session() {
+        use ffx_writer::TestBuffers;
+        use fidl_fuchsia_cpu_profiler::{ManagerError, SessionManagerRequest};
+        use target_holders::fake_proxy;
+
+        let session_manager = fake_proxy(move |req| match req {
+            SessionManagerRequest::StopSession { payload: _, responder } => {
+                responder.send(Err(ManagerError::NoSuchTask)).unwrap();
+            }
+            SessionManagerRequest::AbortSession { payload: _, responder } => {
+                responder.send(Err(ManagerError::NoSuchTask)).unwrap();
+            }
+            _ => panic!("Unexpected request: {:?}", req),
+        });
+
+        let tool = ProfilerTool {
+            controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
+                "controller should not be accessed"
+            )))),
+            session_manager: fho::Deferred::from_output(Ok(session_manager)),
+            cmd: ProfilerCommand {
+                sub_cmd: ProfilerSubCommand::Stop(args::Stop {
+                    output: String::from("profile"),
+                    abort: false,
+                    symbolize: false,
+                    pprof_conversion: false,
+                    color_output: false,
+                    print_stats: false,
+                }),
+            },
+            context: ffx_config::EnvironmentContext::default(),
+        };
+
+        let buffers = TestBuffers::default();
+        let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+
+        let result = tool.profiler(writer).await;
+
+        assert!(result.is_err());
+        let err_str = result.unwrap_err().to_string();
+        assert!(err_str.contains("Failed to finalize session"));
+        assert!(err_str.contains("NoSuchTask"));
     }
 }
