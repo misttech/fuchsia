@@ -12,13 +12,39 @@
 
 namespace sdmmc {
 
+fuchsia_hardware_rpmb::wire::EmmcDeviceInfo RpmbDeviceBase::GetDeviceInfo() {
+  fuchsia_hardware_rpmb::wire::EmmcDeviceInfo emmc_info = {};
+  memcpy(emmc_info.cid.data(), cid_.data(), cid_.size() * sizeof(cid_[0]));
+  emmc_info.rpmb_size = rpmb_size_;
+  emmc_info.reliable_write_sector_count = reliable_write_sector_count_;
+  return emmc_info;
+}
+
+void RpmbDeviceBase::Request(fuchsia_hardware_rpmb::wire::Request request,
+                             fit::callback<void(zx_status_t)> callback) {
+  RpmbRequestInfo info = {
+      .tx_frames = std::move(request.tx_frames),
+      .callback = std::move(callback),
+  };
+
+  if (request.rx_frames) {
+    info.rx_frames = {
+        .vmo = std::move(request.rx_frames->vmo),
+        .offset = request.rx_frames->offset,
+        .size = request.rx_frames->size,
+    };
+  }
+
+  sdmmc_parent_->RpmbQueue(std::move(info));
+}
+
 zx_status_t RpmbDevice::AddDevice() {
   {
-    const std::string path_from_parent = std::string(sdmmc_parent_->parent()->driver_name()) + "/" +
-                                         std::string(sdmmc_parent_->block_name()) + "/";
+    const std::string path_from_parent = std::string(sdmmc_parent()->parent()->driver_name()) +
+                                         "/" + std::string(sdmmc_parent()->block_name()) + "/";
     auto result = compat_server_.Initialize(
-        sdmmc_parent_->parent()->driver_incoming(), sdmmc_parent_->parent()->driver_outgoing(),
-        sdmmc_parent_->parent()->driver_node_name(), kDeviceName, compat::ForwardMetadata::None(),
+        sdmmc_parent()->parent()->driver_incoming(), sdmmc_parent()->parent()->driver_outgoing(),
+        sdmmc_parent()->parent()->driver_node_name(), kDeviceName, compat::ForwardMetadata::None(),
         std::nullopt, path_from_parent);
     if (result.is_error()) {
       return result.status_value();
@@ -30,7 +56,7 @@ zx_status_t RpmbDevice::AddDevice() {
         .device = fit::bind_member<&RpmbDevice::Serve>(this),
     });
     auto result =
-        sdmmc_parent_->parent()->driver_outgoing()->AddService<fuchsia_hardware_rpmb::Service>(
+        sdmmc_parent()->parent()->driver_outgoing()->AddService<fuchsia_hardware_rpmb::Service>(
             std::move(handler));
     if (result.is_error()) {
       FDF_LOGL(ERROR, logger(), "Failed to add RPMB service: %s", result.status_string());
@@ -52,7 +78,7 @@ zx_status_t RpmbDevice::AddDevice() {
                         .offers2(arena, std::move(offers))
                         .Build();
 
-  auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end), {});
+  auto result = sdmmc_parent()->block_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
     return result.status();
@@ -61,40 +87,39 @@ zx_status_t RpmbDevice::AddDevice() {
 }
 
 void RpmbDevice::Serve(fidl::ServerEnd<fuchsia_hardware_rpmb::Rpmb> request) {
-  fidl::BindServer(sdmmc_parent_->parent()->driver_async_dispatcher(), std::move(request), this);
+  fidl::BindServer(sdmmc_parent()->parent()->driver_async_dispatcher(), std::move(request), this);
 }
 
 void RpmbDevice::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
-  using DeviceInfo = fuchsia_hardware_rpmb::wire::DeviceInfo;
-  using EmmcDeviceInfo = fuchsia_hardware_rpmb::wire::EmmcDeviceInfo;
-
-  EmmcDeviceInfo emmc_info = {};
-  memcpy(emmc_info.cid.data(), cid_.data(), cid_.size() * sizeof(cid_[0]));
-  emmc_info.rpmb_size = rpmb_size_;
-  emmc_info.reliable_write_sector_count = reliable_write_sector_count_;
-
-  auto emmc_info_ptr = fidl::ObjectView<EmmcDeviceInfo>::FromExternal(&emmc_info);
-
-  completer.ToAsync().Reply(DeviceInfo::WithEmmcInfo(emmc_info_ptr));
+  fuchsia_hardware_rpmb::wire::EmmcDeviceInfo emmc_info = RpmbDeviceBase::GetDeviceInfo();
+  auto device_info = fuchsia_hardware_rpmb::wire::DeviceInfo::WithEmmcInfo(
+      fidl::ObjectView<fuchsia_hardware_rpmb::wire::EmmcDeviceInfo>::FromExternal(&emmc_info));
+  completer.Reply(device_info);
 }
 
 void RpmbDevice::Request(RequestRequestView request, RequestCompleter::Sync& completer) {
-  RpmbRequestInfo info = {
-      .tx_frames = std::move(request->request.tx_frames),
-      .completer = completer.ToAsync(),
-  };
-
-  if (request->request.rx_frames) {
-    info.rx_frames = {
-        .vmo = std::move(request->request.rx_frames->vmo),
-        .offset = request->request.rx_frames->offset,
-        .size = request->request.rx_frames->size,
-    };
-  }
-
-  sdmmc_parent_->RpmbQueue(std::move(info));
+  RpmbDeviceBase::Request(std::move(request->request),
+                          [completer = completer.ToAsync()](zx_status_t status) mutable {
+                            completer.Reply(zx::make_result(status));
+                          });
 }
 
-fdf::Logger& RpmbDevice::logger() { return sdmmc_parent_->logger(); }
+fdf::Logger& RpmbDevice::logger() { return sdmmc_parent()->logger(); }
+
+void DriverRpmbDevice::GetDeviceInfo(fdf::Arena& arena, GetDeviceInfoCompleter::Sync& completer) {
+  fuchsia_hardware_rpmb::wire::EmmcDeviceInfo emmc_info = RpmbDeviceBase::GetDeviceInfo();
+  auto device_info = fuchsia_hardware_rpmb::wire::DeviceInfo::WithEmmcInfo(
+      fidl::ObjectView<fuchsia_hardware_rpmb::wire::EmmcDeviceInfo>::FromExternal(&emmc_info));
+  completer.buffer(arena).Reply(device_info);
+}
+
+void DriverRpmbDevice::Request(RequestRequestView request, fdf::Arena& arena,
+                               RequestCompleter::Sync& completer) {
+  RpmbDeviceBase::Request(
+      std::move(request->request),
+      [completer = completer.ToAsync(), arena = std::move(arena)](zx_status_t status) mutable {
+        completer.buffer(arena).Reply(zx::make_result(status));
+      });
+}
 
 }  // namespace sdmmc

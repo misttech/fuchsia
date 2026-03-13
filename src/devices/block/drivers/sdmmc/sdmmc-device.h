@@ -9,6 +9,7 @@
 #include <fuchsia/hardware/sdmmc/cpp/banjo.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/stdcompat/span.h>
+#include <lib/zx/eventpair.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 
@@ -122,6 +123,22 @@ class SdmmcDevice {
   zx_status_t UnregisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo* out_vmo);
   zx_status_t Request(const sdmmc_req_t* req, uint32_t out_response[4]);
 
+  zx::result<> EnableCqhci();
+  zx::result<> DisableCqhci();
+
+  struct InitializeCommandQueueingResources {
+    zx::vmo cqhci_mmio;
+    zx_off_t cqhci_mmio_offset;
+    zx::vmo sdhci_mmio;
+    zx_off_t sdhci_mmio_offset;
+    zx::bti bti;
+    zx::interrupt interrupt;
+  };
+
+  zx::result<InitializeCommandQueueingResources> InitializeCommandQueueing(
+      zx::interrupt virtual_interrupt, zx::eventpair virtual_interrupt_lifeline);
+
+  uint16_t Rca() const { return rca_; }
   void ClearRca() { rca_ = 0; }
 
   // Visible for testing.

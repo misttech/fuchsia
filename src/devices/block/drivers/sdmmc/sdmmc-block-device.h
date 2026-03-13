@@ -5,6 +5,8 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_BLOCK_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_BLOCK_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.cqhci/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.cqhci/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.inlineencryption/cpp/wire.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
@@ -105,6 +107,7 @@ struct ReadWriteMetadata {
 };
 
 class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner>,
+                         public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
                          public fidl::WireServer<fuchsia_hardware_inlineencryption::Device> {
  public:
   static constexpr char kHardwarePowerElementName[] = "sdmmc-hardware";
@@ -124,6 +127,13 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  // fuchsia.hardware.cqhci.Cqhci
+  void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
+  void InitializeCommandQueueing(InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+                                 InitializeCommandQueueingCompleter::Sync& completer) override;
+  void EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) override;
+  void DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) override;
 
   SdmmcBlockDevice(SdmmcRootDevice* parent, std::unique_ptr<SdmmcDevice> sdmmc)
       : parent_(parent), sdmmc_(std::move(sdmmc)) {
@@ -164,7 +174,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   void Queue(BlockOperation txn) TA_EXCL(queue_lock_);
   void RpmbQueue(RpmbRequestInfo info) TA_EXCL(queue_lock_);
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& block_node() { return block_node_; }
-  std::string_view block_name() const { return block_name_; }
+  const char* block_name() const { return is_sd_ ? "sdmmc-sd" : "sdmmc-mmc"; }
   SdmmcRootDevice* parent() { return parent_; }
   void OnRequests(PartitionDevice& partition, cpp20::span<block_server::Request> requests);
   bool SupportsInlineEncryption() const { return inline_encryption_client_.is_valid(); }
@@ -209,6 +219,8 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   zx_status_t MmcConfigureBus() TA_REQ(worker_lock_);
   zx_status_t MmcTryHs() TA_REQ(worker_lock_);
 
+  zx_status_t AddCqhciDevice() TA_REQ(worker_lock_, queue_lock_);
+
   template <typename Request>
   zx_status_t ReadWriteWithRetries(std::vector<Request>& requests, EmmcPartition partition)
       TA_REQ(worker_lock_);
@@ -227,7 +239,9 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
 
   void WorkerLoop();
 
+  zx_status_t WaitForIdle();
   zx_status_t WaitForTran();
+  zx_status_t WaitForState(uint32_t state);
 
   zx_status_t MmcDoSwitch(uint8_t index, uint8_t value) TA_REQ(worker_lock_);
   zx_status_t MmcWaitForSwitch(uint8_t index, uint8_t value) TA_REQ(worker_lock_);
@@ -310,7 +324,15 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
       hardware_power_element_runner_server_binding_;
 
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> cqhci_controller_;
+  fdf::ServerBindingGroup<fuchsia_hardware_cqhci::Cqhci> cqhci_bindings_;
+  // Only used when CQHCI is enabled.
+  std::unique_ptr<DriverRpmbDevice> driver_rpmb_device_;
+  // NB: This must not outlive `driver_rpmb_device_`.
+  fdf::ServerBindingGroup<fuchsia_hardware_rpmb::DriverRpmb> driver_rpmb_bindings_;
+
   block_info_t block_info_{};
+  std::optional<fuchsia_hardware_cqhci::CqhciHostInfo> cqhci_host_info_;
 
   bool is_sd_ = false;
   bool cache_enabled_ = false;
@@ -343,11 +365,12 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
     inspect::BoolProperty power_suspended_;              // Updated whenever power state changes.
   } properties_;
 
-  std::string_view block_name_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> block_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 
+  // Only used when CQHCI is disabled.
   std::vector<std::unique_ptr<PartitionDevice>> child_partition_devices_;
+  // Only used when CQHCI is disabled.
   std::unique_ptr<RpmbDevice> child_rpmb_device_;
   EmmcPartition current_partition_ TA_GUARDED(worker_lock_) = EmmcPartition::USER_DATA_PARTITION;
 

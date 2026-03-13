@@ -547,4 +547,16 @@ void FakeSdmmcDevice::Request(RequestRequestView request, fdf::Arena& arena,
   completer.buffer(arena).ReplySuccess(response);
 }
 
+void FakeSdmmcDevice::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+void FakeSdmmcDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+void FakeSdmmcDevice::InitializeCommandQueueing(
+    InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+    InitializeCommandQueueingCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 }  // namespace sdmmc

@@ -179,17 +179,22 @@ impl Driver for CqhciDriver {
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         info!("cqhci driver starting");
-        let cqhci_client = {
+        let (cqhci_client, rpmb_client) = {
             let service: ServiceInstance<cqhci::Service> =
                 context.incoming.service().connect_next().inspect_err(|status| {
                     error!(status:?; "Failed to connect to Cqhci service");
                 })?;
-            let (client_end, server_end) = fdf_fidl::create_channel();
-            service.cqhci(server_end).map_err(|err| {
+            let (cqhci_client_end, cqhci_server_end) = fdf_fidl::create_channel();
+            let (rpmb_client_end, rpmb_server_end) = fdf_fidl::create_channel();
+            service.cqhci(cqhci_server_end).map_err(|err| {
                 error!(err:?; "Failed to connect to Cqhci protocol");
                 zx::Status::INVALID_ARGS
             })?;
-            client_end.spawn()
+            service.rpmb(rpmb_server_end).map_err(|err| {
+                error!(err:?; "Failed to connect to Rpmb protocol");
+                zx::Status::INVALID_ARGS
+            })?;
+            (cqhci_client_end.spawn(), rpmb_client_end.spawn())
         };
 
         let vmar =
@@ -206,12 +211,13 @@ impl Driver for CqhciDriver {
             })?
             .map_err(zx::Status::from_raw)?;
 
-        let command_queue = CommandQueue::initialize(vmar, cqhci_client.clone(), &mut host_info)
-            .await
-            .map_err(|err| {
-                error!(err:?; "Failed to initialize command queueing");
-                to_status(err)
-            })?;
+        let command_queue =
+            CommandQueue::initialize(vmar, cqhci_client.clone(), rpmb_client, &mut host_info)
+                .await
+                .map_err(|err| {
+                    error!(err:?; "Failed to initialize command queueing");
+                    to_status(err)
+                })?;
 
         let mut fs = ServiceFs::new();
         let scope = Scope::new();

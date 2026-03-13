@@ -99,6 +99,7 @@ type SdmmcHostCap = strict bits : uint64 {
     /// The host does not require tuning for SDR50.
     NO_TUNING_SDR50 = 0x80;
     HS400_ENHANCED_STROBE = 0x100;
+    COMMAND_QUEUEING = 0x200;
 };
 
 type SdmmcHostPrefs = strict bits : uint64 {

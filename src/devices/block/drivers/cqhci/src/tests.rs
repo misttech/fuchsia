@@ -13,7 +13,7 @@ use fidl_fuchsia_hardware_block_volume::{self as fvolume};
 use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, CqhciHostInfo, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
-use fidl_next_fuchsia_hardware_sdmmc::{SdmmcHostCap, SdmmcHostInfo};
+use fidl_next_fuchsia_hardware_sdmmc::{self as sdmmc, SdmmcHostCap, SdmmcHostInfo};
 use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -35,10 +35,18 @@ struct MockRpmbServer {
     request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
 }
 
-impl rpmb::RpmbServerHandler for MockRpmbServer {
+impl MockRpmbServer {
+    fn new(
+        request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
+    ) -> Self {
+        Self { request_callback }
+    }
+}
+
+impl rpmb::DriverRpmbServerHandler for MockRpmbServer {
     async fn get_device_info(
         &mut self,
-        responder: fidl_next::Responder<rpmb::rpmb::GetDeviceInfo>,
+        responder: fidl_next::Responder<rpmb::driver_rpmb::GetDeviceInfo, DriverChannel>,
     ) {
         responder
             .respond(rpmb::natural::DeviceInfo::EmmcInfo(rpmb::natural::EmmcDeviceInfo {
@@ -52,8 +60,8 @@ impl rpmb::RpmbServerHandler for MockRpmbServer {
 
     async fn request(
         &mut self,
-        _request: fidl_next::Request<rpmb::rpmb::Request>,
-        responder: fidl_next::Responder<rpmb::rpmb::Request>,
+        _request: fidl_next::Request<rpmb::driver_rpmb::Request, DriverChannel>,
+        responder: fidl_next::Responder<rpmb::driver_rpmb::Request, DriverChannel>,
     ) {
         if let Some(ref mut cb) = self.request_callback {
             let (tx, rx) = futures::channel::oneshot::channel();
@@ -70,18 +78,14 @@ struct MockCqhciServer {
     on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
     hardware_irq: zx::VirtualInterrupt,
     fake_bti: zx::Bti,
-    scope: fasync::ScopeHandle,
-    rpmb_request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
 }
 
 impl MockCqhciServer {
     fn new(
-        scope: fasync::ScopeHandle,
         mmio_vmo: zx::Vmo,
         sdhci_mmio_vmo: zx::Vmo,
         on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
         hardware_irq: zx::VirtualInterrupt,
-        rpmb_request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
     ) -> Self {
         let bti = fake_bti::FakeBti::create().unwrap();
 
@@ -89,10 +93,8 @@ impl MockCqhciServer {
             mmio_vmo,
             sdhci_mmio_vmo,
             fake_bti: bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            scope,
             on_non_cq_interrupt_sink,
             hardware_irq,
-            rpmb_request_callback,
         }
     }
 }
@@ -129,17 +131,12 @@ impl cqhci::CqhciServerHandler for MockCqhciServer {
         responder.respond(&info).await.ok();
     }
 
-    async fn initialize(
+    async fn initialize_command_queueing(
         &mut self,
-        request: fidl_next::Request<cqhci::cqhci::Initialize, DriverChannel>,
-        responder: fidl_next::Responder<cqhci::cqhci::Initialize>,
+        request: fidl_next::Request<cqhci::cqhci::InitializeCommandQueueing, DriverChannel>,
+        responder: fidl_next::Responder<cqhci::cqhci::InitializeCommandQueueing>,
     ) {
         let payload = request.payload();
-
-        let cb = self.rpmb_request_callback.clone();
-        self.scope.spawn(async move {
-            payload.rpmb_server_end.spawn(MockRpmbServer { request_callback: cb });
-        });
 
         let virtual_interrupt = payload.virtual_interrupt;
         let hardware_irq = Arc::new(zx::VirtualInterrupt::from(
@@ -167,7 +164,7 @@ impl cqhci::CqhciServerHandler for MockCqhciServer {
         );
 
         responder
-            .respond(cqhci::CqhciInitializeResponse {
+            .respond(sdmmc::CqhciInitializeCommandQueueingResponse {
                 cqhci_mmio: mmio,
                 cqhci_mmio_offset: 0,
                 sdhci_mmio,
@@ -207,7 +204,6 @@ impl cqhci::CqhciServerHandler for MockCqhciServer {
 
 struct Service {
     dispatcher: FidlExecutor<WeakDispatcher>,
-    scope: fasync::ScopeHandle,
     mmio_vmo: zx::Vmo,
     sdhci_mmio_vmo: zx::Vmo,
     on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
@@ -222,15 +218,18 @@ impl cqhci::ServiceHandler for Service {
     ) {
         server_end.spawn_on(
             MockCqhciServer::new(
-                self.scope.clone(),
                 self.mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
                 self.sdhci_mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
                 self.on_non_cq_interrupt_sink.clone(),
                 self.hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                self.rpmb_request_callback.clone(),
             ),
             &self.dispatcher,
         );
+    }
+
+    fn rpmb(&self, server_end: fidl_next::ServerEnd<fidl_next_fuchsia_hardware_rpmb::DriverRpmb>) {
+        server_end
+            .spawn_on(MockRpmbServer::new(self.rpmb_request_callback.clone()), &self.dispatcher);
     }
 }
 
@@ -381,7 +380,6 @@ fn setup() -> (TestHarness<CqhciDriver>, fasync::Scope, TestHandles) {
             "default",
             Service {
                 dispatcher: FidlExecutor::from(harness.dispatcher().clone()),
-                scope: scope.clone(),
                 mmio_vmo,
                 sdhci_mmio_vmo,
                 on_non_cq_interrupt_sink,
@@ -604,7 +602,7 @@ async fn test_forwards_non_cq_interrupts() {
     // Now ack the virtual interrupt.  The second IRQ should be delivered.
     {
         let mut acked = first_irq_acked.lock();
-        irq.ack().unwrap();
+        let _ = irq.ack();
         *acked = true;
     }
     let irq2 = next_interrupt.await.expect("Failed to wait for second IRQ");

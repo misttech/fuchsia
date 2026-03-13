@@ -29,7 +29,7 @@ struct PartitionInfo {
 struct RpmbRequestInfo {
   fuchsia_mem::wire::Range tx_frames = {};
   fuchsia_mem::wire::Range rx_frames = {};
-  fidl::WireServer<fuchsia_hardware_rpmb::Rpmb>::RequestCompleter::Async completer;
+  fit::callback<void(zx_status_t)> callback;
 };
 
 using BlockOperation = block::BorrowedOperation<PartitionInfo>;

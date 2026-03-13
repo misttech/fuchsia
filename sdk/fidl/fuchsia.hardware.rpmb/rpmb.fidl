@@ -55,6 +55,13 @@ closed protocol Rpmb {
     }) -> () error zx.Status;
 };
 
+/// A driver transport variant of the `Rpmb` protocol.
+@discoverable
+@transport("Driver")
+closed protocol DriverRpmb {
+    compose Rpmb;
+};
+
 service Service {
     device client_end:Rpmb;
 };

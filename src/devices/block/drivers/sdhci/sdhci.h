@@ -9,6 +9,8 @@
 #include <fidl/fuchsia.hardware.sdmmc/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/driver/wire.h>
 #include <lib/async/cpp/irq.h>
+#include <lib/async/cpp/wait.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -56,6 +58,8 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
   Sdhci(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
         irq_handler_{this},
+        virtual_irq_handler_{this},
+        virtual_irq_lifeline_wait_{this},
         registered_vmo_stores_{
             // SdmmcVmoStore does not have a default constructor, so construct each one using an
             // empty Options (do not map or pin automatically upon VMO registration).
@@ -98,6 +102,13 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
   void Request(RequestRequestView request, fdf::Arena& arena, RequestCompleter::Sync& completer)
       TA_EXCL(mtx_) override;
 
+  void EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) TA_EXCL(mtx_) override;
+  void DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer)
+      TA_EXCL(mtx_) override;
+  void InitializeCommandQueueing(InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+                                 InitializeCommandQueueingCompleter::Sync& completer)
+      TA_EXCL(mtx_) override;
+
   // Visible for testing.
   uint32_t base_clock() const { return base_clock_; }
 
@@ -111,6 +122,11 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
     WRITE_DATA_PIO,
     BUSY_RESPONSE,
   };
+
+  // Resumes handling of the physical IRQ.
+  void OnInterruptDelegateStopped();
+  void OnLifelineClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+                        const zx_packet_signal_t* signal);
 
   RequestStatus GetRequestStatus() TA_EXCL(&mtx_) {
     std::lock_guard<std::mutex> lock(mtx_);
@@ -247,8 +263,13 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   zx_status_t PerformVendorTuning(uint32_t cmd_idx);
 
-  zx::interrupt irq_;
+  zx::interrupt irq_;  // Always holds the physical interrupt
   async::IrqMethod<Sdhci, &Sdhci::HandleIrq> irq_handler_;
+
+  zx::interrupt virtual_irq_ TA_GUARDED(mtx_);
+  async::IrqMethod<Sdhci, &Sdhci::HandleIrq> virtual_irq_handler_;
+  zx::eventpair virtual_irq_lifeline_ TA_GUARDED(mtx_);
+  async::WaitMethod<Sdhci, &Sdhci::OnLifelineClosed> virtual_irq_lifeline_wait_;
 
   fdf::WireSyncClient<fuchsia_hardware_sdhci::Device> sdhci_;
   fdf::Arena arena_{'SDHC'};
@@ -273,6 +294,7 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   fdf::WireSharedClient<fuchsia_hardware_sdmmc::InBandInterrupt> interrupt_cb_;
   bool card_interrupt_masked_ TA_GUARDED(mtx_) = false;
+  bool cqhci_enabled_ TA_GUARDED(mtx_) = false;
 
   // Set to true if the device has inline crypto support.
   bool supports_inline_crypto_ = false;
@@ -287,7 +309,6 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server_;
-
   fdf::Dispatcher irq_dispatcher_;
 
   fdf::ServerBindingGroup<fuchsia_hardware_sdmmc::Sdmmc> bindings_;

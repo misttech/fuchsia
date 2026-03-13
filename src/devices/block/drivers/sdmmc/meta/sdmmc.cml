@@ -16,6 +16,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.block.volume.Service" },
+        { service: "fuchsia.hardware.cqhci.Service" },
         { service: "fuchsia.hardware.power.PowerTokenService" },
         { service: "fuchsia.hardware.rpmb.Service" },
         { service: "fuchsia.hardware.sdio.Service" },
@@ -31,6 +32,11 @@
         {
             config: "fuchsia.power.StoragePowerManagementEnabled",
             key: "storage_power_management_enabled",
+            type: "bool",
+        },
+        {
+            config: "fuchsia.storage.SdmmcCommandQueueingEnabled",
+            key: "command_queueing_enabled",
             type: "bool",
         },
 
@@ -57,6 +63,7 @@
         {
             service: [
                 "fuchsia.hardware.block.volume.Service",
+                "fuchsia.hardware.cqhci.Service",
                 "fuchsia.hardware.power.PowerTokenService",
                 "fuchsia.hardware.rpmb.Service",
                 "fuchsia.hardware.sdio.DriverService",

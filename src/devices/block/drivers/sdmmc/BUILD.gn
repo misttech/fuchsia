@@ -72,6 +72,7 @@ source_set("sdmmc-driver-source") {
     "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_cpp",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_cpp",
     "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_cpp",
@@ -126,6 +127,7 @@ fuchsia_structured_config_values("sc-values") {
   values = {
     enable_suspend = false
     storage_power_management_enabled = true
+    command_queueing_enabled = false
   }
 }
 

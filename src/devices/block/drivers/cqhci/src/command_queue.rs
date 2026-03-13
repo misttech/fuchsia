@@ -13,7 +13,7 @@ use event_listener::{Event, IntoNotification as _, Listener as _};
 use fdf_fidl::DriverChannel;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, Cqhci, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
-use fidl_next_fuchsia_hardware_rpmb::Rpmb;
+use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use log::{debug, error, info, trace, warn};
@@ -950,7 +950,7 @@ enum SubmitResult {
 pub struct CommandQueue {
     inner: Mutex<Inner>,
     host: fidl_next::Client<Cqhci, DriverChannel>,
-    rpmb: fidl_next::Client<Rpmb>,
+    rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
     capabilities: CqhciCqCapsRegister,
     ext_csd: [u8; EXT_CSD_SIZE],
     rca: u16,
@@ -972,15 +972,15 @@ impl CommandQueue {
     pub async fn initialize(
         vmar: zx::Vmar,
         host: fidl_next::Client<Cqhci, DriverChannel>,
+        rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
         host_info: &mut cqhci::CqhciHostInfo,
     ) -> anyhow::Result<Arc<Self>> {
         let virtual_interrupt = zx::Interrupt::create_virtual()?;
         let virtual_interrupt_clone =
             virtual_interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let (virtual_irq_lifeline_peer, virtual_irq_lifeline) = zx::EventPair::create();
-        let (rpmb_client_end, rpmb_server_end) = fidl_next::fuchsia::create_channel();
 
-        let cqhci::CqhciInitializeResponse {
+        let sdmmc::CqhciInitializeCommandQueueingResponse {
             cqhci_mmio,
             cqhci_mmio_offset,
             sdhci_mmio,
@@ -988,7 +988,7 @@ impl CommandQueue {
             bti,
             interrupt,
         } = host
-            .initialize(virtual_interrupt_clone, virtual_irq_lifeline_peer, rpmb_server_end)
+            .initialize_command_queueing(virtual_interrupt_clone, virtual_irq_lifeline_peer)
             .await
             .context("FIDL error")?
             .map_err(zx::Status::from_raw)
@@ -1004,8 +1004,6 @@ impl CommandQueue {
             VmoMapping::map(sdhci_mmio_offset as usize, vmo_len as usize, sdhci_mmio)
                 .context("Failed to map mmio")?
         };
-
-        let rpmb = rpmb_client_end.spawn();
 
         let version = cqhci_mmio.load32(CQHCI_CQ_VER_OFFSET);
         let capabilities = CqhciCqCapsRegister(cqhci_mmio.load32(CQHCI_CQ_CAP_OFFSET));

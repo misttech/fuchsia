@@ -345,7 +345,7 @@ void Sdhci::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_st
     }
   }
 
-  irq_.ack();
+  zx::unowned_interrupt(irq->object())->ack();
 }
 
 void Sdhci::HandleTransferInterrupt(const InterruptStatus status) {
@@ -473,6 +473,171 @@ void Sdhci::Request(RequestRequestView request, fdf::Arena& arena,
   completer.buffer(arena).ReplySuccess(out_response);
 }
 
+void Sdhci::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
+  FDF_LOG(DEBUG, "Enabling CQHCI");
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (pending_request_) {
+    FDF_LOG(ERROR, "Enabled CQHCI with inflight request");
+    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    return;
+  }
+
+  // CQE requires 512-byte blocks.
+  BlockSize::Get().FromValue(512).WriteTo(&*regs_mmio_buffer_);
+
+  // Set the command timeout.
+  TimeoutControl::Get()
+      .ReadFrom(&*regs_mmio_buffer_)
+      .set_data_timeout_counter(TimeoutControl::kDataTimeoutMax)
+      .WriteTo(&*regs_mmio_buffer_);
+
+  cqhci_enabled_ = true;
+  completer.buffer(arena).ReplySuccess();
+}
+
+void Sdhci::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (!cqhci_enabled_) {
+    FDF_LOG(ERROR, "Disabled CQHCI before enabling");
+    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    return;
+  }
+  FDF_LOG(INFO, "Disabling CQHCI");
+
+  InterruptSignalEnable::Get()
+      .ReadFrom(&*regs_mmio_buffer_)
+      .set_cqhci_interrupt(0)
+      .EnableErrorInterrupts()
+      .WriteTo(&*regs_mmio_buffer_);
+  InterruptStatusEnable::Get()
+      .ReadFrom(&*regs_mmio_buffer_)
+      .set_cqhci_interrupt(0)
+      .EnableErrorInterrupts()
+      .WriteTo(&*regs_mmio_buffer_);
+  // Command complete bit is latched during CQE command transfers, so be sure to clear the interrupt
+  // now.
+  InterruptStatus::Get().FromValue(0).set_command_complete(1).WriteTo(&*regs_mmio_buffer_);
+  cqhci_enabled_ = false;
+  completer.buffer(arena).ReplySuccess();
+}
+
+void Sdhci::OnLifelineClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                             zx_status_t status, const zx_packet_signal_t* signal) {
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "Lifeline wait failed: %s", zx_status_get_string(status));
+    return;
+  }
+  if (signal->observed & ZX_EVENTPAIR_PEER_CLOSED) {
+    OnInterruptDelegateStopped();
+  }
+}
+
+void Sdhci::OnInterruptDelegateStopped() {
+  std::lock_guard<std::mutex> lock(mtx_);
+  virtual_irq_handler_.Cancel();
+  virtual_irq_lifeline_wait_.Cancel();
+  virtual_irq_.reset();
+  virtual_irq_lifeline_.reset();
+
+  if (shutdown_) {
+    return;
+  }
+  // If cqhci was still enabled when the delegate stopped, disable it.
+  if (cqhci_enabled_) {
+    // Cannot call DisableCqhci here because we would double lock mtx_ and block.
+    // Since Sdhci has no real CQHCI logic, we just set the flag.
+    cqhci_enabled_ = false;
+  }
+
+  if (zx_status_t status = irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
+      status != ZX_OK) {
+    FDF_LOG(ERROR, "Failed to bind interrupt to dispatcher: %s", zx_status_get_string(status));
+  }
+}
+
+void Sdhci::InitializeCommandQueueing(InitializeCommandQueueingRequestView request,
+                                      fdf::Arena& arena,
+                                      InitializeCommandQueueingCompleter::Sync& completer) {
+  zx::bti bti;
+  zx::vmo sdhci_mmio;
+  zx::vmo cqhci_mmio;
+  zx::interrupt physical_interrupt;
+
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (cqhci_enabled_) {
+      completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+      return;
+    }
+
+    if (virtual_irq_) {
+      completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_BOUND);
+      return;
+    }
+
+    zx_status_t status = bti_.duplicate(ZX_RIGHT_SAME_RIGHTS, &bti);
+    if (status != ZX_OK) {
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+
+    status = regs_mmio_buffer_->get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &sdhci_mmio);
+    if (status != ZX_OK) {
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+
+    status = regs_cqhci_mmio_buffer_->get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &cqhci_mmio);
+    if (status != ZX_OK) {
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+
+    if (zx_status_t status = irq_.duplicate(ZX_RIGHT_SAME_RIGHTS, &physical_interrupt);
+        status != ZX_OK) {
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+  }
+
+  sync_completion_t completion;
+  async::PostTask(
+      irq_dispatcher_.async_dispatcher(),
+      [this, &completion, virtual_interrupt = std::move(request->virtual_interrupt),
+       virtual_interrupt_lifeline = std::move(request->virtual_interrupt_lifeline)]() mutable {
+        {
+          std::lock_guard<std::mutex> lock(mtx_);
+          virtual_irq_ = std::move(virtual_interrupt);
+          virtual_irq_lifeline_ = std::move(virtual_interrupt_lifeline);
+          virtual_irq_handler_.set_object(virtual_irq_.get());
+          virtual_irq_lifeline_wait_.set_object(virtual_irq_lifeline_.get());
+          virtual_irq_lifeline_wait_.set_trigger(ZX_EVENTPAIR_PEER_CLOSED);
+
+          if (zx_status_t status = virtual_irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
+              status != ZX_OK) {
+            FDF_LOG(ERROR, "Failed to bind virtual irq to dispatcher: %s",
+                    zx_status_get_string(status));
+          }
+          if (zx_status_t status =
+                  virtual_irq_lifeline_wait_.Begin(irq_dispatcher_.async_dispatcher());
+              status != ZX_OK) {
+            FDF_LOG(ERROR, "Failed to bind virtual irq lifeline wait to dispatcher: %s",
+                    zx_status_get_string(status));
+          }
+        }
+        if (zx_status_t status = irq_handler_.Cancel(); status != ZX_OK) {
+          FDF_LOG(ERROR, "Failed to unbind interrupt: %s", zx_status_get_string(status));
+        }
+        sync_completion_signal(&completion);
+      });
+  sync_completion_wait(&completion, zx::duration::infinite().get());
+  sync_completion_reset(&completion);
+
+  completer.buffer(arena).ReplySuccess(std::move(cqhci_mmio), regs_cqhci_mmio_buffer_->get_offset(),
+                                       std::move(sdhci_mmio), regs_mmio_buffer_->get_offset(),
+                                       std::move(bti), std::move(physical_interrupt));
+}
+
 zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
     const fuchsia_hardware_sdmmc::wire::SdmmcReq& request) {
   TRACE_DURATION("sdhci", "request", "cmd", request.cmd_idx, "arg", request.arg);
@@ -492,6 +657,10 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
     // one command at a time
     if (pending_request_) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
+    }
+
+    if (cqhci_enabled_) {
+      return zx::error(ZX_ERR_BAD_STATE);
     }
 
     if (request.use_inline_crypto) {
@@ -763,7 +932,6 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::FinishRequest(
   }
 
   const InterruptStatus interrupt_status = pending_request.status;
-
   if (!interrupt_status.error()) {
     return zx::ok(out_response);
   }
@@ -1141,6 +1309,11 @@ void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
 
   {
     std::lock_guard<std::mutex> lock(mtx_);
+
+    if (cqhci_enabled_) {
+      completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+      return;
+    }
     blocksize = static_cast<uint16_t>(
         HostControl1::Get().ReadFrom(&*regs_mmio_buffer_).extended_data_transfer_width() ? 128
                                                                                          : 64);
@@ -1255,7 +1428,7 @@ zx_status_t Sdhci::Init() {
             HostControllerVersion::kSpecificationVersion300);
     return ZX_ERR_NOT_SUPPORTED;
   }
-  FDF_LOG(DEBUG, "sdhci: controller version %d", vrsn);
+  FDF_LOG(INFO, "sdhci: controller version %d", vrsn);
 
   auto caps0 = Capabilities0::Get().ReadFrom(&*regs_mmio_buffer_);
   auto caps1 = Capabilities1::Get().ReadFrom(&*regs_mmio_buffer_);
@@ -1305,6 +1478,9 @@ zx_status_t Sdhci::Init() {
     info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe;
   }
   info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12;
+  if (regs_cqhci_mmio_buffer_) {
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kCommandQueueing;
+  }
 
   // allocate and setup DMA descriptor
   if (SupportsAdma2()) {

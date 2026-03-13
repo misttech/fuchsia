@@ -86,6 +86,7 @@ class PresentState : public hwreg::RegisterBase<PresentState, uint32_t> {
 
 class HostControl1 : public hwreg::RegisterBase<HostControl1, uint8_t> {
  public:
+  static constexpr uint8_t kDmaSelectSdma = 0b00;
   static constexpr uint8_t kDmaSelect32BitAdma2 = 0b10;
   static constexpr uint8_t kDmaSelect64BitAdma2 = 0b11;
 
@@ -173,6 +174,8 @@ class InterruptStatus : public hwreg::RegisterBase<InterruptStatus, uint32_t> {
   DEF_BIT(17, command_crc_error);
   DEF_BIT(16, command_timeout_error);
   DEF_BIT(15, error);
+  // NB: This is technically reserved in the SDHCI spec. The CQHCI spec describes this bit.
+  DEF_BIT(14, cqhci_interrupt);
   DEF_BIT(8, card_interrupt);
   DEF_BIT(5, buffer_read_ready);
   DEF_BIT(4, buffer_write_ready);
@@ -219,6 +222,8 @@ class InterruptStatusEnable : public hwreg::RegisterBase<InterruptStatusEnable, 
   DEF_BIT(17, command_crc_error);
   DEF_BIT(16, command_timeout_error);
   DEF_BIT(15, error);
+  // NB: This is technically reserved in the SDHCI spec. The CQHCI spec describes this bit.
+  DEF_BIT(14, cqhci_interrupt);
   DEF_BIT(8, card_interrupt);
   DEF_BIT(5, buffer_read_ready);
   DEF_BIT(4, buffer_write_ready);
@@ -267,6 +272,8 @@ class InterruptSignalEnable : public hwreg::RegisterBase<InterruptSignalEnable, 
   DEF_BIT(17, command_crc_error);
   DEF_BIT(16, command_timeout_error);
   DEF_BIT(15, error);
+  // NB: This is technically reserved in the SDHCI spec. The CQHCI spec describes this bit.
+  DEF_BIT(14, cqhci_interrupt);
   DEF_BIT(8, card_interrupt);
   DEF_BIT(5, buffer_read_ready);
   DEF_BIT(4, buffer_write_ready);

@@ -152,6 +152,11 @@ class FakeSdmmcDevice : public ddk::SdmmcProtocol<FakeSdmmcDevice>,
   void Request(RequestRequestView request, fdf::Arena& arena,
                RequestCompleter::Sync& completer) override;
 
+  void EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) override;
+  void DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) override;
+  void InitializeCommandQueueing(InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+                                 InitializeCommandQueueingCompleter::Sync& completer) override;
+
   std::vector<uint8_t> Read(size_t address, size_t size, uint8_t func = 0);
   void Write(size_t address, cpp20::span<const uint8_t> data, uint8_t func = 0);
   template <typename T>

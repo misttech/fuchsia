@@ -5,9 +5,11 @@
 #include "sdmmc-block-device.h"
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.cqhci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
+#include <fuchsia/hardware/sdmmc/cpp/banjo.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/fit/defer.h>
@@ -147,7 +149,10 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
     return st;
   }
 
-  if (!is_sd_ && parent_->config().storage_power_management_enabled()) {
+  const bool cq_enabled = (sdmmc_->host_info().caps & SDMMC_HOST_CAP_COMMAND_QUEUEING &&
+                           parent_->config().command_queueing_enabled());
+
+  if (!is_sd_ && !cq_enabled && parent_->config().storage_power_management_enabled()) {
     zx::result result = ConfigurePowerManagement();
 
     if (result.is_ok()) {
@@ -169,10 +174,8 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   block_node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
-
-  block_name_ = is_sd_ ? "sdmmc-sd" : "sdmmc-mmc";
   const auto args =
-      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, block_name_).Build();
+      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, block_name()).Build();
 
   auto inline_crypto_client =
       parent_->driver_incoming()->Connect<fuchsia_hardware_sdmmc::SdmmcService::InlineCrypto>();
@@ -191,6 +194,46 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
       fit::defer([&]() { [[maybe_unused]] auto result = controller_->Remove(); });
 
   fbl::AllocChecker ac;
+  if (!is_sd_ && raw_ext_csd_[MMC_EXT_CSD_RPMB_SIZE_MULT] > 0) {
+    if (!cq_enabled) {
+      std::unique_ptr<RpmbDevice> rpmb_device(new (&ac) RpmbDevice(this, raw_cid_, raw_ext_csd_));
+      if (!ac.check()) {
+        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        return ZX_ERR_NO_MEMORY;
+      }
+
+      // Only publish the RPMB service if command queueing is disabled.  When command queueing is
+      // enabled, we instead expose this RPMB device as a driver FIDL service to be consumed by the
+      // CQHCI driver.
+      FDF_LOGL(INFO, logger(), "Adding rpmb device");
+      if ((st = rpmb_device->AddDevice()) != ZX_OK) {
+        FDF_LOGL(ERROR, logger(), "failed to add rpmb device: %d", st);
+        return st;
+      }
+      child_rpmb_device_ = std::move(rpmb_device);
+    } else {
+      std::unique_ptr<DriverRpmbDevice> rpmb_device(
+          new (&ac) DriverRpmbDevice(this, raw_cid_, raw_ext_csd_));
+      if (!ac.check()) {
+        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        return ZX_ERR_NO_MEMORY;
+      }
+
+      driver_rpmb_device_ = std::move(rpmb_device);
+    }
+
+    FDF_LOGL(INFO, logger(), "Adding rpmb device done");
+  }
+
+  if (cq_enabled) {
+    // With command queueing, the child CQHCI driver handles fuchsia.storage.block.*.
+    FDF_LOGL(INFO, logger(), "Initializing cqhci driver");
+    remove_device_on_error.cancel();
+    return AddCqhciDevice();
+  }
+  // Otherwise, bind PartitionDevices for each partition to handle fuchsia.storage.block.*.
+  FDF_LOGL(INFO, logger(), "Initializing local block server");
+
   std::unique_ptr<PartitionDevice> user_partition(
       new (&ac) PartitionDevice(this, block_info_, USER_DATA_PARTITION));
   if (!ac.check()) {
@@ -248,22 +291,74 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
     }
   }
 
-  if (!is_sd_ && raw_ext_csd_[MMC_EXT_CSD_RPMB_SIZE_MULT] > 0) {
-    std::unique_ptr<RpmbDevice> rpmb_device(new (&ac) RpmbDevice(this, raw_cid_, raw_ext_csd_));
-    if (!ac.check()) {
-      FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
-      return ZX_ERR_NO_MEMORY;
-    }
+  remove_device_on_error.cancel();
+  return ZX_OK;
+}
 
-    if ((st = rpmb_device->AddDevice()) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "failed to add rpmb device: %d", st);
-      return st;
-    }
+zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
+  ZX_DEBUG_ASSERT(!cqhci_host_info_);
+  fuchsia_hardware_cqhci::CqhciHostInfo info = {};
+  fuchsia_hardware_sdmmc::SdmmcHostInfo host_info = {};
+  host_info.caps(fuchsia_hardware_sdmmc::SdmmcHostCap{sdmmc_->host_info().caps});
+  host_info.max_transfer_size(sdmmc_->host_info().max_transfer_size);
+  host_info.max_buffer_regions(sdmmc_->host_info().max_buffer_regions);
+  info.sdmmc_host_info(std::move(host_info));
+  std::vector<uint8_t> ext_csd(std::begin(raw_ext_csd_), std::end(raw_ext_csd_));
+  info.ext_csd(std::move(ext_csd));
+  info.rca(sdmmc_->Rca());
+  info.partitions().emplace_back(fuchsia_hardware_cqhci::EmmcPartitionId::kUserDataPartition,
+                                 block_info_.block_count, block_info_.block_size);
+  const uint32_t boot_size = raw_ext_csd_[MMC_EXT_CSD_BOOT_SIZE_MULT] * kBootSizeMultiplier;
+  const bool boot_enabled =
+      raw_ext_csd_[MMC_EXT_CSD_PARTITION_CONFIG] & MMC_EXT_CSD_BOOT_PARTITION_ENABLE_MASK;
+  if (boot_size > 0 && boot_enabled) {
+    const uint64_t boot_partition_block_count = boot_size / block_info_.block_size;
+    const block_info_t boot_info = {
+        .block_count = boot_partition_block_count,
+        .block_size = block_info_.block_size,
+        .max_transfer_size = block_info_.max_transfer_size,
+        .flags = block_info_.flags,
+    };
+    info.partitions().emplace_back(fuchsia_hardware_cqhci::EmmcPartitionId::kBootPartition1,
+                                   boot_info.block_count, boot_info.block_size);
+    info.partitions().emplace_back(fuchsia_hardware_cqhci::EmmcPartitionId::kBootPartition2,
+                                   boot_info.block_count, boot_info.block_size);
+  }
+  fuchsia_hardware_cqhci::Service::InstanceHandler handler({
+      .cqhci = cqhci_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
+                                             fidl::kIgnoreBindingClosure),
+      .rpmb = driver_rpmb_bindings_.CreateHandler(driver_rpmb_device_.get(),
+                                                  fdf::Dispatcher::GetCurrent()->get(),
+                                                  fidl::kIgnoreBindingClosure),
+  });
+  cqhci_host_info_ = std::move(info);
 
-    child_rpmb_device_ = std::move(rpmb_device);
+  if (zx::result<> result = parent_->driver_outgoing()->AddService<fuchsia_hardware_cqhci::Service>(
+          std::move(handler));
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add cqhci service: %s", result.status_string());
+    return result.status_value();
   }
 
-  remove_device_on_error.cancel();
+  auto [controller_client_end, controller_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  cqhci_controller_.Bind(std::move(controller_client_end));
+
+  fidl::Arena arena;
+  std::vector<fuchsia_driver_framework::wire::Offer> offers{
+      fdf::MakeOffer2<fuchsia_hardware_cqhci::Service>(arena),
+  };
+
+  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
+                        .name(arena, "cqhci")
+                        .offers2(arena, std::move(offers))
+                        .Build();
+
+  auto result = block_node()->AddChild(args, std::move(controller_server_end), {});
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
+    return result.status();
+  }
   return ZX_OK;
 }
 
@@ -432,6 +527,58 @@ void SdmmcBlockDevice::handle_unknown_method(
   FDF_LOGL(ERROR, logger(), "ElementRunner received unknown method %lu", metadata.method_ordinal);
 }
 
+void SdmmcBlockDevice::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) {
+  completer.buffer(arena).ReplySuccess(fidl::ToWire(arena, cqhci_host_info_.value()));
+}
+
+void SdmmcBlockDevice::InitializeCommandQueueing(
+    InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+    InitializeCommandQueueingCompleter::Sync& completer) {
+  zx::result resources = sdmmc_->InitializeCommandQueueing(
+      std::move(request->virtual_interrupt), std::move(request->virtual_interrupt_lifeline));
+  if (resources.is_error()) {
+    completer.buffer(arena).ReplyError(resources.status_value());
+    return;
+  }
+
+  completer.buffer(arena).ReplySuccess(
+      std::move(resources->cqhci_mmio), resources->cqhci_mmio_offset,
+      std::move(resources->sdhci_mmio), resources->sdhci_mmio_offset, std::move(resources->bti),
+      std::move(resources->interrupt));
+}
+
+void SdmmcBlockDevice::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
+  {
+    fbl::AutoLock worker_lock(&worker_lock_);
+    if (!(raw_ext_csd_[MMC_EXT_CSD_CMDQ_MODE_EN] & MMC_EXT_CSD_CMDQ_MODE_ENABLED)) {
+      zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, MMC_EXT_CSD_CMDQ_MODE_ENABLED);
+      if (status != ZX_OK) {
+        completer.buffer(arena).ReplyError(status);
+        return;
+      }
+    }
+  }
+  completer.buffer(arena).Reply(sdmmc_->EnableCqhci());
+}
+
+void SdmmcBlockDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
+  zx::result result = sdmmc_->DisableCqhci();
+  if (result.is_error()) {
+    completer.buffer(arena).ReplyError(result.status_value());
+    return;
+  }
+  fbl::AutoLock worker_lock(&worker_lock_);
+  zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, 0);
+  if (status != ZX_OK) {
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+  if (status = sdmmc_->MmcSendExtCsd(raw_ext_csd_); status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "MMC_SEND_EXT_CSD failed: %s", zx_status_get_string(status));
+  }
+  completer.buffer(arena).ReplySuccess();
+}
+
 void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopCompleter> completer) {
   if (worker_dispatcher_.get()) {
     {
@@ -450,7 +597,7 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopComple
   txn_list_.CompleteAll(ZX_ERR_CANCELED);
 
   for (auto& request : rpmb_list_) {
-    request.completer.ReplyError(ZX_ERR_CANCELED);
+    request.callback(ZX_ERR_CANCELED);
   }
   rpmb_list_.clear();
 
@@ -464,6 +611,7 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopComple
 }
 
 void SdmmcBlockDevice::SendPowerOffNotification() {
+  FDF_LOGL(INFO, logger(), "SendPowerOffNotification");
   if (is_sd_ || !parent_->config().storage_power_management_enabled()) {
     return;
   }
@@ -1063,7 +1211,7 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
 
   if (info.tx_frames.size % kFrameSize != 0) {
     FDF_LOGL(ERROR, logger(), "tx frame buffer size not a multiple of %u", kFrameSize);
-    info.completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    info.callback(ZX_ERR_INVALID_ARGS);
     return;
   }
 
@@ -1072,21 +1220,21 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
 
   const uint64_t tx_frame_count = info.tx_frames.size / kFrameSize;
   if (tx_frame_count == 0) {
-    info.completer.ReplyError(ZX_OK);
+    info.callback(ZX_OK);
     return;
   }
 
   if (tx_frame_count > SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS) {
     FDF_LOGL(ERROR, logger(), "received %lu tx frames, maximum is %u", tx_frame_count,
              SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS);
-    info.completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    info.callback(ZX_ERR_OUT_OF_RANGE);
     return;
   }
 
   if (info.rx_frames.vmo.is_valid()) {
     if (info.rx_frames.size % kFrameSize != 0) {
       FDF_LOGL(ERROR, logger(), "rx frame buffer size is not a multiple of %u", kFrameSize);
-      info.completer.ReplyError(ZX_ERR_INVALID_ARGS);
+      info.callback(ZX_ERR_INVALID_ARGS);
       return;
     }
 
@@ -1094,14 +1242,14 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
     if (rx_frame_count > SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS) {
       FDF_LOGL(ERROR, logger(), "received %lu rx frames, maximum is %u", rx_frame_count,
                SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS);
-      info.completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+      info.callback(ZX_ERR_OUT_OF_RANGE);
       return;
     }
   }
 
   fbl::AutoLock lock(&queue_lock_);
   if (rpmb_list_.size() >= kMaxOutstandingRpmbRequests) {
-    info.completer.ReplyError(ZX_ERR_SHOULD_WAIT);
+    info.callback(ZX_ERR_SHOULD_WAIT);
   } else {
     rpmb_list_.push_back(std::move(info));
     lock.release();
@@ -1201,9 +1349,9 @@ void SdmmcBlockDevice::HandleRpmbRequests(std::deque<RpmbRequestInfo>& rpmb_list
     RpmbRequestInfo& request = *rpmb_list.begin();
     zx_status_t status = RpmbRequest(request);
     if (status == ZX_OK) {
-      request.completer.ReplySuccess();
+      request.callback(ZX_OK);
     } else {
-      request.completer.ReplyError(status);
+      request.callback(status);
     }
 
     rpmb_list.pop_front();
@@ -1334,7 +1482,11 @@ zx_status_t SdmmcBlockDevice::ResumePower() {
   return ZX_OK;
 }
 
-zx_status_t SdmmcBlockDevice::WaitForTran() {
+zx_status_t SdmmcBlockDevice::WaitForIdle() { return WaitForState(0); }
+
+zx_status_t SdmmcBlockDevice::WaitForTran() { return WaitForState(MMC_STATUS_CURRENT_STATE_TRAN); }
+
+zx_status_t SdmmcBlockDevice::WaitForState(uint32_t state) {
   uint32_t current_state;
   size_t attempt = 0;
   for (; attempt <= kTranMaxAttempts; attempt++) {
@@ -1349,7 +1501,7 @@ zx_status_t SdmmcBlockDevice::WaitForTran() {
     if (current_state == MMC_STATUS_CURRENT_STATE_RECV) {
       st = sdmmc_->SdmmcStopTransmission();
       continue;
-    } else if (current_state == MMC_STATUS_CURRENT_STATE_TRAN) {
+    } else if (current_state == state) {
       break;
     }
 

@@ -110,6 +110,11 @@ class AmlSdmmc : public fdf::DriverBase,
   void Request(RequestRequestView request, fdf::Arena& arena,
                RequestCompleter::Sync& completer) override;
 
+  void EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) override;
+  void DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) override;
+  void InitializeCommandQueueing(InitializeCommandQueueingRequestView request, fdf::Arena& arena,
+                                 InitializeCommandQueueingCompleter::Sync& completer) override;
+
   // fuchsia_hardware_power::PowerTokenProvider implementation
   void GetToken(GetTokenCompleter::Sync& completer) override;
   void handle_unknown_method(

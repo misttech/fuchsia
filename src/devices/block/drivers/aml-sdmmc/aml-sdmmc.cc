@@ -1635,6 +1635,20 @@ void AmlSdmmc::Request(RequestRequestView request, fdf::Arena& arena,
   DoRequestAndComplete(request->reqs, arena, completer);
 }
 
+void AmlSdmmc::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void AmlSdmmc::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void AmlSdmmc::InitializeCommandQueueing(InitializeCommandQueueingRequestView request,
+                                         fdf::Arena& arena,
+                                         InitializeCommandQueueingCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 template <typename T>
 void AmlSdmmc::DoRequestAndComplete(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq> reqs,
                                     fdf::Arena& arena, T& completer) {

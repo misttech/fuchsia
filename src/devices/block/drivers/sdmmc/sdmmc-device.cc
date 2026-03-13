@@ -1043,6 +1043,64 @@ void SdmmcDevice::AckInBandInterrupt() {
   }
 }
 
+zx::result<SdmmcDevice::InitializeCommandQueueingResources> SdmmcDevice::InitializeCommandQueueing(
+    zx::interrupt virtual_interrupt, zx::eventpair virtual_interrupt_lifeline) {
+  if (using_fidl_) {
+    fdf::Arena arena('SDMC');
+    auto result = client_.sync().buffer(arena)->InitializeCommandQueueing(
+        std::move(virtual_interrupt), std::move(virtual_interrupt_lifeline));
+    if (!result.ok()) {
+      return zx::error(result.status());
+    }
+    if (result->is_error()) {
+      return result->take_error();
+    }
+    return zx::ok(InitializeCommandQueueingResources{
+        .cqhci_mmio = std::move(result.value()->cqhci_mmio),
+        .cqhci_mmio_offset = result.value()->cqhci_mmio_offset,
+        .sdhci_mmio = std::move(result.value()->sdhci_mmio),
+        .sdhci_mmio_offset = result.value()->sdhci_mmio_offset,
+        .bti = std::move(result.value()->bti),
+        .interrupt = std::move(result.value()->interrupt),
+    });
+  }
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
+}
+
+zx::result<> SdmmcDevice::EnableCqhci() {
+  if (!using_fidl_) {
+    // Not supported by Banjo.
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  fdf::Arena arena('SDMC');
+  fdf::WireUnownedResult result = client_.sync().buffer(arena)->EnableCqhci();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  if (result->is_error()) {
+    return result->take_error();
+  }
+  return zx::ok();
+}
+
+zx::result<> SdmmcDevice::DisableCqhci() {
+  if (!using_fidl_) {
+    // Not supported by Banjo.
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  fdf::Arena arena('SDMC');
+  fdf::WireUnownedResult result = client_.sync().buffer(arena)->DisableCqhci();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  if (result->is_error()) {
+    return result->take_error();
+  }
+  return zx::ok();
+}
+
 zx_status_t SdmmcDevice::RegisterVmo(uint32_t vmo_id, uint8_t client_id, zx::vmo vmo,
                                      uint64_t offset, uint64_t size, uint32_t vmo_rights) {
   if (!using_fidl_) {

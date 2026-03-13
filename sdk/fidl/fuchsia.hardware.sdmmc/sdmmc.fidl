@@ -228,6 +228,63 @@ closed protocol Sdmmc {
     }) -> (struct {
         response array<uint32, 4>;
     }) error zx.Status;
+
+    compose Cqhci;
+};
+
+@transport("Driver")
+closed protocol Cqhci {
+    /// Initializes the CQHCI driver, providing it with all necessary resources.
+    ///
+    /// This call is expected to be made once.  The server should reject any additional calls
+    /// until the peer end of `virtual_interrupt_lifeline` closes.
+    ///
+    /// # Interrupt Delegation
+    ///
+    /// While the CQHCI driver is running, it takes over the physical IRQ object from its underlying
+    /// driver, and directly handles any CQHCI-specific interrupts.  Interrupts which it cannot
+    /// service (e.g. SDHCI interrupts) are forwarded to the underlying driver via
+    /// `virtual_interrupt`.  The server should service interrupts exactly as it normally would.
+    /// The CQHCI driver will wait for the virtual IRQ to be acked before acking the physical IRQ.
+    ///
+    /// # Arguments
+    ///
+    /// * `virtual_interrupt` - A virtual interrupt to monitor instead of the physical IRQ.
+    ///   The CQHCI driver will use this to forward interrupts which it cannot directly service.
+    /// * `virtual_interrupt_lifeline` - A lifeline for the virtual interrupt.  The CQHCI
+    ///   driver will destroy the peer end upon shutdown, which should be handled by the server as a
+    ///   signal to stop monitoring the virtual interrupt and return to monitoring the physical
+    ///   interrupt.
+    ///
+    /// # Returns
+    ///
+    /// * `cqhci_mmio` and `cqhci_mmio_offset` - An MMIO for the CQHCI register block.
+    ///   MMIO size minus offset must be at least 512 bytes as per the CQHCI specification.
+    /// * `sdhci_mmio` and `sdhci_mmio_offset` - An MMIO for the SDHCI register block.
+    ///   MMIO size minus offset must be at least 512 bytes as per the SDHCI specification.
+    /// * `bti` - The BTI to use for pinning pages for DMA.
+    /// * `interrupt` - The physical interrupt to monitor.
+    strict InitializeCommandQueueing(resource struct {
+        virtual_interrupt zx.Handle:INTERRUPT;
+        virtual_interrupt_lifeline zx.Handle:EVENTPAIR;
+    }) -> (resource struct {
+        cqhci_mmio zx.Handle:VMO;
+        cqhci_mmio_offset zx.Off;
+        sdhci_mmio zx.Handle:VMO;
+        sdhci_mmio_offset zx.Off;
+        bti zx.Handle:BTI;
+        interrupt zx.Handle:INTERRUPT;
+    }) error zx.Status;
+
+    /// Enables the Command Queueing Engine.  The CQHCI driver is expected to already have called
+    /// [`InitializeCommandQueueing`] to handle interrupts.
+    /// While CQHCI is enabled, it is the caller's responsibility to only submit regular requests
+    /// (via [`Request`]) via DCMD, or after disabling CQHCI.
+    strict EnableCqhci() -> () error zx.Status;
+
+    /// Disables the Command Queueing Engine.  `EnableCqhci` must have previously been called.  From
+    /// this point onwards, regular requests can be submitted (until `EnableCqhci` is called again).
+    strict DisableCqhci() -> () error zx.Status;
 };
 
 service SdmmcService {

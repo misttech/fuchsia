@@ -13,6 +13,7 @@
 #include <lib/fit/function.h>
 #include <lib/mmio-ptr/fake.h>
 #include <lib/sync/completion.h>
+#include <lib/zircon-internal/thread_annotations.h>
 
 #include <atomic>
 #include <memory>
@@ -184,7 +185,13 @@ class FakeSdhci : public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
   }
 
   void GetCqhciMmio(fdf::Arena& arena, GetCqhciMmioCompleter::Sync& completer) override {
-    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+    zx::vmo vmo;
+    zx_status_t status = zx::vmo::create(zx_system_get_page_size(), 0, &vmo);
+    if (status != ZX_OK) {
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+    completer.buffer(arena).ReplySuccess(std::move(vmo), 0);
   }
 
   void GetBti(GetBtiRequestView request, fdf::Arena& arena,
@@ -258,7 +265,6 @@ class FakeSdhci : public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
   void set_supports_set_bus_clock() { supports_set_bus_clock_ = true; }
   void set_supports_perform_tuning() { supports_perform_tuning_ = true; }
 
- private:
   std::vector<zx_paddr_t> dma_paddrs_;
   zx::unowned_bti unowned_bti_;
   uint32_t base_clock_ = 100'000'000;
@@ -424,7 +430,8 @@ TEST_F(SdhciTest, HostInfo) {
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104 |
-                  fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kCommandQueueing);
   });
   driver_test().runtime().RunUntilIdle();
 
@@ -457,6 +464,7 @@ TEST_F(SdhciTest, HostInfoNoDma) {
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50 |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kCommandQueueing |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
   });
   driver_test().runtime().RunUntilIdle();
@@ -479,6 +487,7 @@ TEST_F(SdhciTest, HostInfoNoTuning) {
     EXPECT_EQ(result->value()->info.caps,
               fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kCommandQueueing |
                   fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
   });
   driver_test().runtime().RunUntilIdle();
@@ -2907,6 +2916,157 @@ TEST_F(SdhciTest, InhibitDatIgnoreForAbort) {
         ASSERT_TRUE(result->is_ok());
       });
   driver_test().runtime().RunUntilIdle();
+
+  ASSERT_OK(StopDriver());
+}
+
+class SdhciBackgroundTest : public ::testing::Test {
+ protected:
+  zx::result<> StartDriver(std::vector<zx_paddr_t> dma_paddrs,
+                           fuchsia_hardware_sdhci::Quirk quirks = {},
+                           uint64_t dma_boundary_alignment = 0) {
+    driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+      TestSdhci::mmio_ = &env.mmio();
+      env.sdhci().set_dma_paddrs(std::move(dma_paddrs));
+      env.sdhci().set_quirks(quirks);
+      env.sdhci().set_dma_boundary_alignment(dma_boundary_alignment);
+    });
+
+    zx::result<> result =
+        driver_test().StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+          sdhci_config::Config config{{.enable_suspend = true}};
+          args.config(config.ToVmo());
+        });
+    if (result.is_error()) {
+      return result;
+    }
+
+    zx::result client = driver_test().Connect<fuchsia_hardware_sdmmc::SdmmcService::Sdmmc>();
+    if (client.is_error()) {
+      return client.take_error();
+    }
+    client_.Bind(*std::move(client));
+
+    return zx::ok();
+  }
+
+  zx::result<> StartDriver(fuchsia_hardware_sdhci::Quirk quirks = {},
+                           uint64_t dma_boundary_alignment = 0) {
+    return StartDriver({}, quirks, dma_boundary_alignment);
+  }
+
+  zx::result<> StopDriver() {
+    if (zx::result<> result = driver_test().StopDriver(); result.is_error()) {
+      return result;
+    }
+    driver_test().ShutdownAndDestroyDriver();
+    return zx::ok();
+  }
+
+  fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  fdf::WireSyncClient<fuchsia_hardware_sdmmc::Sdmmc> client_;
+};
+
+TEST_F(SdhciBackgroundTest, InitializeCommandQueueing) {
+  driver_test().RunInEnvironmentTypeContext([](Environment& env) {
+    Capabilities0::Get()
+        .FromValue(0)
+        .set_adma2_support(1)
+        .set_v3_64_bit_system_address_support(1)
+        .WriteTo(&env.mmio());
+  });
+
+  ASSERT_OK(StartDriver());
+
+  class InterruptHandler : public fdf::WireServer<fuchsia_hardware_sdmmc::InBandInterrupt> {
+   public:
+    explicit InterruptHandler(fdf::ServerEnd<fuchsia_hardware_sdmmc::InBandInterrupt> server_end)
+        : binding_(fdf::Dispatcher::GetCurrent()->get(), std::move(server_end), this,
+                   fidl::kIgnoreBindingClosure) {}
+
+    void Callback(fdf::Arena& arena, CallbackCompleter::Sync& completer) override {
+      interrupt_count_++;
+      completer.buffer(arena).Reply();
+    }
+
+    size_t interrupt_count() const { return interrupt_count_; }
+
+   private:
+    size_t interrupt_count_ = 0;
+    fdf::ServerBinding<fuchsia_hardware_sdmmc::InBandInterrupt> binding_;
+  };
+
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_sdmmc::InBandInterrupt>::Create();
+  InterruptHandler handler(std::move(server));
+
+  fdf::Arena arena('TEST');
+  fdf::WireUnownedResult result = client_.buffer(arena)->RegisterInBandInterrupt(std::move(client));
+  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+
+  EXPECT_TRUE(client_.buffer(arena)->AckInBandInterrupt().ok());
+
+  zx::interrupt virtual_irq, virtual_irq_device;
+  ASSERT_OK(zx::interrupt::create(zx::resource(ZX_HANDLE_INVALID), 0, ZX_INTERRUPT_VIRTUAL,
+                                  &virtual_irq));
+  ASSERT_OK(virtual_irq.duplicate(ZX_RIGHT_SAME_RIGHTS, &virtual_irq_device));
+  zx::eventpair virtual_irq_lifeline_host, virtual_irq_lifeline_device;
+  ASSERT_OK(zx::eventpair::create(0, &virtual_irq_lifeline_host, &virtual_irq_lifeline_device));
+
+  zx::interrupt physical_irq;
+  zx::vmo cqhci_mmio;
+  zx::vmo sdhci_mmio;
+  zx::bti bti;
+
+  fdf::WireUnownedResult result2 = client_.buffer(arena)->InitializeCommandQueueing(
+      std::move(virtual_irq_device), std::move(virtual_irq_lifeline_device));
+  EXPECT_TRUE(result2.ok());
+  EXPECT_TRUE(result2->is_ok());
+  physical_irq = std::move(result2->value()->interrupt);
+  cqhci_mmio = std::move(result2->value()->cqhci_mmio);
+  sdhci_mmio = std::move(result2->value()->sdhci_mmio);
+  bti = std::move(result2->value()->bti);
+  EXPECT_TRUE(physical_irq.is_valid());
+  EXPECT_TRUE(cqhci_mmio.is_valid());
+  EXPECT_TRUE(sdhci_mmio.is_valid());
+  EXPECT_TRUE(bti.is_valid());
+
+  // Verify that triggering the physical interrupt results in no interrupt delivery, because the
+  // driver is watching the virtual IRQ.
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(1).WriteTo(&env.mmio());
+  });
+  physical_irq.trigger(0, zx::time());
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  driver_test().runtime().RunUntilIdle();
+  ASSERT_EQ(handler.interrupt_count(), 0u);
+
+  // Verify that triggering the virtual IRQ eventually results in the IRQ being delivered and acked
+  // by the driver.
+  virtual_irq.trigger(0, zx::time());
+  virtual_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), nullptr);
+  driver_test().runtime().RunUntilIdle();
+  ASSERT_GE(handler.interrupt_count(), 1u);
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(0).WriteTo(&env.mmio());
+  });
+  size_t num_irqs = handler.interrupt_count();
+  physical_irq.ack();
+
+  // Verify that after dropping lifeline, the driver will handle physical IRQs again.
+  virtual_irq_lifeline_host.reset();
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(1).WriteTo(&env.mmio());
+  });
+  physical_irq.trigger(0, zx::time());
+  physical_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), nullptr);
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(0).WriteTo(&env.mmio());
+  });
+  driver_test().runtime().RunUntilIdle();
+  ASSERT_GE(handler.interrupt_count(), num_irqs + 1);
 
   ASSERT_OK(StopDriver());
 }
