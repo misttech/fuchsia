@@ -8,8 +8,8 @@ import logging
 import re
 from typing import Tuple
 
-from fuchsia_base_test import fuchsia_base_test
-from mobly import asserts, test_runner
+import fuchsia_base_test
+from mobly import asserts, signals, test_runner
 
 # Required fastboot variables.
 # - key: variable name
@@ -84,10 +84,10 @@ def ignore_line(line: str) -> bool:
     return "waiting for" in line
 
 
-class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class FastbootTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
         """Initializes all DUT(s)"""
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
         # TODO(http://b/276740268#comment33): add support for rebooting into
@@ -97,31 +97,31 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
         # For the time being we'll group tests that would ideally be separate
         # into single methods to minimize the number of times we have to reboot.
 
-    def setup_test(self) -> None:
+    async def setup_test(self) -> None:
         """Puts the device into fastboot mode before each test."""
-        super().setup_test()
-        self.device.fastboot.boot_to_fastboot_mode()
+        await super().setup_test()
+        await self.device.fastboot.boot_to_fastboot_mode()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         """Puts the device back into Fuchsia mode after each test."""
         if self.device.fastboot.is_in_fastboot_mode():
-            self.device.fastboot.boot_to_fuchsia_mode()
-        super().teardown_test()
+            await self.device.fastboot.boot_to_fuchsia_mode()
+        await super().teardown_test()
 
-    def test_getvar(self) -> None:
+    async def test_getvar(self) -> None:
         """Tests fastboot variables."""
         # Make sure each variable can also be individually queried and that the
         # value is what we expect.
         logging.info("Checking `getvar` variables")
         for expected_name, expected_values in _REQUIRED_VARS.items():
-            lines = self.device.fastboot.run(["getvar", expected_name])
+            lines = await self.device.fastboot.run(["getvar", expected_name])
 
             if len(lines) == 1:
                 output = lines[0]
             elif len(lines) == 2 and ignore_line(lines[0]):
                 output = lines[1]
             else:
-                asserts.fail(
+                raise signals.TestFailure(
                     "Unexpected getvar output",
                     extras={"lines": lines},
                 )
@@ -141,7 +141,7 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
         # Make sure all the variables we care about also exist in `getvar all`.
         logging.info("Checking `getvar all`")
         getvar_all_vars = []
-        for line in self.device.fastboot.run(["getvar", "all"]):
+        for line in await self.device.fastboot.run(["getvar", "all"]):
             if ignore_line(line):
                 continue
             name, _ = parse_getvar(line)
