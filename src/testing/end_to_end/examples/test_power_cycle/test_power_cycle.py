@@ -5,7 +5,7 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from honeydew.auxiliary_devices.power_switch import power_switch
 from mobly import test_runner
 
@@ -18,7 +18,7 @@ _DMC_MODULE: str = (
 _DMC_CLASS: str = "PowerSwitchUsingDmc"
 
 
-class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
+class PowerCycleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """power cycle test.
 
     Attributes:
@@ -29,7 +29,7 @@ class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
             executed.
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: list[tuple[int]] = []
 
@@ -44,18 +44,18 @@ class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
             arg_sets=test_arg_tuple_list,
         )
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
         self._power_switch: power_switch.PowerSwitch
         self._outlet: int | None
         (self._power_switch, self._outlet) = self._lookup_power_switch(self.dut)
 
-    def _test_logic(self, iteration: int) -> None:
+    async def _test_logic(self, iteration: int) -> None:
         """Test case logic that performs power cycle of fuchsia device."""
         _LOGGER.info("Starting the Power Cycle test iteration# %s", iteration)
-        self.dut.power_cycle(
+        await self.dut.power_cycle(
             power_switch=self._power_switch, outlet=self._outlet
         )
         _LOGGER.info(
