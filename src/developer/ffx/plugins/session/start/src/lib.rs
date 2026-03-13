@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_session::{LifecycleProxy, LifecycleStartRequest};
 use ffx_session_start_args::SessionStartCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session::{LifecycleProxy, LifecycleStartRequest};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 const STARTING_SESSION: &str = "Starting the default session\n";
 
@@ -47,12 +47,13 @@ pub async fn start_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session::LifecycleRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session::LifecycleRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_start_session() -> Result<()> {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
             LifecycleRequest::Start { payload, responder, .. } => {
                 assert_eq!(payload.session_url, None);
                 let _ = responder.send(Ok(()));
