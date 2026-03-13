@@ -30,16 +30,21 @@ def make_sync_wrapper(
     def wrapper(
         *args: P.args, **kwargs: P.kwargs
     ) -> Coroutine[Any, Any, T] | T:
+        loop: asyncio.AbstractEventLoop | None = None
         try:
-            # If an event loop is already running, return the coroutine directly
-            # so that it can be awaited by the caller (e.g. via super()).
-            # This handles calls originating from test code already running in an async context.
-            asyncio.get_running_loop()
-            return func(*args, **kwargs)
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            # Otherwise, block and run until complete.
-            # This is the Mobly synchronous entry point.
+            pass
+
+        # If there was no event loop, then run func on the global event loop.
+        # This is a Mobly synchronous entry point.
+        if loop is None:
             return get_loop().run_until_complete(func(*args, **kwargs))
+        # If an event loop is running, return the coroutine directly.
+        # The caller will await the coroutine because the calling test
+        # test code must already be running in an async context.
+        else:
+            return func(*args, **kwargs)
 
     return wrapper
 
@@ -119,23 +124,26 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
 
             @wraps(test_logic)
             def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
+                loop: asyncio.AbstractEventLoop | None = None
                 try:
-                    asyncio.get_running_loop()
-                    # This case should never be hit because only Mobly should call a test method,
-                    # and Mobly only ever calls a test method outside an async context.
-                    # Reaching here would imply that the test method was somehow called
-                    # in an async context, and therefore it wasn't Mobly that called it.
-                    raise RuntimeError(
-                        "Test logic was called from an active coroutine context, implying it wasn't called by Mobly."
-                    )
-                except RuntimeError as e:
-                    if (
-                        "Test logic was called from an active coroutine context"
-                        in str(e)
-                    ):
-                        raise
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+
+                # This should be the typical case of Mobly calling a test method
+                # from a synchronous context. Run the coroutine on the global
+                # event loop.
+                if loop is None:
                     return get_loop().run_until_complete(
                         test_logic(*t_args, **t_kwargs)
+                    )
+                # This case indicates the test method was called from an async context,
+                # but only Mobly calls test methods, and Mobly always calls them
+                # from a synchronous context. Therefore, reaching this case indicates
+                # something has gone wrong.
+                else:
+                    raise RuntimeError(
+                        "Test logic was called from an active coroutine context, implying it wasn't called by Mobly."
                     )
 
             return super().generate_tests(
