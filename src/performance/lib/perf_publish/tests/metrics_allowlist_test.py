@@ -39,11 +39,7 @@ class CatapultConverterTest(unittest.TestCase):
             allowlist.check(set(["fuchsia.suite1: foo", "fuchsia.suite1: new"]))
 
         self.assertIn(
-            (
-                "-fuchsia.suite1: bar\n"
-                " fuchsia.suite1: foo\n"
-                "+fuchsia.suite1: new\n"
-            ),
+            ("-fuchsia.suite1: bar\n" "+fuchsia.suite1: new"),
             str(context.exception),
         )
 
@@ -93,13 +89,7 @@ class CatapultConverterTest(unittest.TestCase):
             )
 
         self.assertIn(
-            (
-                "-fuchsia.suite1: bar\n"
-                " fuchsia.suite1: foo\n"
-                "+fuchsia.suite1: new\n"
-                " fuchsia.suite1: opt1 [optional]\n"
-                " fuchsia.suite1: opt2 [optional]"
-            ),
+            ("-fuchsia.suite1: bar\n" "+fuchsia.suite1: new"),
             str(context.exception),
         )
 

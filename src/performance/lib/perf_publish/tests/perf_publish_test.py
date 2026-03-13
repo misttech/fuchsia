@@ -513,10 +513,8 @@ class CatapultConverterTest(unittest.TestCase):
             )
         self.assertIn(
             (
-                " fuchsia.my.benchmark: metric_1\n"
                 "-fuchsia.my.benchmark: metric_2\n"
                 "-fuchsia.my.benchmark: metric_3\n"
-                " fuchsia.my.benchmark: metric_4 [optional]\n"
                 "+fuchsia.my.benchmark: unexpected\n"
             ),
             str(context.exception),

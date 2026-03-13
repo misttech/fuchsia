@@ -61,22 +61,17 @@ class MetricsAllowlist:
         if self.expected_metrics == actual_minus_optional:
             return
         union: list[str] = sorted(
-            actual_metrics.union(self.expected_metrics).union(
+            actual_metrics.union(self.expected_metrics).difference(
                 self.optional_metrics
             )
         )
         lines: list[str] = []
         for entry in union:
-            prefix: str = " "
-            suffix: str = ""
-            if entry in self.optional_metrics:
-                suffix = _OPTIONAL_SUFFIX
-            elif entry in actual_metrics:
+            if entry in actual_metrics:
                 if entry not in self.expected_metrics:
-                    prefix = "+"
+                    lines.append("+" + entry)
             else:
-                prefix = "-"
-            lines.append(prefix + entry + suffix)
+                lines.append("-" + entry)
         diff = "\n".join(lines)
 
         raise ValueError(
