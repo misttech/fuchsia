@@ -463,7 +463,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
         # realize that it is disconnected from the AP. This is needed because
         # synadhd takes a little longer (~5 seconds) to realize that it is
         # disconnected from the AP.
-        time.sleep(10)
+        time.sleep(20)
         self.prepare_dut_for_reconnection()
         uptime = time.time()
         try:
