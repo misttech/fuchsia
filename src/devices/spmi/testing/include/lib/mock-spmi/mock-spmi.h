@@ -75,6 +75,18 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     return SyncWatchControllerWriteCommands();
   }
 
+  // Returns true if the SPMI device is currently watching for write commands
+  // at `address`.
+  bool IsWatchingControllerWriteCommandsAt(uint8_t address) {
+    if (!expected_watches_.contains(address)) {
+      return false;
+    }
+    if (!std::holds_alternative<WatchControllerRequest>(expected_watches_.at(address))) {
+      return false;
+    }
+    return true;
+  }
+
   void VerifyAndClear() {
     EXPECT_TRUE(expectations_.empty());
     expectations_ = {};
