@@ -1203,6 +1203,17 @@ impl DocumentContext {
         }
     }
 
+    pub fn all_storage_names(&self) -> Vec<&BorrowedName> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities
+                .iter()
+                .filter_map(|c| c.value.storage.as_ref().map(|n| n.value.as_ref()))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
     pub fn all_storage_with_sources<'a>(&'a self) -> HashMap<Name, &'a CapabilityFromRef> {
         if let Some(capabilities) = self.capabilities.as_ref() {
             capabilities
@@ -1241,15 +1252,15 @@ impl DocumentContext {
             .unwrap_or_default()
     }
 
-    pub fn all_collection_names(&self) -> HashSet<Name> {
+    pub fn all_collection_names(&self) -> Vec<&BorrowedName> {
         if let Some(collections) = self.collections.as_ref() {
-            collections.iter().map(|c| c.value.name.value.clone()).collect()
+            collections.iter().map(|c| c.value.name.value.as_ref()).collect()
         } else {
-            HashSet::new()
+            vec![]
         }
     }
 
-    pub fn all_config_names(&self) -> HashSet<Name> {
+    pub fn all_config_names(&self) -> Vec<&BorrowedName> {
         self.capabilities
             .as_ref()
             .map(|caps| {
@@ -1257,19 +1268,18 @@ impl DocumentContext {
                     .filter_map(|cap_wrapper| {
                         let cap = &cap_wrapper.value;
 
-                        cap.config.as_ref().map(|spanned_key| spanned_key.value.clone())
+                        cap.config.as_ref().map(|spanned_key| spanned_key.value.as_ref())
                     })
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_else(|| vec![])
     }
 
-    pub fn all_children_names(&self) -> HashSet<Name> {
-        if let Some(children) = self.children.as_ref() {
-            children.iter().map(|c| c.value.name.value.clone()).collect()
-        } else {
-            HashSet::new()
-        }
+    pub fn all_children_names(&self) -> Vec<&BorrowedName> {
+        self.children
+            .as_ref()
+            .map(|children| children.iter().map(|c| c.value.name.value.as_ref()).collect())
+            .unwrap_or_default()
     }
 
     pub fn all_dictionaries<'a>(&'a self) -> HashMap<Name, &'a ContextCapability> {
@@ -1290,6 +1300,55 @@ impl DocumentContext {
         } else {
             HashMap::new()
         }
+    }
+
+    pub fn all_dictionary_names(&self) -> Vec<&BorrowedName> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities
+                .iter()
+                .filter_map(|c| c.value.dictionary.as_ref().map(|d| d.value.as_ref()))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn all_environment_names(&self) -> Vec<&BorrowedName> {
+        self.environments
+            .as_ref()
+            .map(|c| c.iter().map(|s| s.value.name.value.as_ref()).collect())
+            .unwrap_or_else(|| vec![])
+    }
+
+    pub fn all_runner_names(&self) -> Vec<&BorrowedName> {
+        self.capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter_map(|cap_wrapper| {
+                        let cap = &cap_wrapper.value;
+
+                        cap.runner.as_ref().map(|spanned_key| spanned_key.value.as_ref())
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![])
+    }
+
+    pub fn all_resolver_names(&self) -> Vec<&BorrowedName> {
+        self.capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter_map(|cap_wrapper| {
+                        let cap = &cap_wrapper.value;
+
+                        cap.resolver.as_ref().map(|spanned_key| spanned_key.value.as_ref())
+                    })
+                    .collect()
+            })
+            //.map(|c| c.iter().filter_map(|c| c.resolver.as_ref().map(Name::as_ref)).collect())
+            .unwrap_or_else(|| vec![])
     }
 
     fn merge_program(

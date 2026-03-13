@@ -11,8 +11,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use tempfile_ext::NamedTempFileExt as _;
 
+use cml::load::{CmlLoader, OsResolver};
+use cml::translate::compile_context;
+use cml::types::common::ContextSpanned;
+use cml::types::program::ContextProgram;
+
 /// Read in a CML file and produce the equivalent CM.
-pub(crate) fn compile(
+#[allow(dead_code)]
+pub(crate) fn compile_dep(
     file: &PathBuf,
     output: &PathBuf,
     depfile: Option<PathBuf>,
@@ -87,6 +93,94 @@ pub(crate) fn compile(
     Ok(())
 }
 
+/// Read in a CML file and produce the equivalent CM.
+pub(crate) fn compile(
+    file: &PathBuf,
+    output: &PathBuf,
+    depfile: Option<PathBuf>,
+    includepath: &Vec<PathBuf>,
+    includeroot: &PathBuf,
+    config_package_path: Option<&str>,
+    features: &FeatureSet,
+    experimental_force_runner: &Option<String>,
+    required_capabilities: cml::CapabilityRequirements<'_>,
+) -> Result<(), Error> {
+    check_extensions(file, output)?;
+    util::ensure_directory_exists(&output)?;
+
+    let output_parent = output.parent().ok_or_else(|| {
+        Error::invalid_args(format!("Output file {:?} does not have a parent directory.", output))
+    })?;
+
+    let resolver = OsResolver::new(includepath.clone(), includeroot.clone());
+    let mut loader = CmlLoader::new(resolver);
+
+    let mut document = loader.load_and_merge_all(file)?;
+
+    if let Some(force_runner) = experimental_force_runner {
+        let program_context = document.program.get_or_insert_with(|| ContextSpanned {
+            value: ContextProgram::default(),
+            origin: file.clone().into(),
+        });
+
+        let runner_name = cm_types::Name::new(force_runner)?;
+
+        program_context.value.runner =
+            Some(ContextSpanned { value: runner_name, origin: program_context.origin.clone() });
+    }
+
+    document.canonicalize();
+
+    let options = cml::CompileOptions::new()
+        .file(&file)
+        .features(features)
+        .protocol_requirements(required_capabilities);
+    let options =
+        if let Some(s) = config_package_path { options.config_package_path(s) } else { options };
+
+    let mut out_data = compile_context(&document, options)?;
+
+    let mut includes: Vec<PathBuf> =
+        loader.visited_files().into_iter().filter(|p| p != file).collect();
+
+    includes.sort();
+
+    let mut manifest_sources = vec![util::strip_leading_dots(&file.to_string_lossy())];
+    manifest_sources
+        .extend(includes.iter().map(|p| util::strip_leading_dots(&p.to_string_lossy())));
+
+    out_data.debug_info =
+        Some(fdecl::DebugInfo { manifest_sources: Some(manifest_sources), ..Default::default() });
+
+    let bytes = fidl::persist(&out_data)
+        .map_err(|e| Error::parse(format!("FIDL encoding failed: {}", e), None, None))?;
+
+    // Write to the output file, but only if the bytes have changed.
+    let mut tmp = tempfile::NamedTempFile::new_in(output_parent)?;
+    tmp.write_all(&bytes)?;
+    tmp.persist_if_changed(&output).map_err(|e| e.error)?;
+
+    // Write includes to depfile
+    if let Some(depfile_path) = depfile {
+        let mut all_deps = vec![file.clone()];
+        all_deps.extend(includes);
+
+        util::write_depfile(&depfile_path, Some(&output.to_path_buf()), &all_deps)?;
+    }
+
+    Ok(())
+}
+
+fn check_extensions(file: &PathBuf, output: &PathBuf) -> Result<(), Error> {
+    if file.extension().map_or(true, |e| e != "cml") {
+        return Err(Error::invalid_args("Input must be .cml"));
+    }
+    if output.extension().map_or(true, |e| e != "cm") {
+        return Err(Error::invalid_args("Output must be .cm"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,11 +189,12 @@ mod tests {
     use cml::OfferToAllCapability;
     use difference::Changeset;
     use fidl::unpersist;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
     use serde_json::json;
     use std::fs::File;
     use std::io::{ErrorKind, Read};
     use tempfile::TempDir;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata};
 
     macro_rules! test_compile_with_features {
         (
@@ -126,6 +221,61 @@ mod tests {
                 }
             )+
         }
+    }
+
+    #[track_caller]
+    fn compile_dep_test_all_options(
+        in_path: PathBuf,
+        out_path: PathBuf,
+        includepath: Option<PathBuf>,
+        input: serde_json::value::Value,
+        expected_output: fdecl::Component,
+        features: &FeatureSet,
+        experimental_force_runner: &Option<String>,
+        must_offer_protocol: &[String],
+        must_use_protocol: &[String],
+        must_offer_dictionary: &[String],
+    ) -> Result<(), Error> {
+        File::create(&in_path).unwrap().write_all(format!("{}", input).as_bytes()).unwrap();
+        let includepath = includepath.unwrap_or(PathBuf::new());
+
+        compile_dep(
+            &in_path.clone(),
+            &out_path.clone(),
+            None,
+            &vec![includepath.clone()],
+            &includepath.clone(),
+            Some("test.cvf"),
+            features,
+            experimental_force_runner,
+            cml::CapabilityRequirements {
+                must_offer: &must_offer_protocol
+                    .iter()
+                    .map(|value| cml::OfferToAllCapability::Protocol(value))
+                    .chain(
+                        must_offer_dictionary
+                            .iter()
+                            .map(|value| OfferToAllCapability::Dictionary(value)),
+                    )
+                    .collect::<Vec<_>>(),
+                must_use: &must_use_protocol
+                    .iter()
+                    .map(|value| cml::MustUseRequirement::Protocol(value))
+                    .collect::<Vec<_>>(),
+            },
+        )?;
+        let mut buffer = Vec::new();
+        File::open(&out_path).unwrap().read_to_end(&mut buffer).unwrap();
+
+        let mut output: fdecl::Component = unpersist(&buffer).unwrap();
+        output.debug_info = None;
+        if output != expected_output {
+            let e = format!("{:#?}", expected_output);
+            let a = format!("{:#?}", output);
+            panic!("compiled output did not match expected\n{}", Changeset::new(&a, &e, "\n"));
+        }
+
+        Ok(())
     }
 
     #[track_caller]
@@ -184,6 +334,30 @@ mod tests {
     }
 
     #[track_caller]
+    fn compile_dep_test_with_forced_runner(
+        in_path: PathBuf,
+        out_path: PathBuf,
+        includepath: Option<PathBuf>,
+        input: serde_json::value::Value,
+        expected_output: fdecl::Component,
+        features: &FeatureSet,
+        experimental_force_runner: &Option<String>,
+    ) -> Result<(), Error> {
+        compile_dep_test_all_options(
+            in_path,
+            out_path,
+            includepath,
+            input,
+            expected_output,
+            features,
+            experimental_force_runner,
+            &[],
+            &[],
+            &[],
+        )
+    }
+
+    #[track_caller]
     fn compile_test_with_forced_runner(
         in_path: PathBuf,
         out_path: PathBuf,
@@ -203,6 +377,31 @@ mod tests {
             experimental_force_runner,
             &[],
             &[],
+            &[],
+        )
+    }
+
+    #[track_caller]
+    fn compile_dep_test_with_required_protocols(
+        in_path: PathBuf,
+        out_path: PathBuf,
+        includepath: Option<PathBuf>,
+        input: serde_json::value::Value,
+        expected_output: fdecl::Component,
+        features: &FeatureSet,
+        must_offer: &[String],
+        must_use: &[String],
+    ) -> Result<(), Error> {
+        compile_dep_test_all_options(
+            in_path,
+            out_path,
+            includepath,
+            input,
+            expected_output,
+            features,
+            &None,
+            must_offer,
+            must_use,
             &[],
         )
     }
@@ -229,6 +428,26 @@ mod tests {
             must_offer,
             must_use,
             &[],
+        )
+    }
+
+    #[track_caller]
+    fn compile_dep_test(
+        in_path: PathBuf,
+        out_path: PathBuf,
+        includepath: Option<PathBuf>,
+        input: serde_json::value::Value,
+        expected_output: fdecl::Component,
+        features: &FeatureSet,
+    ) -> Result<(), Error> {
+        compile_dep_test_with_forced_runner(
+            in_path,
+            out_path,
+            includepath,
+            input,
+            expected_output,
+            features,
+            &None,
         )
     }
 
@@ -1099,7 +1318,7 @@ mod tests {
     }}
 
     #[test]
-    fn test_invalid_json() {
+    fn test_invalid_json_depr() {
         let tmp_dir = TempDir::new().unwrap();
         let tmp_in_path = tmp_dir.path().join("test.cml");
         let tmp_out_path = tmp_dir.path().join("test.cm");
@@ -1111,7 +1330,7 @@ mod tests {
         });
         File::create(&tmp_in_path).unwrap().write_all(format!("{}", input).as_bytes()).unwrap();
         {
-            let result = compile(
+            let result = compile_dep(
                 &tmp_in_path,
                 &tmp_out_path.clone(),
                 None,
@@ -1135,6 +1354,25 @@ mod tests {
     }
 
     #[test]
+    fn test_missing_include_depr() {
+        let tmp_dir = TempDir::new().unwrap();
+        let in_path = tmp_dir.path().join("test.cml");
+        let out_path = tmp_dir.path().join("test.cm");
+        let result = compile_dep_test(
+            in_path,
+            out_path,
+            Some(tmp_dir.into_path()),
+            json!({ "include": [ "doesnt_exist.cml" ] }),
+            default_component_decl(),
+            &FeatureSet::empty(),
+        );
+        assert_matches!(
+            result,
+            Err(Error::Parse { err, .. }) if err.starts_with("Couldn't read include ") && err.contains("doesnt_exist.cml")
+        );
+    }
+
+    #[test]
     fn test_missing_include() {
         let tmp_dir = TempDir::new().unwrap();
         let in_path = tmp_dir.path().join("test.cml");
@@ -1149,8 +1387,48 @@ mod tests {
         );
         assert_matches!(
             result,
-            Err(Error::Parse { err, .. }) if err.starts_with("Couldn't read include ") && err.contains("doesnt_exist.cml")
+            Err(Error::ValidateContext { err, .. }) if err.starts_with("Internal error: File not found") && err.contains("doesnt_exist.cml")
         );
+    }
+
+    #[test]
+    fn test_good_include_depr() {
+        let tmp_dir = TempDir::new().unwrap();
+        let foo_path = tmp_dir.path().join("foo.cml");
+        File::create(&foo_path)
+            .unwrap()
+            .write_all(format!("{}", json!({ "program": { "runner": "elf" } })).as_bytes())
+            .unwrap();
+
+        let in_path = tmp_dir.path().join("test.cml");
+        let out_path = tmp_dir.path().join("test.cm");
+        compile_dep_test(
+            in_path,
+            out_path,
+            Some(tmp_dir.into_path()),
+            json!({
+                "include": [ "foo.cml" ],
+                "program": { "binary": "bin/test" },
+            }),
+            fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: Some("elf".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: Some(vec![fdata::DictionaryEntry {
+                            key: "binary".to_string(),
+                            value: Some(Box::new(fdata::DictionaryValue::Str(
+                                "bin/test".to_string(),
+                            ))),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..default_component_decl()
+            },
+            &FeatureSet::empty(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1189,6 +1467,99 @@ mod tests {
                 ..default_component_decl()
             },
             &FeatureSet::empty(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_offer_to_all_with_shards_depr() {
+        let tmp_dir = TempDir::new().unwrap();
+        let offer_path = tmp_dir.path().join("offer.shard.cml");
+        let shard_input = json!({
+            "offer": [
+                {
+                    "protocol": "fuchsia.logger.LogSink",
+                    "from": "parent",
+                    "to": "all",
+                },
+                {
+                    "protocol": "fuchsia.inspect.InspectSink",
+                    "from": "parent",
+                    "to": "all",
+                },
+            ],
+        });
+        File::create(&offer_path)
+            .unwrap()
+            .write_all(format!("{}", shard_input).as_bytes())
+            .unwrap();
+
+        let foo_path = tmp_dir.path().join("foo.shard.cml");
+        let foo_input = json!({
+            "include": ["offer.shard.cml"],
+            "children": [
+                {
+                    "name": "foo",
+                    "url": "fuchsia-pkg://fuchsia.com/foo/stable#meta/foo.cm",
+                },
+            ],
+        });
+        File::create(&foo_path).unwrap().write_all(format!("{}", foo_input).as_bytes()).unwrap();
+
+        let main_input = json!({
+            "include": [
+                "offer.shard.cml",
+                "foo.shard.cml",
+            ],
+        });
+
+        let expected_output = fdecl::Component {
+            offers: Some(vec![
+                fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                    source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                    source_name: Some("fuchsia.inspect.InspectSink".into()),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "foo".into(),
+                        collection: None,
+                    })),
+                    target_name: Some("fuchsia.inspect.InspectSink".into()),
+                    dependency_type: Some(fdecl::DependencyType::Strong),
+                    availability: Some(fdecl::Availability::Required),
+                    ..Default::default()
+                }),
+                fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                    source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                    source_name: Some("fuchsia.logger.LogSink".into()),
+                    target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                        name: "foo".into(),
+                        collection: None,
+                    })),
+                    target_name: Some("fuchsia.logger.LogSink".into()),
+                    dependency_type: Some(fdecl::DependencyType::Strong),
+                    availability: Some(fdecl::Availability::Required),
+                    ..Default::default()
+                }),
+            ]),
+            children: Some(vec![fdecl::Child {
+                name: Some("foo".into()),
+                url: Some("fuchsia-pkg://fuchsia.com/foo/stable#meta/foo.cm".into()),
+                startup: Some(fdecl::StartupMode::Lazy),
+                ..Default::default()
+            }]),
+            ..default_component_decl()
+        };
+
+        let in_path = tmp_dir.path().join("test.cml");
+        let out_path = tmp_dir.path().join("test.cm");
+        compile_dep_test_with_required_protocols(
+            in_path,
+            out_path,
+            Some(tmp_dir.into_path()),
+            main_input,
+            expected_output,
+            &FeatureSet::empty(),
+            &["fuchsia.logger.LogSink".into()],
+            &[],
         )
         .unwrap();
     }
@@ -1287,6 +1658,47 @@ mod tests {
     }
 
     #[test]
+    fn test_good_include_with_force_runner_depr() {
+        let tmp_dir = TempDir::new().unwrap();
+        let foo_path = tmp_dir.path().join("foo.cml");
+        File::create(&foo_path)
+            .unwrap()
+            .write_all(format!("{}", json!({ "program": { "runner": "elf" } })).as_bytes())
+            .unwrap();
+
+        let in_path = tmp_dir.path().join("test.cml");
+        let out_path = tmp_dir.path().join("test.cm");
+        compile_dep_test_with_forced_runner(
+            in_path,
+            out_path,
+            Some(tmp_dir.into_path()),
+            json!({
+                "include": [ "foo.cml" ],
+                "program": { "binary": "bin/test" },
+            }),
+            fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: Some("elf_test_runner".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: Some(vec![fdata::DictionaryEntry {
+                            key: "binary".to_string(),
+                            value: Some(Box::new(fdata::DictionaryValue::Str(
+                                "bin/test".to_string(),
+                            ))),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..default_component_decl()
+            },
+            &FeatureSet::empty(),
+            &Some("elf_test_runner".to_string()),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn test_good_include_with_force_runner() {
         let tmp_dir = TempDir::new().unwrap();
         let foo_path = tmp_dir.path().join("foo.cml");
@@ -1323,6 +1735,52 @@ mod tests {
             },
             &FeatureSet::empty(),
             &Some("elf_test_runner".to_string()),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_recursive_include_depr() {
+        let tmp_dir = TempDir::new().unwrap();
+        let foo_path = tmp_dir.path().join("foo.cml");
+        File::create(&foo_path)
+            .unwrap()
+            .write_all(format!("{}", json!({ "include": [ "bar.cml" ] })).as_bytes())
+            .unwrap();
+
+        let bar_path = tmp_dir.path().join("bar.cml");
+        File::create(&bar_path)
+            .unwrap()
+            .write_all(format!("{}", json!({ "program": { "runner": "elf" } })).as_bytes())
+            .unwrap();
+
+        let in_path = tmp_dir.path().join("test.cml");
+        let out_path = tmp_dir.path().join("test.cm");
+        compile_dep_test(
+            in_path,
+            out_path,
+            Some(tmp_dir.into_path()),
+            json!({
+                "include": [ "foo.cml" ],
+                "program": { "binary": "bin/test" },
+            }),
+            fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: Some("elf".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: Some(vec![fdata::DictionaryEntry {
+                            key: "binary".to_string(),
+                            value: Some(Box::new(fdata::DictionaryValue::Str(
+                                "bin/test".to_string(),
+                            ))),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..default_component_decl()
+            },
+            &FeatureSet::empty(),
         )
         .unwrap();
     }
@@ -1390,7 +1848,7 @@ mod tests {
 
         let in_path = tmp_dir.path().join("test.cml");
         let out_path = tmp_dir.path().join("test.cm");
-        let result = compile_test(
+        let result = compile_dep_test(
             in_path,
             out_path,
             Some(tmp_dir.into_path()),
@@ -1431,7 +1889,7 @@ mod tests {
 
         let in_path = tmp_dir.path().join("test.cml");
         let out_path = tmp_dir.path().join("test.cm");
-        let result = compile_test(
+        let result = compile_dep_test(
             in_path,
             out_path,
             Some(tmp_dir.into_path()),
@@ -1469,7 +1927,7 @@ mod tests {
 
         let in_path = tmp_dir.path().join("test.cml");
         let out_path = tmp_dir.path().join("test.cm");
-        let result = compile_test(
+        let result = compile_dep_test(
             in_path,
             out_path,
             Some(tmp_dir.into_path()),

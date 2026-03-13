@@ -32,6 +32,9 @@ use crate::{
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name, StartupMode};
 use directed_graph::DirectedGraph;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::{Map, Value};
@@ -40,7 +43,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::{Into, TryInto};
 use std::path::PathBuf;
 use std::sync::Arc;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 /// Options for CML compilation. Uses the builder pattern.
 #[derive(Default, Clone)]
@@ -185,10 +187,14 @@ pub fn compile_context(
         &options.capability_requirements,
     )?;
 
-    let all_capability_names: BTreeSet<Name> =
-        document.all_capability_names().iter().cloned().collect();
-    let all_children: BTreeSet<Name> = document.all_children_names().iter().cloned().collect();
-    let all_collections: BTreeSet<Name> = document.all_collection_names().iter().cloned().collect();
+    let all_capability_names_owned: BTreeSet<Name> =
+        document.all_capability_names().into_iter().collect();
+
+    let all_capability_names: BTreeSet<&BorrowedName> =
+        all_capability_names_owned.iter().map(|n| n.as_ref()).collect();
+
+    let all_children = document.all_children_names().iter().cloned().collect();
+    let all_collections = document.all_collection_names().iter().cloned().collect();
 
     let component = fdecl::Component {
         program: document.program.as_ref().map(|p| translate_program(&p.value)).transpose()?,
@@ -731,9 +737,9 @@ fn translate_use_deprecated(
 fn translate_use(
     options: &CompileOptions<'_>,
     use_in: &Vec<ContextSpanned<ContextUse>>,
-    all_capability_names: &BTreeSet<Name>,
-    all_children: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_children: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<fdecl::Use>, Error> {
     let mut out_uses = vec![];
     for spanned_use in use_in {
@@ -1199,9 +1205,9 @@ fn translate_expose_deprecated(
 fn translate_expose(
     options: &CompileOptions<'_>,
     expose_in: &Vec<ContextSpanned<ContextExpose>>,
-    all_capability_names: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
-    all_children: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
+    all_children: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<fdecl::Expose>, Error> {
     let mut out_exposes = vec![];
     for spanned_expose in expose_in.iter() {
@@ -1477,9 +1483,9 @@ fn derive_source_and_availability(
     source: fdecl::Ref,
     source_dictionary: Option<String>,
     source_availability: Option<&ContextSpanned<SourceAvailability>>,
-    all_capability_names: &BTreeSet<Name>,
-    all_children: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_children: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
 ) -> DerivedSourceInfo {
     let availability = availability.map(|a| match a.value {
         Availability::Required => fdecl::Availability::Required,
@@ -1663,8 +1669,8 @@ fn expand_offer_to_all_deprecated(
 
 fn expand_offer_to_all(
     offers_in: &Vec<ContextSpanned<ContextOffer>>,
-    children: &BTreeSet<Name>,
-    collections: &BTreeSet<Name>,
+    children: &BTreeSet<&BorrowedName>,
+    collections: &BTreeSet<&BorrowedName>,
 ) -> Vec<ContextSpanned<ContextOffer>> {
     let offers_to_all = offers_in
         .iter()
@@ -1995,9 +2001,9 @@ fn translate_offer_deprecated(
 fn translate_offer(
     options: &CompileOptions<'_>,
     offer_in: &Vec<ContextSpanned<ContextOffer>>,
-    all_capability_names: &BTreeSet<Name>,
-    all_children: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_children: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<fdecl::Offer>, Error> {
     let mut out_offers = vec![];
     let expanded_offers = expand_offer_to_all(offer_in, all_children, all_collections);
@@ -2685,7 +2691,7 @@ fn translate_environments_deprecated(
 fn translate_environments(
     options: &CompileOptions<'_>,
     envs_in: &Vec<ContextSpanned<ContextEnvironment>>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<fdecl::Environment>, Error> {
     envs_in
         .iter()
@@ -2852,7 +2858,7 @@ fn translate_resolver_registration(
 fn translate_debug_capabilities(
     options: &CompileOptions<'_>,
     capabilities: &Vec<ContextSpanned<ContextDebugRegistration>>,
-    all_capability_names: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<fdecl::DebugRegistration>, Error> {
     let mut out_capabilities = vec![];
     for spanned_capability in capabilities {
@@ -2930,9 +2936,9 @@ fn extract_use_source_deprecated(
 fn extract_use_source(
     options: &CompileOptions<'_>,
     in_obj: &ContextUse,
-    all_capability_names: &BTreeSet<Name>,
-    all_children_names: &BTreeSet<Name>,
-    all_collection_names: Option<&BTreeSet<Name>>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_children_names: &BTreeSet<&BorrowedName>,
+    all_collection_names: Option<&BTreeSet<&BorrowedName>>,
 ) -> Result<(fdecl::Ref, Option<String>), Error> {
     let ref_ = match in_obj.from.as_ref() {
         Some(spanned) => match &spanned.value {
@@ -3115,8 +3121,8 @@ fn expose_source_from_ref_deprecated(
 fn expose_source_from_ref(
     options: &CompileOptions<'_>,
     reference: &ExposeFromRef,
-    all_capability_names: Option<&BTreeSet<Name>>,
-    all_collections: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&BorrowedName>>,
+    all_collections: Option<&BTreeSet<&BorrowedName>>,
 ) -> (fdecl::Ref, Option<String>) {
     let ref_ = match reference {
         ExposeFromRef::Named(name) => {
@@ -3161,7 +3167,7 @@ fn extract_single_expose_source_deprecated(
 fn extract_single_expose_source(
     options: &CompileOptions<'_>,
     in_obj: &ContextExpose,
-    all_capability_names: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&BorrowedName>>,
 ) -> Result<(fdecl::Ref, Option<String>), Error> {
     match &in_obj.from.value {
         OneOrMany::One(reference) => {
@@ -3189,7 +3195,7 @@ fn extract_all_expose_sources_deprecated(
 fn extract_all_expose_sources(
     options: &CompileOptions<'_>,
     in_obj: &ContextExpose,
-    all_collections: Option<&BTreeSet<Name>>,
+    all_collections: Option<&BTreeSet<&BorrowedName>>,
 ) -> Vec<(fdecl::Ref, Option<String>)> {
     in_obj
         .from
@@ -3282,7 +3288,7 @@ where
 fn extract_single_offer_source<T>(
     options: &CompileOptions<'_>,
     in_obj: &T,
-    all_capability_names: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&BorrowedName>>,
 ) -> Result<(fdecl::Ref, Option<String>), Error>
 where
     T: FromClauseContext,
@@ -3323,8 +3329,8 @@ fn extract_all_offer_sources_deprecated<T: FromClause>(
 fn extract_all_offer_sources<T: FromClauseContext>(
     options: &CompileOptions<'_>,
     in_obj: &T,
-    all_capability_names: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
 ) -> Vec<(fdecl::Ref, Option<String>)> {
     in_obj
         .from_()
@@ -3373,9 +3379,9 @@ fn translate_target_ref_deprecated(
 fn translate_target_ref(
     options: &CompileOptions<'_>,
     reference: AnyRef<'_>,
-    all_children: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
-    all_capabilities: &BTreeSet<Name>,
+    all_children: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
+    all_capabilities: &BTreeSet<&BorrowedName>,
     target_availability: Option<&TargetAvailability>,
 ) -> Result<Option<fdecl::Ref>, Error> {
     match reference {
@@ -3462,9 +3468,9 @@ fn extract_offer_sources_and_targets<'a>(
     options: &CompileOptions<'_>,
     offer: &'a ContextOffer,
     source_names: OneOrMany<&'a BorrowedName>,
-    all_capability_names: &BTreeSet<Name>,
-    all_children: &BTreeSet<Name>,
-    all_collections: &BTreeSet<Name>,
+    all_capability_names: &BTreeSet<&BorrowedName>,
+    all_children: &BTreeSet<&BorrowedName>,
+    all_collections: &BTreeSet<&BorrowedName>,
 ) -> Result<Vec<(fdecl::Ref, Option<String>, &'a BorrowedName, fdecl::Ref, &'a BorrowedName)>, Error>
 {
     let mut out = vec![];
@@ -4123,8 +4129,8 @@ pub fn any_ref_to_decl_deprecated(
 pub fn any_ref_to_decl(
     options: &CompileOptions<'_>,
     reference: AnyRef<'_>,
-    all_capability_names: Option<&BTreeSet<Name>>,
-    all_collection_names: Option<&BTreeSet<Name>>,
+    all_capability_names: Option<&BTreeSet<&BorrowedName>>,
+    all_collection_names: Option<&BTreeSet<&BorrowedName>>,
 ) -> (fdecl::Ref, Option<String>) {
     let ref_ = match reference {
         AnyRef::Named(name) => {
@@ -4343,13 +4349,13 @@ mod tests {
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};
     use cm_types::{self as cm, Name};
     use difference::Changeset;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_io as fio;
     use serde_json::{Map, Value, json};
     use std::collections::BTreeSet;
     use std::convert::Into;
     use std::str::FromStr;
-    use {
-        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    };
 
     macro_rules! test_compile_context {
         (

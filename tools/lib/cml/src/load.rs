@@ -4,7 +4,6 @@
 
 use crate::Error;
 use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,29 +16,44 @@ pub trait FileResolver {
 
 pub struct OsResolver {
     include_paths: Vec<PathBuf>,
+    include_root: PathBuf,
 }
 
 impl OsResolver {
-    pub fn new(include_paths: Vec<PathBuf>) -> Self {
-        let canonical_paths =
-            include_paths.into_iter().map(|p| std::fs::canonicalize(&p).unwrap_or(p)).collect();
+    pub fn new(include_paths: Vec<PathBuf>, include_root: PathBuf) -> Self {
+        let normalized_paths = include_paths.into_iter().map(|p| normalize_path(&p)).collect();
+        let normalized_root = normalize_path(&include_root);
 
-        Self { include_paths: canonical_paths }
+        Self { include_paths: normalized_paths, include_root: normalized_root }
     }
 }
 
 impl FileResolver for OsResolver {
     fn resolve(&self, path: &Path, current_dir: &Path) -> Result<(PathBuf, String), Error> {
-        let local_path =
-            if path.is_absolute() { path.to_path_buf() } else { current_dir.join(path) };
-        let include_paths_iter = self.include_paths.iter().map(|dir| dir.join(path));
-        let first_existing_path = std::iter::once(local_path)
-            .chain(include_paths_iter)
-            .find(|p| p.exists())
-            .ok_or_else(|| Error::internal(format!("File not found: {:?}", path)))?;
-        let abs = fs::canonicalize(&first_existing_path).map_err(|e| Error::Io(e))?;
-        let content = std::fs::read_to_string(&abs).map_err(|e| Error::Io(e))?;
-        Ok((abs, content))
+        let path_str = path.to_str().unwrap_or("");
+
+        let clean_path = if path_str.starts_with("//") {
+            let p = self.include_root.join(&path_str[2..]);
+            let norm = normalize_path(&p);
+            if norm.exists() { Some(norm) } else { None }
+        } else if path.is_absolute() {
+            let norm = normalize_path(path);
+            if norm.exists() { Some(norm) } else { None }
+        } else {
+            std::iter::once(current_dir.join(path))
+                .chain(std::iter::once(path.to_path_buf()))
+                .chain(self.include_paths.iter().map(|dir| dir.join(path)))
+                .map(|p| normalize_path(&p))
+                .find(|p| p.exists())
+        };
+
+        let clean_path =
+            clean_path.ok_or_else(|| Error::Internal(format!("File not found: {:?}", path)))?;
+
+        let content = std::fs::read_to_string(&clean_path)
+            .map_err(|e| Error::Internal(format!("Read error {:?}: {}", clean_path, e)))?;
+
+        Ok((clean_path, content))
     }
 }
 
@@ -55,24 +69,16 @@ impl<R: FileResolver> CmlLoader<R> {
     }
 
     pub fn load_and_merge_all(&mut self, root_path: &Path) -> Result<DocumentContext, Error> {
-        let (root_path_abs, buffer) =
-            self.resolver.resolve(root_path, Path::new(".")).map_err(|e| {
-                Error::parse(
-                    format!("Could not resolve root file {}: {}", root_path.display(), e),
-                    None,
-                    None,
-                )
-            })?;
+        let (root_path_rel, buffer) = self.resolver.resolve(root_path, Path::new(""))?;
 
-        self.visited.insert(root_path_abs.clone());
-
-        let file_arc = Arc::new(root_path_abs.clone());
+        self.visited.insert(root_path_rel.clone());
+        let file_arc = Arc::new(root_path_rel.clone());
         let mut root_doc = parse_and_hydrate(file_arc, &buffer)?;
 
         let mut stack = HashSet::new();
-        stack.insert(root_path_abs.clone());
+        stack.insert(root_path_rel.clone());
 
-        self.resolve_includes_recursive(&mut root_doc, &root_path_abs, &mut stack)?;
+        self.resolve_includes_recursive(&mut root_doc, &root_path_rel, &mut stack)?;
 
         Ok(root_doc)
     }
@@ -83,7 +89,7 @@ impl<R: FileResolver> CmlLoader<R> {
         current_file_path: &Path,
         stack: &mut HashSet<PathBuf>,
     ) -> Result<(), Error> {
-        let current_dir = current_file_path.parent().unwrap_or_else(|| Path::new("."));
+        let current_dir = current_file_path.parent().unwrap_or_else(|| Path::new(""));
 
         if let Some(includes) = target_doc.include.take() {
             for include_span in includes {
@@ -91,7 +97,7 @@ impl<R: FileResolver> CmlLoader<R> {
 
                 let (shard_path_abs, buffer) = self
                     .resolver
-                    .resolve(include_path, current_dir)
+                    .resolve(include_path, &current_dir)
                     .map_err(|e| e.with_origin(include_span.origin.clone()))?;
 
                 if stack.contains(&shard_path_abs) {
@@ -128,6 +134,35 @@ impl<R: FileResolver> CmlLoader<R> {
     pub fn visited_files(&self) -> HashSet<PathBuf> {
         self.visited.clone()
     }
+}
+
+/// Needed for hermetic builds so that the path is relative.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut ret = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {} // Ignore "."
+            std::path::Component::ParentDir => {
+                match ret.components().next_back() {
+                    Some(std::path::Component::Normal(_)) => {
+                        ret.pop();
+                    }
+                    Some(std::path::Component::RootDir) | Some(std::path::Component::Prefix(_)) => {
+                        /* Do nothing */
+                    }
+                    _ => {
+                        ret.push(component);
+                    }
+                }
+            }
+            _ => {
+                // Push RootDir, Prefix, and Normal components
+                ret.push(component);
+            }
+        }
+    }
+    ret
 }
 
 #[cfg(test)]
@@ -471,5 +506,37 @@ mod tests {
         let doc =
             loader.load_and_merge_all(&main_path).expect("Failed to resolve absolute include");
         assert!(doc.capabilities.is_some());
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        assert_eq!(normalize_path(Path::new("a/b/../c")), PathBuf::from("a/c"));
+
+        assert_eq!(
+            normalize_path(Path::new("/fuchsia/out/default/../../sdk/lib")),
+            PathBuf::from("/fuchsia/sdk/lib")
+        );
+
+        assert_eq!(normalize_path(Path::new("./a/./b/./c/.")), PathBuf::from("a/b/c"));
+
+        assert_eq!(normalize_path(Path::new("/../../foo")), PathBuf::from("/foo"));
+
+        let double_slash = normalize_path(Path::new("//sdk/lib/shard.cml"));
+        assert!(double_slash.to_str().unwrap().contains("sdk/lib/shard.cml"));
+
+        assert_eq!(normalize_path(Path::new("/a/b/c/../../d/./e/../f")), PathBuf::from("/a/d/f"));
+    }
+
+    #[test]
+    fn test_normalize_relative_leading_dots() {
+        assert_eq!(
+            normalize_path(Path::new("../../examples/hello.cml")),
+            PathBuf::from("../../examples/hello.cml")
+        );
+
+        assert_eq!(
+            normalize_path(Path::new("../../sdk/lib/../inspect/client.shard.cml")),
+            PathBuf::from("../../sdk/inspect/client.shard.cml")
+        );
     }
 }

@@ -301,7 +301,7 @@ fn get_nearest_match<'a>(reference: &'a str, candidates: &'a Vec<String>) -> &'a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::compile;
+    use crate::compile::compile_dep;
     use crate::features::FeatureSet;
     use assert_matches::assert_matches;
     use serde_json::json;
@@ -324,7 +324,7 @@ mod tests {
         let path = tmp_dir_path.join(name);
         let cml_path = tmp_dir_path.join("temp.cml");
         File::create(&cml_path).unwrap().write_all(format!("{:#}", contents).as_bytes()).unwrap();
-        compile(
+        compile_dep(
             &cml_path,
             &path,
             None,

@@ -117,13 +117,11 @@ pub(crate) fn read_cm(file: &Path) -> Result<ComponentDecl, Error> {
 
 pub(crate) fn strip_leading_dots(path: &str) -> String {
     let mut path = path;
-    loop {
-        if let Some(stripped) = path.strip_prefix("../") {
+    while path.starts_with("./") || path.starts_with("../") {
+        if let Some(stripped) = path.strip_prefix("./") {
             path = stripped;
-        } else if let Some(stripped) = path.strip_prefix("./") {
+        } else if let Some(stripped) = path.strip_prefix("../") {
             path = stripped;
-        } else {
-            break;
         }
     }
     path.to_string()

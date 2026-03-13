@@ -401,7 +401,11 @@ macro_rules! merge_spanned_vec {
     ($self:expr, $other:expr, $field:ident) => {
         if let Some(other_vec) = $other.$field.take() {
             if let Some(self_vec) = $self.$field.as_mut() {
-                self_vec.extend(other_vec);
+                for item in other_vec {
+                    if !self_vec.contains(&item) {
+                        self_vec.push(item);
+                    }
+                }
             } else {
                 $self.$field = Some(other_vec);
             }

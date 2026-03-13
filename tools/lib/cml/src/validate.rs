@@ -116,7 +116,7 @@ struct ValidationContextV2<'a> {
     document: &'a DocumentContext,
     features: &'a FeatureSet,
     capability_requirements: &'a CapabilityRequirements<'a>,
-    all_children: HashSet<Name>,
+    all_children: HashMap<Name, &'a ContextSpanned<ContextChild>>,
     all_collections: HashSet<Name>,
     all_resolvers: HashSet<Name>,
     all_runners: HashSet<Name>,
@@ -135,13 +135,62 @@ impl<'a> ValidationContextV2<'a> {
         features: &'a FeatureSet,
         capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
-        let all_children = document.all_children_names();
-        let all_collections = document.all_collection_names();
-        let all_storages = document.all_storage_with_sources();
-        let all_capability_names = document.all_capability_names();
-        let all_dictionaries = document.all_dictionaries();
-        let all_configs = document.all_config_names();
-        let all_services = document
+        ValidationContextV2 {
+            document,
+            features,
+            capability_requirements,
+            all_children: HashMap::new(),
+            all_collections: HashSet::new(),
+            all_resolvers: HashSet::new(),
+            all_runners: HashSet::new(),
+            all_storages: HashMap::new(),
+            all_capability_names: HashSet::new(),
+            all_dictionaries: HashMap::new(),
+            all_directories: HashSet::new(),
+            all_protocols: HashSet::new(),
+            all_configs: HashSet::new(),
+            all_services: HashSet::new(),
+        }
+    }
+
+    fn populate_and_check_names(&mut self) -> Result<(), Error> {
+        let child_names = self.document.all_children_names();
+        let col_names = self.document.all_collection_names();
+        let storage_names = self.document.all_storage_names();
+        let runner_names = self.document.all_runner_names();
+        let resolver_names = self.document.all_resolver_names();
+        let env_names = self.document.all_environment_names();
+        let dict_names = self.document.all_dictionary_names();
+
+        ensure_no_duplicate_names(
+            child_names
+                .iter()
+                .map(|n| (*n, "children"))
+                .chain(col_names.iter().map(|n| (*n, "collections")))
+                .chain(storage_names.iter().map(|n| (*n, "storage")))
+                .chain(runner_names.iter().map(|n| (*n, "runner")))
+                .chain(resolver_names.iter().map(|n| (*n, "resolver")))
+                .chain(env_names.iter().map(|n| (*n, "environment")))
+                .chain(
+                    dict_names
+                        .iter()
+                        .map(|n: &&cm_types::BoundedBorrowedName<255>| (*n, "dictionary")),
+                ),
+        )?;
+
+        if let Some(children) = &self.document.children {
+            self.all_children = children.iter().map(|c| (c.value.name.value.clone(), c)).collect();
+        }
+
+        self.all_collections = col_names.into_iter().map(|n| n.to_owned()).collect();
+        self.all_capability_names = self.document.all_capability_names();
+        self.all_storages = self.document.all_storage_with_sources().into_iter().collect();
+
+        self.all_dictionaries = self.document.all_dictionaries().into_iter().collect();
+        self.all_configs =
+            self.document.all_config_names().into_iter().map(|n| n.to_owned()).collect();
+        self.all_services = self
+            .document
             .capabilities
             .as_ref()
             .map(|caps| {
@@ -153,7 +202,8 @@ impl<'a> ValidationContextV2<'a> {
             })
             .unwrap_or_default();
 
-        let all_directories = document
+        self.all_directories = self
+            .document
             .capabilities
             .as_ref()
             .map(|caps| {
@@ -165,7 +215,8 @@ impl<'a> ValidationContextV2<'a> {
             })
             .unwrap_or_default();
 
-        let all_runners = document
+        self.all_runners = self
+            .document
             .capabilities
             .as_ref()
             .map(|caps| {
@@ -177,7 +228,8 @@ impl<'a> ValidationContextV2<'a> {
             })
             .unwrap_or_default();
 
-        let all_resolvers = document
+        self.all_resolvers = self
+            .document
             .capabilities
             .as_ref()
             .map(|caps| {
@@ -189,7 +241,8 @@ impl<'a> ValidationContextV2<'a> {
             })
             .unwrap_or_default();
 
-        let all_protocols = document
+        self.all_protocols = self
+            .document
             .capabilities
             .as_ref()
             .map(|caps| {
@@ -201,25 +254,12 @@ impl<'a> ValidationContextV2<'a> {
             })
             .unwrap_or_default();
 
-        ValidationContextV2 {
-            document,
-            features,
-            capability_requirements,
-            all_children,
-            all_collections,
-            all_resolvers,
-            all_runners,
-            all_storages,
-            all_capability_names,
-            all_dictionaries,
-            all_directories,
-            all_protocols,
-            all_configs,
-            all_services,
-        }
+        Ok(())
     }
 
     fn validate(&mut self) -> Result<(), Error> {
+        self.populate_and_check_names()?;
+
         if let Some(children) = self.document.children.as_ref() {
             for child in children {
                 self.validate_child(&child)?;
@@ -873,7 +913,7 @@ which is almost certainly a mistake: {}",
                 for scope in &scopes.value {
                     match scope {
                         EventScope::Named(name) => {
-                            if !self.all_children.contains::<BorrowedName>(name)
+                            if !self.all_children.contains_key::<BorrowedName>(name)
                                 && !self.all_collections.contains::<BorrowedName>(name)
                             {
                                 return Err(Error::validate_context(
@@ -1169,7 +1209,7 @@ which is almost certainly a mistake: {}",
                         .map_or(false, |a| a.value == TargetAvailability::Unknown);
 
                     // Check that any referenced child actually exists.
-                    if self.all_children.contains::<BorrowedName>(to_target.as_ref())
+                    if self.all_children.contains_key::<BorrowedName>(to_target.as_ref())
                         || self.all_collections.contains::<BorrowedName>(to_target.as_ref())
                         || target_availability_is_unknown
                     {
@@ -1307,21 +1347,20 @@ which is almost certainly a mistake: {}",
             // Ensure that a target is not offered more than once.
             let ids_for_entity = used_ids.entry(to_target.clone()).or_insert(HashMap::new());
             for (target_cap_id, target_origin) in &target_cap_ids_with_origin {
-                if let Some(conflict_origin) =
-                    ids_for_entity.insert(target_cap_id.to_string(), target_origin.clone())
-                {
-                    if let CapabilityId::Service(_) = target_cap_id {
-                        // Services may have duplicates (aggregation).
-                    } else {
+                let key = target_cap_id.to_string();
+                if let Some(existing_origin) = ids_for_entity.get(&key) {
+                    if !matches!(target_cap_id, CapabilityId::Service(_)) {
                         return Err(Error::validate_contexts(
                             format!(
                                 "\"{}\" is a duplicate \"offer\" target capability for \"{}\"",
                                 target_cap_id, target_ref
                             ),
-                            vec![target_origin.clone(), conflict_origin],
+                            vec![target_origin.clone(), existing_origin.clone()],
                         ));
                     }
                 }
+
+                ids_for_entity.insert(key, target_origin.clone());
             }
         }
 
