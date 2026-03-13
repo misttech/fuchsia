@@ -11,14 +11,17 @@ ffx_plugin("ffx_session_stop") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.session:fuchsia.session_rust",
+    "//sdk/fidl/fuchsia.session:fuchsia.session_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fdomain/local",
+    "//src/lib/fuchsia",
+  ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [

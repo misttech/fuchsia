@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_session::LifecycleProxy;
 use ffx_session_stop_args::SessionStopCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session::LifecycleProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 const STOPPING_SESSION: &str = "Stopping the session\n";
 
@@ -44,12 +44,13 @@ pub async fn stop_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session::LifecycleRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session::LifecycleRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_stop_session() -> Result<()> {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
             LifecycleRequest::Stop { responder } => {
                 let _ = responder.send(Ok(()));
             }
