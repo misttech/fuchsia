@@ -1740,6 +1740,7 @@ dependencies = [
  "rayon",
  "ref-cast",
  "regex",
+ "regex-lite",
  "regex-syntax 0.8.9",
  "ring",
  "roaring",
@@ -3982,6 +3983,12 @@ version = "0.1.10"
 dependencies = [
  "regex-syntax 0.6.29",
 ]
+
+[[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 
 [[package]]
 name = "regex-syntax"

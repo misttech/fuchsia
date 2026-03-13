@@ -824,6 +824,10 @@ group("regex") {
   public_deps = [ ":regex-v1_7_3" ]
 }
 
+group("regex-lite") {
+  public_deps = [ ":regex-lite-v0_1_9" ]
+}
+
 group("regex-syntax") {
   public_deps = [ ":regex-syntax-v0_8_9" ]
 }
@@ -14964,6 +14968,41 @@ rustc_library("regex-automata-v0_1_10") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":regex-automata-v0_1_10.license" ]
+}
+
+license("regex-lite-v0_1_9.license") {
+  public_package_name = "regex_lite"
+  license_files = [
+    "//third_party/rust_crates/vendor/regex-lite-0.1.9/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/regex-lite-0.1.9/LICENSE-MIT",
+  ]
+}
+
+rustc_library("regex-lite-v0_1_9") {
+  crate_name = "regex_lite"
+  source_root = "//third_party/rust_crates/vendor/regex-lite-0.1.9/src/lib.rs"
+  output_name = "regex_lite-852f7d2d10ab373b"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=852f7d2d10ab373b",
+    "-Cextra-filename=-852f7d2d10ab373b",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"string\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":regex-lite-v0_1_9.license" ]
 }
 
 license("regex-syntax-v0_6_29.license") {

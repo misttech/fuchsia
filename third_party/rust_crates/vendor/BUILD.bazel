@@ -2029,6 +2029,18 @@ alias(
 )
 
 alias(
+    name = "regex-lite-0.1.9",
+    actual = "//third_party/rust_crates/vendor/regex-lite-0.1.9:regex_lite",
+    tags = ["manual"],
+)
+
+alias(
+    name = "regex-lite",
+    actual = "//third_party/rust_crates/vendor/regex-lite-0.1.9:regex_lite",
+    tags = ["manual"],
+)
+
+alias(
     name = "regex-syntax-0.8.9",
     actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.9:regex_syntax",
     tags = ["manual"],
