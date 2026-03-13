@@ -3151,9 +3151,10 @@ impl MemoryManager {
                         create_anonymous_mapping_memory(length as u64)?
                     } else {
                         let basic_info = backing.memory().basic_info();
+                        let options = mapping.flags().options();
                         let memory =
                             clone_cache.entry(basic_info.koid).or_insert_with_fallible(|| {
-                                backing.memory().clone_memory(basic_info.rights)
+                                backing.memory().clone_memory(basic_info.rights, options)
                             })?;
                         memory.clone()
                     };

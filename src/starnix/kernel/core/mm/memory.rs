@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::{MemoryManager, PAGE_SIZE, VMEX_RESOURCE, ZX_VM_SPECIFIC_OVERWRITE};
+use crate::mm::{
+    MappingOptions, MemoryManager, PAGE_SIZE, VMEX_RESOURCE, ZX_VM_SPECIFIC_OVERWRITE,
+};
 use fuchsia_runtime::UtcClock;
 use mapped_clock::{CLOCK_SIZE, MappedClock};
 use starnix_logging::{impossible_error, set_zx_name};
@@ -401,22 +403,25 @@ impl MemoryObject {
         }
     }
 
-    pub fn clone_memory(self: &Arc<Self>, rights: zx::Rights) -> Result<Arc<Self>, Errno> {
+    pub fn clone_memory(
+        self: &Arc<Self>,
+        rights: zx::Rights,
+        options: MappingOptions,
+    ) -> Result<Arc<Self>, Errno> {
         if self.is_clock() {
             return Err(errno!(ENOTSUP, "clone_memory not supported on memory mapped clock"));
         }
 
-        // VMO-backed objects.
-        let memory_info = self.info()?;
-        let pager_backed = memory_info.flags.contains(zx::VmoInfoFlags::PAGER_BACKED);
-        Ok(if pager_backed && !rights.contains(zx::Rights::WRITE) {
+        // Non-anonymous memory is pager-backed, and we can clone it if we don't need write
+        // rights.
+        Ok(if !options.contains(MappingOptions::ANONYMOUS) && !rights.contains(zx::Rights::WRITE) {
             self.clone()
         } else {
             let mut cloned_memory = self
                 .create_child(
                     zx::VmoChildOptions::SNAPSHOT_MODIFIED | zx::VmoChildOptions::RESIZABLE,
                     0,
-                    memory_info.size_bytes,
+                    self.get_size(),
                 )
                 .map_err(MemoryManager::get_errno_for_map_err)?;
             if rights.contains(zx::Rights::EXECUTE) {
