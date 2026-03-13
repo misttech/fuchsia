@@ -87,11 +87,8 @@ class ClientSet {
   std::optional<ClientPriority> FindConfigStampSource(
       display::DriverConfigStamp driver_config_stamp);
 
-  // Closes all the client connections.
-  //
-  // The ClientSet will be cleared asynchronously. Each client's FIDL
-  // disconnection handler will remove the client from the set.
-  void CloseAll();
+  // Empties the clients list, closing all the client connections.
+  void Clear();
 
   // Returns null if no client owns the displays.
   ClientProxy* GetClientOwningDisplays() const;

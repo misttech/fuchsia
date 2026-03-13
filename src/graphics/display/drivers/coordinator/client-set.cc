@@ -229,23 +229,25 @@ void ClientSet::HandleClientOwnershipChanges() {
     if (client_owning_displays_) {
       client_owning_displays_->SetOwnership(false);
     }
+    client_owning_displays_ = new_client_owning_displays;
     if (new_client_owning_displays) {
       new_client_owning_displays->SetOwnership(true);
     }
-    client_owning_displays_ = new_client_owning_displays;
   }
 }
 
-void ClientSet::CloseAll() {
-  for (const std::unique_ptr<ClientProxy>& client_proxy : clients_) {
+void ClientSet::Clear() {
+  std::list<std::unique_ptr<ClientProxy>> clients_to_close = std::move(clients_);
+  for (const std::unique_ptr<ClientProxy>& client_proxy : clients_to_close) {
     client_proxy->TearDown();
   }
+
   // TODO(costan): Find a better workaround.
   //
-  // We do not clear `clients_` here. `ClientProxy::TearDown()` will trigger
-  // `OnClientDead()` which will call `OnClientDisconnected()` to remove the
-  // client from the list.
+  // `ClientProxy::TearDown()` will trigger `OnClientDead()` which will call
+  // `OnClientDisconnected()` to update the pointers to the now-dead clients.
   client_owning_displays_ = nullptr;
+
   primary_client_ = nullptr;
   primary_client_ready_ = false;
   virtcon_client_ = nullptr;

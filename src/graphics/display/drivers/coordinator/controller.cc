@@ -634,7 +634,7 @@ void Controller::PrepareStop() {
 
   {
     unbinding_ = true;
-    clients_.CloseAll();
+    clients_.Clear();
 
     vsync_monitor_.Deinitialize();
 
