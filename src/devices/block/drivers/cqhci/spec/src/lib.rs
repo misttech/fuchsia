@@ -31,6 +31,9 @@ pub const EXT_CSD_PARTITON_SWITCH_TIME: usize = 199;
 pub const EXT_CSD_SEC_FEATURE_SUPPORT: usize = 231;
 pub const EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN: u8 = 1 << 4;
 
+pub const EXT_CSD_CACHE_FLUSH_POLICY: usize = 240;
+pub const EXT_CSD_CACHE_FLUSH_POLICY_FIFO: u8 = 1;
+
 pub const EXT_CSD_GENERIC_CMD6_TIME: usize = 248;
 
 pub const EXT_CSD_BARRIER_SUPPORT: usize = 486;
@@ -219,7 +222,12 @@ bitfield! {
 }
 
 impl CommandQueueTaskDescriptor {
-    fn new(direction: Direction, block_offset: u64, block_count: NonZeroU16) -> Self {
+    fn new(
+        direction: Direction,
+        block_offset: u64,
+        block_count: NonZeroU16,
+        queue_barrier: bool,
+    ) -> Self {
         let mut this = Self(0);
         this.set_valid(true);
         this.set_end(true);
@@ -228,6 +236,7 @@ impl CommandQueueTaskDescriptor {
         this.set_data_direction(direction == Direction::Read);
         this.set_block_count(block_count.get());
         this.set_block_offset(block_offset);
+        this.set_qbr(queue_barrier);
         this
     }
 }
@@ -408,13 +417,19 @@ impl CommandQueueTDLEntry {
         block_offset: u64,
         block_count: NonZeroU16,
         phys_address: u64,
+        queue_barrier: bool,
     ) -> Result<Self, ()> {
         // Unwrap OK because the caller should never pass a block_count which would exceed 64KiB of
         // data.
         let length = TransferBytes::try_from(block_count.get() as usize * MMC_BLOCK_SIZE as usize)
             .map_err(|_| ())?;
         Ok(Self {
-            task: CommandQueueTaskDescriptor::new(direction, block_offset, block_count),
+            task: CommandQueueTaskDescriptor::new(
+                direction,
+                block_offset,
+                block_count,
+                queue_barrier,
+            ),
             transfer: CommandQueueTransferDescriptor::transfer(phys_address, length, true),
         })
     }
@@ -428,13 +443,19 @@ impl CommandQueueTDLEntry {
         block_offset: u64,
         block_count: NonZeroU16,
         descriptors_phys_address: u64,
+        queue_barrier: bool,
     ) -> Self {
         debug_assert!(
             descriptors_phys_address
                 .is_multiple_of(std::mem::align_of::<CommandQueueTransferDescriptor>() as u64)
         );
         Self {
-            task: CommandQueueTaskDescriptor::new(direction, block_offset, block_count),
+            task: CommandQueueTaskDescriptor::new(
+                direction,
+                block_offset,
+                block_count,
+                queue_barrier,
+            ),
             transfer: CommandQueueTransferDescriptor::link(descriptors_phys_address),
         }
     }

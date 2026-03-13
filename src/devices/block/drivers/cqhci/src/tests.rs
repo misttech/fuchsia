@@ -24,7 +24,8 @@ use futures::{SinkExt as _, StreamExt as _};
 use sdmmc_spec::{
     CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TERRI_OFFSET,
     CqhciCqInterruptStatusRegister, CqhciCqTaskErrorRegister, Direction, EXT_CSD_BARRIER_SUPPORT,
-    EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, SDHCI_IS_OFFSET,
+    EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK,
+    EXT_CSD_CACHE_FLUSH_POLICY, EXT_CSD_CACHE_FLUSH_POLICY_FIFO, SDHCI_IS_OFFSET,
     SdhciInterruptStatusRegister,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -142,6 +143,8 @@ impl CommandQueueHost for TestCommandQueueHost {
         // Advertise all features, which make the driver take more interesting paths.
         ext_csd[EXT_CSD_CACHE_CTRL] = EXT_CSD_CACHE_EN_MASK;
         ext_csd[EXT_CSD_BARRIER_SUPPORT] = EXT_CSD_BARRIER_SUPPORT_MASK;
+        ext_csd[EXT_CSD_CACHE_CTRL] = EXT_CSD_CACHE_EN_MASK;
+        ext_csd[EXT_CSD_CACHE_FLUSH_POLICY] = EXT_CSD_CACHE_FLUSH_POLICY_FIFO;
         Ok(CqhciHostInfo {
             sdmmc_host_info: SdmmcHostInfo {
                 max_transfer_size: u32::MAX,

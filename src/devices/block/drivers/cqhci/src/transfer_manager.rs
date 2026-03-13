@@ -312,6 +312,7 @@ impl TransferManager {
         block_offset: u64,
         block_count: u32,
         data_direction: Direction,
+        transfer_options: TransferOptions,
     ) -> Result<Transfer, zx::Status> {
         // NB: VMO offset does *not* need to be page-aligned.  The CQE is capable of DMAing to
         // arbitrarily aligned addresses.  This is consistent with the legacy SDHCI stack, and
@@ -379,7 +380,13 @@ impl TransferManager {
             offset: (vmo_offset - aligned_vmo_offset) as usize,
             length: length as usize,
         });
-        self.commit_transfer_task(&mut transfer, block_offset, block_count, contig_ranges)?;
+        self.commit_transfer_task(
+            &mut transfer,
+            block_offset,
+            block_count,
+            contig_ranges,
+            transfer_options,
+        )?;
         transfer.pmt = Some(scopeguard::ScopeGuard::into_inner(unpin_guard));
         Ok(transfer)
     }
@@ -390,6 +397,7 @@ impl TransferManager {
         block_offset: u64,
         block_count: NonZeroU16,
         contig_regions: ContiguousPagesIter<'_>,
+        transfer_options: TransferOptions,
     ) -> Result<(), zx::Status> {
         let offset = transfer.tdl_slot() as usize * zx::system_get_page_size() as usize;
         let max_descriptors = zx::system_get_page_size() as usize
@@ -404,6 +412,7 @@ impl TransferManager {
                 block_offset,
                 block_count,
                 first_region.start as u64,
+                transfer_options.queue_barrier,
             )
             .unwrap() // Unwrap OK, we already checked `block_count` is valid in the caller
         } else {
@@ -455,6 +464,7 @@ impl TransferManager {
                 block_offset,
                 block_count,
                 phys_address as u64,
+                transfer_options.queue_barrier,
             )
         };
         self.commit(transfer.tdl_slot(), tdl_entry)
@@ -587,6 +597,33 @@ impl Drop for Transfer {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TransferOptions {
+    /// If set, the transfer will have the QBR flag set.
+    ///
+    /// The semantics are documented in JESD84-B51A B.2.6, but in brief, the QBR flag acts as a
+    /// *full* barrier for a task, ensuring that:
+    /// - all tasks which are active prior to the QBR task being started will complete before it is
+    ///   submitted, and
+    /// - all tasks which are issued whilst the QBR task is active will not be submitted until the
+    ///   QBR task completes.
+    ///
+    /// Note that the QBR flag only controls the behaviour of the command queue.  The underlying MMC
+    /// may reorder requests when it has a non-FIFO cache policy, and so additional commands are
+    /// required for correct barrier behaviour.
+    ///
+    /// TODO(https://fxbug.dev/492496966): Using QBR for PRE_BARRIER is stricter than we need, and
+    //// may have a performance impact.  Evaluate manually implementing PRE_BARRIER in software
+    /// instead.
+    pub queue_barrier: bool,
+}
+
+impl From<block_server::WriteOptions> for TransferOptions {
+    fn from(options: block_server::WriteOptions) -> Self {
+        Self { queue_barrier: options.flags.contains(block_server::WriteFlags::PRE_BARRIER) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU16;
@@ -686,6 +723,7 @@ mod tests {
                         off,
                         1,
                         Direction::Read,
+                        TransferOptions::default(),
                     )
                     .expect("prepare_transfer failed"),
             );
@@ -712,6 +750,7 @@ mod tests {
                 0,
                 1,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer failed");
         unsafe { transfer.unpin() };
@@ -735,6 +774,7 @@ mod tests {
                 0,
                 1,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer failed");
         assert!(transfer.pmt.is_some());
@@ -746,6 +786,7 @@ mod tests {
                 0,
                 NonZeroU16::try_from(1).unwrap(),
                 4096,
+                false,
             )
             .unwrap(),
         );
@@ -771,6 +812,7 @@ mod tests {
                 10,
                 16,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer failed");
         assert!(transfer.pmt.is_some());
@@ -803,6 +845,7 @@ mod tests {
                 10,
                 NonZeroU16::try_from(16).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
+                false,
             ),
         );
         let TransferBuffers::ScatterGatherList(addr, len) = transfer.buffers else {
@@ -821,6 +864,7 @@ mod tests {
                     40,
                     16,
                     Direction::Write,
+                    TransferOptions::default(),
                 )
                 .expect("prepare_transfer failed");
             assert!(transfer.pmt.is_some());
@@ -832,6 +876,7 @@ mod tests {
                     40,
                     NonZeroU16::try_from(16).unwrap(),
                     EXTRA_DESCRIPTORS_BASE as u64 + zx::system_get_page_size() as u64,
+                    false,
                 ),
             );
             unsafe { transfer2.unpin() };
@@ -862,6 +907,7 @@ mod tests {
                 0,
                 block_count,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer failed");
         assert!(transfer.pmt.is_some());
@@ -873,6 +919,7 @@ mod tests {
                 0,
                 NonZeroU16::try_from(block_count as u16).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
+                false,
             ),
         );
         let mut expected_descriptors = vec![];
@@ -906,6 +953,7 @@ mod tests {
                 100,
                 40,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer failed");
         assert!(transfer.pmt.is_some());
@@ -917,6 +965,7 @@ mod tests {
                 100,
                 NonZeroU16::try_from(40).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
+                false,
             ),
         );
         validate_extra_transfer_descriptors(
@@ -980,6 +1029,7 @@ mod tests {
                 0,
                 16,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer 1 failed");
 
@@ -992,6 +1042,7 @@ mod tests {
                 16,
                 16,
                 Direction::Read,
+                TransferOptions::default(),
             )
             .expect("prepare_transfer 2 failed");
 

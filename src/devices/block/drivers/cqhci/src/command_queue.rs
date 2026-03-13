@@ -37,7 +37,8 @@ use sdmmc_spec::{
     CqhciCqTaskErrorRegister, CqhciCryptoRegisterSnapshot, CqhciRegisterSnapshot,
     DeviceManagementOpDiscardCmd44Args, DeviceManagementOpcode, Direction, EXT_CSD_BARRIER_EN,
     EXT_CSD_BARRIER_ENABLED, EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK,
-    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
+    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, EXT_CSD_CACHE_FLUSH_POLICY,
+    EXT_CSD_CACHE_FLUSH_POLICY_FIFO, EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
     EXT_CSD_GENERIC_CMD6_TIME, EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG,
     EXT_CSD_PARTITON_SWITCH_TIME, EXT_CSD_SEC_FEATURE_SUPPORT,
     EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN, EXT_CSD_SIZE, EmmcPartitionIndex, MMC_BLOCK_SIZE,
@@ -48,7 +49,7 @@ use sdmmc_spec::{
 use zx::HandleBased as _;
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
-use crate::transfer_manager::{Transfer, TransferManager, TransferSlot};
+use crate::transfer_manager::{Transfer, TransferManager, TransferOptions, TransferSlot};
 
 const IRQ_PORT_IRQ_KEY: u64 = 1;
 const IRQ_PORT_LIFELINE_KEY: u64 = 2;
@@ -930,7 +931,8 @@ impl CommandQueueExcl {
             info!("TRIM enabled");
         }
         if self.cache_enabled() {
-            info!("Cache enabled");
+            let fifo = if self.cache_policy_fifo() { "FIFO" } else { "non-FIFO" };
+            info!("Cache enabled, policy {fifo}");
         }
         Ok(())
     }
@@ -1157,12 +1159,18 @@ impl CommandQueue {
         self.ext_csd[EXT_CSD_CACHE_CTRL] & EXT_CSD_CACHE_EN_MASK > 0
     }
 
+    fn cache_policy_fifo(&self) -> bool {
+        self.ext_csd[EXT_CSD_CACHE_FLUSH_POLICY] & EXT_CSD_CACHE_FLUSH_POLICY_FIFO > 0
+    }
+
     pub fn device_flags(&self) -> fblock::DeviceFlag {
         let mut flags = fblock::DeviceFlag::empty();
         if self.supports_trim() {
             flags |= fblock::DeviceFlag::TRIM_SUPPORT;
         }
-        // TODO(https://fxbug.dev/490483833): Advertise BARRIER_SUPPORT once implemented
+        if self.supports_barriers() {
+            flags |= fblock::DeviceFlag::BARRIER_SUPPORT;
+        }
         flags
     }
 
@@ -1347,8 +1355,16 @@ impl CommandQueue {
         block_count: u32,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
+        options: TransferOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> SubmitResult {
+        if options.queue_barrier && (self.cache_enabled() && !self.cache_policy_fifo()) {
+            // TODO(https://fxbug.dev/490483833): If the device is not FIFO, we can't get away with
+            // just using a queue barrier.  We will also need to issue an actual barrier command to
+            // the MMC.
+            warn!("Barriers on non-FIFO devices are not supported");
+            return SubmitResult::Done(zx::Status::NOT_SUPPORTED);
+        }
         let slot = match self.transfer_manager.acquire_transfer_slot() {
             Some(s) => s,
             None => {
@@ -1371,6 +1387,7 @@ impl CommandQueue {
             block_offset,
             block_count,
             direction,
+            options,
         ) {
             Ok(transfer) => scopeguard::guard(transfer, |t| {
                 // SAFETY: We never submitted the transfer.
@@ -1419,6 +1436,7 @@ impl CommandQueue {
         block_count: u32,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
+        options: TransferOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         fuchsia_trace::duration!("sdmmc", "cqhci::submit_transfer",
@@ -1433,6 +1451,7 @@ impl CommandQueue {
                 block_count,
                 vmo.clone(),
                 vmo_offset,
+                options,
                 trace_flow_id,
             ) {
                 SubmitResult::Done(status) => {
@@ -1474,6 +1493,7 @@ impl CommandQueue {
             block_count,
             vmo,
             vmo_offset,
+            TransferOptions::default(),
             trace_flow_id,
         ) {
             complete_request(
@@ -1492,6 +1512,7 @@ impl CommandQueue {
         block_count: u32,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
+        options: block_server::WriteOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) {
         debug!("Write {block_count}@{block_offset}");
@@ -1503,6 +1524,7 @@ impl CommandQueue {
             block_count,
             vmo,
             vmo_offset,
+            TransferOptions::from(options),
             trace_flow_id,
         ) {
             complete_request(
