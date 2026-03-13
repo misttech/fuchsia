@@ -18,6 +18,10 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::{create_endpoints, create_proxy};
+use fidl_fuchsia_hardware_hrtimer as ffhh;
+use fidl_fuchsia_power_broker as ffpb;
+use fidl_fuchsia_power_system as fps;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
@@ -27,10 +31,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::pin::{Pin, pin};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_power_broker as ffpb,
-    fidl_fuchsia_power_system as fps, fuchsia_async as fasync,
-};
 
 /// The timer's resolution. The FIDL API supports multiple resolutions, but we
 /// limit support in the fake to one resolution only. Actual hardware can be much
@@ -65,11 +65,75 @@ struct Inner {
     events: HashMap<u64, zx::Event>,
 }
 
+#[derive(Debug)]
+struct PowerElement {
+    pub lessor_proxy: ffpb::LessorProxy,
+    _element_control_proxy: ffpb::ElementControlProxy,
+    _task: fasync::Task<()>,
+}
+
+impl PowerElement {
+    async fn add(name: &str, valid_levels: Vec<u8>, initial_level: u8) -> Self {
+        match Self::add_internal(name, valid_levels.clone(), initial_level).await {
+            Ok(pe) => pe,
+            Err(e) => {
+                log::warn!("Failed to add element to Topology: {:?}. Falling back to skeleton.", e);
+                Self::new_skeleton(name, valid_levels, initial_level)
+            }
+        }
+    }
+
+    async fn add_internal(name: &str, valid_levels: Vec<u8>, initial_level: u8) -> Result<Self> {
+        let topology_proxy = connect_to_protocol::<ffpb::TopologyMarker>()
+            .context("while connecting to fuchsia.power.broker/Topology")?;
+        let (lessor_proxy, lessor_server_end) = create_proxy::<ffpb::LessorMarker>();
+        let (element_control_proxy, element_control_server_end) =
+            create_proxy::<ffpb::ElementControlMarker>();
+        let (element_runner_client_end, element_runner_stream) =
+            create_endpoints::<ffpb::ElementRunnerMarker>();
+
+        let schema = ffpb::ElementSchema {
+            element_name: Some(name.into()),
+            initial_current_level: Some(initial_level),
+            valid_levels: Some(valid_levels),
+            lessor_channel: Some(lessor_server_end),
+            element_control: Some(element_control_server_end),
+            element_runner: Some(element_runner_client_end),
+            ..Default::default()
+        };
+
+        topology_proxy
+            .add_element(schema)
+            .await
+            .context("while calling fuchsia.power.broker/Topology.AddElement")?
+            .map_err(|err| anyhow::anyhow!("AddElement error: {err:?}"))?;
+
+        let task =
+            fasync::Task::local(run_element_runner_server(element_runner_stream.into_stream()));
+
+        Ok(Self { lessor_proxy, _element_control_proxy: element_control_proxy, _task: task })
+    }
+
+    fn new_skeleton(_name: &str, _valid_levels: Vec<u8>, _initial_level: u8) -> Self {
+        let (lessor_proxy, lessor_stream) = create_proxy::<ffpb::LessorMarker>();
+        let (element_control_proxy, element_control_stream) =
+            create_proxy::<ffpb::ElementControlMarker>();
+
+        let task = fasync::Task::local(async move {
+            let lessor_fut = run_skeleton_lessor_server(lessor_stream.into_stream());
+            let element_control_fut =
+                run_skeleton_element_control_server(element_control_stream.into_stream());
+            futures::future::join(lessor_fut, element_control_fut).await;
+        });
+
+        Self { lessor_proxy, _element_control_proxy: element_control_proxy, _task: task }
+    }
+}
+
 /// The state of the hrtimer server.
 #[derive(Debug)]
 struct FakeHrtimerServer {
-    lessor_proxy: ffpb::LessorProxy,
-    _element_control_proxy: ffpb::ElementControlProxy,
+    power_element: PowerElement,
     // Max timer ID supported. Supported timer IDs are 1..max_timers.
     max_timers: usize,
     // Ensure inner is not borrowed across `.await` points.
@@ -90,13 +154,9 @@ fn as_deadline(resolution: ffhh::Resolution, ticks: u64) -> zx::BootInstant {
 
 impl FakeHrtimerServer {
     /// Create a new [FakeHrtimerServer].
-    pub fn new(
-        max_timers: usize,
-        lessor_proxy: ffpb::LessorProxy,
-        _element_control_proxy: ffpb::ElementControlProxy,
-    ) -> Rc<Self> {
+    pub fn new(max_timers: usize, power_element: PowerElement) -> Rc<Self> {
         let inner = RefCell::new(Inner { timers: HashMap::new(), events: HashMap::new() });
-        Rc::new(Self { lessor_proxy, _element_control_proxy, inner, max_timers })
+        Rc::new(Self { power_element, inner, max_timers })
     }
 
     /// Returns a closure that waits for expiry of a given timer.
@@ -177,6 +237,7 @@ impl FakeHrtimerServer {
                     Ok(_) => {
                         // Lease is held until we respond to the FIDL call.
                         let _lease = self_clone
+                            .power_element
                             .lessor_proxy
                             .lease(ffpb::BinaryPowerLevel::On.into_primitive())
                             .await
@@ -399,6 +460,77 @@ impl FakeHrtimerServer {
     }
 }
 
+async fn run_element_runner_server(mut stream: ffpb::ElementRunnerRequestStream) {
+    while let Some(request) = stream.next().await {
+        match request {
+            Ok(ffpb::ElementRunnerRequest::SetLevel { level, responder }) => {
+                log::debug!("ElementRunner::SetLevel to {level}");
+                let _ = responder.send();
+            }
+            Ok(ffpb::ElementRunnerRequest::_UnknownMethod { ordinal, .. }) => {
+                log::warn!("ElementRunner received unknown method: {ordinal}");
+            }
+            _ => break,
+        }
+    }
+}
+
+async fn run_skeleton_lessor_server(mut stream: ffpb::LessorRequestStream) {
+    while let Some(request) = stream.next().await {
+        match request {
+            Ok(ffpb::LessorRequest::Lease { responder, .. }) => {
+                let (lease_control_client_end, lease_control_server_end) =
+                    create_endpoints::<ffpb::LeaseControlMarker>();
+                fasync::Task::local(run_skeleton_lease_control_server(
+                    lease_control_server_end.into_stream(),
+                ))
+                .detach();
+                let _ = responder.send(Ok(lease_control_client_end));
+            }
+            Ok(ffpb::LessorRequest::_UnknownMethod { ordinal, .. }) => {
+                log::warn!("Lessor skeleton received unknown method: {ordinal}");
+            }
+            _ => break,
+        }
+    }
+}
+
+async fn run_skeleton_lease_control_server(mut stream: ffpb::LeaseControlRequestStream) {
+    while let Some(request) = stream.next().await {
+        match request {
+            Ok(ffpb::LeaseControlRequest::WatchStatus { last_status, responder }) => {
+                if last_status != ffpb::LeaseStatus::Satisfied {
+                    let _ = responder.send(ffpb::LeaseStatus::Satisfied);
+                } else {
+                    // Hang as status won't change from Satisfied
+                    futures::future::pending::<()>().await;
+                }
+            }
+            Ok(ffpb::LeaseControlRequest::_UnknownMethod { ordinal, .. }) => {
+                log::warn!("LeaseControl skeleton received unknown method: {ordinal}");
+            }
+            _ => break,
+        }
+    }
+}
+
+async fn run_skeleton_element_control_server(mut stream: ffpb::ElementControlRequestStream) {
+    while let Some(request) = stream.next().await {
+        match request {
+            Ok(ffpb::ElementControlRequest::RegisterDependencyToken { responder, .. }) => {
+                let _ = responder.send(Ok(()));
+            }
+            Ok(ffpb::ElementControlRequest::UnregisterDependencyToken { responder, .. }) => {
+                let _ = responder.send(Ok(()));
+            }
+            Ok(ffpb::ElementControlRequest::_UnknownMethod { ordinal, .. }) => {
+                log::warn!("ElementControl skeleton received unknown method: {ordinal}");
+            }
+            _ => break,
+        }
+    }
+}
+
 #[fuchsia::main(logging_tags = ["test"])]
 async fn main() -> Result<()> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
@@ -410,29 +542,15 @@ async fn main() -> Result<()> {
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
     // Integrate with the power topology
-    let topology_proxy = connect_to_protocol::<ffpb::TopologyMarker>()
-        .context("while connecting to fuchsia.power.broker/Topology")?;
-    let (lessor_proxy, lessor_server_end) = create_proxy::<ffpb::LessorMarker>();
-    let (element_proxy, element_server_end) = create_proxy::<ffpb::ElementControlMarker>();
-    let (element_runner_client_end, _element_runner_server_end) =
-        create_endpoints::<ffpb::ElementRunnerMarker>();
-
-    let schema = ffpb::ElementSchema {
-        element_name: Some("fake-hrtimer".into()),
-        initial_current_level: Some(ffpb::BinaryPowerLevel::Off.into_primitive()),
-        valid_levels: Some(vec![
+    let power_element = PowerElement::add(
+        "fake-hrtimer",
+        vec![
             ffpb::BinaryPowerLevel::Off.into_primitive(),
             ffpb::BinaryPowerLevel::On.into_primitive(),
-        ]),
-        lessor_channel: Some(lessor_server_end),
-        element_control: Some(element_server_end),
-        element_runner: Some(element_runner_client_end),
-        ..Default::default()
-    };
-    let _result = topology_proxy
-        .add_element(schema)
-        .await
-        .context("while calling fuchsia.power.broker/Topology.AddElement")?;
+        ],
+        ffpb::BinaryPowerLevel::Off.into_primitive(),
+    )
+    .await;
 
     // Serve the FIDL APIs.
     let mut fs = ServiceFs::new();
@@ -443,7 +561,7 @@ async fn main() -> Result<()> {
     fs.take_and_serve_directory_handle()
         .context("while trying to serve fuchsia.hardware.hrtimer/Service")?;
 
-    let hrtimer_server = FakeHrtimerServer::new(MAX_TIMERS, lessor_proxy, element_proxy);
+    let hrtimer_server = FakeHrtimerServer::new(MAX_TIMERS, power_element);
 
     fs.for_each_concurrent(/*limit=*/ None, move |connection| {
         let hrtimer_server_clone = hrtimer_server.clone();

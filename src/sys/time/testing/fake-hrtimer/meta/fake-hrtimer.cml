@@ -26,6 +26,7 @@
     use: [
         {
             protocol: [ "fuchsia.power.broker.Topology" ],
+            availability: "optional",
         },
     ],
     expose: [
