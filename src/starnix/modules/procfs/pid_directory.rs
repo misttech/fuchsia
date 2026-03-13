@@ -1276,6 +1276,21 @@ impl StatusFile {
 impl DynamicFileSource for StatusFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = &self.0.upgrade();
+
+        // TODO(https://fxbug.dev/460841705): Temporary debugging block.
+        // This telemetry logs when the Perfetto traced_probes process queries this StatusFile.
+        // It's used to triage whether a parsing or error handling conflict with StatusFile
+        // generation is the leading cause for the `SIGABRT` crash during suspend.
+        // Remove this block after completing the bug investigation.
+        if String::from_utf8_lossy(current_task.task.persistent_info.command_guard().comm_name())
+            .contains("traced_probes")
+        {
+            let target_pid = task.as_ref().map(|t| t.persistent_info.pid()).unwrap_or(0);
+            starnix_logging::log_info!(
+                "WATCHDOG_DEBUG: traced_probes generating StatusFile for target pid {}",
+                target_pid
+            );
+        }
         let (tgid, pid, creds_string) = {
             if let Some(task) = task {
                 track_stub!(TODO("https://fxbug.dev/297440106"), "/proc/pid/status zombies");

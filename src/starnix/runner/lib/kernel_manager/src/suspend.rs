@@ -129,6 +129,15 @@ pub async fn suspend_container(
         // TODO: We will likely have to handle a larger number of wake sources in the
         // future, at which point we may want to consider a Port-based approach. This
         // would also allow us to unblock this thread.
+
+        // TODO(https://fxbug.dev/460841705): Temporary debugging block.
+        // This telemetry is meant to capture whether the Starnix monotonic clock jumps forwards
+        // by the suspended duration after a suspend/resume cycle. It's used to triage whether
+        // Perfetto's CLOCK_MONOTONIC watchdog timers are misinterpreting sleep time as active time.
+        // Remove this block after completing the bug investigation.
+        let mono_before = zx::MonotonicInstant::get();
+        let boot_before = zx::BootInstant::get();
+
         {
             fuchsia_trace::duration!("power", "starnix-runner:waiting-on-container-wake");
             if wait_items.len() > 0 {
@@ -144,7 +153,14 @@ pub async fn suspend_container(
                 };
             }
         }
-        log::info!("Finished waiting on container wake proxies.");
+
+        let mono_after = zx::MonotonicInstant::get();
+        let boot_after = zx::BootInstant::get();
+        log::info!(
+            "Finished waiting on container wake proxies. Monotonic delta: {:?} ns, Boot delta: {:?} ns",
+            (mono_after - mono_before).into_nanos(),
+            (boot_after - boot_before).into_nanos()
+        );
 
         let mut resume_reasons: Vec<String> = Vec::new();
         for wait_item in &wait_items {
