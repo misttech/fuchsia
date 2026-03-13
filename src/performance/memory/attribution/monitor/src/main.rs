@@ -25,12 +25,11 @@ use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zx::{BootInstant, MonotonicInstant};
 
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_kernel as fkernel,
-    fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_memory_attribution_plugin as fattribution_plugin,
-    fidl_fuchsia_metrics as fmetrics,
-};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_memory_attribution_plugin as fattribution_plugin;
+use fidl_fuchsia_metrics as fmetrics;
 
 mod attribution_client;
 mod attribution_data;
@@ -162,6 +161,7 @@ async fn main() -> Result<()> {
         thrashing_config.clone(),
         root_node.create_child("thrashing"),
         page_refault_tracker.clone(),
+        metric_event_logger.clone(),
     );
     let mut thrashing_loop = fuchsia_async::Task::spawn(async move {
         // Default to configured interval, or the default constant if 0/invalid.

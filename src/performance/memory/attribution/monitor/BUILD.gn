@@ -36,6 +36,7 @@ rustc_binary("bin") {
     ":cobalt",
     ":config",
     ":inspect_nodes",
+    ":memory_metrics_registry",
     ":periodic_monitoring",
     ":stalls",
     ":traces",

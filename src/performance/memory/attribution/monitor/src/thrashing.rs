@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use fidl_fuchsia_metrics as fmetrics;
 use fuchsia_inspect::Node;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use memory_metrics_registry::cobalt_registry;
 use serde::Deserialize;
 use stalls::refaults::RefaultProvider;
 use zx::MonotonicInstant;
@@ -50,11 +52,17 @@ pub struct ThrashingDetector<P: RefaultProvider> {
     _events_node_parent: Node,
     events_node: BoundedListNode,
     refault_provider: P,
+    metric_logger: fmetrics::MetricEventLoggerProxy,
     last_refaults: Option<u64>,
 }
 
 impl<P: RefaultProvider> ThrashingDetector<P> {
-    pub fn new(config: ThrashingConfig, node: Node, refault_provider: P) -> Self {
+    pub fn new(
+        config: ThrashingConfig,
+        node: Node,
+        refault_provider: P,
+        metric_logger: fmetrics::MetricEventLoggerProxy,
+    ) -> Self {
         // Create a bounded list node to store the last 50 thrashing events.
         let events_node = BoundedListNode::new(node.create_child("events"), 50);
 
@@ -67,6 +75,7 @@ impl<P: RefaultProvider> ThrashingDetector<P> {
             _events_node_parent: node,
             events_node,
             refault_provider,
+            metric_logger,
             last_refaults: None,
         }
     }
@@ -86,6 +95,11 @@ impl<P: RefaultProvider> ThrashingDetector<P> {
                     node.record_int("timestamp_ns", timestamp);
                     node.record_uint("refaults_delta", refaults_delta);
                 });
+
+                self.metric_logger
+                    .log_occurrence(cobalt_registry::MEMORY_THRASHING_EVENTS_METRIC_ID, 1, &[])
+                    .await?
+                    .map_err(|e| anyhow::anyhow!("Cobalt error: {:?}", e))?;
             }
         }
 
@@ -121,21 +135,51 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_thrashing_detection() {
+        use futures::StreamExt;
+
         let inspector = fuchsia_inspect::Inspector::default();
         let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
 
         let refaults = Rc::new(RefCell::new(0));
         let provider = MockRefaultProvider { count: refaults.clone() };
 
-        let mut detector =
-            ThrashingDetector::new(config, inspector.root().create_child("thrashing"), provider);
+        let (metric_event_logger, mut metric_event_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
+
+        let mut detector = ThrashingDetector::new(
+            config,
+            inspector.root().create_child("thrashing"),
+            provider,
+            metric_event_logger,
+        );
 
         // First iteration - baseline 0
         detector.run_one_iteration().await.unwrap();
 
         // Second iteration - delta 200 > 100 threshold
         *refaults.borrow_mut() = 200;
-        detector.run_one_iteration().await.unwrap();
+
+        let iteration_fut = detector.run_one_iteration();
+
+        let mock_fut = async move {
+            if let Some(Ok(fmetrics::MetricEventLoggerRequest::LogOccurrence {
+                metric_id,
+                count,
+                event_codes,
+                responder,
+            })) = metric_event_request_stream.next().await
+            {
+                assert_eq!(metric_id, cobalt_registry::MEMORY_THRASHING_EVENTS_METRIC_ID);
+                assert_eq!(count, 1);
+                assert!(event_codes.is_empty());
+                responder.send(Ok(())).unwrap();
+            } else {
+                panic!("Missing or invalid metric event logger request");
+            }
+        };
+
+        let (iteration_res, _) = futures::join!(iteration_fut, mock_fut);
+        iteration_res.unwrap();
 
         assert_data_tree!(inspector, root: {
             thrashing: {
@@ -149,6 +193,55 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn test_thrashing_detection_with_metrics() {
+        use futures::StreamExt;
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
+
+        let refaults = Rc::new(RefCell::new(0));
+        let provider = MockRefaultProvider { count: refaults.clone() };
+
+        let (metric_event_logger, mut metric_event_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
+
+        let mut detector = ThrashingDetector::new(
+            config,
+            inspector.root().create_child("thrashing"),
+            provider,
+            metric_event_logger,
+        );
+
+        // First iteration - baseline 0
+        detector.run_one_iteration().await.unwrap();
+
+        // Second iteration - delta 200 > 100 threshold
+        *refaults.borrow_mut() = 200;
+
+        let iteration_fut = detector.run_one_iteration();
+
+        let mock_fut = async move {
+            if let Some(Ok(fmetrics::MetricEventLoggerRequest::LogOccurrence {
+                metric_id,
+                count,
+                event_codes,
+                responder,
+            })) = metric_event_request_stream.next().await
+            {
+                assert_eq!(metric_id, cobalt_registry::MEMORY_THRASHING_EVENTS_METRIC_ID);
+                assert_eq!(count, 1);
+                assert!(event_codes.is_empty());
+                responder.send(Ok(())).unwrap();
+            } else {
+                panic!("Missing or invalid metric event logger request");
+            }
+        };
+
+        let (iteration_res, _) = futures::join!(iteration_fut, mock_fut);
+        iteration_res.unwrap();
     }
 
     #[fuchsia::test]
