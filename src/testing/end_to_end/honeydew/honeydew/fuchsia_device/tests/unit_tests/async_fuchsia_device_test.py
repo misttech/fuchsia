@@ -2211,7 +2211,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
             cmd=ffx_impl._FFX_CMDS["TARGET_SSH_ADDRESS"]
-            + [self.fd_fc_obj.ffx._target_name],
+            + [self.fd_fc_obj.device_name],
             include_target=False,
         )
         mock_fuchsia_device_health_check.assert_called_once()

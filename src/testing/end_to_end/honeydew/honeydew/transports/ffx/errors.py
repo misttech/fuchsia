@@ -18,8 +18,12 @@ class FfxCommandError(errors.TransportError):
     """Exception for errors raised by ffx commands running on host machine."""
 
 
-class FFXMonitorNotSupportedError(errors.HoneydewError):
+class FfxMonitorNotSupportedError(errors.HoneydewError):
     """If this method is called when monitor is not in use."""
+
+
+class FfxMonitorRequiresNameError(errors.HoneydewError):
+    """Raised when ffx device name is not provided."""
 
 
 class FfxTargetStatusError(errors.HostCmdError):

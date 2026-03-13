@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 """FFX transport ABC implementation"""
 
-import ipaddress
 import json
 import logging
 import subprocess
@@ -59,13 +58,11 @@ class FfxImpl(ffx_interface.FFX):
     """Provides methods for Host-(Fuchsia)Target interactions via FFX.
 
     Args:
-        target_name: Fuchsia device name.
+        query: Fuchsia device name or (possibly unresolved) IP address.
         config_data: Configuration associated with FFX.
-        target_ip_port: Fuchsia device IP address and port.
-            Note: When target_ip is provided, it will be used instead of target_name
-            while running ffx commands (ex: `ffx -t <target_ip> <command>`).
+        name: Optional human-readable name of the target for logging purposes.
         use_monitor_state: True to use ffx monitor for target status, False
-            otherwise.
+            otherwise. When True, the "name" arg is mandatory.
         shared_data: Shared data (if any) needed while running FFX commands.
         device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
             IP changes.
@@ -73,51 +70,45 @@ class FfxImpl(ffx_interface.FFX):
     Raises:
         FfxConnectionError: In case of failed to check FFX connection.
         FfxCommandError: In case of failure.
+        FfxMonitorRequiresNameError: If this method is called when name is not provided.
     """
 
     def __init__(
         self,
-        target_name: str,
+        query: str,
         config_data: ffx_config.FfxConfigData,
-        target_ip_port: custom_types.IpPort | None = None,
+        name: str | None = None,
         use_monitor_state: bool = False,
         shared_data: str | None = None,
         device_ip_change: FuchsiaDeviceIpChange | None = None,
     ) -> None:
-        # TODO(b/485903228): Update this logic to reflect the correct relationship
-        # between the target specification (the "query") and the target address.
-        # See bug for details.
-        invalid_target_name: bool = False
-        try:
-            ipaddress.ip_address(target_name)
-            invalid_target_name = True
-        except ValueError:
-            pass
-        if invalid_target_name:
-            raise ValueError(
-                f"{target_name=} is an IP address instead of target name"
-            )
-
         self._config_data: ffx_config.FfxConfigData = config_data
 
-        self._target_name: str = target_name
+        self._query: str = query
+        self._name: str | None = name
 
-        self._target_ip_port: custom_types.IpPort | None = target_ip_port
-        if target_ip_port is not None and device_ip_change is None:
-            raise ValueError(
-                "Pass 'device_ip_change' argument also when 'target_ip_port' arg is passed"
+        # Try parsing the query as an address. If it parses successfully, store it. Otherwise,
+        # we will resolve it on demand.
+        try:
+            self._target_addr: custom_types.TargetAddr | None = (
+                custom_types.TargetAddr.from_str(query)
             )
+        except ValueError:
+            self._target_addr = None
+
+        if (
+            isinstance(self._target_addr, custom_types.IpPort)
+            and device_ip_change is None
+        ):
+            raise ValueError(
+                "Pass 'device_ip_change' argument also when 'query' is a resolved target address"
+            )
+
         self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
         if self._device_ip_change:
             self._device_ip_change.register_for_on_device_ip_change(
                 fn=self._on_device_ip_change
             )
-
-        self._target: str
-        if self._target_ip_port:
-            self._target = str(self._target_ip_port)
-        else:
-            self._target = self._target_name
 
         if shared_data is None:
             # Use the logs_dir, which is guaranteed to exist. It is okay
@@ -126,13 +117,23 @@ class FfxImpl(ffx_interface.FFX):
             shared_data = self.config.logs_dir
         self._shared_data = shared_data
         self._use_monitor = use_monitor_state
-        if use_monitor_state and not self._check_running_monitor():
-            raise ffx_errors.FFXMonitorNotSupportedError(
-                "No running monitor detected."
-            )
+        if use_monitor_state:
+            if not self._check_running_monitor():
+                raise ffx_errors.FfxMonitorNotSupportedError(
+                    "No running monitor detected."
+                )
+            if self._name is None:
+                raise ffx_errors.FfxMonitorRequiresNameError(
+                    "The 'name' argument is required when 'use_monitor_state' is True."
+                )
         _LOGGER.info("Use FFX Monitor Session: %s", self._use_monitor)
 
         self.check_connection()
+
+    @property
+    def _log_name(self) -> str:
+        """Returns the target string to use in log messages."""
+        return self._name if self._name else self._query
 
     @properties.PersistentProperty
     def config(self) -> ffx_config.FfxConfigData:
@@ -182,7 +183,7 @@ class FfxImpl(ffx_interface.FFX):
             self.wait_for_rcs_connection()
         except errors.HoneydewError as err:
             raise ffx_errors.FfxConnectionError(
-                f"FFX connection check failed for {self._target_name} with err: {err}"
+                f"FFX connection check failed for {self._log_name} with err: {err}"
             ) from err
 
     def get_target_information(self) -> TargetInfoData:
@@ -221,7 +222,12 @@ class FfxImpl(ffx_interface.FFX):
         if self._use_monitor:
             return asdict(self._get_target_status())
 
-        cmd: list[str] = _FFX_CMDS["TARGET_LIST"] + [self._target]
+        if self._target_addr is not None:
+            target = str(self._target_addr)
+        else:
+            target = self._query
+
+        cmd: list[str] = _FFX_CMDS["TARGET_LIST"] + [target]
         output: str = self.run(
             cmd=cmd,
             include_target=False,
@@ -236,7 +242,7 @@ class FfxImpl(ffx_interface.FFX):
             return target_info_from_target_list[0]
         else:
             raise ffx_errors.FfxCommandError(
-                f"'{self._target_name}' is not connected to host"
+                f"'{target}' is not connected to host"
             )
 
     def get_target_name(self) -> str:
@@ -256,11 +262,41 @@ class FfxImpl(ffx_interface.FFX):
         ffx_target_show_info: TargetInfoData = self.get_target_information()
         return ffx_target_show_info.target.name
 
-    def get_target_ssh_address(self) -> custom_types.TargetSshAddress:
+    def resolve_target_address(self) -> None:
+        """Resolves the target using 'ffx target list' and caches it."""
+        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [self._query]
+        output: str = self.run(cmd=cmd, include_target=False)
+        targets = json.loads(output)
+        if not targets:
+            raise ffx_errors.FfxCommandError(
+                f"Target '{self._query}' not found in 'ffx target list'"
+            )
+        target = targets[0]
+        if not target.get("addresses"):
+            raise ffx_errors.FfxCommandError(
+                f"No addresses found for target '{self._query}'"
+            )
+        address_obj = target["addresses"][0]
+
+        try:
+            self._target_addr = custom_types.TargetAddr.from_json(address_obj)
+        except ValueError as e:
+            raise ffx_errors.FfxCommandError(
+                f"Failed to parse target address from FFX: {e}"
+            )
+
+    def get_target_address(self) -> custom_types.TargetAddr:
+        """Returns the TargetAddr. Resolves and caches it if not already cached."""
+        if self._target_addr is None:
+            self.resolve_target_address()
+        assert self._target_addr is not None
+        return self._target_addr
+
+    def get_target_ssh_address(self) -> custom_types.TargetSshAddress | None:
         """Returns the target's ssh ip address and port information.
 
         Returns:
-            (Target SSH IP Address, Target SSH Port)
+            (Target SSH IP Address, Target SSH Port) if address is an IP, None otherwise.
 
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
@@ -275,21 +311,10 @@ class FfxImpl(ffx_interface.FFX):
                 port=monitor_address.port,
             )
 
-        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [self._target_name]
-        output: str = self.run(cmd=cmd, include_target=False)
-        targets = json.loads(output)
-        if not targets:
-            raise ffx_errors.FfxCommandError(
-                f"Target '{self._target_name}' not found in 'ffx target list'"
-            )
-        target = targets[0]
-        if not target.get("addresses"):
-            raise ffx_errors.FfxCommandError(
-                f"No addresses found for target '{self._target_name}'"
-            )
-        address = target["addresses"][0]
-
-        return custom_types.TargetSshAddress.from_json(address)
+        addr = self.get_target_address()
+        if isinstance(addr, custom_types.IpPort):
+            return custom_types.TargetSshAddress(ip=addr.ip, port=addr.port)
+        return None
 
     def get_target_board(self) -> str:
         """Returns the target's board.
@@ -385,8 +410,8 @@ class FfxImpl(ffx_interface.FFX):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
-            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
-                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
+            include_target_name: If set to True, `ffx -t {target-query} {cmd}` will be run.
+                Otherwise, `ffx -t {target-address} {cmd}` will be run.
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
@@ -430,14 +455,14 @@ class FfxImpl(ffx_interface.FFX):
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     _LOGGER.warning(
                         "Failed to execute diagnostic 'ffx target status' on target %s: %s",
-                        self._target_name,
+                        self._log_name,
                         e,
                     )
 
             if isinstance(err, errors.HostCmdError):
                 if _DEVICE_NOT_CONNECTED in str(err):
                     raise errors.DeviceNotConnectedError(
-                        f"{self._target_name} is not connected to host"
+                        f"{self._log_name} is not connected to host"
                     ) from err
                 raise ffx_errors.FfxCommandError(err) from err
             else:
@@ -555,18 +580,18 @@ class FfxImpl(ffx_interface.FFX):
         """Wait until FFX is able to establish a RCS connection to the target.
 
         Args:
-            include_target_name: If set to True, target will be specified by name.
+            include_target_name: If set to True, target will be specified by query.
                 Otherwise, target will be specified by address.
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
         """
-        _LOGGER.info("Waiting for %s to connect to host...", self._target_name)
+        _LOGGER.info("Waiting for %s to connect to host...", self._log_name)
         if self._use_monitor:
             while True:
                 target = self._get_target_status()
                 if target.target_state == "Product" and target.rcs_state == "Y":
-                    _LOGGER.info("%s is connected to host", self._target_name)
+                    _LOGGER.info("%s is connected to host", self._log_name)
                     return
 
         self.run(
@@ -574,7 +599,7 @@ class FfxImpl(ffx_interface.FFX):
             include_target_name=include_target_name,
         )
 
-        _LOGGER.info("%s is connected to host", self._target_name)
+        _LOGGER.info("%s is connected to host", self._log_name)
         return
 
     def wait_for_rcs_disconnection(self) -> None:
@@ -585,10 +610,10 @@ class FfxImpl(ffx_interface.FFX):
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info(
-            "Waiting for %s to disconnect from host...", self._target_name
+            "Waiting for %s to disconnect from host...", self._log_name
         )
         self.run(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"])
-        _LOGGER.info("%s is not connected to host", self._target_name)
+        _LOGGER.info("%s is not connected to host", self._log_name)
 
         return
 
@@ -599,6 +624,9 @@ class FfxImpl(ffx_interface.FFX):
         for this target. It parses the output of `ffx --machine json monitor status`
         to find the dictionary corresponding to the current target node.
 
+        This method will only provide status information when the Ffx object
+        node name is provided.
+
         Args:
             None
 
@@ -607,10 +635,10 @@ class FfxImpl(ffx_interface.FFX):
             node, an empty MonitorTargetInfo if the target is not found in the
             monitor output.
         Raises:
-            ffx_errors.FFXMonitorNotSupportedError: If this method is called when monitor is not in use.
+            ffx_errors.FfxMonitorNotSupportedError: If this method is called when monitor is not in use.
         """
         if not self._use_monitor:
-            raise ffx_errors.FFXMonitorNotSupportedError(
+            raise ffx_errors.FfxMonitorNotSupportedError(
                 "_get_target_status can only be called when ffx monitor is in"
                 " use."
             )
@@ -622,7 +650,7 @@ class FfxImpl(ffx_interface.FFX):
         _LOGGER.info("DEBUG: statuses: %s", statuses)
         targets = json.loads(statuses).get("targets", [])
         for target in targets:
-            if target["nodename"] == self._target_name:
+            if target["nodename"] == self._name:
                 addresses = []
                 for addr in target.get("addresses", []):
                     ssh_port = addr["ssh_port"]
@@ -649,9 +677,9 @@ class FfxImpl(ffx_interface.FFX):
 
         Args:
             cmd: FFX command.
-            include_target: True to include "-t <target_name>", False otherwise.
-            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
-                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
+            include_target: True to include "-t <target>", False otherwise.
+            include_target_name: If set to True, `ffx -t {target-query} {cmd}` will be run.
+                Otherwise, `ffx -t {target-address} {cmd}` will be run.
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
 
@@ -662,9 +690,12 @@ class FfxImpl(ffx_interface.FFX):
 
         if include_target:
             if include_target_name:
-                ffx_args.extend(["-t", f"{self._target_name}"])
+                # Use the unresolved target query
+                ffx_args.extend(["-t", f"{self._query}"])
             else:
-                ffx_args.extend(["-t", f"{self._target}"])
+                # Use the resolved target query
+                target = self.get_target_address()
+                ffx_args.extend(["-t", f"{target}"])
 
         # To run FFX in isolation mode
         ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
@@ -692,7 +723,6 @@ class FfxImpl(ffx_interface.FFX):
         Args:
             target_ip_port: New IP address of the device.
         """
-        self._target_ip_port = target_ip_port
-        self._target = str(self._target_ip_port)
+        self._target_addr = target_ip_port
 
         self.check_connection()

@@ -145,7 +145,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
             "-c",
             "ffx.isolated=true",
             "-t",
-            f"{self.dut.ffx._target}",
+            f"{self.dut.ffx.get_target_address()}",
             "target",
             "echo",
         ]
@@ -163,7 +163,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
             "-c",
             "ffx.isolated=true",
             "-t",
-            f"{self.dut.ffx._target}",
+            f"{self.dut.ffx.get_target_address()}",
             "target",
             "wait",
         ]
@@ -177,6 +177,8 @@ class FfxTest(ffxtestcase.FfxTestCase):
             "json",
             "-t",
             "this-should-not-exist",
+            "-c",
+            "proxy.timeout_secs=5",
             "target",
             "show",
         ]

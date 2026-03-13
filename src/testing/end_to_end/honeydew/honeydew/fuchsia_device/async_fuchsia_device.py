@@ -371,10 +371,15 @@ class AsyncFuchsiaDevice(
             )
             if config_shared_data is not None:
                 shared_data = config_shared_data
+        query: str = (
+            str(self._device_info.ip_port)
+            if self._device_info.ip_port
+            else self.device_name
+        )
         ffx_obj: ffx_transport_interface.FFX = ffx_impl.FfxImpl(
-            target_name=self.device_name,
+            query=query,
+            name=self.device_name,
             config_data=self._ffx_config_data,
-            target_ip_port=self._device_info.ip_port,
             use_monitor_state=use_monitor_state,
             shared_data=shared_data,
             device_ip_change=self,

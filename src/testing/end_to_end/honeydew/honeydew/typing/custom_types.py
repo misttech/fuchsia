@@ -9,7 +9,7 @@ import abc
 import enum
 import ipaddress
 from dataclasses import dataclass
-from typing import Any, Self, TypeVar
+from typing import Any, TypeVar
 
 AnyString = TypeVar("AnyString", str, bytes)
 
@@ -121,16 +121,19 @@ class IpPort(TargetAddr):
 
         Raises:
             ValueError: If the query cannot be cleanly parsed as a valid address
-                (e.g., if it's just a hostname).
+                (e.g., if it's just a hostname), or if it is an ipv6 address with
+                a symbolic scope ID.
         """
         # If it's wrapped in brackets, it must be an IP or [IP]:PORT
         if query.startswith("["):
             try:
-                return cls.create_using_ip_and_port(query)
+                ip_port = cls.create_using_ip_and_port(query)
+                if ip_port.port is not None:
+                    return cls._validate_ipv6_scope(ip_port)
             except ValueError:
                 pass
             try:
-                return cls.create_using_ip(query)
+                return cls._validate_ipv6_scope(cls.create_using_ip(query))
             except ValueError:
                 pass
         else:
@@ -141,15 +144,27 @@ class IpPort(TargetAddr):
             # valid IPv6 addresses that contain colons. Users can use
             # brackets for IPv6 (e.g. "[::1]:8022") to force port parsing.
             try:
-                return cls.create_using_ip(query)
+                return cls._validate_ipv6_scope(cls.create_using_ip(query))
             except ValueError:
                 pass
             try:
-                return cls.create_using_ip_and_port(query)
+                return cls._validate_ipv6_scope(
+                    cls.create_using_ip_and_port(query)
+                )
             except ValueError:
                 pass
 
         raise ValueError(f"Could not parse '{query}' as IpPort")
+
+    @classmethod
+    def _validate_ipv6_scope(cls, ip_port: IpPort) -> "IpPort":
+        if isinstance(ip_port.ip, ipaddress.IPv6Address):
+            scope_id = getattr(ip_port.ip, "scope_id", None)
+            if scope_id is not None and not scope_id.isdigit():
+                raise ValueError(
+                    f"Symbolic scope {scope_id} not supported. Addresses must be resolved"
+                )
+        return ip_port
 
     @staticmethod
     def create_using_ip_and_port(ip_port: str) -> IpPort:
@@ -182,7 +197,8 @@ class IpPort(TargetAddr):
                 )
             addr_part: str = arr[0]
             # Remove [] that might be surrounding an IPv6 address
-            addr_part = addr_part.replace("[", "").replace("]", "")
+            if addr_part.startswith("[") and addr_part.endswith("]"):
+                addr_part = addr_part[1:-1]
 
             port = None
             if len(arr) == 2:
@@ -217,13 +233,14 @@ class IpPort(TargetAddr):
         """
         try:
             # Remove [] that might be surrounding an IPv6 address
-            ip = ip.replace("[", "").replace("]", "")
+            if ip.startswith("[") and ip.endswith("]"):
+                ip = ip[1:-1]
             return IpPort(ipaddress.ip_address(ip), None)
         except ValueError as e:
             raise e
 
     @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> Self:
+    def from_json(cls, obj: dict[str, Any]) -> "IpPort":
         """Parses a FFX target address JSON object into an IpPort.
 
         Args:
@@ -245,9 +262,12 @@ class IpPort(TargetAddr):
         if ssh_port == 0:
             ssh_port = None
 
-        return cls(
-            ip=ipaddress.ip_address(ssh_ip),
-            port=ssh_port,
+        ip_obj = ipaddress.ip_address(ssh_ip)
+        return cls._validate_ipv6_scope(
+            IpPort(
+                ip=ip_obj,
+                port=ssh_port,
+            )
         )
 
     @property

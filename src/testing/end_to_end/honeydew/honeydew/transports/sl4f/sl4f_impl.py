@@ -233,7 +233,14 @@ class Sl4fImpl(sl4f_interface.SL4F):
         if self._ip_address:
             sl4f_server_ip = self._ip_address
         else:
-            sl4f_server_ip = self._ffx_transport.get_target_ssh_address().ip
+            ssh_addr = self._ffx_transport.get_target_ssh_address()
+            if ssh_addr is None:
+                # TODO(b/482094590) update to support USB
+                _LOGGER.error("SL4F is not supported on non-IP devices.")
+                raise sl4f_errors.Sl4fError(
+                    "SL4F requires an IP-based target (not USB)."
+                )
+            sl4f_server_ip = ssh_addr.ip
 
         # Device addr is localhost, assume that means that ports were forwarded
         # from a remote workstation/laptop with a device attached.

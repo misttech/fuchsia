@@ -136,8 +136,8 @@ _FFX_TARGET_STATUS_FULL_OUTPUT: str = (
 _FFX_TARGET_WAIT_MACHINE_RAW: str = ""
 
 _INPUT_ARGS: dict[str, Any] = {
-    "target_name": _TARGET_NAME,
-    "target_ip_port": _TARGET_SSH_ADDRESS,
+    "target_query": _TARGET_NAME,
+    "target_addr": _TARGET_SSH_ADDRESS,
     "ffx_config_data": ffx_config.FfxConfigData(
         isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
         logs_dir=_LOGS_DIR,
@@ -216,7 +216,7 @@ class FfxImplTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_wo_ip = ffx_impl.FfxImpl(
-                target_name=_INPUT_ARGS["target_name"],
+                query=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
             )
         mock_ffx_check_connection.assert_called()
@@ -234,8 +234,8 @@ class FfxImplTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_with_ip = ffx_impl.FfxImpl(
-                target_name=_INPUT_ARGS["target_name"],
-                target_ip_port=_INPUT_ARGS["target_ip_port"],
+                query=str(_INPUT_ARGS["target_addr"]),
+                name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
                 device_ip_change=self.device_ip_change,
             )
@@ -257,8 +257,8 @@ class FfxImplTests(unittest.TestCase):
             ) as mock_ffx_check_running_monitor,
         ):
             self.ffx_obj_with_ip_and_monitor = ffx_impl.FfxImpl(
-                target_name=_INPUT_ARGS["target_name"],
-                target_ip_port=_INPUT_ARGS["target_ip_port"],
+                query=str(_INPUT_ARGS["target_addr"]),
+                name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
                 use_monitor_state=True,
                 device_ip_change=self.device_ip_change,
@@ -266,11 +266,31 @@ class FfxImplTests(unittest.TestCase):
         mock_ffx_check_connection.assert_called()
         mock_ffx_check_running_monitor.assert_called()
 
-    def test_ffx_init_with_ip_as_target_name(self) -> None:
-        """Test case for ffx_impl.FfxImpl() when called with target_name=<ip>."""
+    def test_ffx_init_with_ip_as_target_query(self) -> None:
+        """Test case for ffx_impl.FfxImpl() when called with query=<ip>."""
+        with mock.patch.object(
+            ffx_impl.FfxImpl,
+            "check_connection",
+            autospec=True,
+        ):
+            ffx_obj = ffx_impl.FfxImpl(
+                query="127.0.0.1",
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                device_ip_change=self.device_ip_change,
+            )
+        self.assertEqual(ffx_obj._query, "127.0.0.1")
+        self.assertEqual(
+            ffx_obj._target_addr,
+            custom_types.IpPort(ipaddress.ip_address("127.0.0.1"), None),
+        )
+
+    def test_ffx_init_with_ip_as_target_query_raises_when_no_device_ip_change(
+        self,
+    ) -> None:
+        """Test case for ffx_impl.FfxImpl() when called with IP and no device_ip_change."""
         with self.assertRaises(ValueError):
             ffx_impl.FfxImpl(
-                target_name=_IPV6,
+                query="127.0.0.1",
                 config_data=_INPUT_ARGS["ffx_config_data"],
             )
 
@@ -287,7 +307,7 @@ class FfxImplTests(unittest.TestCase):
             autospec=True,
         ):
             ffx_obj = ffx_impl.FfxImpl(
-                target_name=_INPUT_ARGS["target_name"],
+                query=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
                 shared_data=shared_data,
             )
@@ -376,12 +396,96 @@ class FfxImplTests(unittest.TestCase):
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
     )
-    def test_get_target_ssh_address(self, mock_ffx_run: mock.Mock) -> None:
-        """Verify get_target_ssh_address returns SSH information of the fuchsia
-        device."""
+    def test_get_target_ssh_address_cached(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify get_target_ssh_address returns SSH information without command."""
         self.assertEqual(
             self.ffx_obj_with_ip.get_target_ssh_address(), _TARGET_SSH_ADDRESS
         )
+        mock_ffx_run.assert_not_called()
+
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
+        autospec=True,
+    )
+    def test_get_target_ssh_address_resolves(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify get_target_ssh_address resolves via command when not cached."""
+        self.assertEqual(
+            self.ffx_obj_wo_ip.get_target_ssh_address(), _TARGET_SSH_ADDRESS
+        )
+        mock_ffx_run.assert_called_once()
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=json.dumps(
+            [
+                {
+                    "nodename": "fuchsia-emulator",
+                    "rcs_state": "Y",
+                    "serial": "<unknown>",
+                    "target_type": "core.x64",
+                    "target_state": "Product",
+                    "addresses": [
+                        {
+                            "type": "Ip",
+                            "ip": "fe80::1",
+                            "ssh_port": 8022,
+                        }
+                    ],
+                    "is_default": False,
+                    "is_manual": False,
+                }
+            ]
+        ),
+        autospec=True,
+    )
+    def test_get_target_ssh_address_no_scope(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify get_target_ssh_address works with IP addresses that have no scope."""
+        expected = custom_types.TargetSshAddress(
+            ip=ipaddress.ip_address("fe80::1"), port=8022
+        )
+        self.assertEqual(self.ffx_obj_wo_ip.get_target_ssh_address(), expected)
+        mock_ffx_run.assert_called()
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=json.dumps(
+            [
+                {
+                    "nodename": "fuchsia-emulator",
+                    "rcs_state": "Y",
+                    "serial": "<unknown>",
+                    "target_type": "core.x64",
+                    "target_state": "Product",
+                    "addresses": [
+                        {
+                            "type": "Ip",
+                            "ip": "192.168.42.12",
+                            "ssh_port": 8022,
+                        }
+                    ],
+                    "is_default": False,
+                    "is_manual": False,
+                }
+            ]
+        ),
+        autospec=True,
+    )
+    def test_get_target_ssh_address_ipv4(self, mock_ffx_run: mock.Mock) -> None:
+        """Verify get_target_ssh_address works with IPv4 addresses."""
+        expected = custom_types.TargetSshAddress(
+            ip=ipaddress.ip_address("192.168.42.12"), port=8022
+        )
+        self.assertEqual(self.ffx_obj_wo_ip.get_target_ssh_address(), expected)
         mock_ffx_run.assert_called()
 
     @mock.patch.object(
@@ -702,7 +806,7 @@ class FfxImplTests(unittest.TestCase):
         self, mock_host_run: mock.Mock
     ) -> None:
         """Verify _check_running_monitor includes shared_data in its command."""
-        self.ffx_obj_wo_ip._check_running_monitor()
+        self.ffx_obj_with_ip._check_running_monitor()
         mock_host_run.assert_called()
         cmd = mock_host_run.call_args[1]["cmd"]
         self.assertIn("-c", cmd)
@@ -809,7 +913,7 @@ class FfxImplTests(unittest.TestCase):
         mock_host_shell.side_effect = errors.HostCmdError("Command failed")
 
         with self.assertRaises(ffx_errors.FfxCommandError):
-            self.ffx_obj_wo_ip.run(
+            self.ffx_obj_with_ip.run(
                 cmd=["test", "cmd"], log_status_on_failure=False
             )
 

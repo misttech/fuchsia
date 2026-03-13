@@ -197,6 +197,7 @@ class CustomTypesTests(unittest.TestCase):
     @parameterized.expand(
         [
             ("invalid_ip", "256.256.256.256"),
+            ("invalid_symbolic_scope", "fe80::1%eth0"),
             ("random_string", "my-fuchsia-device"),
         ]
     )
@@ -245,6 +246,7 @@ class CustomTypesTests(unittest.TestCase):
         [
             ("invalid_ip", {"type": "Ip", "ip": "256.256.256.256"}),
             ("missing_ip", {"type": "Ip"}),
+            ("invalid_symbolic_scope", {"type": "Ip", "ip": "fe80::1%eth0"}),
             ("unsupported_type", {"type": "Unknown"}),
         ]
     )

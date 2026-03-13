@@ -435,3 +435,10 @@ class Sl4fImplTests(unittest.TestCase):
             self.sl4f_obj_with_ipv6._get_sl4f_server_address(),
             _EXPECTED_VALUES["sl4f_server_address_ipv6"],
         )
+
+    def test_get_sl4f_server_address_none_ssh_address(self) -> None:
+        """Testcase for SL4F._get_sl4f_server_address() when ssh_addr is None."""
+        self.ffx_obj.get_target_ssh_address.return_value = None
+
+        with self.assertRaises(sl4f_errors.Sl4fError):
+            self.sl4f_obj_wo_ip._get_sl4f_server_address()

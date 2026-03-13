@@ -71,11 +71,12 @@ class FFX(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_target_ssh_address(self) -> custom_types.TargetSshAddress:
+    def get_target_ssh_address(self) -> custom_types.TargetSshAddress | None:
         """Returns the target's ssh ip address and port information.
 
         Returns:
-            (Target SSH IP Address, Target SSH Port)
+            (Target SSH IP Address, Target SSH Port) if target is IP,
+            None otherwise.
 
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
@@ -133,8 +134,8 @@ class FFX(abc.ABC):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
-            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
-                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
+            include_target_name: If set to True, `ffx -t {target-query} {cmd}` will be run.
+                Otherwise, `ffx -t {target-address} {cmd}` will be run.
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
@@ -249,7 +250,7 @@ class FFX(abc.ABC):
         """Wait until FFX is able to establish a RCS connection to the target.
 
         Args:
-            include_target_name: If set to True, target will be specified by name.
+            include_target_name: If set to True, target will be specified by query.
                 Otherwise, target will be specified by address.
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
@@ -277,9 +278,9 @@ class FFX(abc.ABC):
 
         Args:
             cmd: FFX command.
-            include_target: True to include "-t <target_name>", False otherwise.
-            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
-                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
+            include_target: True to include "-t <target>", False otherwise.
+            include_target_name: If set to True, `ffx -t {target-query} {cmd}` will be run.
+                Otherwise, `ffx -t {target-address} {cmd}` will be run.
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
 
