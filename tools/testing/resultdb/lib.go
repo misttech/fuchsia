@@ -149,7 +149,7 @@ func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails) {
 	}
 }
 
-// testCaseToResultSink converts TestCaseResult defined in //tools/testing/testparser/result.go
+// testCaseToResultSink converts TestCaseResult defined in //tools/testing/runtests/runtests.go
 // to ResultSink's TestResult. A testcase will not be converted if test result cannot be
 // mapped to result_sink.Status.
 func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.StringPair, testDetail *runtests.TestDetails, outputRoot string) ([]*sinkpb.TestResult, []string) {
