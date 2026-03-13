@@ -35,17 +35,16 @@ class AsyncChannel:
         Raises:
             FcTransportStatus exception outlining the specific failure of the underlying handle.
         """
-        self.waker.register(self.channel, name=f"AsyncChannel {self.channel}")
-        while True:
-            try:
-                result = self.channel.read()
-                self.waker.unregister(self.channel)
-                return result
-            except fc.FcTransportStatus as e:
-                if e.args[0] != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
-                    self.waker.unregister(self.channel)
-                    raise e
-            await self.waker.wait_ready(self.channel)
+        with self.waker.registration(
+            self.channel, name=f"AsyncChannel {self.channel}"
+        ):
+            while True:
+                try:
+                    return self.channel.read()
+                except fc.FcTransportStatus as e:
+                    if e.args[0] != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
+                        raise e
+                await self.waker.wait_ready(self.channel)
 
     def write(
         self,

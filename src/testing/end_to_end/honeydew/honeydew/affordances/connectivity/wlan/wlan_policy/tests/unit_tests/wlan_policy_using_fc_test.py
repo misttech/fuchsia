@@ -12,6 +12,7 @@ from unittest import mock
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_controller_py
+from fidl import GlobalHandleWaker
 from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable
@@ -134,6 +135,9 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
+
+        wakers = GlobalHandleWaker()
+        wakers._reset_for_testing()
 
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.AsyncRebootCapableDevice,

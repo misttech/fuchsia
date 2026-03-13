@@ -58,7 +58,7 @@ class AsyncSocket:
         self._read_all_lock = asyncio.Lock()
 
     def __del__(self) -> None:
-        self.close()
+        self.socket.close()
 
     def _invariant_check(self) -> None:
         """Checks to make sure we're not already in the middle of a read-all
@@ -83,19 +83,20 @@ class AsyncSocket:
 
     async def _read(self) -> bytes:
         _LOGGER.debug("Doing read of socket: {self.socket}")
-        self.waker.register(self.socket, name=f"AsyncSocket {self.socket}")
-        while True:
-            try:
-                result = self.socket.read()
-                self.waker.unregister(self.socket)
-                return result
-            except fc.FcTransportStatus as e:
-                if e.args[0] != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
-                    self.waker.unregister(self.socket)
-                    raise e
-                _LOGGER.debug("Received wait signal for socket: {self.socket}")
-            _LOGGER.debug("Awaiting socket wake for socket: {self.socket}")
-            await self.waker.wait_ready(self.socket)
+        with self.waker.registration(
+            self.socket, name=f"AsyncSocket {self.socket}"
+        ):
+            while True:
+                try:
+                    return self.socket.read()
+                except fc.FcTransportStatus as e:
+                    if e.args[0] != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
+                        raise e
+                    _LOGGER.debug(
+                        "Received wait signal for socket: {self.socket}"
+                    )
+                _LOGGER.debug("Awaiting socket wake for socket: {self.socket}")
+                await self.waker.wait_ready(self.socket)
 
     async def read_all(self) -> bytearray:
         """Attempts to read all data on the socket until it is closed.
@@ -139,33 +140,3 @@ class AsyncSocket:
             FcTransportStatus exception on failure of the underlying handle.
         """
         self.socket.write(buf)
-
-    def close(self) -> None:
-        """Closes this socket, making it no longer usable."""
-        # This is intended to be idempotent. Unless a caller is fiddling with the internals, the
-        # socket should not be registered with the waker if it is closed. If it is closed and there
-        # is still a waker registered, this is a bug (which is something we've seen before with
-        # spurious wakes coming in).
-        #
-        # This could be papering over a bug, as attempting to unregister a channel that has
-        # already been closed will raise an exception (we cast the channel to an integer, and that
-        # cast will fail if the channel has already been closed).
-        #
-        # And if the channel has been closed but we don't unregister the waker somehow this can lead
-        # to spurious channel wakes, because our method of handle allocation recycles "available"
-        # channels (see fuchsia-controller/src/fdomain.rs), so can cause a channel that is wholly
-        # separate to receive events for a remote channel event even though the client-end (on the
-        # host side) has already been closed and the event has not yet been received.
-        #
-        # TODO(https://fxbug.dev/482412212): While it might require some digging, a way to avoid
-        # this might simply be to ensure the exception for passing an already-closed socket is
-        # always raised (as that should be a bug), and that we use a monotonically increasing handle
-        # number for allocating FDomain handles to prevent spurious events (as receiving an event in
-        # the channel waker for a channel that does not exist will simply drop the event, and since
-        # previous numbers are not reused, we would not handle spurious wakes).
-        #
-        # This all would require a fair amount of refactoring, though, as the internal method of
-        # handle number allocation is load bearing in a lot of tests.
-        if not self.socket._is_unregistered():
-            self.waker.unregister(self.socket)
-        self.socket.close()

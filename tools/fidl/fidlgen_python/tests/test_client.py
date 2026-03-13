@@ -3,11 +3,38 @@
 # found in the LICENSE file.
 import asyncio
 import unittest
-from unittest.mock import Mock
+from typing import Any, Dict
+from unittest.mock import MagicMock, Mock
 
 import fidl_fuchsia_developer_ffx as ffx
 from fidl_codec import encode_fidl_message, method_ordinal
 from fuchsia_controller_py import Channel, FcTransportStatus
+
+
+class MockWaker:
+    def __init__(self) -> None:
+        self.queues: Dict[int, asyncio.Queue[int]] = {}
+
+    def register(self, h: Any, *, name: str) -> None:
+        h_id = h.as_int()
+        if h_id not in self.queues:
+            self.queues[h_id] = asyncio.Queue()
+
+    def unregister(self, h: Any) -> None:
+        pass
+
+    def registration(self, h: Any, *, name: str) -> Any:
+        self.register(h, name=name)
+        return MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
+
+    def post_ready(self, h: Any) -> None:
+        h_id = h.as_int()
+        if h_id not in self.queues:
+            self.queues[h_id] = asyncio.Queue()
+        self.queues[h_id].put_nowait(h_id)
+
+    async def wait_ready(self, h: Any) -> int:
+        return await self.queues[h.as_int()].get()
 
 
 class FidlClientTests(unittest.IsolatedAsyncioTestCase):
@@ -23,12 +50,11 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             (bytearray([1, 0, 0, 0]), []),
         ]
         # The proxy here really doesn't matter, we're trying to access internal methods.
-        proxy = ffx.EchoClient(channel)
+        waker = MockWaker()
+        proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
         proxy.pending_txids.add(2)
-        proxy._channel_waker._handle_ready_queues = {}
-        proxy._channel_waker._handle_ready_queues[0] = asyncio.Queue()
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
+        waker.post_ready(channel)
         proxy._decode = Mock()  # type: ignore[method-assign]
         proxy._decode.return_value = (bytearray([1, 2, 3]), [])
         loop = asyncio.get_running_loop()
@@ -46,13 +72,12 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
             (bytearray([1, 0, 0, 0]), []),
         ]
-        proxy = ffx.EchoClient(channel)
+        waker = MockWaker()
+        proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
-        proxy._channel_waker._handle_ready_queues = {}
-        proxy._channel_waker._handle_ready_queues[0] = asyncio.Queue()
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
+        waker.post_ready(channel)
+        waker.post_ready(channel)
+        waker.post_ready(channel)
         proxy._decode = Mock()  # type: ignore[method-assign]
         proxy._decode.return_value = (bytearray([1, 2, 3]), [])
         await proxy._read_and_decode(1)
@@ -65,11 +90,10 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
         ]
-        proxy = ffx.EchoClient(channel)
+        waker = MockWaker()
+        proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
-        proxy._channel_waker._handle_ready_queues = {}
-        proxy._channel_waker._handle_ready_queues[0] = asyncio.Queue()
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
+        waker.post_ready(channel)
         proxy.staged_messages[1] = asyncio.Queue(1)
         proxy.staged_messages[1].put_nowait((bytearray([1, 0, 0, 0]), []))
         proxy._decode = Mock()  # type: ignore[method-assign]
@@ -81,10 +105,9 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         channel.__class__ = Channel  # type: ignore[assignment]
         channel.as_int.return_value = 0
         channel.read.side_effect = [(bytearray([1, 0, 0, 0]), ())]
-        proxy = ffx.EchoClient(channel)
-        proxy._channel_waker._handle_ready_queues = {}
-        proxy._channel_waker._handle_ready_queues[0] = asyncio.Queue()
-        proxy._channel_waker._handle_ready_queues[0].put_nowait(0)
+        waker = MockWaker()
+        proxy = ffx.EchoClient(channel, channel_waker=waker)
+        waker.post_ready(channel)
         with self.assertRaises(RuntimeError):
             await proxy._read_and_decode(10)
         self.assertEqual(proxy._channel, None)

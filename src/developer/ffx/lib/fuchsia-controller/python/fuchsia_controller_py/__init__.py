@@ -36,16 +36,6 @@ class BaseHandle(ABC):
     def close(self) -> None:
         """Releases the underlying handle."""
 
-    @abstractmethod
-    def _is_unregistered(self) -> bool:
-        """Returns whether this handle has been closed.
-
-        This is NOT intended to be used other than internally with the
-        fidl AsyncChannel and AsyncSocket wrappers, as they have specific
-        async notification checks they are working with. You cannot (and should
-        not) rely on this for any form of synchronization.
-        """
-
 
 class Handle(BaseHandle):
     """Fuchsia controller FIDL handle.
@@ -84,9 +74,6 @@ class Handle(BaseHandle):
 
     def close(self) -> None:
         self._handle = None
-
-    def _is_unregistered(self) -> bool:
-        return self._handle is None
 
 
 class Socket(BaseHandle):
@@ -150,9 +137,6 @@ class Socket(BaseHandle):
 
     def close(self) -> None:
         self._socket = None
-
-    def _is_unregistered(self) -> bool:
-        return self._socket is None
 
 
 class IsolateDir:
@@ -436,9 +420,6 @@ class Channel(BaseHandle):
         self.write((msg, []))
         self.close()
 
-    def _is_unregistered(self) -> bool:
-        return self._channel is None
-
 
 class Event(BaseHandle):
     """
@@ -488,6 +469,3 @@ class Event(BaseHandle):
 
     def close(self) -> None:
         self._handle = None
-
-    def _is_unregistered(self) -> bool:
-        return self._handle is None

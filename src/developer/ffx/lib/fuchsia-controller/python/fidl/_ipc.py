@@ -8,7 +8,8 @@ import logging
 import socket
 import traceback
 from abc import ABC, abstractmethod
-from typing import Dict
+from types import TracebackType
+from typing import Dict, Self
 
 import fuchsia_controller_py as fc
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 HANDLE_READY_QUEUES: Dict[int, asyncio.Queue[int]] = {}
+HANDLE_REFCOUNTS: Dict[int, int] = {}
 
 
 def enqueue_ready_zx_handle_from_fd(
@@ -33,6 +35,33 @@ def enqueue_ready_zx_handle_from_fd(
     queue.put_nowait(handle_no)
 
 
+class HandleRegistration:
+    """A scoped object for handles.
+
+    This is intended to be used with the `with` keyword to ensure that handle registration is
+    properly cleaned up.
+    """
+
+    def __init__(
+        self, waker: "HandleWaker", h: fc.BaseHandle, *, name: str
+    ) -> None:
+        self.waker = waker
+        self.handle = h
+        self.name = name
+
+    def __enter__(self) -> Self:
+        self.waker.register(self.handle, name=self.name)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.waker.unregister(self.handle)
+
+
 class HandleWaker(ABC):
     """Base class for a waker used with potentially blocking handles."""
 
@@ -43,6 +72,12 @@ class HandleWaker(ABC):
     @abstractmethod
     def unregister(self, channel: fc.BaseHandle) -> None:
         """Unregisters a handle, meaning it is not possible to wait for it to be ready."""
+
+    def registration(
+        self, channel: fc.BaseHandle, *, name: str
+    ) -> HandleRegistration:
+        """Returns a scoped registration object for a handle."""
+        return HandleRegistration(self, channel, name=name)
 
     @abstractmethod
     def post_ready(self, channel: fc.BaseHandle) -> None:
@@ -62,10 +97,15 @@ class GlobalHandleWaker(HandleWaker):
 
     def __init__(self) -> None:
         self._handle_ready_queues = HANDLE_READY_QUEUES
+        self._handle_refcounts = HANDLE_REFCOUNTS
 
     def register(self, h: fc.BaseHandle, *, name: str) -> None:
-        if h.as_int() not in self._handle_ready_queues:
-            self._handle_ready_queues[h.as_int()] = asyncio.Queue()
+        h_id = h.as_int()
+        if h_id not in self._handle_ready_queues:
+            self._handle_ready_queues[h_id] = asyncio.Queue()
+            self._handle_refcounts[h_id] = 0
+        self._handle_refcounts[h_id] += 1
+
         notification_fd = fc.connect_handle_notifier()
         # This try call is simply here in case registration occurs in outside
         # an async event loop.
@@ -88,8 +128,12 @@ class GlobalHandleWaker(HandleWaker):
             logger.debug("[[ TRACE END ]]")
 
     def unregister(self, h: fc.BaseHandle) -> None:
-        if h.as_int() in self._handle_ready_queues:
-            self._handle_ready_queues.pop(h.as_int())
+        h_id = h.as_int()
+        if h_id in self._handle_ready_queues:
+            self._handle_refcounts[h_id] -= 1
+            if self._handle_refcounts[h_id] <= 0:
+                self._handle_ready_queues.pop(h_id)
+                self._handle_refcounts.pop(h_id)
 
     def post_ready(self, h: fc.BaseHandle) -> None:
         logger.debug(f"Re-notifying for channel: {h.as_int()}")
@@ -113,3 +157,4 @@ class GlobalHandleWaker(HandleWaker):
         one loop into another.
         """
         self._handle_ready_queues.clear()
+        self._handle_refcounts.clear()
