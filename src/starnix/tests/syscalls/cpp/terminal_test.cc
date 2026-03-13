@@ -552,23 +552,35 @@ TEST_F(Pty, NewInstance) {
 
     struct stat stat_buf;
 
-    // Open ptmx in the first instance, which should create pts/0.
+    // Open ptmx in the first instance, which should create pts/<id>.
     std::string ptmx1_path = mount_point1.path() + "/ptmx";
     fbl::unique_fd ptmx1_fd(open(ptmx1_path.c_str(), O_RDWR));
     ASSERT_TRUE(ptmx1_fd.is_valid());
-    std::string pts1_0_path = mount_point1.path() + "/0";
-    ASSERT_EQ(0, stat(pts1_0_path.c_str(), &stat_buf));
 
-    // The two instances should be separate. Opening a pty in the second instance
-    // should not create a new pty in the first one.
+    int pty1_id = -1;
+    ASSERT_EQ(0, ioctl(ptmx1_fd.get(), TIOCGPTN, &pty1_id));
+
+    std::string pts1_id_path = mount_point1.path() + "/" + std::to_string(pty1_id);
+    ASSERT_EQ(0, stat(pts1_id_path.c_str(), &stat_buf));
+
+    // The two instances should be separate. Opening a pty in the first instance
+    // should not create a new pty in the second one.
     std::string pts2_0_path = mount_point2.path() + "/0";
     ASSERT_EQ(-1, stat(pts2_0_path.c_str(), &stat_buf));
+    ASSERT_EQ(ENOENT, errno);
+    std::string pts2_id_path = mount_point2.path() + "/" + std::to_string(pty1_id);
+    ASSERT_EQ(-1, stat(pts2_id_path.c_str(), &stat_buf));
     ASSERT_EQ(ENOENT, errno);
 
     // Open ptmx in the second instance, which should now create pts/0.
     std::string ptmx2_path = mount_point2.path() + "/ptmx";
     fbl::unique_fd ptmx2_fd(open(ptmx2_path.c_str(), O_RDWR));
     ASSERT_TRUE(ptmx2_fd.is_valid());
+
+    int pty2_id = -1;
+    ASSERT_EQ(0, ioctl(ptmx2_fd.get(), TIOCGPTN, &pty2_id));
+    ASSERT_EQ(0, pty2_id);
+
     ASSERT_EQ(0, stat(pts2_0_path.c_str(), &stat_buf));
   });
 }
