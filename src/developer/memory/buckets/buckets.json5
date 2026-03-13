@@ -8,10 +8,9 @@
     },
     {
         name: "Graphics",
-        process: "driver-host-#display|driver-host-#gpu",
-        vmo: "magma_create_buffer|Mali .*|Magma.*|ImagePipe2Surface.*|GFXBufferCollection.*|ScenicImageMemory|Display.*|CompactImage.*|GFX Device Memory.*|FlatlandImageMemory.*",
+        process: "driver-host-#display|driver-host-#gpu|aml-gpu\\.cm.*",
+        vmo: "",
         event_code: 2,
-        order: 10,
     },
     {
         name: "Storage",
@@ -80,13 +79,6 @@
         event_code: 46,
     },
     {
-        name: "OtherDrivers",
-        process: "driver_host.*|driver-host-.*|pwrbtn-monitor\\.cm|aml-rawnand\\.cm.*|aml-gpu\\.cm.*|aml-sdmmc\\.cm.*|aml-usb-phy\\.cm|platform-bus\\.cm.*|aml-uart\\.cm.*|amlogic-display\\.cm|aml-gpio\\.cm.*|aml-meson-power\\.cm.*|xhci.cm\\.*|aml-i2c\\.cm.*|optee\\.cm.*|aml-pwm\\.cm.*|amlogic_video_decoder\\.cm.*|aml-g12-tdm\\.cm.*|tas27xx\\.cm.*|ams-light\\.cm.*|aml-securemem\\.cm.*|aml-g12-pdm\\.cm.*|aml-ram\\\.cm.*|aml-thermistor\\.cm.*|aml-canvas\\.cm.*|focaltech\\.cm.*|aml-thermal\\.cm.*|buttons\\.cm.*|aml-light\\.cm.*|ti-lp8556\\.cm.*|aml-g12-tdm-dai\\.cm.*|registers\\.cm.*|aml-pwm-init\\.cm.*|aml_mipicsi\\.cm.*|lowpan-ot-driver\\.cm.*|aml-thermal-s905d2g-legacy\\.cm.*|amlogic_h264_encoder_driver\\.cm.*|focaltech-sherlock\\.cm.*|tas5720\\.cm.*|camera_device\\.cm.*|aml-nna\\.cm.*|gt6853\\.cm.*|ti-ina231\\.cm.*|nelson-brownout-protection\\.cm.*|shtv3\\.cm.*",
-        vmo: "",
-        event_code: 48,
-        order: 9,
-    },
-    {
         name: "A11y",
         process: "a11y-manager\\.cm",
         vmo: "",
@@ -135,12 +127,6 @@
         event_code: 63,
     },
     {
-        name: "EngTools",
-        process: "/boot/bin/sh|/pkg/bin/sshd|memory_monitor2?\\.cm|overnetstack\\.cm|memory_pressure_signaler\\.cm|remote.*|sh:console|sshd-host\\.cm",
-        vmo: "",
-        event_code: 64,
-    },
-    {
         name: "Power",
         process: "power-manager\\.cm|shutdown-shim\\.cm",
         vmo: "",
@@ -151,5 +137,19 @@
         process: "input-pipeline\\.cm|scene_manager\\.cm",
         vmo: "",
         event_code: 69,
+    },
+    {
+        // OtherDrivers should be after all the other driver buckets, to be able to catch all the
+        // remaining drivers.
+        name: "OtherDrivers",
+        process: "driver_host.*|driver-host-.*|pwrbtn-monitor\\.cm|aml-rawnand\\.cm.*|aml-sdmmc\\.cm.*|aml-usb-phy\\.cm|platform-bus\\.cm.*|aml-uart\\.cm.*|amlogic-display\\.cm|aml-gpio\\.cm.*|aml-meson-power\\.cm.*|xhci.cm\\.*|aml-i2c\\.cm.*|optee\\.cm.*|aml-pwm\\.cm.*|amlogic_video_decoder\\.cm.*|aml-g12-tdm\\.cm.*|tas27xx\\.cm.*|ams-light\\.cm.*|aml-securemem\\.cm.*|aml-g12-pdm\\.cm.*|aml-ram\\\.cm.*|aml-thermistor\\.cm.*|aml-canvas\\.cm.*|focaltech\\.cm.*|aml-thermal\\.cm.*|buttons\\.cm.*|aml-light\\.cm.*|ti-lp8556\\.cm.*|aml-g12-tdm-dai\\.cm.*|registers\\.cm.*|aml-pwm-init\\.cm.*|aml_mipicsi\\.cm.*|lowpan-ot-driver\\.cm.*|aml-thermal-s905d2g-legacy\\.cm.*|amlogic_h264_encoder_driver\\.cm.*|focaltech-sherlock\\.cm.*|tas5720\\.cm.*|camera_device\\.cm.*|aml-nna\\.cm.*|gt6853\\.cm.*|ti-ina231\\.cm.*|nelson-brownout-protection\\.cm.*|shtv3\\.cm.*",
+        vmo: "",
+        event_code: 48,
+    },
+    {
+        name: "EngTools",
+        process: "/boot/bin/sh|/pkg/bin/sshd|memory_monitor2?\\.cm|overnetstack\\.cm|memory_pressure_signaler\\.cm|remote.*|sh:console|sshd-host\\.cm",
+        vmo: "",
+        event_code: 64,
     },
 ]
