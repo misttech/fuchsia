@@ -438,7 +438,7 @@ Supported backends: Rust, C++, HLCPP, banjo_{c,cpp,rust}, bindlib, and Zither.""
     implementation = _fidl_library_impl,
     attrs = {
         "srcs": attr.label_list(
-            doc = """List of `.fidl` source files.
+            doc = """List of `.fidl` source files for the library.
 GN equivalent: `sources`""",
             mandatory = True,
             allow_files = True,
@@ -459,7 +459,7 @@ GN equivalent: `name`""",
             configurable = False,
         ),
         "stable": attr.bool(
-            doc = """Whether this source library is stabilized.
+            doc = """Whether this FIDL library is stabilized.
 When True, a `.api` file is generated. When False, the atom is marked as unstable in the final IDK.""",
             mandatory = False,
             configurable = False,
@@ -471,9 +471,8 @@ GN equivalent: `sdk_area`""",
             mandatory = False,
         ),
         "deps": attr.label_list(
-            doc = """
-            List of labels for other FIDL libraries on which this library depends.
-As with all deps arguments, must not contain `select()` statements.
+            doc = """List of `Label`s for other FIDL libraries on which this library depends.
+Must not contain `select()` statements.
 GN equivalent: `public_deps`""",
             default = [],
             configurable = False,
@@ -493,7 +492,7 @@ Not allowed when `stable` is false.""",
             configurable = False,
         ),
         "versioned": attr.string(
-            doc = """A string of the form PLATFORM or PLATFORM:VERSION.
+            doc = """String of the form "PLATFORM" or "PLATFORM:VERSION".
 If provided, fidlc will validate that the library is versioned under PLATFORM and added at
 VERSION (if provided).
 fidlc determines the library's actual platform from FIDL files as follows:
@@ -511,8 +510,8 @@ Defaults are:
             configurable = False,
         ),
         "available": attr.string_list(
-            doc = """A list of strings of the form PLATFORM:VERSION. This is needed when using
-`@available` annotations for platforms other than "fuchsia".
+            doc = """List of strings of the form "PLATFORM:VERSION". This is
+needed when using `@available` annotations for platforms other than "fuchsia".
 For more information, look for `--available` in `fidlc --help`.
 Warning: All dependencies must specify the same value for `available`;
 otherwise bindings will be inconsistent. Since this is easy to misuse,
@@ -522,68 +521,70 @@ If not specified, appropriate values will be determined based on the target API 
             configurable = False,
         ),
         "experimental_flags": attr.string_list(
-            doc = "A list of experimental fidlc features to enable.",
+            doc = "List of experimental `fidlc` features to enable.",
             configurable = False,
         ),
         "experimental_checks": attr.string_list(
-            doc = "A list of fidl-lint check IDs to include (by passing the command line flag " +
-                  "`-x some-check-id` for each value).",
+            doc = "List of `fidl-lint` check IDs to include (by passing the " +
+                  "command line flag `-x some-check-id` for each value).",
             configurable = False,
         ),
         "excluded_checks": attr.string_list(
-            doc = "A list of fidl-lint check IDs to ignore (by passing the command line flag " +
-                  "`-e some-check-id` for each value).",
+            doc = "List of `fidl-lint` check IDs to ignore (by passing the " +
+                  "command line flag `-e some-check-id` for each value).",
             configurable = False,
         ),
         "goldens_dir": attr.string(
-            doc = "The directory containing golden files for this FIDL API, per API level. " +
-                  "Should not contain a trailing slash. This is only used if compatibility tests are required.",
+            doc = "String absolute path for the directory containing golden " +
+                  "files for this FIDL API, per API level. Should not " +
+                  "contain a trailing slash. This is only used if " +
+                  "compatibility tests are required.",
             default = "//sdk/history",
             configurable = False,
         ),
         "contains_drivers": attr.bool(
-            doc = "Indicates if any of the FIDL files contain the driver transport or " +
-                  "references to the driver transport.",
+            doc = "Indicates whether any of the FIDL files contain the " +
+                  "driver transport or references to the driver transport.",
             default = False,
             configurable = False,
         ),
         "enable_cpp": attr.bool(
-            doc = "Set to false to disable the new C++ bindings for this library",
+            doc = "Set to False to disable the new C++ bindings for this library",
             default = True,
             configurable = False,
         ),
         "enable_hlcpp": attr.bool(
-            doc = "Set to true to enable legacy HLCPP bindings for this library",
+            doc = "Set to True to enable legacy HLCPP bindings for this library",
             default = False,
             configurable = False,
         ),
         "enable_rust": attr.bool(
-            doc = "Set to false to disable Rust bindings for this library",
+            doc = "Set to False to disable Rust bindings for this library",
             default = True,
             configurable = False,
         ),
         "enable_rust_next": attr.bool(
-            doc = "Set to true to enable next-generation Rust bindings for this library",
+            doc = "Set to True to enable next-generation Rust bindings for this library",
             default = False,
             configurable = False,
         ),
         "enable_rust_drivers": attr.bool(
-            doc = "Set to true to enable experimental rust driver transport support",
+            doc = "Set to True to enable experimental rust driver transport support",
             default = False,
             configurable = False,
         ),
         "enable_bindlib": attr.bool(
-            doc = "Set to false to disable bindlib bindings for this library",
+            doc = "Set to False to disable bindlib bindings for this library",
             default = True,
             configurable = False,
         ),
         "enable_banjo": attr.bool(
-            doc = "Set to true to enable Banjo bindings for this library.",
+            doc = "Set to True to enable Banjo bindings for this library.",
             default = False,
             configurable = False,
         ),
         "enable_zither": attr.bool(
-            doc = "Set to true to enable Zither bindings for this library.",
+            doc = "Set to True to enable Zither bindings for this library.",
             default = False,
             configurable = False,
         ),
