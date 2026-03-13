@@ -787,7 +787,7 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   // The user-friendly VMO name. For debug purposes only. That
   // is, there is no mechanism to get access to a VMO via this name.
-  fbl::Name<ZX_MAX_NAME_LEN> name_ TA_GUARDED(lock());
+  fbl::Name<ZX_MAX_NAME_LEN, fbl::ThreadSafe::No> name_ TA_GUARDED(lock());
 
   static constexpr uint64_t MAX_SIZE = VmPageList::MAX_SIZE;
   // Ensure that MAX_SIZE + kPageSize doesn't overflow so no VmObjects
