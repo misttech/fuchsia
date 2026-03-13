@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "chrono-english",
     package_url = "https://github.com/stevedonovan/chrono-english.git",
-    package_version = "0.1.7",
+    package_version = "0.1.8",
 )
 
 license(
@@ -69,7 +69,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.7",
+    version = "0.1.8",
     deps = [
         "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
         "//third_party/rust_crates/vendor/scanlex-0.1.4:scanlex",

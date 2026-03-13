@@ -37,10 +37,7 @@ pub struct NamedDate {
 
 impl NamedDate {
     pub fn new(direct: Direction, unit: u32) -> NamedDate {
-        NamedDate {
-            direct: direct,
-            unit: unit,
-        }
+        NamedDate { direct, unit }
     }
 }
 
@@ -58,16 +55,14 @@ fn add_days<Tz: TimeZone>(base: DateTime<Tz>, days: i64) -> Option<DateTime<Tz>>
 
 //fn next_last_direction<Tz: TimeZone>(date: Date<Tz>, base: Date<Tz>, direct: Direction) -> Option<i32> {
 
-fn next_last_direction<T: PartialOrd + Copy>(date: T, base: T, direct: Direction) -> Option<i32> {
+fn next_last_direction<T: PartialOrd>(date: &T, base: &T, direct: Direction) -> Option<i32> {
     let mut res = None;
     if date > base {
         if direct == Direction::Last {
             res = Some(-1);
         }
-    } else if date < base {
-        if direct == Direction::Next {
-            res = Some(1)
-        }
+    } else if date < base && direct == Direction::Next {
+        res = Some(1)
     }
     res
 }
@@ -90,12 +85,8 @@ impl ByName {
         }
     }
 
-    pub fn from_day_month(d: u32, m: u32, direct: Direction) -> ByName {
-        ByName::DayMonth(YearDate {
-            direct: direct,
-            day: d,
-            month: m,
-        })
+    pub fn from_day_month(day: u32, month: u32, direct: Direction) -> ByName {
+        ByName::DayMonth(YearDate { direct, day, month })
     }
 
     pub fn to_date_time<Tz: TimeZone>(
@@ -127,8 +118,8 @@ impl ByName {
                 let this_day = base.weekday().num_days_from_monday() as i64;
                 let that_day = nd.unit as i64;
                 let diff_days = that_day - this_day;
-                let mut date = add_days(base, diff_days)?;
-                if let Some(correct) = next_last_direction(date, base, nd.direct) {
+                let mut date = add_days(base.clone(), diff_days)?;
+                if let Some(correct) = next_last_direction(&date, &base, nd.direct) {
                     date = add_days(date, 7 * correct as i64)?;
                 }
                 if extra_week > 0 {
@@ -137,33 +128,27 @@ impl ByName {
                 if diff_days == 0 {
                     // same day - comparing times will determine which way we swing...
                     let base_time = base.time();
-                    let this_time = NaiveTime::from_hms(ts.hour, ts.min, ts.sec);
-                    if let Some(correct) = next_last_direction(this_time, base_time, nd.direct) {
+                    let this_time = NaiveTime::from_hms_opt(ts.hour, ts.min, ts.sec)?;
+                    if let Some(correct) = next_last_direction(&this_time, &base_time, nd.direct) {
                         date = add_days(date, 7 * correct as i64)?;
                     }
                 }
-                ts.to_date_time(date.date())
+                ts.to_date_time(date)
             }
             ByName::MonthName(nd) => {
-                let mut date = base.timezone().ymd_opt(this_year, nd.unit, 1).single()?;
-                if let Some(correct) = next_last_direction(date, base.date(), nd.direct) {
-                    date = base
-                        .timezone()
-                        .ymd_opt(this_year + correct, nd.unit, 1)
-                        .single()?;
+                let mut date = base.timezone().with_ymd_and_hms(this_year, nd.unit, 1, 0, 0,0 ).single()?;
+                if let Some(correct) = next_last_direction(&date, &base, nd.direct) {
+                    date = date.with_year(this_year + correct)?;
                 }
                 ts.to_date_time(date)
             }
             ByName::DayMonth(yd) => {
                 let mut date = base
                     .timezone()
-                    .ymd_opt(this_year, yd.month, yd.day)
+                    .with_ymd_and_hms(this_year, yd.month, yd.day, 0, 0, 0)
                     .single()?;
-                if let Some(correct) = next_last_direction(date, base.date(), yd.direct) {
-                    date = base
-                        .timezone()
-                        .ymd_opt(this_year + correct, yd.month, yd.day)
-                        .single()?;
+                if let Some(correct) = next_last_direction(&date, &base, yd.direct) {
+                    date = date.with_year(this_year + correct)?;
                 }
                 ts.to_date_time(date)
             }
@@ -179,9 +164,9 @@ pub struct AbsDate {
 }
 
 impl AbsDate {
-    pub fn to_date<Tz: TimeZone>(self, base: DateTime<Tz>) -> Option<Date<Tz>> {
+    pub fn to_date<Tz: TimeZone>(self, base: DateTime<Tz>) -> Option<DateTime<Tz>> {
         base.timezone()
-            .ymd_opt(self.year, self.month, self.day)
+            .with_ymd_and_hms(self.year, self.month, self.day,0,0,0)
             .single()
     }
 }
@@ -197,7 +182,7 @@ impl AbsDate {
 // to months, where we want to preserve dates. So adding a month to
 // '5 May' gives '5 June'. Adding a month to '30 Jan' gives 'Feb 28' or 'Feb 29'
 // depending on whether this is a leap year.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Interval {
     Seconds(i32),
     Days(i32),
@@ -227,35 +212,35 @@ impl Skip {
                     .checked_add_signed(Duration::seconds((secs as i64) * (self.skip as i64)))
                     .unwrap();
                 if !ts.empty() {
-                    ts.to_date_time(date.date())?
+                    ts.to_date_time(date)?
                 } else {
                     date
                 }
             }
             Interval::Months(mm) => {
-                let (y, m0, d) = (base.year(), (base.month() - 1) as i32, base.day());
+                let (year, month, mut day) = (base.year(), (base.month() - 1) as i32, base.day());
                 let delta = mm * self.skip;
-                // our new month number
-                let mm = m0 + delta;
-                // which may run over to the next year and so forth
-                let (y, m) = if mm >= 0 {
-                    (y + mm / 12, mm % 12 + 1)
+                // Our new month number
+                let month = month + delta;
+                // Which may run over to the next year and so forth
+                let (year, month) = if month >= 0 {
+                    (year + month / 12, month % 12 + 1)
                 } else {
-                    let pmm = 12 - mm;
-                    (y - pmm / 12, 12 - pmm % 12 + 1)
+                    // TODO: What the heck is pmm?
+                    let pmm = 12 - month;
+                    (year - pmm / 12, 12 - pmm % 12 + 1)
                 };
                 // let chrono work out if the result makes sense
-                let mut date = base.timezone().ymd_opt(y, m as u32, d).single();
+                let mut date = base.timezone().with_ymd_and_hms(year, month as u32, day, 0,0,0).single();
                 // dud dates like Feb 30 may result, so we back off...
-                let mut d = d;
                 while date.is_none() {
-                    d -= 1;
-                    if d == 0 || d < 28 {
+                    day -= 1;
+                    if day == 0 || day < 28 {
                         // sanity check...
                         eprintln!("fkd date");
                         return None;
                     }
-                    date = base.timezone().ymd_opt(y, m as u32, d).single();
+                    date = base.timezone().with_ymd_and_hms(year, month as u32, day,0,0,0).single();
                 }
                 ts.to_date_time(date.unwrap())?
             }
@@ -281,23 +266,20 @@ pub enum DateSpec {
 }
 
 impl DateSpec {
-    pub fn absolute(y: u32, m: u32, d: u32) -> DateSpec {
+    pub fn absolute(year: u32, month: u32, day: u32) -> DateSpec {
         DateSpec::Absolute(AbsDate {
-            year: y as i32,
-            month: m,
-            day: d,
+            year: year as i32,
+            month,
+            day,
         })
     }
 
-    pub fn from_day_month(d: u32, m: u32, direct: Direction) -> DateSpec {
-        DateSpec::FromName(ByName::from_day_month(d, m, direct))
+    pub fn from_day_month(day: u32, month: u32, direct: Direction) -> DateSpec {
+        DateSpec::FromName(ByName::from_day_month(day, month, direct))
     }
 
-    pub fn skip(unit: Interval, n: i32) -> DateSpec {
-        DateSpec::Relative(Skip {
-            unit: unit,
-            skip: n,
-        })
+    pub fn skip(unit: Interval, skip: i32) -> DateSpec {
+        DateSpec::Relative(Skip { unit, skip })
     }
 
     pub fn to_date_time<Tz: TimeZone>(
@@ -366,13 +348,14 @@ impl TimeSpec {
         self.empty
     }
 
-    pub fn to_date_time<Tz: TimeZone>(self, d: Date<Tz>) -> Option<DateTime<Tz>> {
-        let dt = d.and_hms_micro(self.hour, self.min, self.sec, self.microsec);
+    pub fn to_date_time<Tz: TimeZone>(self, date: DateTime<Tz>) -> Option<DateTime<Tz>> {
+        let dt = date.with_hour(self.hour)?.with_minute(self.min)?.with_second(self.sec)?.with_nanosecond(1000 * self.microsec)?;
         if let Some(offs) = self.offset {
             let zoffset = dt.offset().clone();
             let tstamp = dt.timestamp() - offs + zoffset.fix().local_minus_utc() as i64;
-            let nd = NaiveDateTime::from_timestamp(tstamp, 1000 * self.microsec);
-            Some(DateTime::from_utc(nd, zoffset))
+            // let nd = NaiveDateTime::from_timestamp(tstamp, 1000 * self.microsec);
+            // let q = DateTime::from_timestamp(tstamp, 1000 * self.microsec)?;
+            dt.timezone().timestamp_opt(tstamp, 1000 * self.microsec).single()
         } else {
             Some(dt)
         }

@@ -475,14 +475,14 @@ alias(
 )
 
 alias(
-    name = "chrono-english-0.1.7",
-    actual = "//third_party/rust_crates/vendor/chrono-english-0.1.7:chrono_english",
+    name = "chrono-english-0.1.8",
+    actual = "//third_party/rust_crates/vendor/chrono-english-0.1.8:chrono_english",
     tags = ["manual"],
 )
 
 alias(
     name = "chrono-english",
-    actual = "//third_party/rust_crates/vendor/chrono-english-0.1.7:chrono_english",
+    actual = "//third_party/rust_crates/vendor/chrono-english-0.1.8:chrono_english",
     tags = ["manual"],
 )
 

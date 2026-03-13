@@ -703,9 +703,9 @@ dependencies = [
 
 [[package]]
 name = "chrono-english"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f73d909da7eb4a7d88c679c3f5a1bc09d965754e0adb2e7627426cef96a00d6f"
+checksum = "38a56613410c9249673f4676ab8d27c70949814accb27b6b738009e2ff1034a1"
 dependencies = [
  "chrono",
  "scanlex",

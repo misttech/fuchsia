@@ -82,10 +82,11 @@ mod types;
 use errors::*;
 use types::*;
 
+pub use errors::{date_error, date_result};
 pub use errors::{DateError, DateResult};
 pub use types::Interval;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Dialect {
     Uk,
     Us,
@@ -106,10 +107,7 @@ where
     let d = dp.parse()?;
 
     // we may have explicit hour:minute:sec
-    let tspec = match d.time {
-        Some(tspec) => tspec,
-        None => TimeSpec::new_empty(),
-    };
+    let tspec = d.time.unwrap_or_else(|| TimeSpec::new_empty());
     if tspec.offset.is_some() {
         //   return DateTime::fix()::parse_from_rfc3339(s);
     }
@@ -119,7 +117,7 @@ where
             .or_err("bad date")?
     } else {
         // no date, time set for today's date
-        tspec.to_date_time(now.date()).or_err("bad time")?
+        tspec.to_date_time(now).or_err("bad time")?
     };
     Ok(date_time)
 }

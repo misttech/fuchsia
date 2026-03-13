@@ -202,7 +202,7 @@ group("chrono") {
 }
 
 group("chrono-english") {
-  public_deps = [ ":chrono-english-v0_1_7" ]
+  public_deps = [ ":chrono-english-v0_1_8" ]
 }
 
 group("ciborium") {
@@ -3956,17 +3956,17 @@ rustc_library("chrono-v0_4_44") {
   applicable_licenses = [ ":chrono-v0_4_44.license" ]
 }
 
-license("chrono-english-v0_1_7.license") {
+license("chrono-english-v0_1_8.license") {
   public_package_name = "chrono_english"
   license_files =
-      [ "//third_party/rust_crates/vendor/chrono-english-0.1.7/LICENSE.txt" ]
+      [ "//third_party/rust_crates/vendor/chrono-english-0.1.8/LICENSE.txt" ]
 }
 
-rustc_library("chrono-english-v0_1_7") {
+rustc_library("chrono-english-v0_1_8") {
   crate_name = "chrono_english"
   source_root =
-      "//third_party/rust_crates/vendor/chrono-english-0.1.7/src/lib.rs"
-  output_name = "chrono_english-f3d6180781b6b606"
+      "//third_party/rust_crates/vendor/chrono-english-0.1.8/src/lib.rs"
+  output_name = "chrono_english-9785d73afff01bf8"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -3980,13 +3980,13 @@ rustc_library("chrono-english-v0_1_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f3d6180781b6b606",
-    "-Cextra-filename=-f3d6180781b6b606",
+    "-Cmetadata=9785d73afff01bf8",
+    "-Cextra-filename=-9785d73afff01bf8",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chrono-english-v0_1_7.license" ]
+  applicable_licenses = [ ":chrono-english-v0_1_8.license" ]
 }
 
 license("ciborium-v0_2_2.license") {

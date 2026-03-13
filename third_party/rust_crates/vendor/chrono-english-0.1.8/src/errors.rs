@@ -2,7 +2,7 @@ use scanlex::ScanError;
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct DateError {
     details: String,
 }
@@ -17,9 +17,9 @@ impl Error for DateError {}
 
 pub type DateResult<T> = Result<T, DateError>;
 
-pub fn date_error(msg: &str) -> DateError {
+pub fn date_error(msg: impl ToString) -> DateError {
     DateError {
-        details: msg.into(),
+        details: msg.to_string(),
     }
 }
 
@@ -29,7 +29,7 @@ pub fn date_result<T>(msg: &str) -> DateResult<T> {
 
 impl From<ScanError> for DateError {
     fn from(err: ScanError) -> DateError {
-        date_error(&err.to_string())
+        date_error(err)
     }
 }
 
@@ -38,8 +38,6 @@ pub trait OrErr<T> {
     /// use when the error message is always a simple string
     fn or_err(self, msg: &str) -> DateResult<T>;
 
-    /// use when the message needs to be constructed
-    fn or_then_err<C: FnOnce() -> String>(self, fun: C) -> DateResult<T>;
 }
 
 impl<T> OrErr<T> for Option<T> {
@@ -47,7 +45,4 @@ impl<T> OrErr<T> for Option<T> {
         self.ok_or(date_error(msg))
     }
 
-    fn or_then_err<C: FnOnce() -> String>(self, fun: C) -> DateResult<T> {
-        self.ok_or_else(|| date_error(&fun()))
-    }
 }
