@@ -112,17 +112,6 @@ declare_args() {
                                           },
                                         ]
                                       },
-                                      {
-                                        bazel_label =
-                                            "//tools/whereiscl:whereiscl"
-                                        copy_outputs = [
-                                          {
-                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/whereiscl_/whereiscl"
-                                            ninja = "whereiscl"
-                                          },
-                                        ]
-                                        install_host_tool = true
-                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration
