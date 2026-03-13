@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
-use crate::command_queue::{CommandQueue, TaskStatusReceiver};
+use crate::command_queue::{CommandQueue, CommandQueueHost, TaskStatusReceiver};
 use crate::partition::EmmcPartition;
 use block_server::callback_interface::SessionManager;
 use block_server::{BlockServer, RequestId};
@@ -174,27 +174,45 @@ impl rpmb::RpmbServerHandler for RpmbConnection {
     }
 }
 
+#[cfg(not(test))]
+fn get_cqhci_client(
+    service: &ServiceInstance<cqhci::Service>,
+) -> Result<Box<dyn CommandQueueHost>, zx::Status> {
+    let (cqhci_client_end, cqhci_server_end) = fdf_fidl::create_channel();
+    service.cqhci(cqhci_server_end).map_err(|err| {
+        error!(err:?; "Failed to connect to Cqhci protocol");
+        zx::Status::INVALID_ARGS
+    })?;
+    Ok(Box::new(cqhci_client_end.spawn()))
+}
+
+/// Inject a fake instance of CommandQueueHost for testing hooks.
+/// We do this in order to substitute fake MMIOs for testing purposes.
+#[cfg(test)]
+fn get_cqhci_client(
+    _service: &ServiceInstance<cqhci::Service>,
+) -> Result<Box<dyn CommandQueueHost>, zx::Status> {
+    Ok(tests::TestCommandQueueHost::global())
+}
+
 impl Driver for CqhciDriver {
     const NAME: &str = "cqhci";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         info!("cqhci driver starting");
-        let (cqhci_client, rpmb_client) = {
+        let (cqhci, rpmb) = {
             let service: ServiceInstance<cqhci::Service> =
                 context.incoming.service().connect_next().inspect_err(|status| {
                     error!(status:?; "Failed to connect to Cqhci service");
                 })?;
-            let (cqhci_client_end, cqhci_server_end) = fdf_fidl::create_channel();
             let (rpmb_client_end, rpmb_server_end) = fdf_fidl::create_channel();
-            service.cqhci(cqhci_server_end).map_err(|err| {
-                error!(err:?; "Failed to connect to Cqhci protocol");
-                zx::Status::INVALID_ARGS
-            })?;
             service.rpmb(rpmb_server_end).map_err(|err| {
                 error!(err:?; "Failed to connect to Rpmb protocol");
                 zx::Status::INVALID_ARGS
             })?;
-            (cqhci_client_end.spawn(), rpmb_client_end.spawn())
+            let rpmb = rpmb_client_end.spawn();
+
+            (get_cqhci_client(&service)?, rpmb)
         };
 
         let vmar =
@@ -202,22 +220,15 @@ impl Driver for CqhciDriver {
                 error!(status:?; "Failed to duplicate VMAR");
             })?;
 
-        let cqhci::CqhciHostInfoResponse { info: mut host_info } = cqhci_client
-            .host_info()
-            .await
-            .map_err(|err| {
-                error!(err:?; "FIDL error");
-                zx::Status::INTERNAL
-            })?
-            .map_err(zx::Status::from_raw)?;
+        let mut host_info = cqhci.info().await.inspect_err(|status| {
+            error!(status:?; "Failed to get host info");
+        })?;
 
         let command_queue =
-            CommandQueue::initialize(vmar, cqhci_client.clone(), rpmb_client, &mut host_info)
-                .await
-                .map_err(|err| {
-                    error!(err:?; "Failed to initialize command queueing");
-                    to_status(err)
-                })?;
+            CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info).await.map_err(|err| {
+                error!(err:?; "Failed to initialize command queueing");
+                to_status(err)
+            })?;
 
         let mut fs = ServiceFs::new();
         let scope = Scope::new();

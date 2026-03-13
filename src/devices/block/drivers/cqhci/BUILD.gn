@@ -50,6 +50,7 @@ fuchsia_rust_driver("driver") {
     "//src/lib/trace/rust:trace",
     "//src/storage/lib/block_server",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:bit-vec",
     "//third_party/rust_crates:event-listener",
     "//third_party/rust_crates:futures",

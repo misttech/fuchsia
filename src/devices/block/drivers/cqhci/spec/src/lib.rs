@@ -571,12 +571,12 @@ bitfield! {
     #[derive(Clone, Copy)]
     pub struct CqhciCqTaskErrorRegister(u32);
     impl Debug;
-    pub u8, response_mode_error_command_index, _: 5, 0;
-    pub u8, response_mode_error_task_id, _: 12, 8;
-    pub bool, response_mode_error_fields_valid, _: 15;
-    pub u8, data_transfer_error_command_index, _: 21, 16;
-    pub u8, data_transfer_error_task_id, _: 28, 24;
-    pub bool, data_transfer_error_fields_valid, _: 31;
+    pub u8, response_mode_error_command_index, set_response_mode_error_command_index: 5, 0;
+    pub u8, response_mode_error_task_id, set_response_mode_error_task_id: 12, 8;
+    pub bool, response_mode_error_fields_valid, set_response_mode_error_fields_valid: 15;
+    pub u8, data_transfer_error_command_index, set_data_transfer_error_command_index: 21, 16;
+    pub u8, data_transfer_error_task_id, set_data_transfer_error_task_id: 28, 24;
+    pub bool, data_transfer_error_fields_valid, set_data_transfer_error_fields_valid: 31;
 }
 
 // SDHCI registers (SD Host Controller Simplified Specification V4.20)

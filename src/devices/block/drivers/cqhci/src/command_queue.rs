@@ -8,18 +8,17 @@ use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 
 use anyhow::Context as _;
+use async_trait::async_trait;
 use block_server::RequestId;
 use event_listener::{Event, IntoNotification as _, Listener as _};
 use fdf_fidl::DriverChannel;
-use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, Cqhci, EmmcPartitionId};
+use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use log::{debug, error, info, trace, warn};
 use mmio::Mmio;
-use mmio::region::MmioRegion;
-use mmio::vmo::{VmoMapping, VmoMemory};
 use sdmmc_spec::{
     CQHCI_CQ_CAP_OFFSET, CQHCI_CQ_CFG_OFFSET, CQHCI_CQ_CRA_OFFSET, CQHCI_CQ_CRDCT_OFFSET,
     CQHCI_CQ_CRI_OFFSET, CQHCI_CQ_CRYPTO_CAP_OFFSET, CQHCI_CQ_CRYPTO_NQDUN_OFFSET,
@@ -51,8 +50,117 @@ const IRQ_PORT_IRQ_KEY: u64 = 1;
 const IRQ_PORT_LIFELINE_KEY: u64 = 2;
 const IRQ_PORT_VIRTUAL_IRQ_ACKED_KEY: u64 = 3;
 
+/// Trait wrapper for fuchsia.hardware.cqhci.Cqhci.
+#[async_trait]
+pub trait CommandQueueHost: Send + Sync {
+    /// Returns information about the CQHCI host.
+    async fn info(&self) -> Result<cqhci::CqhciHostInfo, zx::Status>;
+    /// Initializes command queueing.  Must be called at most once.
+    async fn initialize(
+        &self,
+        virtual_interrupt: zx::VirtualInterrupt,
+        virtual_irq_lifeline: zx::EventPair,
+    ) -> Result<CommandQueueResources, zx::Status>;
+    /// Enables command queueing.  Must not be called before [`Self::initialize`].
+    async fn enable(&self) -> Result<(), zx::Status>;
+    /// Disables command queueing.  Must not be called before [`Self::enable`].  The queue can be
+    /// later re-enabled by calling [`Self::enable`] again.
+    async fn disable(&self) -> Result<(), zx::Status>;
+
+    /// A side-channel used to send information about submitted tasks to a test harness.
+    /// This simplifies testing, so we don't have to sniff the TDL.
+    fn on_task_submitted(&self, _task: SubmittedTaskForTesting<'_>) {}
+}
+
+#[async_trait]
+impl CommandQueueHost for fidl_next::Client<cqhci::Cqhci> {
+    async fn info(&self) -> Result<cqhci::CqhciHostInfo, zx::Status> {
+        self.host_info()
+            .await
+            .map_err(|err| {
+                error!(err:?; "FIDL error");
+                zx::Status::INTERNAL
+            })?
+            .map(|response| response.info)
+            .map_err(zx::Status::from_raw)
+    }
+
+    async fn initialize(
+        &self,
+        virtual_interrupt: zx::VirtualInterrupt,
+        virtual_irq_lifeline: zx::EventPair,
+    ) -> Result<CommandQueueResources, zx::Status> {
+        let sdmmc::CqhciInitializeCommandQueueingResponse {
+            cqhci_mmio,
+            cqhci_mmio_offset,
+            sdhci_mmio,
+            sdhci_mmio_offset,
+            bti,
+            interrupt,
+        } = self
+            .initialize_command_queueing(virtual_interrupt, virtual_irq_lifeline)
+            .await
+            .map_err(|err| {
+                error!(err:?; "FIDL error");
+                zx::Status::INTERNAL
+            })?
+            .map_err(|err| {
+                error!(err:?; "Failed to initialize CQHCI");
+                zx::Status::from_raw(err)
+            })?;
+        let cqhci_mmio = {
+            let vmo_len = cqhci_mmio.get_size()?;
+            let m = mmio::vmo::VmoMapping::map(
+                cqhci_mmio_offset as usize,
+                vmo_len as usize,
+                cqhci_mmio,
+            )?;
+            Box::new(m) as Box<dyn Mmio + Send + Sync>
+        };
+        let sdhci_mmio = {
+            let vmo_len = sdhci_mmio.get_size()?;
+            let m = mmio::vmo::VmoMapping::map(
+                sdhci_mmio_offset as usize,
+                vmo_len as usize,
+                sdhci_mmio,
+            )?;
+            Box::new(m) as Box<dyn Mmio + Send + Sync>
+        };
+        Ok(CommandQueueResources { cqhci_mmio, sdhci_mmio, bti, interrupt })
+    }
+
+    async fn enable(&self) -> Result<(), zx::Status> {
+        self.enable_cqhci()
+            .await
+            .map_err(|err| {
+                error!(err:?; "FIDL error");
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    async fn disable(&self) -> Result<(), zx::Status> {
+        self.disable_cqhci()
+            .await
+            .map_err(|err| {
+                error!(err:?; "FIDL error");
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+}
+
+pub struct CommandQueueResources {
+    pub cqhci_mmio: Box<dyn Mmio + Send + Sync>,
+    pub sdhci_mmio: Box<dyn Mmio + Send + Sync>,
+    pub bti: zx::Bti,
+    pub interrupt: zx::Interrupt,
+}
+
 pub trait TaskStatusReceiver: Send + Sync {
-    /// A callback invoke upon task completion.
+    /// A callback to invoke upon task completion.
     fn complete(&self, request_id: RequestId, status: zx::Status);
 }
 
@@ -68,7 +176,7 @@ fn complete_request(
     }
 }
 
-#[cfg(test)]
+#[allow(dead_code)]
 pub enum SubmittedTaskForTesting<'a> {
     Transfer(EmmcPartitionId, &'a Transfer),
     DirectCmd,
@@ -143,16 +251,6 @@ impl PendingTasks {
         }
         task
     }
-
-    fn report_task_errors(&self, mut mask: u32) {
-        while mask > 0 {
-            let task_id = mask.trailing_zeros();
-            if let Some(task) = &self.tasks[task_id as usize] {
-                warn!("Task {task:?} failed");
-            }
-            mask &= !(1 << task_id);
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -209,8 +307,8 @@ struct Inner {
     active_partition: Option<EmmcPartitionId>,
     /// In-flight tasks.
     pending_tasks: PendingTasks,
-    cqhci_mmio: MmioRegion<VmoMemory>,
-    sdhci_mmio: MmioRegion<VmoMemory>,
+    cqhci_mmio: Box<dyn Mmio + Send + Sync>,
+    sdhci_mmio: Box<dyn Mmio + Send + Sync>,
     /// Runs [`AsyncTask`] in a loop.
     async_task_loop: Option<fasync::Task<()>>,
     /// Drop to signal the SDHCI driver to resume handling physical interrupts.
@@ -220,11 +318,6 @@ struct Inner {
     /// Drop to shut down the IRQ thread.
     irq_lifeline: Option<zx::EventPair>,
     partition_status_receivers: BTreeMap<EmmcPartitionId, Weak<dyn TaskStatusReceiver>>,
-    // A side-channel which is used to publish submitted tasks.  This is needed because it is
-    // difficult to simulate the W1S semantics of the actual hardware registers with VMO-backed
-    // ones, and so submitted tasks will clobber existing ones. Exposed for testing.
-    #[cfg(test)]
-    on_task_submitted: Option<Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>>,
 }
 
 impl Inner {
@@ -311,19 +404,14 @@ impl Inner {
     }
 
     /// Submits a transfer to hardware.
-    fn submit_transfer(&mut self, tdl_slot: u8, task: PendingTask) {
+    fn submit_transfer(&mut self, tdl_slot: u8, task: PendingTask, host: &dyn CommandQueueHost) {
         debug_assert!(self.state.enabled);
         trace!("Submitting transfer {tdl_slot}");
-        #[cfg(test)]
-        if let Some(hook) = &self.on_task_submitted {
-            hook(SubmittedTaskForTesting::Transfer(task.partition, &task.transfer));
-        }
-        debug_assert!(self.active_partition == Some(task.partition));
-        debug_assert!(tdl_slot < CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
         // Execute a write barrier, so the transfer descriptor's contents are visible *before* we
         // ring the doorbell.
         self.cqhci_mmio.write_barrier();
         self.cqhci_mmio.store32(CQHCI_CQ_TDBR_OFFSET, 1u32 << tdl_slot);
+        host.on_task_submitted(SubmittedTaskForTesting::Transfer(task.partition, &task.transfer));
         self.pending_tasks.add_task(tdl_slot, task);
     }
 
@@ -577,14 +665,7 @@ impl Drop for CommandQueueExcl {
 
 impl CommandQueueExcl {
     async fn enable(&mut self) -> Result<(), zx::Status> {
-        self.host
-            .enable_cqhci()
-            .await
-            .map_err(|err| {
-                error!(err:?; "FIDL error");
-                zx::Status::INTERNAL
-            })?
-            .map_err(zx::Status::from_raw)?;
+        self.host.enable().await?;
         {
             let mut inner = self.inner.lock();
 
@@ -664,7 +745,7 @@ impl CommandQueueExcl {
             inner.state.enabled = false;
             inner.event.notify(usize::MAX);
         }
-        let _ = self.host.disable_cqhci().await;
+        let _ = self.host.disable().await;
         debug!("CQHCI disabled");
     }
 
@@ -734,16 +815,15 @@ impl CommandQueueExcl {
                             self.transfer_manager.prepare_dcmd(&slot, command, command_arg)?;
                             dcmd = Some(slot);
                             trace!("Submitting dcmd {command:?}");
-                            #[cfg(test)]
-                            if let Some(hook) = &inner.on_task_submitted {
-                                hook(SubmittedTaskForTesting::DirectCmd);
-                            }
+                            // Execute a write barrier, so the descriptor's contents are visible
+                            // *before* we ring the doorbell.
                             inner.cqhci_mmio.write_barrier();
                             inner.cqhci_mmio.store32(
                                 CQHCI_CQ_TDBR_OFFSET,
                                 1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT,
                             );
                             inner.pending_tasks.dcmd_status = None;
+                            self.host.on_task_submitted(SubmittedTaskForTesting::DirectCmd);
                         }
                         inner.event.listen()
                     }
@@ -862,7 +942,7 @@ impl CommandQueueExcl {
             inner.active_partition = Some(task.partition);
             let task = task.task.take().unwrap();
             let tdl = task.transfer.tdl_slot();
-            inner.submit_transfer(tdl, task);
+            inner.submit_transfer(tdl, task, self.host.as_ref());
         } else {
             let Some(receiver) = inner.partition_status_receivers.get(&task.partition) else {
                 panic!("No receiver was registered for partition {:?}", task.partition);
@@ -949,7 +1029,7 @@ enum SubmitResult {
 
 pub struct CommandQueue {
     inner: Mutex<Inner>,
-    host: fidl_next::Client<Cqhci, DriverChannel>,
+    host: Box<dyn CommandQueueHost>,
     rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
     capabilities: CqhciCqCapsRegister,
     ext_csd: [u8; EXT_CSD_SIZE],
@@ -971,7 +1051,7 @@ impl CommandQueue {
     /// `host_info` is updated to reflect the maximum transfer size supported.
     pub async fn initialize(
         vmar: zx::Vmar,
-        host: fidl_next::Client<Cqhci, DriverChannel>,
+        host: Box<dyn CommandQueueHost>,
         rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
         host_info: &mut cqhci::CqhciHostInfo,
     ) -> anyhow::Result<Arc<Self>> {
@@ -980,30 +1060,10 @@ impl CommandQueue {
             virtual_interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let (virtual_irq_lifeline_peer, virtual_irq_lifeline) = zx::EventPair::create();
 
-        let sdmmc::CqhciInitializeCommandQueueingResponse {
-            cqhci_mmio,
-            cqhci_mmio_offset,
-            sdhci_mmio,
-            sdhci_mmio_offset,
-            bti,
-            interrupt,
-        } = host
-            .initialize_command_queueing(virtual_interrupt_clone, virtual_irq_lifeline_peer)
+        let CommandQueueResources { cqhci_mmio, sdhci_mmio, bti, interrupt } = host
+            .initialize(virtual_interrupt_clone, virtual_irq_lifeline_peer)
             .await
-            .context("FIDL error")?
-            .map_err(zx::Status::from_raw)
             .context("Failed to initialize")?;
-
-        let cqhci_mmio = {
-            let vmo_len = cqhci_mmio.get_size()?;
-            VmoMapping::map(cqhci_mmio_offset as usize, vmo_len as usize, cqhci_mmio)
-                .context("Failed to map mmio")?
-        };
-        let sdhci_mmio = {
-            let vmo_len = sdhci_mmio.get_size()?;
-            VmoMapping::map(sdhci_mmio_offset as usize, vmo_len as usize, sdhci_mmio)
-                .context("Failed to map mmio")?
-        };
 
         let version = cqhci_mmio.load32(CQHCI_CQ_VER_OFFSET);
         let capabilities = CqhciCqCapsRegister(cqhci_mmio.load32(CQHCI_CQ_CAP_OFFSET));
@@ -1052,8 +1112,6 @@ impl CommandQueue {
                 irq_thread: None,
                 irq_lifeline: Some(irq_lifeline),
                 partition_status_receivers: BTreeMap::new(),
-                #[cfg(test)]
-                on_task_submitted: None,
             }),
             host,
             rpmb,
@@ -1150,14 +1208,6 @@ impl CommandQueue {
         }
     }
 
-    #[cfg(test)]
-    pub fn set_task_submitted_hook(
-        &self,
-        hook: Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>,
-    ) {
-        self.inner.lock().on_task_submitted = Some(hook);
-    }
-
     /// Registers the completion callback for the given partition.
     /// Must be called exactly once for each partition for which requests will be submitted.
     pub fn register_partition(
@@ -1225,7 +1275,7 @@ impl CommandQueue {
         let tdl = task.transfer.tdl_slot();
         if inner.active_partition == Some(partition) {
             // Fast path, we can immediately submit.
-            inner.submit_transfer(tdl, task);
+            inner.submit_transfer(tdl, task, self.host.as_ref());
             SubmitResult::Done(zx::Status::OK)
         } else {
             // Slow path, we have to switch partitions before we can submit.
@@ -1516,6 +1566,7 @@ impl CommandQueue {
                     inner.take_complete(finished, zx::Status::OK, &mut completed_tasks);
                 };
                 if cq_irq_status.is_error() {
+                    warn!("on_interrupt error, sdhci {irq_status:x?} cqhci {cq_irq_status:x?}");
                     fuchsia_trace::instant!(
                         "sdmmc",
                         "cqhci::on_interrupt::error",
@@ -1531,7 +1582,6 @@ impl CommandQueue {
                     if terri.data_transfer_error_fields_valid() {
                         mask |= 1 << terri.data_transfer_error_task_id();
                     }
-                    inner.pending_tasks.report_task_errors(mask);
                     inner.take_complete(mask, zx::Status::IO, &mut completed_tasks);
 
                     // Per JESD84-B51A B.2.8, we need to run recovery on error.

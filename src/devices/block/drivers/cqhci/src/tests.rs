@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::CqhciDriver;
-use crate::command_queue::SubmittedTaskForTesting;
+use crate::command_queue::{CommandQueueHost, CommandQueueResources, SubmittedTaskForTesting};
+use async_trait::async_trait;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fdf::WeakDispatcher;
 use fdf_component::testing::harness::{DriverUnderTest, TestHarness};
@@ -13,33 +14,33 @@ use fidl_fuchsia_hardware_block_volume::{self as fvolume};
 use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, CqhciHostInfo, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
-use fidl_next_fuchsia_hardware_sdmmc::{self as sdmmc, SdmmcHostCap, SdmmcHostInfo};
+use fidl_next_fuchsia_hardware_sdmmc::{SdmmcHostCap, SdmmcHostInfo};
 use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
-use futures::{FutureExt as _, StreamExt as _};
-use mmio::Mmio;
+use futures::{SinkExt as _, StreamExt as _};
 use sdmmc_spec::{
-    CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET,
-    CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CqhciCqInterruptStatusRegister, Direction,
-    EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL,
-    EXT_CSD_CACHE_EN_MASK, SDHCI_IS_OFFSET, SdhciInterruptStatusRegister,
+    CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TERRI_OFFSET,
+    CqhciCqInterruptStatusRegister, CqhciCqTaskErrorRegister, Direction, EXT_CSD_BARRIER_SUPPORT,
+    EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, SDHCI_IS_OFFSET,
+    SdhciInterruptStatusRegister,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use zx::HandleBased as _;
 
 struct MockRpmbServer {
-    request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
+    /// A stream which receives a new channel end each time an RPMB request is made.
+    ///
+    /// The request will hang until the test sends a message on the channel.
+    request_sender: mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>,
 }
 
 impl MockRpmbServer {
-    fn new(
-        request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
-    ) -> Self {
-        Self { request_callback }
+    fn new(request_sender: mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>) -> Self {
+        Self { request_sender }
     }
 }
 
@@ -63,315 +64,476 @@ impl rpmb::DriverRpmbServerHandler for MockRpmbServer {
         _request: fidl_next::Request<rpmb::driver_rpmb::Request, DriverChannel>,
         responder: fidl_next::Responder<rpmb::driver_rpmb::Request, DriverChannel>,
     ) {
-        if let Some(ref mut cb) = self.request_callback {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            let _ = cb.unbounded_send(tx);
-            let _ = rx.await;
-        }
+        let (tx, rx) = futures::channel::oneshot::channel();
+        let _ = self.request_sender.unbounded_send(tx);
+        let _ = rx.await;
         responder.respond(()).await.ok();
     }
 }
 
-struct MockCqhciServer {
-    mmio_vmo: zx::Vmo,
-    sdhci_mmio_vmo: zx::Vmo,
-    on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
-    hardware_irq: zx::VirtualInterrupt,
-    fake_bti: zx::Bti,
+struct FakeCqhciHost {
+    task_handler: Arc<FakeTaskHandler>,
+    bti: fake_bti::FakeBti,
+    /// A channel which receives a stream of all interrupts that the CQHCI driver delegates.
+    /// Consumed when [`CommandQueueHost::initialize`] is called.
+    /// The receiver end is made available to tests via [`TestHandles`].
+    non_cq_interrupt_sink: Mutex<Option<mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>>>,
 }
 
-impl MockCqhciServer {
-    fn new(
-        mmio_vmo: zx::Vmo,
-        sdhci_mmio_vmo: zx::Vmo,
-        on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
-        hardware_irq: zx::VirtualInterrupt,
-    ) -> Self {
-        let bti = fake_bti::FakeBti::create().unwrap();
+static INSTANCE: OnceLock<Arc<FakeCqhciHost>> = OnceLock::new();
 
-        MockCqhciServer {
-            mmio_vmo,
-            sdhci_mmio_vmo,
-            fake_bti: bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            on_non_cq_interrupt_sink,
-            hardware_irq,
+impl FakeCqhciHost {
+    pub fn global() -> Arc<Self> {
+        INSTANCE.get().unwrap().clone()
+    }
+
+    fn register_global(self: Arc<Self>) {
+        INSTANCE.set(self).map_err(|_| "Already registered").unwrap();
+    }
+
+    fn resources(&self) -> CommandQueueResources {
+        CommandQueueResources {
+            cqhci_mmio: Box::new(FakeMmio {
+                state: self.task_handler.state.clone(),
+                region_type: MmioRegionType::Cqhci,
+            }),
+            sdhci_mmio: Box::new(FakeMmio {
+                state: self.task_handler.state.clone(),
+                region_type: MmioRegionType::Sdhci,
+            }),
+            bti: self.bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            interrupt: self
+                .task_handler
+                .irq
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .unwrap()
+                .into_handle()
+                .into(),
         }
     }
 }
 
-impl cqhci::CqhciServerHandler for MockCqhciServer {
-    async fn host_info(&mut self, responder: fidl_next::Responder<cqhci::cqhci::HostInfo>) {
+/// A test implementation of [`CommandQueueHost`].
+///
+/// When running tests, we provide substitute MMIOs rather than using the real ones.
+///
+/// This is necessary for a few reasons:
+/// - The real MMIO is backed by a memory-mapped VMO, and we can't easily simulate the W1S/W1C
+///   semantics of the actual hardware registers.
+/// - The test needs to synchronize with the driver as both sides update the MMIO, which is
+///   challenging if the test and driver are both using their own separate memory-map of the same
+///   VMO.  The easiest way to ensure synchronization is to have all updates go through the same
+///   interface with appropriate locking.
+///
+/// We use a global singleton so that we can inject the instance into the driver while it is
+/// starting up, without needing to weave the instance through the driver harness.
+pub struct TestCommandQueueHost(Arc<FakeCqhciHost>);
+
+impl TestCommandQueueHost {
+    pub fn global() -> Box<dyn CommandQueueHost> {
+        Box::new(TestCommandQueueHost(FakeCqhciHost::global())) as Box<dyn CommandQueueHost>
+    }
+}
+
+#[async_trait]
+impl CommandQueueHost for TestCommandQueueHost {
+    async fn info(&self) -> Result<CqhciHostInfo, zx::Status> {
         let mut ext_csd = vec![0; 512];
         // Advertise all features, which make the driver take more interesting paths.
         ext_csd[EXT_CSD_CACHE_CTRL] = EXT_CSD_CACHE_EN_MASK;
         ext_csd[EXT_CSD_BARRIER_SUPPORT] = EXT_CSD_BARRIER_SUPPORT_MASK;
-        let info = {
-            CqhciHostInfo {
-                sdmmc_host_info: SdmmcHostInfo {
-                    max_transfer_size: u32::MAX,
-                    caps: SdmmcHostCap::empty(),
-                    max_buffer_regions: 128,
+        Ok(CqhciHostInfo {
+            sdmmc_host_info: SdmmcHostInfo {
+                max_transfer_size: u32::MAX,
+                caps: SdmmcHostCap::empty(),
+                max_buffer_regions: 128,
+            },
+            partitions: vec![
+                cqhci::EmmcPartition {
+                    id: EmmcPartitionId::UserDataPartition,
+                    block_count: 1024,
+                    block_size: 512,
                 },
-                partitions: vec![
-                    cqhci::EmmcPartition {
-                        id: EmmcPartitionId::UserDataPartition,
-                        block_count: 1024,
-                        block_size: 512,
-                    },
-                    cqhci::EmmcPartition {
-                        id: EmmcPartitionId::BootPartition1,
-                        block_count: 1024,
-                        block_size: 512,
-                    },
-                ],
-                rca: 1,
-                ext_csd,
-            }
-        };
-        responder.respond(&info).await.ok();
+                cqhci::EmmcPartition {
+                    id: EmmcPartitionId::BootPartition1,
+                    block_count: 1024,
+                    block_size: 512,
+                },
+            ],
+            rca: 1,
+            ext_csd,
+        })
     }
 
-    async fn initialize_command_queueing(
-        &mut self,
-        request: fidl_next::Request<cqhci::cqhci::InitializeCommandQueueing, DriverChannel>,
-        responder: fidl_next::Responder<cqhci::cqhci::InitializeCommandQueueing>,
-    ) {
-        let payload = request.payload();
-
-        let virtual_interrupt = payload.virtual_interrupt;
+    async fn initialize(
+        &self,
+        virtual_interrupt: zx::VirtualInterrupt,
+        virtual_irq_lifeline: zx::EventPair,
+    ) -> Result<CommandQueueResources, zx::Status> {
         let hardware_irq = Arc::new(zx::VirtualInterrupt::from(
-            self.hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into_handle(),
+            self.0
+                .task_handler
+                .irq
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .unwrap()
+                .into_handle(),
         ));
-        let on_non_cq_interrupt_sink = self.on_non_cq_interrupt_sink.clone();
+        let non_cq_interrupt_sink = self.0.non_cq_interrupt_sink.lock().take().unwrap();
+        std::thread::Builder::new()
+            .name("test-irq-delegator".to_owned())
+            .spawn(move || {
+                let port = zx::Port::create_with_opts(zx::PortOptions::BIND_TO_INTERRUPT);
+                let mut exec = fasync::LocalExecutorBuilder::new().port(port).build();
+                exec.run_singlethreaded(async move {
+                    let _lifeline = virtual_irq_lifeline;
+                    let mut virtual_irq_stream = Box::pin(fuchsia_async::OnInterrupt::new(
+                        virtual_interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    ));
+                    let mut lifeline_waiter = fuchsia_async::OnSignals::new(
+                        &_lifeline,
+                        zx::Signals::EVENTPAIR_PEER_CLOSED,
+                    )
+                    .fuse();
 
-        std::thread::spawn(move || {
-            loop {
-                match virtual_interrupt.wait() {
-                    Ok(_) => {
-                        on_non_cq_interrupt_sink.unbounded_send(hardware_irq.clone()).unwrap();
+                    use futures::{FutureExt as _, StreamExt as _};
+                    loop {
+                        futures::select! {
+                            irq = virtual_irq_stream.next().fuse() => {
+                                match irq.expect("Stream ended unexpectedly") {
+                                    Ok(_) => {}
+                                    Err(zx::Status::CANCELED) => break,
+                                    Err(e) => panic!("Virtual interrupt failed: {:?}", e),
+                                }
+                                let _ = virtual_interrupt.ack();
+                                non_cq_interrupt_sink.unbounded_send(hardware_irq.clone()).unwrap();
+                            }
+                            _ = &mut lifeline_waiter => {
+                                break;
+                            }
+                        }
                     }
-                    Err(zx::Status::CANCELED) => break,
-                    Err(e) => panic!("wait failed: {:?}", e),
-                }
-            }
-        });
-
-        let mmio = self.mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let sdhci_mmio = self.sdhci_mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let bti = self.fake_bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let interrupt = zx::Interrupt::from(
-            self.hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into_handle(),
-        );
-
-        responder
-            .respond(sdmmc::CqhciInitializeCommandQueueingResponse {
-                cqhci_mmio: mmio,
-                cqhci_mmio_offset: 0,
-                sdhci_mmio,
-                sdhci_mmio_offset: 0,
-                bti,
-                interrupt,
+                });
             })
-            .await
-            .ok();
+            .unwrap();
+
+        Ok(self.0.resources())
     }
 
-    async fn enable_cqhci(&mut self, responder: fidl_next::Responder<cqhci::cqhci::EnableCqhci>) {
-        responder.respond(()).await.ok();
+    async fn enable(&self) -> Result<(), zx::Status> {
+        self.0.task_handler.state.lock().enabled = true;
+        Ok(())
     }
 
-    async fn disable_cqhci(&mut self, responder: fidl_next::Responder<cqhci::cqhci::DisableCqhci>) {
-        let mut cqhci_mmio = mmio::vmo::VmoMapping::map(
-            0,
-            0x2000,
-            self.mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        )
-        .unwrap();
-        cqhci_mmio.store32(CQHCI_CQ_IS_OFFSET, 0);
-        cqhci_mmio.store32(CQHCI_CQ_TCN_OFFSET, 0);
+    async fn disable(&self) -> Result<(), zx::Status> {
+        self.0.task_handler.state.lock().enabled = false;
+        Ok(())
+    }
 
-        let mut sdhci_mmio = mmio::vmo::VmoMapping::map(
-            0,
-            0x2000,
-            self.sdhci_mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        )
-        .unwrap();
-        sdhci_mmio.store32(SDHCI_IS_OFFSET, 0);
-
-        responder.respond(()).await.ok();
+    fn on_task_submitted(&self, task: SubmittedTaskForTesting<'_>) {
+        if let Some(hook) = self.0.task_handler.on_task_hook.as_ref() {
+            hook(task);
+        }
     }
 }
-
 struct Service {
     dispatcher: FidlExecutor<WeakDispatcher>,
-    mmio_vmo: zx::Vmo,
-    sdhci_mmio_vmo: zx::Vmo,
-    on_non_cq_interrupt_sink: mpsc::UnboundedSender<Arc<zx::VirtualInterrupt>>,
-    hardware_irq: zx::VirtualInterrupt,
-    rpmb_request_callback: Option<mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>>,
+    rpmb_request_sender: mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>,
 }
 
 impl cqhci::ServiceHandler for Service {
     fn cqhci(
         &self,
-        server_end: fidl_next::ServerEnd<fidl_next_fuchsia_hardware_cqhci::Cqhci, DriverChannel>,
+        _server_end: fidl_next::ServerEnd<fidl_next_fuchsia_hardware_cqhci::Cqhci, DriverChannel>,
     ) {
-        server_end.spawn_on(
-            MockCqhciServer::new(
-                self.mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                self.sdhci_mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                self.on_non_cq_interrupt_sink.clone(),
-                self.hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            ),
-            &self.dispatcher,
-        );
+        unreachable!()
     }
 
     fn rpmb(&self, server_end: fidl_next::ServerEnd<fidl_next_fuchsia_hardware_rpmb::DriverRpmb>) {
         server_end
-            .spawn_on(MockRpmbServer::new(self.rpmb_request_callback.clone()), &self.dispatcher);
+            .spawn_on(MockRpmbServer::new(self.rpmb_request_sender.clone()), &self.dispatcher);
     }
 }
 
 struct TestHandles {
-    mmio: zx::Vmo,
-    sdhci_mmio: zx::Vmo,
     hardware_irq: zx::VirtualInterrupt,
     /// A receiver for non-CQ interrupts.  Each time the driver receives a non-CQ interrupt, it
     /// will forward it to the delegator, which in turn forwards the physical IRQ to this receiver
     /// to be acked by the test.  Note that the test MUST ack the interrupt, or the driver will
     /// never resume handling interrupts.
-    on_non_cq_interrupt_receiver: mpsc::UnboundedReceiver<Arc<zx::VirtualInterrupt>>,
+    non_cq_interrupt_receiver: mpsc::UnboundedReceiver<Arc<zx::VirtualInterrupt>>,
     /// A receiver for RPMB requests.  Each time the driver receives an RPMB request, it will send
     /// a message to this receiver, and will wait for the test to send a message back before
     /// continuing.
     rpmb_request_receiver: mpsc::UnboundedReceiver<futures::channel::oneshot::Sender<()>>,
 }
 
-struct FakeTaskHandlerInner {
-    mmio: mmio::region::MmioRegion<mmio::vmo::VmoMemory>,
-    sdhci_mmio: mmio::region::MmioRegion<mmio::vmo::VmoMemory>,
-    requests_to_fail: usize,
+struct FakeHardwareState {
+    enabled: bool,
+    cq_data: Vec<u32>,
+    sd_data: Vec<u32>,
+    requests_to_fail: u32,
     stall: bool,
+    wake_event: event_listener::Event,
+}
+
+impl FakeHardwareState {
+    fn load32(&self, region: MmioRegionType, offset: usize) -> u32 {
+        let buffer = match region {
+            MmioRegionType::Cqhci => &self.cq_data,
+            MmioRegionType::Sdhci => &self.sd_data,
+        };
+        buffer[offset / 4]
+    }
+
+    fn store32(&mut self, region: MmioRegionType, offset: usize, value: u32) {
+        let buffer = match region {
+            MmioRegionType::Cqhci => &mut self.cq_data,
+            MmioRegionType::Sdhci => &mut self.sd_data,
+        };
+        buffer[offset / 4] = value;
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MmioRegionType {
+    Cqhci,
+    Sdhci,
+}
+
+/// A fake MMIO implementation which emulates hardware register behaviour, and notifies
+/// FakeTaskHandler when tasks are submitted.
+struct FakeMmio {
+    state: Arc<Mutex<FakeHardwareState>>,
+    region_type: MmioRegionType,
+}
+
+impl FakeMmio {
+    fn buffer<'a>(&self, state: &'a FakeHardwareState) -> &'a [u32] {
+        match self.region_type {
+            MmioRegionType::Cqhci => &state.cq_data,
+            MmioRegionType::Sdhci => &state.sd_data,
+        }
+    }
+
+    fn buffer_mut<'a>(&self, state: &'a mut FakeHardwareState) -> &'a mut Vec<u32> {
+        match self.region_type {
+            MmioRegionType::Cqhci => &mut state.cq_data,
+            MmioRegionType::Sdhci => &mut state.sd_data,
+        }
+    }
+}
+
+impl mmio::Mmio for FakeMmio {
+    fn len(&self) -> usize {
+        self.buffer(&self.state.lock()).len() * 4
+    }
+    fn align_offset(&self, _align: usize) -> usize {
+        0
+    }
+    fn write_barrier(&self) {}
+
+    fn try_load8(&self, _offset: usize) -> Result<u8, mmio::MmioError> {
+        unreachable!()
+    }
+    fn try_load16(&self, _offset: usize) -> Result<u16, mmio::MmioError> {
+        unreachable!()
+    }
+    fn try_load64(&self, _offset: usize) -> Result<u64, mmio::MmioError> {
+        unreachable!()
+    }
+
+    fn try_load32(&self, offset: usize) -> Result<u32, mmio::MmioError> {
+        let state = self.state.lock();
+        let buf = self.buffer(&state);
+        Ok(buf[offset / 4])
+    }
+
+    fn load8(&self, _offset: usize) -> u8 {
+        unreachable!()
+    }
+    fn load16(&self, _offset: usize) -> u16 {
+        unreachable!()
+    }
+    fn load64(&self, _offset: usize) -> u64 {
+        unreachable!()
+    }
+    fn load32(&self, offset: usize) -> u32 {
+        self.try_load32(offset).unwrap()
+    }
+
+    fn try_store8(&mut self, _offset: usize, _value: u8) -> Result<(), mmio::MmioError> {
+        unreachable!()
+    }
+    fn try_store16(&mut self, _offset: usize, _value: u16) -> Result<(), mmio::MmioError> {
+        unreachable!()
+    }
+    fn try_store64(&mut self, _offset: usize, _value: u64) -> Result<(), mmio::MmioError> {
+        unreachable!()
+    }
+
+    fn try_store32(&mut self, offset: usize, value: u32) -> Result<(), mmio::MmioError> {
+        let mut state = self.state.lock();
+        let enabled = state.enabled;
+        let buf = self.buffer_mut(&mut state);
+
+        let idx = offset / 4;
+        match (self.region_type, offset) {
+            (MmioRegionType::Cqhci, offset) if offset == CQHCI_CQ_TDBR_OFFSET as usize => {
+                assert!(enabled, "Doorbell rung while CQHCI is disabled");
+                // Notify the FakeTaskHandler on doorbell ring
+                let current = buf[idx];
+                let new_val = current | value;
+                buf[idx] = new_val;
+                state.wake_event.notify(usize::MAX);
+                Ok(())
+            }
+            (MmioRegionType::Cqhci, offset) if offset == CQHCI_CQ_IS_OFFSET as usize => {
+                // Emulate W1C semantics
+                let current = buf[idx];
+                let cleared = current & !value;
+                buf[idx] = cleared;
+                Ok(())
+            }
+            (MmioRegionType::Sdhci, offset) if offset == SDHCI_IS_OFFSET as usize => {
+                // Emulate W1C semantics
+                let current = buf[idx];
+                let cleared = current & !value;
+                buf[idx] = cleared;
+                Ok(())
+            }
+            _ => {
+                buf[idx] = value;
+                Ok(())
+            }
+        }
+    }
+
+    fn store8(&mut self, _offset: usize, _value: u8) {
+        unreachable!()
+    }
+    fn store16(&mut self, _offset: usize, _value: u16) {
+        unreachable!()
+    }
+    fn store64(&mut self, _offset: usize, _value: u64) {
+        unreachable!()
+    }
+    fn store32(&mut self, offset: usize, value: u32) {
+        self.try_store32(offset, value).unwrap();
+    }
 }
 
 struct FakeTaskHandler {
-    inner: Mutex<FakeTaskHandlerInner>,
     irq: zx::VirtualInterrupt,
-    // A side-channel which receives all tasks submitted by the driver.
-    // We need this because the doorbell register has W1S semantics in the real world, which we
-    // cannot easily simulate.  Races can occur where two simultaneously submitted tasks erase
-    // each other's slots in the doorbell register upon submission.
-    doorbell_receiver: Mutex<std::sync::mpsc::Receiver<u8>>,
+    state: Arc<Mutex<FakeHardwareState>>,
+    on_task_hook: Option<Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>>,
 }
 
 impl FakeTaskHandler {
-    fn new(handles: &TestHandles, doorbell_receiver: std::sync::mpsc::Receiver<u8>) -> Arc<Self> {
-        let mmio = mmio::vmo::VmoMapping::map(
-            0,
-            0x2000,
-            handles.mmio.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        )
-        .unwrap();
-        let sdhci_mmio = mmio::vmo::VmoMapping::map(
-            0,
-            0x2000,
-            handles.sdhci_mmio.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        )
-        .unwrap();
+    fn new(
+        on_task_hook: Option<Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            inner: Mutex::new(FakeTaskHandlerInner {
-                mmio,
-                sdhci_mmio,
+            irq: zx::Interrupt::create_virtual().unwrap(),
+            state: Arc::new(Mutex::new(FakeHardwareState {
+                enabled: false,
+                cq_data: vec![0; 0x400],
+                sd_data: vec![0; 0x400],
                 requests_to_fail: 0,
                 stall: false,
-            }),
-            irq: handles.hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            doorbell_receiver: Mutex::new(doorbell_receiver),
+                wake_event: event_listener::Event::new(),
+            })),
+            on_task_hook,
         })
-    }
-
-    fn fail_next(&self, count: usize) {
-        self.inner.lock().requests_to_fail = count;
-    }
-
-    fn stall(&self, stall: bool) {
-        self.inner.lock().stall = stall;
     }
 
     fn spawn(self: &Arc<Self>, scope: &fasync::Scope) -> fasync::JoinHandle<()> {
         let this = self.clone();
         scope.spawn(async move {
             loop {
-                this.poll();
-                fasync::Timer::new(std::time::Duration::from_millis(1)).await;
+                if let Some(l) = this.poll().await {
+                    l.await;
+                }
             }
         })
     }
 
-    fn poll(&self) {
-        {
-            let mut inner = self.inner.lock();
-            let mut doorbell = inner.mmio.load32(CQHCI_CQ_TDBR_OFFSET as usize);
+    fn fail_next(&self, count: u32) {
+        self.state.lock().requests_to_fail = count;
+    }
 
-            // Also check the side-channel for any doorbells that might have been overwritten/lost due
-            // to lack of W1S semantics on the VMO.
-            let doorbell_receiver = self.doorbell_receiver.lock();
-            while let Ok(slot) = doorbell_receiver.try_recv() {
-                doorbell |= 1 << slot;
-            }
+    fn stall(&self, stall: bool) {
+        let mut state = self.state.lock();
+        state.stall = stall;
+        if !stall {
+            state.wake_event.notify(usize::MAX);
+        }
+    }
 
-            if inner.stall || doorbell == 0 {
-                return;
-            }
+    async fn poll(&self) -> Option<event_listener::EventListener> {
+        let mut state = self.state.lock();
+        let listener = state.wake_event.listen();
+        if state.stall {
+            return Some(listener);
+        }
+        let doorbell = state.load32(MmioRegionType::Cqhci, CQHCI_CQ_TDBR_OFFSET as usize);
+        if doorbell == 0 {
+            return Some(listener);
+        }
+        // Consume one bit at a time.  This simplifies the implementation of the fake.
+        let task_id = doorbell.trailing_zeros();
+        let mask = 1 << task_id;
+        let new_dbr = doorbell & !mask;
+        state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TDBR_OFFSET as usize, new_dbr);
 
-            // Only clear the bits we are about to process.  If another thread writes to TDBR
-            // *after* we read it but *before* we write it back, we don't want to clobber that
-            // write.
-            let current_tdbr = inner.mmio.load32(CQHCI_CQ_TDBR_OFFSET as usize);
-            inner.mmio.store32(CQHCI_CQ_TDBR_OFFSET, current_tdbr & !doorbell);
+        let mut sdhci_irq_status = SdhciInterruptStatusRegister::from_raw(0);
+        let current_cq_is = state.load32(MmioRegionType::Cqhci, CQHCI_CQ_IS_OFFSET as usize);
+        let mut cqhci_irq_status = CqhciCqInterruptStatusRegister::from_raw(current_cq_is);
+        sdhci_irq_status.set_cqhci_interrupt(true);
 
-            let mut sdhci_irq_status =
-                SdhciInterruptStatusRegister::from_raw(inner.sdhci_mmio.load32(SDHCI_IS_OFFSET));
-            let mut cqhci_irq_status = CqhciCqInterruptStatusRegister::from_raw(
-                inner.mmio.load32(CQHCI_CQ_IS_OFFSET as usize),
-            );
-            if inner.requests_to_fail > 0 {
-                inner.requests_to_fail -= 1;
-                sdhci_irq_status.set_cqhci_interrupt(true);
-                cqhci_irq_status.set_response_error_detected(true);
-            } else {
-                sdhci_irq_status.set_cqhci_interrupt(true);
-                cqhci_irq_status.set_task_complete(true);
-                // Accumulate completions in TCN (don't overwrite existing ones)
-                let current_tcn = inner.mmio.load32(CQHCI_CQ_TCN_OFFSET);
-                inner.mmio.store32(CQHCI_CQ_TCN_OFFSET, current_tcn | doorbell);
-            }
-            inner.mmio.store32(CQHCI_CQ_IS_OFFSET, cqhci_irq_status.raw());
-            inner.sdhci_mmio.store32(SDHCI_IS_OFFSET, sdhci_irq_status.raw());
-            inner.mmio.write_barrier();
+        if state.requests_to_fail > 0 {
+            state.requests_to_fail -= 1;
+            cqhci_irq_status.set_response_error_detected(true);
+            let mut terri = CqhciCqTaskErrorRegister(0);
+            terri.set_response_mode_error_task_id(task_id as u8);
+            terri.set_response_mode_error_fields_valid(true);
+            state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TERRI_OFFSET as usize, terri.0);
+        } else {
+            cqhci_irq_status.set_task_complete(true);
+            let current_tcn = state.load32(MmioRegionType::Cqhci, CQHCI_CQ_TCN_OFFSET as usize);
+            let new_tcn = current_tcn | mask;
+            state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TCN_OFFSET as usize, new_tcn);
         }
 
+        state.store32(MmioRegionType::Cqhci, CQHCI_CQ_IS_OFFSET as usize, cqhci_irq_status.raw());
+        state.store32(MmioRegionType::Sdhci, SDHCI_IS_OFFSET as usize, sdhci_irq_status.raw());
+
         self.irq.trigger(zx::BootInstant::get()).expect("failed to trigger interrupt");
+
+        None
     }
 }
 
-fn setup() -> (TestHarness<CqhciDriver>, fasync::Scope, TestHandles) {
-    let mmio_vmo = zx::Vmo::create(0x2000).unwrap();
-    let sdhci_mmio_vmo = zx::Vmo::create(0x2000).unwrap();
-    let hardware_irq = zx::Interrupt::create_virtual().unwrap();
-    let (on_non_cq_interrupt_sink, on_non_cq_interrupt_receiver) = mpsc::unbounded();
-    let (rpmb_tx, rpmb_rx) = mpsc::unbounded();
+fn setup(
+    on_task_hook: Option<Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>>,
+) -> (TestHarness<CqhciDriver>, fasync::Scope, TestHandles) {
+    let (non_cq_interrupt_sink, non_cq_interrupt_receiver) = mpsc::unbounded();
+    let (rpmb_request_sender, rpmb_request_receiver) = mpsc::unbounded();
     let scope = fasync::Scope::new_with_name("test");
     let mut service_fs = ServiceFs::new();
     let mut harness = TestHarness::<CqhciDriver>::new();
 
+    let instance = Arc::new(FakeCqhciHost {
+        task_handler: FakeTaskHandler::new(on_task_hook),
+        bti: fake_bti::FakeBti::create().unwrap(),
+        non_cq_interrupt_sink: Mutex::new(Some(non_cq_interrupt_sink)),
+    });
+    instance.task_handler.spawn(&scope);
+    FakeCqhciHost::register_global(instance.clone());
+
     let test_handles = TestHandles {
-        mmio: mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        sdhci_mmio: sdhci_mmio_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        hardware_irq: hardware_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        on_non_cq_interrupt_receiver,
-        rpmb_request_receiver: rpmb_rx,
+        hardware_irq: instance.task_handler.irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        non_cq_interrupt_receiver,
+        rpmb_request_receiver,
     };
 
     let offers = [ServiceOffer::<cqhci::Service>::new_next()
@@ -380,11 +542,7 @@ fn setup() -> (TestHarness<CqhciDriver>, fasync::Scope, TestHandles) {
             "default",
             Service {
                 dispatcher: FidlExecutor::from(harness.dispatcher().clone()),
-                mmio_vmo,
-                sdhci_mmio_vmo,
-                on_non_cq_interrupt_sink,
-                hardware_irq,
-                rpmb_request_callback: Some(rpmb_tx),
+                rpmb_request_sender,
             },
         )
         .build_driver_offer()];
@@ -431,86 +589,42 @@ fn connect_rpmb_client(
     client_end.spawn_on(scope)
 }
 
-async fn start_driver<'a>(
-    harness: &'a mut TestHarness<CqhciDriver>,
-    scope: &fasync::Scope,
-    handles: &TestHandles,
-    additional_hook: Option<Box<dyn Fn(SubmittedTaskForTesting<'_>) + Send + Sync>>,
-) -> (DriverUnderTest<'a, CqhciDriver>, Arc<FakeTaskHandler>) {
-    let (doorbell_sender, doorbell_receiver) = std::sync::mpsc::channel();
-    let doorbell_sender = Arc::new(Mutex::new(doorbell_sender));
-
-    let task_handler = FakeTaskHandler::new(handles, doorbell_receiver);
-    task_handler.spawn(scope);
-
-    let started_driver = harness.start_driver().await.expect("failed to start driver");
-
-    started_driver
-        .get_driver()
-        .unwrap()
-        .command_queue
-        .lock()
-        .as_ref()
-        .unwrap()
-        .set_task_submitted_hook(Box::new(move |transfer_op| {
-            match &transfer_op {
-                SubmittedTaskForTesting::Transfer(_, transfer) => {
-                    let _ = doorbell_sender.lock().send(transfer.tdl_slot());
-                }
-                SubmittedTaskForTesting::DirectCmd => {
-                    let _ = doorbell_sender.lock().send(CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
-                }
-            }
-            if let Some(hook) = &additional_hook {
-                hook(transfer_op);
-            }
-        }));
-
-    (started_driver, task_handler)
-}
-
 #[fuchsia::test]
 async fn test_driver_lifecycle() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, _task_handler) = start_driver(&mut harness, &scope, &handles, None).await;
+    let (mut harness, _scope, _handles) = setup(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
     started_driver.stop_driver().await;
 }
 
 #[fuchsia::test]
 async fn test_io() {
-    let (mut harness, scope, handles) = setup();
     let data = Arc::new(Mutex::new(vec![0u8; 65536]));
     let data_clone = data.clone();
-    let (started_driver, _task_handler) = start_driver(
-        &mut harness,
-        &scope,
-        &handles,
-        Some(Box::new(move |transfer_op| {
-            let SubmittedTaskForTesting::Transfer(partition, transfer) = transfer_op else {
-                return;
-            };
-            assert_eq!(partition, EmmcPartitionId::UserDataPartition);
-            let mut data = data_clone.lock();
-            assert!(transfer.offset() + transfer.length() <= data.len() as u64);
-            let range =
-                transfer.offset() as usize..transfer.offset() as usize + transfer.length() as usize;
-            match transfer.direction() {
-                Direction::Read => {
-                    transfer
-                        .vmo()
-                        .write(&data[range], transfer.vmo_offset())
-                        .expect("vmo write failed");
-                }
-                Direction::Write => {
-                    transfer
-                        .vmo()
-                        .read(&mut data[range], transfer.vmo_offset())
-                        .expect("vmo read failed");
-                }
+    let (mut harness, _scope, _handles) = setup(Some(Box::new(move |transfer_op| {
+        let SubmittedTaskForTesting::Transfer(partition, transfer) = transfer_op else {
+            return;
+        };
+        assert_eq!(partition, EmmcPartitionId::UserDataPartition);
+        let mut data = data_clone.lock();
+        assert!(transfer.offset() + transfer.length() <= data.len() as u64);
+        let range =
+            transfer.offset() as usize..transfer.offset() as usize + transfer.length() as usize;
+        match transfer.direction() {
+            Direction::Read => {
+                transfer
+                    .vmo()
+                    .write(&data[range], transfer.vmo_offset())
+                    .expect("vmo write failed");
             }
-        })),
-    )
-    .await;
+            Direction::Write => {
+                transfer
+                    .vmo()
+                    .read(&mut data[range], transfer.vmo_offset())
+                    .expect("vmo read failed");
+            }
+        }
+    })));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
 
     let block_client = connect_block_client(&started_driver, "user").await;
 
@@ -528,27 +642,21 @@ async fn test_io() {
 
 #[fuchsia::test]
 async fn test_switch_partition() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, _task_handler) = start_driver(
-        &mut harness,
-        &scope,
-        &handles,
-        Some(Box::new(move |transfer_op| {
-            let (partition, transfer) = match transfer_op {
-                SubmittedTaskForTesting::Transfer(partition, transfer) => (partition, transfer),
-                SubmittedTaskForTesting::DirectCmd => return,
-            };
-            let pattern = match partition {
-                EmmcPartitionId::UserDataPartition => 0x11,
-                EmmcPartitionId::BootPartition1 => 0x22,
-                _ => panic!("Unexpected partition"),
-            };
-            let len = transfer.length();
-            let buf = vec![pattern; len as usize];
-            transfer.vmo().write(&buf, transfer.vmo_offset()).expect("vmo write failed");
-        })),
-    )
-    .await;
+    let (mut harness, _scope, _handles) = setup(Some(Box::new(move |transfer_op| {
+        let (partition, transfer) = match transfer_op {
+            SubmittedTaskForTesting::Transfer(partition, transfer) => (partition, transfer),
+            SubmittedTaskForTesting::DirectCmd => return,
+        };
+        let pattern = match partition {
+            EmmcPartitionId::UserDataPartition => 0x11,
+            EmmcPartitionId::BootPartition1 => 0x22,
+            _ => panic!("Unexpected partition"),
+        };
+        let len = transfer.length();
+        let buf = vec![pattern; len as usize];
+        transfer.vmo().write(&buf, transfer.vmo_offset()).expect("vmo write failed");
+    })));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
 
     let user_client = connect_block_client(&started_driver, "user").await;
     let boot1_client = connect_block_client(&started_driver, "boot1").await;
@@ -571,32 +679,38 @@ async fn test_switch_partition() {
 
 #[fuchsia::test]
 async fn test_forwards_non_cq_interrupts() {
-    let (mut harness, scope, mut handles) = setup();
-    let (started_driver, _task_handler) = start_driver(&mut harness, &scope, &handles, None).await;
+    let (mut harness, scope, mut handles) = setup(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let task_handler = FakeCqhciHost::global().task_handler.clone();
 
     // Generate a non-CQ interrupt
-    let mut test_mmio = mmio::vmo::VmoMapping::map(
-        0,
-        0x2000,
-        handles.sdhci_mmio.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-    )
-    .unwrap();
-    let mut sdhci_interrupt_status = SdhciInterruptStatusRegister::from_raw(0);
-    sdhci_interrupt_status.set_command_complete(true);
-    test_mmio.store32(SDHCI_IS_OFFSET, sdhci_interrupt_status.raw());
+    {
+        let mut state = task_handler.state.lock();
+        let mut sdhci_interrupt_status = SdhciInterruptStatusRegister::from_raw(0);
+        sdhci_interrupt_status.set_command_complete(true);
+        state.store32(
+            MmioRegionType::Sdhci,
+            SDHCI_IS_OFFSET as usize,
+            sdhci_interrupt_status.raw(),
+        );
+    }
     handles.hardware_irq.trigger(zx::BootInstant::get()).unwrap();
 
-    // Wait until the virtual interrupt is given to the delegator.
-    let irq = handles.on_non_cq_interrupt_receiver.next().await.expect("Failed to wait for irq");
+    // Wait until the first non-CQ interrupt is delivered to the delegator.
+    let irq = handles.non_cq_interrupt_receiver.next().await.expect("Failed to wait for irq");
 
     // Trigger again while it's not acked.  It should not be delivered to CQHCI, because the CQHCI
     // driver shouldn't have acked it.
     handles.hardware_irq.trigger(zx::BootInstant::get()).unwrap();
 
     let first_irq_acked = Arc::new(Mutex::new(false));
-    let next_interrupt = handles.on_non_cq_interrupt_receiver.next().then(|res| async {
-        assert!(*first_irq_acked.lock());
-        res
+    let first_irq_acked_clone = first_irq_acked.clone();
+    let (mut next_irq_tx, mut next_irq_rx) = mpsc::channel(0);
+    scope.spawn(async move {
+        let irq =
+            handles.non_cq_interrupt_receiver.next().await.expect("Failed to wait for second IRQ");
+        assert!(*first_irq_acked_clone.lock());
+        next_irq_tx.send(irq).await.unwrap();
     });
 
     // Now ack the virtual interrupt.  The second IRQ should be delivered.
@@ -605,19 +719,21 @@ async fn test_forwards_non_cq_interrupts() {
         let _ = irq.ack();
         *acked = true;
     }
-    let irq2 = next_interrupt.await.expect("Failed to wait for second IRQ");
-    test_mmio.store32(SDHCI_IS_OFFSET, 0);
-    irq2.ack().unwrap();
+    let irq2 = next_irq_rx.next().await.expect("Failed to wait for second IRQ");
+    {
+        let mut state = task_handler.state.lock();
+        state.store32(MmioRegionType::Sdhci, SDHCI_IS_OFFSET as usize, 0);
+    }
+    let _ = irq2.ack();
 
     started_driver.stop_driver().await;
 }
 
-// TODO(https://fxbug.dev/42176727): The test is disabled until flakiness is resolved.
-#[ignore]
 #[fuchsia::test]
 async fn test_error_recovery() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, task_handler) = start_driver(&mut harness, &scope, &handles, None).await;
+    let (mut harness, scope, _handles) = setup(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let task_handler = FakeCqhciHost::global().task_handler.clone();
 
     struct TestState {
         on_error_event: event_listener::Event,
@@ -673,7 +789,6 @@ async fn test_error_recovery() {
     // up, so we should see at most 2 errors (one per client).
     task_handler.fail_next(1);
     on_error_listener.await;
-
     // Run a bit longer to let a few more tasks through, verifying that they can successfully
     // run.
     fasync::Timer::new(std::time::Duration::from_millis(100)).await;
@@ -689,37 +804,31 @@ async fn test_error_recovery() {
 
 #[fuchsia::test(threads = 4)]
 async fn test_concurrency() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, _task_handler) = start_driver(
-        &mut harness,
-        &scope,
-        &handles,
-        Some(Box::new(move |transfer_op| {
-            if let SubmittedTaskForTesting::Transfer(partition, transfer) = transfer_op {
-                let len = transfer.length();
-                let pattern = match partition {
-                    EmmcPartitionId::UserDataPartition => {
-                        if len == 512 {
-                            0x11
-                        } else {
-                            0x22
-                        }
+    let (mut harness, _scope, _handles) = setup(Some(Box::new(move |transfer_op| {
+        if let SubmittedTaskForTesting::Transfer(partition, transfer) = transfer_op {
+            let len = transfer.length();
+            let pattern = match partition {
+                EmmcPartitionId::UserDataPartition => {
+                    if len == 512 {
+                        0x11
+                    } else {
+                        0x22
                     }
-                    EmmcPartitionId::BootPartition1 => 0x33,
-                    _ => panic!("Unexpected partition"),
-                };
-                let buf = vec![pattern; len as usize];
-                transfer.vmo().write(&buf, transfer.vmo_offset()).expect("vmo write failed");
-            }
-        })),
-    )
-    .await;
+                }
+                EmmcPartitionId::BootPartition1 => 0x33,
+                _ => panic!("Unexpected partition"),
+            };
+            let buf = vec![pattern; len as usize];
+            transfer.vmo().write(&buf, transfer.vmo_offset()).expect("vmo write failed");
+        }
+    })));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
     let started_driver = Mutex::new(Some(started_driver));
 
-    let proxy0 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
-    let proxy1 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
-    let proxy2 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
-    let proxy3 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "boot1");
+    let proxy0 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "user");
+    let proxy1 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "user");
+    let proxy2 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "user");
+    let proxy3 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "boot1");
 
     let user_client1 = RemoteBlockClient::new(proxy0).await.expect("failed to create block client");
     let user_client2 = RemoteBlockClient::new(proxy1).await.expect("failed to create block client");
@@ -755,13 +864,13 @@ async fn test_concurrency() {
 
 #[fuchsia::test(threads = 4)]
 async fn test_shutdown_with_active_clients() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, _task_handler) = start_driver(&mut harness, &scope, &handles, None).await;
+    let (mut harness, scope, _handles) = setup(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
     let started_driver = Mutex::new(Some(started_driver));
 
-    let proxy0 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
-    let proxy1 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
-    let proxy2 = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "boot1");
+    let proxy0 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "user");
+    let proxy1 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "user");
+    let proxy2 = connect_block_proxy((*started_driver.lock()).as_ref().unwrap(), "boot1");
 
     let user_client0 = RemoteBlockClient::new(proxy0).await.expect("failed to create block client");
     let user_client1 = RemoteBlockClient::new(proxy1).await.expect("failed to create block client");
@@ -790,23 +899,16 @@ async fn test_shutdown_with_active_clients() {
 
 #[fuchsia::test]
 async fn test_rpmb() {
-    let (mut harness, scope, handles) = setup();
-
     let rpmb_active = Arc::new(AtomicBool::new(false));
     let rpmb_active_clone = rpmb_active.clone();
+    let (mut harness, scope, handles) = setup(Some(Box::new(move |_| {
+        assert!(
+            !rpmb_active_clone.load(Ordering::Relaxed),
+            "task submitted while RPMB request is active!"
+        );
+    })));
 
-    let (started_driver, _task_handler) = start_driver(
-        &mut harness,
-        &scope,
-        &handles,
-        Some(Box::new(move |_| {
-            assert!(
-                !rpmb_active_clone.load(Ordering::Relaxed),
-                "task submitted while RPMB request is active!"
-            );
-        })),
-    )
-    .await;
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
     let started_driver = Mutex::new(Some(started_driver));
 
     let block_client = RemoteBlockClient::new(connect_block_proxy(
@@ -869,25 +971,20 @@ async fn test_rpmb() {
 
 #[fuchsia::test]
 async fn test_shutdown_with_active_dcmd() {
-    let (mut harness, scope, handles) = setup();
-
     // Intercept when the DCMD is submitted.
     let (dcmd_tx, dcmd_rx) = futures::channel::oneshot::channel();
     let dcmd_tx = Arc::new(Mutex::new(Some(dcmd_tx)));
 
-    let (started_driver, task_handler) = start_driver(
-        &mut harness,
-        &scope,
-        &handles,
-        Some(Box::new(move |transfer_op| {
-            if let SubmittedTaskForTesting::DirectCmd = transfer_op {
-                if let Some(tx) = dcmd_tx.lock().take() {
-                    let _ = tx.send(());
-                }
+    let (mut harness, scope, _handles) = setup(Some(Box::new(move |transfer_op| {
+        if let SubmittedTaskForTesting::DirectCmd = transfer_op {
+            if let Some(tx) = dcmd_tx.lock().take() {
+                let _ = tx.send(());
             }
-        })),
-    )
-    .await;
+        }
+    })));
+
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let task_handler = FakeCqhciHost::global().task_handler.clone();
 
     let block_client0 = connect_block_client(&started_driver, "user").await;
     let block_client1 = connect_block_client(&started_driver, "user").await;
@@ -911,8 +1008,9 @@ async fn test_shutdown_with_active_dcmd() {
 
 #[fuchsia::test]
 async fn test_shutdown_with_blocked_transfers() {
-    let (mut harness, scope, handles) = setup();
-    let (started_driver, task_handler) = start_driver(&mut harness, &scope, &handles, None).await;
+    let (mut harness, scope, _handles) = setup(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+    let task_handler = FakeCqhciHost::global().task_handler.clone();
 
     // Stall requests so the requests never complete.
     task_handler.stall(true);
