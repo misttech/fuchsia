@@ -3,12 +3,14 @@
 # found in the LICENSE file.
 """Async Fuchsia base test class."""
 
+import functools
 import importlib
+import inspect
 import logging
 import os
 import pathlib
 import typing
-from typing import Any, Dict, Union
+from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar, Union
 
 import fuchsia_async_extension
 from honeydew import errors
@@ -27,9 +29,12 @@ from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 
 # Import enums from the synchronous base test to maintain compatibility
-from .fuchsia_base_test import SnapshotOn, TracingOn
+from .fuchsia_base_test import FuchsiaTestCases, SnapshotOn, TracingOn
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 # TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
 # AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
@@ -38,6 +43,46 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # LINT.IfChange
+class AsyncFuchsiaTestCases:
+    """Base class for modular test cases."""
+
+    def __init__(
+        self,
+        mobly_test: "AsyncFuchsiaBaseTest",
+    ):
+        self.mobly_test = mobly_test
+
+    async def setup_test(self) -> None:
+        """Called before each test case."""
+
+    async def teardown_test(self) -> None:
+        """Called after each test case."""
+
+    def inject_test_cases(self) -> None:
+        for attr_name, method in inspect.getmembers(self, callable):
+            if attr_name.startswith("test_"):
+
+                @functools.wraps(method)
+                async def wrapper(
+                    *args: Any, method: Any = method, **kwargs: Any
+                ) -> None:
+                    try:
+                        await self.setup_test()
+
+                        if inspect.iscoroutinefunction(method):
+                            await method(*args, **kwargs)
+                        else:
+                            method(*args, **kwargs)
+                    finally:
+                        await self.teardown_test()
+
+                self.mobly_test.generate_tests(
+                    test_logic=wrapper,
+                    name_func=lambda *a, name=attr_name: name,
+                    arg_sets=[()],
+                )
+
+
 class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     """Async Fuchsia-specific base test class
 
@@ -56,8 +101,14 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             Default value is "never".
     """
 
+    TEST_CASES: list[type[AsyncFuchsiaTestCases]] | None = None
+
     async def pre_run(self) -> None:
-        pass
+        if self.TEST_CASES is None:
+            return
+
+        for tc in self.TEST_CASES:
+            tc(self).inject_test_cases()
 
     async def setup_class(self) -> None:
         """setup_class is called once before running tests.

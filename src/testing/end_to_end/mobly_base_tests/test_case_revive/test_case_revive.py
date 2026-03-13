@@ -132,6 +132,7 @@ class TestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
 
     def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
+        super().pre_run()
 
         self._test_case_revive: bool = self.user_params.get(
             "test_case_revive", False

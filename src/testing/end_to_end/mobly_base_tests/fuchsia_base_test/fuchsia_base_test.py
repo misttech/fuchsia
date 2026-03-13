@@ -4,12 +4,12 @@
 """Fuchsia base test class."""
 
 import enum
+import functools
 import importlib
 import inspect
 import logging
 import os
 import pathlib
-from functools import wraps
 from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar
 
 import fuchsia_async_extension
@@ -90,6 +90,39 @@ class TracingOn(enum.StrEnum):
 
 
 # LINT.IfChange
+class FuchsiaTestCases:
+    """Base class for modular test cases."""
+
+    def __init__(self, mobly_test: "FuchsiaBaseTest"):
+        self.mobly_test = mobly_test
+
+    def setup_test(self) -> None:
+        """Called before each test case."""
+
+    def teardown_test(self) -> None:
+        """Called after each test case."""
+
+    def inject_test_cases(self) -> None:
+        for attr_name, method in inspect.getmembers(self, callable):
+            if attr_name.startswith("test_"):
+
+                @functools.wraps(method)
+                def wrapper(
+                    *args: Any, method: Any = method, **kwargs: Any
+                ) -> None:
+                    try:
+                        self.setup_test()
+                        method(*args, **kwargs)
+                    finally:
+                        self.teardown_test()
+
+                self.mobly_test.generate_tests(
+                    test_logic=wrapper,
+                    name_func=lambda *a, name=attr_name: name,
+                    arg_sets=[()],
+                )
+
+
 class FuchsiaBaseTest(MoblyBaseTestClass):
     """Fuchsia-specific base test class
 
@@ -116,8 +149,14 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         on a global event loop.
     """
 
+    TEST_CASES: list[type[FuchsiaTestCases]] | None = None
+
     def pre_run(self) -> None:
-        pass
+        if self.TEST_CASES is None:
+            return
+
+        for tc in self.TEST_CASES:
+            tc(self).inject_test_cases()
 
     def setup_class(
         self,
@@ -735,7 +774,7 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
     ) -> None:
         if inspect.iscoroutinefunction(test_logic):
 
-            @wraps(test_logic)
+            @functools.wraps(test_logic)
             def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
                 return fuchsia_async_extension.get_loop().run_until_complete(
                     test_logic(*t_args, **t_kwargs)
@@ -758,7 +797,7 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         def make_sync_wrapper(
             func: Callable[P, Coroutine[Any, Any, T]]
         ) -> Callable[P, T]:
-            @wraps(func)
+            @functools.wraps(func)
             def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 return fuchsia_async_extension.get_loop().run_until_complete(
                     func(*args, **kwargs)
