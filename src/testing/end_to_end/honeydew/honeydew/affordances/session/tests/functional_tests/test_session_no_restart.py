@@ -21,26 +21,12 @@ _TILE_URL = (
 )
 
 
-class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
-    """Session affordance tests without restart
+class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
+    """Test logic for Session affordance without restart."""
 
-    This test suite only contains tests that do not restart the session.
-    So we can keep test coverage on platform having flaky issue on session
-    restart.
-    """
-
-    def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `dut` variable with FuchsiaDevice object
-        """
-        super().setup_class()
-        self.dut = self.fuchsia_devices[0]
-
-    def teardown_test(self) -> None:
-        self.dut.session.cleanup()
-        super().teardown_test()
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.dut = self.mobly_test.fuchsia_devices[0]
 
     def test_add_component(self) -> None:
         """Test case for session.add_component()"""
@@ -107,7 +93,31 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
                 wait_time=2,  # Time to wait between retries in seconds
             )
         except errors.HoneydewTimeoutError:
-            self.fail("The added element is not removed.")
+            asserts.fail("The added element is not removed.")
+
+
+class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
+    """Session affordance tests without restart
+
+    This test suite only contains tests that do not restart the session.
+    So we can keep test coverage on platform having flaky issue on session
+    restart.
+    """
+
+    TEST_CASES = [SessionNoRestartTestCases]
+
+    def setup_class(self) -> None:
+        """setup_class is called once before running tests.
+
+        It does the following things:
+            * Assigns `dut` variable with FuchsiaDevice object
+        """
+        super().setup_class()
+        self.dut = self.fuchsia_devices[0]
+
+    def teardown_test(self) -> None:
+        self.dut.session.cleanup()
+        super().teardown_test()
 
 
 if __name__ == "__main__":
