@@ -20,25 +20,13 @@ EXAMPLE_URL = (
 )
 
 
-class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
-    """Screenshot affordance tests"""
-
-    def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `dut` variable with FuchsiaDevice object
-        """
-        super().setup_class()
-        self.dut = self.fuchsia_devices[0]
+class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
+    """Test logic for Screenshot affordance."""
 
     def setup_test(self) -> None:
         super().setup_test()
-        self.dut.session.ensure_started()
-
-    def teardown_test(self) -> None:
-        self.dut.session.cleanup()
-        super().teardown_test()
+        self.dut = self.mobly_test.fuchsia_devices[0]
+        self.test_case_path = self.mobly_test.test_case_path
 
     def test_take_screenshot(self) -> None:
         # We launch the test app that draws something on the screen.
@@ -79,6 +67,29 @@ class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         # Example app render a colorful image with color HSV(?, 75 or 30, 75).
         # Ensure the top left pixel is not black or transparent.
         asserts.assert_not_equal(image.data[0:4], [0x0, 0x0, 0x0, 0xFF])
+
+
+class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+    """Screenshot affordance tests"""
+
+    TEST_CASES = [ScreenshotTestCases]
+
+    def setup_class(self) -> None:
+        """setup_class is called once before running tests.
+
+        It does the following things:
+            * Assigns `dut` variable with FuchsiaDevice object
+        """
+        super().setup_class()
+        self.dut = self.fuchsia_devices[0]
+
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.dut.session.ensure_started()
+
+    def teardown_test(self) -> None:
+        self.dut.session.cleanup()
+        super().teardown_test()
 
 
 if __name__ == "__main__":
