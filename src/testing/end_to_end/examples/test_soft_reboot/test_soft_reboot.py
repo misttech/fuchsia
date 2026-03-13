@@ -5,13 +5,13 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
+class SoftRebootTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Soft Reboot test.
 
     Attributes:
@@ -21,7 +21,7 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
         num_reboots (int): Number of times reboot test need to be executed.
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: list[tuple[int]] = []
 
@@ -34,19 +34,19 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
             arg_sets=test_arg_tuple_list,
         )
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns dut variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def _test_logic(self, iteration: int) -> None:
+    async def _test_logic(self, iteration: int) -> None:
         """Test case logic that."""
         _LOGGER.info("Starting the Soft Reboot test iteration# %s", iteration)
-        self.dut.reboot()
+        await self.dut.reboot()
         _LOGGER.info(
             "Successfully ended the Soft Reboot test iteration# %s", iteration
         )
