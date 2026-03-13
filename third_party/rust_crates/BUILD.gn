@@ -198,7 +198,7 @@ group("chacha20") {
 }
 
 group("chrono") {
-  public_deps = [ ":chrono-v0_4_42" ]
+  public_deps = [ ":chrono-v0_4_44" ]
 }
 
 group("chrono-english") {
@@ -3901,16 +3901,16 @@ rustc_library("chacha20-v0_9_1") {
   applicable_licenses = [ ":chacha20-v0_9_1.license" ]
 }
 
-license("chrono-v0_4_42.license") {
+license("chrono-v0_4_44.license") {
   public_package_name = "chrono"
   license_files =
-      [ "//third_party/rust_crates/vendor/chrono-0.4.42/LICENSE.txt" ]
+      [ "//third_party/rust_crates/vendor/chrono-0.4.44/LICENSE.txt" ]
 }
 
-rustc_library("chrono-v0_4_42") {
+rustc_library("chrono-v0_4_44") {
   crate_name = "chrono"
-  source_root = "//third_party/rust_crates/vendor/chrono-0.4.42/src/lib.rs"
-  output_name = "chrono-f8a7062d0885b45b"
+  source_root = "//third_party/rust_crates/vendor/chrono-0.4.44/src/lib.rs"
+  output_name = "chrono-c4a76591026ff018"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3934,8 +3934,8 @@ rustc_library("chrono-v0_4_42") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f8a7062d0885b45b",
-    "-Cextra-filename=-f8a7062d0885b45b",
+    "-Cmetadata=c4a76591026ff018",
+    "-Cextra-filename=-c4a76591026ff018",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"clock\"",
     "--cfg=feature=\"default\"",
@@ -3953,7 +3953,7 @@ rustc_library("chrono-v0_4_42") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chrono-v0_4_42.license" ]
+  applicable_licenses = [ ":chrono-v0_4_44.license" ]
 }
 
 license("chrono-english-v0_1_7.license") {
@@ -3973,7 +3973,7 @@ rustc_library("chrono-english-v0_1_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":scanlex-v0_1_4" ]
 
   rustenv = []
@@ -6662,7 +6662,7 @@ rustc_library("fatfs-v0_3_6") {
   deps = []
   deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":log-v0_4_27" ]
 
   rustenv = []
@@ -11528,7 +11528,7 @@ rustc_library("omaha_client-v0_3_8") {
 
   deps = []
   deps += [ ":anyhow-v1_0_102" ]
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":ecdsa-v0_14_8" ]
   deps += [ ":elliptic-curve-v0_12_3" ]
   deps += [ ":futures-v0_3_31" ]
@@ -16320,7 +16320,7 @@ rustc_library("schemars-v0_8_22") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":dyn-clone-v1_0_20" ]
   deps += [ ":indexmap-v1_9_2" ]
   deps += [ ":schemars_derive-v0_8_22($host_toolchain)" ]
@@ -17541,7 +17541,7 @@ rustc_library("simplelog-v0_10_2") {
 
   deps = []
   deps += [ ":termcolor-v1_1_2" ]
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":log-v0_4_27" ]
 
   rustenv = []
@@ -19863,7 +19863,7 @@ rustc_library("tuf-v0_3_0-beta14") {
 
   deps = []
   deps += [ ":ring-v0_17_8" ]
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":data-encoding-v2_10_0" ]
   deps += [ ":futures-io-v0_3_31" ]
   deps += [ ":futures-util-v0_3_31" ]
@@ -20896,7 +20896,7 @@ rustc_library("valico-v2_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_42" ]
+  deps += [ ":chrono-v0_4_44" ]
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":phf-v0_7_24" ]
   deps += [ ":publicsuffix-v1_5_6" ]
