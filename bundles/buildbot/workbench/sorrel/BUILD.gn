@@ -8,13 +8,16 @@ import("//build/testing/environments.gni")
 product_bundle_test_group("stable") {
   product_bundle_name = "workbench_eng.sorrel"
   environments = [ sorrel_env ]
-  target_tests = [ "//src/sys/component_manager:hermetic_tests" ]
+  target_tests = [
+    "//src/sys/component_manager:hermetic_tests",
+    "//src/tests/end_to_end/power/suspend_resume:suspend_resume_test($host_toolchain)",
+  ]
 }
 
 product_bundle_test_group("staging") {
   product_bundle_name = "workbench_eng.sorrel"
   environments = [ sorrel_env ]
-  host_tests = [ "//src/tests/end_to_end/power/suspend_resume:suspend_resume_test($host_toolchain)" ]
+  host_tests = []
   tests = []
 }
 
