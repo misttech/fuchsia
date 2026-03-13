@@ -637,6 +637,9 @@ async fn test_io() {
     // Flush takes a separate path.  Just make sure it succeeds.
     block_client.flush().await.expect("flush failed");
 
+    // Same for trim.
+    block_client.trim(0..1024).await.expect("trim failed");
+
     started_driver.stop_driver().await;
 }
 

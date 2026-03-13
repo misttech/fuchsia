@@ -28,6 +28,9 @@ pub const EXT_CSD_PARTITION_ACCESS_MASK: u8 = 0xf8;
 
 pub const EXT_CSD_PARTITON_SWITCH_TIME: usize = 199;
 
+pub const EXT_CSD_SEC_FEATURE_SUPPORT: usize = 231;
+pub const EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN: u8 = 1 << 4;
+
 pub const EXT_CSD_GENERIC_CMD6_TIME: usize = 248;
 
 pub const EXT_CSD_BARRIER_SUPPORT: usize = 486;
@@ -41,6 +44,9 @@ pub const EXT_CSD_BARRIER_SUPPORT_MASK: u8 = 0x1;
 pub enum MmcCommand {
     Switch = 6,
     SendStatus = 13,
+    QueuedTaskParams = 44,
+    QueuedTaskAddress = 45,
+    CommandQueueTaskManagement = 48,
 }
 
 impl MmcCommand {
@@ -48,6 +54,9 @@ impl MmcCommand {
         match self {
             Self::Switch => DcmdResponseType::R1B,
             Self::SendStatus => DcmdResponseType::R1,
+            Self::QueuedTaskParams => DcmdResponseType::R1,
+            Self::QueuedTaskAddress => DcmdResponseType::R1,
+            Self::CommandQueueTaskManagement => DcmdResponseType::R1B,
         }
     }
 }
@@ -56,6 +65,97 @@ impl MmcCommand {
 impl From<MmcCommand> for u8 {
     fn from(value: MmcCommand) -> Self {
         value as u8
+    }
+}
+
+const DEVICE_MANAGEMENT_SEQUENCE: u8 = 0b10;
+
+/// See JESD84-B51A, 6.10.4
+#[derive(Clone, Copy, Debug, PartialEq, Eq, enumn::N)]
+#[repr(u8)]
+pub enum EmmcPartitionIndex {
+    UserDataPartition = 0,
+    BootPartition1 = 1,
+    BootPartition2 = 2,
+}
+
+// Necessary for bitfield
+impl From<EmmcPartitionIndex> for u8 {
+    fn from(value: EmmcPartitionIndex) -> Self {
+        value as u8
+    }
+}
+
+bitfield! {
+    #[derive(
+        Clone, Copy, Eq, PartialEq, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable,
+    )]
+    /// The arguments to CMD44 for a DISCARD DMS operation (JESD84-B51A, 6.6.39.7)
+    pub struct DeviceManagementOpDiscardCmd44Args(u32);
+    impl Debug;
+    u16, num_blocks, set_num_blocks: 15, 0;
+    u8, task_id, set_task_id: 20, 16;
+    u8, dms, set_dms: 22, 21;
+    // 23..=24 reserved
+    u8, from into EmmcPartitionIndex, _, set_partition: 28, 25;
+    // 29..=31 reserved
+}
+
+impl DeviceManagementOpDiscardCmd44Args {
+    pub fn new(num_blocks: u16, task_id: u8, partition: EmmcPartitionIndex) -> Self {
+        let mut this = Self(0);
+        this.set_num_blocks(num_blocks);
+        this.set_task_id(task_id);
+        this.set_dms(DEVICE_MANAGEMENT_SEQUENCE);
+        this.set_partition(partition);
+        this
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, enumn::N)]
+pub enum DeviceManagementOpcode {
+    Discard = 8,
+}
+
+// Necessary for bitfield
+impl From<DeviceManagementOpcode> for u8 {
+    fn from(value: DeviceManagementOpcode) -> Self {
+        value as u8
+    }
+}
+
+const TM_OPCODE_DEVICE_MANAGEMENT_SEQUENCE: u8 = 2;
+
+bitfield! {
+    #[derive(
+        Clone, Copy, Eq, PartialEq, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable,
+    )]
+    /// The arguments to CMD48 (JESD84-B51A, 6.10.4)
+    pub struct CommandQueueTaskManagementArgs(u32);
+    impl Debug;
+    // 0..=19 reserved
+    u8, tm_opcode, set_tm_opcode: 4, 0;
+    u8, task_id, set_task_id: 20, 16;
+    u8, from into DeviceManagementOpcode, _, set_dm_opcode: 24, 21;
+    // 25..=31 reserved
+}
+
+impl CommandQueueTaskManagementArgs {
+    pub fn new(task_id: u8, operation: DeviceManagementOpcode) -> Self {
+        let mut this = Self(0);
+        this.set_tm_opcode(TM_OPCODE_DEVICE_MANAGEMENT_SEQUENCE);
+        this.set_task_id(task_id);
+        this.set_dm_opcode(operation);
+        this
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.0
     }
 }
 

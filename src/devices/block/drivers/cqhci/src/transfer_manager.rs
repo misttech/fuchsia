@@ -152,6 +152,12 @@ pub struct TransferSlot {
     tdl_slot: u8,
 }
 
+impl TransferSlot {
+    pub fn raw(&self) -> u8 {
+        self.tdl_slot
+    }
+}
+
 impl Drop for TransferSlot {
     fn drop(&mut self) {
         self.manager.state.fetch_and(!(1u32 << self.tdl_slot), Ordering::Release);

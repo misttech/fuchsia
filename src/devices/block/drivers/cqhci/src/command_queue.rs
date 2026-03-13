@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use block_server::RequestId;
 use event_listener::{Event, IntoNotification as _, Listener as _};
 use fdf_fidl::DriverChannel;
+use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
@@ -29,26 +30,37 @@ use sdmmc_spec::{
     CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET,
     CQHCI_CQ_TDPE_OFFSET, CQHCI_CQ_TERRI_OFFSET, CQHCI_CQ_VER_OFFSET,
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS,
-    CQHCI_TASK_DESCRIPTOR_LIST_SIZE, CqhciCqCapsRegister, CqhciCqCfgRegister, CqhciCqCtlRegister,
-    CqhciCqInterruptCoalescingRegister, CqhciCqInterruptSignalEnableRegister,
-    CqhciCqInterruptStatusEnableRegister, CqhciCqInterruptStatusRegister,
-    CqhciCqSendStatusConfiguration2Register, CqhciCqTaskErrorRegister, CqhciCryptoRegisterSnapshot,
-    CqhciRegisterSnapshot, Direction, EXT_CSD_BARRIER_EN, EXT_CSD_BARRIER_ENABLED,
-    EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL,
-    EXT_CSD_CACHE_EN_MASK, EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
+    CQHCI_TASK_DESCRIPTOR_LIST_SIZE, CommandQueueTaskManagementArgs, CqhciCqCapsRegister,
+    CqhciCqCfgRegister, CqhciCqCtlRegister, CqhciCqInterruptCoalescingRegister,
+    CqhciCqInterruptSignalEnableRegister, CqhciCqInterruptStatusEnableRegister,
+    CqhciCqInterruptStatusRegister, CqhciCqSendStatusConfiguration2Register,
+    CqhciCqTaskErrorRegister, CqhciCryptoRegisterSnapshot, CqhciRegisterSnapshot,
+    DeviceManagementOpDiscardCmd44Args, DeviceManagementOpcode, Direction, EXT_CSD_BARRIER_EN,
+    EXT_CSD_BARRIER_ENABLED, EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK,
+    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
     EXT_CSD_GENERIC_CMD6_TIME, EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG,
-    EXT_CSD_PARTITON_SWITCH_TIME, EXT_CSD_SIZE, MMC_BLOCK_SIZE, MmcCommand, MmcSendStatusResponse,
-    SDHCI_IS_OFFSET, SDHCI_ISGE_OFFSET, SDHCI_ISTE_OFFSET, SdhciInterruptSignalEnableRegister,
-    SdhciInterruptStatusEnableRegister, SdhciInterruptStatusRegister,
+    EXT_CSD_PARTITON_SWITCH_TIME, EXT_CSD_SEC_FEATURE_SUPPORT,
+    EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN, EXT_CSD_SIZE, EmmcPartitionIndex, MMC_BLOCK_SIZE,
+    MmcCommand, MmcSendStatusResponse, SDHCI_IS_OFFSET, SDHCI_ISGE_OFFSET, SDHCI_ISTE_OFFSET,
+    SdhciInterruptSignalEnableRegister, SdhciInterruptStatusEnableRegister,
+    SdhciInterruptStatusRegister,
 };
 use zx::HandleBased as _;
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
-use crate::transfer_manager::{Transfer, TransferManager};
+use crate::transfer_manager::{Transfer, TransferManager, TransferSlot};
 
 const IRQ_PORT_IRQ_KEY: u64 = 1;
 const IRQ_PORT_LIFELINE_KEY: u64 = 2;
 const IRQ_PORT_VIRTUAL_IRQ_ACKED_KEY: u64 = 3;
+
+fn emmc_partition_index(partition: EmmcPartitionId) -> EmmcPartitionIndex {
+    match partition {
+        EmmcPartitionId::UserDataPartition => EmmcPartitionIndex::UserDataPartition,
+        EmmcPartitionId::BootPartition1 => EmmcPartitionIndex::BootPartition1,
+        EmmcPartitionId::BootPartition2 => EmmcPartitionIndex::BootPartition2,
+    }
+}
 
 /// Trait wrapper for fuchsia.hardware.cqhci.Cqhci.
 #[async_trait]
@@ -546,17 +558,16 @@ struct RpmbRequestTask(rpmb::Request);
 
 /// Execute a cache flush command.
 struct FlushTask {
-    request_id: Option<RequestId>,
-    receiver: Weak<dyn TaskStatusReceiver>,
     trace_flow_id: Option<NonZero<u64>>,
 }
 
-impl Drop for FlushTask {
-    fn drop(&mut self) {
-        if let Some(request_id) = self.request_id.take() {
-            complete_request(self.receiver.upgrade(), request_id, zx::Status::CANCELED);
-        }
-    }
+/// Execute a trim command.
+struct TrimTask {
+    tdl_slot: TransferSlot,
+    partition: EmmcPartitionId,
+    block_offset: u64,
+    block_count: u32,
+    trace_flow_id: Option<NonZero<u64>>,
 }
 
 /// A blocking, asynchronous task.
@@ -564,11 +575,31 @@ struct AsyncTask {
     task: Option<AsyncTaskInner>,
     event: event_listener::Event<zx::Status>,
     status: zx::Status,
+    request_and_receiver: Option<(RequestId, Weak<dyn TaskStatusReceiver>)>,
 }
 
 impl AsyncTask {
     fn new(task: AsyncTaskInner) -> Self {
-        Self { task: Some(task), event: Event::with_tag(), status: zx::Status::CANCELED }
+        Self {
+            task: Some(task),
+            event: Event::with_tag(),
+            status: zx::Status::CANCELED,
+            request_and_receiver: None,
+        }
+    }
+
+    /// Creates a task that will complete `request` on drop.
+    fn new_with_request(
+        task: AsyncTaskInner,
+        request_id: RequestId,
+        receiver: Weak<dyn TaskStatusReceiver>,
+    ) -> Self {
+        Self {
+            task: Some(task),
+            event: Event::with_tag(),
+            status: zx::Status::CANCELED,
+            request_and_receiver: Some((request_id, receiver)),
+        }
     }
 
     fn take_task(&mut self) -> AsyncTaskInner {
@@ -584,6 +615,9 @@ impl AsyncTask {
 impl Drop for AsyncTask {
     fn drop(&mut self) {
         self.event.notify(usize::MAX.tag(self.status));
+        if let Some((request_id, receiver)) = self.request_and_receiver.take() {
+            complete_request(receiver.upgrade(), request_id, self.status);
+        }
     }
 }
 
@@ -596,6 +630,8 @@ enum AsyncTaskInner {
     RpmbRequest(RpmbRequestTask),
     /// Execute a cache flush command.
     Flush(FlushTask),
+    /// Execute a trim command.
+    Trim(TrimTask),
     /// Perform device recovery.
     Recovery,
 }
@@ -610,6 +646,10 @@ impl AsyncTaskInner {
             AsyncTaskInner::RpmbRequest(_) => true,
             // Flushes do not need to block data transfers.
             AsyncTaskInner::Flush(_) => false,
+            // TODO(https://fxbug.dev/490482696): The spec suggests that we should be able to
+            // implement TRIM without blocking submission of new tasks, by instead HALTing the queue
+            // while the DMS runs.  This may be slightly more efficient.
+            AsyncTaskInner::Trim(_) => true,
             // Recovery will cancel all tasks, and we can't assume they will complete anyways.
             AsyncTaskInner::Recovery => false,
         }
@@ -655,7 +695,9 @@ impl std::ops::Deref for CommandQueueExcl {
 impl Drop for CommandQueueExcl {
     fn drop(&mut self) {
         let mut inner = self.inner.lock();
-        debug!("queue unblocked");
+        if inner.state.blocked {
+            debug!("queue unblocked");
+        }
         // It's OK to always set blocked to false, since nothing else other than [`Self::new`] sets
         // blocked.
         inner.state.blocked = false;
@@ -884,6 +926,9 @@ impl CommandQueueExcl {
                 },
             )?;
         }
+        if self.supports_trim() {
+            info!("TRIM enabled");
+        }
         if self.cache_enabled() {
             info!("Cache enabled");
         }
@@ -975,7 +1020,7 @@ impl CommandQueueExcl {
         }
     }
 
-    async fn flush(&mut self, mut task: FlushTask) -> Result<(), zx::Status> {
+    async fn flush(&mut self, task: FlushTask) -> Result<(), zx::Status> {
         let status =
             zx::Status::from(self.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await);
         fuchsia_trace::duration!(
@@ -987,8 +1032,70 @@ impl CommandQueueExcl {
                 trace_flow_id.get().into()
             );
         }
-        complete_request(task.receiver.upgrade(), task.request_id.take().unwrap(), status);
         status.into()
+    }
+
+    async fn trim(&mut self, task: TrimTask) -> Result<(), zx::Status> {
+        // TODO(https://fxbug.dev/490482696): To handle larger TRIM requests, we can't use DMS, we
+        // instead have to execute the usual ERASE commands via DCMD (which is slightly less
+        // efficient because it requires a partition switch, which blocks the queue, and a queue
+        // barrier).
+        //
+        // This is OK for now, as in practice filesystems send small trims, and we don't support
+        // devices large enough to overflow u32 offsets.
+        let Ok(block_offset) = u32::try_from(task.block_offset) else {
+            log::warn!("Trim block offset too large; CQHCI trim only supports 32-bit offsets");
+            return Err(zx::Status::INVALID_ARGS);
+        };
+        let Ok(block_count) = u16::try_from(task.block_count) else {
+            log::warn!("Trim block count too large; CQHCI trim only supports 16-bit counts");
+            return Err(zx::Status::INVALID_ARGS);
+        };
+        debug!(
+            "Trim {block_offset:x} {block_count:x} {} {:?}",
+            task.tdl_slot.raw(),
+            task.partition
+        );
+        // NOTE: This implements a DISCARD, not a TRIM.  The difference is that DISCARD does not
+        // guarantee that the data will be 0 or 1 when read back.  This is more efficient, and
+        // neither is secure anyways.
+        let mut res = self
+            .execute_dcmd(
+                MmcCommand::QueuedTaskParams,
+                DeviceManagementOpDiscardCmd44Args::new(
+                    block_count,
+                    task.tdl_slot.raw(),
+                    emmc_partition_index(task.partition),
+                )
+                .raw(),
+            )
+            .await;
+        if res.is_ok() {
+            res = self.execute_dcmd(MmcCommand::QueuedTaskAddress, block_offset).await;
+        }
+        if res.is_ok() {
+            res = self
+                .execute_dcmd(
+                    MmcCommand::CommandQueueTaskManagement,
+                    CommandQueueTaskManagementArgs::new(
+                        task.tdl_slot.raw(),
+                        DeviceManagementOpcode::Discard,
+                    )
+                    .raw(),
+                )
+                .await;
+        }
+        let res = res.map(|_| ());
+        fuchsia_trace::duration!(
+                    "sdmmc", "cqhci::complete_trim", "status" => zx::Status::from(res).into_raw());
+        if let Some(trace_flow_id) = task.trace_flow_id {
+            fuchsia_trace::flow_step!(
+                "storage",
+                "cqhci::complete_trim",
+                trace_flow_id.get().into()
+            );
+        }
+        res
     }
 
     async fn run_recovery(&mut self) -> Result<(), zx::Status> {
@@ -1042,8 +1149,21 @@ impl CommandQueue {
         self.ext_csd[EXT_CSD_BARRIER_SUPPORT] & EXT_CSD_BARRIER_SUPPORT_MASK > 0
     }
 
+    fn supports_trim(&self) -> bool {
+        self.ext_csd[EXT_CSD_SEC_FEATURE_SUPPORT] & EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN > 0
+    }
+
     fn cache_enabled(&self) -> bool {
         self.ext_csd[EXT_CSD_CACHE_CTRL] & EXT_CSD_CACHE_EN_MASK > 0
+    }
+
+    pub fn device_flags(&self) -> fblock::DeviceFlag {
+        let mut flags = fblock::DeviceFlag::empty();
+        if self.supports_trim() {
+            flags |= fblock::DeviceFlag::TRIM_SUPPORT;
+        }
+        // TODO(https://fxbug.dev/490483833): Advertise BARRIER_SUPPORT once implemented
+        flags
     }
 
     /// Initializes command queueing.
@@ -1413,28 +1533,56 @@ impl CommandQueue {
         }
         let mut inner = self.inner.lock();
         let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-        // Response will be sent by [`FlushTask::drop`].
-        let _ = inner.submit_async_task(AsyncTask::new(AsyncTaskInner::Flush(FlushTask {
-            request_id: Some(request_id),
+        // Response will be sent by [`AsyncTask::drop`].
+        let _ = inner.submit_async_task(AsyncTask::new_with_request(
+            AsyncTaskInner::Flush(FlushTask { trace_flow_id }),
+            request_id,
             receiver,
-            trace_flow_id,
-        })));
+        ));
     }
 
     pub fn submit_trim(
         self: &Arc<Self>,
         partition: EmmcPartitionId,
         request_id: RequestId,
-        _block_offset: u64,
-        _block_count: u32,
-        _trace_flow_id: Option<NonZero<u64>>,
+        block_offset: u64,
+        block_count: u32,
+        trace_flow_id: Option<NonZero<u64>>,
     ) {
-        // TODO(https://fxbug.dev/42176727): TRIM support.
-        complete_request(
-            self.inner.lock().get_request_completer(partition),
-            request_id,
-            zx::Status::NOT_SUPPORTED,
-        );
+        fuchsia_trace::duration!("sdmmc", "cqhci::submit_trim");
+        if let Some(trace_flow_id) = trace_flow_id {
+            fuchsia_trace::flow_step!("storage", "cqhci::submit_trim", trace_flow_id.get().into());
+        }
+        debug!("submit_trim");
+        loop {
+            let slot = self.transfer_manager.acquire_transfer_slot();
+            let listener = {
+                let mut inner = self.inner.lock();
+                let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
+                if inner.state.should_reject_tasks() {
+                    complete_request(receiver.upgrade(), request_id, zx::Status::UNAVAILABLE);
+                    break;
+                }
+                if let Some(tdl_slot) = slot {
+                    // Response will be sent by [`AsyncTask::drop`].
+                    let _ = inner.submit_async_task(AsyncTask::new_with_request(
+                        AsyncTaskInner::Trim(TrimTask {
+                            tdl_slot,
+                            partition,
+                            block_offset,
+                            block_count,
+                            trace_flow_id,
+                        }),
+                        request_id,
+                        receiver,
+                    ));
+                    break;
+                } else {
+                    inner.event.listen()
+                }
+            };
+            listener.wait();
+        }
     }
 
     pub async fn get_rpmb_info(&self) -> Result<rpmb::natural::DeviceInfo, zx::Status> {
@@ -1532,6 +1680,7 @@ impl CommandQueue {
                 AsyncTaskInner::SwitchAndSubmit(t) => this.switch_and_submit(t).await,
                 AsyncTaskInner::RpmbRequest(t) => this.rpmb_request(t).await,
                 AsyncTaskInner::Flush(t) => this.flush(t).await,
+                AsyncTaskInner::Trim(t) => this.trim(t).await,
                 AsyncTaskInner::Recovery => this.run_recovery().await,
             });
         }

@@ -33,9 +33,6 @@ mod transfer_manager;
 #[cfg(test)]
 mod tests;
 
-// TODO(https://fxbug.dev/42176727): Advertise TRIM/BARRIER support once implemented
-const DEVICE_FLAGS: fblock::DeviceFlag = fblock::DeviceFlag::empty();
-
 pub fn partition_name(id: EmmcPartitionId) -> &'static str {
     match id {
         EmmcPartitionId::UserDataPartition => "user",
@@ -240,7 +237,7 @@ impl Driver for CqhciDriver {
                 block_count: partition.block_count,
                 block_size: partition.block_size,
                 max_transfer_size: host_info.sdmmc_host_info.max_transfer_size,
-                flags: DEVICE_FLAGS,
+                flags: command_queue.device_flags(),
             };
             let partition_server =
                 Arc::new(PartitionServer::new(block_info, partition.id, command_queue.clone()));
