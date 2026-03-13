@@ -137,6 +137,7 @@ async def collect_scan_result_iterator(
             if isinstance(status, FcTransportStatus):
                 is_fdomain_close = (
                     status.code() == FcTransportStatus.FC_ERR_FDOMAIN
+                    or status.code() == FcTransportStatus.FC_ERR_CHANNEL_WRITE
                 )
             elif isinstance(status, ZxStatus):
                 is_fdomain_close = status.args[0] == ZxStatus.ZX_ERR_PEER_CLOSED
