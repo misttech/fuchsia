@@ -223,7 +223,7 @@ class WlanScanTest(base_test.WifiBaseTest):
     def test_basic_scan_request(self) -> None:
         """Verify a general scan trigger returns at least one result"""
         ssid = AccessPointConfig.random_string(20)
-        if self.openwrt_ap:
+        if self.openwrt_aps:
             config = AccessPointConfig.generate(
                 band=Band.BAND_2G,
                 ssid=ssid,
