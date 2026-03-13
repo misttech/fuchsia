@@ -170,6 +170,9 @@ template("generated_licenses_spdx") {
         deps += [ ":${_targets.additional_licenses}" ]
       }
 
+      # This generated_file()'s output does not need its own license.
+      applicable_licenses = [ "//build/licenses:no_license" ]
+
       output_conversion = "json"
     }
 
@@ -236,6 +239,9 @@ template("generated_licenses_spdx") {
         deps = []
       }
       deps += [ ":${_targets.generated_metadata}" ]
+
+      # This spdx.json file does not need its own license.
+      applicable_licenses = [ "//build/licenses:no_license" ]
     }
   }
 }
