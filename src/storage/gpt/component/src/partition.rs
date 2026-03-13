@@ -7,18 +7,50 @@ use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use block_server::{DeviceInfo, OffsetMap};
 use fidl_fuchsia_storage_block as fblock;
+use fuchsia_async as fasync;
 
 use fuchsia_sync::Mutex;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::num::NonZero;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+
+/// A wrapper around a VmoId which keeps it active until all requests which use the Vmoid are
+/// complete.  Strong references are held by ongoing requests.
+pub struct VmoIdWrapper {
+    partition: Weak<GptPartition>,
+    vmo_id: VmoId,
+}
+
+impl std::ops::Deref for VmoIdWrapper {
+    type Target = VmoId;
+    fn deref(&self) -> &Self::Target {
+        &self.vmo_id
+    }
+}
+
+impl Drop for VmoIdWrapper {
+    fn drop(&mut self) {
+        // Turn it into an ID so that if the spawned task is dropped, the assertion in VmoId::drop
+        // doesn't fire.  It will mean the ID is leaked, but it's most likely that the server is
+        // being shut down anyway so it shouldn't matter.
+        let vmo_id = self.vmo_id.take().into_id();
+        if let Some(partition) = self.partition.upgrade() {
+            fasync::Task::spawn(async move {
+                if let Err(e) = partition.detach_vmo(VmoId::new(vmo_id)).await {
+                    log::error!("detach_vmo failed: {:?}", e);
+                }
+            })
+            .detach();
+        }
+    }
+}
 
 /// PartitionBackend is an implementation of block_server's Interface which is backed by a windowed
 /// view of the underlying GPT device.
 pub struct PartitionBackend {
     partition: Arc<GptPartition>,
-    vmo_keys_to_vmoids_map: Mutex<BTreeMap<usize, Arc<VmoId>>>,
+    vmo_keys_to_vmoids_map: Mutex<BTreeMap<usize, Arc<VmoIdWrapper>>>,
     passthrough: bool,
 }
 
@@ -43,18 +75,19 @@ impl block_server::async_interface::Interface for PartitionBackend {
 
     async fn on_attach_vmo(&self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
         let key = std::ptr::from_ref(vmo) as usize;
-        let vmoid = self.partition.attach_vmo(vmo).await?;
-        let old = self.vmo_keys_to_vmoids_map.lock().insert(key, Arc::new(vmoid));
-        if let Some(vmoid) = old {
-            // For now, leak the old vmoid.
-            // XXX kludge -- addresses can be reused!  We need to manage vmoids ourself to properly
-            // manage lifetimes, or possibly change the APIs to eliminate the need to do so.
-            // TODO(https://fxbug.dev/339491886): Reconcile vmoid management.
-            let _ = Arc::try_unwrap(vmoid)
-                .map(|vmoid| vmoid.into_id())
-                .expect("VMO removed while in use");
-        }
+        let vmo_id = self.partition.attach_vmo(vmo).await?;
+        self.vmo_keys_to_vmoids_map.lock().insert(
+            key,
+            Arc::new(VmoIdWrapper { partition: Arc::downgrade(&self.partition), vmo_id }),
+        );
         Ok(())
+    }
+
+    fn on_detach_vmo(&self, vmo: &zx::Vmo) {
+        // Note that we will not immediately detach the VMO.  This happens when the last reference
+        // to it is dropped (in [`VmoIdWrapper::drop`]).
+        let key = std::ptr::from_ref(vmo) as usize;
+        self.vmo_keys_to_vmoids_map.lock().remove(&key);
     }
 
     fn get_info(&self) -> Cow<'_, DeviceInfo> {
@@ -70,9 +103,9 @@ impl block_server::async_interface::Interface for PartitionBackend {
         opts: ReadOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
-        let vmoid = self.get_vmoid(vmo)?;
+        let vmo_id = self.get_vmoid(vmo)?;
         self.partition
-            .read(device_block_offset, block_count, vmoid.as_ref(), vmo_offset, opts, trace_flow_id)
+            .read(device_block_offset, block_count, &vmo_id, vmo_offset, opts, trace_flow_id)
             .await
     }
 
@@ -85,9 +118,9 @@ impl block_server::async_interface::Interface for PartitionBackend {
         opts: WriteOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
-        let vmoid = self.get_vmoid(vmo)?;
+        let vmo_id = self.get_vmoid(vmo)?;
         self.partition
-            .write(device_block_offset, length, vmoid.as_ref(), vmo_offset, opts, trace_flow_id)
+            .write(device_block_offset, length, &vmo_id, vmo_offset, opts, trace_flow_id)
             .await
     }
 
@@ -106,6 +139,11 @@ impl block_server::async_interface::Interface for PartitionBackend {
 }
 
 impl PartitionBackend {
+    #[cfg(test)]
+    pub fn vmo_count(&self) -> usize {
+        self.vmo_keys_to_vmoids_map.lock().len()
+    }
+
     pub fn new(partition: Arc<GptPartition>, passthrough: bool) -> Arc<Self> {
         Arc::new(Self {
             partition,
@@ -119,20 +157,8 @@ impl PartitionBackend {
         self.partition.update_info(info)
     }
 
-    fn get_vmoid(&self, vmo: &zx::Vmo) -> Result<Arc<VmoId>, zx::Status> {
+    fn get_vmoid(&self, vmo: &zx::Vmo) -> Result<Arc<VmoIdWrapper>, zx::Status> {
         let key = std::ptr::from_ref(vmo) as usize;
         self.vmo_keys_to_vmoids_map.lock().get(&key).map(Arc::clone).ok_or(zx::Status::NOT_FOUND)
-    }
-}
-
-impl Drop for PartitionBackend {
-    fn drop(&mut self) {
-        for vmoid in std::mem::take(&mut *self.vmo_keys_to_vmoids_map.lock()).into_values() {
-            // For now, leak the vmoids.
-            // TODO(https://fxbug.dev/339491886): Reconcile vmoid management.
-            let _ = Arc::try_unwrap(vmoid)
-                .map(|vmoid| vmoid.into_id())
-                .expect("VMO removed while in use");
-        }
     }
 }

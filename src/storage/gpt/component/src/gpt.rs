@@ -14,19 +14,18 @@ use block_server::BlockServer;
 use block_server::async_interface::SessionManager;
 
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::format::constants::{
     ALL_BENCHMARK_PARTITION_LABELS, ALL_SYSTEM_PARTITION_LABELS,
 };
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt as _;
 use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
-    fuchsia_async as fasync,
-};
 
 fn partition_directory_entry_name(index: u32) -> String {
     format!("part-{:03}", index)
@@ -684,7 +683,11 @@ mod tests {
     };
     use block_server::{BlockInfo, DeviceInfo, WriteOptions};
     use fidl::HandleBased as _;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_storage_block as fblock;
+    use fidl_fuchsia_storage_partitions as fpartitions;
     use fs_management::format::constants::FVM_PARTITION_LABEL;
+    use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::num::NonZero;
@@ -692,10 +695,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
-    };
-    use {
-        fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock,
-        fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
     };
 
     async fn setup(
@@ -1796,6 +1795,49 @@ mod tests {
             )
             .expect("FIDL error");
         session.get_fifo().await.expect_err("Session should be closed");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_vmos_detached_on_session_close() {
+        let (block_device, partitions_dir) = setup(
+            512,
+            100,
+            vec![PartitionInfo {
+                type_guid: Guid::from_bytes([2u8; 16]),
+                instance_guid: Guid::from_bytes([2u8; 16]),
+                start_block: 34,
+                num_blocks: 10,
+                flags: 0,
+                label: "test".to_string(),
+            }],
+        )
+        .await;
+
+        let runner = GptManager::new(block_device.connect(), partitions_dir.clone()).await.unwrap();
+        let proxy = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            fio::PERM_READABLE,
+        );
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
+        let client = RemoteBlockClient::new(block).await.expect("Failed to create block client");
+
+        {
+            let inner = runner.inner.lock().await;
+            let backend = inner.partitions.get(&0).unwrap().session_manager().interface();
+            assert_eq!(backend.vmo_count(), 1);
+        }
+
+        client.close().await.expect("Failed to close client");
+
+        {
+            let inner = runner.inner.lock().await;
+            let backend = inner.partitions.get(&0).unwrap().session_manager().interface();
+            assert_eq!(backend.vmo_count(), 0);
+        }
 
         runner.shutdown().await;
     }
