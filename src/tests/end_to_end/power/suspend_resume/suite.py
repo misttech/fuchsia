@@ -8,6 +8,7 @@ from datetime import timedelta
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.utils import control_flows, power
+from honeydew.utils.deadline import Deadline
 from mobly.asserts import assert_equal, assert_less
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ class SuspendResumeTestSuite(fuchsia_base_test.FuchsiaBaseTest):
         self.dut.set_usb_power_hub(usb_power_hub, usb_port)
 
     def test_suspend_resume(self) -> None:
-        power.suspend_resume(self.dut)
+        power.suspend_resume(
+            self.dut, Deadline.from_timeout(timedelta(minutes=1))
+        )
 
     def test_no_suspend_on_usb(self) -> None:
         before_on_usb_idle_stats = power.get_sag_suspend_stats(self.dut)
