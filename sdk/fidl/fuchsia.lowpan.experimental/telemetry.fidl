@@ -191,6 +191,71 @@ type BorderRoutingRouter = table {
     9: is_peer_br bool;
 };
 
+/// Represents a Border Router configuration.
+///
+/// Derived from `otBorderRouterConfig`(https://openthread.io/reference/struct/ot-border-router-config)
+type BorderRouterConfig = table {
+    /// The IPv6 prefix.
+    ///
+    /// Required.
+    1: prefix string:64;
+
+    /// A 2-bit signed int preference (OT_ROUTE_PREFERENCE_* values).
+    ///
+    /// Required.
+    2: preference int8;
+
+    /// Whether prefix is preferred.
+    ///
+    /// Required.
+    3: preferred bool;
+
+    /// Whether prefix can be used for address auto-configuration (SLAAC).
+    ///
+    /// Required.
+    4: slaac bool;
+
+    /// Whether border router is DHCPv6 Agent.
+    ///
+    /// Required.
+    5: dhcp bool;
+
+    /// Whether DHCPv6 Agent supplying other config data.
+    ///
+    /// Required.
+    6: configure bool;
+
+    /// Whether border router is a default router for prefix.
+    ///
+    /// Required.
+    7: default_route bool;
+
+    /// Whether this prefix is considered on-mesh.
+    ///
+    /// Required.
+    8: on_mesh bool;
+
+    /// Whether this configuration is considered Stable Network Data.
+    ///
+    /// Required.
+    9: stable bool;
+
+    /// Whether this border router can supply DNS information via ND.
+    ///
+    /// Required.
+    10: nd_dns bool;
+
+    /// Whether prefix is a Thread Domain Prefix (added since Thread 1.2).
+    ///
+    /// Required.
+    11: dp bool;
+
+    /// The border router's RLOC16.
+    ///
+    /// Required.
+    12: rloc16 uint16;
+};
+
 /// Represents the Thread Security Policy.
 type SecurityPolicy = table {
     /// Key Rotation time value, in uints of hours.
@@ -310,6 +375,225 @@ type OperationalDataset = table {
     ///
     /// Required.
     13: channel_mask uint32;
+};
+
+/// The maximum Steering Data length in bytes, align with
+/// OT_STEERING_DATA_MAX_LENGTH(16).
+const MAX_STEERING_DATA_LENGTH uint32 = 16;
+
+/// Represents a Commissioning Dataset.
+///
+/// Derived from `otCommissioningDataset`(https://openthread.io/reference/struct/ot-commissioning-dataset)
+type CommissioningDataset = table {
+    /// Border Router RLOC16.
+    ///
+    /// Required.
+    1: locator uint16;
+
+    /// Commissioner Session Id.
+    ///
+    /// Required.
+    2: session_id uint16;
+
+    /// Steering Data.
+    ///
+    /// Required.
+    3: steering_data vector<uint8>:MAX_STEERING_DATA_LENGTH;
+
+    /// Joiner UDP Port.
+    ///
+    /// Required.
+    4: joiner_udp_port uint16;
+
+    /// Whether Border Router RLOC16 is set.
+    ///
+    /// Required.
+    5: is_locator_set bool;
+
+    /// Whether Commissioner Session Id is set.
+    ///
+    /// Required.
+    6: is_session_id_set bool;
+
+    /// Whether Steering Data is set.
+    ///
+    /// Required.
+    7: is_steering_data_set bool;
+
+    /// Whether Joiner UDP Port is set.
+    ///
+    /// Required.
+    8: is_joiner_udp_port_set bool;
+
+    /// Whether the Dataset contains any extra unknown sub-TLV.
+    ///
+    /// Required.
+    9: has_extra_tlv bool;
+};
+
+/// Represents an External Route configuration.
+///
+/// Derived from `otExternalRouteConfig`(https://openthread.io/reference/struct/ot-external-route-config)
+type ExternalRouteConfig = table {
+    /// IPv6 prefix.
+    ///
+    /// Required.
+    1: prefix string:64;
+
+    /// The border router's RLOC16.
+    ///
+    /// Required.
+    2: rloc16 uint16;
+
+    /// A 2-bit signed int preference.
+    ///
+    /// Required.
+    3: preference int8;
+
+    /// Whether this is a NAT64 prefix.
+    ///
+    /// Required.
+    4: nat64 bool;
+
+    /// Whether this configuration is considered Stable Network Data.
+    ///
+    /// Required.
+    5: stable bool;
+
+    /// Whether the next hop is this device.
+    ///
+    /// Required.
+    6: next_hop_is_this_device bool;
+
+    /// Whether or not BR is advertising a ULA prefix in PIO (AP flag).
+    ///
+    /// Required.
+    7: adv_pio bool;
+};
+
+/// The maximum size of Service Data in bytes, align with
+/// OT_SERVICE_DATA_MAX_SIZE(252).
+const MAX_SERVICE_DATA_SIZE uint32 = 252;
+
+/// The maximum size of Server Data in bytes.
+/// Theoretical limit, practically much lower, align with
+/// OT_SERVER_DATA_MAX_SIZE(252).
+const MAX_SERVER_DATA_SIZE uint32 = 252;
+
+/// Represents a Server configuration.
+///
+/// Derived from `otServerConfig`(https://openthread.io/reference/struct/ot-server-config)
+type ServerConfig = table {
+    /// Whether this config is considered Stable Network Data.
+    ///
+    /// Required.
+    1: stable bool;
+
+    /// Length of server data.
+    ///
+    /// Required.
+    2: server_data_length uint8;
+
+    /// Server data bytes.
+    ///
+    /// Required.
+    3: server_data vector<uint8>:MAX_SERVER_DATA_SIZE;
+
+    /// The Server RLOC16.
+    ///
+    /// Required.
+    4: rloc16 uint16;
+};
+
+/// Represents a Service configuration.
+///
+/// Derived from `otServiceConfig`(https://openthread.io/reference/struct/ot-service-config)
+type ServiceConfig = table {
+    /// The service ID.
+    ///
+    /// Required.
+    1: service_id uint8;
+
+    /// IANA Enterprise Number.
+    ///
+    /// Required.
+    2: enterprise_number uint32;
+
+    /// Length of service data.
+    ///
+    /// Required.
+    3: service_data_length uint8;
+
+    /// Service data bytes.
+    ///
+    /// Required.
+    4: service_data vector<uint8>:MAX_SERVICE_DATA_SIZE;
+
+    /// The Server configuration.
+    ///
+    /// Required.
+    5: server_config ServerConfig;
+};
+
+/// Represents 6LoWPAN Context ID information associated with a prefix in Network Data.
+///
+/// Derived from `otLowpanContextInfo`(https://openthread.io/reference/struct/ot-lowpan-context-info)
+type LowpanContextInfo = table {
+    /// The 6LoWPAN Context ID.
+    ///
+    /// Required.
+    1: context_id uint8;
+
+    /// The compress flag.
+    ///
+    /// Required.
+    2: compress_flag bool;
+
+    /// Whether the Context TLV is marked as Stable Network Data.
+    ///
+    /// Required.
+    3: stable bool;
+
+    /// The associated IPv6 prefix.
+    ///
+    /// Required.
+    4: prefix string:64;
+};
+
+/// The maximum number of entries in Network Data Service list, making it consistent
+/// with the sizing for on-mesh prefixes and external routes.
+const MAX_SERVICE_ENTRIES uint32 = 32;
+
+/// The maximum number of entries in Network Data 6LoWPAN Context ID information list,
+/// the maximum size should be aligned with on-mesh prefixes.
+const MAX_LOWPAN_CONTEXTS uint32 = 32;
+
+/// Represents the full Network Data received from the Leader.
+type NetworkData = table {
+    /// On-mesh prefixes.
+    ///
+    /// Required.
+    1: on_mesh_prefixes vector<BorderRouterConfig>:MAX_ON_MESH_PREFIXES;
+
+    /// External Routes.
+    ///
+    /// Required.
+    2: external_routes vector<ExternalRouteConfig>:MAX_EXTERNAL_ROUTES;
+
+    /// SRP service entries.
+    ///
+    /// Required.
+    3: services vector<ServiceConfig>:MAX_SERVICE_ENTRIES;
+
+    /// 6LoWPAN Context IDs.
+    ///
+    /// Required.
+    4: contexts vector<LowpanContextInfo>:MAX_LOWPAN_CONTEXTS;
+
+    /// Commissioning Dataset information.
+    ///
+    /// Required.
+    5: commissioning_dataset CommissioningDataset;
 };
 
 /// Represents the count of queries, responses, failures handled by upstream DNS server
@@ -1064,4 +1348,9 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     32: router_info vector<RouterInfo>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// Full Network Data received from the Leader.
+    ///
+    /// Only present on Thread networks.
+    33: network_data NetworkData;
 };
