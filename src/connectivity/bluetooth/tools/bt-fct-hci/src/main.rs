@@ -286,7 +286,7 @@ async fn main() -> Result<(), Error> {
     if args.verbose {
         println!("Opening device");
     }
-    let command_channel = hci::open_default_device().context("Error opening HCI device")?;
+    let command_channel = hci::open_default_device().await.context("Error opening HCI device")?;
 
     match args.subcommand {
         HciSubcommand::Raw(rawcmd) => raw_command(args.verbose, rawcmd, command_channel).await,

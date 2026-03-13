@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_hardware_bluetooth::{
     HciTransportEvent, HciTransportEventStream, HciTransportProxy, ReceivedPacket, SentPacket,
+    ServiceMarker,
 };
-use futures::executor::block_on;
-use futures::{ready, Stream, StreamExt};
+use fuchsia_async::{DurationExt, MonotonicDuration, TimeoutExt};
+use fuchsia_component::client::Service;
+use futures::{Stream, StreamExt, ready};
 use std::convert::TryFrom as _;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Poll;
 
 use crate::types::{
-    decode_opcode, parse_inquiry_result, EventPacketType, InquiryResult, StatusCode,
+    EventPacketType, InquiryResult, StatusCode, decode_opcode, parse_inquiry_result,
 };
 
-/// Default HCI device on the system.
-/// TODO: consider supporting more than one HCI device.
-const DEFAULT_DEVICE: &str = "/dev/class/bt-hci/000";
+const OPEN_SERVICE_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(5);
 
 /// A CommandChannel provides a `Stream` associated with the control channel for a single HCI device.
 /// This stream can be polled for `EventPacket`s coming off the channel.
@@ -30,10 +30,10 @@ pub struct CommandChannel {
 }
 
 impl CommandChannel {
-    /// Create a new CommandChannel from a device path. This opens a new command channel, returning
+    /// Create a new CommandChannel. This opens a new command channel, returning
     /// an error if the device doesn't exist or the channel cannot be created.
-    pub fn new(device_path: &str) -> Result<CommandChannel, Error> {
-        let proxy = open_hci_transport(device_path)?;
+    pub async fn new() -> Result<CommandChannel, Error> {
+        let proxy = open_hci_transport().await?;
         CommandChannel::from_proxy(proxy)
     }
 
@@ -187,18 +187,27 @@ impl fmt::Display for EventPacket {
     }
 }
 
-fn open_hci_transport(device_path: &str) -> Result<HciTransportProxy, Error> {
-    let interface = fuchsia_component::client::connect_to_protocol_at_path::<
-        fidl_fuchsia_hardware_bluetooth::VendorMarker,
-    >(device_path)?;
-    let proxy = block_on(interface.open_hci_transport())?
+async fn open_hci_transport() -> Result<HciTransportProxy, Error> {
+    let vendor_proxy = Service::open(ServiceMarker)?
+        .watch_for_any()
+        .on_timeout(OPEN_SERVICE_TIMEOUT.after_now(), || {
+            Err(anyhow::anyhow!("Timeout waiting for Service"))
+        })
+        .await
+        .context("Failed to find any fuchsia.hardware.bluetooth.Service instance")?
+        .connect_to_vendor()
+        .context("Failed to connect to vendor member")?;
+
+    let proxy = vendor_proxy
+        .open_hci_transport()
+        .await?
         .map_err(|_| format_err!("open_hci_transport failed"))?
         .into_proxy();
     Ok(proxy)
 }
 
-pub fn open_default_device() -> Result<CommandChannel, Error> {
-    CommandChannel::new(DEFAULT_DEVICE)
+pub async fn open_default_device() -> Result<CommandChannel, Error> {
+    CommandChannel::new().await
 }
 
 #[cfg(test)]
@@ -208,8 +217,8 @@ mod tests {
     use bt_fidl_mocks::timeout_duration;
     use fidl_fuchsia_hardware_bluetooth::{HciTransportMarker, ReceivedPacket};
     use fuchsia_async as fasync;
-    use futures::future::join;
     use futures::StreamExt;
+    use futures::future::join;
 
     #[test]
     fn test_command_channel_stream_lifecycle() {

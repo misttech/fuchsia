@@ -67,7 +67,11 @@
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.bluetooth.Service",
             from: "parent",
-            to: "#bluetooth-core",
+            to: [
+                "#bluetooth-core",
+                "self/toolbox",
+            ],
+            target_availability: "unknown",
         },
         {
             protocol: "fuchsia.metrics.MetricEventLoggerFactory",
