@@ -84,6 +84,12 @@ import("//build/testing/host_test_data.gni")
 #    Type: string
 #    Default: "list_host_python_unittests"
 #
+#  data_sources (optional)
+#    See build/python/python_binary.gni
+#
+#  data_package_name (required if |data_sources| is provided, else optional)
+#    See build/python/python_binary.gni
+#
 #  deps
 #  environments
 #  visibility
@@ -103,6 +109,8 @@ template("python_host_test") {
                              "main_source",
                              "sources",
                              "deps",
+                             "data_sources",
+                             "data_package_name",
                            ])
 
     testonly = true
