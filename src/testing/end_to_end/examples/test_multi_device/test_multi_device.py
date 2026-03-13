@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Sample test that demonstrates the usage of 2 Fuchsia devices in one test"""
+import asyncio
 import logging
 import re
-import time
 from typing import Any
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -17,10 +17,10 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
+class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Sample test that uses multiple Fuchsia devices"""
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: list[tuple[int]] = []
 
@@ -36,9 +36,9 @@ class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
     def _name_func(self, iteration: int) -> str:
         return f"test_bluetooth_sample_test_{iteration}"
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """Initialize all DUTs."""
-        super().setup_class()
+        await super().setup_class()
         if len(self.fuchsia_devices) < 2:
             raise MultipleFuchsiaDevicesNotFound(
                 "Two FuchsiaDevices are" "required to run BluetoothSampleTest"
@@ -46,7 +46,7 @@ class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
         self.initiator = self.fuchsia_devices[0]
         self.receiver = self.fuchsia_devices[1]
 
-    def _test_logic(self, iteration: int) -> None:
+    async def _test_logic(self, iteration: int) -> None:
         """Test Logic for Bluetooth Sample Test
         1. Turn on BT discoverability on both devices
         2. Retrieve the receiver's BT address
@@ -58,15 +58,17 @@ class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
             "Starting the Bluetooth Sample test iteration# %s", iteration
         )
         _LOGGER.info("Initializing Bluetooth and setting discoverability")
-        self._set_discoverability_on()
+        await self._set_discoverability_on()
 
-        address = self.receiver.bluetooth_gap.get_active_adapter_address()
+        address = await self.receiver.bluetooth_gap.get_active_adapter_address()
 
         _LOGGER.info(
             "Sleep for 5 seconds to wait for dut to listen for receiever"
         )
-        time.sleep(5)
-        known_device = self.initiator.bluetooth_gap.get_known_remote_devices()
+        await asyncio.sleep(5)
+        known_device = (
+            await self.initiator.bluetooth_gap.get_known_remote_devices()
+        )
         receiver_address_converted = self._sl4f_bt_mac_address(
             mac_address=address
         )
@@ -78,13 +80,13 @@ class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
             msg="Receiver was not discovered.",
         )
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         """Teardown test will turn off discoverability for all the devices."""
         _LOGGER.info("Turning off discoverability on all devices")
-        self.initiator.bluetooth_gap.set_discoverable(False)
-        self.receiver.bluetooth_gap.set_discoverable(False)
+        await self.initiator.bluetooth_gap.set_discoverable(False)
+        await self.receiver.bluetooth_gap.set_discoverable(False)
 
-        return super().teardown_class()
+        return await super().teardown_test()
 
     def _sl4f_bt_mac_address(self, mac_address: str) -> list[int]:
         """Converts BT mac addresses to reversed BT byte lists.
@@ -131,12 +133,12 @@ class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
                 return True
         return False
 
-    def _set_discoverability_on(self) -> None:
+    async def _set_discoverability_on(self) -> None:
         """Turns on discoverability for the devices."""
-        self.initiator.bluetooth_gap.request_discovery(True)
-        self.initiator.bluetooth_gap.set_discoverable(True)
-        self.receiver.bluetooth_gap.request_discovery(True)
-        self.receiver.bluetooth_gap.set_discoverable(True)
+        await self.initiator.bluetooth_gap.request_discovery(True)
+        await self.initiator.bluetooth_gap.set_discoverable(True)
+        await self.receiver.bluetooth_gap.request_discovery(True)
+        await self.receiver.bluetooth_gap.set_discoverable(True)
 
 
 if __name__ == "__main__":
