@@ -110,6 +110,7 @@ if (toolchain_environment == "kernel") {
       "relaxed_atomic_tests.cc",
       "relocation_tests.cc",
       "resource_tests.cc",
+      "scheduler_state_tests.cc",
       "sleep_tests.cc",
       "spinner.cc",
       "string_tests.cc",

@@ -387,12 +387,13 @@ class SchedulerState {
         return static_cast<int32_t>(weight_.raw_value());
       }
 
-      const int32_t clamped_capacity =
-          ktl::clamp(static_cast<int32_t>(capacity_ns_.raw_value()), 10'000, 99'990'000);
+      const int32_t clamped_scaled_capacity =
+          ktl::clamp(static_cast<int32_t>(capacity_ns_.raw_value() / 10'000), 1, 9'999);
       const int32_t clamped_scaled_deadline =
           ktl::clamp(static_cast<int32_t>(deadline_ns_.raw_value() / 10'000), 1, 9'999);
 
-      const int32_t diagnostic_value = -(clamped_capacity + clamped_scaled_deadline);
+      const int32_t diagnostic_value =
+          -((clamped_scaled_capacity * 10'000) + clamped_scaled_deadline);
       weight_ = SchedWeight::FromRaw(diagnostic_value);
 
       return diagnostic_value;
