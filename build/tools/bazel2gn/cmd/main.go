@@ -103,7 +103,7 @@ func main() {
 		}
 		lines, err := bazel2gn.StmtToGN(stmt)
 		if err != nil {
-			log.Fatalf("Failed to convert top-level statement in Bazel to GN: %v", err)
+			log.Fatalf("Failed to convert top-level statement in Bazel file %s to GN: %v", *bazelInputPath, err)
 		}
 		finalLines = append(finalLines, lines...)
 	}

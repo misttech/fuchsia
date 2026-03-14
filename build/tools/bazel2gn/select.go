@@ -80,8 +80,14 @@ func listConcatWithSelectToGN(attrName string, expr syntax.Expr, transformers []
 			return nil, fmt.Errorf("converting rhs of concatenation: %v", err)
 		}
 		return append(lhs, rhs...), nil
+	case *syntax.Ident:
+		l, err := identToGN(v)
+		if err != nil {
+			return nil, fmt.Errorf("converting identifier: %v", err)
+		}
+		return []string{fmt.Sprintf("%s += %s", attrName, l[0])}, nil
 	default:
-		return nil, fmt.Errorf("converting list concatenation with select to GN, want call expression, binary expression, or list expression, got %T", expr)
+		return nil, fmt.Errorf("converting list concatenation with select to GN, want call expression, binary expression, list expression, or identifier, got %T", expr)
 	}
 }
 

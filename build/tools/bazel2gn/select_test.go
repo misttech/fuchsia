@@ -52,6 +52,8 @@ rust_library(
 	name = "list_concatenation",
 	srcs = [
 		"foo.rs",
+	] + [
+		"bar.rs",
 	] + select({
 		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
 		"@platforms//os:linux": [ "linux.rs" ],
@@ -62,6 +64,49 @@ rust_library(
 	sources += [
 		"foo.rs",
 	]
+	sources += [
+		"bar.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"fuchsia.rs",
+		]
+	} else if (is_linux) {
+		sources += [
+			"linux.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "list concatenation with variable",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+list_of_files = ["bar.rs"]
+
+rust_library(
+	name = "list_concatenation_with_variable",
+	srcs = [
+		"foo.rs",
+	] + list_of_files + select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"@platforms//os:linux": [ "linux.rs" ],
+	}),
+)`,
+			wantGN: `list_of_files = [
+	"bar.rs",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "list_of_files" ])
+
+rustc_library("list_concatenation_with_variable") {
+	sources = []
+	sources += [
+		"foo.rs",
+	]
+	sources += list_of_files
 	if (is_fuchsia) {
 		sources += [
 			"fuchsia.rs",
