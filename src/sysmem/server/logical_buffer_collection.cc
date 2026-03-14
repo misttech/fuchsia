@@ -4974,6 +4974,7 @@ void LogicalBufferCollection::LogBufferCollectionInfo(
       auto indent = indent_tracker.Nested();
       const auto& bms = *sbs.buffer_settings();
       LOG_UINT64_FIELD(FROM_HERE, indent, bms, size_bytes);
+      LOG_UINT64_FIELD(FROM_HERE, indent, bms, raw_vmo_size);
       LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_physically_contiguous);
       LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_secure);
       LogInfo(FROM_HERE, "%*scoherency_domain: %u", indent.num_spaces(), "",
