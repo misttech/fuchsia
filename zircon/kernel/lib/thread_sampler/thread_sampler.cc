@@ -20,9 +20,9 @@
 #include <object/io_buffer_dispatcher.h>
 #include <object/process_dispatcher.h>
 
-KernelHandle<sampler::ThreadSamplerDispatcher> sampler::ThreadSamplerDispatcher::gThreadSampler_;
+KernelHandle<ThreadSamplerDispatcher> ThreadSamplerDispatcher::gThreadSampler_;
 
-zx::result<> sampler::ThreadSamplerDispatcher::CreateImpl(
+zx::result<> ThreadSamplerDispatcher::CreateImpl(
     const zx_sampler_config_t& config, KernelHandle<ThreadSamplerDispatcher>& read_handle,
     KernelHandle<ThreadSamplerDispatcher>& write_handle) {
   const size_t num_cpus = percpu::processor_count();
@@ -59,7 +59,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::CreateImpl(
   write_dispatcher.dispatcher()->InitPeer(read_dispatcher.dispatcher());
 
   write_dispatcher.dispatcher()->per_cpu_state_ =
-      fbl::MakeArray<internal::PerCpuState>(&ac, num_cpus);
+      fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
@@ -80,7 +80,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::CreateImpl(
   return zx::ok();
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::StartImpl() TA_EXCL(get_lock()) {
+zx::result<> ThreadSamplerDispatcher::StartImpl() TA_EXCL(get_lock()) {
   Guard<CriticalMutex> guard(get_lock());
   if (state_ != SamplingState::Configured) {
     return zx::error(ZX_ERR_BAD_STATE);
@@ -88,19 +88,18 @@ zx::result<> sampler::ThreadSamplerDispatcher::StartImpl() TA_EXCL(get_lock()) {
 
   DEBUG_ASSERT(!per_cpu_state_.empty());
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
-  for (internal::PerCpuState& state : per_cpu_state_) {
+  for (sampler::internal::PerCpuState& state : per_cpu_state_) {
     state.EnableWrites();
   }
 
   mp_sync_exec(
       mp_ipi_target::ALL, 0,
-      [](void* s) { reinterpret_cast<sampler::ThreadSamplerDispatcher*>(s)->SetCurrCpuTimer(); },
-      this);
+      [](void* s) { reinterpret_cast<ThreadSamplerDispatcher*>(s)->SetCurrCpuTimer(); }, this);
   state_ = SamplingState::Running;
   return zx::ok();
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::StopImpl() TA_EXCL(get_lock()) {
+zx::result<> ThreadSamplerDispatcher::StopImpl() TA_EXCL(get_lock()) {
   Guard<CriticalMutex> guard(get_lock());
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
   if (state_ != SamplingState::Running) {
@@ -110,10 +109,10 @@ zx::result<> sampler::ThreadSamplerDispatcher::StopImpl() TA_EXCL(get_lock()) {
   return zx::ok();
 }
 
-void sampler::ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
+void ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
 
-  for (internal::PerCpuState& state : per_cpu_state_) {
+  for (sampler::internal::PerCpuState& state : per_cpu_state_) {
     state.DisableWrites();
     state.CancelTimer();
   }
@@ -121,7 +120,7 @@ void sampler::ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
   // Some timers may not have not been able to be canceled, so we need to wait for any samples that
   // have already started to finish.
   zx_instant_mono_t deadline = zx_time_add_duration(current_mono_time(), ZX_SEC(30));
-  for (const internal::PerCpuState& i : per_cpu_state_) {
+  for (const sampler::internal::PerCpuState& i : per_cpu_state_) {
     bool pending_timers;
     bool pending_writes;
     do {
@@ -151,9 +150,8 @@ void sampler::ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
   state_ = SamplingState::Configured;
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t tid,
-                                                                GeneralRegsSource source,
-                                                                void* gregs) {
+zx::result<> ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t tid,
+                                                       GeneralRegsSource source, void* gregs) {
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
   // We are going to attempt a usercopy below which might fault, so interrupts cannot be disabled.
   DEBUG_ASSERT(!arch_ints_disabled());
@@ -267,7 +265,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, z
   // SetPendingWrite, get context switched out, and then have another thread attempt to
   // SetPendingWrite which would assert.
   InterruptDisableGuard irqd;
-  internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
+  sampler::internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
   const bool enabled = cpu_state.SetPendingWrite();
   if (!enabled) {
     // Even though we didn't successfully write a sample, we return a success result -- we should
@@ -289,7 +287,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, z
   return zx::ok();
 }
 
-void sampler::ThreadSamplerDispatcher::OnPeerZeroHandlesLocked() {
+void ThreadSamplerDispatcher::OnPeerZeroHandlesLocked() {
   DEBUG_ASSERT(GetEndpointId() == IobEndpointId::Ep0);
 
   // We purposely don't emit a call to IoBufferDispatcher::OnPeerZeroHandlesLocked() here. It's used
@@ -318,24 +316,22 @@ void sampler::ThreadSamplerDispatcher::OnPeerZeroHandlesLocked() {
   state_ = SamplingState::Destroyed;
 }
 
-void sampler::ThreadSamplerDispatcher::SetCurrCpuTimer() {
-  GetPerCpuState(arch_curr_cpu_num()).SetTimer();
-}
+void ThreadSamplerDispatcher::SetCurrCpuTimer() { GetPerCpuState(arch_curr_cpu_num()).SetTimer(); }
 
-zx::result<KernelHandle<sampler::ThreadSamplerDispatcher>> sampler::ThreadSamplerDispatcher::Create(
+zx::result<KernelHandle<ThreadSamplerDispatcher>> ThreadSamplerDispatcher::Create(
     const zx_sampler_config_t& config) {
   {
     Guard<Mutex> guard(ThreadSamplerLock::Get());
     if (gThreadSampler_.dispatcher() != nullptr &&
         gThreadSampler_.dispatcher()->State() !=
-            sampler::ThreadSamplerDispatcher::SamplingState::Destroyed) {
+            ThreadSamplerDispatcher::SamplingState::Destroyed) {
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
   }
 
-  KernelHandle<sampler::ThreadSamplerDispatcher> write_handle;
-  KernelHandle<sampler::ThreadSamplerDispatcher> read_handle;
-  zx::result res = sampler::ThreadSamplerDispatcher::CreateImpl(config, read_handle, write_handle);
+  KernelHandle<ThreadSamplerDispatcher> write_handle;
+  KernelHandle<ThreadSamplerDispatcher> read_handle;
+  zx::result res = ThreadSamplerDispatcher::CreateImpl(config, read_handle, write_handle);
   if (res.is_error()) {
     return res.take_error();
   }
@@ -345,7 +341,7 @@ zx::result<KernelHandle<sampler::ThreadSamplerDispatcher>> sampler::ThreadSample
     // Ensure that someone hasn't created a new sampler since we created ours
     if ((gThreadSampler_.dispatcher() != nullptr &&
          gThreadSampler_.dispatcher()->State() !=
-             sampler::ThreadSamplerDispatcher::SamplingState::Destroyed)) {
+             ThreadSamplerDispatcher::SamplingState::Destroyed)) {
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
     gThreadSampler_ = ktl::move(write_handle);
@@ -354,7 +350,7 @@ zx::result<KernelHandle<sampler::ThreadSamplerDispatcher>> sampler::ThreadSample
   return zx::ok(ktl::move(read_handle));
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::Stop(const fbl::RefPtr<IoBufferDispatcher>& disp) {
+zx::result<> ThreadSamplerDispatcher::Stop(const fbl::RefPtr<IoBufferDispatcher>& disp) {
   Guard<Mutex> guard(ThreadSamplerLock::Get());
   if (gThreadSampler_.dispatcher() == nullptr) {
     return zx::error(ZX_ERR_BAD_STATE);
@@ -365,7 +361,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::Stop(const fbl::RefPtr<IoBufferDi
   return gThreadSampler_.dispatcher()->StopImpl();
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::Start(const fbl::RefPtr<IoBufferDispatcher>& disp) {
+zx::result<> ThreadSamplerDispatcher::Start(const fbl::RefPtr<IoBufferDispatcher>& disp) {
   Guard<Mutex> guard(ThreadSamplerLock::Get());
   if (gThreadSampler_.dispatcher() == nullptr) {
     return zx::error(ZX_ERR_BAD_STATE);
@@ -376,9 +372,9 @@ zx::result<> sampler::ThreadSamplerDispatcher::Start(const fbl::RefPtr<IoBufferD
   return gThreadSampler_.dispatcher()->StartImpl();
 }
 
-zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_koid_t tid,
-                                                            GeneralRegsSource source, void* gregs) {
-  fbl::RefPtr<sampler::ThreadSamplerDispatcher> sampler_ref;
+zx::result<> ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_koid_t tid,
+                                                   GeneralRegsSource source, void* gregs) {
+  fbl::RefPtr<ThreadSamplerDispatcher> sampler_ref;
   {
     // We hold the global ThreadSamplerLock only long enough to increase the reference count on
     // the current sampler if it exists.
@@ -391,8 +387,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_ko
     // and SetCurrCpuTimers will simply short circuit and return early if that is the case.
     Guard<Mutex> guard(ThreadSamplerLock::Get());
     if (gThreadSampler_.dispatcher() == nullptr ||
-        gThreadSampler_.dispatcher()->State() !=
-            sampler::ThreadSamplerDispatcher::SamplingState::Running) {
+        gThreadSampler_.dispatcher()->State() != ThreadSamplerDispatcher::SamplingState::Running) {
       return zx::error(ZX_ERR_BAD_STATE);
     }
     sampler_ref = gThreadSampler_.dispatcher();
@@ -401,7 +396,7 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_ko
   return sampler_ref->SampleThreadImpl(pid, tid, source, gregs);
 }
 
-ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUser(
+ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUser(
     const fbl::RefPtr<IoBufferDispatcher>& disp, user_out_ptr<void> ptr, size_t len) {
   // We unfortunately run into some complexity here: while the buffer our samples in is created by
   // the kernel and is safe to read from, the user memory we are writing to could be pager-backed.
@@ -420,7 +415,7 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUser(
   //    2) If OnPeerZeroHandlesLocked is triggered while in `Reading` mode, we delay actually
   //       destroying the buffers and destroy them after the copy is completed instead.
 
-  fbl::RefPtr<sampler::ThreadSamplerDispatcher> sampler_ref;
+  fbl::RefPtr<ThreadSamplerDispatcher> sampler_ref;
   ktl::optional<sampler::ReadToken> token;
   {
     Guard<Mutex> guard(ThreadSamplerLock::Get());
@@ -428,7 +423,7 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUser(
     // active session when we are reading data.
     if (gThreadSampler_.dispatcher() == nullptr ||
         gThreadSampler_.dispatcher()->State() !=
-            sampler::ThreadSamplerDispatcher::SamplingState::Configured) {
+            ThreadSamplerDispatcher::SamplingState::Configured) {
       return {ZX_ERR_BAD_STATE, 0};
     }
 
@@ -455,16 +450,16 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUser(
   return {status, read};
 }
 
-zx::result<sampler::ReadToken> sampler::ThreadSamplerDispatcher::PrepareRead() {
+zx::result<sampler::ReadToken> ThreadSamplerDispatcher::PrepareRead() {
   Guard<CriticalMutex> guard(get_lock());
   if (state_ != SamplingState::Configured) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
   state_ = SamplingState::Reading;
-  return zx::ok(ReadToken{});
+  return zx::ok(sampler::ReadToken{});
 }
 
-void sampler::ThreadSamplerDispatcher::FinishRead(ReadToken&& token) {
+void ThreadSamplerDispatcher::FinishRead(sampler::ReadToken&& token) {
   Guard<CriticalMutex> guard(get_lock());
   DEBUG_ASSERT(state_ == SamplingState::Reading || state_ == SamplingState::Destroying);
   if (state_ == SamplingState::Destroying) {
@@ -480,8 +475,9 @@ void sampler::ThreadSamplerDispatcher::FinishRead(ReadToken&& token) {
   token.disarmed = true;
 }
 
-ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUserImpl(
-    const sampler::ReadToken&, user_out_ptr<void> ptr, size_t len) {
+ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUserImpl(const sampler::ReadToken&,
+                                                                     user_out_ptr<void> ptr,
+                                                                     size_t len) {
   // We're going to call into VmObject::ReadUser which could be copying to pager backed user memory.
   // We can't be holding any locks.
   lockdep::AssertNoLocksHeld();

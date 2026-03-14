@@ -1365,7 +1365,7 @@ void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
     // If a thread was marked to be sampled but was first suspended, it may now be long after the
     // sampling session has ended. sampler::SampleThread grabs the global state, checks if it's
     // still valid.
-    auto sampler_result = sampler::ThreadSamplerDispatcher::SampleThread(
+    auto sampler_result = ThreadSamplerDispatcher::SampleThread(
         current_thread->pid(), current_thread->tid(), source, gregs);
     if (sampler_result.is_error()) {
       kcounter_add(thread_sampling_failed, 1);

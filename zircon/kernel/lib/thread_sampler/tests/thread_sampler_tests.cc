@@ -24,11 +24,11 @@ namespace thread_sampler_tests {
 
 // A test version of ThreadSampler which overrides functions
 // for testing purposes.
-class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
+class TestThreadSampler : public ThreadSamplerDispatcher {
  public:
   TestThreadSampler(fbl::RefPtr<PeerHolder<IoBufferDispatcher>> holder, IobEndpointId endpoint_id,
                     fbl::RefPtr<SharedIobState> shared_state)
-      : sampler::ThreadSamplerDispatcher(ktl::move(holder), endpoint_id, ktl::move(shared_state)) {}
+      : ThreadSamplerDispatcher(ktl::move(holder), endpoint_id, ktl::move(shared_state)) {}
 
   void SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source, void* gregs) {
     sampler::internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
@@ -59,9 +59,9 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
           .period = zx::msec(1).get(),
           .buffer_size = kPageSize,
       };
-      KernelHandle<sampler::ThreadSamplerDispatcher> state;
+      KernelHandle<ThreadSamplerDispatcher> state;
       for (int i = 0; i < 10; i++) {
-        KernelHandle<sampler::ThreadSamplerDispatcher> read_handle;
+        KernelHandle<ThreadSamplerDispatcher> read_handle;
         ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
         auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(state.release());
         ASSERT_TRUE(test_state->StartImpl().is_ok());
@@ -71,7 +71,7 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
       // We should also be able to drop the read handle without stopping first and the state should
       // get cleaned up properly
       for (int i = 0; i < 10; i++) {
-        KernelHandle<sampler::ThreadSamplerDispatcher> read_handle;
+        KernelHandle<ThreadSamplerDispatcher> read_handle;
         ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
         auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(state.release());
         ASSERT_TRUE(test_state->StartImpl().is_ok());
@@ -84,8 +84,8 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
     BEGIN_TEST;
     {
       // Construct a thread sampler state and initialize it
-      KernelHandle<sampler::ThreadSamplerDispatcher> state;
-      KernelHandle<sampler::ThreadSamplerDispatcher> read_handle;
+      KernelHandle<ThreadSamplerDispatcher> state;
+      KernelHandle<ThreadSamplerDispatcher> read_handle;
 
       zx_sampler_config_t config{
           .period = zx::msec(1).get(),

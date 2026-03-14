@@ -22,6 +22,7 @@
 #include <object/thread_dispatcher.h>
 #include <vm/pinned_vm_object.h>
 
+class ThreadSamplerDispatcher;
 namespace sampler {
 
 // A helper type to ensure we always call our Read functions in the order of PrepareRead,
@@ -46,8 +47,10 @@ struct ReadToken {
   ReadToken() = default;
 
   bool disarmed = false;
-  friend class ThreadSamplerDispatcher;
+  friend class ::ThreadSamplerDispatcher;
 };
+
+}  // namespace sampler
 
 // A ThreadSampler is really just an IOBuffer with some added control methods on top to start and
 // stop sampling.
@@ -107,7 +110,7 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
                                                  user_out_ptr<void> ptr, size_t len);
 
  protected:
-  internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
+  sampler::internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
 
   ThreadSamplerDispatcher(fbl::RefPtr<PeerHolder<IoBufferDispatcher>> holder,
                           IobEndpointId endpoint_id, fbl::RefPtr<SharedIobState> shared_state)
@@ -130,25 +133,22 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
  private:
   void StopLocked() TA_REQ(get_lock());
 
-  zx::result<ReadToken> PrepareRead() TA_REQ(ThreadSamplerLock::Get());
-  void FinishRead(ReadToken&& token) TA_REQ(ThreadSamplerLock::Get());
+  zx::result<sampler::ReadToken> PrepareRead() TA_REQ(ThreadSamplerLock::Get());
+  void FinishRead(sampler::ReadToken&& token) TA_REQ(ThreadSamplerLock::Get());
 
   // ReadUser calls into VmObject::ReadUser. As we could be copying to pager backed user memory, we
   // must not hold any locks.
-  ktl::pair<zx_status_t, size_t> ReadUserImpl(const ReadToken& token, user_out_ptr<void> ptr,
-                                              size_t len)
+  ktl::pair<zx_status_t, size_t> ReadUserImpl(const sampler::ReadToken& token,
+                                              user_out_ptr<void> ptr, size_t len)
       TA_EXCL(ThreadSamplerLock::Get(), get_lock());
 
   SamplingState state_ TA_GUARDED(get_lock()){SamplingState::Configured};
-  fbl::Array<internal::PerCpuState> per_cpu_state_;
+  fbl::Array<sampler::internal::PerCpuState> per_cpu_state_;
 
   DECLARE_SINGLETON_MUTEX(ThreadSamplerLock);
   // We have only a single global thread sampler at a time. Another callers will get
   // ZX_ERR_ALREADY_EXISTS until the existing sampler is released.
-  static KernelHandle<sampler::ThreadSamplerDispatcher> gThreadSampler_
-      TA_GUARDED(ThreadSamplerLock::Get());
+  static KernelHandle<ThreadSamplerDispatcher> gThreadSampler_ TA_GUARDED(ThreadSamplerLock::Get());
 };
-
-}  // namespace sampler
 
 #endif  // ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_THREAD_SAMPLER_H_

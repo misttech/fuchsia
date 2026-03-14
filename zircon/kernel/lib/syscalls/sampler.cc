@@ -71,8 +71,8 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zx::result<KernelHandle<sampler::ThreadSamplerDispatcher>> create_res =
-      sampler::ThreadSamplerDispatcher::Create(sample_config);
+  zx::result<KernelHandle<ThreadSamplerDispatcher>> create_res =
+      ThreadSamplerDispatcher::Create(sample_config);
   if (create_res.is_error()) {
     return create_res.status_value();
   }
@@ -100,7 +100,7 @@ zx_status_t sys_sampler_start(zx_handle_t iobuffer) {
     return status;
   }
 
-  return sampler::ThreadSamplerDispatcher::Start(thread_sampler).status_value();
+  return ThreadSamplerDispatcher::Start(thread_sampler).status_value();
 }
 
 // zx_status_t zx_sampler_stop
@@ -121,7 +121,7 @@ zx_status_t sys_sampler_stop(zx_handle_t iobuffer) {
     return status;
   }
 
-  return sampler::ThreadSamplerDispatcher::Stop(thread_sampler).status_value();
+  return ThreadSamplerDispatcher::Stop(thread_sampler).status_value();
 }
 
 // zx_status_t zx_sampler_read
@@ -143,8 +143,7 @@ zx_status_t sys_sampler_read(zx_handle_t iobuffer, user_out_ptr<void> data, size
     return status;
   }
 
-  auto [status, bytes_copied] =
-      sampler::ThreadSamplerDispatcher::ReadUser(thread_sampler, data, len);
+  auto [status, bytes_copied] = ThreadSamplerDispatcher::ReadUser(thread_sampler, data, len);
   // We may have a partial read: some bytes were copied, but we received an error later on.
   // We provide the caller with how many bytes we copied, but also the error we ran into.
   if (zx_status_t copy_status = actual.copy_to_user(bytes_copied); copy_status != ZX_OK) {
