@@ -4,18 +4,18 @@
 
 import os
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
 
 
-class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_test(self) -> None:
-        super().setup_test()
+class PerfTestTraceEventsTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.device = self.fuchsia_devices[0]
 
-    def test_perftest_library_trace_events(self) -> None:
-        with self.device.tracing.trace_session(
+    async def test_perftest_library_trace_events(self) -> None:
+        async with self.device.tracing.trace_session(
             categories=[
                 "kernel",
                 "perftest",
