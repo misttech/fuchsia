@@ -27,11 +27,7 @@
 using testing::_;
 
 using allocation::Allocator;
-using allocation::BufferCollectionImporter;
-using flatland::FlatlandManager;
 using flatland::ImageRect;
-using flatland::MockFlatlandPresenter;
-using fuchsia::ui::composition::RegisterBufferCollectionArgs;
 using fuchsia::ui::composition::internal::FrameInfo;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
 using fuchsia::ui::composition::internal::ScreenCaptureError;
@@ -43,6 +39,12 @@ namespace test {
 class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
  public:
   ScreenCapture2ManagerTest() = default;
+
+  void RunLoopUntil(fit::function<bool()> condition) {
+    while (!condition()) {
+      RunLoopUntilIdle();
+    }
+  }
 
   void SetUp() override {
     // Create the SysmemAllocator.
@@ -83,7 +85,8 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
         CreateAllocator(importer_, context_provider_.context(), dispatcher());
     CreateBufferCollectionInfoWithConstraints(
         utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
+        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
+        [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
     ScreenCaptureConfig args;
     args.set_import_token(std::move(ref_pair.import_token));

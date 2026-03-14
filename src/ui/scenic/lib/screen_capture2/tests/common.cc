@@ -39,7 +39,8 @@ void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     std::shared_ptr<Allocator> flatland_allocator,
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    fit::function<void(fit::function<bool()>)> run_loop_until) {
   // Create Sysmem tokens.
   auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
 
@@ -49,7 +50,7 @@ void CreateBufferCollectionInfoWithConstraints(
       std::move(dup_token).Unbind().TakeChannel()));
   rbc_args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
+  fuchsia::sysmem2::BufferCollectionPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
@@ -62,8 +63,7 @@ void CreateBufferCollectionInfoWithConstraints(
 
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
   set_constraints_request.set_constraints(std::move(constraints));
-  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-  EXPECT_EQ(status, ZX_OK);
+  buffer_collection->SetConstraints(std::move(set_constraints_request));
 
   bool processed_callback = false;
   flatland_allocator->RegisterBufferCollection(std::move(rbc_args),
@@ -72,16 +72,21 @@ void CreateBufferCollectionInfoWithConstraints(
                                                  processed_callback = true;
                                                });
 
-  // Wait for allocation.
-  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-  status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-  ASSERT_EQ(ZX_OK, status);
-  ASSERT_TRUE(!wait_result.is_framework_err());
-  ASSERT_TRUE(!wait_result.is_err());
-  ASSERT_TRUE(wait_result.is_response());
-  auto buffer_collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
-  ASSERT_EQ(constraints.min_buffer_count(), buffer_collection_info.buffers().size());
+  // Wait for allocation and registration.
+  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info;
+  bool allocation_complete = false;
+  buffer_collection->WaitForAllBuffersAllocated(
+      [&allocation_complete, &buffer_collection_info](
+          fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result result) {
+        ASSERT_TRUE(result.is_response());
+        buffer_collection_info = std::move(*result.response().mutable_buffer_collection_info());
+        allocation_complete = true;
+      });
 
+  run_loop_until([&]() { return processed_callback && allocation_complete; });
+
+  ASSERT_TRUE(processed_callback);
+  ASSERT_TRUE(allocation_complete);
   buffer_collection->Release();
 }
 

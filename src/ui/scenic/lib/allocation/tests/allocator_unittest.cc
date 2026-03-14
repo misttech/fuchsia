@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/fsl/handles/object_info.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
@@ -45,6 +45,7 @@ namespace test {
                                         EXPECT_EQ(expect_success, result.is_ok());             \
                                         processed_callback = true;                             \
                                       });                                                      \
+  RunLoopUntil([&processed_callback] { return processed_callback; });                          \
   EXPECT_TRUE(processed_callback);
 
 RegisterBufferCollectionArgs CreateArgs(
@@ -59,7 +60,7 @@ RegisterBufferCollectionArgs CreateArgs(
   return args;
 }
 
-class AllocatorTest : public gtest::TestLoopFixture {
+class AllocatorTest : public gtest::RealLoopFixture {
  public:
   AllocatorTest() {}
 
@@ -156,8 +157,8 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughAllocatorChann
   const auto usage = GetParam();
   std::shared_ptr<Allocator> allocator = CreateAllocator(usage);
 
-  auto allocator_ptr = fidl::Client<fuchsia_ui_composition::Allocator>(ConnectToAllocator(),
-                                                                       test_loop().dispatcher());
+  auto allocator_ptr =
+      fidl::Client<fuchsia_ui_composition::Allocator>(ConnectToAllocator(), dispatcher());
 
   bool processed_callback = false;
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
@@ -171,7 +172,7 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughAllocatorChann
         EXPECT_TRUE(result.is_ok());
         processed_callback = true;
       });
-  RunLoopUntilIdle();
+  RunLoopUntil([&processed_callback] { return processed_callback; });
   EXPECT_TRUE(processed_callback);
 
   // Closing channel should not trigger ReleaseBufferCollection, because the client still holds a
@@ -194,8 +195,8 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughMultipleAlloca
   const int kNumAllocators = 3;
   std::vector<fidl::Client<fuchsia_ui_composition::Allocator>> allocator_ptrs;
   for (int i = 0; i < kNumAllocators; ++i) {
-    allocator_ptrs.push_back(fidl::Client<fuchsia_ui_composition::Allocator>(
-        ConnectToAllocator(), test_loop().dispatcher()));
+    allocator_ptrs.push_back(
+        fidl::Client<fuchsia_ui_composition::Allocator>(ConnectToAllocator(), dispatcher()));
   }
 
   for (auto& allocator_ptr : allocator_ptrs) {
@@ -211,7 +212,7 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughMultipleAlloca
           EXPECT_TRUE(result.is_ok());
           processed_callback = true;
         });
-    RunLoopUntilIdle();
+    RunLoopUntil([&processed_callback] { return processed_callback; });
     EXPECT_TRUE(processed_callback);
   }
 }
@@ -449,6 +450,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
                                         EXPECT_TRUE(result.is_ok());
                                         processed_callback = true;
                                       });
+  RunLoopUntil([&processed_callback] { return processed_callback; });
   EXPECT_TRUE(processed_callback);
 
   // Register with the screenshot screenshot.
@@ -465,6 +467,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
                                         EXPECT_TRUE(result.is_ok());
                                         processed_callback = true;
                                       });
+  RunLoopUntil([&processed_callback] { return processed_callback; });
   EXPECT_TRUE(processed_callback);
 }
 
@@ -512,6 +515,7 @@ TEST_F(AllocatorTest, RegisterBufferCollectionCombined) {
     EXPECT_TRUE(result.is_ok());
     processed_callback = true;
   });
+  RunLoopUntil([&processed_callback] { return processed_callback; });
   EXPECT_TRUE(processed_callback);
 
   // Cleanup.

@@ -40,6 +40,13 @@ namespace test {
 class ScreenCapture2Test : public gtest::TestLoopFixture {
  public:
   ScreenCapture2Test() = default;
+
+  void RunLoopUntil(fit::function<bool()> condition) {
+    while (!condition()) {
+      RunLoopUntilIdle();
+    }
+  }
+
   void SetUp() override {
     // Create the SysmemAllocator.
     sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenCapture2Test");
@@ -102,7 +109,8 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
         CreateAllocator(importer_, context_provider_.context(), dispatcher());
     CreateBufferCollectionInfoWithConstraints(
         utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
+        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
+        [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
     ScreenCaptureConfig args;
     args.set_import_token(std::move(ref_pair.import_token));
@@ -152,7 +160,8 @@ TEST_F(ScreenCapture2Test, ConfigureWithMissingArguments) {
       CreateAllocator(importer_, context_provider_.context(), dispatcher());
   CreateBufferCollectionInfoWithConstraints(
       utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
+      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
+      [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
   // Missing image size.
   {
@@ -251,7 +260,8 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
       CreateAllocator(importer_, context_provider_.context(), dispatcher());
   CreateBufferCollectionInfoWithConstraints(
       utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_);
+      std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
+      [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
   ScreenCaptureConfig args;
   args.set_import_token(std::move(ref_pair.import_token));

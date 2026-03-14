@@ -195,6 +195,7 @@ struct GlobalIdPair {
     EXPECT_EQ(expect_success, result.is_ok());                                                   \
     processed_callback = true;                                                                   \
   });                                                                                            \
+  RunLoopUntil([&processed_callback] { return processed_callback; });                            \
   EXPECT_TRUE(processed_callback);
 
 // This macro searches for a local matrix associated with a specific TransformHandle.

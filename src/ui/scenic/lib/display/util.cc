@@ -9,6 +9,7 @@
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
 #include <zircon/status.h>
@@ -22,6 +23,7 @@ bool ImportBufferCollection(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage) {
+  TRACE_DURATION("gfx", "display::ImportBufferCollection");
   const WireBufferCollectionId display_buffer_collection_id =
       ToDisplayFidlBufferCollectionId(buffer_collection_id);
 

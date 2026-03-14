@@ -23,7 +23,8 @@ void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
     fuchsia::ui::composition::BufferCollectionExportToken export_token,
     std::shared_ptr<allocation::Allocator> flatland_allocator,
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    fit::function<void(fit::function<bool()>)> run_loop_until);
 
 }  // namespace test
 }  // namespace screen_capture2
