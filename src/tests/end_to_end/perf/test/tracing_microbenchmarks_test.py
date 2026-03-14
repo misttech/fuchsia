@@ -5,8 +5,8 @@
 import json
 import os
 
+import fuchsia_base_test
 import test_data
-from fuchsia_base_test import fuchsia_base_test
 from host_driven import run_test_component
 from mobly import asserts, test_runner
 from perf_publish import publish
@@ -48,20 +48,20 @@ ITERATIONS_PER_TEST_PER_PROCESS: int = 120
 PROCESS_RUNS: int = 6
 
 
-class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_test(self) -> None:
-        super().setup_test()
+class TracingMicrobenchmarksTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.device = self.fuchsia_devices[0]
 
     # Run some of the microbenchmarks with tracing enabled to measure the
     # overhead of tracing.
-    def test_tracing_categories_enabled(self) -> None:
+    async def test_tracing_categories_enabled(self) -> None:
         results_files = []
         userspace_events = {"InstantEvent", "ScopedDuration", "DurationBegin"}
         syscall_events = {"syscall_test_0", "syscall_test_8"}
         for i in range(PROCESS_RUNS):
             results_files.append(
-                self._run_tracing_microbenchmark(
+                await self._run_tracing_microbenchmark(
                     i, ["kernel", "benchmark"], ".tracing"
                 )
             )
@@ -109,11 +109,11 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
     # Run some of the microbenchmarks with tracing enabled but each category
     # disabled to measure the overhead of a trace event with the category turned
     # off.
-    def test_tracing_categories_disabled(self) -> None:
+    async def test_tracing_categories_disabled(self) -> None:
         results_files = []
         for i in range(PROCESS_RUNS):
             results_files.append(
-                self._run_tracing_microbenchmark(
+                await self._run_tracing_microbenchmark(
                     i, ["nonexistent_category"], ".tracing_categories_disabled"
                 )
             )
@@ -144,8 +144,8 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
     # async loop. At the same time sl4f tries to block on stopping the trace but doesn't try to read
     # the trace buffer resulting in a deadlock. Once that's done, it should be as easy as copying
     # this benchmark and changing the categories enabled to 'benchmark'.
-    def test_tracing_rust_categories_disabled(self) -> None:
-        with self.device.tracing.trace_session(
+    async def test_tracing_rust_categories_disabled(self) -> None:
+        async with self.device.tracing.trace_session(
             categories=["nonexistent_category"],
             buffer_size=1,
             download=True,
@@ -187,10 +187,10 @@ class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
             test_data_module=test_data,
         )
 
-    def _run_tracing_microbenchmark(
+    async def _run_tracing_microbenchmark(
         self, run_id: int, categories: list[str], results_suffix: str
     ) -> str:
-        with self.device.tracing.trace_session(
+        async with self.device.tracing.trace_session(
             categories=categories,
             buffer_size=36,
             download=True,
