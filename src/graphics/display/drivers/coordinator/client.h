@@ -130,58 +130,58 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   uint8_t GetMinimumRgb() const { return client_minimum_rgb_; }
 
   // fidl::WireServer<fuchsia_hardware_display::Coordinator> overrides:
-  void ImportImage(ImportImageRequestView request, ImportImageCompleter::Sync& _completer) override;
+  void ImportImage(ImportImageRequestView request, ImportImageCompleter::Sync& completer) override;
   void ReleaseImage(ReleaseImageRequestView request,
-                    ReleaseImageCompleter::Sync& _completer) override;
-  void ImportEvent(ImportEventRequestView request, ImportEventCompleter::Sync& _completer) override;
+                    ReleaseImageCompleter::Sync& completer) override;
+  void ImportEvent(ImportEventRequestView request, ImportEventCompleter::Sync& completer) override;
   void ReleaseEvent(ReleaseEventRequestView request,
-                    ReleaseEventCompleter::Sync& _completer) override;
-  void CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& _completer) override;
+                    ReleaseEventCompleter::Sync& completer) override;
+  void CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& completer) override;
   void DestroyLayer(DestroyLayerRequestView request,
-                    DestroyLayerCompleter::Sync& _completer) override;
+                    DestroyLayerCompleter::Sync& completer) override;
   void SetDisplayMode(SetDisplayModeRequestView request,
-                      SetDisplayModeCompleter::Sync& _completer) override;
+                      SetDisplayModeCompleter::Sync& completer) override;
   void SetDisplayColorConversion(SetDisplayColorConversionRequestView request,
-                                 SetDisplayColorConversionCompleter::Sync& _completer) override;
+                                 SetDisplayColorConversionCompleter::Sync& completer) override;
   void SetDisplayLayers(SetDisplayLayersRequestView request,
-                        SetDisplayLayersCompleter::Sync& _completer) override;
+                        SetDisplayLayersCompleter::Sync& completer) override;
   void SetLayerPrimaryConfig(SetLayerPrimaryConfigRequestView request,
-                             SetLayerPrimaryConfigCompleter::Sync& _completer) override;
+                             SetLayerPrimaryConfigCompleter::Sync& completer) override;
   void SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
-                               SetLayerPrimaryPositionCompleter::Sync& _completer) override;
+                               SetLayerPrimaryPositionCompleter::Sync& completer) override;
   void SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
-                            SetLayerPrimaryAlphaCompleter::Sync& _completer) override;
+                            SetLayerPrimaryAlphaCompleter::Sync& completer) override;
   void SetLayerColorConfig(SetLayerColorConfigRequestView request,
-                           SetLayerColorConfigCompleter::Sync& _completer) override;
+                           SetLayerColorConfigCompleter::Sync& completer) override;
   void SetLayerImage2(SetLayerImage2RequestView request,
-                      SetLayerImage2Completer::Sync& _completer) override;
-  void CheckConfig(CheckConfigCompleter::Sync& _completer) override;
-  void DiscardConfig(DiscardConfigCompleter::Sync& _completer) override;
+                      SetLayerImage2Completer::Sync& completer) override;
+  void CheckConfig(CheckConfigCompleter::Sync& completer) override;
+  void DiscardConfig(DiscardConfigCompleter::Sync& completer) override;
   void CommitConfig(CommitConfigRequestView request,
-                    CommitConfigCompleter::Sync& _completer) override;
+                    CommitConfigCompleter::Sync& completer) override;
   void GetLatestCommittedConfigStamp(
-      GetLatestCommittedConfigStampCompleter::Sync& _completer) override;
+      GetLatestCommittedConfigStampCompleter::Sync& completer) override;
 
   void SetVirtconMode(SetVirtconModeRequestView request,
-                      SetVirtconModeCompleter::Sync& _completer) override;
+                      SetVirtconModeCompleter::Sync& completer) override;
   void ImportBufferCollection(ImportBufferCollectionRequestView request,
-                              ImportBufferCollectionCompleter::Sync& _completer) override;
+                              ImportBufferCollectionCompleter::Sync& completer) override;
   void SetBufferCollectionConstraints(
       SetBufferCollectionConstraintsRequestView request,
-      SetBufferCollectionConstraintsCompleter::Sync& _completer) override;
+      SetBufferCollectionConstraintsCompleter::Sync& completer) override;
   void ReleaseBufferCollection(ReleaseBufferCollectionRequestView request,
-                               ReleaseBufferCollectionCompleter::Sync& _completer) override;
+                               ReleaseBufferCollectionCompleter::Sync& completer) override;
 
-  void IsCaptureSupported(IsCaptureSupportedCompleter::Sync& _completer) override;
+  void IsCaptureSupported(IsCaptureSupportedCompleter::Sync& completer) override;
 
   void StartCapture(StartCaptureRequestView request,
-                    StartCaptureCompleter::Sync& _completer) override;
+                    StartCaptureCompleter::Sync& completer) override;
 
   void AcknowledgeVsync(AcknowledgeVsyncRequestView request,
-                        AcknowledgeVsyncCompleter::Sync& _completer) override;
+                        AcknowledgeVsyncCompleter::Sync& completer) override;
 
   void SetMinimumRgb(SetMinimumRgbRequestView request,
-                     SetMinimumRgbCompleter::Sync& _completer) override;
+                     SetMinimumRgbCompleter::Sync& completer) override;
 
   void SetDisplayPowerMode(SetDisplayPowerModeRequestView request,
                            SetDisplayPowerModeCompleter::Sync& completer) override;
@@ -235,9 +235,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
 
   // Discards all the draft configs on all displays and layers.
   void DiscardConfig();
-
-  void SetLayerImageImpl(display::LayerId layer_id, display::ImageId image_id,
-                         display::EventId wait_event_id);
 
   void DrainVsyncQueue();
 

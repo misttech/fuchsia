@@ -179,8 +179,7 @@ zx_status_t Client::ImportImageForDisplay(const display::ImageMetadata& image_me
   return ZX_OK;
 }
 
-void Client::ReleaseImage(ReleaseImageRequestView request,
-                          ReleaseImageCompleter::Sync& /*_completer*/) {
+void Client::ReleaseImage(ReleaseImageRequestView request, ReleaseImageCompleter::Sync&) {
   TRACE_DURATION("gfx", "Display::Client::ReleaseImage");
 
   const display::ImageId image_id = display::ImageId(request->image_id);
@@ -209,21 +208,20 @@ void Client::ReleaseImage(ReleaseImageRequestView request,
   fdf::error("Invalid Image ID requested for release");
 }
 
-void Client::ImportEvent(ImportEventRequestView request,
-                         ImportEventCompleter::Sync& /*_completer*/) {
+void Client::ImportEvent(ImportEventRequestView request, ImportEventCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::ImportEvent");
 
   const display::EventId event_id = display::EventId(request->id);
   if (event_id == display::kInvalidEventId) {
     fdf::error("Cannot import events with an invalid ID #{}", event_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
   zx::result<> import_result = fences_.ImportEvent(std::move(request->event), event_id);
   if (import_result.is_error()) {
     fdf::error("Failed to import event: {}", import_result);
-    TearDown(import_result.error_value());
+    completer.Close(import_result.error_value());
     return;
   }
 }
@@ -257,7 +255,7 @@ void Client::ImportBufferCollection(ImportBufferCollectionRequestView request,
 }
 
 void Client::ReleaseBufferCollection(ReleaseBufferCollectionRequestView request,
-                                     ReleaseBufferCollectionCompleter::Sync& /*_completer*/) {
+                                     ReleaseBufferCollectionCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::ReleaseBufferCollection");
 
   const display::BufferCollectionId buffer_collection_id =
@@ -303,8 +301,7 @@ void Client::SetBufferCollectionConstraints(
   completer.ReplySuccess();
 }
 
-void Client::ReleaseEvent(ReleaseEventRequestView request,
-                          ReleaseEventCompleter::Sync& /*_completer*/) {
+void Client::ReleaseEvent(ReleaseEventRequestView request, ReleaseEventCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::ReleaseEvent");
 
   const display::EventId event_id = display::EventId(request->id);
@@ -343,8 +340,7 @@ void Client::CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::S
   completer.ReplySuccess();
 }
 
-void Client::DestroyLayer(DestroyLayerRequestView request,
-                          DestroyLayerCompleter::Sync& /*_completer*/) {
+void Client::DestroyLayer(DestroyLayerRequestView request, DestroyLayerCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::DestroyLayer");
 
   display::LayerId layer_id = display::LayerId(request->layer_id);
@@ -352,13 +348,13 @@ void Client::DestroyLayer(DestroyLayerRequestView request,
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("Tried to destroy invalid layer {}", layer_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
   if (layer.in_use()) {
     fdf::error("Destroyed layer {} which was in use", layer_id.value());
-    TearDown(ZX_ERR_BAD_STATE);
+    completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
 
@@ -385,7 +381,7 @@ display::ModeId GetPreferredModeIdForMode(
 }  // namespace
 
 void Client::SetDisplayMode(SetDisplayModeRequestView request,
-                            SetDisplayModeCompleter::Sync& /*_completer*/) {
+                            SetDisplayModeCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetDisplayMode");
 
   const display::DisplayId display_id = display::DisplayId(request->display_id);
@@ -401,7 +397,7 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
                request->mode.active_area.width, request->mode.active_area.height,
                request->mode.refresh_rate_millihertz / 1000,
                request->mode.refresh_rate_millihertz % 1000);
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::Mode target_mode = display::Mode::From(request->mode);
@@ -411,7 +407,7 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   if (display_preferred_modes_result.is_error()) {
     fdf::error("Failed to get display preferred modes for display ID {}: {}", display_id.value(),
                display_preferred_modes_result);
-    TearDown(display_preferred_modes_result.status_value());
+    completer.Close(display_preferred_modes_result.status_value());
     return;
   }
   std::span<const display::ModeAndId> display_preferred_modes =
@@ -420,7 +416,7 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   display::ModeId mode_id = GetPreferredModeIdForMode(display_preferred_modes, target_mode);
   if (mode_id == display::kInvalidModeId) {
     fdf::error("Failed to find supported mode for: {}", target_mode);
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
@@ -439,7 +435,7 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
 }
 
 void Client::SetDisplayColorConversion(SetDisplayColorConversionRequestView request,
-                                       SetDisplayColorConversionCompleter::Sync& /*_completer*/) {
+                                       SetDisplayColorConversionCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetDisplayColorConversion");
 
   const display::DisplayId display_id = display::DisplayId(request->display_id);
@@ -488,12 +484,12 @@ void Client::SetDisplayColorConversion(SetDisplayColorConversionRequestView requ
 }
 
 void Client::SetDisplayLayers(SetDisplayLayersRequestView request,
-                              SetDisplayLayersCompleter::Sync& /*_completer*/) {
+                              SetDisplayLayersCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetDisplayLayers");
 
   if (request->layer_ids.empty()) {
     fdf::error("SetDisplayLayers called with an empty layer list");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
@@ -515,14 +511,14 @@ void Client::SetDisplayLayers(SetDisplayLayersRequestView request,
     auto layers_it = layers_.find(layer_id);
     if (!layers_it.IsValid()) {
       fdf::error("SetDisplayLayers called with unknown layer ID: {}", layer_id.value());
-      TearDown(ZX_ERR_INVALID_ARGS);
+      completer.Close(ZX_ERR_INVALID_ARGS);
       return;
     }
 
     Layer& layer = *layers_it;
     if (!layer.AppendToConfigLayerList(display_config.draft_layers_)) {
       fdf::error("Tried to reuse an in-use layer");
-      TearDown(ZX_ERR_BAD_STATE);
+      completer.Close(ZX_ERR_BAD_STATE);
       return;
     }
   }
@@ -533,7 +529,7 @@ void Client::SetDisplayLayers(SetDisplayLayersRequestView request,
 }
 
 void Client::SetLayerPrimaryConfig(SetLayerPrimaryConfigRequestView request,
-                                   SetLayerPrimaryConfigCompleter::Sync& /*_completer*/) {
+                                   SetLayerPrimaryConfigCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetLayerPrimaryConfig");
 
   display::LayerId layer_id = display::LayerId(request->layer_id);
@@ -541,14 +537,14 @@ void Client::SetLayerPrimaryConfig(SetLayerPrimaryConfigRequestView request,
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("SetLayerPrimaryConfig called with unknown layer ID: {}", layer_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
 
   if (!display::ImageMetadata::IsValid(request->image_metadata)) {
     fdf::error("SetLayerPrimaryConfig called with invalid image metadata");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::ImageMetadata image_metadata(request->image_metadata);
@@ -562,7 +558,7 @@ void Client::SetLayerPrimaryConfig(SetLayerPrimaryConfigRequestView request,
 }
 
 void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
-                                     SetLayerPrimaryPositionCompleter::Sync& /*_completer*/) {
+                                     SetLayerPrimaryPositionCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetLayerPrimaryPosition");
 
   display::LayerId layer_id = display::LayerId(request->layer_id);
@@ -570,14 +566,14 @@ void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("SetLayerPrimaryPosition called with unknown layer ID: {}", layer_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
 
   if (!display::CoordinateTransformation::IsValid(request->image_source_transformation)) {
     fdf::error("SetLayerPrimaryPosition called with invalid image_source_transformation");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::CoordinateTransformation image_source_transformation(
@@ -585,14 +581,14 @@ void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
 
   if (!display::Rectangle::IsValid(request->image_source)) {
     fdf::error("SetLayerPrimaryPosition called with invalid image_source");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::Rectangle image_source = display::Rectangle::From(request->image_source);
 
   if (!display::Rectangle::IsValid(request->display_destination)) {
     fdf::error("SetLayerPrimaryPosition called with invalid display_destination");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::Rectangle display_destination = display::Rectangle::From(request->display_destination);
@@ -607,7 +603,7 @@ void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
 }
 
 void Client::SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
-                                  SetLayerPrimaryAlphaCompleter::Sync& /*_completer*/) {
+                                  SetLayerPrimaryAlphaCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetLayerPrimaryAlpha");
 
   display::LayerId layer_id = display::LayerId(request->layer_id);
@@ -615,21 +611,21 @@ void Client::SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("SetLayerPrimaryAlpha called with unknown layer ID: {}", layer_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
 
   if (!display::AlphaMode::IsValid(request->mode)) {
     fdf::error("Invalid alpha mode {}", static_cast<uint8_t>(request->mode));
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::AlphaMode alpha_mode(request->mode);
 
   if ((!isnan(request->val) && (request->val < 0 || request->val > 1))) {
     fdf::error("Invalid alpha value {}", request->val);
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   layer.SetPrimaryAlpha(alpha_mode, /*alpha_coefficient=*/request->val);
@@ -642,7 +638,7 @@ void Client::SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
 }
 
 void Client::SetLayerColorConfig(SetLayerColorConfigRequestView request,
-                                 SetLayerColorConfigCompleter::Sync& /*_completer*/) {
+                                 SetLayerColorConfigCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetLayerColorConfig");
 
   display::LayerId layer_id = display::LayerId(request->layer_id);
@@ -650,20 +646,21 @@ void Client::SetLayerColorConfig(SetLayerColorConfigRequestView request,
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("SetLayerColorConfig called with unknown layer ID: {}", layer_id.value());
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
 
   if (!display::Color::IsValid(request->color)) {
     fdf::error("SetLayerColorConfig with invalid pixel format");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::Color color = display::Color::From(request->color);
 
   if (!display::Rectangle::IsValid(request->display_destination)) {
     fdf::error("SetLayerColorConfig called with invalid display_destination");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   display::Rectangle display_destination = display::Rectangle::From(request->display_destination);
@@ -678,19 +675,17 @@ void Client::SetLayerColorConfig(SetLayerColorConfigRequestView request,
 }
 
 void Client::SetLayerImage2(SetLayerImage2RequestView request,
-                            SetLayerImage2Completer::Sync& /*_completer*/) {
+                            SetLayerImage2Completer::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetLayerImage2");
 
-  SetLayerImageImpl(display::LayerId(request->layer_id), display::ImageId(request->image_id),
-                    display::EventId(request->wait_event_id));
-}
+  display::LayerId layer_id(request->layer_id);
+  display::ImageId image_id(request->image_id);
+  display::EventId wait_event_id(request->wait_event_id);
 
-void Client::SetLayerImageImpl(display::LayerId layer_id, display::ImageId image_id,
-                               display::EventId wait_event_id) {
   auto layers_it = layers_.find(layer_id);
   if (!layers_it.IsValid()) {
     fdf::error("SetLayerImage called with unknown layer ID: {}", layer_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Layer& layer = *layers_it;
@@ -698,7 +693,7 @@ void Client::SetLayerImageImpl(display::LayerId layer_id, display::ImageId image
   auto images_it = images_.find(image_id);
   if (!images_it.IsValid()) {
     fdf::error("SetLayerImage called with unknown image ID: {}", image_id.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   Image& image = *images_it;
@@ -721,7 +716,7 @@ void Client::SetLayerImageImpl(display::LayerId layer_id, display::ImageId image
   // `Layer`'s format support.
   if (image.metadata() != display::ImageMetadata(layer.draft_image_metadata())) {
     fdf::error("SetLayerImage with mismatching layer and image metadata");
-    TearDown(ZX_ERR_BAD_STATE);
+    completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
 
@@ -739,27 +734,26 @@ void Client::CheckConfig(CheckConfigCompleter::Sync& completer) {
   completer.Reply(config_check_result.ToFidl());
 }
 
-void Client::DiscardConfig(DiscardConfigCompleter::Sync& /*_completer*/) { DiscardConfig(); }
+void Client::DiscardConfig(DiscardConfigCompleter::Sync& completer) { DiscardConfig(); }
 
-void Client::CommitConfig(CommitConfigRequestView request,
-                          CommitConfigCompleter::Sync& _completer) {
+void Client::CommitConfig(CommitConfigRequestView request, CommitConfigCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::CommitConfig");
 
   if (!request->has_stamp()) {
     fdf::error("CommitConfig called without a config stamp");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   const display::ConfigStamp new_config_stamp(request->stamp().value);
 
   if (layers_.is_empty()) {
     FDF_LOG(ERROR, "CommitConfig called before SetDisplayLayers");
-    TearDown(ZX_ERR_BAD_STATE);
+    completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
 
   if (!draft_display_config_was_validated_) {
-    // TODO(https://fxbug.dev/397427767): TearDown(ZX_ERR_BAD_STATE) instead of
+    // TODO(https://fxbug.dev/397427767): completer.Close(ZX_ERR_BAD_STATE) instead of
     // calling CheckConfig() and silently failing.
     draft_display_config_was_validated_ = CheckConfigImpl() == display::ConfigCheckResult::kOk;
 
@@ -775,7 +769,7 @@ void Client::CommitConfig(CommitConfigRequestView request,
     fdf::error(
         "CommitConfig config stamp not monotonically increasing; new stamp: {}, previous stamp: {}",
         new_config_stamp.value(), latest_config_stamp_.value());
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   latest_config_stamp_ = new_config_stamp;
@@ -803,13 +797,13 @@ void Client::CommitConfig(CommitConfigRequestView request,
       if (!draft_layer_node.layer->ResolveDraftLayerProperties()) {
         fdf::error("Failed to resolve draft layer properties for layer {}",
                    draft_layer_node.layer->id().value());
-        TearDown(ZX_ERR_BAD_STATE);
+        completer.Close(ZX_ERR_BAD_STATE);
         return;
       }
       if (!draft_layer_node.layer->ResolveDraftImage(&fences_, latest_config_stamp_)) {
         fdf::error("Failed to resolve draft image for layer {}",
                    draft_layer_node.layer->id().value());
-        TearDown(ZX_ERR_BAD_STATE);
+        completer.Close(ZX_ERR_BAD_STATE);
         return;
       }
     }
@@ -861,12 +855,12 @@ void Client::GetLatestCommittedConfigStamp(
 }
 
 void Client::SetVirtconMode(SetVirtconModeRequestView request,
-                            SetVirtconModeCompleter::Sync& /*_completer*/) {
+                            SetVirtconModeCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetVirtconMode");
 
   if (priority_ != ClientPriority::kVirtcon) {
     fdf::error("SetVirtconMode() called by {} client", DebugStringFromClientPriority(priority_));
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
   controller_.SetVirtconMode(request->mode);
@@ -1579,11 +1573,11 @@ void Client::DiscardConfig() {
 }
 
 void Client::AcknowledgeVsync(AcknowledgeVsyncRequestView request,
-                              AcknowledgeVsyncCompleter::Sync& /*_completer*/) {
+                              AcknowledgeVsyncCompleter::Sync& completer) {
   display::VsyncAckCookie ack_cookie = display::VsyncAckCookie(request->cookie);
   if (ack_cookie == display::kInvalidVsyncAckCookie) {
     fdf::error("AcknowledgeVsync() called with invalid cookie");
-    TearDown(ZX_ERR_INVALID_ARGS);
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
