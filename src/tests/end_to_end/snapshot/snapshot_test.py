@@ -15,8 +15,7 @@ import tempfile
 import zipfile
 from typing import Any, Dict, List
 
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+import fuchsia_base_test
 from mobly import asserts, test_runner
 from perf import action_timer
 
@@ -25,21 +24,29 @@ _SNAPSHOT_ZIP = "snapshot_test.zip"
 _TEST_SUITE = "fuchsia.test.diagnostics"
 
 
-class SnapshotPerfResults(action_timer.ActionTimer[None, None]):
-    def __init__(self, device: FuchsiaDevice):
-        self._device = device
+class SnapshotTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self._fuchsia_device = self.fuchsia_devices[0]
+        self._repetitions = self.user_params["repeat_count"]
 
-    def pre_action(self) -> None:
-        self._directory = tempfile.TemporaryDirectory()
-
-    def action(self, _: None) -> None:
-        self._device.snapshot(self._directory.name, _SNAPSHOT_ZIP)
-
-    def post_action(self, _: None) -> None:
-        final_path = os.path.join(self._directory.name, _SNAPSHOT_ZIP)
-        with zipfile.ZipFile(final_path) as zf:
-            self._validate_inspect(zf)
-        self._directory.cleanup()
+    async def test_snapshot(self) -> None:
+        """Get a device snapshot and extract the inspect.json file."""
+        with action_timer.timer(
+            _TEST_SUITE, "Snapshot", self.test_case_path
+        ) as t:
+            for _ in range(self._repetitions):
+                with t.record_iteration():
+                    directory = tempfile.TemporaryDirectory()
+                    try:
+                        await self._fuchsia_device.snapshot(
+                            directory.name, _SNAPSHOT_ZIP
+                        )
+                        final_path = os.path.join(directory.name, _SNAPSHOT_ZIP)
+                        with zipfile.ZipFile(final_path) as zf:
+                            self._validate_inspect(zf)
+                    finally:
+                        directory.cleanup()
 
     def _validate_inspect(self, zf: zipfile.ZipFile) -> None:
         with zf.open("inspect.json") as inspect_file:
@@ -66,19 +73,6 @@ class SnapshotPerfResults(action_timer.ActionTimer[None, None]):
             health["status"],
             "OK",
             "Archivist did not return OK status",
-        )
-
-
-class SnapshotTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
-        super().setup_class()
-        self._fuchsia_device = self.fuchsia_devices[0]
-        self._repetitions = self.user_params["repeat_count"]
-
-    def test_snapshot(self) -> None:
-        """Get a device snapshot and extract the inspect.json file."""
-        SnapshotPerfResults(self._fuchsia_device).execute(
-            _TEST_SUITE, "Snapshot", self.test_case_path, self._repetitions
         )
 
 
