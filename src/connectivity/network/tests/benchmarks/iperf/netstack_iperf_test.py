@@ -11,15 +11,13 @@ import pathlib
 import stat
 import statistics
 import subprocess
-import time
 from enum import Enum
 from importlib.resources import as_file, files
-from typing import Any, Callable
+from typing import Any, Callable, Coroutine
 
-import fuchsia_async_extension
-import honeydew
+import fuchsia_base_test
 import test_data
-from fuchsia_base_test import fuchsia_base_test
+from honeydew.transports.ffx.ffx import FFX
 from mobly import asserts, test_runner
 from perf_publish import publish
 from reporting import metrics
@@ -217,7 +215,7 @@ def generate_result(
 
 
 class IperfServer:
-    def __init__(self, ffx: honeydew.transports.ffx.ffx.FFX) -> None:
+    def __init__(self, ffx: FFX) -> None:
         self._process: subprocess.Popen[bytes] = ffx.popen(
             ["target", "ssh", f"iperf3 --server --port {LISTEN_PORT} --json"],
             text=False,
@@ -229,7 +227,7 @@ class IperfServer:
         self._process.kill()
         output, err = self._process.communicate()
         if err:
-            _LOGGER.warn(f"Server wrote errors: {err!r}")
+            _LOGGER.warning(f"Server wrote errors: {err!r}")
         # NOTE: this file contains a set of JSON objects (not a list of objects, just a bunch of
         # JSON objects). The first one is the one we used to check that the connection had been
         # established. Consider removing that one as it's a test implementation detail.
@@ -237,9 +235,9 @@ class IperfServer:
             f.write(output)
 
 
-class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_test(self) -> None:
-        super().setup_test()
+class NetstackIperfTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self._device = self.fuchsia_devices[0]
         self._protocol = Protocol.from_str(self.user_params["protocol"])
         self._direction = Direction.from_str(self.user_params["direction"])
@@ -248,13 +246,13 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         if self._netstack3:
             self._label += ".netstack3"
 
-    def test_iperf(self) -> None:
-        self._wait_system_metrics_daemon_start()
-        self._run_iperf_client_tests()
+    async def test_iperf(self) -> None:
+        await self._wait_system_metrics_daemon_start()
+        await self._run_iperf_client_tests()
 
-    def _wait_system_metrics_daemon_start(self) -> None:
-        for i in range(10):
-            with self._device.tracing.trace_session(
+    async def _wait_system_metrics_daemon_start(self) -> None:
+        for _ in range(10):
+            async with self._device.tracing.trace_session(
                 categories=["system_metrics"],
                 download=True,
                 directory=self.test_case_path,
@@ -262,7 +260,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             ):
                 # Record a 1-second trace session to give the system metrics daemon a chance to
                 # emit CPU usage trace event(s), which it typically does every second.
-                time.sleep(1)
+                await asyncio.sleep(1)
             cpu_results = self._get_cpu_results(
                 os.path.join(self.test_case_path, "trace.fxt")
             )
@@ -272,16 +270,14 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             "Failed to retrieve CPU stats from system_metrics daemon"
         )
 
-    def _run_iperf_client_tests(self) -> None:
+    async def _run_iperf_client_tests(self) -> None:
         results: list[dict[str, Any]] = []
         MESSAGE_SIZES = [64, 1024, 1400]
         if self._direction != Direction.LOOPBACK:
-            server = fuchsia_async_extension.get_loop().run_until_complete(
-                self._start_iperf3_server()
-            )
+            server = await self._start_iperf3_server()
             try:
                 for message_size in MESSAGE_SIZES:
-                    results += self._run_iperf_client_test_case(
+                    results += await self._run_iperf_client_test_case(
                         self._run_ethernet_tests, message_size, 1
                     )
             finally:
@@ -291,7 +287,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         else:
             for message_size in MESSAGE_SIZES:
                 for flows in [1, 2, 4]:
-                    results += self._run_iperf_client_test_case(
+                    results += await self._run_iperf_client_test_case(
                         self._run_loopback_tests, message_size, flows
                     )
 
@@ -306,9 +302,11 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             test_data_module=test_data,
         )
 
-    def _run_iperf_client_test_case(
+    async def _run_iperf_client_test_case(
         self,
-        test: Callable[[pathlib.Path, int, int], list[str]],
+        test: Callable[
+            [pathlib.Path, int, int], Coroutine[Any, Any, list[str]]
+        ],
         message_size: int,
         flows: int,
     ) -> list[dict[str, Any]]:
@@ -317,13 +315,13 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         os.makedirs(dir)
 
-        with self._device.tracing.trace_session(
+        async with self._device.tracing.trace_session(
             categories=["system_metrics"],
             download=True,
-            directory=dir,
+            directory=str(dir),
             trace_file="trace.fxt",
         ):
-            result_files = test(dir, message_size, flows)
+            result_files = await test(dir, message_size, flows)
 
         cpu_results = self._get_cpu_results(dir / "trace.fxt")
         asserts.assert_equal(len(cpu_results), 1)
@@ -334,7 +332,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             message_size,
         )
 
-    def _run_loopback_tests(
+    async def _run_loopback_tests(
         self, dir: pathlib.Path, message_size: int, flows: int
     ) -> list[str]:
         test_component_args = [
@@ -351,7 +349,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             "fuchsia-pkg://fuchsia.com/iperf-benchmark#meta/iperf-benchmark-component.cm",
             ffx_test_args=[
                 "--output-directory",
-                dir,
+                str(dir),
             ],
             test_component_args=test_component_args,
             capture_output=False,
@@ -377,21 +375,19 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
             )
         return result_files
 
-    def _run_ethernet_tests(
+    async def _run_ethernet_tests(
         self, dir: pathlib.Path, message_size: int, flows: int
     ) -> list[str]:
         asserts.assert_equal(flows, 1)
         return [
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._execute_iperf3_commands(
-                    # NOTE(https://fxbug.dev/42124566): Currently, we are using the link used for
-                    # ssh to also inject data traffic. This is prone to interference to ssh and to
-                    # the tests. Ideally we would use a separate usb-ethernet interface for the test
-                    # traffic.
-                    self._device.ffx.get_target_ssh_address().ip,
-                    message_size,
-                    dir,
-                )
+            await self._execute_iperf3_commands(
+                # NOTE(https://fxbug.dev/42124566): Currently, we are using the link used for
+                # ssh to also inject data traffic. This is prone to interference to ssh and to
+                # the tests. Ideally we would use a separate usb-ethernet interface for the test
+                # traffic.
+                self._device.ffx.get_target_ssh_address().ip,
+                message_size,
+                dir,
             )
         ]
 
@@ -430,7 +426,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 return server
             except Exception:  # pylint: disable=broad-except
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
 
     async def _execute_iperf3_commands(
         self,
