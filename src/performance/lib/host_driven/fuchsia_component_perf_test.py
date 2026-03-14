@@ -8,18 +8,19 @@ component that publishes a fuchsiaperf.json file.
 
 import os
 
+import fuchsia_base_test
+
 # LINT.IfChange
 import test_data
 
 # LINT.ThenChange(//build/testing/perf/test.gni)
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 from host_driven import run_test_component
 from mobly import test_runner
 from perf_publish import publish
 
 
-class FuchsiaComponentPerfTest(fuchsia_base_test.FuchsiaBaseTest):
+class FuchsiaComponentPerfTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """
     Mobly test class allowing to run a test component and publish its fuchsiaperf data.
 
@@ -55,7 +56,9 @@ class FuchsiaComponentPerfTest(fuchsia_base_test.FuchsiaBaseTest):
         fuchsiaperf data and then publishes it ensuring that the expected
         metrics are present.
         """
-        device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
+        device: async_fuchsia_device.AsyncFuchsiaDevice = self.fuchsia_devices[
+            0
+        ]
         ffx_test_args: list[str] = self.user_params["ffx_test_args"]
         ffx_test_url: str = self.user_params["ffx_test_url"]
         expected_metric_names_filepath: str = self.user_params[
