@@ -8,8 +8,8 @@ import logging
 import subprocess
 from typing import Tuple
 
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
+import fuchsia_base_test
+from honeydew.fuchsia_device import async_fuchsia_device
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -32,12 +32,14 @@ class SpawnedFfx:
         return stdout.decode()
 
 
-class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
+class FfxTestCase(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """FFX host tool E2E test For Strict."""
 
-    def setup_class(self) -> None:
+    dut: async_fuchsia_device.AsyncFuchsiaDevice
+
+    async def setup_class(self) -> None:
         """setup_class is called once before running the testsuite."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
     def spawn_ffx(self, args: list[str]) -> SpawnedFfx:

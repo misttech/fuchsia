@@ -24,10 +24,10 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test for daemon subtools when in direct mode."""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         # This just gets some things out of the way before we start turning
         # the daemon off and on again.
-        super().setup_class()
+        await super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
 
     def test_direct_daemon_disconnect(self) -> None:

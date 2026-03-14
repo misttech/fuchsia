@@ -27,17 +27,17 @@ def remove_ansi_escape_sequences(text: str) -> str:
 class FfxDirectTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test for Direct connections."""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         # This just gets some things out of the way in case the daemon gets
         # turned on and off again.
-        super().setup_class()
+        await super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         # Verify that we did not start the daemon
         with asserts.assert_raises(FfxCommandError):
             self.dut.ffx.run(["-c", "daemon.autostart=false", "daemon", "echo"])
-        super().teardown_test()
+        await super().teardown_test()
 
     # Run the ffx command with the --direct arg, and parse the results
     def _run_ffx_direct(

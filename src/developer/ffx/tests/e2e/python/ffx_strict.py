@@ -35,10 +35,10 @@ def parse_json_messages(output: str) -> list[dict[str, Any]]:
 class FfxStrictTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test For Strict."""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         # This just gets some things out of the way before we start turning
         # the daemon off and on again.
-        super().setup_class()
+        await super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
         self.dut_name = self.dut.ffx.get_target_name()
         self.ssh_private_key: Optional[str] = None
