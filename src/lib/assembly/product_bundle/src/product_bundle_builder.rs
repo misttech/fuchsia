@@ -281,11 +281,20 @@ impl ProductBundleBuilder {
             partitions,
             sdk_version,
             system_a: system_a.as_ref().map(|s| s.images.clone()),
-            platform_tools_a: vec![],
+            platform_tools_a: system_a
+                .as_ref()
+                .map(|s| s.platform_tools.clone())
+                .unwrap_or_default(),
             system_b: system_b.as_ref().map(|s| s.images.clone()),
-            platform_tools_b: vec![],
+            platform_tools_b: system_b
+                .as_ref()
+                .map(|s| s.platform_tools.clone())
+                .unwrap_or_default(),
             system_r: system_r.as_ref().map(|s| s.images.clone()),
-            platform_tools_r: vec![],
+            platform_tools_r: system_r
+                .as_ref()
+                .map(|s| s.platform_tools.clone())
+                .unwrap_or_default(),
             repositories,
             update_package_hash,
             virtual_devices_path,

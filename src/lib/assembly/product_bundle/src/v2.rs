@@ -320,6 +320,16 @@ impl ProductBundleV2 {
         canonicalizer.canonicalize_system(&mut self.system_b)?;
         canonicalizer.canonicalize_system(&mut self.system_r)?;
 
+        for tool in &mut self.platform_tools_a {
+            *tool = canonicalizer.canonicalize_path(&tool, vec![]);
+        }
+        for tool in &mut self.platform_tools_b {
+            *tool = canonicalizer.canonicalize_path(&tool, vec![]);
+        }
+        for tool in &mut self.platform_tools_r {
+            *tool = canonicalizer.canonicalize_path(&tool, vec![]);
+        }
+
         for repository in &mut self.repositories {
             repository.metadata_path = canonicalizer.canonicalize_dir(&repository.metadata_path)?;
             repository.blobs_path = canonicalizer.canonicalize_dir(&repository.blobs_path)?;
@@ -411,6 +421,18 @@ impl ProductBundleV2 {
         relativize_system(&mut self.system_a)?;
         relativize_system(&mut self.system_b)?;
         relativize_system(&mut self.system_r)?;
+
+        let relativize_tools = |tools: &mut Vec<Utf8PathBuf>| -> Result<()> {
+            for tool in tools.iter_mut() {
+                *tool = diff_utf8_paths(&*tool, &product_bundle_dir).ok_or_else(|| {
+                    anyhow!("failed to rebase the file: {} in {}", tool, &product_bundle_dir)
+                })?;
+            }
+            Ok(())
+        };
+        relativize_tools(&mut self.platform_tools_a)?;
+        relativize_tools(&mut self.platform_tools_b)?;
+        relativize_tools(&mut self.platform_tools_r)?;
 
         for repository in &mut self.repositories {
             let relativize_dir = |path: &Utf8PathBuf| -> Result<Utf8PathBuf> {
@@ -531,6 +553,7 @@ mod tests {
         create_temp_file("vbmeta");
         create_temp_file("unlock_credentials");
         create_temp_file("device");
+        create_temp_file("tool");
 
         let mut pb = ProductBundleV2 {
             product_name: "".to_string(),
@@ -562,7 +585,7 @@ mod tests {
             ]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
+            platform_tools_a: vec!["tool".into()],
             platform_tools_b: vec![],
             platform_tools_r: vec![],
             repositories: vec![],
@@ -588,6 +611,7 @@ mod tests {
                 _ => assert!(false),
             }
         }
+        assert_eq!(tempdir.join("tool"), pb.platform_tools_a[0]);
     }
 
     #[test]
@@ -655,7 +679,7 @@ mod tests {
             ]),
             system_b: None,
             system_r: None,
-            platform_tools_a: vec![],
+            platform_tools_a: vec![tempdir.join("tool")],
             platform_tools_b: vec![],
             platform_tools_r: vec![],
             repositories: vec![],
@@ -665,6 +689,7 @@ mod tests {
         };
         let result = pb.relativize_paths(tempdir);
         assert!(result.is_ok());
+        assert_eq!(Utf8PathBuf::from("tool"), pb.platform_tools_a[0]);
     }
 
     #[fuchsia::test]
