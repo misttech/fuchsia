@@ -381,7 +381,7 @@ fn handle_pending_packets<I: IpLayerIpExt, CC, BC>(
                 CounterContext::<MulticastForwardingCounters<I>>::counters(core_ctx)
                     .pending_packet_tx
                     .increment();
-                let packet_iter = RepeatN::new(packet, targets.len());
+                let packet_iter = core::iter::repeat_n(packet, targets.len());
                 for (mut packet, MulticastRouteTarget { output_interface, min_ttl }) in
                     packet_iter.zip(targets.iter())
                 {
@@ -405,42 +405,6 @@ fn handle_pending_packets<I: IpLayerIpExt, CC, BC>(
                     );
                 }
             }
-        }
-    }
-}
-
-/// An iterator that repeats a provided item `N` times.
-///
-/// Notably, this iterator will clone the item n-1 times, and move the owned
-/// value into the final item.
-// TODO(https://github.com/rust-lang/rust/issues/104434): Replace this with the
-// standard library version, once it stabilizes.
-struct RepeatN<T> {
-    // `Some` while `size` is greater than 0; `None` otherwise.
-    elem: Option<T>,
-    size: usize,
-}
-
-impl<T> RepeatN<T> {
-    fn new(elem: T, size: usize) -> Self {
-        if size == 0 {
-            Self { elem: None, size }
-        } else {
-            Self { elem: Some(elem), size: size - 1 }
-        }
-    }
-}
-
-impl<T: Clone> Iterator for RepeatN<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        let Self { elem, size } = self;
-        if *size > 0 {
-            *size -= 1;
-            Some(elem.as_ref().unwrap().clone())
-        } else {
-            elem.take()
         }
     }
 }
@@ -717,14 +681,5 @@ mod tests {
         let expected_stats = MulticastRouteStats { last_used: new_time };
         assert_eq!(api.add_multicast_route(key.clone(), route.clone()), Ok(Some(route)));
         assert_eq!(api.get_route_stats(&key), Ok(Some(expected_stats)));
-    }
-
-    #[test_case(0)]
-    #[test_case(1)]
-    #[test_case(10)]
-    fn repeat_n(size: usize) {
-        #[derive(Clone)]
-        struct Foo;
-        assert_eq!(RepeatN::new(Foo, size).count(), size);
     }
 }
