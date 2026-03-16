@@ -161,13 +161,21 @@ fn check_background_args(
     Ok(())
 }
 
-fn default_sampling_config(sample_period_us: u64) -> profiler::SamplingConfig {
+fn default_sampling_config(
+    sample_period_us: u64,
+    unwind_strategy: args::UnwindStrategy,
+) -> profiler::SamplingConfig {
+    let strategy = match unwind_strategy {
+        args::UnwindStrategy::Dwarf => profiler::CallgraphStrategy::Dwarf,
+        args::UnwindStrategy::FramePointer => profiler::CallgraphStrategy::FramePointer,
+    };
+
     profiler::SamplingConfig {
         period: Some(sample_period_us * 1000),
         timebase: Some(profiler::Counter::PlatformIndependent(profiler::CounterId::Nanoseconds)),
         sample: Some(profiler::Sample {
             callgraph: Some(profiler::CallgraphConfig {
-                strategy: Some(profiler::CallgraphStrategy::FramePointer),
+                strategy: Some(strategy),
                 ..Default::default()
             }),
             ..Default::default()
@@ -625,7 +633,7 @@ impl ProfilerTool {
                     )?;
                 }
                 let target = gather_targets(&opts)?;
-                let config = default_sampling_config(opts.sample_period_us);
+                let config = default_sampling_config(opts.sample_period_us, opts.unwind_strategy);
                 let session_opts = create_session_opts(
                     opts.symbolize,
                     opts.buffer_size_mb,
@@ -665,7 +673,7 @@ impl ProfilerTool {
                     })
                 };
                 let target = profiler::TargetConfig::Component(component_config);
-                let config = default_sampling_config(opts.sample_period_us);
+                let config = default_sampling_config(opts.sample_period_us, opts.unwind_strategy);
                 let session_opts = create_session_opts(
                     opts.symbolize,
                     opts.buffer_size_mb,

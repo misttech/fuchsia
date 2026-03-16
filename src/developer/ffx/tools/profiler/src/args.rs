@@ -5,6 +5,7 @@
 use argh::{ArgsInfo, FromArgs};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 /// Interact with the profiling subsystem.
@@ -23,6 +24,29 @@ pub enum ProfilerSubCommand {
     DownloadAndroidSymbols(DownloadAndroidSymbols),
     Stop(Stop),
     Status(Status),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UnwindStrategy {
+    FramePointer,
+    Dwarf,
+}
+
+impl Default for UnwindStrategy {
+    fn default() -> Self {
+        UnwindStrategy::FramePointer
+    }
+}
+
+impl FromStr for UnwindStrategy {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "fp" => Ok(UnwindStrategy::FramePointer),
+            "dwarf" => Ok(UnwindStrategy::Dwarf),
+            _ => Err(format!("invalid unwind strategy '{}', valid options are 'fp', 'dwarf'", s)),
+        }
+    }
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -92,6 +116,13 @@ pub struct Attach {
     /// run the profiler session in the background
     #[argh(switch)]
     pub background: bool,
+
+    /// unwinding strategy to use. Options are "fp" and "dwarf".
+    /// fp: uses on-device frame pointers for unwinding.
+    /// dwarf: uses off-device DWARF unwinding. Enable this to profile binaries
+    /// compiled without frame pointers, such as 32 bit starnix containers.
+    #[argh(option, default = "UnwindStrategy::FramePointer")]
+    pub unwind_strategy: UnwindStrategy,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -154,6 +185,13 @@ pub struct Launch {
     /// run the profiler session in the background
     #[argh(switch)]
     pub background: bool,
+
+    /// unwinding strategy to use. Options are "fp" and "dwarf".
+    /// fp: uses on-device frame pointers for unwinding.
+    /// dwarf: uses off-device DWARF unwinding. Enable this to profile binaries
+    /// compiled without frame pointers, such as 32 bit starnix containers.
+    #[argh(option, default = "UnwindStrategy::FramePointer")]
+    pub unwind_strategy: UnwindStrategy,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
