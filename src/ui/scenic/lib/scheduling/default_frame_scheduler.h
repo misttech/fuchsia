@@ -60,10 +60,6 @@ class DefaultFrameScheduler final : public FrameScheduler {
   void SetRenderContinuously(bool render_continuously) override;
 
   // |FrameScheduler|
-  PresentId RegisterPresent(SessionId session_id, std::vector<zx::event> release_fences,
-                            PresentId present_id = kInvalidPresentId) override;
-
-  // |FrameScheduler|
   void ScheduleUpdateForSession(zx::time requested_presentation_time, SchedulingIdPair id_pair,
                                 bool squashable, bool schedule_asap) override;
 
@@ -157,10 +153,6 @@ class DefaultFrameScheduler final : public FrameScheduler {
 
   // All currently tracked presents and their associated latched_times.
   std::map<SchedulingIdPair, /*latched_time*/ std::optional<zx::time>> presents_;
-
-  // Per-present release fences. To be released as each subsequent present for each session is
-  // rendered.
-  std::map<SchedulingIdPair, std::vector<zx::event>> release_fences_;
 
   // References.
   async_dispatcher_t* const dispatcher_;

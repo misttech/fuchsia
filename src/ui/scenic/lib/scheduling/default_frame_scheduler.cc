@@ -67,23 +67,6 @@ void DefaultFrameScheduler::SetRenderContinuously(bool render_continuously) {
   }
 }
 
-PresentId DefaultFrameScheduler::RegisterPresent(SessionId session_id,
-                                                 std::vector<zx::event> release_fences,
-                                                 PresentId present_id) {
-  present_id = present_id == kInvalidPresentId ? scheduling::GetNextPresentId() : present_id;
-
-  SchedulingIdPair id_pair{session_id, present_id};
-  FX_DCHECK((presents_.lower_bound(id_pair) == presents_.end()) ||
-            (presents_.lower_bound(id_pair)->first.session_id != session_id))
-      << "PresentIds for a Session must be submitted in order";
-  presents_[id_pair] = std::nullopt;  // Initialize an empty entry in |presents_|.
-
-  FX_DCHECK(release_fences_.find(id_pair) == release_fences_.end());
-  release_fences_.emplace(id_pair, std::move(release_fences));
-
-  return present_id;
-}
-
 std::pair<zx::time, zx::time> DefaultFrameScheduler::ComputePresentationAndWakeupTimesForTargetTime(
     const zx::time& requested_presentation_time, bool schedule_asap) const {
   const zx::time& last_vsync_time = vsync_timing_->last_vsync_time();
@@ -295,7 +278,13 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
 void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presentation_time,
                                                      SchedulingIdPair id_pair, bool squashable,
                                                      bool schedule_asap) {
+  FX_DCHECK(id_pair.present_id != kInvalidPresentId);
   FX_DCHECK(id_pair.session_id != scheduling::kInvalidSessionId);
+  FX_DCHECK((presents_.lower_bound(id_pair) == presents_.end()) ||
+            (presents_.lower_bound(id_pair)->first.session_id != id_pair.session_id))
+      << "PresentIds for a Session must be submitted in order";
+  presents_[id_pair] = std::nullopt;  // Initialize an empty entry in |presents_|.
+
   TRACE_DURATION("gfx", "DefaultFrameScheduler::ScheduleUpdateForSession",
                  "requested_presentation_time", requested_presentation_time.get() / 1'000'000);
 
@@ -461,7 +450,6 @@ void DefaultFrameScheduler::HandleFramePresented(uint64_t frame_number, zx::time
 void DefaultFrameScheduler::RemoveSession(SessionId session_id) {
   RemoveSessionIdFromMap(session_id, &presents_);
   RemoveSessionIdFromMap(session_id, &pending_present_requests_);
-  RemoveSessionIdFromMap(session_id, &release_fences_);
 }
 
 std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesForThisFrame(
@@ -532,18 +520,6 @@ std::vector<zx::event> DefaultFrameScheduler::PrepareUpdates(
   for (const auto& [session_id, present_id] : updates) {
     SetLatchedTimeForPresentsUpTo({.session_id = session_id, .present_id = present_id},
                                   latched_time);
-
-    // Grab all fences from presents previous to this one for this session.
-    const auto begin_it = release_fences_.lower_bound({session_id, 0});
-    const auto end_it = release_fences_.lower_bound({session_id, present_id});
-    FX_DCHECK(std::distance(begin_it, end_it) >= 0);
-    std::for_each(
-        begin_it, end_it,
-        [&fences](std::pair<const SchedulingIdPair, std::vector<zx::event>>& release_fences) {
-          std::move(std::begin(release_fences.second), std::end(release_fences.second),
-                    std::back_inserter(fences));
-        });
-    release_fences_.erase(begin_it, end_it);
   }
 
   return fences;

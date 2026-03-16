@@ -21,9 +21,6 @@ class MockFrameScheduler : public FrameScheduler {
   // |FrameScheduler|
   void SetRenderContinuously(bool render_continuously) override;
 
-  PresentId RegisterPresent(SessionId session_id, std::vector<zx::event> release_fences,
-                            PresentId present_id) override;
-
   // |FrameScheduler|
   void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
                                 bool squashable, bool schedule_asap) override;
@@ -41,8 +38,6 @@ class MockFrameScheduler : public FrameScheduler {
       std::function<void(zx::time, SchedulingIdPair, bool, bool)>;
   using OnGetFuturePresentationInfosCallback =
       std::function<std::vector<FuturePresentationInfo>(zx::duration requested_prediction_span)>;
-  using RegisterPresentCallback = std::function<void(
-      SessionId session_id, std::vector<zx::event> release_fences, PresentId present_id)>;
   using RemoveSessionCallback = std::function<void(SessionId session_id)>;
 
   // Testing only. Sets mock method callback.
@@ -52,17 +47,12 @@ class MockFrameScheduler : public FrameScheduler {
 
   // Testing only. Sets mock method callback.
   void set_schedule_update_for_session_callback(OnScheduleUpdateForSessionCallback callback) {
-    schedule_update_for_session_callback_ = callback;
+    schedule_update_for_session_callback_ = std::move(callback);
   }
 
   // Testing only. Sets mock method callback.
   void set_get_future_presentation_infos_callback(OnGetFuturePresentationInfosCallback callback) {
-    get_future_presentation_infos_callback_ = callback;
-  }
-
-  // Testing only. Sets mock method callback.
-  void set_register_present_callback(RegisterPresentCallback callback) {
-    register_present_callback_ = callback;
+    get_future_presentation_infos_callback_ = std::move(callback);
   }
 
   // Testing only. Sets mock method callback.
@@ -77,7 +67,6 @@ class MockFrameScheduler : public FrameScheduler {
   OnSetRenderContinuouslyCallback set_render_continuously_callback_;
   OnScheduleUpdateForSessionCallback schedule_update_for_session_callback_;
   OnGetFuturePresentationInfosCallback get_future_presentation_infos_callback_;
-  RegisterPresentCallback register_present_callback_;
   RemoveSessionCallback remove_session_callback_;
 
   PresentId next_present_id_;

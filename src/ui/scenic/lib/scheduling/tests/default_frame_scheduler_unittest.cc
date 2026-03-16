@@ -63,15 +63,11 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
     };
   }
 
-  // Schedule an update on the frame scheduler.
-  void ScheduleUpdate(SessionId session_id, zx::time presentation_time,
-                      std::vector<zx::event> release_fences = {}, bool squashable = true,
+  void ScheduleUpdate(SessionId session_id, zx::time presentation_time, bool squashable = true,
                       bool schedule_asap = false) {
-    scheduling::PresentId present_id =
-        scheduler_.RegisterPresent(session_id, std::move(release_fences));
-    scheduler_.ScheduleUpdateForSession(presentation_time,
-                                        {.session_id = session_id, .present_id = present_id},
-                                        squashable, schedule_asap);
+    scheduler_.ScheduleUpdateForSession(
+        presentation_time, {.session_id = session_id, .present_id = next_present_id_++}, squashable,
+        schedule_asap);
   }
 
   void FireFramePresentedCallback(std::optional<Timestamps> timestamps = std::nullopt) {
@@ -149,6 +145,7 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
   std::vector<zx::event> last_received_fences_;
 
   std::shared_ptr<VsyncTiming> vsync_timing_;
+  PresentId next_present_id_ = 1;
 };
 
 namespace {
@@ -246,10 +243,10 @@ TEST_F(FrameSchedulerTest, UnsquashablePresents_ShouldNeverBeSquashed) {
 
   // Schedule four updates with the same presentation time, but different squashability.
   constexpr SessionId kSessionId = 1;
-  ScheduleUpdate(kSessionId, zx::time(0), /*release_fences*/ {}, /*squashable=*/false);
-  ScheduleUpdate(kSessionId, zx::time(0), /*release_fences*/ {}, /*squashable=*/false);
-  ScheduleUpdate(kSessionId, zx::time(0), /*release_fences*/ {}, /*squashable=*/true);
-  ScheduleUpdate(kSessionId, zx::time(0), /*release_fences*/ {}, /*squashable=*/false);
+  ScheduleUpdate(kSessionId, zx::time(0), /*squashable=*/false);
+  ScheduleUpdate(kSessionId, zx::time(0), /*squashable=*/false);
+  ScheduleUpdate(kSessionId, zx::time(0), /*squashable=*/true);
+  ScheduleUpdate(kSessionId, zx::time(0), /*squashable=*/false);
 
   RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
 
@@ -655,95 +652,6 @@ TEST_F(FrameSchedulerTest, SessionUpdater_OnPresented_Test) {
   }
 }
 
-TEST_F(FrameSchedulerTest, ReleaseFences_ShouldBeReceivedWhenTheNextPresentIsRendered) {
-  constexpr SessionId kSession = 1;
-
-  std::vector<zx::event> fences1 = utils::CreateEventArray(1);
-  std::vector<zx_koid_t> fence1_koid = utils::ExtractKoids(fences1);
-  std::vector<zx::event> fences2 = utils::CreateEventArray(1);
-  std::vector<zx_koid_t> fence2_koid = utils::ExtractKoids(fences2);
-
-  ScheduleUpdate(kSession, zx::time(0), std::move(fences1), /*squashable=*/false);
-  RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
-  EXPECT_TRUE(last_received_fences_.empty());
-  FireFramePresentedCallback();
-
-  ScheduleUpdate(kSession, zx::time(0), std::move(fences2), /*squashable=*/false);
-  RunLoopFor(zx::sec(1));
-  EXPECT_THAT(utils::ExtractKoids(last_received_fences_), testing::ElementsAreArray(fence1_koid));
-  FireFramePresentedCallback();
-
-  ScheduleUpdate(kSession, zx::time(0), {}, /*squashable=*/false);
-  RunLoopFor(zx::sec(1));
-  EXPECT_THAT(utils::ExtractKoids(last_received_fences_), testing::ElementsAreArray(fence2_koid));
-}
-
-TEST_F(FrameSchedulerTest, SquashedPresents_ShouldHaveTheirFencesCombined) {
-  constexpr SessionId kSessionId = 1;
-
-  // Create release fences
-  std::vector<zx::event> fences = utils::CreateEventArray(3);
-  std::vector<zx_koid_t> fence_koids = utils::ExtractKoids(fences);
-  fence_koids.pop_back();  // The last fences should not be sent out yet.
-
-  // Schedule three presents, the first two should be squashed into the third.
-  {
-    std::vector<zx::event> fence1;
-    fence1.push_back(std::move(fences[0]));
-    ScheduleUpdate(kSessionId, Now() + vsync_timing_->vsync_interval(), std::move(fence1),
-                   /*squashable=*/true);
-  }
-
-  {
-    std::vector<zx::event> fence2;
-    fence2.push_back(std::move(fences[1]));
-    ScheduleUpdate(kSessionId, zx::time(0), std::move(fence2), /*squashable=*/true);
-  }
-
-  {
-    std::vector<zx::event> fence3;
-    fence3.push_back(std::move(fences[2]));
-    ScheduleUpdate(kSessionId, zx::time(0), std::move(fence3), /*squashable=*/true);
-  }
-
-  // After 1 second, we've latched on all three updates. The fences for the first two should
-  // therefore have been sent.
-  RunLoopFor(zx::sec(1));
-  EXPECT_EQ(update_sessions_call_count_, 1U);
-  EXPECT_THAT(utils::ExtractKoids(last_received_fences_), testing::ElementsAreArray(fence_koids));
-}
-
-TEST_F(FrameSchedulerTest, SkippedPresents_ShouldHaveTheirFencesCombined) {
-  constexpr SessionId kSessionId = 1;
-
-  // Create release fences
-  std::vector<zx::event> fences = utils::CreateEventArray(3);
-  std::vector<zx_koid_t> fence_koids = utils::ExtractKoids(fences);
-  fence_koids.pop_back();  // The last fences should not be sent out yet.
-
-  // Register two presents but don't schedule them. Then when we actually schedule a third the first
-  // two's fences should be sent on.
-  {
-    std::vector<zx::event> fence1;
-    fence1.push_back(std::move(fences[0]));
-    scheduler_.RegisterPresent(kSessionId, std::move(fence1));
-  }
-  {
-    std::vector<zx::event> fence2;
-    fence2.push_back(std::move(fences[1]));
-    scheduler_.RegisterPresent(kSessionId, std::move(fence2));
-  }
-  {
-    std::vector<zx::event> fence3;
-    fence3.push_back(std::move(fences[2]));
-    ScheduleUpdate(kSessionId, zx::time(0), std::move(fence3));
-  }
-  // After 1 second, we've latched on all three updates. The fences for the first two should
-  // therefore have been sent.
-  RunLoopFor(zx::sec(1));
-  EXPECT_THAT(utils::ExtractKoids(last_received_fences_), testing::ElementsAreArray(fence_koids));
-}
-
 TEST_F(FrameSchedulerTest, DelayedRendering_ShouldProduceLatchedTimes) {
   constexpr SessionId kSessionId = 1;
   EXPECT_EQ(update_sessions_call_count_, 0u);
@@ -840,7 +748,7 @@ TEST_F(FrameSchedulerTest, ScheduleAsap_ShouldBeScheduledAsap) {
   const zx::duration vsync_interval = vsync_timing_->vsync_interval();
   zx::time next_vsync_time = vsync_timing_->last_vsync_time() + vsync_interval;
 
-  ScheduleUpdate(kSessionId, next_vsync_time, /*release_fences*/ {}, /*squashable*/ true,
+  ScheduleUpdate(kSessionId, next_vsync_time, /*squashable*/ true,
                  /*schedule_asap*/ true);
 
   // The update SHOULD be applied immediately.
@@ -855,7 +763,7 @@ TEST_F(FrameSchedulerTest, AsapUpdate_ShouldPreemptNormallyScheduledUpdate) {
   constexpr SessionId kScheduleAsapSessionId = 2;
 
   // Schedule a normal update far in the future.
-  ScheduleUpdate(kSessionId, Now() + zx::sec(10), {}, /*squashable*/ true, /*schedule_asap*/ false);
+  ScheduleUpdate(kSessionId, Now() + zx::sec(10), /*squashable*/ true, /*schedule_asap*/ false);
 
   // The task should be scheduled, but not run yet.
   // Let the first schedule request go through.
@@ -863,7 +771,7 @@ TEST_F(FrameSchedulerTest, AsapUpdate_ShouldPreemptNormallyScheduledUpdate) {
   EXPECT_EQ(update_sessions_call_count_, 0u);
 
   // Now schedule an ASAP update for "now".
-  ScheduleUpdate(kScheduleAsapSessionId, Now(), {}, /*squashable*/ true, /*schedule_asap*/ true);
+  ScheduleUpdate(kScheduleAsapSessionId, Now(), /*squashable*/ true, /*schedule_asap*/ true);
 
   // The ASAP update should cause an immediate render.
   RunLoopUntilIdle();
@@ -890,8 +798,8 @@ TEST_F(FrameSchedulerTest, AsapAndNormalUpdateForSameTime_ShouldBeScheduledAsap)
   // Schedule a normal update and an ASAP update for the next vsync.
   zx::time presentation_time = vsync_timing_->last_vsync_time() + vsync_timing_->vsync_interval();
 
-  ScheduleUpdate(kSessionId, presentation_time, {}, /*squashable*/ true, /*schedule_asap*/ false);
-  ScheduleUpdate(kScheduleAsapSessionId, presentation_time, {}, /*squashable*/ true,
+  ScheduleUpdate(kSessionId, presentation_time, /*squashable*/ true, /*schedule_asap*/ false);
+  ScheduleUpdate(kScheduleAsapSessionId, presentation_time, /*squashable*/ true,
                  /*schedule_asap*/ true);
 
   // The ASAP flag should cause them to be scheduled immediately since it's the next vsync.
@@ -910,8 +818,8 @@ TEST_F(FrameSchedulerTest, UnsquashableAsapUpdate_ShouldNotBeSquashedWithNextAsa
   constexpr SessionId kSessionId = 1;
 
   // Schedule an unsquashable ASAP update, then a squashable one.
-  ScheduleUpdate(kSessionId, Now(), {}, /*squashable*/ false, /*schedule_asap*/ true);
-  ScheduleUpdate(kSessionId, Now(), {}, /*squashable*/ true, /*schedule_asap*/ true);
+  ScheduleUpdate(kSessionId, Now(), /*squashable*/ false, /*schedule_asap*/ true);
+  ScheduleUpdate(kSessionId, Now(), /*squashable*/ true, /*schedule_asap*/ true);
 
   // The first update should be rendered immediately.
   RunLoopUntilIdle();
@@ -963,9 +871,9 @@ TEST_F(FrameSchedulerTest, ScheduleAsap_WhenNowExceedsPredictedTarget_ShouldClam
       vsync_timing_->last_vsync_time() + vsync_timing_->vsync_interval() + zx::msec(20);
   RunLoopUntil(past_vsync_time);
 
-  // Register a present and schedule it ASAP.
-  local_scheduler.RegisterPresent(1, {});
-  local_scheduler.ScheduleUpdateForSession(zx::time(0), {1, 1}, true, true);
+  // Schedule update ASAP.
+  const SchedulingIdPair kIdPair = {1, 1};
+  local_scheduler.ScheduleUpdateForSession(zx::time(0), kIdPair, true, true);
 
   // Trigger MaybeRenderFrame.
   RunLoopUntilIdle();
@@ -990,7 +898,7 @@ TEST_F(FrameSchedulerTest, ScheduleAsapWithFutureTime_ShouldScheduleForFuture) {
   // This should NOT be scheduled immediately because the requested time is far in the future.
   const zx::time future_time = now + vsync_interval * 5;
 
-  ScheduleUpdate(kSessionId, future_time, {}, /*squashable=*/true, /*schedule_asap=*/true);
+  ScheduleUpdate(kSessionId, future_time, /*squashable=*/true, /*schedule_asap=*/true);
 
   // Run loop for a short time (less than future_time). Should NOT render yet.
   RunLoopFor(vsync_interval * 2);
@@ -1012,7 +920,7 @@ TEST_F(FrameSchedulerTest, ScheduleAsapWithImmediateTime_ShouldScheduleASAP) {
   // schedule_asap=true. This SHOULD be scheduled immediately.
   const zx::time immediate_time = now;
 
-  ScheduleUpdate(kSessionId, immediate_time, {}, /*squashable=*/true, /*schedule_asap=*/true);
+  ScheduleUpdate(kSessionId, immediate_time, /*squashable=*/true, /*schedule_asap=*/true);
 
   // It should run immediately (or at least very soon), not waiting for a full latch point if we are
   // "ASAP". However, the test fixture's "Now()" simulates time. Check that it's scheduled.
@@ -1026,7 +934,7 @@ TEST_F(FrameSchedulerTest, ScheduleAsapWithZeroTime_ShouldScheduleASAP) {
 
   // Schedule a frame for time 0, with schedule_asap=true.
   // This SHOULD be scheduled immediately.
-  ScheduleUpdate(kSessionId, zx::time(0), {}, /*squashable=*/true, /*schedule_asap=*/true);
+  ScheduleUpdate(kSessionId, zx::time(0), /*squashable=*/true, /*schedule_asap=*/true);
 
   RunLoopUntilIdle();
   EXPECT_EQ(update_sessions_call_count_, 1u);

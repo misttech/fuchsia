@@ -40,33 +40,6 @@ class FlatlandPresenterTest : public LoggingEventLoop, public ::testing::Test {
 
 }  // namespace
 
-TEST_F(FlatlandPresenterTest, RegisterPresentForwardsToFrameScheduler) {
-  scheduling::test::MockFrameScheduler frame_scheduler;
-
-  // Capture the relevant arguments of the RegisterPresent() call.
-  scheduling::SessionId last_session_id = scheduling::kInvalidSessionId;
-  scheduling::PresentId last_present_id = scheduling::kInvalidPresentId;
-
-  frame_scheduler.set_register_present_callback(
-      [&last_session_id, &last_present_id](scheduling::SessionId session_id,
-                                           std::vector<zx::event> release_fences,
-                                           scheduling::PresentId present_id) {
-        last_session_id = session_id;
-        last_present_id = present_id;
-      });
-
-  auto presenter = CreateFlatlandPresenterImpl(frame_scheduler);
-
-  const scheduling::SessionId kSessionId = 2;
-  const scheduling::PresentId present_id = scheduling::GetNextPresentId();
-  presenter->ScheduleUpdateForSession(zx::time(0), {kSessionId, present_id}, /*unsquashable=*/false,
-                                      /*release_fences=*/{}, false);
-  RunLoopUntilIdle();
-
-  EXPECT_EQ(last_session_id, kSessionId);
-  EXPECT_EQ(last_present_id, present_id);
-}
-
 TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) {
   scheduling::test::MockFrameScheduler frame_scheduler;
 
@@ -318,21 +291,12 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
   scheduling::test::MockFrameScheduler frame_scheduler;
 
   // The FrameScheduler will be accessed in a thread-safe way, so the test instead collects the
-  // registered presents and scheduled updates and ensures each function was called the correct
-  // number of times with the correct set of ID pairs.
-  std::set<scheduling::SchedulingIdPair> registered_presents;
+  // scheduled updates and ensures the function was called the correct number of times with the
+  // correct set of ID pairs.
   std::set<scheduling::SchedulingIdPair> scheduled_updates;
 
   // Also use a generic function call counter to test mutual exclusion between function calls.
   size_t function_count = 0;
-
-  frame_scheduler.set_register_present_callback(
-      [&registered_presents, &function_count](scheduling::SessionId session_id,
-                                              std::vector<zx::event> release_fences,
-                                              scheduling::PresentId present_id) {
-        registered_presents.insert({session_id, present_id});
-        ++function_count;
-      });
 
   frame_scheduler.set_schedule_update_for_session_callback(
       [&scheduled_updates, &function_count](zx::time presentation_time,
@@ -435,12 +399,9 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
   std::this_thread::sleep_until(then);
 
   for (uint64_t i = 0; i < kNumGfxPresents; ++i) {
-    // RegisterPresent() is one of the three functions being tested.
     auto present_id = scheduling::GetNextPresentId();
-    frame_scheduler.RegisterPresent(kGfxSessionId, /*release_fences=*/{}, present_id);
     gfx_presents.push_back(present_id);
 
-    // ScheduleUpdateForSession() is the second function being tested.
     frame_scheduler.ScheduleUpdateForSession(zx::time(0), {kGfxSessionId, present_id},
                                              /*squashable=*/true, /*schedule_asap=*/false);
   }
@@ -469,19 +430,14 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
   // Flush all the tasks posted by the presenter.
   RunLoopUntilIdle();
 
-  // Verify that all the PresentIds are unique and that the sets from both mock functions have the
-  // same number of ID pairs.
+  // Verify that all the PresentIds are unique and that the set has the correct number of ID pairs.
   static constexpr uint64_t kTotalNumPresents = (kNumSessions * kNumPresents) + kNumGfxPresents;
 
   EXPECT_EQ(present_ids.size(), kTotalNumPresents);
-  EXPECT_EQ(registered_presents.size(), kTotalNumPresents);
   EXPECT_EQ(scheduled_updates.size(), kTotalNumPresents);
 
   // Verify that the correct total number of function calls were made.
-  EXPECT_EQ(function_count, kTotalNumPresents * 2ul);
-
-  // Verify that the sets from both mock functions are identical.
-  EXPECT_THAT(registered_presents, ::testing::ElementsAreArray(scheduled_updates));
+  EXPECT_EQ(function_count, kTotalNumPresents);
 
   // Verify that every session received the total number of presentation_infos.
   EXPECT_EQ(loop_quits, kNumSessions);

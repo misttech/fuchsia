@@ -59,19 +59,14 @@ class FrameScheduler {
   // regardless of whether they're explicitly requested using RequestFrame().
   virtual void SetRenderContinuously(bool render_continuously) = 0;
 
-  // Registers per-present information with the frame scheduler and returns an incrementing
-  // PresentId unique to that session. When not equal to scheduling::kInvalidPresentId, the
-  // |present_id| argument will be used in place of a new PresentId, allowing feed-forward
-  // semantics for clients that need them.
-  virtual PresentId RegisterPresent(SessionId session_id, std::vector<zx::event> release_fences,
-                                    PresentId present_id = kInvalidPresentId) = 0;
-
-  // Tell the FrameScheduler to schedule a frame. This is also used for updates triggered by
-  // something other than a Session update i.e. an ImagePipe with a new Image to present.
-  // |squashable| determines if the update is allowed to be combined with a following one in case
-  // of delays.
-  virtual void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
-                                        bool squashable, bool schedule_asap) = 0;
+  // The scheduler will choose a presentation time based on `requested_presentation_time`,
+  // according to its internal scheduling algorithm.  `squashable` determines if the update is
+  // allowed to be combined with a subsequent one in case of delays.
+  //
+  // All calls to this method must provide a valid (non-zero) `id_pair.present_id`.
+  virtual void ScheduleUpdateForSession(zx::time requested_presentation_time,
+                                        SchedulingIdPair id_pair, bool squashable,
+                                        bool schedule_asap) = 0;
 
   // Gets the predicted latch points and presentation times for the frames at or before the next
   // |requested_prediction_span| time span. Uses the FramePredictor to do so.

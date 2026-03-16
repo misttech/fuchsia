@@ -11,16 +11,6 @@
 
 namespace scheduling::test {
 
-PresentId MockFrameScheduler::RegisterPresent(SessionId session_id,
-                                              std::vector<zx::event> release_fences,
-                                              PresentId present_id) {
-  if (register_present_callback_) {
-    register_present_callback_(session_id, std::move(release_fences), present_id);
-  }
-
-  return present_id != 0 ? present_id : next_present_id_++;
-}
-
 void MockFrameScheduler::SetRenderContinuously(bool render_continuously) {
   if (set_render_continuously_callback_) {
     set_render_continuously_callback_(render_continuously);

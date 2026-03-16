@@ -62,8 +62,6 @@ void FlatlandPresenterImpl::ScheduleUpdateForSession(zx::time requested_presenta
                     TRACE_DURATION("gfx", "FlatlandPresenterImpl::ScheduleUpdateForSession[task]");
                     FX_DCHECK(thiz->release_fences_.find(id_pair) == thiz->release_fences_.end());
                     thiz->release_fences_.emplace(id_pair, std::move(release_fences));
-                    thiz->frame_scheduler_.RegisterPresent(id_pair.session_id, {},
-                                                           id_pair.present_id);
                     thiz->frame_scheduler_.ScheduleUpdateForSession(
                         requested_presentation_time, id_pair, !unsquashable, schedule_asap);
                   });
@@ -87,15 +85,14 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
       thiz->release_fences_.erase(start, end);
     }
 
-    const auto present_id = scheduling::GetNextPresentId();
+    scheduling::SchedulingIdPair id_pair{session_id, scheduling::GetNextPresentId()};
 
     // If provided, add one final release fence for cleanup.
     if (release_fence.has_value()) {
       FX_DCHECK(release_fence.value());
       std::vector<zx::event> release_fences;
       release_fences.emplace_back(std::move(*release_fence));
-      thiz->release_fences_.emplace(scheduling::SchedulingIdPair{session_id, present_id},
-                                    std::move(release_fences));
+      thiz->release_fences_.emplace(id_pair, std::move(release_fences));
     }
 
     // Ensure that in case no client is currently rendering we'll still produce a new frame to clean
@@ -104,8 +101,7 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
     // ensures both that there will be no collisions for the |session_id| used and that we'll
     // schedule exactly one frame for the shortest possible timeframe.
     thiz->frame_scheduler_.RemoveSession(session_id);
-    thiz->frame_scheduler_.RegisterPresent(session_id, {});
-    thiz->frame_scheduler_.ScheduleUpdateForSession(zx::time(0), {session_id, present_id},
+    thiz->frame_scheduler_.ScheduleUpdateForSession(zx::time(0), id_pair,
                                                     /*squashable=*/true, /*schedule_asap=*/false);
   });
 }
