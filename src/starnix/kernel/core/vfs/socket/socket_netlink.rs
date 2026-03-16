@@ -7,7 +7,7 @@ use crate::vfs::socket::{SockOptValue, SocketDomain};
 use futures::channel::mpsc::{
     UnboundedReceiver, UnboundedSender, {self},
 };
-use linux_uapi::{AUDIT_GET, audit_status};
+use linux_uapi::{AUDIT_GET, NETLINK_GET_STRICT_CHK, audit_status};
 use netlink::messaging::{
     AccessControl, MessageWithPermission, NetlinkContext, NetlinkMessageWithCreds, Permission,
     Sender, UnparsedNetlinkMessage,
@@ -24,7 +24,10 @@ use netlink_packet_core::{
     ErrorMessage, NETLINK_HEADER_LEN, NLMSG_ERROR, NetlinkBuffer, NetlinkDeserializable,
     NetlinkHeader, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };
-use netlink_packet_generic::message::EmptyDeserializeOptions;
+use netlink_packet_generic::message::EmptyDeserializeOptions as EmptyDeserializeGenlOptions;
+use netlink_packet_route::{RouteNetlinkMessage, RouteNetlinkMessageParseMode};
+use netlink_packet_sock_diag::SockDiagRequest;
+use netlink_packet_sock_diag::message::EmptyDeserializeOptions as EmptyDeserializeSockDiagOptions;
 use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use std::marker::PhantomData;
@@ -215,6 +218,9 @@ struct NetlinkSocketInner {
 
     /// See SO_TIMESTAMP.
     pub timestamp: bool,
+
+    /// See NETLINK_GET_STRICT_CHK.
+    pub strict_chk: bool,
 }
 
 impl NetlinkSocketInner {
@@ -227,6 +233,7 @@ impl NetlinkSocketInner {
             address: None,
             passcred: false,
             timestamp: false,
+            strict_chk: false,
         }
     }
 
@@ -351,6 +358,10 @@ impl NetlinkSocketInner {
                 SO_PROTOCOL => self.family.as_raw().as_bytes().to_vec(),
                 _ => return error!(ENOSYS),
             },
+            SOL_NETLINK => match optname {
+                NETLINK_GET_STRICT_CHK => (self.strict_chk as u32).as_bytes().to_vec(),
+                _ => return error!(ENOSYS),
+            },
             _ => vec![],
         };
 
@@ -407,6 +418,13 @@ impl NetlinkSocketInner {
                 SO_TIMESTAMP => {
                     let timestamp: u32 = optval.read(current_task)?;
                     self.timestamp = timestamp != 0;
+                }
+                _ => return error!(ENOSYS),
+            },
+            SOL_NETLINK => match optname {
+                NETLINK_GET_STRICT_CHK => {
+                    let strict_chk: u32 = optval.read(current_task)?;
+                    self.strict_chk = strict_chk != 0;
                 }
                 _ => return error!(ENOSYS),
             },
@@ -1014,7 +1032,8 @@ fn new_sock_diag_socket(
 struct NetlinkSocket<C: NetlinkClient> {
     /// The inner Netlink socket implementation
     inner: Arc<Mutex<NetlinkSocketInner>>,
-    /// The implementation of a client (socket connection) to NETLINK_ROUTE.
+    /// The implementation of a client (socket connection) to a netlink protocol
+    /// family.
     client: C,
     /// The sender of messages from this socket to Netlink.
     // TODO(https://issuetracker.google.com/285880057): Bound the capacity of
@@ -1024,7 +1043,37 @@ struct NetlinkSocket<C: NetlinkClient> {
     >,
 }
 
-impl<C: NetlinkClient + 'static> SocketOps for NetlinkSocket<C> {
+/// A type that provides Netlink message deserialization options.
+trait DeserializeOptionsProvider {
+    /// The type of the message to deserialize.
+    type Message: NetlinkDeserializable;
+    /// The options to use when deserializing a `Message`.
+    fn options(&self) -> <Self::Message as NetlinkDeserializable>::DeserializeOptions;
+}
+
+impl DeserializeOptionsProvider for NetlinkSocket<NetlinkRouteClient> {
+    type Message = RouteNetlinkMessage;
+    fn options(&self) -> RouteNetlinkMessageParseMode {
+        let strict = self.inner.lock().strict_chk;
+        if strict {
+            RouteNetlinkMessageParseMode::Strict
+        } else {
+            RouteNetlinkMessageParseMode::Relaxed
+        }
+    }
+}
+
+impl DeserializeOptionsProvider for NetlinkSocket<NetlinkSockDiagClient> {
+    type Message = SockDiagRequest;
+    fn options(&self) -> EmptyDeserializeSockDiagOptions {
+        EmptyDeserializeSockDiagOptions
+    }
+}
+
+impl<C: NetlinkClient + 'static> SocketOps for NetlinkSocket<C>
+where
+    Self: DeserializeOptionsProvider<Message = C::Request>,
+{
     fn connect(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -1136,7 +1185,7 @@ impl<C: NetlinkClient + 'static> SocketOps for NetlinkSocket<C> {
         }
 
         let msg = NetlinkMessageWithCreds::new(
-            UnparsedNetlinkMessage::new(bytes),
+            UnparsedNetlinkMessage::new(bytes, self.options()),
             current_task.current_creds().clone(),
         );
         message_sender.unbounded_send(msg).map_err(|e| {
@@ -1354,7 +1403,7 @@ impl SocketOps for GenericNetlinkSocket {
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
-        match NetlinkMessage::<GenericMessage>::deserialize(&bytes, EmptyDeserializeOptions) {
+        match NetlinkMessage::<GenericMessage>::deserialize(&bytes, EmptyDeserializeGenlOptions) {
             Err(e) => {
                 log_warn!("Failed to process write; data could not be deserialized: {:?}", e);
                 error!(EINVAL)
@@ -1684,7 +1733,7 @@ impl SocketOps for AuditNetlinkSocket {
     ) -> Result<usize, Errno> {
         match NetlinkMessage::<GenericMessage>::deserialize(
             &(data.peek_all()?),
-            EmptyDeserializeOptions,
+            EmptyDeserializeGenlOptions,
         ) {
             Ok(nl_message) => {
                 let header = nl_message.header;

@@ -3,8 +3,9 @@
 // This file only contains testing parsing RouteNetlinkMessage, not focusing on
 // detailed sub-component parsing. Each component has their own tests module.
 
+use assert_matches::assert_matches;
 use netlink_packet_core::{NetlinkHeader, NetlinkMessage, NetlinkPayload};
-use netlink_packet_utils::Emitable;
+use netlink_packet_utils::{DecodeError, Emitable};
 
 use crate::address::AddressMessage;
 use crate::link::{LinkAttribute, LinkExtentMask, LinkMessage};
@@ -89,6 +90,25 @@ fn test_parse_malformed_get_route_from_iproute2_relaxed() {
 }
 
 #[test]
+fn test_parse_malformed_get_route_from_iproute2_strict() {
+    // wireshark capture of nlmon against command:
+    //   ip route show
+    let raw: Vec<u8> = vec![
+        0x28, 0x00, 0x00, 0x00, 0x1a, 0x00, 0x01, 0x03, 0xb3, 0xc3, 0xa5, 0x69, 0x00, 0x00, 0x00,
+        0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x08, 0x00, 0x1d, 0x00, 0x01, 0x00, 0x00, 0x00,
+    ];
+
+    assert_matches!(
+        NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &raw,
+            RouteNetlinkMessageParseMode::Strict
+        ),
+        Err(DecodeError::FailedToParseMessageWithType { .. })
+    );
+}
+
+#[test]
 fn test_parse_malformed_get_address_from_iproute2_relaxed() {
     // wireshark capture of nlmon against command:
     //   ip addr show
@@ -112,6 +132,24 @@ fn test_parse_malformed_get_address_from_iproute2_relaxed() {
     assert_eq!(
         NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Relaxed).unwrap(),
         expected
+    );
+}
+#[test]
+fn test_parse_malformed_get_address_from_iproute2_strict() {
+    // wireshark capture of nlmon against command:
+    //   ip addr show
+    let raw: Vec<u8> = vec![
+        0x28, 0x00, 0x00, 0x00, 0x16, 0x00, 0x01, 0x03, 0x24, 0xce, 0xa5, 0x69, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x08, 0x00, 0x1d, 0x00, 0x01, 0x00, 0x00, 0x00,
+    ];
+
+    assert_matches!(
+        NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &raw,
+            RouteNetlinkMessageParseMode::Strict
+        ),
+        Err(DecodeError::FailedToParseMessageWithType { .. })
     );
 }
 
@@ -142,5 +180,24 @@ fn test_parse_malformed_get_rule_from_iproute2_relaxed() {
     assert_eq!(
         NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Relaxed).unwrap(),
         expected
+    );
+}
+
+#[test]
+fn test_parse_malformed_get_rule_from_iproute2_strict() {
+    // wireshark capture of nlmon against command:
+    //   ip rule show
+    let raw: Vec<u8> = vec![
+        0x28, 0x00, 0x00, 0x00, 0x22, 0x00, 0x01, 0x03, 0x12, 0xcf, 0xa5, 0x69, 0x00, 0x00, 0x00,
+        0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x08, 0x00, 0x1d, 0x00, 0x01, 0x00, 0x00, 0x00,
+    ];
+
+    assert_matches!(
+        NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &raw,
+            RouteNetlinkMessageParseMode::Strict
+        ),
+        Err(DecodeError::FailedToParseMessageWithType { .. })
     );
 }

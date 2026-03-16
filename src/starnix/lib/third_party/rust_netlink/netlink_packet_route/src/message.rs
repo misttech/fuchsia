@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use crate::AddressFamily;
 use crate::address::{AddressError, AddressHeader, AddressMessage, AddressMessageBuffer};
-use crate::link::{LinkAttribute, LinkExtentMask, LinkHeader, LinkMessage, LinkMessageBuffer};
+use crate::link::{LinkMessage, LinkMessageBuffer};
 use crate::neighbour::{NeighbourError, NeighbourMessage, NeighbourMessageBuffer};
 use crate::neighbour_discovery_user_option::{
     NeighbourDiscoveryUserOptionError, NeighbourDiscoveryUserOptionMessage,
@@ -128,47 +127,6 @@ impl From<RouteNetlinkMessageParseError> for DecodeError {
     }
 }
 
-// HACK: prior to sometime in October 2018, iproute2 would send dump requests
-// for a number of object types, including `addr`, `route`, and `rule`, that
-// incorrectly used the interface message header and attributes.
-//
-// https://github.com/iproute2/iproute2/commit/b05d9a3d5866219b3c772256dc215bb04e65baa5
-// is an example of a commit that fixed this bug, and
-// https://github.com/iproute2/iproute2/blob/b05d9a3d5866219b3c772256dc215bb04e65baa5/lib/libnetlink.c#L301-L327
-// shows the problematic function(s) in question.
-//
-// These requests succeed on Linux if strict checking is not enabled because the
-// address family appears in the correct byte and the rest of the header is
-// zeroed out.
-//
-// In order to allow these requests to succeed in Starnix as well, this function
-// explicitly checks if the malformed request format is present and returns the
-// address family if so.
-//
-// TODO(https://fxbug.dev/456508664): Remove this hack once
-// `NETLINK_GET_STRICT_CHK` (or rather, its absence) is properly supported.
-fn looks_like_bad_iproute2_dump_req<'a, T: AsRef<[u8]> + ?Sized>(
-    buf: &RouteNetlinkMessageBuffer<&'a T>,
-) -> Option<AddressFamily> {
-    let buf_inner = buf.inner();
-    let buffer = LinkMessageBuffer::new(&buf_inner).ok()?;
-    let as_link_msg = LinkMessage::parse(&buffer).ok()?;
-
-    // The format of a malformed request is an `RTM_GETLINK` message where:
-    // * all header fields are unset except for the address family (which is the
-    // address family of the intended request); and
-    // * the sole attribute sets `IFLA_EXT_MASK` to `RTEXT_FILTER_VF`.
-    let bad_req_format = LinkMessage {
-        header: LinkHeader {
-            interface_family: as_link_msg.header.interface_family,
-            ..Default::default()
-        },
-        attributes: vec![LinkAttribute::ExtMask(vec![LinkExtentMask::Vf])],
-        ..Default::default()
-    };
-    (as_link_msg == bad_req_format).then_some(as_link_msg.header.interface_family)
-}
-
 /// Describes how to handle errors when parsing `NETLINK_ROUTE` messages.
 #[derive(Default)]
 pub enum RouteNetlinkMessageParseMode {
@@ -236,18 +194,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             // Address messages
             RTM_NEWADDR | RTM_GETADDR | RTM_DELADDR => {
                 let msg = match AddressMessageBuffer::new(&buf.inner()) {
-                    Ok(buffer) => {
-                        AddressMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
-                            if message_type == RTM_GETADDR
-                                && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
-                            {
-                                let mut message = AddressMessage::default();
-                                message.header.family = af.into();
-                                return Ok(message);
-                            }
-                            Err(e)
-                        })?
-                    }
+                    Ok(buffer) => AddressMessage::parse_with_param(&buffer, parse_mode)?,
                     // HACK: iproute2 sends invalid RTM_GETADDR message, where
                     // the header is limited to the
                     // interface family (1 byte) and 3 bytes of padding.
@@ -314,18 +261,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             // Route messages
             RTM_NEWROUTE | RTM_GETROUTE | RTM_DELROUTE => {
                 let msg = match RouteMessageBuffer::new(&buf.inner()) {
-                    Ok(buffer) => {
-                        RouteMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
-                            if message_type == RTM_GETROUTE
-                                && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
-                            {
-                                let mut message = RouteMessage::default();
-                                message.header.address_family = af;
-                                return Ok(message);
-                            }
-                            Err(e)
-                        })?
-                    }
+                    Ok(buffer) => RouteMessage::parse_with_param(&buffer, parse_mode)?,
                     // HACK: iproute2 sends invalid RTM_GETROUTE message, where
                     // the header is limited to the
                     // interface family (1 byte) and 3 bytes of padding.
@@ -369,16 +305,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = RuleMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = RuleMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
-                    if message_type == RTM_GETRULE
-                        && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
-                    {
-                        let mut message = RuleMessage::default();
-                        message.header.family = af;
-                        return Ok(message);
-                    }
-                    Err(e)
-                })?;
+                let msg = RuleMessage::parse_with_param(&buffer, parse_mode)?;
                 match message_type {
                     RTM_NEWRULE => RouteNetlinkMessage::NewRule(msg),
                     RTM_DELRULE => RouteNetlinkMessage::DelRule(msg),

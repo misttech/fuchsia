@@ -21,6 +21,8 @@ rustc_library("netlink_packet_route") {
     "//third_party/rust_crates:zerocopy",
   ]
 
+  test_deps = [ "//third_party/rust_crates:assert_matches" ]
+
   sources = [
     "src/address/addr_flags.rs",
     "src/address/addr_scope.rs",

@@ -66,15 +66,9 @@ class NetlinkTest : public ::testing::Test {
   }
 
   void SetStrictCheck() {
-    // Starnix is always in strict mode, we're skipping the set.
-    // TODO(https://fxbug.dev/456508664): Implement NETLINK_GET_STRICT_CHK in
-    // starnix and remove this check.
-    if (!test_helper::IsStarnix()) {
-      int val = 1;
-      EXPECT_THAT(
-          setsockopt(nl_sock_.get(), SOL_NETLINK, NETLINK_GET_STRICT_CHK, &val, sizeof(val)),
-          SyscallSucceeds());
-    }
+    int val = 1;
+    EXPECT_THAT(setsockopt(nl_sock_.get(), SOL_NETLINK, NETLINK_GET_STRICT_CHK, &val, sizeof(val)),
+                SyscallSucceeds());
   }
 
   fbl::unique_fd nl_sock_;
@@ -708,6 +702,71 @@ TEST_F(RouteNetlinkSocketTestWithInterface, CreateAndProbeNeighbor) {
   // completion.
 }
 
+struct RouteNetlinkSocketStrictOptParam {
+  bool strict;
+  std::optional<int> expected_err;
+};
+
+class RouteNetlinkSocketStrictOpt
+    : public NetlinkRouteTest,
+      public testing::WithParamInterface<RouteNetlinkSocketStrictOptParam> {};
+
+TEST_P(RouteNetlinkSocketStrictOpt, MalformedDumpRequest) {
+  const auto [strict, expected_err] = GetParam();
+  if (strict) {
+    SetStrictCheck();  // Relaxed is the default.
+  }
+  // Construct a bad Netlink message where the header and attribute don't match
+  // the message type in the Netlink header.
+  test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP);
+  encoder.Write(ifinfomsg{
+      .ifi_family = AF_INET,
+  });
+  uint32_t mask = RTEXT_FILTER_VF;
+  encoder.AddRtAttr(IFLA_EXT_MASK, mask);
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+  struct {
+    nlmsghdr hdr;
+    // Note: if `nlmsg_type` is
+    // * `NLMSG_DONE`: the response is `NLM_F_MULTIPART` and this is the raw
+    //   error payload
+    // * `NLMSG_ERROR`: this is the first field of `nlmsgerr`
+    // * anything else: we don't access this field
+    //
+    // Linux returns the former when an error arises while handling a dump
+    // request whereas Starnix returns the latter.
+    //
+    // TODO(https://fxbug.dev/491914658): this test only needs to handle
+    // `NLMSG_DONE` once this behavior is aligned.
+    int err;
+  } response;
+  ssize_t received = recv(nl_sock_.get(), &response, sizeof(response), 0);
+  ASSERT_THAT(received, SyscallSucceeds());
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
+  if (expected_err) {
+    ASSERT_TRUE(response.hdr.nlmsg_type == NLMSG_ERROR || response.hdr.nlmsg_type == NLMSG_DONE);
+    EXPECT_EQ(response.err, *expected_err);
+  } else {
+    ASSERT_NE(response.hdr.nlmsg_type, NLMSG_ERROR);
+    EXPECT_TRUE(response.hdr.nlmsg_type != NLMSG_DONE || response.err == 0);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RouteNetlinkSocket, RouteNetlinkSocketStrictOpt,
+    testing::Values(
+        RouteNetlinkSocketStrictOptParam{
+            .strict = true,
+            .expected_err = std::make_optional(-EINVAL),
+        },
+        RouteNetlinkSocketStrictOptParam{
+            .strict = false,
+            .expected_err = std::nullopt,
+        }),
+    [](const testing::TestParamInfo<RouteNetlinkSocketStrictOpt::ParamType>& info) {
+      return info.param.strict ? "strict" : "relaxed";
+    });
+
 TEST(NetlinkSocket, RecvMsg) {
   // TODO(https://fxbug.dev/317285180) don't skip on baseline
   if (!test_helper::HasSysAdmin()) {
@@ -944,6 +1003,7 @@ TEST_F(NetlinkRouteTest, HeaderOnlyMessageWithBadLength) {
 
 // Regression test for syzkaller finding on https://fxbug.dev/387662319.
 TEST_F(NetlinkRouteTest, IncompleteRouteFlow) {
+  SetStrictCheck();
   test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST);
   encoder.Write(rtmsg{
       .rtm_family = AF_INET,

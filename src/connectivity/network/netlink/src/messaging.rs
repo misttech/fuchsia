@@ -109,15 +109,16 @@ impl<M: MessageWithPermission> MaybeParsedNetlinkMessage for NetlinkMessage<M> {
 }
 
 /// An unparsed netlink message backed by the bytes in `B`.
-pub struct UnparsedNetlinkMessage<B, M> {
+pub struct UnparsedNetlinkMessage<B, M: NetlinkDeserializable> {
     data: B,
+    options: M::DeserializeOptions,
     _marker: std::marker::PhantomData<M>,
 }
 
-impl<B, M> UnparsedNetlinkMessage<B, M> {
+impl<B, M: NetlinkDeserializable> UnparsedNetlinkMessage<B, M> {
     /// Creates a new `UnparsedNetlinkMessage`.
-    pub fn new(data: B) -> Self {
-        Self { data, _marker: std::marker::PhantomData }
+    pub fn new(data: B, options: M::DeserializeOptions) -> Self {
+        Self { data, options, _marker: std::marker::PhantomData }
     }
 }
 
@@ -125,17 +126,15 @@ impl<M, B> MaybeParsedNetlinkMessage for UnparsedNetlinkMessage<B, M>
 where
     B: AsRef<[u8]>,
     M: NetlinkDeserializable + MessageWithPermission,
-    M::DeserializeOptions: Default,
     M::Error: Into<DecodeError>,
 {
     type Message = M;
 
     fn try_into_parsed(self) -> Result<NetlinkMessage<M>, ParseError> {
-        let Self { data, _marker } = self;
+        let Self { data, options, _marker } = self;
         let data = data.as_ref();
         let netlink_buffer =
             NetlinkBuffer::new(&data).map_err(|error| ParseError { error, header: None })?;
-        let options = M::DeserializeOptions::default();
         NetlinkMessage::<M>::parse_with_param(&netlink_buffer, options).map_err(|error| {
             ParseError {
                 error,
