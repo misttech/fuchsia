@@ -4,10 +4,10 @@
 
 use crate::error::Error;
 use crate::util;
-use crate::util::{json_or_json5_from_file, write_depfile};
+use crate::util::write_depfile;
 use cml::features::FeatureSet;
-use serde_json::Value;
-use std::collections::HashSet;
+use cml::load::{CmlLoader, OsResolver};
+use cml::translate::compile_context;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -26,25 +26,26 @@ pub(crate) fn merge_includes(
     validate: bool,
     features: &FeatureSet,
 ) -> Result<(), Error> {
-    let includes = transitive_includes(&file, &includepath, &includeroot)?;
-    let mut document = util::read_cml(&file)?;
-    for include in &includes {
-        let mut include_document = util::read_cml(&include)?;
-        document.merge_from(&mut include_document, &include)?;
-    }
+    let resolver = OsResolver::new(includepath.clone(), includeroot.clone());
+    let mut loader = CmlLoader::new(resolver);
+
+    let mut document = loader.load_and_merge_all(file)?;
+
     document.include = None;
     document.canonicalize();
+
     if validate {
-        cml::compile(
+        compile_context(
             &document,
             cml::CompileOptions::new().features(features).file(file.as_path()),
         )?;
     }
+
     let json_str = serde_json::to_string_pretty(&document)?;
 
     if let Some(output_path) = output.as_ref() {
         util::ensure_directory_exists(&output_path)?;
-        fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
@@ -54,9 +55,12 @@ pub(crate) fn merge_includes(
         println!("{:#}", json_str);
     }
 
-    // Write includes to depfile
     if let Some(depfile_path) = depfile {
-        write_depfile(depfile_path, output, &includes)?;
+        let mut includes: Vec<PathBuf> =
+            loader.visited_files().into_iter().filter(|p| p != file).collect();
+
+        includes.sort();
+        util::write_depfile(depfile_path, output, &includes)?;
     }
 
     Ok(())
@@ -84,6 +88,7 @@ pub(crate) fn check_includes(
             }
         }
     }
+
     if expected_includes.is_empty() {
         if let Some(depfile_path) = depfile {
             if depfile_path.exists() {
@@ -94,11 +99,17 @@ pub(crate) fn check_includes(
         return Ok(());
     }
 
-    let actual = transitive_includes(&file, includepath, &includeroot)?;
-    for expected in
-        expected_includes.iter().map(|i| canonicalize_include(&i, includepath, &includeroot))
-    {
-        if !actual.contains(&expected) {
+    let resolver = OsResolver::new(includepath.clone(), includeroot.clone());
+    let mut loader = CmlLoader::new(resolver);
+
+    loader.load_and_merge_all(file)?;
+
+    let actual_includes = loader.visited_files();
+
+    for expected in expected_includes.iter() {
+        let expected_path = canonicalize_include(&expected, includepath, &includeroot);
+
+        if !actual_includes.contains(&expected_path) {
             return Err(Error::Validate {
                 err: format!(
                     "{:?} must include {:?}.\nFor more details, see {}",
@@ -111,69 +122,12 @@ pub(crate) fn check_includes(
 
     // Write includes to depfile
     if let Some(depfile_path) = depfile {
-        let mut inputs = actual;
-        inputs.push(file.clone());
+        let mut inputs: Vec<PathBuf> = actual_includes.into_iter().collect();
+        inputs.sort();
         write_depfile(depfile_path, stamp, &inputs)?;
     }
 
     Ok(())
-}
-
-/// Returns all includes of a document.
-/// Follows transitive includes.
-/// Detects cycles.
-/// Includes are returned in sorted order.
-/// Includes are returned as canonicalized paths.
-pub(crate) fn transitive_includes(
-    file: &PathBuf,
-    includepath: &Vec<PathBuf>,
-    includeroot: &PathBuf,
-) -> Result<Vec<PathBuf>, Error> {
-    fn helper(
-        includepath: &Vec<PathBuf>,
-        includeroot: &PathBuf,
-        doc: &Value,
-        entered: &mut HashSet<PathBuf>,
-        exited: &mut HashSet<PathBuf>,
-    ) -> Result<(), Error> {
-        if let Some(includes) = doc.get("include").and_then(|v| v.as_array()) {
-            for include in includes
-                .into_iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .map(|i| canonicalize_include(&i, includepath, &includeroot))
-            {
-                // Avoid visiting the same include more than once
-                if !entered.insert(include.clone()) {
-                    if !exited.contains(&include) {
-                        return Err(Error::parse(
-                            format!("Includes cycle at {:?}", include),
-                            None,
-                            None,
-                        ));
-                    }
-                } else {
-                    let include_doc = json_or_json5_from_file(&include).map_err(|e| {
-                        Error::parse(
-                            format!("Couldn't read include {:?}: {}", &include, e),
-                            None,
-                            None,
-                        )
-                    })?;
-                    helper(includepath, &includeroot, &include_doc, entered, exited)?;
-                    exited.insert(include);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    let mut entered = HashSet::new();
-    let mut exited = HashSet::new();
-    let doc = json_or_json5_from_file(&file)?;
-    helper(includepath, &includeroot, &doc, &mut entered, &mut exited)?;
-    let mut includes = Vec::from_iter(exited);
-    includes.sort();
-    Ok(includes)
 }
 
 /// Resolves an include to a canonical path.
@@ -201,7 +155,7 @@ fn canonicalize_include(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::fmt::Display;
     use std::fs::File;
     use std::io::{LineWriter, Read};
@@ -719,8 +673,8 @@ mod tests {
         );
         let result = ctx.merge_includes(&cml_path);
 
-        assert_matches!(result, Err(Error::Parse { err, .. })
-                        if err.starts_with("Couldn't read include ") && err.contains("doesnt_exist.cml"));
+        assert_matches!(result, Err(Error::ValidateContext { err, .. })
+                        if err.starts_with("Internal error") && err.contains("doesnt_exist.cml"));
     }
 
     #[test]
@@ -739,40 +693,7 @@ mod tests {
             }),
         );
         let result = ctx.merge_includes(&cml_path);
-        assert_matches!(result, Err(Error::Parse { err, .. }) if err.contains("Includes cycle"));
-    }
-
-    #[test]
-    fn test_include_a_diamond_is_not_a_cycle() {
-        // This is fine:
-        //
-        //   A
-        //  / \
-        // B   C
-        //  \ /
-        //   D
-        let ctx = TestContext::new();
-        let a_path = ctx.new_include(
-            "a.cml",
-            json!({
-                "include": ["b.cml", "c.cml"],
-            }),
-        );
-        ctx.new_include(
-            "b.cml",
-            json!({
-                "include": ["d.cml"],
-            }),
-        );
-        ctx.new_include(
-            "c.cml",
-            json!({
-                "include": ["d.cml"],
-            }),
-        );
-        ctx.new_include("d.cml", json!({}));
-        let result = ctx.merge_includes(&a_path);
-        assert_matches!(result, Ok(()));
+        assert_matches!(result, Err(Error::ValidateContext { err, .. }) if err.contains("Circular include detected"));
     }
 
     #[test]

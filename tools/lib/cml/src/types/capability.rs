@@ -338,46 +338,67 @@ pub enum CapabilityFromRef {
 pub struct ContextCapability {
     #[serde(skip)]
     pub origin: Arc<PathBuf>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub directory: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolver: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_stream: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dictionary: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<ContextSpanned<Path>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rights: Option<ContextSpanned<Rights>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<ContextSpanned<CapabilityFromRef>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backing_dir: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subdir: Option<ContextSpanned<RelativePath>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_id: Option<ContextSpanned<StorageId>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub config_type: Option<ContextSpanned<ConfigType>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "max_size", skip_serializing_if = "Option::is_none")]
     pub config_max_size: Option<ContextSpanned<NonZeroU32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "max_count", skip_serializing_if = "Option::is_none")]
     pub config_max_count: Option<ContextSpanned<NonZeroU32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "element", skip_serializing_if = "Option::is_none")]
     pub config_element_type: Option<ContextSpanned<ConfigNestedValueType>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<ContextSpanned<serde_json::Value>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery: Option<ContextSpanned<DeliveryType>>,
 }

@@ -398,51 +398,74 @@ impl FromClause for Use {
 pub struct ContextUse {
     #[serde(skip)]
     pub origin: Arc<PathBuf>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub directory: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_stream: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<ContextSpanned<Name>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dictionary: Option<ContextSpanned<OneOrMany<Name>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<ContextSpanned<UseFromRef>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<ContextSpanned<Path>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numbered_handle: Option<ContextSpanned<HandleType>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rights: Option<ContextSpanned<Rights>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subdir: Option<ContextSpanned<RelativePath>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<ContextSpanned<OneOrMany<EventScope>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<ContextSpanned<Map<String, Value>>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependency: Option<ContextSpanned<DependencyType>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub availability: Option<ContextSpanned<Availability>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<ContextSpanned<Name>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config_type: Option<ContextSpanned<ConfigType>>, // todo rename?
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub config_type: Option<ContextSpanned<ConfigType>>,
+
+    #[serde(rename = "max_size", skip_serializing_if = "Option::is_none")]
     pub config_max_size: Option<ContextSpanned<NonZeroU32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "max_count", skip_serializing_if = "Option::is_none")]
     pub config_max_count: Option<ContextSpanned<NonZeroU32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "element", skip_serializing_if = "Option::is_none")]
     pub config_element_type: Option<ContextSpanned<ConfigNestedValueType>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+
+    #[serde(rename = "default", skip_serializing_if = "Option::is_none")]
     pub config_default: Option<ContextSpanned<serde_json::Value>>,
 }
 

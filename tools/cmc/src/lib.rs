@@ -6,7 +6,6 @@
 
 use anyhow::{Error, ensure};
 use cml::types::document::Document;
-use cml::types::program::Program;
 use cml::{OfferToAllCapability, error, features};
 use reference_doc::MarkdownReferenceDocGenerator;
 use std::path::{Path, PathBuf};

@@ -7,39 +7,9 @@ use crate::error::Error;
 use cm_rust::ComponentDecl;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
-use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-
-/// Read a JSON or JSON5 file.
-/// Attempts to parse as JSON first.
-/// If this fails, attempts to parse as JSON5.
-/// Parsing with serde_json5 is known to be much slower, so we try the faster
-/// parser first.
-pub(crate) fn json_or_json5_from_file(file: &PathBuf) -> Result<Value, Error> {
-    let mut buffer = String::new();
-    fs::File::open(&file)
-        .map_err(|e| {
-            Error::invalid_args(format!(
-                "Could not open file at path \"{}\": {}",
-                file.display(),
-                e
-            ))
-        })?
-        .read_to_string(&mut buffer)?;
-
-    serde_json::from_str(&buffer).or_else(|_| {
-        // If JSON parsing fails, try JSON5 parsing (which is slower)
-        serde_json5::from_str(&buffer).map_err(|e| {
-            Error::parse(
-                format!("Couldn't read {} as JSON: {}", file.display(), e),
-                e.try_into().ok(),
-                Some(file.as_path()),
-            )
-        })
-    })
-}
 
 /// Write a depfile.
 /// Given an output and its includes, writes a depfile in Make format.
