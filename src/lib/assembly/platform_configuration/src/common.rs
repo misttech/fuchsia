@@ -8,7 +8,7 @@ use assembly_config_schema::assembly_input_bundle::{
     AssemblyInputBundle, CompiledPackageDefinition,
 };
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
-use assembly_file_relative_path::SupportsFileRelativePaths;
+use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
@@ -519,8 +519,9 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl {
     ) {
         let bundle_names = platform_artifacts.assembly_input_bundles.clone();
         for bundle_name in bundle_names {
-            let aib_path = platform_artifacts.get_bundle(&bundle_name);
-            let aib: AssemblyInputBundle = assembly_util::read_config(&aib_path).unwrap();
+            let aib_config_path = platform_artifacts.get_bundle(&bundle_name);
+            let aib_dir = aib_config_path.parent().unwrap();
+            let aib = AssemblyInputBundle::from_dir(aib_dir).unwrap();
 
             // Perform the "mutual exclusivity" check for the platform configuration.
             //
@@ -530,7 +531,6 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl {
                 self.auto_includable_bundles.insert(bundle_name.clone());
             }
 
-            let aib = aib.resolve_paths_from_file(&aib_path).unwrap();
             if aib.should_be_auto_included_in(feature_set_level, build_type) {
                 self.bundles.insert(bundle_name);
             }

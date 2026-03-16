@@ -16,7 +16,6 @@ rustc_binary("assembly") {
     "//src/lib/assembly/cli_args",
     "//src/lib/assembly/config_schema",
     "//src/lib/assembly/container",
-    "//src/lib/assembly/file_relative_path",
     "//src/lib/assembly/image_assembly_config",
     "//src/lib/assembly/image_assembly_config_builder",
     "//src/lib/assembly/platform_artifacts",
@@ -30,6 +29,8 @@ rustc_binary("assembly") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde_json",
   ]
+
+  test_deps = [ "//third_party/rust_crates:tempfile" ]
 
   sources = [
     "src/create_system.rs",

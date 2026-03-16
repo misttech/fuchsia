@@ -6,11 +6,9 @@ use anyhow::{Context, Result};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::developer_overrides::DeveloperOverrides;
 use assembly_config_schema::{BoardConfig, ProductConfig};
-use assembly_container::AssemblyContainer;
-use assembly_file_relative_path::SupportsFileRelativePaths;
+use assembly_container::{AssemblyContainer, WalkPaths};
 use assembly_platform_artifacts::PlatformArtifacts;
 use assembly_tool::PlatformToolProvider;
-use assembly_util::read_config;
 use camino::Utf8PathBuf;
 use fuchsia_pkg::PackageManifest;
 use image_assembly_config_builder::ProductAssembly;
@@ -57,20 +55,7 @@ Resulting product is not supported and may misbehave!
     let board_config =
         BoardConfig::from_dir(&board_config).context("Reading board configuration")?;
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
-        let developer_overrides = read_config::<DeveloperOverrides>(&overrides_path)
-            .context("Reading developer overrides")?
-            .resolve_paths_from_file(&overrides_path)
-            .context("Resolving paths in developer overrides")?;
-
-        let developer_overrides = developer_overrides.merge_developer_provided_files().context(
-            "Merging developer-provided file paths into developer-provided configuration.",
-        )?;
-
-        if !suppress_overrides_warning {
-            print_developer_overrides_banner(&developer_overrides, &overrides_path)
-                .context("Displaying developer overrides.")?;
-        }
-        Some(developer_overrides)
+        Some(load_developer_overrides(&overrides_path, suppress_overrides_warning)?)
     } else {
         None
     };
@@ -121,6 +106,37 @@ Resulting product is not supported and may misbehave!
         .with_context(|| format!("Writing image assembly config file: {image_assembly_path}"))?;
 
     Ok(())
+}
+
+fn load_developer_overrides(
+    overrides_path: &Utf8PathBuf,
+    suppress_overrides_warning: bool,
+) -> Result<DeveloperOverrides> {
+    let mut developer_overrides = DeveloperOverrides::from_config_path(overrides_path)
+        .context("Reading developer overrides")?;
+
+    if let Some(dir) = overrides_path.parent() {
+        developer_overrides
+            .walk_paths(
+                &mut |path: &mut Utf8PathBuf,
+                      _dest: Utf8PathBuf,
+                      _filetype: assembly_container::FileType| {
+                    *path = dir.join(&path);
+                    Ok(())
+                },
+            )
+            .context("Resolving paths in developer overrides")?;
+    }
+
+    let developer_overrides = developer_overrides
+        .merge_developer_provided_files()
+        .context("Merging developer-provided file paths into developer-provided configuration.")?;
+
+    if !suppress_overrides_warning {
+        print_developer_overrides_banner(&developer_overrides, overrides_path)
+            .context("Displaying developer overrides.")?;
+    }
+    Ok(developer_overrides)
 }
 
 fn print_developer_overrides_banner(
@@ -240,4 +256,48 @@ fn print_developer_overrides_banner(
     // line of this warning.
     eprintln!();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_load_developer_overrides_resolves_paths() {
+        let dir = tempdir().unwrap();
+        let dir_path = Utf8PathBuf::from(dir.path().to_str().unwrap());
+        let overrides_path = dir_path.join("product_assembly_overrides.json");
+
+        // Write a test configuration.
+        let overrides_json = serde_json::json!({
+            // Start with an empty platform definition, then merge the overrides.
+            "platform": {},
+            "developer_provided_files": [
+                {
+                    "node_path": "platform.development_support",
+                    "fields": {
+                        "authorized_ssh_keys_path": "resources/keys/test.pem"
+                    }
+                }
+            ],
+        });
+        std::fs::write(&overrides_path, serde_json::to_string(&overrides_json).unwrap()).unwrap();
+
+        let overrides = load_developer_overrides(&overrides_path, true).unwrap();
+
+        // The path should be merged into platform and must be an absolute path at this point
+        let keys_path = overrides
+            .platform
+            .get("development_support")
+            .unwrap()
+            .get("authorized_ssh_keys_path")
+            .unwrap()
+            .as_str()
+            .unwrap();
+
+        let keys_path_buf = Utf8PathBuf::from(keys_path);
+        assert!(keys_path_buf.is_absolute());
+        assert_eq!(keys_path_buf, dir_path.join("resources").join("keys").join("test.pem"));
+    }
 }
