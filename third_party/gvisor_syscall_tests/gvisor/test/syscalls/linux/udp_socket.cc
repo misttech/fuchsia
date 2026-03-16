@@ -16,11 +16,17 @@
 #include <fcntl.h>
 #include <netinet/icmp6.h>
 #include <netinet/ip_icmp.h>
+#include <sched.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <ctime>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include "gmock/gmock.h"
 
 #ifdef __linux__
 #include <linux/errqueue.h>
@@ -522,9 +528,6 @@ TEST_P(UdpSocketTest, Connect) {
 }
 
 TEST_P(UdpSocketTest, ConnectAnyZero) {
-  // TODO(138658473): Enable when we can connect to port 0 with gVisor.
-  SKIP_IF(IsRunningOnGvisor());
-
   struct sockaddr_storage any = InetAnyAddr();
   EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
               SyscallSucceeds());
@@ -546,8 +549,6 @@ TEST_P(UdpSocketTest, ConnectAnyWithPort) {
 }
 
 TEST_P(UdpSocketTest, DisconnectAfterConnectAny) {
-  // TODO(138658473): Enable when we can connect to port 0 with gVisor.
-  SKIP_IF(IsRunningOnGvisor());
   struct sockaddr_storage any = InetAnyAddr();
   EXPECT_THAT(connect(sock_.get(), AsSockAddr(&any), addrlen_),
               SyscallSucceeds());
@@ -578,11 +579,19 @@ TEST_P(UdpSocketTest, DisconnectAfterConnectAnyWithPort) {
 TEST_P(UdpSocketTest, DisconnectAfterBind) {
   ASSERT_NO_ERRNO(BindLoopback());
 
-  // Bind to the next port above bind_.
+  // Bind to the next available port near bind_.
   struct sockaddr_storage addr_storage = InetLoopbackAddr();
   struct sockaddr* addr = AsSockAddr(&addr_storage);
-  SetPort(&addr_storage, *Port(&bind_addr_storage_) - 1);
-  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
+  bool bound = false;
+  uint16_t base_port = ntohs(*Port(&bind_addr_storage_));
+  for (int i = 1; i <= 10; ++i) {
+    SetPort(&addr_storage, base_port - i);
+    if (BindSocket(sock_.get(), addr).ok()) {
+      bound = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(bound);
 
   // Connect the socket.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
@@ -921,6 +930,9 @@ TEST_P(UdpSocketTest, RecvErrorConnRefused) {
   msg.msg_controllen = control_buf_len;
   msg.msg_name = reinterpret_cast<void*>(&remote);
   msg.msg_namelen = addrlen_;
+  struct pollfd pfd = {.fd = sock_.get(), .events = POLLIN};
+  int ready = poll(&pfd, 1, 1000);
+  ASSERT_TRUE(ready > 0 && (pfd.revents & POLLERR));
   ASSERT_THAT(recvmsg(sock_.get(), &msg, MSG_ERRQUEUE),
               SyscallSucceedsWithValue(kBufLen));
 
@@ -1339,12 +1351,18 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendRecv) {
   }
 
   // Receive the data as 3 separate packets.
-  char received[6 * psize];
+  std::vector<std::string> rcvd_pkts;
   for (int i = 0; i < 3; ++i) {
-    EXPECT_THAT(recv(bind_.get(), received + i * psize, 3 * psize, 0),
+    char recv_buf[psize];
+    ASSERT_THAT(recv(bind_.get(), recv_buf, psize, 0),
                 SyscallSucceedsWithValue(psize));
+    rcvd_pkts.push_back(std::string(recv_buf, psize));
   }
-  EXPECT_EQ(memcmp(buf, received, 3 * psize), 0);
+  // Note: the packets might be received in a different order.
+  for (int i = 0; i < 3; ++i) {
+    std::string sent_packet(buf + i * psize, psize);
+    EXPECT_THAT(rcvd_pkts, ::testing::Contains(sent_packet));
+  }
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
@@ -1372,6 +1390,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
 
   // Receive the data as 2 separate packets.
   char received[6 * kPieceSize];
+  memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
     for (int j = 0; j < 3; j++) {
@@ -1382,7 +1401,17 @@ TEST_P(UdpSocketTest, BoundaryPreserved_WritevReadv) {
     ASSERT_THAT(readv(bind_.get(), iov, 3),
                 SyscallSucceedsWithValue(2 * kPieceSize));
   }
-  EXPECT_EQ(memcmp(buf, received, 4 * kPieceSize), 0);
+
+  std::string sent_pkt0 = std::string(buf, kPieceSize) +
+                          std::string(buf + 2 * kPieceSize, kPieceSize);
+  std::string sent_pkt1 = std::string(buf + kPieceSize, kPieceSize) +
+                          std::string(buf + 3 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt0 = std::string(received, kPieceSize) +
+                          std::string(received + 2 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt1 = std::string(received + kPieceSize, kPieceSize) +
+                          std::string(received + 3 * kPieceSize, kPieceSize);
+  EXPECT_THAT(std::vector<std::string>({rcvd_pkt0, rcvd_pkt1}),
+              ::testing::UnorderedElementsAre(sent_pkt0, sent_pkt1));
 }
 
 TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
@@ -1412,6 +1441,7 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
 
   // Receive the data as 2 separate packets.
   char received[6 * kPieceSize];
+  memset(received, 0, sizeof(received));
   for (int i = 0; i < 2; i++) {
     struct iovec iov[3];
     for (int j = 0; j < 3; j++) {
@@ -1425,7 +1455,17 @@ TEST_P(UdpSocketTest, BoundaryPreserved_SendMsgRecvMsg) {
     ASSERT_THAT(recvmsg(bind_.get(), &msg, 0),
                 SyscallSucceedsWithValue(2 * kPieceSize));
   }
-  EXPECT_EQ(memcmp(buf, received, 4 * kPieceSize), 0);
+
+  std::string sent_pkt0 = std::string(buf, kPieceSize) +
+                          std::string(buf + 2 * kPieceSize, kPieceSize);
+  std::string sent_pkt1 = std::string(buf + kPieceSize, kPieceSize) +
+                          std::string(buf + 3 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt0 = std::string(received, kPieceSize) +
+                          std::string(received + 2 * kPieceSize, kPieceSize);
+  std::string rcvd_pkt1 = std::string(received + kPieceSize, kPieceSize) +
+                          std::string(received + 3 * kPieceSize, kPieceSize);
+  EXPECT_THAT(std::vector<std::string>({rcvd_pkt0, rcvd_pkt1}),
+              ::testing::UnorderedElementsAre(sent_pkt0, sent_pkt1));
 }
 
 TEST_P(UdpSocketTest, FIONREADShutdown) {
@@ -1859,48 +1899,43 @@ TEST_P(UdpSocketTest, RecvBufLimits) {
                 SyscallSucceeds());
   }
 
-  {
-    std::vector<char> buf(min);
-    RandomizeBuffer(buf.data(), buf.size());
+  constexpr int max_to_send = 10;  // Enough to definitely fill min * 2.
+  std::vector<char> buf(min);
+  RandomizeBuffer(buf.data(), buf.size());
 
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    ASSERT_THAT(
-        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-        SyscallSucceedsWithValue(buf.size()));
-    int sent = 4;
-    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
-      // Linux seems to drop the 4th packet even though technically it should
-      // fit in the receive buffer.
-      ASSERT_THAT(
-          sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_),
-          SyscallSucceedsWithValue(buf.size()));
+  // Send to sock_.
+  int sent = 0;
+  for (int i = 0; i < max_to_send; ++i) {
+    size_t sentBytes =
+        sendto(sock_.get(), buf.data(), buf.size(), 0, bind_addr_, addrlen_);
+    if (sentBytes == buf.size()) {
       sent++;
+    } else {
+      break;
     }
-
-    for (int i = 0; i < sent - 1; i++) {
-      // Receive the data.
-      std::vector<char> received(buf.size());
-      EXPECT_THAT(RecvTimeout(bind_.get(), received.data(), received.size(),
-                              1 /*timeout*/),
-                  IsPosixErrorOkAndHolds(received.size()));
-      EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
-    }
-
-    // The last receive should fail with EAGAIN as the last packet should have
-    // been dropped due to lack of space in the receive buffer.
-    std::vector<char> received(buf.size());
-    EXPECT_THAT(
-        recv(bind_.get(), received.data(), received.size(), MSG_DONTWAIT),
-        SyscallFailsWithErrno(EAGAIN));
   }
+
+  // Receive from bind_.
+  int recvd = 0;
+  bool received_eagain = false;
+  for (int i = 0; i < sent; ++i) {
+    std::vector<char> received(buf.size());
+    PosixErrorOr<int> ret = RecvTimeout(bind_.get(), received.data(),
+                                        received.size(), 1 /*timeout*/);
+    if (ret.ok()) {
+      EXPECT_EQ(ret.ValueOrDie(), buf.size());
+      EXPECT_EQ(memcmp(buf.data(), received.data(), buf.size()), 0);
+      recvd++;
+    } else {
+      EXPECT_EQ(ret.error().errno_value(), EAGAIN);
+      received_eagain = true;
+      break;
+    }
+  }
+
+  EXPECT_GT(recvd, 1);
+  EXPECT_LT(recvd, sent);
+  EXPECT_TRUE(received_eagain);
 }
 
 #ifdef __linux__

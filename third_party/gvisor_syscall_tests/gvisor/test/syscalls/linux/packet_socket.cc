@@ -27,6 +27,9 @@
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -40,16 +43,39 @@ using ::testing::Combine;
 using ::testing::Eq;
 using ::testing::Values;
 
+#ifndef __Fuchsia__  // Fuchsia doesn't support caps.
+TEST(PacketSocketNoCapTest, CreationFailsWithEPERM) {
+  AutoCapability cap(CAP_NET_RAW, false);
+  ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL)),
+              SyscallFailsWithErrno(EPERM));
+
+  // Fork to avoid changing the user namespace of the original test process.
+  EXPECT_THAT(InForkedProcess([&] {
+                // Fails with EPERM because we don't have CAP_NET_RAW.
+                TEST_CHECK_ERRNO(syscall(SYS_socket, AF_PACKET, SOCK_DGRAM,
+                                         htons(ETH_P_ALL)),
+                                 EPERM);
+                // Enter a new userns to gain all caps in the new userns.
+                TEST_CHECK_SUCCESS(syscall(SYS_unshare, CLONE_NEWUSER));
+                // But socket() should still fails with EPERM, for we don't have
+                // CAP_NET_RAW in the original userns (that owns the netns we
+                // are in).
+                TEST_CHECK_ERRNO(syscall(SYS_socket, AF_PACKET, SOCK_DGRAM,
+                                         htons(ETH_P_ALL)),
+                                 EPERM);
+                _exit(0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+#endif  // __Fuchsia__
+
 class PacketSocketCreationTest
     : public ::testing::TestWithParam<std::tuple<int, int>> {
  protected:
   void SetUp() override {
-    if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-      const auto [type, protocol] = GetParam();
-      ASSERT_THAT(socket(AF_PACKET, type, htons(protocol)),
-                  SyscallFailsWithErrno(EPERM));
-      GTEST_SKIP() << "Missing packet socket capability";
-    }
+    const auto [type, protocol] = GetParam();
+    SKIP_IF(
+        !ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability(type, protocol)));
   }
 };
 
@@ -68,11 +94,10 @@ INSTANTIATE_TEST_SUITE_P(AllPacketSocketTests, PacketSocketCreationTest,
 class PacketSocketTest : public ::testing::TestWithParam<int> {
  protected:
   void SetUp() override {
-    if (!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability())) {
-      ASSERT_THAT(socket(AF_PACKET, GetParam(), 0),
-                  SyscallFailsWithErrno(EPERM));
-      GTEST_SKIP() << "Missing packet socket capability";
-    }
+    // The tests need packet sockets with ETH_P_IP, even though socket_ is not
+    // bound to any protocol.
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(
+        HavePacketSocketCapability(GetParam(), ETH_P_IP)));
 
     socket_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, GetParam(), 0));
   }

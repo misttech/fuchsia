@@ -6,6 +6,8 @@ fs_util.h
 fuchsia_capability_util.cc
 logging.cc
 logging.h
+multiprocess_util.cc
+multiprocess_util.h
 posix_error.cc
 posix_error.h
 save_util.cc
