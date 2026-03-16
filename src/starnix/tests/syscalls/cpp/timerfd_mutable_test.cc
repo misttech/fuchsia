@@ -41,7 +41,7 @@ TEST(TimerFD, AlarmCancelOnSet) {
   auto rendezvous = test_helper::MakeRendezvous();
   pid_t test_thread_tid = 0;
   std::thread test_thread([&rendezvous, &test_thread_tid, epoll_fd, timer_fd] {
-    test_thread_tid = static_cast<pid_t>(syscall(SYS_gettid));
+    test_thread_tid = gettid();
     rendezvous.poker.poke();
 
     struct epoll_event events[1];
