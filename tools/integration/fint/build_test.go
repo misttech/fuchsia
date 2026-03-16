@@ -115,7 +115,7 @@ func TestBuild(t *testing.T) {
 
 	platform := "linux-x64"
 
-	failedBuildRunner := func(cmd []string, _ io.Writer) error {
+	failedBuildRunner := func(cmd []string, _, _ io.Writer) error {
 		// Make ninja build fail, but ninjatrace succeed.
 		prog := filepath.Base(cmd[0])
 		if prog == "ninjatrace_prebuilt" || prog == "buildstats_prebuilt" {
@@ -150,7 +150,7 @@ func TestBuild(t *testing.T) {
 		// Callback that is called by the fake runner whenever it starts
 		// "running" a command, allowing each test to fake the result and output
 		// of any subprocess.
-		runnerFunc func(cmd []string, stdout io.Writer) error
+		runnerFunc func(cmd []string, stdout io.Writer, stderr io.Writer) error
 		// List of regex strings, where each string corresponds to a subprocess
 		// that must have been run by the runner.
 		mustRun []string
@@ -167,7 +167,7 @@ func TestBuild(t *testing.T) {
 			name:              "empty spec produces no ninja targets",
 			staticSpec:        &fintpb.Static{},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
 		},
 		{
 			name: "enable_jobserver flag support",
@@ -175,7 +175,7 @@ func TestBuild(t *testing.T) {
 				GnArgs: []string{"enable_jobserver = true"},
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json --jobserver$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)? --jobserver$`},
 		},
 		{
 			name: "use rs-sub-ninja when build_event_service_ninja is resultstore_infra",
@@ -188,7 +188,7 @@ func TestBuild(t *testing.T) {
 				}),
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`rs-sub-ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
+			mustRun:           []string{`rs-sub-ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
 		},
 		{
 			name:       "artifact dir set",
@@ -200,7 +200,7 @@ func TestBuild(t *testing.T) {
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
-			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
+			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
 		},
 		{
 			name:       "affected tests",
@@ -395,7 +395,7 @@ func TestBuild(t *testing.T) {
 			// The fake ninja no-op check command succeeds, but does not print any
 			// output, so the no-op check will fail because the "no work to do"
 			// string will not be present in the output.
-			runnerFunc: func(cmd []string, _ io.Writer) error {
+			runnerFunc: func(cmd []string, _, _ io.Writer) error {
 				return nil
 			},
 			expectErr:               true,
@@ -422,7 +422,7 @@ func TestBuild(t *testing.T) {
 			name:           "passed ninja no-op check",
 			staticSpec:     &fintpb.Static{},
 			ninjaNoopCheck: true,
-			runnerFunc: func(cmd []string, stdout io.Writer) error {
+			runnerFunc: func(cmd []string, stdout, _ io.Writer) error {
 				if slices.Contains(cmd, "-n") { // -n indicates ninja dry run.
 					stdout.Write([]byte(noWorkString))
 				}
@@ -436,7 +436,7 @@ func TestBuild(t *testing.T) {
 			contextSpec: &fintpb.Context{
 				ArtifactDir: artifactDir,
 			},
-			runnerFunc: func(cmd []string, stdout io.Writer) error {
+			runnerFunc: func(cmd []string, stdout, _ io.Writer) error {
 				if filepath.Base(cmd[0]) == "ninjatrace_prebuilt" {
 					return fmt.Errorf("failed to run command: %s", cmd)
 				}

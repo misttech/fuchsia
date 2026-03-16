@@ -36,18 +36,14 @@ func TestRunNinja(t *testing.T) {
 		name string
 		// Whether to mock a non-zero ninja retcode, in which case we should get
 		// an error.
-		fail bool
-		// Mock Ninja stdout.
-		stdout                 string
+		fail                   bool
+		stderr                 string
+		mockNinjaErrors        string
 		expectedActionData     *fintpb.NinjaActionMetrics
 		expectedFailureMessage string
 	}{
 		{
 			name: "success",
-			stdout: `
-                [1/2](1) ACTION a.o
-                [2/2](1) ACTION b.o
-            `,
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 2,
 				FinalActions:   2,
@@ -57,27 +53,7 @@ func TestRunNinja(t *testing.T) {
 			},
 		},
 		{
-			name: "success with regenerating ninja files",
-			stdout: `
-                [0/1](1) Regenerating ninja files
-                [1/3](1) ACTION a.o
-                [2/3](1) ACTION b.o
-            `,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 3,
-				FinalActions:   3,
-				ActionsByType: map[string]int32{
-					"ACTION": 2,
-				},
-			},
-		},
-		{
 			name: "multiple action types",
-			stdout: `
-                [1/3](1) CXX a.o
-                [2/3](1) RUST crab.rlib
-                [3/3](1) RUST lobster.rlib
-            `,
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 3,
 				FinalActions:   3,
@@ -89,11 +65,6 @@ func TestRunNinja(t *testing.T) {
 		},
 		{
 			name: "restat decreasing action counts",
-			stdout: `
-                [1/300](1) CXX a.o
-                [2/200](1) RUST crab.rlib
-                [3/100](1) RUST lobster.rlib
-            `,
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 300,
 				FinalActions:   100,
@@ -104,23 +75,19 @@ func TestRunNinja(t *testing.T) {
 			},
 		},
 		{
-			name: "single failed target",
+			name: "failed target",
 			fail: true,
-			stdout: `
-                [35792/53672](8) CXX a.o b.o
-                [35793/53672](7) CXX c.o d.o
-                FAILED: c.o d.o
-                output line 1
-                output line 2
-                [35794/53672](4) CXX successful/e.o
-                [35795/53672](4) CXX f.o
-            `,
-			expectedFailureMessage: `
-                [35793/53672](7) CXX c.o d.o
-                FAILED: c.o d.o
-                output line 1
-                output line 2
-            `,
+			mockNinjaErrors: `{
+				"version": 1,
+				"failures": [
+					{
+						"artifacts": ["c.o", "d.o"],
+						"exit_code": 1,
+						"output": "output line 1\noutput line 2"
+					}
+				]
+			}`,
+			expectedFailureMessage: "FAILED: [code=1] c.o d.o\noutput line 1\noutput line 2\n",
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 53672,
 				FinalActions:   53672,
@@ -130,49 +97,19 @@ func TestRunNinja(t *testing.T) {
 			},
 		},
 		{
-			// newer versions of ninja include exit code
-			name: "single failed target with exit code",
+			name: "failed target with decreasing action counts",
 			fail: true,
-			stdout: `
-                [792/4321](8) CXX a.o b.o
-                [793/4321](7) CXX d.o
-                FAILED: [code=1] d.o
-                output line 1
-                output line 2
-                [794/4321](4) CXX successful/e.o
-            `,
-			expectedFailureMessage: `
-                [793/4321](7) CXX d.o
-                FAILED: [code=1] d.o
-                output line 1
-                output line 2
-            `,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 4321,
-				FinalActions:   4321,
-				ActionsByType: map[string]int32{
-					"CXX": 3,
-				},
-			},
-		},
-		{
-			name: "single failed target decreasing action counts",
-			fail: true,
-			stdout: `
-                [35792/53672](2) CXX a.o b.o
-                [35793/53672](2) CXX c.o d.o
-                FAILED: c.o d.o
-                output line 1
-                output line 2
-                [35794/45678](2) CXX successful/e.o
-                [35795/45678](1) CXX f.o
-            `,
-			expectedFailureMessage: `
-                [35793/53672](2) CXX c.o d.o
-                FAILED: c.o d.o
-                output line 1
-                output line 2
-            `,
+			mockNinjaErrors: `{
+				"version": 1,
+				"failures": [
+					{
+						"artifacts": ["c.o", "d.o"],
+						"exit_code": 1,
+						"output": "output line 1\noutput line 2"
+					}
+				]
+			}`,
+			expectedFailureMessage: "FAILED: [code=1] c.o d.o\noutput line 1\noutput line 2\n",
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 53672,
 				FinalActions:   45678,
@@ -182,23 +119,30 @@ func TestRunNinja(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves indentation",
+			name: "deduplicate identical outputs",
 			fail: true,
-			stdout: `
-                [35793/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                    output line 1
-                        output line 2
-                            output line 3
-                [35794/53672](1) CXX successful/c.o
-            `,
-			expectedFailureMessage: `
-                [35793/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                    output line 1
-                        output line 2
-                            output line 3
-            `,
+			mockNinjaErrors: `{
+				"version": 1,
+				"failures": [
+					{
+						"artifacts": ["a.rlib", "b.rlib"],
+						"exit_code": 1,
+						"output": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6"
+					},
+					{
+						"artifacts": ["c.rlib", "d.rlib"],
+						"exit_code": 1,
+						"output": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6"
+					}
+				]
+			}`,
+			expectedFailureMessage: "FAILED: [code=1] a.rlib b.rlib\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\n",
+		},
+		{
+			name:                   "ninja internal error",
+			fail:                   true,
+			stderr:                 `ninja: build stopped: something went wrong`,
+			expectedFailureMessage: "ninja: build stopped: something went wrong",
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 53672,
 				FinalActions:   53672,
@@ -206,160 +150,13 @@ func TestRunNinja(t *testing.T) {
 					"CXX": 2,
 				},
 			},
-		},
-		{
-			name: "multiple failed targets",
-			fail: true,
-			stdout: `
-                [35790/53672](1) CXX foo
-                [35791/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                output line 1
-                output line 2
-                [35792/53672](1) CXX c.o d.o
-                [35793/53672](1) CXX e.o
-                FAILED: e.o
-                output line 3
-                output line 4
-                [35794/53672](1) CXX f.o
-            `,
-			expectedFailureMessage: `
-                [35791/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                output line 1
-                output line 2
-                [35793/53672](1) CXX e.o
-                FAILED: e.o
-                output line 3
-                output line 4
-            `,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 53672,
-				FinalActions:   53672,
-				ActionsByType: map[string]int32{
-					"CXX": 5,
-				},
-			},
-		},
-		{
-			name: "last target fails",
-			fail: true,
-			stdout: `
-                [35790/53672](1) CXX foo
-                [35791/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                output line 1
-                output line 2
-                ninja: build stopped: subcommand failed.
-            `,
-			expectedFailureMessage: `
-                [35791/53672](1) CXX a.o b.o
-                FAILED: a.o b.o
-                output line 1
-                output line 2
-            `,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 53672,
-				FinalActions:   53672,
-				ActionsByType: map[string]int32{
-					"CXX": 2,
-				},
-			},
-		},
-		{
-			name: "gn gen fails",
-			fail: true,
-			stdout: `
-				ninja: Entering directory '/usr/me/fuchsia/out/default'
-				[0/1](1) Regenerating ninja files
-				ERROR at //src/foo/BUILD.gn:41:5: Can't load input file.
-					"//src/bar:tests",
-					^----------------
-				Unable to load:
-				/usr/me/fuchsia/src/bar/BUILD.gn
-				FAILED: build.ninja
-				../../prebuilt/third_party/gn/linux-x64/gn --root=../.. gen .
-				ninja: error: rebuilding 'build.ninja': subcommand failed
-			`,
-			expectedFailureMessage: `
-				[0/1](1) Regenerating ninja files
-				ERROR at //src/foo/BUILD.gn:41:5: Can't load input file.
-					"//src/bar:tests",
-					^----------------
-				Unable to load:
-				/usr/me/fuchsia/src/bar/BUILD.gn
-				FAILED: build.ninja
-				../../prebuilt/third_party/gn/linux-x64/gn --root=../.. gen .
-				ninja: error: rebuilding 'build.ninja': subcommand failed
-            `,
-		},
-		{
-			name: "ninja internal error",
-			fail: true,
-			stdout: `
-                [1/53672](1) CXX foo
-                [2/53672](1) CXX a.o b.o
-                ninja: build stopped: something went wrong
-            `,
-			expectedFailureMessage: `
-                ninja: build stopped: something went wrong
-			`,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 53672,
-				FinalActions:   53672,
-				ActionsByType: map[string]int32{
-					"CXX": 2,
-				},
-			},
-		},
-		{
-			name: "graph error",
-			fail: true,
-			stdout: `
-				ninja: Entering directory /foo
-				ninja: error: bar.ninja: multiple rules generate baz
-            `,
-			expectedFailureMessage: `
-				ninja: error: bar.ninja: multiple rules generate baz
-            `,
-		},
-		{
-			name: "fatal error",
-			fail: true,
-			stdout: `
-				ninja: Entering directory /foo
-				[1/1](1) ACTION //foo
-				ninja: fatal: cannot create file foo
-            `,
-			expectedFailureMessage: `
-				ninja: fatal: cannot create file foo
-            `,
-			expectedActionData: &fintpb.NinjaActionMetrics{
-				InitialActions: 1,
-				FinalActions:   1,
-				ActionsByType: map[string]int32{
-					"ACTION": 1,
-				},
-			},
-		},
-		{
-			name: "unrecognized failure",
-			fail: true,
-			stdout: `
-				ninja: Entering directory /foo
-				...something went wrong...
-            `,
-			expectedFailureMessage: unrecognizedFailureMsg,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.stdout = trimLines(tc.stdout)
-			tc.expectedFailureMessage = trimLines(tc.expectedFailureMessage)
-
 			sr := &fakeSubprocessRunner{
-				mockStdout: []byte(tc.stdout),
+				mockStderr: []byte(tc.stderr),
 				fail:       tc.fail,
 			}
 			r := ninjaRunner{
@@ -368,20 +165,34 @@ func TestRunNinja(t *testing.T) {
 				buildDir:  filepath.Join(t.TempDir(), "out"),
 				jobCount:  23, // Arbitrary but distinctive value.
 			}
-			if tc.expectedActionData != nil {
-				sr.run = func(cmd []string, stdout io.Writer) error {
+			if tc.expectedActionData != nil || tc.mockNinjaErrors != "" {
+				sr.run = func(cmd []string, stdout io.Writer, stderr io.Writer) error {
 					stdout.Write(sr.mockStdout)
-					metrics := ninjaActionMetrics{
-						InitialActions: tc.expectedActionData.InitialActions,
-						FinalActions:   tc.expectedActionData.FinalActions,
-						ActionCounts:   tc.expectedActionData.ActionsByType,
+					if tc.stderr != "" {
+						stderr.Write(sr.mockStderr)
 					}
-					path := filepath.Join(r.buildDir, actionMetricsName)
-					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-						return err
+					if tc.expectedActionData != nil {
+						metrics := ninjaActionMetrics{
+							InitialActions: tc.expectedActionData.InitialActions,
+							FinalActions:   tc.expectedActionData.FinalActions,
+							ActionCounts:   tc.expectedActionData.ActionsByType,
+						}
+						path := filepath.Join(r.buildDir, actionMetricsName)
+						if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+							return err
+						}
+						if err := jsonutil.WriteToFile(path, metrics); err != nil {
+							return err
+						}
 					}
-					if err := jsonutil.WriteToFile(path, metrics); err != nil {
-						return err
+					if tc.mockNinjaErrors != "" {
+						path := filepath.Join(r.buildDir, ninjaErrorsPath)
+						if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+							return err
+						}
+						if err := os.WriteFile(path, []byte(tc.mockNinjaErrors), 0o644); err != nil {
+							return err
+						}
 					}
 					if sr.fail {
 						return errSubprocessFailure
@@ -437,9 +248,7 @@ func TestRunWithNinjaExplain(t *testing.T) {
 	ctx := streams.ContextWithStdout(context.Background(), gotStdout)
 
 	sr := &fakeSubprocessRunner{
-		mockStdout: []byte(`ninja: Entering directory /foo
-[1/1](1) ACTION //foo
-ninja explain: obj/build/foo is dirty`),
+		mockStdout: []byte("ninja: Entering directory /foo\n[1/1](1) ACTION //foo\nninja explain: obj/build/foo is dirty\n"),
 	}
 	r := ninjaRunner{
 		runner:    sr,
@@ -868,7 +677,7 @@ func TestNinjaDryRun(t *testing.T) {
 	}
 }
 
-func TestStripNinjaExplain(t *testing.T) {
+func TestNinjaExplainExtractor(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		input string
@@ -917,7 +726,7 @@ build even more
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := new(strings.Builder)
-			w := stripNinjaExplain(got)
+			w := newNinjaExplainExtractor(got, nil)
 
 			if _, err := w.Write([]byte(tc.input)); err != nil {
 				t.Fatalf("Write failed: %v", err)

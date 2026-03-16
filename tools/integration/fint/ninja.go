@@ -5,7 +5,6 @@
 package fint
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -18,7 +17,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
@@ -35,31 +33,6 @@ var (
 	// Explicitly format Ninja stdout lines via the NINJA_STATUS
 	// environment variable.  %f=finished, %t=remaining, %r=running
 	ninjaStatus = "[%f/%t](%r) "
-
-	// ruleRegex matches a line of Ninja stdout using the above ninjaStatus.
-	// e.g. "[56/1234](16) CXX host_x64/foo.o"
-	// $1 is the number of finished actions
-	// $2 is the number of remaining actions
-	// $3 is the number of running actions
-	// $4 is the action type, e.g. LINK
-	// $5 is the target name
-	ruleRegex = regexp.MustCompile(`^\s*\[(\d+)/(\d+)\]\((\d+)\) (\S+) (\S+)`)
-
-	// errorRegex matches a single-line error message that Ninja prints at the
-	// end of its output if it encounters an error that prevents it from even
-	// starting the build (e.g. multiple rules generating the same target file),
-	// or a fatal error in the middle of the build (e.g. OS error). These error
-	// strings are defined here:
-	// https://github.com/ninja-build/ninja/blob/master/src/util.cc
-	errorRegex = regexp.MustCompile(`^\s*ninja: (error|fatal): .+`)
-
-	// failureStartRegex matches the first line of a failure message, e.g.
-	// "FAILED: foo.o"
-	failureStartRegex = regexp.MustCompile(`^\s*FAILED: .*`)
-
-	// buildStoppedRegex indicates the end of Ninja's execution as a result of a
-	// build failure. When present, it will be the last line of stdout.
-	buildStoppedRegex = regexp.MustCompile(`^\s*ninja: build stopped:.*`)
 
 	// noWorkString in the Ninja output indicates a null build (i.e. all the
 	// requested targets have already been built).
@@ -94,6 +67,9 @@ const (
 	// ninjaDepsPath is the path to the log of ninja deps relative to the build
 	// directory.
 	ninjaDepsPath = ".ninja_deps"
+
+	// ninjaErrorsPath is the path to the JSON file containing ninja failures
+	ninjaErrorsPath = ".ninja_errors.json"
 
 	// unrecognizedFailureMsg is the message we'll output if ninja fails but its
 	// output doesn't match any of the known failure modes.
@@ -133,15 +109,17 @@ func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.W
 	}})
 }
 
-// withoutNinjaExplain is a writer that removes all Ninja explain outputs
-// before writing to the underlying writer.
-type withoutNinjaExplain struct {
-	buf *bytes.Buffer
-	w   io.Writer
+// ninjaExplainExtractor is a writer that removes all Ninja explain outputs
+// before writing to the underlying writer. If explainSink is provided, explain
+// output is copied to it.
+type ninjaExplainExtractor struct {
+	buf         *bytes.Buffer
+	w           io.Writer
+	explainSink io.Writer
 }
 
-// Write implements io.Writer for withoutNinjaExplain.
-func (w *withoutNinjaExplain) Write(bs []byte) (int, error) {
+// Write implements io.Writer for ninjaExplainExtractor.
+func (w *ninjaExplainExtractor) Write(bs []byte) (int, error) {
 	if _, err := w.buf.Write(bs); err != nil {
 		return 0, err
 	}
@@ -157,13 +135,15 @@ func (w *withoutNinjaExplain) Write(bs []byte) (int, error) {
 		}
 		if !explainRegex.MatchString(string(line)) {
 			w.w.Write(line)
+		} else if w.explainSink != nil {
+			w.explainSink.Write(line)
 		}
 	}
 	return len(bs), nil
 }
 
 // Flush empties the internal buffer and forward non-ninja-explain lines.
-func (w *withoutNinjaExplain) Flush() error {
+func (w *ninjaExplainExtractor) Flush() error {
 	for {
 		line, err := w.buf.ReadBytes('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -171,6 +151,8 @@ func (w *withoutNinjaExplain) Flush() error {
 		}
 		if !explainRegex.MatchString(string(line)) {
 			w.w.Write(line)
+		} else if w.explainSink != nil {
+			w.explainSink.Write(line)
 		}
 		// The last line may not finish with a '\n', so handle it before breaking.
 		if errors.Is(err, io.EOF) {
@@ -180,107 +162,31 @@ func (w *withoutNinjaExplain) Flush() error {
 	return nil
 }
 
-// stripNinjaExplain returns a writer that strips all Ninja explain outputs and
-// forwards the rest to input writer.
-func stripNinjaExplain(w io.Writer) *withoutNinjaExplain {
-	return &withoutNinjaExplain{
-		buf: new(bytes.Buffer),
-		w:   w,
+// newNinjaExplainExtractor returns a writer that strips all Ninja explain
+// outputs and forwards the rest to input writer. If explainSink is provided,
+// explain output is copied to it.
+func newNinjaExplainExtractor(w io.Writer, explainSink io.Writer) *ninjaExplainExtractor {
+	return &ninjaExplainExtractor{
+		buf:         new(bytes.Buffer),
+		w:           w,
+		explainSink: explainSink,
 	}
 }
 
-// ninjaParser is a container for tracking the stdio of a ninja subprocess and
-// aggregating the logs from any failed targets.
-type ninjaParser struct {
-	// ninjaStdio emits the combined stdout and stderr of a Ninja command.
-	ninjaStdio io.Reader
-
-	// explainOutputSink is a writer to which all ninja explain output
-	// will be redirected.
-	explainOutputSink io.Writer
-
-	// Lines of output produced by failed Ninja steps, with all successful steps
-	// filtered out to make the logs easy to read.
-	failureOutputLines []string
-
-	// Whether we're currently processing a failed step's logs (haven't yet hit
-	// a line indicating the end of the error).
-	processingFailure bool
-
-	// All lines printed for the rule currently being run, including the first
-	// line that starts with an index like [0/1].
-	currentRuleLines []string
+// ninjaFailureLog represents the top-level structure of .ninja_errors.json.
+//
+// The schema is documented here:
+// https://fuchsia.googlesource.com/third_party/github.com/ninja-build/ninja/+/8ffce4dbe12ce518cb21c70c4058039e737be28c/src/status_to_error_log.h#29
+type ninjaFailureLog struct {
+	Version  int            `json:"version"`
+	Failures []ninjaFailure `json:"failures"`
 }
 
-func (p *ninjaParser) parse(ctx context.Context) error {
-	scanner := bufio.NewScanner(p.ninjaStdio)
-	for scanner.Scan() {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		line := scanner.Text()
-		if err := p.parseLine(line); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
-
-func (p *ninjaParser) parseLine(line string) error {
-	// Trailing whitespace isn't significant, as it doesn't affect the way the
-	// line shows up in the logs. However, leading whitespace may be
-	// significant, especially for compiler error messages.
-	line = strings.TrimRightFunc(line, unicode.IsSpace)
-
-	ruleMatches := ruleRegex.FindStringSubmatch(line)
-	if len(ruleMatches) == 6 {
-		// Group each rule line with the non-rule lines of text that follow.
-		p.currentRuleLines = nil
-	}
-	p.currentRuleLines = append(p.currentRuleLines, line)
-
-	if p.processingFailure {
-		if ruleRegex.MatchString(line) || buildStoppedRegex.MatchString(line) {
-			// Found the end of the info for this failure (either a new rule
-			// started or we hit the end of the Ninja logs).
-			p.processingFailure = false
-		} else {
-			// Found another line of the error message.
-			p.failureOutputLines = append(p.failureOutputLines, line)
-		}
-	} else if failureStartRegex.MatchString(line) {
-		// We found a line that indicates the start of a build failure error
-		// message. Start recording information about this failure.
-		p.processingFailure = true
-		p.failureOutputLines = append(p.failureOutputLines, p.currentRuleLines...)
-	} else if errorRegex.MatchString(line) {
-		// An "error" log comes at the end of the output and should only be one
-		// line.
-		p.failureOutputLines = append(p.failureOutputLines, line)
-	} else if explainRegex.MatchString(line) && p.explainOutputSink != nil {
-		if _, err := p.explainOutputSink.Write([]byte(line + "\n")); err != nil {
-			return err
-		}
-	} else if buildStoppedRegex.MatchString(line) && len(p.failureOutputLines) == 0 {
-		// Use the "build stopped" error message (which is generally the final
-		// line of output) as the failure message if there were no failed
-		// targets, as this is likely an internal ninja failure that the "build
-		// stopped" message will help identify.
-		p.failureOutputLines = append(p.failureOutputLines, line)
-	}
-	return nil
-}
-
-func (p *ninjaParser) failureMessage() string {
-	if len(p.failureOutputLines) == 0 {
-		p.failureOutputLines = []string{unrecognizedFailureMsg}
-	}
-	lines := p.failureOutputLines
-	if p.failureOutputLines[len(p.failureOutputLines)-1] != "" {
-		// Add a blank line at the end to ensure a trailing newline.
-		lines = append(p.failureOutputLines, "")
-	}
-	return strings.Join(lines, "\n")
+// ninjaFailure represents a single failure as output in .ninja_errors.json
+type ninjaFailure struct {
+	Artifacts []string `json:"artifacts"`
+	ExitCode  int      `json:"exit_code"`
+	Output    string   `json:"output"`
 }
 
 type ninjaActionMetrics struct {
@@ -298,53 +204,28 @@ func runNinja(
 	explain bool,
 	explainSink io.Writer,
 ) (string, *fintpb.NinjaActionMetrics, error) {
-	stdioReader, stdioWriter := io.Pipe()
-	defer stdioReader.Close()
-	parser := &ninjaParser{ninjaStdio: stdioReader, explainOutputSink: explainSink}
+	if explain {
+		targets = append(targets, "-d", "explain")
+	}
 
-	parserErrs := make(chan error)
-	go func() {
-		parserErrs <- parser.parse(ctx)
-	}()
+	targets = append(targets, fmt.Sprintf("--error_logging_output=%s", ninjaErrorsPath))
 
-	err := func() error {
-		// Close the pipe as soon as the subprocess completes so that the pipe
-		// reader will return an EOF.
-		defer stdioWriter.Close()
-		if explain {
-			targets = append(targets, "-d", "explain")
-		}
-		stdout, stderr := stripNinjaExplain(streams.Stdout(ctx)), stripNinjaExplain(streams.Stderr(ctx))
-		err := r.run(
-			ctx,
-			append(ninjaArgs, targets...),
-			// Ninja writes "ninja: ..." logs to stderr, but step logs like
-			// "[1/12345] ..." to stdout. The parser should consider both of
-			// these kinds of logs. In theory stdout and stderr should be
-			// handled by separate parsers, but it's simpler to dump them to the
-			// same stream and have the parser read from that stream. The writer
-			// returned by io.Pipe() is thread-safe, so there's no need to worry
-			// about interleaving characters of stdout and stderr.
-			//
-			// Ninja explain outputs are not stripped from stdout and stderr because
-			// there are too much.
-			io.MultiWriter(stdout, stdioWriter),
-			io.MultiWriter(stderr, stdioWriter),
-		)
-		if err != nil {
-			return err
-		}
-		if err := stdout.Flush(); err != nil {
-			return fmt.Errorf("flushing stdout writer: %w", err)
-		}
-		if err := stderr.Flush(); err != nil {
-			return fmt.Errorf("flushing stderr writer: %w", err)
-		}
-		return nil
-	}()
-	// Wait for parsing to complete.
-	if parserErr := <-parserErrs; parserErr != nil {
-		return "", nil, parserErr
+	var stderrBuf bytes.Buffer
+
+	stdout := newNinjaExplainExtractor(streams.Stdout(ctx), explainSink)
+	stderr := newNinjaExplainExtractor(io.MultiWriter(&stderrBuf, streams.Stderr(ctx)), explainSink)
+	err := r.run(
+		ctx,
+		append(ninjaArgs, targets...),
+		stdout,
+		stderr,
+	)
+
+	if flushErr := stdout.Flush(); flushErr != nil {
+		return "", nil, fmt.Errorf("flushing stdout writer: %w", flushErr)
+	}
+	if flushErr := stderr.Flush(); flushErr != nil {
+		return "", nil, fmt.Errorf("flushing stderr writer: %w", flushErr)
 	}
 
 	var metrics *fintpb.NinjaActionMetrics
@@ -361,11 +242,63 @@ func runNinja(
 	}
 
 	if err != nil {
-		return parser.failureMessage(), metrics, err
+		failureMsg, msgErr := ninjaFailureMessage(r.buildDir, stderrBuf.String())
+		if msgErr != nil {
+			return "", nil, msgErr
+		}
+		return failureMsg, metrics, err
 	}
 
 	// No failure message necessary if Ninja succeeded.
 	return "", metrics, nil
+}
+
+func ninjaFailureMessage(buildDir string, ninjaStderr string) (string, error) {
+	var failureLog ninjaFailureLog
+	err := jsonutil.ReadFromFile(filepath.Join(buildDir, ninjaErrorsPath), &failureLog)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("failed to read %s: %w", ninjaErrorsPath, err)
+	}
+
+	if err == nil && failureLog.Version != 1 {
+		return "", fmt.Errorf("unsupported ninja failure log version: %d", failureLog.Version)
+	}
+
+	if len(failureLog.Failures) == 0 {
+		// Ninja failed but didn't report any failures in the JSON file,
+		// could be a configuration error (e.g. duplicate rule).
+		failureMsg := strings.TrimSpace(ninjaStderr)
+		if failureMsg == "" {
+			failureMsg = unrecognizedFailureMsg
+		}
+		failureMsg += "\n"
+		return failureMsg, nil
+	}
+
+	var msgLines []string
+	seenOutputs := make(map[string]bool)
+	for _, f := range failureLog.Failures {
+		// Sometimes multiple actions fail with the same output (e.g. they try
+		// to compile the same file and run into the same error mode).
+		// Deduplicate them to avoid cluttering the failure message. Only
+		// deduplicate if the output is more than 5 lines long, to avoid
+		// deduplicating multiple unrelated failures that happen to have the
+		// same short output. The goal is to deduplicate compiler error messages
+		// that point to a specific line, while not deduplicating generic error
+		// messages that may have multiple causes.
+		if f.Output != "" && strings.Count(f.Output, "\n") >= 5 {
+			if seenOutputs[f.Output] {
+				continue
+			}
+			seenOutputs[f.Output] = true
+		}
+		msgLines = append(msgLines, fmt.Sprintf("FAILED: [code=%d] %s", f.ExitCode, strings.Join(f.Artifacts, " ")))
+		if f.Output != "" {
+			msgLines = append(msgLines, strings.TrimRight(f.Output, " \n\t\r"))
+		}
+		msgLines = append(msgLines, "\n")
+	}
+	return strings.Join(msgLines, "\n"), nil
 }
 
 // ninjaDryRun does a `ninja explain` dry run against a build directory and
