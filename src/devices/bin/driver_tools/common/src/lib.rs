@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow, format_err};
-use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
 
 #[derive(Debug)]
 pub struct Device(pub fdd::NodeInfo);
@@ -114,6 +115,99 @@ pub async fn get_driver_info(
         }
     }
     Ok(info_result)
+}
+
+pub async fn get_drivers_from_query(
+    query: &str,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<Vec<fdf::DriverInfo>> {
+    // Try to get exactly matching driver first by treating the query as a filter.
+    // If that fails or returns multiple, we'll do manual filtering.
+    let driver_filter = [query.to_string()];
+    let driver_info = get_driver_info(driver_development_proxy, &driver_filter).await;
+
+    match driver_info {
+        Ok(drivers) if !drivers.is_empty() => Ok(drivers),
+        _ => {
+            // If direct filter didn't work, get all drivers and filter manually.
+            let empty: [String; 0] = [];
+            let all_drivers = get_driver_info(driver_development_proxy, &empty).await?;
+            Ok(all_drivers
+                .into_iter()
+                .filter(|driver| {
+                    let url_match = driver.url.as_ref().map(|u| u.contains(query)).unwrap_or(false);
+                    if url_match {
+                        return true;
+                    }
+                    driver.name.as_ref().map(|n| n.contains(query)).unwrap_or(false)
+                })
+                .collect())
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum GetSingleDriverError {
+    NotFound(String),
+    Ambiguous { query: String, drivers: String },
+    UnderlyingError(anyhow::Error),
+}
+
+impl std::fmt::Display for GetSingleDriverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GetSingleDriverError::NotFound(query) => {
+                write!(f, "No matching driver found for query {:?}.", query)
+            }
+            GetSingleDriverError::Ambiguous { query, drivers } => {
+                write!(
+                    f,
+                    "The query {:?} matches more than one driver:\n{}\n\nTo avoid ambiguity, use a more specific query.",
+                    query, drivers
+                )
+            }
+            GetSingleDriverError::UnderlyingError(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for GetSingleDriverError {}
+
+impl From<anyhow::Error> for GetSingleDriverError {
+    fn from(e: anyhow::Error) -> Self {
+        GetSingleDriverError::UnderlyingError(e)
+    }
+}
+
+pub async fn get_single_driver_from_query(
+    query: &str,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<fdf::DriverInfo, GetSingleDriverError> {
+    let mut filtered_drivers = get_drivers_from_query(query, driver_development_proxy)
+        .await
+        .map_err(anyhow::Error::from)?;
+
+    if filtered_drivers.len() > 1 {
+        let driver_names: Vec<String> = filtered_drivers
+            .iter()
+            .map(|d| {
+                d.url.as_ref().cloned().unwrap_or_else(|| {
+                    d.name.as_ref().cloned().unwrap_or_else(|| "Unknown".to_string())
+                })
+            })
+            .collect();
+        let driver_names = driver_names.join("\n");
+        return Err(GetSingleDriverError::Ambiguous {
+            query: query.to_string(),
+            drivers: driver_names,
+        });
+    }
+
+    if filtered_drivers.is_empty() {
+        return Err(GetSingleDriverError::NotFound(query.to_string()));
+    }
+
+    Ok(filtered_drivers.remove(0))
 }
 
 /// Combines pagination results into a single vector.

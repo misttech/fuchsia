@@ -9,9 +9,9 @@ use argh::{ArgsInfo, FromArgs};
     subcommand,
     name = "list",
     description = "List drivers",
-    example = "To list all drivers with properties:
+    example = "To list all drivers:
 
-    $ driver list -v
+    $ driver list
 
 To list only loaded drivers:
 
@@ -19,7 +19,7 @@ To list only loaded drivers:
     error_code(1, "Failed to connect to the driver development service")
 )]
 pub struct ListCommand {
-    /// list all driver properties
+    /// [Deprecated] Use `ffx driver show` instead. List all driver properties.
     #[argh(switch, short = 'v', long = "verbose")]
     pub verbose: bool,
 

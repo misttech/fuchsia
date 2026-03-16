@@ -92,6 +92,8 @@ rustc_library("lib") {
     "src/subcommands/register/mod.rs",
     "src/subcommands/restart/args.rs",
     "src/subcommands/restart/mod.rs",
+    "src/subcommands/show/args.rs",
+    "src/subcommands/show/mod.rs",
     "src/subcommands/test_node/args.rs",
     "src/subcommands/test_node/mod.rs",
     "src/subcommands/test_node/subcommands/add/args.rs",

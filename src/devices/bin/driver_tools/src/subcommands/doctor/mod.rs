@@ -94,13 +94,7 @@ async fn resolve_driver(
     driver_dev_proxy: &fdd::ManagerProxy,
     writer: &mut dyn io::Write,
 ) -> Result<Option<fdf::DriverInfo>> {
-    let all_drivers =
-        fdev::get_driver_info(driver_dev_proxy, &[]).await.context("Failed to get driver info")?;
-
-    let matched_drivers = all_drivers
-        .into_iter()
-        .filter(|d| d.url.as_deref().map(|url| url.contains(filter)).unwrap_or(false))
-        .collect_vec();
+    let matched_drivers = fdev::get_drivers_from_query(filter, driver_dev_proxy).await?;
 
     if matched_drivers.is_empty() {
         writeln!(writer, "ERROR: No drivers matched the filter '{}'.", filter)?;
