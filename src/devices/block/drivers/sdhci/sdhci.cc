@@ -534,6 +534,7 @@ void Sdhci::OnLifelineClosed(async_dispatcher_t* dispatcher, async::WaitBase* wa
 
 void Sdhci::OnInterruptDelegateStopped() {
   std::lock_guard<std::mutex> lock(mtx_);
+  FDF_LOG(DEBUG, "sdhci: OnInterruptDelegateStopped");
   virtual_irq_handler_.Cancel();
   virtual_irq_lifeline_wait_.Cancel();
   virtual_irq_.reset();
@@ -541,12 +542,6 @@ void Sdhci::OnInterruptDelegateStopped() {
 
   if (shutdown_) {
     return;
-  }
-  // If cqhci was still enabled when the delegate stopped, disable it.
-  if (cqhci_enabled_) {
-    // Cannot call DisableCqhci here because we would double lock mtx_ and block.
-    // Since Sdhci has no real CQHCI logic, we just set the flag.
-    cqhci_enabled_ = false;
   }
 
   if (zx_status_t status = irq_handler_.Begin(irq_dispatcher_.async_dispatcher());

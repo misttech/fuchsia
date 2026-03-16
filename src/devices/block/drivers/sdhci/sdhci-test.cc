@@ -2987,14 +2987,19 @@ TEST_F(SdhciBackgroundTest, InitializeCommandQueueing) {
                    fidl::kIgnoreBindingClosure) {}
 
     void Callback(fdf::Arena& arena, CallbackCompleter::Sync& completer) override {
+      std::lock_guard lock(lock_);
       interrupt_count_++;
       completer.buffer(arena).Reply();
     }
 
-    size_t interrupt_count() const { return interrupt_count_; }
+    size_t interrupt_count() {
+      std::lock_guard lock(lock_);
+      return interrupt_count_;
+    }
 
    private:
-    size_t interrupt_count_ = 0;
+    std::mutex lock_;
+    size_t interrupt_count_ TA_GUARDED(lock_) = 0;
     fdf::ServerBinding<fuchsia_hardware_sdmmc::InBandInterrupt> binding_;
   };
 
@@ -3034,39 +3039,46 @@ TEST_F(SdhciBackgroundTest, InitializeCommandQueueing) {
   EXPECT_TRUE(bti.is_valid());
 
   // Verify that triggering the physical interrupt results in no interrupt delivery, because the
-  // driver is watching the virtual IRQ.
+  // driver is watching the virtual IRQ instead.
+  EXPECT_OK(physical_irq.trigger(0, zx::time()));
   driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
     sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(1).WriteTo(&env.mmio());
   });
-  physical_irq.trigger(0, zx::time());
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
   driver_test().runtime().RunUntilIdle();
   ASSERT_EQ(handler.interrupt_count(), 0u);
+  // Wait to consume the pending physical IRQ.  This also verifies that the driver's port is no
+  // longer bound to the physical IRQ (since zx_interrupt_wait requires that).
+  EXPECT_OK(physical_irq.wait(nullptr));
 
   // Verify that triggering the virtual IRQ eventually results in the IRQ being delivered and acked
   // by the driver.
-  virtual_irq.trigger(0, zx::time());
-  virtual_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), nullptr);
-  driver_test().runtime().RunUntilIdle();
-  ASSERT_GE(handler.interrupt_count(), 1u);
-  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
-    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(0).WriteTo(&env.mmio());
-  });
+  EXPECT_OK(virtual_irq.trigger(0, zx::time()));
+  EXPECT_OK(virtual_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), nullptr));
+  // Although the IRQ has been acked at this point, the driver may not have yet called Callback,
+  // because that happens on a different dispatcher from the IRQ dispatcher.  From the IRQ
+  // dispatcher's perspective, Callback is fire-and-forget.
+  // The callback will run on this test's dispatcher, so make sure we yield to allow it to run.
+  driver_test().runtime().RunUntil([&]() { return handler.interrupt_count() >= 1u; });
   size_t num_irqs = handler.interrupt_count();
-  physical_irq.ack();
 
   // Verify that after dropping lifeline, the driver will handle physical IRQs again.
+  // Since we're using a virtual IRQ, it's edge-triggered, so we need to do this in a loop.  Real
+  // interrupts are level-triggered.
   virtual_irq_lifeline_host.reset();
-  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
-    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(1).WriteTo(&env.mmio());
-  });
-  physical_irq.trigger(0, zx::time());
-  physical_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), nullptr);
-  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
-    sdhci::InterruptStatus::Get().FromValue(0).set_card_interrupt(0).WriteTo(&env.mmio());
-  });
-  driver_test().runtime().RunUntilIdle();
-  ASSERT_GE(handler.interrupt_count(), num_irqs + 1);
+  while (handler.interrupt_count() < num_irqs + 1) {
+    // TODO(https://fxbug.dev/492600836): This ack shouldn't be necessary, but it is due to a kernel
+    // bug where the interrupt may end up in a state where it's unacked but will also never enqueue
+    // a port packet to the driver.
+    physical_irq.ack();
+    EXPECT_OK(physical_irq.trigger(0, zx::time()));
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    driver_test().runtime().RunUntilIdle();
+  }
+  // Make sure the driver acked the physical interrupt.
+  zx_signals_t signals;
+  physical_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &signals);
+  EXPECT_TRUE(signals & ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
 
   ASSERT_OK(StopDriver());
 }
