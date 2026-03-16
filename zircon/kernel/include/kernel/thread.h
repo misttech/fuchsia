@@ -738,14 +738,15 @@ class PreemptionState {
   // EagerReschedReenable() to decrement the eager resched disable counter.
   void EagerReschedDisable() {
     const uint32_t old_state = state_.fetch_add(1 << kEagerReschedDisableShift);
-    ASSERT(EagerReschedDisableCount(old_state) < kMaxCountValue);
+    ASSERT_MSG(EagerReschedDisableCount(old_state) < kMaxCountValue, "old_state: %#" PRIx32,
+               old_state);
   }
 
   // EagerReschedReenable() decrements the eager resched disable counter and
   // flushes pending local and/or remote preemptions if enabled, respectively.
   void EagerReschedReenable() {
     const uint32_t old_state = state_.fetch_sub(1 << kEagerReschedDisableShift);
-    ASSERT(EagerReschedDisableCount(old_state) > 0);
+    ASSERT_MSG(EagerReschedDisableCount(old_state) > 0, "old_state: %#" PRIx32, old_state);
 
     // First check the expected case.
     if (old_state == 1 << kEagerReschedDisableShift) {
