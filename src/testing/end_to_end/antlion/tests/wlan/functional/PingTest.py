@@ -188,7 +188,7 @@ class PingTest(base_test.WifiBaseTest):
         _: str,
         get_addr_fn: str | Callable[[Addrs], str],
         count: int = 3,
-        interval: int = 1000,
+        interval: int = 500,
         timeout: int = 1000,
         size: int = 25,
         min_success: int | None = None,
@@ -209,6 +209,10 @@ class PingTest(base_test.WifiBaseTest):
         self.log.info(f"Attempting to ping {dest_ip}...")
         ping_result = self.dut.ping(dest_ip, count, interval, timeout, size)
         min_success = min_success or count
+        if not ping_result.success:
+            raise signals.TestFailure(
+                f"Failed to ping {dest_ip}: {ping_result}"
+            )
         asserts.assert_greater_equal(
             ping_result.received,
             min_success,
