@@ -63,10 +63,40 @@ RenderTotalAverage  Manual      11.583923586956521  milliseconds
 import argparse
 import pathlib
 import sys
+from typing import Any, Tuple
 
 from reporting import metrics
 from trace_processing import trace_importing, trace_model
 from trace_processing.metrics import scenic
+
+
+def PrintClientInfo(model: trace_model.Model) -> None:
+    """
+    Prints all of the client information for the GPU.
+    """
+
+    def FindProcessAndThread(
+        model: trace_model.Model, thread_id: int
+    ) -> Tuple[Any, Any]:
+        for process in model.processes:
+            for thread in process.threads:
+                if thread.tid == thread_id:
+                    return (process, thread)
+        return (None, None)
+
+    gpu_process: Any = next(
+        filter(lambda p: "#gpu" in p.name, iter(model.processes))
+    )
+    for thread in gpu_process.threads:
+        words = thread.name.split()
+        if words[0] != "ConnectionThread":
+            continue
+        client_thread = int(words[1])
+        process, thread = FindProcessAndThread(model, client_thread)
+        if process:
+            print(f"Connection ID: {client_thread}")
+            print(f"    Process: {process.name}")
+            print(f"    Thread: {thread.name}")
 
 
 def main() -> None:
@@ -77,6 +107,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("path_to_trace", type=str)
     parser.add_argument("output_path", type=str)
+    parser.add_argument(
+        "--clients", action="store_true", help="Print GPU client info"
+    )
     args = parser.parse_args()
 
     if args.path_to_trace.endswith(".json"):
@@ -93,6 +126,8 @@ def main() -> None:
     model: trace_model.Model = trace_importing.create_model_from_file_path(
         path_to_trace_json
     )
+    if args.clients:
+        PrintClientInfo(model)
     trace_results = scenic.ScenicMetricsProcessor().process_metrics(model)
 
     metrics.TestCaseResult.write_fuchsiaperf_json(
