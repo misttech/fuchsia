@@ -13,6 +13,7 @@
 
 // page fault flags
 const uint VMM_PF_FLAG_WRITE = (1u << 0);
+// Indicates the fault occurred while the CPU was executing in user mode.
 const uint VMM_PF_FLAG_USER = (1u << 1);
 const uint VMM_PF_FLAG_GUEST = (1u << 2);
 const uint VMM_PF_FLAG_INSTRUCTION = (1u << 3);
