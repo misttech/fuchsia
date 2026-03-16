@@ -136,8 +136,8 @@ impl FsInspectTree {
         self.volumes_tracker.lock().insert(name, volume);
     }
 
-    pub fn unregister_volume(&self, name: String) {
-        self.volumes_tracker.lock().remove(&name);
+    pub fn unregister_volume(&self, name: &str) {
+        self.volumes_tracker.lock().remove(name);
     }
 }
 

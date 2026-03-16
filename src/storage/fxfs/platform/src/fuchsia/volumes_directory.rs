@@ -218,6 +218,24 @@ impl MountedVolumesGuard<'_> {
         }
     }
 
+    async fn lock_mount(&self, mounted_volume: &mut MountedVolume) {
+        let MountedVolume { volume, locked, .. } = mounted_volume;
+
+        if let Some(callback) = self.volumes_directory.on_volume_added.get() {
+            callback(&volume.volume().name(), None);
+        }
+        if !*locked {
+            if let Some(inspect) = self.volumes_directory.inspect_tree.upgrade() {
+                inspect.unregister_volume(volume.volume().name());
+            }
+            // We must make sure to remove the root entry which holds strong references to the
+            // volume since otherwise `Volume::try_unwrap` might fail.
+            let _ = volume.outgoing_dir().remove_entry("root", true);
+            volume.volume().terminate().await;
+            *locked = true;
+        }
+    }
+
     async fn remove_volume(&mut self, name: &str) -> Result<(), Error> {
         let (object_id, transaction) = self
             .volumes_directory
@@ -227,9 +245,6 @@ impl MountedVolumesGuard<'_> {
 
         // Cowardly refuse to delete a mounted volume.
         ensure!(!self.mounted_volumes.contains_key(&object_id), FxfsError::AlreadyBound);
-        if let Some(inspect) = self.volumes_directory.inspect_tree.upgrade() {
-            inspect.unregister_volume(name.to_string());
-        }
         let directory_node = self.volumes_directory.directory_node.clone();
         self.volumes_directory
             .root_volume
@@ -242,18 +257,13 @@ impl MountedVolumesGuard<'_> {
     }
 
     async fn terminate(&mut self) {
-        let volumes = std::mem::take(&mut *self.mounted_volumes);
-        for MountedVolume { volume, locked, .. } in volumes.values() {
-            if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-                callback(volume.volume().name(), None);
-            }
-            let admin_scope = volume.admin_scope();
+        let mut volumes = std::mem::take(&mut *self.mounted_volumes);
+        for mounted_volume in volumes.values_mut() {
+            let admin_scope = mounted_volume.volume.admin_scope();
             admin_scope.shutdown();
             admin_scope.wait().await;
 
-            if !locked {
-                volume.volume().terminate().await;
-            }
+            self.lock_mount(mounted_volume).await;
         }
     }
 
@@ -262,35 +272,19 @@ impl MountedVolumesGuard<'_> {
     //
     // NOTE: This will not terminate any connections on the admin scope.
     pub async fn unmount(&mut self, store_id: u64) -> Result<FxVolumeAndRoot, Error> {
-        let MountedVolume { volume, locked, .. } =
+        let mut mounted_volume =
             self.mounted_volumes.remove(&store_id).ok_or(FxfsError::NotFound)?;
-        if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-            callback(volume.volume().name(), None);
-        }
-
-        if !locked {
-            // As we are not terminating the admin scope, we must make sure to remove the root entry
-            // which holds strong references to the volume since otherwise `Volume::try_unwrap`
-            // might fail.
-            let _ = volume.outgoing_dir().remove_entry("root", true);
-            volume.volume().terminate().await;
-        }
-
-        Ok(volume)
+        self.lock_mount(&mut mounted_volume).await;
+        Ok(mounted_volume.volume)
     }
 
     async fn force_lock(&mut self, store_id: u64) -> Result<(), Error> {
-        let Some(MountedVolume { volume, locked, .. }) = self.mounted_volumes.get_mut(&store_id)
-        else {
-            // The volume is already unmounted, so there's nothing to do.
-            return Ok(());
-        };
-
-        if !*locked {
-            // Remove the "root" entry so that no more connections can be made.
-            let _ = volume.outgoing_dir().remove_entry("root", true);
-            volume.volume().terminate().await;
-            *locked = true;
+        if let Some(mut mounted_volume) = self.mounted_volumes.remove(&store_id) {
+            self.lock_mount(&mut mounted_volume).await;
+            // Reinsert the volume as locked. This looks racy but it isn't, we held the mutable
+            // reference to `self` for this whole duration. `get_mut()` would be cleaner but that
+            // would hold a mutable reference while this call would take another reference.
+            self.mounted_volumes.insert(store_id, mounted_volume);
         }
 
         Ok(())
