@@ -1470,7 +1470,7 @@ void Client::TearDown(zx_status_t epitaph) {
   // Break FIDL connections.
   binding_->Close(epitaph);
   binding_.reset();
-  coordinator_listener_ = fidl::WireClient<fuchsia_hardware_display::CoordinatorListener>();
+  coordinator_listener_ = fidl::WireSyncClient<fuchsia_hardware_display::CoordinatorListener>();
 
   CleanUpAllImages();
   fdf::info("Releasing {} capture images cur={}, pending={}", capture_images_.size(),
@@ -1609,8 +1609,8 @@ void Client::Bind(
   binding_ = fidl::BindServer(controller_.driver_dispatcher()->async_dispatcher(),
                               std::move(coordinator_server_end), this, std::move(unbound_callback));
 
-  coordinator_listener_.Bind(std::move(coordinator_listener_client_end),
-                             controller_.driver_dispatcher()->async_dispatcher());
+  coordinator_listener_ = fidl::WireSyncClient<fuchsia_hardware_display::CoordinatorListener>(
+      std::move(coordinator_listener_client_end));
 }
 
 Client::Client(Controller* controller, ClientPriority priority, ClientId client_id)
