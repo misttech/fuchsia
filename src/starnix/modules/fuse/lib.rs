@@ -1927,6 +1927,9 @@ impl<'a> FuseMutableStateGuard<'a> {
         }
         let mut first_loop = true;
         loop {
+            if !self.is_connected() {
+                return error!(ECONNABORTED);
+            }
             if let Some(response) = self.get_response(unique_id) {
                 return response;
             }
@@ -1986,9 +1989,7 @@ impl FuseMutableState {
         }
         self.state = FuseConnectionState::Disconnected;
         self.message_queue.clear();
-        for operation in &mut self.operations {
-            operation.1.response = Some(error!(ECONNABORTED));
-        }
+        self.operations.clear();
         self.waiters.notify_all();
     }
 
