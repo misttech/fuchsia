@@ -207,6 +207,10 @@ import("//build/testing/host_test_data.gni")
 #  timeout_secs (optional)
 #    [int] The infra timeout in seconds for the test.
 #
+#  cleanup_period_secs (optional)
+#    [int] If set, we send SIGTERM to the test this many seconds before the
+#    test times out. Requires timeout_secs to be set.
+#
 #  isolated (optional)
 #    [bool] Whether the test needs to be run in isolation to other tests.
 #
@@ -434,6 +438,22 @@ template("python_mobly_test") {
     ]
 
     _additional_deps += [ ":${_param_yaml_data_target}" ]
+  }
+
+  if (defined(invoker.timeout_secs)) {
+    _common_host_test_args += [
+      "--test-timeout-sec",
+      "${invoker.timeout_secs}",
+    ]
+  }
+
+  if (defined(invoker.cleanup_period_secs)) {
+    assert(defined(invoker.timeout_secs),
+           "cleanup_period_secs requires timeout_secs to be set")
+    _common_host_test_args += [
+      "--cleanup-period-sec",
+      "${invoker.cleanup_period_secs}",
+    ]
   }
 
   if (defined(invoker.honeydew_config)) {

@@ -58,6 +58,9 @@ performance_testing_environments = [
 #   timeout_secs (optional)
 #     See test_spec in build/testing/test_spec.gni
 #
+#   cleanup_period_secs (optional)
+#     See python_mobly_test in build/python/python_mobly_test.gni
+#
 #   enable_mypy (optional)
 #     If true, enable MyPy type checking on the target and respective deps.
 #     Type: boolean
@@ -137,6 +140,7 @@ template("python_perf_test") {
                                "product_bundle",
                                "test_data_deps",
                                "timeout_secs",
+                               "cleanup_period_secs",
                              ])
       data_sources = _data_sources
       data_package_name = _data_package_name
