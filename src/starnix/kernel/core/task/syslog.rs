@@ -7,7 +7,6 @@ use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::OutputBuffer;
 use diagnostics_data::{Data, Logs, LogsData, Severity};
-use diagnostics_message::from_extended_record;
 use estimate_timeline::{DefaultFetcher, TimeFetcher, TimelineEstimator};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -24,7 +23,7 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, mpsc};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 const BUFFER_SIZE: i32 = 1_049_000;
 
@@ -293,6 +292,7 @@ struct LogIterator {
     pending_formatted_contents: VecDeque<fdiagnostics::FormattedContent>,
     pending_datas: VecDeque<Data<Logs>>,
     state: Arc<Mutex<TimelineEstimator<DefaultFetcher>>>,
+    tags: std::collections::HashMap<u64, diagnostics_message::MonikerWithUrl>,
 }
 
 impl LogIterator {
@@ -307,6 +307,7 @@ impl LogIterator {
             client_selector_configuration: Some(
                 fdiagnostics::ClientSelectorConfiguration::SelectAll(true),
             ),
+            subscribe_to_manifest: Some(true),
             ..fdiagnostics::StreamParameters::default()
         };
         let (client_end, server_end) =
@@ -325,6 +326,7 @@ impl LogIterator {
             pending_formatted_contents: VecDeque::new(),
             pending_datas: VecDeque::new(),
             state: syslog.state.clone(),
+            tags: std::collections::HashMap::new(),
         })
     }
 
@@ -353,22 +355,78 @@ impl LogIterator {
                         let mut current_slice = buf.as_ref();
                         let mut ret: Option<OneOrMany<LogsData>> = None;
                         loop {
-                            let (data, remaining) = from_extended_record(current_slice)
-                                .map_err(|a| errno!(EIO, format!("Error {a} parsing FXT")))?;
-                            ret = Some(match ret.take() {
-                                Some(OneOrMany::One(one)) => OneOrMany::Many(vec![one, data]),
-                                Some(OneOrMany::Many(mut many)) => {
-                                    many.push(data);
-                                    OneOrMany::Many(many)
+                            let (record, remaining) =
+                                diagnostics_log_encoding::parse::parse_record(current_slice)
+                                    .map_err(|a| errno!(EIO, format!("Error {a} parsing FXT")))?;
+
+                            let record_len = current_slice.len() - remaining.len();
+                            let record_bytes = &current_slice[..record_len];
+
+                            let header = diagnostics_log_encoding::Header::read_from_bytes(
+                                &current_slice[..8],
+                            )
+                            .map_err(|_| errno!(EIO, "Invalid FXT header"))?;
+                            let tag = header.tag();
+                            let is_manifest =
+                                (tag & diagnostics_log_encoding::LOG_CONTROL_BIT) != 0;
+                            let actual_tag = tag & !diagnostics_log_encoding::LOG_CONTROL_BIT;
+
+                            if is_manifest {
+                                let mut moniker = None;
+                                let mut url = None;
+                                for arg in &record.arguments {
+                                    use diagnostics_log_encoding::Value;
+                                    if arg.name() == "moniker" {
+                                        if let Value::Text(t) = arg.value() {
+                                            moniker = Some(diagnostics_data::ExtendedMoniker::parse_str(&t).unwrap_or_else(|_| diagnostics_data::ExtendedMoniker::ComponentInstance(moniker::Moniker::parse_str("unknown").unwrap())));
+                                        }
+                                    } else if arg.name() == "url" {
+                                        if let Value::Text(t) = arg.value() {
+                                            url = Some(flyweights::FlyStr::new(t));
+                                        }
+                                    }
                                 }
-                                None => OneOrMany::One(data),
-                            });
+                                if let (Some(moniker), Some(url)) = (moniker, url) {
+                                    self.tags.insert(
+                                        actual_tag as u64,
+                                        diagnostics_message::MonikerWithUrl { moniker, url },
+                                    );
+                                }
+                            } else {
+                                let source = self
+                                    .tags
+                                    .get(&(actual_tag as u64))
+                                    .cloned()
+                                    .unwrap_or_else(|| diagnostics_message::MonikerWithUrl {
+                                        moniker:
+                                            diagnostics_data::ExtendedMoniker::ComponentInstance(
+                                                moniker::Moniker::parse_str("unknown").unwrap(),
+                                            ),
+                                        url: flyweights::FlyStr::new("unknown"),
+                                    });
+
+                                let data =
+                                    diagnostics_message::from_structured(source, record_bytes)
+                                        .map_err(|a| {
+                                            errno!(EIO, format!("Error {a} parsing FXT"))
+                                        })?;
+
+                                ret = Some(match ret.take() {
+                                    Some(OneOrMany::One(one)) => OneOrMany::Many(vec![one, data]),
+                                    Some(OneOrMany::Many(mut many)) => {
+                                        many.push(data);
+                                        OneOrMany::Many(many)
+                                    }
+                                    None => OneOrMany::One(data),
+                                });
+                            }
+
                             if remaining.is_empty() {
                                 break;
                             }
                             current_slice = remaining;
                         }
-                        ret.ok_or_else(|| errno!(EIO, format!("archivist returned invalid data")))?
+                        ret.unwrap_or_else(|| OneOrMany::Many(vec![]))
                     }
                     format => {
                         unreachable!("we only request and expect one format. Got: {format:?}")
