@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import traceback
+from datetime import timedelta
 from typing import Any
 
 import mobly_driver
@@ -37,7 +38,14 @@ parser.add_argument(
 parser.add_argument(
     "--test-timeout-sec",
     default=None,
+    type=int,
     help="integer to specify number of seconds before a Mobly test times out.",
+)
+parser.add_argument(
+    "--cleanup-period-sec",
+    default=None,
+    type=int,
+    help="if set, we send SIGTERM to the test this many seconds before the test times out.",
 )
 parser.add_argument("--ffx-path", default=None, help="path to FFX.")
 parser.add_argument(
@@ -132,6 +140,12 @@ def main() -> None:
     driver = factory.get_driver()
 
     try:
+
+        def maybe_timedelta(seconds: int | None) -> timedelta | None:
+            if seconds is not None:
+                return timedelta(seconds=seconds)
+            return None
+
         # Use the same Python runtime for Mobly test execution as the one that's
         # currently running this Mobly driver script.
         mobly_driver.run(
@@ -139,7 +153,8 @@ def main() -> None:
             python_path=sys.executable,
             test_path=args.mobly_test_path,
             test_cases=args.test_cases,
-            timeout_sec=args.test_timeout_sec,
+            timeout=maybe_timedelta(args.test_timeout_sec),
+            cleanup_period=maybe_timedelta(args.cleanup_period_sec),
             verbose=args.v,
             hermetic=args.hermetic,
             list_mobly_tests=args.list_mobly_tests,

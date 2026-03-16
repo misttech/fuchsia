@@ -6,6 +6,8 @@
 import os
 import signal
 import subprocess
+from dataclasses import dataclass
+from datetime import timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any, Optional
 
@@ -27,16 +29,25 @@ class MoblyTestFailureException(Exception):
         return f"Mobly test failed with return code {self.return_code}."
 
 
+# The "final grace period" is how long we wait before killing the test in the
+# case that the cleanup period times out. Once tests have received two
+# SIGTERMs, they get this last chance to exit gracefully. In particular, tests
+# shouldn't do anything during this period other than persist information they
+# have already collected and exit.
+FINAL_GRACE_PERIOD_TIMEOUT = timedelta(seconds=10)
+
+
 def _execute_test(
     driver: base.BaseDriver,
     python_path: str,
     test_path: str,
     test_cases: Optional[list[str]] = None,
-    timeout_sec: Optional[int] = None,
+    timeout: Optional[timedelta] = None,
+    cleanup_period: Optional[timedelta] = None,
     verbose: bool = False,
     hermetic: bool = False,
     list_mobly_tests: bool = False,
-) -> None:
+) -> int:
     """Executes a Mobly test with the specified Mobly Driver.
 
     Mobly test output is streamed to the console.
@@ -46,14 +57,18 @@ def _execute_test(
       python_path: path to the Python runtime for to use.
       test_path: path to the Mobly test executable to run.
       test_cases: The set of cases to run. If None, all methods in test are run.
-      timeout_sec: Number of seconds before a test is killed due to timeout.
+      timeout: Duration before a test is killed due to timeout.
         If set to None, timeout is not enforced.
+      cleanup_period: If set, we send SIGTERM to the test this long before the
+          test is killed due to timeout. Requires timeout to be set.
       verbose: Whether to enable verbose output from the mobly test.
       hermetic: Whether the mobly test is a self-contained executable.
       list_mobly_tests: Whether to list test cases instead of running them.
 
+    Returns:
+      The return code of the Mobly test.
+
     Raises:
-      MoblyTestFailureException if Mobly test returns non-zero return code.
       MoblyTestTimeoutException if Mobly test duration exceeds timeout.
     """
     test_env = os.environ.copy()
@@ -86,36 +101,85 @@ def _execute_test(
             universal_newlines=True,
             env=test_env,
         ) as proc:
-
+            # Treat SIGTERM as SIGINT
             def sigterm_handler(signum: int, _: Any) -> None:
+                raise InterruptedError(
+                    f"[Mobly Driver] - Received signal: {signum}, interrupting the mobly test"
+                )
+
+            signal.signal(signal.SIGTERM, sigterm_handler)
+
+            # The main test timeout is the total timeout minus the (optional)
+            # cleanup period and the final grace period.
+            if timeout is not None:
+                main_test_timeout = (
+                    timeout
+                    - (cleanup_period or timedelta(0))
+                    - FINAL_GRACE_PERIOD_TIMEOUT
+                )
+            else:
+                main_test_timeout = None
+
+            if main_test_timeout is not None:
                 print(
-                    f"[Mobly Driver] - Received signal: {signum}, terminating the mobly test"
+                    f"[Mobly Driver] - Waiting {main_test_timeout} for test to complete."
+                )
+            else:
+                print(
+                    f"[Mobly Driver] - Waiting indefinitely for test to complete."
+                )
+            try:
+                return proc.wait(
+                    timeout=main_test_timeout.total_seconds()
+                    if main_test_timeout is not None
+                    else None
+                )
+            except subprocess.TimeoutExpired:
+                print(
+                    f"[Mobly Driver] - test timed out after {main_test_timeout}."
+                )
+            except InterruptedError:
+                print(
+                    "[Mobly Driver] - got SIGINT/SIGTERM while waiting for test to complete."
+                )
+
+            if cleanup_period is not None:
+                print(
+                    "[Mobly Driver] - Sending SIGTERM to begin cleanup period."
                 )
                 proc.terminate()
                 try:
-                    proc.wait(timeout=5)
+                    return proc.wait(timeout=cleanup_period.total_seconds())
                 except subprocess.TimeoutExpired:
                     print(
-                        "[Mobly Driver] - After terminating the mobly test, "
-                        "it is still running even after waiting for 5 seconds"
+                        f"[Mobly Driver] - cleanup period timed out after {cleanup_period}."
                     )
-                driver.teardown()
+                except InterruptedError:
+                    print(
+                        "[Mobly Driver] - got SIGINT/SIGTERM during cleanup period."
+                    )
 
-            signal.signal(signal.SIGINT, sigterm_handler)
-            signal.signal(signal.SIGTERM, sigterm_handler)
+            print(
+                "[Mobly Driver] - Sending SIGTERM to begin final grace period."
+            )
+            proc.terminate()
             try:
-                return_code = proc.wait(timeout=timeout_sec)
-            except subprocess.TimeoutExpired:
-                # Mobly test timed out.
-                proc.kill()
-                proc.wait(timeout=10)
-                raise MoblyTestTimeoutException(
-                    f"Mobly test timed out after {timeout_sec} seconds."
+                return proc.wait(
+                    timeout=FINAL_GRACE_PERIOD_TIMEOUT.total_seconds()
                 )
-        if return_code != 0:
-            # TODO(https://fxbug.dev/42070748) - differentiate between legitimate
-            # test failures vs unexpected crashes.
-            raise MoblyTestFailureException(return_code)
+            except subprocess.TimeoutExpired:
+                print(
+                    f"[Mobly Driver] - final grace period timed out after {FINAL_GRACE_PERIOD_TIMEOUT}."
+                )
+            except InterruptedError:
+                print(
+                    "[Mobly Driver] - got SIGINT/SIGTERM during final grace period."
+                )
+
+            print("[Mobly Driver] - Sending SIGKILL")
+            proc.kill()
+            proc.wait()
+            raise MoblyTestTimeoutException("Mobly test had to be killed.")
 
 
 def run(
@@ -123,7 +187,8 @@ def run(
     python_path: str,
     test_path: str,
     test_cases: Optional[list[str]] = None,
-    timeout_sec: Optional[int] = None,
+    timeout: Optional[timedelta] = None,
+    cleanup_period: Optional[timedelta] = None,
     verbose: bool = False,
     hermetic: bool = False,
     list_mobly_tests: bool = False,
@@ -139,8 +204,10 @@ def run(
       python_path: path to the Python runtime to use for test execution.
       test_path: path to the Mobly test executable to run.
       test_cases: The set of cases to run. If None, all methods in test are run.
-      timeout_sec: Number of seconds before a test is killed due to timeout.
+      timeout: Duration before a test is killed due to timeout.
           If None, timeout is not enforced.
+      cleanup_period: If set, we send SIGTERM to the test this long before the
+          test is killed due to timeout. Requires timeout to be set.
       verbose: Whether to enable verbose output from the mobly test.
       hermetic: Whether the mobly test is a self-contained executable.
       list_mobly_tests: Whether to list test cases instead of running them.
@@ -156,21 +223,30 @@ def run(
         raise ValueError("|python_path| must not be empty.")
     if not test_path:
         raise ValueError("|test_path| must not be empty.")
-    if timeout_sec is not None and timeout_sec < 0:
+    if timeout is not None and timeout < timedelta(0):
+        raise ValueError("|timeout| must be None or a non-negative timedelta.")
+    if cleanup_period is not None and cleanup_period < timedelta(0):
         raise ValueError(
-            "|timeout_sec| must be None or a non-negative integer."
+            "|cleanup_period| must be None or a non-negative timedelta."
         )
+    if cleanup_period is not None and timeout is None:
+        raise ValueError("|cleanup_period| must be None if |timeout| is None.")
     print(f"Running [{driver.__class__.__name__}]")
     try:
-        _execute_test(
+        return_code = _execute_test(
             python_path=python_path,
             test_path=test_path,
             driver=driver,
-            timeout_sec=timeout_sec,
+            timeout=timeout,
+            cleanup_period=cleanup_period,
             test_cases=test_cases,
             verbose=verbose,
             hermetic=hermetic,
             list_mobly_tests=list_mobly_tests,
         )
+        if return_code != 0:
+            # TODO(https://fxbug.dev/42070748) - differentiate between legitimate
+            # test failures vs unexpected crashes.
+            raise MoblyTestFailureException(return_code)
     finally:
         driver.teardown()

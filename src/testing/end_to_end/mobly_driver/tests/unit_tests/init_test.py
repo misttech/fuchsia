@@ -5,6 +5,7 @@
 
 import subprocess
 import unittest
+from datetime import timedelta
 from typing import Any
 from unittest import mock
 
@@ -52,7 +53,10 @@ class MoblyDriverLibTest(unittest.TestCase):
         """Test case to ensure exception raised on invalid args"""
         with self.assertRaises(ValueError):
             mobly_driver.run(
-                driver, python_path, test_path, timeout_sec=timeout_sec
+                driver,
+                python_path,
+                test_path,
+                timeout=timedelta(seconds=timeout_sec),
             )
 
     @mock.patch("builtins.print")
@@ -77,13 +81,115 @@ class MoblyDriverLibTest(unittest.TestCase):
         """Test case to ensure exception raised on test timeout"""
         mock_popen.return_value.__enter__.return_value = self.mock_process
         self.mock_process.wait.side_effect = [
-            subprocess.TimeoutExpired("", 0),
-            0,
+            subprocess.TimeoutExpired("", 0),  # Main test times out
+            # No cleanup period
+            subprocess.TimeoutExpired("", 0),  # Final warning times out
+            0,  # Kill wait succeeds
         ]
 
         with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
             mobly_driver.run(self.mock_driver, "/py/path", "/test/path")
         self.mock_process.kill.assert_called()
+
+    @mock.patch("builtins.print")
+    @mock.patch("subprocess.Popen")
+    def test_run_with_cleanup_period_sends_sigterm(
+        self, mock_popen: Any, *unused_args: Any
+    ) -> None:
+        """Testcase to ensure SIGTERM is sent when main test times out with cleanup_period set"""
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        self.mock_process.wait.side_effect = [
+            subprocess.TimeoutExpired("", 0),  # Main test times out
+            0,  # Cleanup period succeeds
+        ]
+
+        mobly_driver.run(
+            self.mock_driver,
+            "/py/path",
+            "/test/path",
+            timeout=timedelta(seconds=30),
+            cleanup_period=timedelta(seconds=10),
+        )
+
+        self.mock_process.terminate.assert_called_once()
+        self.mock_process.kill.assert_not_called()
+
+    @mock.patch("builtins.print")
+    @mock.patch("subprocess.Popen")
+    def test_run_with_bo_cleanup_period_sends_sigterm_grace_period_succeeds(
+        self, mock_popen: Any, *unused_args: Any
+    ) -> None:
+        """Testcase to ensure SIGTERM is sent when main test times out with cleanup_period set"""
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        self.mock_process.wait.side_effect = [
+            subprocess.TimeoutExpired("", 0),  # Main test times out
+            # No cleanup period
+            0,  # Grace period succeeds
+        ]
+
+        mobly_driver.run(
+            self.mock_driver,
+            "/py/path",
+            "/test/path",
+            timeout=timedelta(seconds=30),
+        )
+
+        self.mock_process.terminate.assert_called_once()
+        self.mock_process.kill.assert_not_called()
+
+    @mock.patch("builtins.print")
+    @mock.patch("subprocess.Popen")
+    def test_run_with_cleanup_period_sends_sigkill(
+        self, mock_popen: Any, *unused_args: Any
+    ) -> None:
+        """Testcase to ensure SIGKILL is sent when cleanup period also times out"""
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        self.mock_process.wait.side_effect = [
+            subprocess.TimeoutExpired("", 0),  # Main test times out
+            subprocess.TimeoutExpired("", 0),  # Cleanup period times out
+            subprocess.TimeoutExpired("", 0),  # Final warning times out
+            0,  # Kill wait succeeds
+        ]
+
+        with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
+            mobly_driver.run(
+                self.mock_driver,
+                "/py/path",
+                "/test/path",
+                timeout=timedelta(seconds=30),
+                cleanup_period=timedelta(seconds=10),
+            )
+
+        # It calls terminate for each timeout before the last one
+        self.assertEqual(self.mock_process.terminate.call_count, 2)
+        self.mock_process.kill.assert_called_once()
+
+    @mock.patch("builtins.print")
+    @mock.patch("subprocess.Popen")
+    def test_interrupted_error_also_works(
+        self, mock_popen: Any, *unused_args: Any
+    ) -> None:
+        """Testcase to ensure SIGKILL is sent when cleanup period also times out"""
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        self.mock_process.wait.side_effect = [
+            InterruptedError,  # Main test interrupted
+            InterruptedError,  # Cleanup period interrupted
+            InterruptedError,  # Final warning interrupted
+            0,  # Kill wait succeeds
+        ]
+
+        with self.assertRaises(mobly_driver.MoblyTestTimeoutException):
+            mobly_driver.run(
+                self.mock_driver,
+                "/py/path",
+                "/test/path",
+                timeout=timedelta(seconds=30),
+                cleanup_period=timedelta(seconds=10),
+            )
+
+        # It calls terminate for each timeout before the last one
+        self.assertEqual(self.mock_process.terminate.call_count, 2)
+        self.mock_process.kill.assert_called_once()
 
     @mock.patch("builtins.print")
     @mock.patch("subprocess.Popen")
