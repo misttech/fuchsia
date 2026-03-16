@@ -1480,6 +1480,7 @@ mod tests {
             Weak::new(),
             store,
             store_object_id,
+            "vol".to_owned(),
             Arc::new(PageRefaultCounter::new().unwrap()),
             MemoryPressureConfig::default(),
         )

@@ -41,8 +41,15 @@ macro_rules! flow_end {
 }
 
 #[macro_export]
+macro_rules! counter {
+    ($name:expr, $counter_id:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        $crate::storage_trace::counter!("fxfs", $name, $counter_id $(,$key => $val)*);
+    }
+}
+
+#[macro_export]
 macro_rules! trace_future_args {
     ($name:expr $(, $key:expr => $val:expr)* $(,)?) => {
         $crate::storage_trace::trace_future_args!("fxfs", $name $(,$key => $val)*);
-    };
+    }
 }

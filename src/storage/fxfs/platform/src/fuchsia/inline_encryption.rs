@@ -488,6 +488,7 @@ mod tests {
                     Weak::new(),
                     starnix_vol.clone(),
                     starnix_vol.store_object_id(),
+                    "starnix-vol".to_owned(),
                     Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
                     MemoryPressureConfig::default(),
                 )
@@ -659,6 +660,7 @@ mod tests {
                 Weak::new(),
                 store.clone(),
                 store.store_object_id(),
+                "starnix-vol".to_owned(),
                 Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
                 MemoryPressureConfig::default(),
             )

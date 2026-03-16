@@ -19,7 +19,9 @@ use fidl_fuchsia_fxfs::{
     BytesAndNodes, FileBackedVolumeProviderRequest, FileBackedVolumeProviderRequestStream,
     ProjectIdRequest, ProjectIdRequestStream, ProjectIterToken,
 };
+use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectVolume, VolumeData};
+use fuchsia_async as fasync;
 use fuchsia_async::epoch::Epoch;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
@@ -43,7 +45,6 @@ use std::time::Duration;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // LINT.IfChange
 // TODO:(b/299919008) Fix this number to something reasonable, or maybe just for fxblob.
@@ -144,6 +145,7 @@ pub struct FxVolume {
     store: Arc<ObjectStore>,
     pager: Pager,
     executor: fasync::EHandle,
+    name: String,
 
     // A tuple of the actual task and a channel to signal to terminate the task.
     background_task: Mutex<Option<(fasync::Task<()>, oneshot::Sender<()>)>>,
@@ -165,6 +167,10 @@ pub struct FxVolume {
     poisoned: AtomicBool,
 
     blob_resupplied_count: Arc<PageRefaultCounter>,
+
+    /// The number of dirty bytes in pager backed VMOs that belong to this volume. VolumesDirectory
+    /// holds a count for all volumes. This count is only used for tracing.
+    pager_dirty_byte_count: AtomicU64,
 }
 
 #[fxfs_trace::trace]
@@ -173,6 +179,7 @@ impl FxVolume {
         parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         fs_id: u64,
+        name: String,
         blob_resupplied_count: Arc<PageRefaultCounter>,
         memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Self, Error> {
@@ -181,6 +188,7 @@ impl FxVolume {
             parent,
             cache: NodeCache::new(),
             store,
+            name,
             pager: Pager::new(scope.clone())?,
             executor: fasync::EHandle::local(),
             background_task: Mutex::new(None),
@@ -192,6 +200,7 @@ impl FxVolume {
             #[cfg(any(test, feature = "testing"))]
             poisoned: AtomicBool::new(false),
             blob_resupplied_count,
+            pager_dirty_byte_count: AtomicU64::new(0),
         })
     }
 
@@ -221,6 +230,10 @@ impl FxVolume {
 
     pub fn blob_resupplied_count(&self) -> &PageRefaultCounter {
         &self.blob_resupplied_count
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Reports the filesystem info, but if the volume has a space limit applied then the space
@@ -566,10 +579,16 @@ impl FxVolume {
         byte_count: u64,
         mark_dirty: impl FnOnce() + Send + 'static,
     ) {
-        if let Some(parent) = self.parent.upgrade() {
-            parent.report_pager_dirty(byte_count, self, mark_dirty);
-        } else {
+        let this = self.clone();
+        let callback = move || {
             mark_dirty();
+            let prev = this.pager_dirty_byte_count.fetch_add(byte_count, Ordering::Relaxed);
+            fxfs_trace::counter!("dirty-bytes", 0, this.name => prev.saturating_add(byte_count));
+        };
+        if let Some(parent) = self.parent.upgrade() {
+            parent.report_pager_dirty(byte_count, self, callback);
+        } else {
+            callback();
         }
     }
 
@@ -578,6 +597,8 @@ impl FxVolume {
         if let Some(parent) = self.parent.upgrade() {
             parent.report_pager_clean(byte_count);
         }
+        let prev = self.pager_dirty_byte_count.fetch_sub(byte_count, Ordering::Relaxed);
+        fxfs_trace::counter!("dirty-bytes", 0, self.name => prev.saturating_sub(byte_count));
     }
 
     #[trace]
@@ -893,6 +914,7 @@ impl FxVolumeAndRoot {
         parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         unique_id: u64,
+        volume_name: String,
         blob_resupplied_count: Arc<PageRefaultCounter>,
         memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Self, Error> {
@@ -900,6 +922,7 @@ impl FxVolumeAndRoot {
             parent,
             store,
             unique_id,
+            volume_name,
             blob_resupplied_count.clone(),
             memory_pressure_config,
         )?);
@@ -1000,7 +1023,9 @@ mod tests {
     use crate::volume::MAX_READ_AHEAD_SIZE;
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::{BytesAndNodes, ProjectIdMarker};
+    use fidl_fuchsia_io as fio;
     use fs_inspect::FsInspectVolume;
+    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder};
@@ -1019,7 +1044,6 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 
@@ -2993,6 +3017,7 @@ mod tests {
                 Weak::new(),
                 store,
                 unique_id,
+                "vol".to_owned(),
                 blob_resupplied_count,
                 MemoryPressureConfig::default(),
             )
@@ -3035,6 +3060,7 @@ mod tests {
                 Weak::new(),
                 store,
                 unique_id,
+                "vol".to_owned(),
                 blob_resupplied_count,
                 MemoryPressureConfig::default(),
             )

@@ -140,6 +140,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    volume_name.to_owned(),
                     blob_resupplied_count.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
@@ -150,6 +151,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    volume_name.to_owned(),
                     blob_resupplied_count.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
@@ -185,6 +187,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    volume_name.to_owned(),
                     blob_resupplied_count.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
@@ -195,6 +198,7 @@ impl TestFixture {
                     Arc::downgrade(&volumes_directory),
                     store,
                     store_object_id,
+                    volume_name.to_owned(),
                     blob_resupplied_count.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )

@@ -65,7 +65,7 @@ pub struct VolumesDirectory {
 
     /// A running estimate of the number of dirty bytes outstanding in all pager-backed VMOs across
     /// all volumes.
-    pager_dirty_bytes_count: AtomicU64,
+    pager_dirty_bytes_count: PagerDirtyByteCount,
 
     /// Max outstanding dirty bytes under critical memory pressure. This could be hardcoded, but is
     /// broken out for testing.
@@ -88,7 +88,6 @@ pub struct MountedVolumesGuard<'a> {
 
 struct MountedVolume {
     sequence: u64,
-    name: String,
     volume: FxVolumeAndRoot,
 
     // True if the volume was forcibly locked.
@@ -188,6 +187,7 @@ impl MountedVolumesGuard<'_> {
             Arc::downgrade(&self.volumes_directory),
             store,
             unique_id.koid().unwrap().raw_koid(),
+            name.to_owned(),
             self.volumes_directory.blob_resupplied_count.clone(),
             self.volumes_directory.memory_pressure_config,
         )
@@ -205,12 +205,7 @@ impl MountedVolumesGuard<'_> {
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         self.mounted_volumes.insert(
             volume.volume().store().store_object_id(),
-            MountedVolume {
-                sequence,
-                name: name.to_string(),
-                volume: volume.clone(),
-                locked: false,
-            },
+            MountedVolume { sequence, volume: volume.clone(), locked: false },
         );
         if let Some(inspect) = self.volumes_directory.inspect_tree.upgrade() {
             inspect.register_volume(
@@ -248,9 +243,9 @@ impl MountedVolumesGuard<'_> {
 
     async fn terminate(&mut self) {
         let volumes = std::mem::take(&mut *self.mounted_volumes);
-        for (_, MountedVolume { name, volume, locked, .. }) in volumes {
+        for MountedVolume { volume, locked, .. } in volumes.values() {
             if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-                callback(&name, None);
+                callback(volume.volume().name(), None);
             }
             let admin_scope = volume.admin_scope();
             admin_scope.shutdown();
@@ -267,10 +262,10 @@ impl MountedVolumesGuard<'_> {
     //
     // NOTE: This will not terminate any connections on the admin scope.
     pub async fn unmount(&mut self, store_id: u64) -> Result<FxVolumeAndRoot, Error> {
-        let MountedVolume { name, volume, locked, .. } =
+        let MountedVolume { volume, locked, .. } =
             self.mounted_volumes.remove(&store_id).ok_or(FxfsError::NotFound)?;
         if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-            callback(&name, None);
+            callback(volume.volume().name(), None);
         }
 
         if !locked {
@@ -364,7 +359,7 @@ impl VolumesDirectory {
             mem_monitor,
             blob_resupplied_count,
             profiling_state: futures::lock::Mutex::new(None),
-            pager_dirty_bytes_count: AtomicU64::new(0),
+            pager_dirty_bytes_count: PagerDirtyByteCount::new(),
             max_dirty_bytes_when_critical: AtomicU64::new(zx::system_get_physmem() / 100),
             on_volume_added: OnceLock::new(),
             memory_pressure_config,
@@ -400,8 +395,8 @@ impl VolumesDirectory {
             warn!("Failing profile deletion while profile operations are in flight.");
             return Err(zx::Status::SHOULD_WAIT);
         }
-        for (_, MountedVolume { name, volume, .. }) in &*volumes {
-            if name == volume_name {
+        for MountedVolume { volume, .. } in volumes.values() {
+            if volume.volume().name() == volume_name {
                 let dir = Arc::new(FxDirectory::new(
                     None,
                     volume.volume().get_profile_directory().await.map_err(map_to_status)?,
@@ -491,7 +486,7 @@ impl VolumesDirectory {
                 }
             }
             None => {
-                for (_, MountedVolume { name, volume, .. }) in &*volumes.mounted_volumes {
+                for MountedVolume { volume, .. } in volumes.mounted_volumes.values() {
                     let is_blob =
                         volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
                     // Just log the errors, don't stop half-way.
@@ -503,7 +498,7 @@ impl VolumesDirectory {
                         error!(
                             error:?,
                             profile_name = profile_name.as_str(),
-                            volume_name = name.as_str();
+                            volume_name = volume.volume().name();
                             "Failed to record or replay profile",
                         );
                     }
@@ -801,7 +796,7 @@ impl VolumesDirectory {
             return false;
         }
 
-        let total_dirty = self.pager_dirty_bytes_count.load(Ordering::Acquire);
+        let total_dirty = self.pager_dirty_bytes_count.load();
         total_dirty + byte_count >= self.max_dirty_bytes_when_critical.load(Ordering::Relaxed)
     }
 
@@ -816,7 +811,7 @@ impl VolumesDirectory {
         mark_dirty: impl FnOnce() + Send + 'static,
     ) {
         if !self.is_flush_required_to_dirty(byte_count) {
-            self.pager_dirty_bytes_count.fetch_add(byte_count, Ordering::AcqRel);
+            self.pager_dirty_bytes_count.fetch_add(byte_count);
             mark_dirty();
         } else {
             volume.spawn(
@@ -829,7 +824,7 @@ impl VolumesDirectory {
                         debug!(
                             "Flushing all volumes. Memory pressure is critical & dirty pager bytes \
                             ({} MiB) >= limit ({} MiB)",
-                            self.pager_dirty_bytes_count.load(Ordering::Acquire) / MEBIBYTE,
+                            self.pager_dirty_bytes_count.load() / MEBIBYTE,
                             self.max_dirty_bytes_when_critical.load(Ordering::Relaxed) / MEBIBYTE
                         );
 
@@ -843,7 +838,7 @@ impl VolumesDirectory {
 
                         flushes.collect::<()>().await;
                     }
-                    self.pager_dirty_bytes_count.fetch_add(byte_count, Ordering::AcqRel);
+                    self.pager_dirty_bytes_count.fetch_add(byte_count);
                     mark_dirty();
                 }
                 .trace(trace_future_args!("flush-before-mark-dirty")),
@@ -853,12 +848,12 @@ impl VolumesDirectory {
 
     /// Reports that a certain number of bytes were cleaned in a pager-backed VMO.
     pub fn report_pager_clean(&self, byte_count: u64) {
-        let prev_dirty = self.pager_dirty_bytes_count.fetch_sub(byte_count, Ordering::AcqRel);
+        let prev_dirty = self.pager_dirty_bytes_count.fetch_sub(byte_count);
 
         if prev_dirty < byte_count {
             // An unlikely scenario, but if there was an underflow, reset the pager dirty bytes to
             // zero.
-            self.pager_dirty_bytes_count.store(0, Ordering::Release);
+            self.pager_dirty_bytes_count.store(0);
         }
     }
 
@@ -977,12 +972,12 @@ impl VolumesDirectory {
     ) -> Result<(), Error> {
         let guard = self.lock().await;
         info!("installing {src}/{image_file} -> {dst}");
-        for (_, MountedVolume { name, .. }) in guard.mounted_volumes.iter() {
-            if name == src {
+        for MountedVolume { volume, .. } in guard.mounted_volumes.values() {
+            if volume.volume().name() == src {
                 return Err(zx::Status::ALREADY_BOUND)
                     .with_context(|| format!("volume {src} is already mounted"));
             }
-            if name == dst {
+            if volume.volume().name() == dst {
                 return Err(zx::Status::ALREADY_BOUND)
                     .with_context(|| format!("volume {dst} is already mounted"));
             }
@@ -1040,6 +1035,35 @@ pub(crate) fn serve_startup_volume_proxy(
         )
         .unwrap();
     (proxy, scope)
+}
+
+struct PagerDirtyByteCount(AtomicU64);
+
+impl PagerDirtyByteCount {
+    pub fn new() -> Self {
+        Self(AtomicU64::new(0))
+    }
+
+    pub fn fetch_add(&self, value: u64) -> u64 {
+        let prev = self.0.fetch_add(value, Ordering::Relaxed);
+        fxfs_trace::counter!("dirty-bytes", 0, "total" => prev.saturating_add(value));
+        prev
+    }
+
+    pub fn fetch_sub(&self, value: u64) -> u64 {
+        let prev = self.0.fetch_sub(value, Ordering::Relaxed);
+        fxfs_trace::counter!("dirty-bytes", 0, "total" => prev.saturating_sub(value));
+        prev
+    }
+
+    pub fn load(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    pub fn store(&self, value: u64) {
+        self.0.store(value, Ordering::Relaxed);
+        fxfs_trace::counter!("dirty-bytes", 0, "total" => value);
+    }
 }
 
 #[cfg(test)]
@@ -1182,7 +1206,7 @@ mod tests {
             .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
             .await
             .expect("create encrypted volume failed");
-        let old_dirty = volumes_directory.pager_dirty_bytes_count.load(Ordering::SeqCst);
+        let old_dirty = volumes_directory.pager_dirty_bytes_count.load();
 
         let new_dirty = {
             let (root, server_end) = create_proxy::<fio::DirectoryMarker>();
@@ -1201,7 +1225,7 @@ mod tests {
             file::write(&f, buf.as_slice()).await.expect("Write");
             // It's important to check the dirty bytes before closing the file, as closing can
             // trigger a flush.
-            volumes_directory.pager_dirty_bytes_count.load(Ordering::SeqCst)
+            volumes_directory.pager_dirty_bytes_count.load()
         };
         assert_ne!(old_dirty, new_dirty);
 
@@ -2634,15 +2658,12 @@ mod tests {
         let buf = [0xAAu8];
         // One call to get dirty bytes over 0, the second to force a flush during mark_dirty.
         vmo.write(&buf, 0).expect("Writing to create dirty bytes");
-        let before = fixture.volumes_directory().pager_dirty_bytes_count.load(Ordering::Relaxed);
+        let before = fixture.volumes_directory().pager_dirty_bytes_count.load();
         vmo.write(&buf, zx::system_get_page_size().into())
             .expect("Writing to force a flush during mark_dirty");
         // This is still the page size because we forced a flush of the first write during the
         // second write.
-        assert_eq!(
-            fixture.volumes_directory().pager_dirty_bytes_count.load(Ordering::Relaxed),
-            before,
-        );
+        assert_eq!(fixture.volumes_directory().pager_dirty_bytes_count.load(), before,);
 
         fixture.close().await;
     }
