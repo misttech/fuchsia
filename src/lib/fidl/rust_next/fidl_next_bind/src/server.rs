@@ -159,7 +159,6 @@ impl<P, T: Transport> ServerDispatcher<P, T> {
     pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchServerMessage<H, T>,
-        H: Send,
     {
         self.dispatcher
             .run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> })

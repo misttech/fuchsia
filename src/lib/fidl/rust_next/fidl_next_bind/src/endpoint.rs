@@ -14,7 +14,7 @@ use fidl_next_protocol::{ProtocolError, Transport};
 
 use crate::{
     Client, ClientDispatcher, DispatchClientMessage, DispatchServerMessage, Executor, HasExecutor,
-    HasTransport, IgnoreEvents, Server, ServerDispatcher,
+    HasTransport, IgnoreEvents, LocalExecutor, Server, ServerDispatcher,
 };
 
 macro_rules! endpoint {
@@ -269,6 +269,10 @@ pub type HandlerJoinHandle<T, H, E = <T as HasExecutor>::Executor> =
     <E as Executor>::JoinHandle<Result<H, ProtocolError<<T as Transport>::Error>>>;
 
 impl<P, T: Transport> ClientEnd<P, T> {
+    // -------------------------------------------------------------------------
+    // Non-local executor API
+    // -------------------------------------------------------------------------
+
     /// Spawns a dispatcher for the given client end with a handler computed
     /// from a closure on an executor.
     ///
@@ -455,9 +459,152 @@ impl<P, T: Transport> ClientEnd<P, T> {
         let executor = self.executor();
         Self::spawn_on(self, &executor)
     }
+
+    // -------------------------------------------------------------------------
+    // Local executor API
+    // -------------------------------------------------------------------------
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on a local executor.
+    ///
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_local_handler_full_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
+        executor: &E,
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H, E>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        let dispatcher = ClientDispatcher::new(self);
+        let client = dispatcher.client();
+        let handler = create_handler(client.clone());
+        (client, executor.spawn_local(dispatcher.run(handler)))
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler on a local
+    /// executor.
+    ///
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_local_handler_full_on<H, E>(
+        self,
+        handler: H,
+        executor: &E,
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H, E>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        self.spawn_local_handler_full_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on a local executor.
+    ///
+    /// Returns the client.
+    pub fn spawn_local_handler_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
+        executor: &E,
+    ) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        Self::spawn_local_handler_full_on_with(self, create_handler, executor).0
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler on a local
+    /// executor.
+    ///
+    /// Returns the client.
+    pub fn spawn_local_handler_on<H, E>(self, handler: H, executor: &E) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        self.spawn_local_handler_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_local_handler_full_with<H>(
+        self,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_local_handler_full_on_with(self, create_handler, &executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler on the
+    /// default executor for the transport.
+    ///
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_local_handler_full<H>(self, handler: H) -> (Client<P, T>, HandlerJoinHandle<T, H>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        self.spawn_local_handler_full_with(|_| handler)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the client.
+    pub fn spawn_local_handler_with<H>(
+        self,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
+    ) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_local_handler_on_with(self, create_handler, &executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler on the
+    /// default executor for the transport.
+    ///
+    /// Returns the client.
+    pub fn spawn_local_handler<H>(self, handler: H) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        self.spawn_local_handler_with(|_| handler)
+    }
 }
 
 impl<P, T: Transport> ServerEnd<P, T> {
+    // -------------------------------------------------------------------------
+    // Non-local executor API
+    // -------------------------------------------------------------------------
+
     /// Spawns a dispatcher for the given server end with a handler computed
     /// from a closure on an executor.
     ///
@@ -589,5 +736,146 @@ impl<P, T: Transport> ServerEnd<P, T> {
         H: Send + 'static,
     {
         self.spawn_with(|_| handler)
+    }
+
+    // -------------------------------------------------------------------------
+    // Local executor API
+    // -------------------------------------------------------------------------
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on a local executor.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_local_full_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
+        executor: &E,
+    ) -> (HandlerJoinHandle<T, H, E>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        let dispatcher = ServerDispatcher::new(self);
+        let server = dispatcher.server();
+        let handler = create_handler(server.clone());
+        (executor.spawn_local(dispatcher.run(handler)), server)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler on a local
+    /// executor.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_local_full_on<H, E>(
+        self,
+        handler: H,
+        executor: &E,
+    ) -> (HandlerJoinHandle<T, H, E>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        self.spawn_local_full_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on a local executor.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_local_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
+        executor: &E,
+    ) -> HandlerJoinHandle<T, H, E>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        let dispatcher = ServerDispatcher::new(self);
+        let handler = create_handler(dispatcher.server());
+        executor.spawn_local(dispatcher.run(handler))
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler on a local
+    /// executor.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_local_on<H, E>(self, handler: H, executor: &E) -> HandlerJoinHandle<T, H, E>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: 'static,
+        E: LocalExecutor,
+    {
+        self.spawn_local_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_local_full_with<H>(
+        self,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
+    ) -> (HandlerJoinHandle<T, H>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_local_full_on_with(self, create_handler, &executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler on the
+    /// default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_local_full<H>(self, handler: H) -> (HandlerJoinHandle<T, H>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        self.spawn_local_full_with(|_| handler)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_local_with<H>(
+        self,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
+    ) -> HandlerJoinHandle<T, H>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_local_on_with(self, create_handler, &executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler on the
+    /// default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_local<H>(self, handler: H) -> HandlerJoinHandle<T, H>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        T::Executor: LocalExecutor,
+        H: 'static,
+    {
+        self.spawn_local_with(|_| handler)
     }
 }

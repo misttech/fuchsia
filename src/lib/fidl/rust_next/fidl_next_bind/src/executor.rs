@@ -21,6 +21,16 @@ pub trait Executor {
         F::Output: Send + 'static;
 }
 
+/// A local executor which supports spawning non-`Send` futures.
+pub trait LocalExecutor: Executor {
+    /// Spawns the given non-`Send` future on this executor, returning a
+    /// `JoinHandle` for the task.
+    fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static;
+}
+
 /// Identifies an executor as being able to run a transport.
 ///
 /// Implementing `RunsTransport` is optional and only enables some more

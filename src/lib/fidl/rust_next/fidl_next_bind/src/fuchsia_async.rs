@@ -12,7 +12,7 @@ use fidl_next_protocol::mpsc::Mpsc as BaseMpsc;
 use fidl_next_protocol::{NonBlockingTransport, Transport};
 use fuchsia_async::{CancelableJoinHandle, Scope, ScopeHandle, Task};
 
-use crate::{ClientEnd, Executor, HasExecutor, RunsTransport, ServerEnd};
+use crate::{ClientEnd, Executor, HasExecutor, LocalExecutor, RunsTransport, ServerEnd};
 
 /// A type representing the current fuchsia-async executor.
 pub struct FuchsiaAsync;
@@ -28,8 +28,23 @@ impl Executor for FuchsiaAsync {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // This may be a useless conversion because `Task::spawn` returns a
+        // `CancelableJoinHandle` on host but not on target
         #[allow(clippy::useless_conversion)]
         CancelableJoinHandle::from(Task::spawn(future).detach_on_drop())
+    }
+}
+
+impl LocalExecutor for FuchsiaAsync {
+    fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        // This may be a useless conversion because `Task::local` returns a
+        // `CancelableJoinHandle` on host but not on target
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(Task::local(future).detach_on_drop())
     }
 }
 
@@ -44,8 +59,23 @@ impl Executor for Scope {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // This may be a useless conversion because `compute` returns a
+        // `CancelableJoinHandle` on host but not on target
         #[allow(clippy::useless_conversion)]
         CancelableJoinHandle::from(self.compute(future).detach_on_drop())
+    }
+}
+
+impl LocalExecutor for Scope {
+    fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        // This may be a useless conversion because `compute_local` returns a
+        // `CancelableJoinHandle` on host but not on target
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(self.compute_local(future).detach_on_drop())
     }
 }
 
@@ -60,8 +90,23 @@ impl Executor for ScopeHandle {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // This may be a useless conversion because `compute` returns a
+        // `CancelableJoinHandle` on host but not on target
         #[allow(clippy::useless_conversion)]
         CancelableJoinHandle::from(self.compute(future).detach_on_drop())
+    }
+}
+
+impl LocalExecutor for ScopeHandle {
+    fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        // This may be a useless conversion because `compute_local` returns a
+        // `CancelableJoinHandle` on host but not on target
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(self.compute_local(future).detach_on_drop())
     }
 }
 

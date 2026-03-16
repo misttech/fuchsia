@@ -202,4 +202,19 @@ mod tests {
         assert_eq!(client_task.await.unwrap().unwrap().error, Some(100));
         assert_eq!(server_task.await.unwrap().unwrap().last_result, None);
     }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_local() {
+        let (client_end, server_end) = create_endpoints();
+        let (client, client_task) =
+            client_end.spawn_local_handler_full_with(MyCalculatorClient::with_client);
+        let server_task = server_end.spawn_local(MyCalculatorServer::new());
+
+        add(&client).await;
+
+        client.close();
+
+        assert_eq!(client_task.await.unwrap().unwrap().error, None);
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(42));
+    }
 }
