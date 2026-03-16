@@ -997,5 +997,11 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:           swarmingOutputType,
 			SkipPassedTask: true,
 		},
+		// For https://fxbug.dev/491197177
+		&stringInLogCheck{
+			String:      "Found conflicting adb server process",
+			Type:        swarmingOutputType,
+			AlwaysFlake: true,
+		},
 	}
 }
