@@ -34,7 +34,8 @@ use std::marker::PhantomData;
 
 use bit_set::BitSet;
 
-use crate::logging::log_warn;
+use crate::logging::{log_info, log_warn};
+use crate::protocol_family::NamedNetlinkFamily;
 
 // Safe "as" conversion because u32::BITS (32) will fit into any usize.
 const U32_BITS_USIZE: usize = u32::BITS as usize;
@@ -97,20 +98,25 @@ impl TryFrom<u32> for SingleLegacyGroup {
     }
 }
 
-/// Multicast group semantics that are specific to a particular protocol family.
-pub(crate) trait MulticastCapableNetlinkFamily {
-    /// Returns true if the given [`ModernGroup`] is a valid multicast group.
-    fn is_valid_group(group: &ModernGroup) -> bool;
+/// Indicates support for a multicast group with respect to a particular
+/// protocol family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GroupSupport {
+    /// The group is valid for the protocol family and supported.
+    Supported,
+    /// The group is valid for the protocol family but not supported.
+    Unsupported,
 }
 
-/// Translate the given legacy group membership to a modern membership.
-///
-/// Returns `None` if the given legacy_group does not exist in this family.
-fn legacy_to_modern<F: MulticastCapableNetlinkFamily>(
-    group: SingleLegacyGroup,
-) -> Option<ModernGroup> {
-    let modern_group = ModernGroup(group.inner().ilog2() + 1);
-    F::is_valid_group(&modern_group).then_some(modern_group)
+/// Error returned when attempting to join an invalid [`ModernGroup`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct InvalidModernGroupError;
+
+/// Multicast group semantics that are specific to a particular protocol family.
+pub(crate) trait MulticastCapableNetlinkFamily {
+    /// Returns whether `group` is supported for this protocol family, or an
+    /// error if it's not a valid group for this family.
+    fn check_support(group: &ModernGroup) -> Result<GroupSupport, InvalidModernGroupError>;
 }
 
 /// Manages the current multicast group memberships of a single connection to
@@ -129,10 +135,6 @@ pub(crate) struct MulticastGroupMemberships<F: MulticastCapableNetlinkFamily> {
     memberships: BitSet,
 }
 
-/// Error returned when attempting to join an invalid [`ModernGroup`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct InvalidModernGroupError;
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Mutation {
     None,
@@ -144,7 +146,7 @@ pub(crate) enum Mutation {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct InvalidLegacyGroupsError;
 
-impl<F: MulticastCapableNetlinkFamily> MulticastGroupMemberships<F> {
+impl<F: MulticastCapableNetlinkFamily + NamedNetlinkFamily> MulticastGroupMemberships<F> {
     /// Instantiate a new [`MulticastGroupMemberships`].
     pub(crate) fn new() -> MulticastGroupMemberships<F> {
         MulticastGroupMemberships { family: PhantomData, memberships: Default::default() }
@@ -163,8 +165,12 @@ impl<F: MulticastCapableNetlinkFamily> MulticastGroupMemberships<F> {
         group: ModernGroup,
     ) -> Result<bool, InvalidModernGroupError> {
         let MulticastGroupMemberships { family: _, memberships } = self;
-        if !F::is_valid_group(&group) {
-            return Err(InvalidModernGroupError);
+        if F::check_support(&group)? == GroupSupport::Unsupported {
+            log_info!(
+                "{}: adding membership for valid but unsupported multicast group {:?}",
+                F::NAME,
+                group
+            );
         }
         let was_absent = memberships.insert(group.into());
         return Ok(was_absent);
@@ -178,9 +184,7 @@ impl<F: MulticastCapableNetlinkFamily> MulticastGroupMemberships<F> {
         group: ModernGroup,
     ) -> Result<bool, InvalidModernGroupError> {
         let MulticastGroupMemberships { family: _, memberships } = self;
-        if !F::is_valid_group(&group) {
-            return Err(InvalidModernGroupError);
-        }
+        let _ = F::check_support(&group)?;
         let was_present = memberships.remove(group.into());
         return Ok(was_present);
     }
@@ -202,23 +206,35 @@ impl<F: MulticastCapableNetlinkFamily> MulticastGroupMemberships<F> {
         // Validate and record all the mutations that will need to be applied.
         for i in 0..U32_BITS_USIZE {
             let raw_legacy_group = 1 << i;
-            let legacy_group = raw_legacy_group
+            let legacy_group: SingleLegacyGroup = raw_legacy_group
                 .try_into()
                 .expect("raw_legacy_group unexpectedly had multiple bits set");
-            let modern_group = legacy_to_modern::<F>(legacy_group);
+
+            let modern_group = ModernGroup(legacy_group.inner().ilog2() + 1);
+            let support = F::check_support(&modern_group);
             let is_member_of_group = requested_groups & raw_legacy_group != 0;
-            mutations[i] = match (modern_group, is_member_of_group) {
-                (Some(modern_group), true) => Mutation::Add(modern_group),
-                (Some(modern_group), false) => Mutation::Del(modern_group),
-                (None, true) => {
+            mutations[i] = match (support, is_member_of_group) {
+                (Ok(support), true) => {
+                    if support == GroupSupport::Unsupported {
+                        log_info!(
+                            "{}: adding membership for valid but unsupported multicast group {:?}",
+                            F::NAME,
+                            modern_group
+                        );
+                    }
+                    Mutation::Add(modern_group)
+                }
+                (Ok(_), false) => Mutation::Del(modern_group),
+                (Err(_), true) => {
                     log_warn!(
-                        "failed to join legacy groups ({:?}) because of invalid group: {:?}",
+                        "{}: failed to join legacy groups ({:?}) because of invalid group: {:?}",
+                        F::NAME,
                         requested_groups,
                         legacy_group
                     );
                     return Err(InvalidLegacyGroupsError);
                 }
-                (None, false) => Mutation::None,
+                (Err(_), false) => Mutation::None,
             };
         }
 

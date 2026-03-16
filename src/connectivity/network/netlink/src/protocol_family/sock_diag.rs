@@ -23,24 +23,26 @@ use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use crate::client::{AsyncWorkCompletionWaiter, ExternalClient};
 use crate::messaging::{MessageWithPermission, Sender};
 use crate::multicast_groups::{
-    InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
+    GroupSupport, InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
     MulticastCapableNetlinkFamily,
 };
-use crate::protocol_family::{NetlinkClient, ProtocolFamily};
+use crate::protocol_family::{NamedNetlinkFamily, NetlinkClient, ProtocolFamily};
 
 /// An implementation of the `NETLINK_SOCK_DIAG` protocol family.
 pub(crate) struct NetlinkSockDiag;
 
 impl MulticastCapableNetlinkFamily for NetlinkSockDiag {
     #[allow(non_upper_case_globals)]
-    fn is_valid_group(ModernGroup(group): &ModernGroup) -> bool {
+    fn check_support(
+        ModernGroup(group): &ModernGroup,
+    ) -> Result<GroupSupport, InvalidModernGroupError> {
         match *group {
             sknetlink_groups_SKNLGRP_INET_TCP_DESTROY
             | sknetlink_groups_SKNLGRP_INET_UDP_DESTROY
             | sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY
             | sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY
-            | sknetlink_groups_SKNLGRP_NONE => true,
-            _ => false,
+            | sknetlink_groups_SKNLGRP_NONE => Ok(GroupSupport::Unsupported),
+            _ => Err(InvalidModernGroupError),
         }
     }
 }
@@ -102,11 +104,14 @@ impl NetlinkClient for NetlinkSockDiagClient {
     }
 }
 
+impl NamedNetlinkFamily for NetlinkSockDiag {
+    const NAME: &'static str = "NETLINK_SOCK_DIAG";
+}
+
 impl ProtocolFamily for NetlinkSockDiag {
     type Request = SockDiagRequest;
     type Response = SockDiagResponse;
     type RequestHandler<S: Sender<Self::Response>> = NetlinkSockDiagRequestHandler<S>;
-    const NAME: &'static str = "NETLINK_SOCK_DIAG";
     type NotifiedMulticastGroup = NetlinkSockDiagNotifiedGroup;
     type AsyncWorkItem = Never;
 

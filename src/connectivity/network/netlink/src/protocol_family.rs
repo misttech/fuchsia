@@ -29,8 +29,15 @@ use crate::multicast_groups::{
 };
 use crate::route_tables::{NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex};
 
+/// A type representing a named Netlink family.
+pub(crate) trait NamedNetlinkFamily {
+    const NAME: &'static str;
+}
+
 /// A type representing a Netlink Protocol Family.
-pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
+pub(crate) trait ProtocolFamily:
+    MulticastCapableNetlinkFamily + NamedNetlinkFamily + Send + Sized
+{
     /// The request message type associated with the protocol family.
     type Request: Clone
         + Debug
@@ -43,8 +50,6 @@ pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
 
     /// The implementation for handling requests from this protocol family.
     type RequestHandler<S: Sender<Self::Response>>: NetlinkFamilyRequestHandler<Self, S>;
-
-    const NAME: &'static str;
 
     type NotifiedMulticastGroup: PartialEq + Eq + Hash + Clone + Copy + Debug + Send;
 
@@ -145,6 +150,7 @@ pub mod route {
     use crate::client::AsyncWorkCompletionWaiter;
     use crate::interfaces::AcceptRaRtTable;
     use crate::messaging::{MessageWithPermission, Permission};
+    use crate::multicast_groups::GroupSupport;
     use crate::neighbors::{
         DelNeighborArgs, GetNeighborArgs, NeighborRequestArgs, NewNeighborArgs,
     };
@@ -161,31 +167,33 @@ pub mod route {
 
     impl MulticastCapableNetlinkFamily for NetlinkRoute {
         #[allow(non_upper_case_globals)]
-        fn is_valid_group(ModernGroup(group): &ModernGroup) -> bool {
+        fn check_support(
+            ModernGroup(group): &ModernGroup,
+        ) -> Result<GroupSupport, InvalidModernGroupError> {
             match *group {
+                rtnetlink_groups_RTNLGRP_IPV4_IFADDR
+                | rtnetlink_groups_RTNLGRP_IPV4_ROUTE
+                | rtnetlink_groups_RTNLGRP_IPV6_IFADDR
+                | rtnetlink_groups_RTNLGRP_IPV6_ROUTE
+                | rtnetlink_groups_RTNLGRP_LINK
+                | rtnetlink_groups_RTNLGRP_ND_USEROPT => Ok(GroupSupport::Supported),
                 rtnetlink_groups_RTNLGRP_DCB
                 | rtnetlink_groups_RTNLGRP_DECnet_IFADDR
                 | rtnetlink_groups_RTNLGRP_DECnet_ROUTE
                 | rtnetlink_groups_RTNLGRP_DECnet_RULE
-                | rtnetlink_groups_RTNLGRP_IPV4_IFADDR
                 | rtnetlink_groups_RTNLGRP_IPV4_MROUTE
                 | rtnetlink_groups_RTNLGRP_IPV4_MROUTE_R
                 | rtnetlink_groups_RTNLGRP_IPV4_NETCONF
-                | rtnetlink_groups_RTNLGRP_IPV4_ROUTE
                 | rtnetlink_groups_RTNLGRP_IPV4_RULE
-                | rtnetlink_groups_RTNLGRP_IPV6_IFADDR
                 | rtnetlink_groups_RTNLGRP_IPV6_IFINFO
                 | rtnetlink_groups_RTNLGRP_IPV6_MROUTE
                 | rtnetlink_groups_RTNLGRP_IPV6_MROUTE_R
                 | rtnetlink_groups_RTNLGRP_IPV6_NETCONF
                 | rtnetlink_groups_RTNLGRP_IPV6_PREFIX
-                | rtnetlink_groups_RTNLGRP_IPV6_ROUTE
                 | rtnetlink_groups_RTNLGRP_IPV6_RULE
-                | rtnetlink_groups_RTNLGRP_LINK
                 | rtnetlink_groups_RTNLGRP_MDB
                 | rtnetlink_groups_RTNLGRP_MPLS_NETCONF
                 | rtnetlink_groups_RTNLGRP_MPLS_ROUTE
-                | rtnetlink_groups_RTNLGRP_ND_USEROPT
                 | rtnetlink_groups_RTNLGRP_NEIGH
                 | rtnetlink_groups_RTNLGRP_NONE
                 | rtnetlink_groups_RTNLGRP_NOP2
@@ -194,8 +202,8 @@ pub mod route {
                 | rtnetlink_groups_RTNLGRP_NSID
                 | rtnetlink_groups_RTNLGRP_PHONET_IFADDR
                 | rtnetlink_groups_RTNLGRP_PHONET_ROUTE
-                | rtnetlink_groups_RTNLGRP_TC => true,
-                _ => false,
+                | rtnetlink_groups_RTNLGRP_TC => Ok(GroupSupport::Unsupported),
+                _ => Err(InvalidModernGroupError),
             }
         }
     }
@@ -251,6 +259,10 @@ pub mod route {
         }
     }
 
+    impl NamedNetlinkFamily for NetlinkRoute {
+        const NAME: &'static str = "NETLINK_ROUTE";
+    }
+
     impl ProtocolFamily for NetlinkRoute {
         type Request = RouteNetlinkMessage;
         type Response = RouteNetlinkMessage;
@@ -258,7 +270,6 @@ pub mod route {
         type NotifiedMulticastGroup = NetlinkRouteNotifiedGroup;
         type AsyncWorkItem = RouteAsyncWork;
 
-        const NAME: &'static str = "NETLINK_ROUTE";
         fn should_notify_on_group_membership_change(
             group: ModernGroup,
         ) -> Option<Self::NotifiedMulticastGroup> {
@@ -1650,6 +1661,7 @@ pub(crate) mod testutil {
 
     use crate::messaging::testutil::FakeCreds;
     use crate::messaging::{NetlinkMessageWithCreds, Permission};
+    use crate::multicast_groups::GroupSupport;
     use netlink_packet_core::NetlinkHeader;
 
     pub(crate) const LEGACY_GROUP1: u32 = 0x00000001;
@@ -1668,10 +1680,12 @@ pub(crate) mod testutil {
     pub(crate) enum FakeProtocolFamily {}
 
     impl MulticastCapableNetlinkFamily for FakeProtocolFamily {
-        fn is_valid_group(group: &ModernGroup) -> bool {
+        fn check_support(group: &ModernGroup) -> Result<GroupSupport, InvalidModernGroupError> {
             match *group {
-                MODERN_GROUP1 | MODERN_GROUP2 | MODERN_GROUP3 | MODERN_GROUP_NEEDS_BLOCKING => true,
-                _ => false,
+                MODERN_GROUP1 | MODERN_GROUP2 | MODERN_GROUP3 | MODERN_GROUP_NEEDS_BLOCKING => {
+                    Ok(GroupSupport::Unsupported)
+                }
+                _ => Err(InvalidModernGroupError),
             }
         }
     }
@@ -1741,6 +1755,10 @@ pub(crate) mod testutil {
         }
     }
 
+    impl NamedNetlinkFamily for FakeProtocolFamily {
+        const NAME: &'static str = "FAKE_PROTOCOL_FAMILY";
+    }
+
     impl ProtocolFamily for FakeProtocolFamily {
         type Request = FakeNetlinkInnerMessage;
         type Response = FakeNetlinkInnerMessage;
@@ -1748,7 +1766,6 @@ pub(crate) mod testutil {
         type NotifiedMulticastGroup = ();
         type AsyncWorkItem = Never;
 
-        const NAME: &'static str = "FAKE_PROTOCOL_FAMILY";
         fn should_notify_on_group_membership_change(
             group: ModernGroup,
         ) -> Option<Self::NotifiedMulticastGroup> {
