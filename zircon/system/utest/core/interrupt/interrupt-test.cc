@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/elfldltl/machine.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/guest.h>
 #include <lib/zx/interrupt.h>
@@ -17,7 +18,7 @@
 #include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/object.h>
 
-#include <array>
+#include <cstddef>
 #include <thread>
 
 #include <fbl/algorithm.h>
@@ -41,8 +42,8 @@ using InterruptTest = ResourceFixture;
 // It's defined in pure assembly so that there are no issues with
 // compiler-generated code's assumptions about the proper ABI setup,
 // instrumentation, etc.
-extern "C" void ThreadEntry(uintptr_t arg1, uintptr_t arg2);
-// if (zx_interrupt_wait(static_cast<zx_handle_t>(arg1), nullptr) == ZX_OK) {
+extern "C" void ThreadEntry(zx_handle_t handle);
+// if (zx_interrupt_wait(handle, nullptr) == ZX_OK) {
 //   zx_thread_exit();
 // }
 // ASSERT(false);
@@ -261,16 +262,16 @@ TEST_F(InterruptTest, WaitThreadFunctionsAfterSuspendResume) {
   zx::interrupt interrupt;
   zx::thread thread;
   constexpr char name[] = "interrupt_test_thread";
-  // preallocated stack to satisfy the thread we create
-  static uint8_t stack[1024] __ALIGNED(16);
 
   ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
 
   // Create and start a thread which waits for an IRQ
   ASSERT_OK(zx::thread::create(*zx::process::self(), name, sizeof(name), 0, &thread));
 
-  ASSERT_OK(
-      thread.start(ThreadEntry, &stack[sizeof(stack)], static_cast<uintptr_t>(interrupt.get()), 0));
+  const uint64_t pc = reinterpret_cast<uintptr_t>(&ThreadEntry);
+  alignas(elfldltl::AbiTraits<>::kStackAlignment<>) static std::byte thread_stack[1024];
+  const uint64_t sp = reinterpret_cast<uintptr_t>(&thread_stack[sizeof(thread_stack)]);
+  ASSERT_OK(thread.start(pc, sp, interrupt.get()));
 
   // Wait till the thread is in blocked state
   ASSERT_TRUE(WaitThread(thread, ZX_THREAD_STATE_BLOCKED_INTERRUPT));

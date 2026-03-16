@@ -30,7 +30,7 @@ class TestThread {
 
   zx_status_t StartAndCrash() {
     // Passing 0 for sp and pc crashes the thread immediately.
-    return thread_.start(nullptr, 0, 0, 0);
+    return thread_.start(0, 0);
   }
 
   // Blocks until the thread is in an exception.

@@ -37,6 +37,14 @@ class thread final : public task<thread> {
   static zx_status_t create(const process& process, const char* name, uint32_t name_len,
                             uint32_t flags, thread* result) ZX_AVAILABLE_SINCE(7);
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  zx_status_t start(uint64_t pc, uint64_t sp,
+                    // PC and SP must be given, but others default to zero.
+                    uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t tp = 0,
+                    uint64_t abi_reg = 0) const ZX_AVAILABLE_SINCE(NEXT) {
+    return zx_thread_start_regs(get(), pc, sp, arg1, arg2, tp, abi_reg);
+  }
+#else
   // The first variant maps exactly to the syscall and can be used for
   // launching threads in remote processes. The second variant is for
   // conveniently launching threads in the current process.
@@ -49,6 +57,7 @@ class thread final : public task<thread> {
     return zx_thread_start(get(), reinterpret_cast<uintptr_t>(thread_entry),
                            reinterpret_cast<uintptr_t>(stack), arg1, arg2);
   }
+#endif
 
   zx_status_t read_state(uint32_t kind, void* buffer, size_t len) const ZX_AVAILABLE_SINCE(7) {
     return zx_thread_read_state(get(), kind, buffer, len);

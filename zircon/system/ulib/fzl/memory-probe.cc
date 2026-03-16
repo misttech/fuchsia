@@ -103,13 +103,12 @@ zx_status_t do_probe(void (*op)(uintptr_t address, uintptr_t), uintptr_t addr) {
   zx::thread thread;
   ZX_ASSERT(zx::thread::create(*zx::process::self(), "memory_probe", 12u, 0u, &thread) == ZX_OK);
 
-  alignas(16) static uint8_t thread_stack[128];
-  void* stack = thread_stack + sizeof(thread_stack);
-
   zx::channel exception_channel;
   ZX_ASSERT(thread.create_exception_channel(0, &exception_channel) == ZX_OK);
 
-  thread.start(op, stack, addr, 0);
+  alignas(16) static uint8_t thread_stack[128];
+  const uint64_t sp = reinterpret_cast<uintptr_t>(&thread_stack[sizeof(thread_stack)]);
+  ZX_ASSERT(thread.start(reinterpret_cast<uintptr_t>(op), sp, addr, 0) == ZX_OK);
 
   // Wait for exception or thread completion.
   zx_signals_t signals = 0;

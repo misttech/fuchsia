@@ -9,6 +9,7 @@ source_set("interrupt") {
     "msi-test.cc",
   ]
   deps = [
+    "//src/lib/elfldltl",
     "//src/zircon/testing/standalone-test",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",

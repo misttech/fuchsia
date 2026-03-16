@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <fidl/fuchsia.boot/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/elfldltl/machine.h>
 #include <lib/fdio/directory.h>
 #include <lib/fzl/time.h>
 #include <lib/test-exceptions/exception-handling.h>
@@ -39,6 +40,8 @@
 #include <zxtest/zxtest.h>
 
 #include "util.h"
+
+namespace {
 
 template <typename Handle>
 void Duplicating(const Handle& handle) {
@@ -139,8 +142,9 @@ void Peering(const Handle& handle) {
   ASSERT_STATUS(status, expected_status);
 }
 
-[[noreturn]] void do_segfault(uintptr_t /*arg1*/, uintptr_t /*arg2*/) {
-  volatile int* p = 0;
+[[noreturn, clang::no_sanitize("all"), gnu::no_stack_protector]] void do_segfault() {
+  int* p = nullptr;
+  __asm__("" : "=r"(p) : "0"(p));  // Mask the pointer value from the compiler.
   *p = 1;
   zx_thread_exit();
 }
@@ -369,14 +373,17 @@ TEST(TraitsTestCase, IommuTraits) {
 TEST(TraitsTestCase, ExceptionTraits) {
   // Create a thread that segfaults so we can catch and analyze the
   // resulting exception object.
-  alignas(16) static uint8_t thread_stack[1024];
   zx::thread thread;
   zx::channel exception_channel;
   ASSERT_OK(zx::thread::create(*zx::process::self(), "", 0, 0, &thread));
   ASSERT_OK(thread.create_exception_channel(0, &exception_channel));
 
-  // Stack grows down, make sure to pass a pointer to the end.
-  ASSERT_OK(thread.start(&do_segfault, thread_stack + sizeof(thread_stack), 0, 0));
+  const uint64_t pc = reinterpret_cast<uintptr_t>(&do_segfault);
+
+  alignas(elfldltl::AbiTraits<>::kStackAlignment<>) static std::byte thread_stack[1024];
+  const uint64_t sp = elfldltl::AbiTraits<>::InitialStackPointer(
+      reinterpret_cast<uintptr_t>(thread_stack), sizeof(thread_stack));
+  ASSERT_OK(thread.start(pc, sp));
 
   zx::exception exception;
   zx_exception_info_t info;
@@ -394,3 +401,5 @@ TEST(TraitsTestCase, ExceptionTraits) {
   ASSERT_OK(test_exceptions::ExitExceptionZxThread(std::move(exception)));
   ASSERT_OK(thread.wait_one(ZX_THREAD_TERMINATED, zx::time::infinite(), nullptr));
 }
+
+}  // namespace
