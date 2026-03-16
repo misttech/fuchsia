@@ -26,6 +26,11 @@
             to: [ "#bt-snoop" ],
         },
         {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "#feedback",
+            to: "#bt-snoop",
+        },
+        {
             protocol: "fuchsia.bluetooth.snoop.Snoop",
             from: "#bt-snoop",
             to: "self/toolbox",

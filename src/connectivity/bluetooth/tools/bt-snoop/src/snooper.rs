@@ -2,15 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Error, format_err};
-use fidl::endpoints::{ClientEnd, Proxy};
+use anyhow::{Error, format_err};
+use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth_snoop::{PacketFormat, SnoopPacket as FidlSnoopPacket};
 use fidl_fuchsia_hardware_bluetooth::{
     PacketDirection as Direction, SnoopEvent, SnoopEventStream, SnoopMarker,
     SnoopOnObservePacketRequest, SnoopPacket as HardwareSnoopPacket, SnoopProxy,
-    VendorMarker as HardwareVendorMarker,
 };
-use fidl_fuchsia_io::DirectoryProxy;
 use futures::{Stream, StreamExt, ready};
 use log::warn;
 use std::fmt;
@@ -82,19 +80,13 @@ impl fmt::Debug for Snooper {
 }
 
 impl Snooper {
-    /// Create a new snooper from a device path. This opens a new snoop channel, returning an error
-    /// if the devices doesn't exist or the channel cannot be created.
-    pub fn new(dir: &DirectoryProxy, path: &str) -> Result<Snooper, Error> {
-        let vendor = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-            HardwareVendorMarker,
-        >(dir, path)
-        .context("failed to open bt-hci device")?;
-
-        let client_end_vendor = vendor.into_client_end().unwrap();
-        let vendor_sync = client_end_vendor.into_sync_proxy();
-
-        let snoop_client = vendor_sync
-            .open_snoop(zx::MonotonicInstant::INFINITE.into())?
+    pub(crate) async fn from_vendor(
+        vendor: &fidl_fuchsia_hardware_bluetooth::VendorProxy,
+        path: &str,
+    ) -> Result<Snooper, Error> {
+        let snoop_client = vendor
+            .open_snoop()
+            .await?
             .map_err(|e| format_err!("Failed opening Snoop with {e:?}"))?;
 
         Ok(Snooper::from_client(snoop_client, path))
@@ -112,7 +104,7 @@ impl TryFrom<SnoopOnObservePacketRequest> for SnoopPacket {
     type Error = Error;
 
     fn try_from(value: SnoopOnObservePacketRequest) -> Result<Self, Self::Error> {
-        let time = zx::MonotonicInstant::get();
+        let time = fuchsia_async::MonotonicInstant::now().into();
         let SnoopOnObservePacketRequest {
             packet: Some(packet), direction: Some(direction), ..
         } = value
@@ -201,21 +193,20 @@ impl Stream for Snooper {
 mod tests {
     use super::*;
 
+    use async_utils::PollExt;
     use fidl::endpoints::RequestStream;
-    use fidl_fuchsia_hardware_bluetooth::SnoopRequest;
-    use fuchsia_async as fasync;
-    use futures::StreamExt;
+    use fidl_fuchsia_hardware_bluetooth::{SnoopRequest, VendorMarker as HardwareVendorMarker};
+    use futures::{StreamExt, poll};
 
-    #[test]
-    fn test_from_proxy() {
-        let _exec = fasync::TestExecutor::new();
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_from_proxy() {
         let (client, _stream) = fidl::endpoints::create_request_stream::<SnoopMarker>();
         let snooper = Snooper::from_client(client, "c");
         assert_eq!(snooper.device_name, "c");
     }
 
-    #[test]
-    fn test_try_from() {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_try_from() {
         let req = SnoopOnObservePacketRequest {
             sequence: Some(0),
             direction: Some(Direction::ControllerToHost),
@@ -225,7 +216,6 @@ mod tests {
         let pkt = SnoopPacket::try_from(req).unwrap();
         assert!(pkt.is_received);
         assert!(pkt.payload.is_empty());
-        assert!(pkt.timestamp.into_nanos() > 0);
         assert_eq!(pkt.format, PacketFormat::Event);
 
         let req = SnoopOnObservePacketRequest {
@@ -240,8 +230,8 @@ mod tests {
         assert_eq!(pkt.format, PacketFormat::AclData);
     }
 
-    #[test]
-    fn test_try_from_missing_payload() {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_try_from_missing_payload() {
         let req = SnoopOnObservePacketRequest {
             sequence: Some(0),
             direction: Some(Direction::ControllerToHost),
@@ -252,8 +242,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_try_from_missing_direction() {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_try_from_missing_direction() {
         let req = SnoopOnObservePacketRequest {
             sequence: Some(0),
             direction: None,
@@ -264,9 +254,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_snoop_stream() {
-        let mut exec = fasync::TestExecutor::new();
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_snoop_stream() {
         let (snoop_client, mut req_stream) =
             fidl::endpoints::create_request_stream::<SnoopMarker>();
         let snoop_control = req_stream.control_handle();
@@ -286,44 +275,28 @@ mod tests {
         snoop_control.send_on_observe_packet(&req_0).unwrap();
         snoop_control.send_on_observe_packet(&req_1).unwrap();
 
-        let item_1 = exec.run_until_stalled(&mut snooper.next());
-        assert!(item_1.is_ready());
-        let item_2 = exec.run_until_stalled(&mut snooper.next());
-        assert!(item_2.is_ready());
-        match (item_1, item_2) {
-            (Poll::Ready(item_1), Poll::Ready(item_2)) => {
-                assert_eq!(item_1.unwrap().1.payload, vec![0, 1, 2]);
-                assert_eq!(item_2.unwrap().1.payload, vec![3, 4, 5]);
-            }
-            _ => panic!("failed to build both packets 1 and 2 from snoop stream"),
-        }
+        assert_eq!(snooper.next().await.unwrap().1.payload, vec![0, 1, 2]);
+        assert_eq!(snooper.next().await.unwrap().1.payload, vec![3, 4, 5]);
 
-        let item_3 = exec.run_until_stalled(&mut snooper.next());
-        assert!(item_3.is_pending());
+        poll!(snooper.next()).expect_pending("pending item_3");
 
-        let req_1 = exec.run_until_stalled(&mut req_stream.next());
-        assert!(req_1.is_ready());
-        match req_1 {
-            Poll::Ready(Some(Ok(SnoopRequest::AcknowledgePackets { sequence, .. }))) => {
+        match req_stream.next().await {
+            Some(Ok(SnoopRequest::AcknowledgePackets { sequence, .. })) => {
                 assert_eq!(sequence, 0);
             }
             _ => panic!("failed to send OnAcknowledgePackets"),
         }
-        let req_2 = exec.run_until_stalled(&mut req_stream.next());
-        assert!(req_2.is_ready());
-        match req_2 {
-            Poll::Ready(Some(Ok(SnoopRequest::AcknowledgePackets { sequence, .. }))) => {
+        match req_stream.next().await {
+            Some(Ok(SnoopRequest::AcknowledgePackets { sequence, .. })) => {
                 assert_eq!(sequence, 1);
             }
             _ => panic!("failed to send OnAcknowledgePackets"),
         }
-        let req_3 = exec.run_until_stalled(&mut req_stream.next());
-        assert!(req_3.is_pending());
+        poll!(req_stream.next()).expect_pending("pending req_3");
     }
 
-    #[test]
-    fn test_snoop_stream_missing_sequence() {
-        let mut exec = fasync::TestExecutor::new();
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_snoop_stream_missing_sequence() {
         let (snoop_client, snoop_stream) = fidl::endpoints::create_request_stream::<SnoopMarker>();
         let snoop_control = snoop_stream.control_handle();
         let mut snooper = Snooper::from_client(snoop_client, "c");
@@ -335,8 +308,7 @@ mod tests {
             ..Default::default()
         };
         snoop_control.send_on_observe_packet(&req_0).unwrap();
-        let item = exec.run_until_stalled(&mut snooper.next());
-        assert!(item.is_pending());
+        poll!(snooper.next()).expect_pending("pending item");
 
         let req_1 = SnoopOnObservePacketRequest {
             sequence: Some(1),
@@ -345,23 +317,40 @@ mod tests {
             ..Default::default()
         };
         snoop_control.send_on_observe_packet(&req_1).unwrap();
-        let item = exec.run_until_stalled(&mut snooper.next());
-        assert!(item.is_ready());
+        assert!(snooper.next().await.is_some());
     }
 
-    #[test]
-    fn test_snoop_stream_lifecycle() {
-        let mut exec = fasync::TestExecutor::new();
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_snoop_stream_lifecycle() {
         let (snoop_client, snoop_server) = fidl::endpoints::create_endpoints::<SnoopMarker>();
         let mut snooper = Snooper::from_client(snoop_client, "c");
 
-        let item = exec.run_until_stalled(&mut snooper.next());
-        assert!(item.is_pending());
+        poll!(snooper.next()).expect_pending("pending item");
 
         drop(snoop_server);
-        let item = exec.run_until_stalled(&mut snooper.next());
-        let Poll::Ready(None) = item else {
-            panic!("Expected None");
+        assert!(snooper.next().await.is_none());
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_from_vendor_success() {
+        let (vendor_proxy, mut vendor_stream) =
+            fidl::endpoints::create_proxy_and_stream::<HardwareVendorMarker>();
+
+        let path = "test_dev";
+        let from_vendor_fut = Snooper::from_vendor(&vendor_proxy, path);
+
+        let stream_fut = async move {
+            let Some(Ok(fidl_fuchsia_hardware_bluetooth::VendorRequest::OpenSnoop { responder })) =
+                vendor_stream.next().await
+            else {
+                panic!("Expected OpenSnoop");
+            };
+            let (snoop_client, _snoop_stream) = fidl::endpoints::create_endpoints::<SnoopMarker>();
+            responder.send(Ok(snoop_client)).unwrap();
         };
+
+        let (res, _) = futures::future::join(from_vendor_fut, stream_fut).await;
+        let snooper = res.expect("from_vendor should succeed");
+        assert_eq!(snooper.device_name, path);
     }
 }

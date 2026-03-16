@@ -11,15 +11,15 @@ use futures::future::{BoxFuture, FutureExt};
 use inspect_format::constants::MINIMUM_VMO_SIZE_BYTES;
 use itertools::Itertools;
 use log::warn;
-use std::collections::vec_deque::{Iter as VecDequeIter, VecDeque};
 use std::collections::HashMap;
+use std::collections::vec_deque::{Iter as VecDequeIter, VecDeque};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::DeviceId;
 use crate::bounded_queue::BoundedQueue;
 use crate::snooper::SnoopPacket;
-use crate::DeviceId;
 
 fn generate_lazy_values_for_packet_log(
     device_name: String,
@@ -180,6 +180,9 @@ const PCAP_SCO_DATA: u8 = 0x03;
 const PCAP_EVENT: u8 = 0x04;
 const PCAP_ISO_DATA: u8 = 0x05;
 
+pub(crate) const PCAP_GLOBAL_HEADER_SIZE: usize = 24;
+pub(crate) const PCAP_PACKET_HEADER_SIZE: usize = 21;
+
 // Format described in https://wiki.wireshark.org/Development/LibpcapFileFormat#Global_Header
 pub(crate) fn write_pcap_header<W: Write>(mut buffer: W) -> Result<(), Error> {
     buffer.write_u32::<BigEndian>(0xa1b2c3d4)?; // Magic number
@@ -194,9 +197,10 @@ pub(crate) fn write_pcap_header<W: Write>(mut buffer: W) -> Result<(), Error> {
 
 const MICROS_PER_SEC: u128 = Duration::from_secs(1).as_micros();
 
-// Format described in
-// https://wiki.wireshark.org/Development/LibpcapFileFormat#Record_.28Packet.29_Header
-pub(crate) fn append_pcap<W: Write>(mut buffer: W, pkt: &SnoopPacket) -> Result<(), Error> {
+pub(crate) fn write_pcap_packet_header<W: Write>(
+    mut buffer: W,
+    pkt: &SnoopPacket,
+) -> Result<(), Error> {
     let timestamp = Duration::from_nanos(pkt.timestamp.into_nanos() as u64);
     let (seconds, microseconds) = (timestamp.as_secs(), timestamp.as_micros() % MICROS_PER_SEC);
     // timestamp seconds
@@ -217,6 +221,13 @@ pub(crate) fn append_pcap<W: Write>(mut buffer: W, pkt: &SnoopPacket) -> Result<
         PacketFormat::IsoData => buffer.write_u8(PCAP_ISO_DATA)?,
         _ => buffer.write_u8(PCAP_ACL_DATA)?,
     }
+    Ok(())
+}
+
+// Format described in
+// https://wiki.wireshark.org/Development/LibpcapFileFormat#Record_.28Packet.29_Header
+pub(crate) fn append_pcap<W: Write>(mut buffer: W, pkt: &SnoopPacket) -> Result<(), Error> {
+    write_pcap_packet_header(&mut buffer, pkt)?;
     let written = buffer.write(&pkt.payload)?;
     if written != pkt.payload.len() {
         warn!("Couldn't write entire payload, only wrote {} < {}", written, pkt.payload.len());

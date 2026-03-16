@@ -5,8 +5,8 @@
 use argh::FromArgs;
 use async_utils::PollExt;
 use diagnostics_assertions::assert_data_tree;
-use fidl::endpoints::RequestStream;
 use fidl::Error as FidlError;
+use fidl::endpoints::RequestStream;
 use fidl_fuchsia_bluetooth_snoop::{
     PacketFormat, PacketObserverMarker, PacketObserverRequest, PacketObserverRequestStream,
     SnoopMarker, SnoopProxy, SnoopRequestStream, SnoopStartRequest,
@@ -21,10 +21,15 @@ use std::time::Duration;
 
 use crate::packet_logs::{append_pcap, write_pcap_header};
 use crate::{
-    handle_client_request, register_new_client, Args, ClientId, ClientRequest,
-    ConcurrentClientRequestFutures, ConcurrentSnooperPacketFutures, IdGenerator, PacketLogs,
-    SnoopConfig, SnoopPacket, SubscriptionManager, HCI_DEVICE_CLASS_PATH,
+    Args, ClientId, ClientRequest, ConcurrentClientRequestFutures, ConcurrentSnooperPacketFutures,
+    HCI_DEVICE_CLASS_PATH, IdGenerator, PacketLogs, SnoopConfig, SnoopPacket, SubscriptionManager,
+    handle_client_request, register_new_client,
 };
+
+use crate::core_dump::CRASH_REPORT_DEBOUNCE_DURATION;
+use crate::{CrashState, HandlePacketOutcome, handle_packet};
+use fidl_fuchsia_hardware_bluetooth as hardware_bt;
+use std::collections::HashMap;
 
 fn setup() -> (
     TestExecutor,
@@ -131,7 +136,7 @@ fn test_snoop_command_line_args() {
     assert_eq!(args.truncate_payload, Some(truncate_payload));
 }
 
-#[fuchsia::test]
+#[fuchsia::test(allow_stalls = false)]
 async fn test_packet_logs_inspect() {
     // This is a test that basic inspect data is plumbed through from the inspect root.
     // More comprehensive testing of possible permutations of packet log inspect data
@@ -191,7 +196,7 @@ async fn test_packet_logs_inspect() {
     drop(packet_logs);
 }
 
-#[fuchsia::test]
+#[fuchsia::test(allow_stalls = false)]
 async fn test_snoop_config_inspect() {
     let args = Args {
         log_size_soft_kib: 1,
@@ -332,7 +337,7 @@ fn test_handle_client_request() {
             lock.insert(SnoopPacket::new(
                 true,
                 PacketFormat::AclData,
-                zx::MonotonicInstant::get(),
+                fuchsia_async::MonotonicInstant::now().into(),
                 vec![0; 500],
             ));
         }
@@ -405,4 +410,278 @@ fn test_handle_bad_client_request() {
     let (_, stream) = fidl::endpoints::create_request_stream::<SnoopMarker>();
     pump_handle_client_request(&mut exec, request, stream, &mut requests, &mut subscribers, &logs);
     assert!(!subscribers.is_registered(&id));
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_handle_packet_crash_report_rate_limit() {
+    let inspect = Inspector::default();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+
+    let device_id = "test_device".to_string();
+
+    let mut crash_states = HashMap::new();
+    let _ = crash_states.insert(
+        device_id.clone(),
+        CrashState {
+            parameters: hardware_bt::VendorCrashParameters {
+                vendor_subevent_code: Some(0x1B),
+                program_name: Some("test_program".to_string()),
+                crash_signature: Some("test_sig".to_string()),
+                ..Default::default()
+            },
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        },
+    );
+
+    let _ = logs.add_device(device_id.clone());
+
+    let packet1 = SnoopPacket::new(
+        true,
+        PacketFormat::Event,
+        fuchsia_async::MonotonicInstant::now().into(),
+        vec![0xFF, 0x02, 0x1B, 0x00],
+    );
+    let outcome = handle_packet(
+        &device_id,
+        Some((device_id.clone(), packet1)),
+        &mut subscribers,
+        &mut logs,
+        None,
+        &mut crash_states,
+    );
+    assert!(matches!(outcome, HandlePacketOutcome::CrashDetected(_)));
+
+    // After first packet, collector should be created, timer should be set.
+    let state = crash_states.get(&device_id).unwrap();
+    assert!(state.collector.is_some());
+    assert!(state.tentative_report_file_time.is_some());
+    let last_report_time = state.last_report_local_time.unwrap();
+
+    let packet2 = SnoopPacket::new(
+        true,
+        PacketFormat::Event,
+        fuchsia_async::MonotonicInstant::now().into(),
+        vec![0xFF, 0x02, 0x1B, 0x01],
+    );
+    let outcome = handle_packet(
+        &device_id,
+        Some((device_id.clone(), packet2)),
+        &mut subscribers,
+        &mut logs,
+        None,
+        &mut crash_states,
+    );
+    assert!(matches!(outcome, HandlePacketOutcome::Processed));
+
+    // After second packet, collector should STILL be active, tentative_report_file_time should be updated.
+    let state = crash_states.get(&device_id).unwrap();
+    assert!(state.collector.is_some());
+    assert!(state.tentative_report_file_time.is_some());
+
+    // Fast forward 6 seconds to complete the crash dump collection.
+    let target = state.tentative_report_file_time.unwrap();
+    fuchsia_async::TestExecutor::advance_to(
+        (target
+            + zx::MonotonicDuration::from_seconds(
+                CRASH_REPORT_DEBOUNCE_DURATION.into_seconds() + 1,
+            ))
+        .into(),
+    )
+    .await;
+
+    // Simulate removing the collector like `run` does when the timer fires.
+    let state = crash_states.get_mut(&device_id).unwrap();
+    state.collector = None;
+    state.tentative_report_file_time = None;
+
+    // Send a 3rd crash packet.
+    let packet3 = SnoopPacket::new(
+        true,
+        PacketFormat::Event,
+        fuchsia_async::MonotonicInstant::now().into(),
+        vec![0xFF, 0x02, 0x1B, 0x02],
+    );
+    let outcome = handle_packet(
+        &device_id,
+        Some((device_id.clone(), packet3)),
+        &mut subscribers,
+        &mut logs,
+        None,
+        &mut crash_states,
+    );
+    assert!(matches!(outcome, HandlePacketOutcome::Processed));
+
+    // Because it is rate limited, collector shouldn't be recreated!
+    let state = crash_states.get(&device_id).unwrap();
+    assert!(state.collector.is_none());
+    assert!(state.tentative_report_file_time.is_none());
+    assert_eq!(state.last_report_local_time.unwrap(), last_report_time);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_process_vendor_connection_success() {
+    let inspect = Inspector::default();
+    let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let mut crash_states = HashMap::new();
+    let (vendor_proxy, mut vendor_stream) =
+        fidl::endpoints::create_proxy_and_stream::<hardware_bt::VendorMarker>();
+
+    let path = "test_dev";
+    let process_fut = crate::process_vendor_connection(
+        path,
+        &vendor_proxy,
+        &mut snoopers,
+        &mut crash_states,
+        &mut logs,
+        &mut subscribers,
+    );
+
+    let stream_fut = async move {
+        // Mock get_crash_parameters
+        let Some(Ok(hardware_bt::VendorRequest::GetCrashParameters { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected GetCrashParameters");
+        };
+        responder
+            .send(Ok(&hardware_bt::VendorCrashParameters {
+                program_name: Some("test".to_string()),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        // Mock open_snoop
+        let Some(Ok(hardware_bt::VendorRequest::OpenSnoop { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected OpenSnoop");
+        };
+        let (snoop_client, _snoop_stream) =
+            fidl::endpoints::create_endpoints::<hardware_bt::SnoopMarker>();
+        responder.send(Ok(snoop_client)).unwrap();
+    };
+
+    futures::future::join(process_fut, stream_fut).await;
+
+    assert!(crash_states.contains_key("test_dev"));
+    assert_eq!(
+        crash_states.get("test_dev").unwrap().parameters.program_name,
+        Some("test".to_string())
+    );
+    assert_eq!(snoopers.len(), 1);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_process_vendor_connection_unsupported_error() {
+    let inspect = Inspector::default();
+    let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let mut crash_states = HashMap::new();
+    let (vendor_proxy, mut vendor_stream) =
+        fidl::endpoints::create_proxy_and_stream::<hardware_bt::VendorMarker>();
+
+    let path = "test_dev";
+    let process_fut = crate::process_vendor_connection(
+        path,
+        &vendor_proxy,
+        &mut snoopers,
+        &mut crash_states,
+        &mut logs,
+        &mut subscribers,
+    );
+
+    let stream_fut = async move {
+        // Mock get_crash_parameters
+        let Some(Ok(hardware_bt::VendorRequest::GetCrashParameters { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected GetCrashParameters");
+        };
+        responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED)).unwrap();
+
+        // Mock open_snoop
+        let Some(Ok(hardware_bt::VendorRequest::OpenSnoop { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected OpenSnoop");
+        };
+        let (snoop_client, _snoop_stream) =
+            fidl::endpoints::create_endpoints::<hardware_bt::SnoopMarker>();
+        responder.send(Ok(snoop_client)).unwrap();
+    };
+
+    futures::future::join(process_fut, stream_fut).await;
+
+    assert!(!crash_states.contains_key("test_dev"));
+    assert_eq!(snoopers.len(), 1);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_process_vendor_connection_fidl_error() {
+    let inspect = Inspector::default();
+    let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let mut crash_states = HashMap::new();
+    let (vendor_proxy, mut vendor_stream) =
+        fidl::endpoints::create_proxy_and_stream::<hardware_bt::VendorMarker>();
+
+    let path = "test_dev";
+    let process_fut = crate::process_vendor_connection(
+        path,
+        &vendor_proxy,
+        &mut snoopers,
+        &mut crash_states,
+        &mut logs,
+        &mut subscribers,
+    );
+
+    let stream_fut = async move {
+        // Mock get_crash_parameters
+        let Some(Ok(hardware_bt::VendorRequest::GetCrashParameters { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected GetCrashParameters");
+        };
+
+        // Drop stream to simulate FIDL connection close error before responding
+        drop(responder);
+        drop(vendor_stream);
+    };
+
+    futures::future::join(process_fut, stream_fut).await;
+
+    assert!(!crash_states.contains_key("test_dev"));
+    // Since we dropped `vendor_stream`, `open_snoop` will fail, so `snoopers` len should be 0.
+    assert_eq!(snoopers.len(), 0);
 }

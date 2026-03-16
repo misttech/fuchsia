@@ -28,6 +28,10 @@
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.bluetooth.Service",
         },
+        {
+            protocol: [ "fuchsia.feedback.CrashReporter" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

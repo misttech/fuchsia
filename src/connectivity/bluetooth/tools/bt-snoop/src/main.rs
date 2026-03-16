@@ -11,9 +11,15 @@ use fidl_fuchsia_bluetooth_snoop::{
     CaptureError, DevicePackets, SnoopPacket as FidlSnoopPacket, SnoopRequest, SnoopRequestStream,
     SnoopStartRequest, UnrecognizedDeviceName,
 };
+use fidl_fuchsia_feedback::CrashReporterMarker;
+
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::DirectoryProxy;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
+use fuchsia_inspect as inspect;
+use fuchsia_trace as trace;
 use futures::future::{Join, Ready, join, ready};
 use futures::select;
 use futures::stream::{FusedStream, FuturesUnordered, Stream, StreamExt, StreamFuture};
@@ -21,13 +27,14 @@ use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
-use {fidl_fuchsia_io as fio, fuchsia_inspect as inspect, fuchsia_trace as trace};
 
 use crate::packet_logs::PacketLogs;
 use crate::snooper::{SnoopPacket, Snooper};
 use crate::subscription_manager::SubscriptionManager;
 
 mod bounded_queue;
+mod core_dump;
+use crate::core_dump::CrashState;
 mod packet_logs;
 mod snooper;
 mod subscription_manager;
@@ -80,13 +87,108 @@ impl IdGenerator {
     }
 }
 
+async fn process_vendor_connection(
+    path: &str,
+    vendor: &fidl_fuchsia_hardware_bluetooth::VendorProxy,
+    snoopers: &mut ConcurrentSnooperPacketFutures,
+    crash_states: &mut HashMap<DeviceId, CrashState>,
+    packet_logs: &mut PacketLogs,
+    subscribers: &mut SubscriptionManager,
+) {
+    let crash_params = match vendor.get_crash_parameters().await {
+        Ok(Ok(params)) => Some(params),
+        Ok(Err(e)) => {
+            debug!("Device {} does not support crash reporting: {:?}", path, e);
+            None
+        }
+        Err(e) => {
+            warn!("FIDL error getting crash parameters for {}: {:?}", path, e);
+            None
+        }
+    };
+
+    match Snooper::from_vendor(vendor, path).await {
+        Ok(snooper) => {
+            snoopers.push(snooper.into_future());
+            let removed_device = packet_logs.add_device(path.to_string());
+            if let Some(device) = removed_device {
+                subscribers.remove_device(&device);
+                let _ = crash_states.remove(&device);
+            }
+            if let Some(params) = crash_params {
+                let _ = crash_states.insert(
+                    path.to_string(),
+                    CrashState {
+                        parameters: params,
+                        last_report_local_time: None,
+                        collector: None,
+                        tentative_report_file_time: None,
+                    },
+                );
+            }
+        }
+        Err(e) => {
+            warn!("Failed to open snoop channel for \"{path}\": {e:?}");
+        }
+    }
+}
+
+fn spawn_crash_timer(
+    crash_timers: &mut FuturesUnordered<fasync::Task<DeviceId>>,
+    device_id: DeviceId,
+    target: fuchsia_async::MonotonicInstant,
+) {
+    crash_timers.push(fasync::Task::spawn(async move {
+        fasync::Timer::new(target).await;
+        device_id
+    }));
+}
+
+fn handle_crash_timer_fired(
+    device_id: DeviceId,
+    crash_states: &mut HashMap<DeviceId, CrashState>,
+    reporting_tasks: &mut FuturesUnordered<fasync::Task<()>>,
+    crash_timers: &mut FuturesUnordered<fasync::Task<DeviceId>>,
+) {
+    let Some(state) = crash_states.get_mut(&device_id) else {
+        return;
+    };
+
+    let Some(target) = state.tentative_report_file_time else {
+        return;
+    };
+
+    if fuchsia_async::MonotonicInstant::now() < target {
+        spawn_crash_timer(crash_timers, device_id, target);
+        return;
+    }
+
+    state.tentative_report_file_time = None;
+    let Some(collector) = state.collector.take() else {
+        return;
+    };
+
+    // Spawn a task because file_report is a long-running operation.
+    reporting_tasks.push(fasync::Task::spawn(async move {
+        match fuchsia_component::client::connect_to_protocol::<CrashReporterMarker>() {
+            Ok(crash_reporter) => {
+                collector.file_report(&crash_reporter).await;
+            }
+            Err(e) => {
+                warn!("Failed to connect to fuchsia.feedback.CrashReporter: {:?}", e);
+            }
+        }
+    }));
+}
+
 /// Handle an event on the virtual filesystem in the HCI device directory.
-fn handle_hci_device_event(
+async fn handle_hci_device_event(
     message: WatchMessage,
     directory: &DirectoryProxy,
     snoopers: &mut ConcurrentSnooperPacketFutures,
     subscribers: &mut SubscriptionManager,
     packet_logs: &mut PacketLogs,
+    crash_states: &mut HashMap<DeviceId, CrashState>,
 ) {
     let WatchMessage { event, filename } = message;
 
@@ -97,21 +199,29 @@ fn handle_hci_device_event(
                 return;
             }
             info!(path; "Opening snoop channel");
-            match Snooper::new(directory, &path) {
-                Ok(snooper) => {
-                    snoopers.push(snooper.into_future());
-                    let removed_device = packet_logs.add_device(path.to_owned());
-                    if let Some(device) = removed_device {
-                        subscribers.remove_device(&device);
-                    }
-                }
+            let vendor = match fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+                fidl_fuchsia_hardware_bluetooth::VendorMarker,
+            >(directory, path)
+            {
+                Ok(v) => v,
                 Err(e) => {
-                    warn!("Failed to open snoop channel for \"{path}\": {e:?}");
+                    warn!("failed to open bt-hci device: {e:?}");
+                    return;
                 }
-            }
+            };
+            process_vendor_connection(
+                path,
+                &vendor,
+                snoopers,
+                crash_states,
+                packet_logs,
+                subscribers,
+            )
+            .await;
         }
         WatchEvent::REMOVE_FILE => {
             info!("Removing snoop channel for hci device: \"{path}\"");
+            let _ = crash_states.remove(path);
             // TODO(https://fxbug.dev/319447676):
             // What should be done with the logged packets in this case?
             // Find out how to remove snooper from ConcurrentTask (perhaps cancel and wake)
@@ -219,27 +329,48 @@ async fn handle_client_request(
     Ok(false)
 }
 
-/// Handle a possible incoming packet. Returns an error if the snoop channel is closed and cannot
-/// be reopened.
-fn handle_packet(
+/// The outcome of handling a possible incoming packet.
+pub(crate) enum HandlePacketOutcome {
+    /// The snoop channel for the device has closed.
+    ChannelClosed,
+    /// The packet was processed normally.
+    Processed,
+    /// A crash was detected and a new crash dump collection has started.
+    CrashDetected(DeviceId),
+}
+
+/// Handle a possible incoming packet. Returns the outcome of the processing.
+pub(crate) fn handle_packet(
+    device_name: &DeviceId,
     packet: Option<(DeviceId, SnoopPacket)>,
-    snooper: Snooper,
-    snoopers: &mut ConcurrentSnooperPacketFutures,
     subscribers: &mut SubscriptionManager,
     packet_logs: &mut PacketLogs,
     truncate_payload: Option<usize>,
-) {
+    crash_states: &mut HashMap<DeviceId, CrashState>,
+) -> HandlePacketOutcome {
     let Some((device, mut packet)) = packet else {
-        info!("Snoop channel closed for device: {}", snooper.device_name);
-        return;
+        info!("Snoop channel closed for device: {}", device_name);
+        let _ = crash_states.remove(device_name);
+        return HandlePacketOutcome::ChannelClosed;
     };
-    trace!("Received packet from {}.", snooper.device_name);
+    trace!("Received packet from {}.", device_name);
+
+    let mut started_new_crash = false;
+    if let Some(state) = crash_states.get_mut(&device) {
+        started_new_crash = state.process_packet(&packet);
+    }
+
     if let Some(len) = truncate_payload {
         packet.payload.truncate(len);
     }
     subscribers.notify(&device, &packet);
     packet_logs.log_packet(&device, packet);
-    snoopers.push(snooper.into_future());
+
+    if started_new_crash {
+        HandlePacketOutcome::CrashDetected(device)
+    } else {
+        HandlePacketOutcome::Processed
+    }
 }
 
 struct SnoopConfig {
@@ -339,6 +470,8 @@ async fn run(
     let mut client_requests = ConcurrentClientRequestFutures::new();
     let mut subscribers = SubscriptionManager::new();
     let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    let mut reporting_tasks = FuturesUnordered::new();
+    let mut crash_timers = FuturesUnordered::new();
     let mut packet_logs = PacketLogs::new(
         config.max_device_count,
         config.log_size_soft_max_bytes,
@@ -346,6 +479,8 @@ async fn run(
         config.log_time,
         inspect,
     );
+
+    let mut crash_states: HashMap<DeviceId, CrashState> = HashMap::new();
 
     debug!("Capturing snoop packets...");
 
@@ -365,8 +500,15 @@ async fn run(
                     .and_then(|r| Ok(r?));
                 match message {
                     Ok(message) => {
-                        handle_hci_device_event(message, &directory, &mut snoopers, &mut subscribers,
-                            &mut packet_logs);
+                        handle_hci_device_event(
+                            message,
+                            &directory,
+                            &mut snoopers,
+                            &mut subscribers,
+                            &mut packet_logs,
+                            &mut crash_states,
+                        )
+                        .await;
                     }
                     Err(e) => {
                         // Attempt to recreate watcher in the event of an error.
@@ -393,9 +535,40 @@ async fn run(
             // A new snoop packet has been received from an hci device.
             (packet, snooper) = snoopers.select_next_some() => {
                 trace::duration!("bluetooth", "Snoop::ProcessPacket");
-                handle_packet(packet, snooper, &mut snoopers, &mut subscribers,
-                    &mut packet_logs, config.truncate_payload);
+                let device_name = snooper.device_name.clone();
+                match handle_packet(
+                    &device_name,
+                    packet,
+                    &mut subscribers,
+                    &mut packet_logs,
+                    config.truncate_payload,
+                    &mut crash_states,
+                ) {
+                    HandlePacketOutcome::CrashDetected(device_id) => {
+                        if let Some(target) =
+                            crash_states.get(&device_id).and_then(|s| s.tentative_report_file_time)
+                        {
+                            spawn_crash_timer(&mut crash_timers, device_id.clone(), target);
+                        }
+                        snoopers.push(snooper.into_future());
+                    }
+                    HandlePacketOutcome::Processed => snoopers.push(snooper.into_future()),
+                    HandlePacketOutcome::ChannelClosed => {}
+                }
             },
+
+            // New crash timer fired
+            device_id = crash_timers.select_next_some() => {
+                handle_crash_timer_fired(
+                    device_id,
+                    &mut crash_states,
+                    &mut reporting_tasks,
+                    &mut crash_timers,
+                );
+            },
+
+            // Reaping reporting tasks
+            _ = reporting_tasks.select_next_some() => {},
         }
     }
 }
