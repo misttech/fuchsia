@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use ffx_core::ffx_command;
-use fidl_fuchsia_settings::{
+use fdomain_fuchsia_settings::{
     AudioSettings2, AudioStreamSettingSource, AudioStreamSettings2, Volume,
 };
+use ffx_core::ffx_command;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone, Copy)]
@@ -17,7 +17,7 @@ pub struct Audio {
     /// which stream should be modified. Valid options are background, media, interruption,
     /// system_agent, communication and accessibility.
     #[argh(option, short = 't', from_str_fn(str_to_audio_stream))]
-    pub stream: Option<fidl_fuchsia_media::AudioRenderUsage2>,
+    pub stream: Option<fdomain_fuchsia_media::AudioRenderUsage2>,
 
     /// which source is changing the stream. Valid options are user, system, and
     /// system_with_feedback
@@ -34,15 +34,17 @@ pub struct Audio {
     pub volume_muted: Option<bool>,
 }
 
-fn str_to_audio_stream(src: &str) -> Result<fidl_fuchsia_media::AudioRenderUsage2, String> {
+fn str_to_audio_stream(src: &str) -> Result<fdomain_fuchsia_media::AudioRenderUsage2, String> {
     match src.to_lowercase().as_str() {
-        "accessibility" | "a" | "a11y" => Ok(fidl_fuchsia_media::AudioRenderUsage2::Accessibility),
-        "background" | "b" => Ok(fidl_fuchsia_media::AudioRenderUsage2::Background),
-        "communication" | "c" => Ok(fidl_fuchsia_media::AudioRenderUsage2::Communication),
-        "interruption" | "i" => Ok(fidl_fuchsia_media::AudioRenderUsage2::Interruption),
-        "media" | "m" => Ok(fidl_fuchsia_media::AudioRenderUsage2::Media),
+        "accessibility" | "a" | "a11y" => {
+            Ok(fdomain_fuchsia_media::AudioRenderUsage2::Accessibility)
+        }
+        "background" | "b" => Ok(fdomain_fuchsia_media::AudioRenderUsage2::Background),
+        "communication" | "c" => Ok(fdomain_fuchsia_media::AudioRenderUsage2::Communication),
+        "interruption" | "i" => Ok(fdomain_fuchsia_media::AudioRenderUsage2::Interruption),
+        "media" | "m" => Ok(fdomain_fuchsia_media::AudioRenderUsage2::Media),
         "system_agent" | "systemagent" | "system agent" | "s" => {
-            Ok(fidl_fuchsia_media::AudioRenderUsage2::SystemAgent)
+            Ok(fdomain_fuchsia_media::AudioRenderUsage2::SystemAgent)
         }
         _ => Err(String::from("Couldn't parse audio stream type")),
     }
@@ -50,12 +52,12 @@ fn str_to_audio_stream(src: &str) -> Result<fidl_fuchsia_media::AudioRenderUsage
 
 fn str_to_audio_source(
     src: &str,
-) -> Result<fidl_fuchsia_settings::AudioStreamSettingSource, String> {
+) -> Result<fdomain_fuchsia_settings::AudioStreamSettingSource, String> {
     match src.to_lowercase().as_str() {
-        "user" | "u" => Ok(fidl_fuchsia_settings::AudioStreamSettingSource::User),
-        "system" | "s" => Ok(fidl_fuchsia_settings::AudioStreamSettingSource::System),
+        "user" | "u" => Ok(fdomain_fuchsia_settings::AudioStreamSettingSource::User),
+        "system" | "s" => Ok(fdomain_fuchsia_settings::AudioStreamSettingSource::System),
         "system_with_feedback" | "f" => {
-            Ok(fidl_fuchsia_settings::AudioStreamSettingSource::SystemWithFeedback)
+            Ok(fdomain_fuchsia_settings::AudioStreamSettingSource::SystemWithFeedback)
         }
         _ => Err(String::from("Couldn't parse audio source type")),
     }

@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{AudioProxy, AudioSettings2};
 use ffx_setui_audio_args::Audio;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{AudioProxy, AudioSettings2};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -56,14 +56,15 @@ async fn command(proxy: AudioProxy, audio: Audio) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_media::AudioRenderUsage2;
-    use fidl_fuchsia_settings::AudioRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_media::AudioRenderUsage2;
+    use fdomain_fuchsia_settings::AudioRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AudioRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
@@ -83,7 +84,7 @@ mod test {
 
         let audio = Audio {
             stream: Some(AudioRenderUsage2::Background),
-            source: Some(fidl_fuchsia_settings::AudioStreamSettingSource::User),
+            source: Some(fdomain_fuchsia_settings::AudioStreamSettingSource::User),
             level: Some(0.5),
             volume_muted: Some(false),
         };
@@ -94,7 +95,7 @@ mod test {
     #[test_case(
         Audio {
             stream: Some(AudioRenderUsage2::Media),
-            source: Some(fidl_fuchsia_settings::AudioStreamSettingSource::User),
+            source: Some(fdomain_fuchsia_settings::AudioStreamSettingSource::User),
             level: Some(0.6),
             volume_muted: Some(false),
         };
@@ -103,7 +104,7 @@ mod test {
     #[test_case(
         Audio {
             stream: Some(AudioRenderUsage2::Background),
-            source: Some(fidl_fuchsia_settings::AudioStreamSettingSource::User),
+            source: Some(fdomain_fuchsia_settings::AudioStreamSettingSource::User),
             level: Some(0.1),
             volume_muted: Some(false),
         };
@@ -111,7 +112,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_audio_set_output(expected_audio: Audio) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AudioRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
@@ -146,7 +148,7 @@ mod test {
     #[test_case(
         Audio {
             stream: Some(AudioRenderUsage2::Background),
-            source: Some(fidl_fuchsia_settings::AudioStreamSettingSource::User),
+            source: Some(fdomain_fuchsia_settings::AudioStreamSettingSource::User),
             level: Some(0.1),
             volume_muted: Some(false),
         };
@@ -154,7 +156,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_audio_watch_output(expected_audio: Audio) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AudioRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
