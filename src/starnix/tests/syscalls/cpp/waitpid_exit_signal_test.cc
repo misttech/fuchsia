@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <sched.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -171,12 +172,26 @@ namespace {
 int pipefd[2];
 
 int pdeath_waiter(void *) {
+  close(pipefd[1]);  // Close our write end of the pipe
+
   pid_t pid = 0;
   read(pipefd[0], &pid, sizeof(pid));
 
+  EXPECT_EQ(pid, getppid());
+
   // Wait for the parent to exit so that this task will
   // have been reparented before exiting.
-  waitpid(pid, nullptr, 0);
+
+  // 1. Wait to read EOF on the pipe, which will happen when the parent file
+  //    descriptors are closed when it exits.
+  char c;
+  while (read(pipefd[0], &c, 1) > 0) {
+  }
+
+  // 2. Wait for the reparenting to be done.
+  while (getppid() == pid) {
+    sched_yield();
+  }
 
   return 0;
 }
