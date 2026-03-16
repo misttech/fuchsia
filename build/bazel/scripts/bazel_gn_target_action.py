@@ -427,7 +427,7 @@ def main() -> int:
         "gn_targets_dir", "Updating @gn_targets directory symlink"
     )
     update_gn_targets_symlink(
-        bazel_paths, gn_targets_dir, check_license_timestamp=True
+        bazel_paths, gn_targets_dir, check_license_timestamps=True
     )
 
     time_profile.start("query_cache", "loading Bazel query cache")

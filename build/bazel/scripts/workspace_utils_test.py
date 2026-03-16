@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from textwrap import dedent
 
 sys.path.insert(0, os.path.dirname(__file__))
 import workspace_utils
@@ -482,12 +483,14 @@ class GnTargetsDirTest(unittest.TestCase):
                         "bazel_package": "src/drivers/virtio",
                         "generator_label": "//src/drivers/virtio:package-archive(//build/toolchain/fuchsia:x64)",
                         "output_files": ["obj/src/drivers/virtio/package.far"],
+                        "license_spdx_file": "obj/src/drivers/virtio/package-archive.licenses.spdx.json",
                     },
                     {
                         "bazel_name": "eng.bazel_inputs",
                         "bazel_package": "bundles/assembly",
                         "generator_label": "//bundles/assembly:eng.platform_artifacts(//build/toolchain/fuchsia:x64)",
                         "output_directory": "obj/bundles/assembly/eng/platform_artifacts",
+                        "license_spdx_file": "obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json",
                     },
                 ],
                 indent=2,
@@ -510,7 +513,10 @@ class GnTargetsDirTest(unittest.TestCase):
                 "BUILD.bazel",
                 "MODULE.bazel",
                 "_files/obj/bundles/assembly/eng/platform_artifacts",
+                "_files/obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json",
+                "_files/obj/src/drivers/virtio/package-archive.licenses.spdx.json",
                 "_files/obj/src/drivers/virtio/package.far",
+                "all_license_files.txt",
                 "all_licenses.spdx.json",
                 "bundles/assembly/BUILD.bazel",
                 "bundles/assembly/_files",
@@ -521,30 +527,35 @@ class GnTargetsDirTest(unittest.TestCase):
 
         self.assertEqual(
             generated_json["BUILD.bazel"]["content"],
-            r"""# AUTO-GENERATED - DO NOT EDIT
-load("@rules_license//rules:license.bzl", "license")
+            dedent(
+                """\
+            # AUTO-GENERATED - DO NOT EDIT
+            load("@rules_license//rules:license.bzl", "license")
 
-# This contains information about all the licenses of all
-# Ninja outputs exposed in this repository.
-# IMPORTANT: package_name *must* be "Legacy Ninja Build Outputs"
-# as several license pipeline exception files hard-code this under //vendor/...
-license(
-    name = "all_licenses_spdx_json",
-    package_name = "Legacy Ninja Build Outputs",
-    license_text = "all_licenses.spdx.json",
-    visibility = ["//visibility:public"]
-)
-
-""",
+            # This contains information about all the licenses of all
+            # Ninja outputs exposed in this repository.
+            # IMPORTANT: package_name *must* be "Legacy Ninja Build Outputs"
+            # as several license pipeline exception files hard-code this under //vendor/...
+            license(
+                name = "all_licenses_spdx_json",
+                package_name = "Legacy Ninja Build Outputs",
+                license_text = "all_licenses.spdx.json",
+                visibility = ["//visibility:public"]
+            )
+            """
+            ),
         )
 
         self.assertEqual(
             generated_json["MODULE.bazel"]["content"],
-            """# AUTO-GENERATED - DO NOT EDIT
+            dedent(
+                """\
+                # AUTO-GENERATED - DO NOT EDIT
 
-module(name = "gn_targets", version = "1")
+                module(name = "gn_targets", version = "1")
 
-bazel_dep(name = "rules_license", version = "1.0.0")""",
+                bazel_dep(name = "rules_license", version = "1.0.0")"""
+            ),
         )
 
         self.assertDictEqual(
@@ -556,9 +567,35 @@ bazel_dep(name = "rules_license", version = "1.0.0")""",
         )
 
         self.assertDictEqual(
+            generated_json[
+                "_files/obj/src/drivers/virtio/package-archive.licenses.spdx.json"
+            ],
+            {
+                "target": str(
+                    build_dir
+                    / "obj/src/drivers/virtio/package-archive.licenses.spdx.json"
+                ),
+                "type": "raw_symlink",
+            },
+        )
+
+        self.assertDictEqual(
             generated_json["_files/obj/src/drivers/virtio/package.far"],
             {
                 "target": str(build_dir / "obj/src/drivers/virtio/package.far"),
+                "type": "raw_symlink",
+            },
+        )
+
+        self.assertDictEqual(
+            generated_json[
+                "_files/obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json"
+            ],
+            {
+                "target": str(
+                    build_dir
+                    / "obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json"
+                ),
                 "type": "raw_symlink",
             },
         )
@@ -593,42 +630,56 @@ bazel_dep(name = "rules_license", version = "1.0.0")""",
 
         self.assertEqual(
             generated_json["bundles/assembly/BUILD.bazel"]["content"],
-            r"""# AUTO-GENERATED - DO NOT EDIT
+            dedent(
+                """\
+            # AUTO-GENERATED - DO NOT EDIT
 
-package(
-    default_applicable_licenses = ["//:all_licenses_spdx_json"],
-    default_visibility = ["//visibility:public"],
-)
+            load("@rules_license//rules:license.bzl", "license")
 
+            package(default_visibility = ["//visibility:public"])
 
-# From GN target: //bundles/assembly:eng.platform_artifacts(//build/toolchain/fuchsia:x64)
-filegroup(
-    name = "eng.bazel_inputs",
-    srcs = glob(["_files/obj/bundles/assembly/eng/platform_artifacts/**"], exclude_directories=1, allow_empty=True),
-)
-alias(
-    name = "eng.bazel_inputs.directory",
-    actual = "_files/obj/bundles/assembly/eng/platform_artifacts",
-)
-""",
+            # From GN target: //bundles/assembly:eng.platform_artifacts(//build/toolchain/fuchsia:x64)
+            license(
+                name = "eng.bazel_inputs.license",
+                package_name = "Legacy Ninja Build Outputs",
+                license_text = "_files/obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json",
+            )
+            filegroup(
+                name = "eng.bazel_inputs",
+                applicable_licenses = [":eng.bazel_inputs.license"],
+                srcs = glob(["_files/obj/bundles/assembly/eng/platform_artifacts/**"], exclude_directories=1, allow_empty=True),
+            )
+            alias(
+                name = "eng.bazel_inputs.directory",
+                actual = "_files/obj/bundles/assembly/eng/platform_artifacts",
+            )
+            """
+            ),
         )
 
         self.assertEqual(
             generated_json["src/drivers/virtio/BUILD.bazel"]["content"],
-            """# AUTO-GENERATED - DO NOT EDIT
+            dedent(
+                """\
+            # AUTO-GENERATED - DO NOT EDIT
 
-package(
-    default_applicable_licenses = ["//:all_licenses_spdx_json"],
-    default_visibility = ["//visibility:public"],
-)
+            load("@rules_license//rules:license.bzl", "license")
 
+            package(default_visibility = ["//visibility:public"])
 
-# From GN target: //src/drivers/virtio:package-archive(//build/toolchain/fuchsia:x64)
-filegroup(
-    name = "package",
-    srcs = ["_files/obj/src/drivers/virtio/package.far"],
-)
-""",
+            # From GN target: //src/drivers/virtio:package-archive(//build/toolchain/fuchsia:x64)
+            license(
+                name = "package.license",
+                package_name = "Legacy Ninja Build Outputs",
+                license_text = "_files/obj/src/drivers/virtio/package-archive.licenses.spdx.json",
+            )
+            filegroup(
+                name = "package",
+                applicable_licenses = [":package.license"],
+                srcs = ["_files/obj/src/drivers/virtio/package.far"],
+            )
+            """
+            ),
         )
 
 

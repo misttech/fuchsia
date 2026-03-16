@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/licenses/generated_licenses_spdx.gni")
+
 # A set of GN templates to expose Ninja-generated output files as inputs
 # to bazel_action() targets. The latter run a `bazel build` command in
 # the Bazel workspace setup by the platform build, which cannot access
@@ -110,6 +112,29 @@ template("_bazel_input_entry") {
     _bazel_name = get_label_info(invoker.generator, "name")
   }
 
+  _licenses_spdx_target = "${target_name}.licenses_spdx"
+
+  # IMPORTANT: This must end in `.spdx.json` for license classification to work correctly!
+  _licenses_spdx_file = "$target_out_dir/${target_name}.licenses.spdx.json"
+
+  # Generate the SPDX file for the generated outputs.
+  generated_licenses_spdx(_licenses_spdx_target) {
+    forward_variables_from(invoker, [ "testonly" ])
+    target = invoker.generator
+    output = _licenses_spdx_file
+    spdx_root_package_name = "Fuchsia"
+    debug_hints = true
+
+    include_host_tools = defined(invoker.include_host_tools_licenses) &&
+                         invoker.include_host_tools_licenses
+
+    ignore_collection_errors =
+        defined(invoker.ignore_license_collection_errors) &&
+        invoker.ignore_license_collection_errors
+
+    visibility = [ ":${_main_target_name}" ]
+  }
+
   group(_main_target_name) {
     forward_variables_from(invoker,
                            [
@@ -118,13 +143,17 @@ template("_bazel_input_entry") {
                              "applicable_licenses",
                            ])
 
-    deps = [ invoker.generator ]
+    deps = [
+      ":${_licenses_spdx_target}",
+      invoker.generator,
+    ]
 
     metadata = {
       # Used by generate_gn_targets_repository_manifest() template, which
       # is part of the new scheme to expose Ninja outputs as Bazel inputs.
       gn_targets_repository_entries = [
         {
+          # LINT.IfChange(gn_targets_repository_manifest)
           generator_label =
               get_label_info(invoker.generator, "label_with_toolchain")
           bazel_package = _bazel_package
@@ -134,6 +163,9 @@ template("_bazel_input_entry") {
           } else if (invoker.entry_type == "directory") {
             output_directory = _output_dir
           }
+          license_spdx_file = rebase_path(_licenses_spdx_file, root_build_dir)
+
+          # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:gn_targets_repository_manifest)
         },
       ]
       gn_targets_repository_entries_barrier = []
@@ -212,6 +244,18 @@ template("_bazel_input_entry") {
 #      output files. If not provided, this will use the name of the generator
 #      target.
 #
+#   include_host_tools_licenses: (optional)
+#     Set this to true to include the licenses of host tool dependencies in
+#     this target's SPDX file.
+#     Type: boolean
+#     Default: false
+#
+#   ignore_license_collection_errors: (optional)
+#     Set this to true to ignore errors when collecting license requirements
+#     from dependencies.
+#     Type: boolean
+#     Default: false
+#
 #   testonly, visibility: Usual GN meaning.
 #
 template("bazel_input_file") {
@@ -263,6 +307,18 @@ template("bazel_input_file") {
 #   gn_targets_name: Optional. Name of Bazel filegroup() used to expose the
 #      output files. If not provided, this will use the name of the generator
 #      target.
+#
+#   include_host_tools_licenses: (optional)
+#     Set this to true to include the licenses of host tool dependencies in
+#     this target's SPDX file.
+#     Type: boolean
+#     Default: false
+#
+#   ignore_license_collection_errors: (optional)
+#     Set this to true to ignore errors when collecting license requirements
+#     from dependencies.
+#     Type: boolean
+#     Default: false
 #
 #   testonly, visibility: Usual GN meaning.
 #
@@ -419,6 +475,8 @@ template("generate_gn_targets_repository_manifest") {
     _output = "$target_gen_dir/$target_name.json"
   }
 
+  # LINT.IfChange(GnTargetsDirectoryManifestEntry)
+  #
   # There are two types of entries:
   #
   # ## REGULAR ENTRIES
@@ -443,12 +501,23 @@ template("generate_gn_targets_repository_manifest") {
   #        These will appear in the 'srcs' attribute of the filegroup.
   #        Type: list of paths relative to the root_build_dir
   #
+  #     license_spdx_file: (required)
+  #        Path to an SPDX JSON file describing the license that applies to
+  #        the output files.
+  #
   #   They should generate Bazel targets in @gn_targets//<bazel_package>/BUILD.bazel
   #   that look like:
   #
   #     # From <generator_label>
+  #     license(
+  #        name = "<bazel_name>.license",
+  #        package_name = "Legacy Ninja Build Outputs",
+  #        license_text = "_files/<license_spdx_file>",
+  #     )
+  #
   #     filegroup(
   #        name = "<bazel_name>",
+  #        applicable_licenses = [ "<bazel_name>.license" ],
   #        srcs = [
   #            "_files/<output_file_1>",
   #            "_files/<output_file_2>",
@@ -484,15 +553,27 @@ template("generate_gn_targets_repository_manifest") {
   #        Path to the directory containing Ninja output files, relative to the Ninja build directories.
   #        Type: directory path relative to the root_build_dir
   #
+  #     license_spdx_file: (required)
+  #        Path to an SPDX JSON file describing the license that applies to
+  #        the output files.
+  #
   #   They should generate Bazel targets in @gn_targets//<bazel_package>/BUILD.bazel
   #   that look like:
   #
   #     # From <generator_label>
+  #     license(
+  #        name = "<bazel_name>.license",
+  #        package_name = "Legacy Ninja Build Outputs",
+  #        license_text = "_files/<license_spdx_file>",
+  #     )
+  #
   #     filegroup(
   #         name = "<bazel_name>",
+  #         applicable_licenses = [ "<bazel_name>.license" ],
   #         srcs = glob(["_files/<output_directory>/**]),
   #     )
   #
+  # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:GnTargetsDirectoryManifestEntry)
   generated_file(target_name) {
     forward_variables_from(invoker, [ "testonly" ])
     outputs = [ _output ]

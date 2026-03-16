@@ -165,7 +165,7 @@ def main() -> int:
             generated.write(gn_targets_dir)
 
             update_gn_targets_symlink(
-                bazel_paths, gn_targets_dir, check_license_timestamp=True
+                bazel_paths, gn_targets_dir, check_license_timestamps=True
             )
 
             action_result = bazel_action_runner.run(

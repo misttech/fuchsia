@@ -269,6 +269,7 @@ if (!is_host) {
       ":generate_compatibility_goldens",
       ":plasa_manifest",
       "//build/bazel/licenses:all_bazel_inputs",
+      "//build/bazel/licenses:all_bazel_inputs.licenses_spdx.licenses_metadata",
     ]
     subbuilds_visibility = [
       ":final_fuchsia_idk.exported",
@@ -817,7 +818,7 @@ if (current_toolchain == default_toolchain) {
     visibility = [
       ":bazel_in_tree_idk_tests_${target_cpu}",
       ":ensure_bazel_in_tree_idk_is_populated_for_bazel_action",
-      "//build/bazel/bazel_sdk:ninja_generated_in_tree_idk_for_test.bazel_input",
+      "//build/bazel/bazel_sdk:*",
     ]
 
     assert_no_deps = [
