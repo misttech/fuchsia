@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::AccessibilityProxy;
 use ffx_setui_accessibility_args::{Accessibility, SubCommandEnum};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::AccessibilityProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 pub use utils;
 

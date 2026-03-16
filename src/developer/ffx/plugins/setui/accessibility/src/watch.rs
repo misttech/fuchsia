@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl_fuchsia_settings::AccessibilityProxy;
+use fdomain_fuchsia_settings::AccessibilityProxy;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn watch<W: std::io::Write>(
@@ -20,12 +20,13 @@ async fn command(proxy: AccessibilityProxy) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::{AccessibilityRequest, AccessibilitySettings};
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::{AccessibilityRequest, AccessibilitySettings};
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn validate_accessibility_watch() -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AccessibilityRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

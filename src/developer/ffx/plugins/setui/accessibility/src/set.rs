@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
+use fdomain_fuchsia_settings::{AccessibilityProxy, AccessibilitySettings};
 use ffx_setui_accessibility_args::SetArgs;
-use fidl_fuchsia_settings::{AccessibilityProxy, AccessibilitySettings};
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn set<W: std::io::Write>(
@@ -37,14 +37,15 @@ async fn command(proxy: AccessibilityProxy, options: SetArgs) -> WatchOrSetResul
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::{AccessibilityRequest, ColorBlindnessType};
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::{AccessibilityRequest, ColorBlindnessType};
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_set() {
         const TRUE: bool = true;
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AccessibilityRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -87,7 +88,8 @@ mod test {
     #[fuchsia::test]
     async fn validate_accessibility_set(expected_set: SetArgs) -> Result<()> {
         let set_clone = expected_set.clone();
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AccessibilityRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }

@@ -36,22 +36,22 @@ pub struct CaptionArgs {
 
     #[argh(option, short = 'w', from_str_fn(str_to_color))]
     /// border color used around the closed captions window. Valid options are red, green, and blue
-    pub window_color: Option<fidl_fuchsia_ui_types::ColorRgba>,
+    pub window_color: Option<fdomain_fuchsia_ui_types::ColorRgba>,
 
     #[argh(option, short = 'b', from_str_fn(str_to_color))]
     /// border color used around the closed captions window. Valid options are red, green, and blue
-    pub background_color: Option<fidl_fuchsia_ui_types::ColorRgba>,
+    pub background_color: Option<fdomain_fuchsia_ui_types::ColorRgba>,
 
     // CaptionFontStyle options below
     #[argh(option, short = 'f', from_str_fn(str_to_font_family))]
     /// font family for captions as specified by 47 CFR §79.102(k). Valid options are unknown,
     /// monospaced_serif, proportional_serif, monospaced_sans_serif, proportional_sans_serif,
     /// casual, cursive, and small_capitals
-    pub font_family: Option<fidl_fuchsia_settings::CaptionFontFamily>,
+    pub font_family: Option<fdomain_fuchsia_settings::CaptionFontFamily>,
 
     #[argh(option, short = 'c', from_str_fn(str_to_color))]
     /// color of the closed caption text. Valid options are red, green, and blue
-    pub font_color: Option<fidl_fuchsia_ui_types::ColorRgba>,
+    pub font_color: Option<fdomain_fuchsia_ui_types::ColorRgba>,
 
     #[argh(option, short = 'r')]
     /// size of closed captions text relative to the default captions size, specified in the
@@ -61,7 +61,7 @@ pub struct CaptionArgs {
     #[argh(option, short = 'e', from_str_fn(str_to_edge_style))]
     /// edge style for fonts as specified in 47 CFR §79.103(c)(7). Valid options are none,
     /// drop_shadow, raised, depressed, outline
-    pub char_edge_style: Option<fidl_fuchsia_settings::EdgeStyle>,
+    pub char_edge_style: Option<fdomain_fuchsia_settings::EdgeStyle>,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug, Clone)]
@@ -88,7 +88,7 @@ pub struct SetArgs {
     #[argh(option, short = 'c', from_str_fn(str_to_color_blindness_type))]
     /// configures the type of color-blindness to correct for. Valid options are none, protanomaly,
     /// deuteranomaly, and tritanomaly
-    pub color_correction: Option<fidl_fuchsia_settings::ColorBlindnessType>,
+    pub color_correction: Option<fdomain_fuchsia_settings::ColorBlindnessType>,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
@@ -96,56 +96,56 @@ pub struct SetArgs {
 /// watch current accessibility settings
 pub struct WatchArgs {}
 
-fn str_to_color(src: &str) -> Result<fidl_fuchsia_ui_types::ColorRgba, String> {
+fn str_to_color(src: &str) -> Result<fdomain_fuchsia_ui_types::ColorRgba, String> {
     Ok(match src.to_lowercase().as_str() {
         "red" | "r" => {
-            fidl_fuchsia_ui_types::ColorRgba { red: 255.0, green: 0.0, blue: 0.0, alpha: 255.0 }
+            fdomain_fuchsia_ui_types::ColorRgba { red: 255.0, green: 0.0, blue: 0.0, alpha: 255.0 }
         }
         "green" | "g" => {
-            fidl_fuchsia_ui_types::ColorRgba { red: 0.0, green: 2.055, blue: 0.0, alpha: 255.0 }
+            fdomain_fuchsia_ui_types::ColorRgba { red: 0.0, green: 2.055, blue: 0.0, alpha: 255.0 }
         }
         "blue" | "b" => {
-            fidl_fuchsia_ui_types::ColorRgba { red: 0.0, green: 0.0, blue: 255.0, alpha: 255.0 }
+            fdomain_fuchsia_ui_types::ColorRgba { red: 0.0, green: 0.0, blue: 255.0, alpha: 255.0 }
         }
         _ => return Err(String::from("Couldn't parse color")),
     })
 }
 
-fn str_to_font_family(src: &str) -> Result<fidl_fuchsia_settings::CaptionFontFamily, String> {
+fn str_to_font_family(src: &str) -> Result<fdomain_fuchsia_settings::CaptionFontFamily, String> {
     Ok(match src.to_lowercase().as_str() {
-        "unknown" => fidl_fuchsia_settings::CaptionFontFamily::Unknown,
-        "monospaced_serif" => fidl_fuchsia_settings::CaptionFontFamily::MonospacedSerif,
-        "proportional_serif" => fidl_fuchsia_settings::CaptionFontFamily::ProportionalSerif,
-        "monospaced_sans_serif" => fidl_fuchsia_settings::CaptionFontFamily::MonospacedSansSerif,
+        "unknown" => fdomain_fuchsia_settings::CaptionFontFamily::Unknown,
+        "monospaced_serif" => fdomain_fuchsia_settings::CaptionFontFamily::MonospacedSerif,
+        "proportional_serif" => fdomain_fuchsia_settings::CaptionFontFamily::ProportionalSerif,
+        "monospaced_sans_serif" => fdomain_fuchsia_settings::CaptionFontFamily::MonospacedSansSerif,
         "proportional_sans_serif" => {
-            fidl_fuchsia_settings::CaptionFontFamily::ProportionalSansSerif
+            fdomain_fuchsia_settings::CaptionFontFamily::ProportionalSansSerif
         }
-        "casual" => fidl_fuchsia_settings::CaptionFontFamily::Casual,
-        "cursive" => fidl_fuchsia_settings::CaptionFontFamily::Cursive,
-        "small_capitals" => fidl_fuchsia_settings::CaptionFontFamily::SmallCapitals,
+        "casual" => fdomain_fuchsia_settings::CaptionFontFamily::Casual,
+        "cursive" => fdomain_fuchsia_settings::CaptionFontFamily::Cursive,
+        "small_capitals" => fdomain_fuchsia_settings::CaptionFontFamily::SmallCapitals,
         _ => return Err(String::from("Couldn't parse font family")),
     })
 }
 
-fn str_to_edge_style(src: &str) -> Result<fidl_fuchsia_settings::EdgeStyle, String> {
+fn str_to_edge_style(src: &str) -> Result<fdomain_fuchsia_settings::EdgeStyle, String> {
     Ok(match src.to_lowercase().as_str() {
-        "none" => fidl_fuchsia_settings::EdgeStyle::None,
-        "drop_shadow" => fidl_fuchsia_settings::EdgeStyle::DropShadow,
-        "raised" => fidl_fuchsia_settings::EdgeStyle::Raised,
-        "depressed" => fidl_fuchsia_settings::EdgeStyle::Depressed,
-        "outline" => fidl_fuchsia_settings::EdgeStyle::Outline,
+        "none" => fdomain_fuchsia_settings::EdgeStyle::None,
+        "drop_shadow" => fdomain_fuchsia_settings::EdgeStyle::DropShadow,
+        "raised" => fdomain_fuchsia_settings::EdgeStyle::Raised,
+        "depressed" => fdomain_fuchsia_settings::EdgeStyle::Depressed,
+        "outline" => fdomain_fuchsia_settings::EdgeStyle::Outline,
         _ => return Err(String::from("Couldn't parse edge style")),
     })
 }
 
 fn str_to_color_blindness_type(
     src: &str,
-) -> Result<fidl_fuchsia_settings::ColorBlindnessType, String> {
+) -> Result<fdomain_fuchsia_settings::ColorBlindnessType, String> {
     match src.to_lowercase().as_str() {
-        "none" | "n" => Ok(fidl_fuchsia_settings::ColorBlindnessType::None),
-        "protanomaly" | "p" => Ok(fidl_fuchsia_settings::ColorBlindnessType::Protanomaly),
-        "deuteranomaly" | "d" => Ok(fidl_fuchsia_settings::ColorBlindnessType::Deuteranomaly),
-        "tritanomaly" | "t" => Ok(fidl_fuchsia_settings::ColorBlindnessType::Tritanomaly),
+        "none" | "n" => Ok(fdomain_fuchsia_settings::ColorBlindnessType::None),
+        "protanomaly" | "p" => Ok(fdomain_fuchsia_settings::ColorBlindnessType::Protanomaly),
+        "deuteranomaly" | "d" => Ok(fdomain_fuchsia_settings::ColorBlindnessType::Deuteranomaly),
+        "tritanomaly" | "t" => Ok(fdomain_fuchsia_settings::ColorBlindnessType::Tritanomaly),
         _ => Err(String::from("Couldn't parse color blindness type")),
     }
 }

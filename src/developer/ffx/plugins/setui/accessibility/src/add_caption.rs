@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use ffx_setui_accessibility_args::CaptionArgs;
-use fidl_fuchsia_settings::{
+use fdomain_fuchsia_settings::{
     AccessibilityProxy, AccessibilitySettings, CaptionFontStyle, CaptionsSettings,
 };
+use ffx_setui_accessibility_args::CaptionArgs;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn add_caption<W: std::io::Write>(
@@ -56,9 +56,9 @@ async fn command(proxy: AccessibilityProxy, input: CaptionArgs) -> WatchOrSetRes
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::{AccessibilityRequest, CaptionFontFamily, EdgeStyle};
-    use fidl_fuchsia_ui_types::ColorRgba;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::{AccessibilityRequest, CaptionFontFamily, EdgeStyle};
+    use fdomain_fuchsia_ui_types::ColorRgba;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     const TEST_COLOR: ColorRgba = ColorRgba { red: 238.0, green: 23.0, blue: 128.0, alpha: 255.0 };
@@ -66,7 +66,8 @@ mod test {
     #[fuchsia::test]
     async fn test_add_caption() {
         const TRUE: bool = true;
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AccessibilityRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -118,7 +119,8 @@ mod test {
     #[fuchsia::test]
     async fn validate_accessibility_add_caption(expected_add: CaptionArgs) -> Result<()> {
         let add_clone = expected_add.clone();
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             AccessibilityRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
