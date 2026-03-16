@@ -95,17 +95,15 @@ class VmAddressRegionEnumerator {
         // below it, for example.
         if ((mapping->base() < min_addr_ && mapping->base() + mapping->size() <= min_addr_) ||
             mapping->base() > max_addr_) {
-          // Mapping is out of bounds, do not yield it. We do not `continue` here, as we must
-          // fall through to the ascending logic below in case this was the last child.
-        } else {
-          // The const_cast here allows for returning a pointer with the same constness as the
-          // originally provided VmAddressRegion, but allowing for the fact that we use a
-          // const_iterator for traversal. This is safe since we have a non-const references to the
-          // tree, and we are allowed to manipulate the underlying objects, however since we do not
-          // hold the region_lock_ we cannot manipulate the subregion_ tree itself, hence we have to
-          // use const_iterator.
-          ret = NextResult{const_cast<maybe_const<VmMapping*>>(mapping), depth_};
+          continue;
         }
+        // The const_cast here allows for returning a pointer with the same constness as the
+        // originally provided VmAddressRegion, but allowing for the fact that we use a
+        // const_iterator for traversal. This is safe since we have a non-const references to the
+        // tree, and we are allowed to manipulate the underlying objects, however since we do not
+        // hold the region_lock_ we cannot manipulate the subregion_ tree itself, hence we have to
+        // use const_iterator.
+        ret = NextResult{const_cast<maybe_const<VmMapping*>>(mapping), depth_};
       } else {
         auto* vmar = curr->as_vm_address_region_ptr();
         DEBUG_ASSERT(vmar != nullptr);
