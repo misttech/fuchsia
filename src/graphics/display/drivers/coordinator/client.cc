@@ -1210,6 +1210,8 @@ void Client::SetOwnership(bool is_owner) {
 void Client::NotifyDisplayChanges(
     std::span<const fuchsia_hardware_display::wire::Info> added_display_infos,
     std::span<const fuchsia_hardware_display_types::wire::DisplayId> removed_display_ids) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   if (!coordinator_listener_.is_valid()) {
     return;
   }
@@ -1235,6 +1237,8 @@ void Client::NotifyDisplayChanges(
 }
 
 void Client::NotifyOwnershipChange(bool client_has_ownership) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   if (!coordinator_listener_.is_valid()) {
     return;
   }
@@ -1249,6 +1253,8 @@ void Client::NotifyOwnershipChange(bool client_has_ownership) {
 void Client::NotifyVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                          display::ConfigStamp config_stamp,
                          display::VsyncAckCookie vsync_ack_cookie) {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+
   if (!coordinator_listener_.is_valid()) {
     return;
   }
@@ -1464,7 +1470,7 @@ void Client::TearDown(zx_status_t epitaph) {
   // Break FIDL connections.
   binding_->Close(epitaph);
   binding_.reset();
-  coordinator_listener_.AsyncTeardown();
+  coordinator_listener_ = fidl::WireClient<fuchsia_hardware_display::CoordinatorListener>();
 
   CleanUpAllImages();
   fdf::info("Releasing {} capture images cur={}, pending={}", capture_images_.size(),
@@ -1592,9 +1598,11 @@ void Client::Bind(
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
     fidl::OnUnboundFn<Client> unbound_callback) {
-  ZX_DEBUG_ASSERT(!valid_);
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(coordinator_server_end.is_valid());
   ZX_DEBUG_ASSERT(coordinator_listener_client_end.is_valid());
+  ZX_DEBUG_ASSERT_MSG(!valid_, "Bind() already called");
+
   valid_ = true;
 
   // Keep a copy of FIDL binding so we can safely unbind from it during shutdown.

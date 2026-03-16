@@ -287,7 +287,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   Layer::Map layers_;
 
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_display::Coordinator>> binding_;
-  fidl::WireSharedClient<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_;
+  fidl::WireClient<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_;
 
   // Capture related bookkeeping.
   display::EventId capture_fence_id_ = display::kInvalidEventId;
