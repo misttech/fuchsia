@@ -18,7 +18,9 @@ use fidl_fuchsia_fs_startup::{
     CheckOptions, CreateOptions, MountOptions, VolumeRequest, VolumeRequestStream,
 };
 use fidl_fuchsia_fxfs::{FileBackedVolumeProviderMarker, ProjectIdMarker};
+use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectTree, FsInspectVolume};
+use fuchsia_async as fasync;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
@@ -37,7 +39,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::directory::helper::DirectlyMutable;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const MEBIBYTE: u64 = 1024 * 1024;
 
@@ -1054,6 +1055,8 @@ mod tests {
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use futures::{TryStreamExt, join};
@@ -1075,7 +1078,6 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     async fn write_image_to_file(image: DeviceHolder, file: fio::FileProxy) {
         file.resize(image.size()).await.unwrap().expect("resize failed");
@@ -2553,7 +2555,7 @@ mod tests {
                 fasync::Timer::new(Duration::from_millis(200)).await;
             },
             async move {
-                filesystem_clone.journal().compact().await.expect("Compact failed");
+                filesystem_clone.journal().force_compact().await.expect("Compact failed");
             },
             async move {
                 if let Err(e) = volumes_directory_clone1.remove_volume(name).await {
@@ -2708,7 +2710,7 @@ mod tests {
             let filesystem_clone = filesystem.clone();
             join!(
                 async move {
-                    filesystem_clone.journal().compact().await.expect("Compact failed");
+                    filesystem_clone.journal().force_compact().await.expect("Compact failed");
                 },
                 async move {
                     let mut i = 0;

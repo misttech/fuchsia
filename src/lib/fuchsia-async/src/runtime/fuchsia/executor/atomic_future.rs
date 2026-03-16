@@ -249,8 +249,11 @@ const WITH_ACTIVE_GUARD: usize = 1 << 58;
 // The result has been taken.
 const RESULT_TAKEN: usize = 1 << 57;
 
+// The task is low priority.
+const LOW_PRIORITY: usize = 1 << 56;
+
 // The mask for the ref count.
-const REF_COUNT_MASK: usize = RESULT_TAKEN - 1;
+const REF_COUNT_MASK: usize = LOW_PRIORITY - 1;
 
 /// The result of a call to `try_poll`.
 /// This indicates the result of attempting to `poll` the future.
@@ -559,6 +562,21 @@ impl<'a> AtomicFutureHandle<'a> {
         } else {
             None
         }
+    }
+
+    /// Marks the task as low priority.  Returns the old state.
+    pub(crate) fn set_low_priority(&self, v: bool) -> bool {
+        let prev = if v {
+            self.meta().state.fetch_or(LOW_PRIORITY, Relaxed)
+        } else {
+            self.meta().state.fetch_and(!LOW_PRIORITY, Relaxed)
+        };
+        prev & LOW_PRIORITY != 0
+    }
+
+    /// Returns true if this is a low priority task.
+    pub(crate) fn is_low_priority(&self) -> bool {
+        self.meta().state.load(Relaxed) & LOW_PRIORITY != 0
     }
 }
 

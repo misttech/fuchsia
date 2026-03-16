@@ -3871,7 +3871,7 @@ async fn test_delete_volume() {
         // journal_file_offsets.
         join!(
             async move {
-                fs_clone.journal().compact().await.expect("compact failed");
+                fs_clone.journal().force_compact().await.expect("compact failed");
             },
             async move {
                 for i in 0..50 {
@@ -4441,7 +4441,7 @@ async fn test_bad_last_object_id() {
         store.test_set_last_object_id(1);
 
         // This ensures the last object ID gets written to StoreInfo.
-        fs.journal().compact().await.unwrap();
+        fs.journal().force_compact().await.unwrap();
 
         store.store_object_id()
     };

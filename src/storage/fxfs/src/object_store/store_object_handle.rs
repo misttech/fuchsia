@@ -42,7 +42,8 @@ use std::sync::atomic::{self, AtomicBool, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 use storage_device::{InlineCryptoOptions, ReadOptions, WriteOptions};
 
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 
 /// Maximum size for an extended attribute name.
 pub const MAX_XATTR_NAME_SIZE: usize = 255;
@@ -2695,7 +2696,7 @@ mod tests {
             )
             .await
             .unwrap();
-        fs.journal().compact().await.unwrap();
+        fs.journal().force_compact().await.unwrap();
         object.remove_extended_attribute(test_attr.name()).await.unwrap();
         object
             .set_extended_attribute(

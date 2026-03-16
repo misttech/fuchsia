@@ -81,15 +81,20 @@ impl LocalExecutor {
             "Error: called `run_singlethreaded` on an executor using fake time"
         );
 
-        let Poll::Ready(result) = self.run::</* UNTIL_STALLED: */ false, _>(main_future) else {
+        let Poll::Ready(result) = self.run(main_future, |executor, task| {
+            executor.ehandle.inner().worker_lifecycle::</*UNTIL_STALLED=*/false>(Some(task));
+            // SAFETY: This is the correct type for the main future.
+            unsafe { executor.poll_join_result(task) }
+        }) else {
             unreachable!()
         };
         result
     }
 
-    fn run<const UNTIL_STALLED: bool, Fut: Future>(
-        &mut self,
+    fn run<Fut: Future>(
+        &mut self, // &mut ensures exclusive access
         main_future: Fut,
+        runner: impl FnOnce(&Self, &TaskHandle) -> Poll<Fut::Output>,
     ) -> Poll<Fut::Output> {
         /// # Safety
         ///
@@ -122,14 +127,20 @@ impl LocalExecutor {
         // order to walk the async task tree.
         std::hint::black_box(&self);
 
-        self.ehandle.inner().worker_lifecycle::<UNTIL_STALLED>(Some(&task_handle));
+        runner(self, &task_handle)
+    }
 
-        // SAFETY: We spawned the task earlier, so `R` (the return type) will be the correct type
-        // here.
+    /// Polls the join result for the task.
+    ///
+    /// # Safety
+    ///
+    /// `R` must be the correct type.
+    unsafe fn poll_join_result<R>(&self, task: &TaskHandle) -> Poll<R> {
+        // SAFETY: See function comment.
         unsafe {
             self.ehandle
                 .global_scope()
-                .poll_join_result(&task_handle, &mut Context::from_waker(std::task::Waker::noop()))
+                .poll_join_result(task, &mut Context::from_waker(std::task::Waker::noop()))
         }
     }
 
@@ -277,7 +288,7 @@ impl TestExecutor {
     where
         F: Future + Unpin,
     {
-        let mut main_future = pin!(main_future);
+        let main_future = pin!(main_future);
 
         // Set up an instance of UntilStalledData that works with `poll_until_stalled`.
         struct Cleanup(Arc<Executor>);
@@ -290,24 +301,28 @@ impl TestExecutor {
         *self.local.ehandle.inner().owner_data.lock() =
             Some(Box::new(UntilStalledData { watcher: None }));
 
-        loop {
-            let result = self.local.run::</* UNTIL_STALLED: */ true, _>(main_future.as_mut());
-            if result.is_ready() {
-                return result;
-            }
+        self.local.run(main_future, |executor, task| {
+            loop {
+                executor.ehandle.inner().worker_lifecycle::</*UNTIL_STALLED=*/true>(Some(task));
 
-            // If a waker was set by `poll_until_stalled`, disarm, wake, and loop.
-            if let Some(watcher) = with_data(|data| data.watcher.take()) {
-                watcher.waker.wake();
-                // Relaxed ordering is fine here because this atomic is only ever access from the
-                // main thread.
-                watcher.done.store(true, Ordering::Relaxed);
-            } else {
-                break;
-            }
-        }
+                // SAFETY: This is the correct type for the main future.
+                let result = unsafe { executor.poll_join_result(task) };
 
-        Poll::Pending
+                if result.is_ready() {
+                    break result;
+                }
+
+                // If a waker was set by `poll_until_stalled`, disarm, wake, and loop.
+                if let Some(watcher) = with_data(|data| data.watcher.take()) {
+                    watcher.waker.wake();
+                    // Relaxed ordering is fine here because this atomic is only ever access from
+                    // the main thread.
+                    watcher.done.store(true, Ordering::Relaxed);
+                } else {
+                    break Poll::Pending;
+                }
+            }
+        })
     }
 
     /// Wake all tasks waiting for expired timers, and return `true` if any task was woken.
@@ -396,7 +411,7 @@ impl TestExecutor {
     ///
     /// # Panics
     ///
-    /// Panics if another task is currently trying to use `run_until_stalled`, or the executor is
+    /// Panics if another task is currently trying to use `poll_until_stalled`, or the executor is
     /// not using `TestExecutor::run_until_stalled`.
     pub async fn poll_until_stalled<T>(fut: impl Future<Output = T> + Unpin) -> Poll<T> {
         let watcher =

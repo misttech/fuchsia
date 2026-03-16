@@ -71,12 +71,12 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
     ops::put(fs, vol, &Path::new(REGULAR_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     ops::put(fs, vol, &Path::new(DELETED_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     // Compact here and below so that there are some persistent files added.
-    fs.journal().compact().await?;
+    fs.journal().force_compact().await?;
     ops::unlink(fs, vol, &Path::new(DELETED_FILE_PATH)).await?;
     ops::put(fs, vol, &Path::new(VERITY_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     ops::enable_verity(vol, &Path::new(VERITY_FILE_PATH)).await?;
 
-    fs.journal().compact().await?;
+    fs.journal().force_compact().await?;
 
     ops::set_extended_attribute_for_node(
         vol,

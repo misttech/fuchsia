@@ -724,7 +724,7 @@ mod tests {
                         .unwrap();
                 },
                 async move {
-                    fs_clone2.journal().compact().await.unwrap();
+                    fs_clone2.journal().force_compact().await.unwrap();
                 },
             );
 
@@ -770,7 +770,7 @@ mod tests {
             },
             async move {
                 while !done_clone.load(Ordering::Relaxed) {
-                    fs_clone2.journal().compact().await.unwrap();
+                    fs_clone2.journal().force_compact().await.unwrap();
                 }
             },
         );

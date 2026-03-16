@@ -34,6 +34,7 @@ pub use self::fuchsia::{
     executor::{
         BootInstant, EHandle, PacketReceiver, RawReceiverRegistration, ReceiverRegistration,
     },
+    task::LowPriorityTask,
     timer::Interval,
 };
 

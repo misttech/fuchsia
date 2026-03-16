@@ -145,7 +145,7 @@ impl ObjectStore {
             })?;
         } else {
             if let FlushResult::CryptError(error) = self
-                .flush_unlocked(&txn_guard)
+                .flush_unlocked(&txn_guard, reason)
                 .await
                 .with_context(|| format!("Failed to flush object store {}", self.store_object_id))?
             {
@@ -171,6 +171,7 @@ impl ObjectStore {
     async fn flush_unlocked(
         &self,
         txn_guard: &TxnGuard<'_>,
+        reason: Reason,
     ) -> Result<FlushResult<Vec<u64>>, Error> {
         let roll_mutations_key = self
             .mutations_cipher
@@ -276,9 +277,17 @@ impl ObjectStore {
         parent_store.add_to_graveyard(&mut transaction, new_object_tree_layer_object_id);
 
         transaction.commit().await?;
-        let (layers_to_keep, old_layers) =
-            tree::flush(&self.tree, writer).await.context("Failed to flush tree")?;
 
+        // *Do* the actual compaction.
+        let (layers_to_keep, old_layers) = tree::flush(
+            &self.tree,
+            writer,
+            (reason == Reason::Journal).then(|| filesystem.journal().get_compaction_yielder()),
+        )
+        .await
+        .context("Failed to flush tree")?;
+
+        // Finalise the compaction.
         let mut new_layers = layers_from_handles([new_object_tree_layer]).await?;
         new_layers.extend(layers_to_keep.iter().map(|l| (*l).clone()));
 

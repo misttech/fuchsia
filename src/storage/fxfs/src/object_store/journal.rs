@@ -82,7 +82,7 @@ const CHUNK_SIZE: u64 = 131_072;
 const_assert!(CHUNK_SIZE > TRANSACTION_MAX_JOURNAL_USAGE);
 
 // See the comment for the `reclaim_size` member of Inner.
-pub const DEFAULT_RECLAIM_SIZE: u64 = 262_144;
+pub const DEFAULT_RECLAIM_SIZE: u64 = 524_288;
 
 // Temporary space that should be reserved for the journal.  For example: space that is currently
 // used in the journal file but cannot be deallocated yet because we are flushing.
@@ -335,6 +335,9 @@ struct Inner {
     // If true, indicates that data write requests have been made to the device since the last
     // journal write.
     needs_barrier: bool,
+
+    // True if a compaction is being forced for reasons other than the journal being full.
+    forced_compaction: bool,
 }
 
 impl Inner {
@@ -394,8 +397,7 @@ pub struct JournaledTransaction {
     pub checksums: Vec<JournaledChecksums>,
 
     /// Records offset + 1 of the matching begin_flush transaction. The +1 is because we want to
-    /// ignore the begin flush
-    /// transaction; we don't need or want to replay it.
+    /// ignore the begin flush transaction; we don't need or want to replay it.
     pub end_flush: Option<(/* store_id: */ u64, /* begin offset: */ u64)>,
 
     /// The volume which was deleted in this transaction, if any.
@@ -475,6 +477,7 @@ impl Journal {
                 image_builder_mode: None,
                 barriers_enabled: options.barriers_enabled,
                 needs_barrier: false,
+                forced_compaction: false,
             }),
             writer_mutex: Mutex::new(()),
             sync_mutex: futures::lock::Mutex::new(()),
@@ -1005,7 +1008,8 @@ impl Journal {
                                             }
                                         }
                                         // The +1 is because we don't want to replay the transaction
-                                        // containing the begin flush.
+                                        // containing the begin flush; we don't need or want to
+                                        // replay it.
                                         if current_transaction
                                             .end_flush
                                             .replace((object_id, offset + 1))
@@ -1841,6 +1845,11 @@ impl Journal {
         .await;
     }
 
+    /// Returns a yielder that can be used for compactions.
+    pub fn get_compaction_yielder(&self) -> CompactionYielder<'_> {
+        CompactionYielder::new(self)
+    }
+
     async fn flush(&self, amount: usize) -> Result<(), Error> {
         let handle = self.handle.get().unwrap();
         let mut buf = handle.allocate_buffer(amount).await;
@@ -1872,10 +1881,8 @@ impl Journal {
         Ok(())
     }
 
-    /// This should generally NOT be called externally. It is public to allow use by FIDL service
-    /// fxfs.Debug.
     #[trace]
-    pub async fn compact(&self) -> Result<(), Error> {
+    async fn compact(&self) -> Result<(), Error> {
         assert!(
             self.inner.lock().image_builder_mode.is_none(),
             "compact called in image builder mode"
@@ -1893,6 +1900,14 @@ impl Journal {
         }
         debug!("Compaction finished");
         Ok(())
+    }
+
+    /// This should generally NOT be called externally. It is public to allow use by FIDL service
+    /// fxfs.Debug.
+    pub async fn force_compact(&self) -> Result<(), Error> {
+        self.inner.lock().forced_compaction = true;
+        scopeguard::defer! { self.inner.lock().forced_compaction = false; }
+        self.compact().await
     }
 
     pub async fn stop_compactions(&self) {
@@ -1965,13 +1980,94 @@ impl Writer<'_> {
     }
 }
 
+#[cfg(target_os = "fuchsia")]
+mod yielder {
+    use super::Journal;
+    use crate::lsm_tree::Yielder;
+    use fuchsia_async as fasync;
+
+    /// CompactionYielder uses fuchsia-async to yield if other tasks are being polled, which should
+    /// be a proxy for how busy the system is.  We can afford to delay compactions for a small
+    /// amount of time but not so long that we end up blocking new transactions.
+    pub struct CompactionYielder<'a> {
+        journal: &'a Journal,
+        low_priority_task: Option<fasync::LowPriorityTask>,
+    }
+
+    impl<'a> CompactionYielder<'a> {
+        pub fn new(journal: &'a Journal) -> Self {
+            Self { journal, low_priority_task: None }
+        }
+    }
+
+    impl Yielder for CompactionYielder<'_> {
+        async fn yield_now(&mut self) {
+            // We will wait for the executor to be idle for 4ms, but no longer than 16ms.  We need
+            // to cap the maximum amount of time we wait in case we've reached a point where
+            // compaction is now urgent or else we could block new transactions.
+            const IDLE_PERIOD: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(4);
+            const MAX_YIELD_DURATION: zx::MonotonicDuration =
+                zx::MonotonicDuration::from_millis(16);
+
+            {
+                let inner = self.journal.inner.lock();
+                if inner.forced_compaction {
+                    return;
+                }
+                let outstanding = self.journal.objects.last_end_offset()
+                    - inner.super_block_header.journal_checkpoint.file_offset;
+                let half_reclaim_size = inner.reclaim_size / 2;
+                if outstanding
+                    .checked_sub(half_reclaim_size)
+                    .is_some_and(|x| x >= half_reclaim_size / 2)
+                {
+                    // If we have got to the point where we have used up 3/4 of reclaim size in the
+                    // journal, do not delay any further.  If we continue to yield we will get to
+                    // the point where we block new transactions.
+                    self.low_priority_task = None;
+                    return;
+                }
+            }
+
+            self.low_priority_task
+                .get_or_insert_with(|| fasync::LowPriorityTask::new())
+                .wait_until_idle_for(
+                    IDLE_PERIOD,
+                    fasync::MonotonicInstant::after(MAX_YIELD_DURATION),
+                )
+                .await;
+        }
+    }
+}
+
+#[cfg(not(target_os = "fuchsia"))]
+mod yielder {
+    use super::Journal;
+    use crate::lsm_tree::Yielder;
+
+    #[expect(dead_code)]
+    pub struct CompactionYielder<'a>(&'a Journal);
+
+    impl<'a> CompactionYielder<'a> {
+        pub fn new(journal: &'a Journal) -> Self {
+            Self(journal)
+        }
+    }
+
+    impl Yielder for CompactionYielder<'_> {
+        async fn yield_now(&mut self) {}
+    }
+}
+
+pub use yielder::*;
+
 #[cfg(test)]
 mod tests {
+    use super::SuperBlockInstance;
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::fsck;
     use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
-    use crate::object_store::journal::SuperBlockInstance;
     use crate::object_store::transaction::Options;
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
@@ -2230,7 +2326,7 @@ mod tests {
             }
 
             // Compact and then disable compactions.
-            fs.journal().compact().await.expect("compact failed");
+            fs.journal().force_compact().await.expect("compact failed");
             fs.journal().stop_compactions().await;
 
             // Keep going until we need another journal extent.
@@ -2384,6 +2480,369 @@ mod tests {
             generation1
         );
         fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_low_priority_compaction() {
+        use fuchsia_async::TestExecutor;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(super::JournalOptions { reclaim_size: 65536, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let _low = fasync::LowPriorityTask::new();
+
+        // Add some data to the tree.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            for i in 0..100 {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("test{}", i))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            }
+        }
+
+        // Spawn a task that polls every 1ms.
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let _normal_task = fasync::Task::spawn(async move {
+            while !stop_clone.load(Ordering::Relaxed) {
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    MonotonicDuration::from_millis(1),
+                ))
+                .await;
+            }
+        });
+
+        // Trigger journal compaction.
+        // We can do this by writing more data until outstanding > reclaim_size / 2.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            let mut i = 0;
+            loop {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("trigger{i}"))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+
+                if fs.journal().inner.lock().compaction_running {
+                    break;
+                }
+                TestExecutor::advance_to(fasync::MonotonicInstant::after(
+                    MonotonicDuration::from_millis(1),
+                ))
+                .await;
+                i += 1;
+            }
+        }
+
+        // Compaction should now be running. Because of our 1ms poller, it should be yielding.
+        // It will yield for 16ms at each point.
+        for _ in 0..10 {
+            TestExecutor::advance_to(fasync::MonotonicInstant::after(
+                MonotonicDuration::from_millis(1),
+            ))
+            .await;
+            assert!(fs.journal().inner.lock().compaction_running);
+        }
+
+        // Stop the normal task.
+        stop.store(true, Ordering::Relaxed);
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(MonotonicDuration::from_millis(
+            1,
+        )))
+        .await;
+
+        // Compaction should still be running because it hasn't been 4 ms since the normal task
+        // finished.
+        assert!(fs.journal().inner.lock().compaction_running);
+
+        // For the next 3ms, compaction should still be running.
+        for _ in 0..3 {
+            TestExecutor::advance_to(fasync::MonotonicInstant::after(
+                MonotonicDuration::from_millis(1),
+            ))
+            .await;
+            assert!(fs.journal().inner.lock().compaction_running);
+        }
+
+        // 1 more ms and compaction should be unblocked.
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(MonotonicDuration::from_millis(
+            1,
+        )))
+        .await;
+
+        // When the executor next stalls, compaction should be done.
+        let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
+        assert!(!fs.journal().inner.lock().compaction_running);
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_low_priority_compaction_deadline() {
+        use fuchsia_async::TestExecutor;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let device = DeviceHolder::new(FakeDevice::new(216384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(super::JournalOptions { reclaim_size: 65536, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let _low = fasync::LowPriorityTask::new();
+
+        // Add some data to the tree.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            for i in 0..10 {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("test{}", i))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            }
+        }
+
+        // Spawn a task that polls every 3ms.
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let _normal_task = fasync::Task::spawn(async move {
+            while !stop_clone.load(Ordering::Relaxed) {
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    MonotonicDuration::from_millis(3),
+                ))
+                .await;
+            }
+        });
+
+        // Trigger journal compaction.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            let mut i = 0;
+            loop {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("trigger{i}"))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+
+                if fs.journal().inner.lock().compaction_running {
+                    break;
+                }
+                TestExecutor::advance_to(fasync::MonotonicInstant::after(
+                    MonotonicDuration::from_millis(1),
+                ))
+                .await;
+                i += 1;
+            }
+        }
+
+        // Advance time in 20ms increments. Each increment should allow compaction to make progress
+        // on one item (since MAX_YIELD_DURATION is 16ms).
+        let mut count = 0;
+        for _ in 0..1000 {
+            TestExecutor::advance_to(fasync::MonotonicInstant::after(
+                MonotonicDuration::from_millis(20),
+            ))
+            .await;
+            if !fs.journal().inner.lock().compaction_running {
+                break;
+            }
+            count += 1;
+        }
+        assert!(!fs.journal().inner.lock().compaction_running);
+
+        // Make sure it took a few iterations to complete.  It's difficult to know what the exact
+        // number should be.
+        assert!(count > 200);
+
+        stop.store(true, Ordering::Relaxed);
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_low_priority_compaction_no_yielding_when_full() {
+        use fuchsia_async::TestExecutor;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let reclaim_size = 65536;
+        let device = DeviceHolder::new(FakeDevice::new(216384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(super::JournalOptions { reclaim_size, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let _low = fasync::LowPriorityTask::new();
+
+        // Add some data to the tree.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            for i in 0..10 {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("test{}", i))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            }
+        }
+
+        // Spawn a task that polls every 3ms.
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let _normal_task = fasync::Task::spawn(async move {
+            while !stop_clone.load(Ordering::Relaxed) {
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    MonotonicDuration::from_millis(3),
+                ))
+                .await;
+            }
+        });
+
+        // Trigger journal compaction, but this time we fill it up to 3/4 full.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            let mut i = 0;
+            loop {
+                let mut transaction = fs
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            root_store.store_object_id(),
+                            root_store.root_directory_object_id(),
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                root_directory
+                    .create_child_file(&mut transaction, &format!("trigger{i}"))
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+
+                let outstanding = {
+                    let inner = fs.journal().inner.lock();
+                    fs.journal().objects.last_end_offset()
+                        - inner.super_block_header.journal_checkpoint.file_offset
+                };
+                if outstanding >= reclaim_size * 7 / 8 {
+                    break;
+                }
+                // We don't advance time here to try and reach 3/4 before compaction can yield.
+                i += 1;
+            }
+        }
+
+        // Advancing by 4ms should be enough to wake compaction up.
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(MonotonicDuration::from_millis(
+            4,
+        )))
+        .await;
+
+        // When the executor next stalls, compaction should be done.
+        let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
+        assert!(!fs.journal().inner.lock().compaction_running);
+
+        stop.store(true, Ordering::Relaxed);
+        fs.close().await.expect("Close failed");
     }
 }
 

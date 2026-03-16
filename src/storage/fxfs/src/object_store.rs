@@ -3728,7 +3728,7 @@ mod tests {
             };
 
             if with_flush {
-                fs.journal().compact().await.unwrap();
+                fs.journal().force_compact().await.unwrap();
             }
 
             let last_object_id = store.last_object_id.lock();
@@ -3794,7 +3794,7 @@ mod tests {
             let task = {
                 let fs = fs.clone();
                 fasync::Task::spawn(async move {
-                    fs.journal().compact().await.unwrap();
+                    fs.journal().force_compact().await.unwrap();
                 })
             };
 
@@ -3960,7 +3960,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         // Compact so that StoreInfo is written.
-        fs.journal().compact().await.unwrap();
+        fs.journal().force_compact().await.unwrap();
 
         let last_object_id = store.last_object_id.lock().id();
 
@@ -4427,7 +4427,7 @@ mod tests {
             // Shut down the crypt instance for store2, and then compact.  Compaction should not
             // fail, and the store should become locked.
             crypt.shutdown();
-            fs.journal().compact().await.expect("compact failed");
+            fs.journal().force_compact().await.expect("compact failed");
             // The store should now be locked.
             assert!(store2.is_locked());
         }

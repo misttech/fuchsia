@@ -1677,7 +1677,11 @@ impl Allocator {
         for (owner_object_id, total) in totals {
             match inner.owner_bytes.get_mut(&owner_object_id) {
                 Some(counters) => counters.committed_deallocated_bytes -= total,
-                None => panic!("Failed to decrement for unknown owner: {}", owner_object_id),
+                None => {
+                    // This should only be possible if the volume has been deleted and a sync is
+                    // pending.
+                    assert!(inner.volumes_deleted_pending_sync.contains(&owner_object_id));
+                }
             }
         }
     }
@@ -2050,6 +2054,7 @@ impl<'a> Flusher<'a> {
                     total_len,
                     DirectWriter::new(&layer_object_handle, txn_options).await,
                     layer_object_handle.block_size(),
+                    Some(self.fs.journal().get_compaction_yielder()),
                 )
                 .await?;
         }
@@ -2638,7 +2643,7 @@ mod tests {
 
         // Compact so that when we replay the transaction to delete the store won't find any
         // mutations.
-        fs.journal().compact().await.expect("compact failed");
+        fs.journal().force_compact().await.expect("compact failed");
 
         for _ in 0..2 {
             {
@@ -2705,7 +2710,7 @@ mod tests {
             let executor_tasks = testing::force_executor_threads_to_run(4).await;
 
             let task = fasync::Task::spawn(async move {
-                fs_clone.journal().compact().await.expect("compact failed");
+                fs_clone.journal().force_compact().await.expect("compact failed");
             });
 
             // We don't need the executor tasks any more.
@@ -2736,7 +2741,7 @@ mod tests {
             task.await;
         }
 
-        fs.journal().compact().await.expect("compact failed");
+        fs.journal().force_compact().await.expect("compact failed");
         fs.close().await.expect("close failed");
 
         let device = fs.take_device().await;

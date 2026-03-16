@@ -109,6 +109,9 @@ pub(crate) struct Executor {
     pub(super) instrument: Option<Arc<dyn TaskInstrument>>,
     pub(super) hooks_map: HooksMap,
     pub(super) first_thread_id: OnceLock<ThreadId>,
+
+    // The time, in nanoseconds, that the executor was last executing a normal priority task.
+    last_active: AtomicI64,
 }
 
 impl Executor {
@@ -153,6 +156,7 @@ impl Executor {
             instrument,
             hooks_map: HooksMap::default(),
             first_thread_id: OnceLock::new(),
+            last_active: Default::default(),
         }
     }
 
@@ -576,6 +580,9 @@ impl Executor {
         let poll_result = TaskHandle::set_current_with(&task, || {
             task.try_poll(&mut Context::from_waker(&task_waker))
         });
+        if !task.is_low_priority() {
+            self.last_active.store(self.now().into_nanos(), Ordering::Relaxed);
+        }
         match poll_result {
             AttemptPollResult::Yield => {
                 self.ready_tasks.push(task);
@@ -639,6 +646,10 @@ impl Executor {
     pub fn task_is_ready(&self, task: TaskHandle) {
         self.ready_tasks.push(task);
         self.notify_task_ready();
+    }
+
+    pub(crate) fn last_active(&self) -> MonotonicInstant {
+        MonotonicInstant::from_nanos(self.last_active.load(Ordering::Relaxed))
     }
 }
 

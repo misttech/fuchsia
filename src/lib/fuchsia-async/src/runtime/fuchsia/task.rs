@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::EHandle;
 use crate::runtime::fuchsia::executor::TaskHandle;
 use crate::runtime::fuchsia::scope::JoinError;
 use crate::scope::ScopeHandle;
+use crate::{EHandle, MonotonicDuration, MonotonicInstant, Timer};
 use futures::prelude::*;
 use std::future::poll_fn;
 use std::marker::PhantomData;
@@ -311,12 +311,63 @@ pub async fn yield_now() {
     .await;
 }
 
+/// LowPriorityTask is to be used for tasks that are low priority.  Low priority tasks should
+/// periodically call `wait_until_idle` which will wait until no other normal priority tasks have
+/// been running for the specified tasks.  A normal priority task is any task that isn't a low
+/// priority one (due to creating an instance of `LowPriorityTask`).
+pub struct LowPriorityTask(TaskHandle);
+
+impl Default for LowPriorityTask {
+    /// See `LowPriorityTask::new()`.
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LowPriorityTask {
+    /// Marks the current task as a low priority task which means that it won't count as activity
+    /// that `wait_until_idle` will respect.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if there is no task currently running or if the task is already marked
+    /// as a low priority task.
+    pub fn new() -> Self {
+        let handle = TaskHandle::with_current(|handle| handle.unwrap().clone());
+        assert!(!handle.set_low_priority(true));
+        Self(handle)
+    }
+
+    /// Waits until the executor has been idle for `period` i.e. no normal priority tasks have been
+    /// polled for `period`.  `deadline` is the limit for how long this will wait.
+    pub async fn wait_until_idle_for(&self, period: MonotonicDuration, deadline: MonotonicInstant) {
+        let executor = self.0.scope().executor();
+        loop {
+            let deadline = std::cmp::min(executor.last_active() + period, deadline);
+            if executor.now() >= deadline {
+                break;
+            }
+            Timer::new(deadline).await;
+        }
+    }
+}
+
+impl Drop for LowPriorityTask {
+    fn drop(&mut self) {
+        assert!(self.0.set_low_priority(false));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::executor::{LocalExecutor, SendExecutorBuilder};
+    use super::super::executor::{
+        LocalExecutor, SendExecutorBuilder, TestExecutor, TestExecutorBuilder,
+    };
     use super::*;
     use fuchsia_sync::Mutex;
+    use std::pin::pin;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// This struct holds a thread-safe mutable boolean and
     /// sets its value to true when dropped.
@@ -371,5 +422,127 @@ mod tests {
             let lock = value.lock();
             assert!(*lock);
         });
+    }
+
+    #[test]
+    fn test_low_priority_task() {
+        let mut executor = TestExecutorBuilder::new().fake_time(true).build();
+        executor.set_fake_time(MonotonicInstant::from_nanos(0));
+        assert!(
+            executor
+                .run_until_stalled(&mut pin!(async {
+                    // We want this main future to be a low priority task so that it doesn't
+                    // interfere with what we're trying to test.
+                    let _low = LowPriorityTask::new();
+
+                    let stop = Arc::new(AtomicBool::new(false));
+                    let stop_clone = stop.clone();
+                    let normal_task = Task::spawn(async move {
+                        loop {
+                            Timer::new(MonotonicInstant::after(MonotonicDuration::from_millis(1)))
+                                .await;
+                            if stop_clone.load(Ordering::Relaxed) {
+                                break;
+                            }
+                        }
+                    });
+
+                    let mut low_priority_task = Task::spawn(async move {
+                        let low = LowPriorityTask::new();
+                        // Wait for 10ms of idle.  The normal task is active every 1ms, so this
+                        // should not finish until we stop the normal task.
+                        low.wait_until_idle_for(
+                            MonotonicDuration::from_millis(10),
+                            MonotonicInstant::after(MonotonicDuration::from_seconds(100)),
+                        )
+                        .await;
+                    });
+
+                    // Run for a bit.
+                    for _ in 0..50 {
+                        TestExecutor::advance_to(MonotonicInstant::after(
+                            MonotonicDuration::from_millis(1),
+                        ))
+                        .await;
+                        assert!(futures::poll!(&mut low_priority_task).is_pending());
+                    }
+
+                    stop.store(true, Ordering::Relaxed);
+
+                    // Run until normal_task finishes.
+                    TestExecutor::advance_to(MonotonicInstant::after(
+                        MonotonicDuration::from_millis(1),
+                    ))
+                    .await;
+                    normal_task.await;
+
+                    // Now that the normal task has stopped, the low priority task should finish
+                    // after 10ms.
+                    TestExecutor::advance_to(MonotonicInstant::after(
+                        MonotonicDuration::from_millis(10),
+                    ))
+                    .await;
+                    low_priority_task.await;
+                }))
+                .is_ready()
+        );
+    }
+
+    #[test]
+    fn test_low_priority_task_deadline() {
+        let mut executor = TestExecutorBuilder::new().fake_time(true).build();
+        executor.set_fake_time(MonotonicInstant::from_nanos(0));
+        assert!(
+            executor
+                .run_until_stalled(&mut pin!(async {
+                    // We want this main future to be a low priority task so that it doesn't
+                    // interfere with what we're trying to test.
+                    let _low = LowPriorityTask::new();
+
+                    let stop = Arc::new(AtomicBool::new(false));
+                    let stop_clone = stop.clone();
+                    let _normal_task = Task::spawn(async move {
+                        loop {
+                            Timer::new(MonotonicInstant::after(MonotonicDuration::from_millis(1)))
+                                .await;
+                            if stop_clone.load(Ordering::Relaxed) {
+                                break;
+                            }
+                        }
+                    });
+
+                    let mut low_priority_task = Task::spawn(async move {
+                        let low = LowPriorityTask::new();
+                        // Wait for 10ms of idle, with a deadline of 50ms.  The normal task is
+                        // active every 1ms, so this should not reach the idle period, but it should
+                        // finish when the deadline is reached.
+                        low.wait_until_idle_for(
+                            MonotonicDuration::from_millis(10),
+                            MonotonicInstant::after(MonotonicDuration::from_millis(50)),
+                        )
+                        .await;
+                    });
+
+                    // Run for 49ms.
+                    for _ in 0..49 {
+                        TestExecutor::advance_to(MonotonicInstant::after(
+                            MonotonicDuration::from_millis(1),
+                        ))
+                        .await;
+                        assert!(futures::poll!(&mut low_priority_task).is_pending());
+                    }
+
+                    // Advance to 50ms.  The low priority task should finish now because of the
+                    // deadline.
+                    TestExecutor::advance_to(MonotonicInstant::after(
+                        MonotonicDuration::from_millis(1),
+                    ))
+                    .await;
+                    low_priority_task.await;
+
+                    stop.store(true, Ordering::Relaxed);
+                }))
+                .is_ready()
+        );
     }
 }

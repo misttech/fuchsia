@@ -162,6 +162,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         num_items: usize,
         writer: W,
         block_size: u64,
+        mut yielder: Option<impl Yielder>,
     ) -> Result<(), Error> {
         let mut writer =
             PersistentLayerWriter::<W, K, V>::new(writer, num_items, block_size).await?;
@@ -169,6 +170,9 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             debug!(item_ref:?; "compact: writing");
             writer.write(item_ref).await?;
             iterator.advance().await?;
+            if let Some(y) = yielder.as_mut() {
+                y.yield_now().await;
+            }
         }
         writer.flush().await
     }
@@ -444,9 +448,14 @@ impl<K, V> fmt::Debug for LayerSet<K, V> {
     }
 }
 
+/// A yielder can be used during compactions which are low priority.
+pub trait Yielder: Send {
+    fn yield_now(&mut self) -> impl Future<Output = ()> + Send;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::LSMTree;
+    use super::{LSMTree, Yielder};
     use crate::drop_event::DropEvent;
     use crate::lsm_tree::cache::{
         NullCache, ObjectCache, ObjectCachePlaceholder, ObjectCacheResult,
@@ -520,6 +529,11 @@ mod tests {
         const DELETED_MARKER: Self = 0;
     }
 
+    struct NoOpYielder;
+    impl Yielder for NoOpYielder {
+        async fn yield_now(&mut self) {}
+    }
+
     #[fuchsia::test]
     async fn test_iteration() {
         let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
@@ -564,6 +578,7 @@ mod tests {
                 items.len(),
                 Writer::new(&handle).await,
                 handle.block_size(),
+                Option::<NoOpYielder>::None,
             )
             .await
             .expect("compact failed");
@@ -629,9 +644,15 @@ mod tests {
             let layer_set = tree.immutable_layer_set();
             let mut merger = layer_set.merger();
             let iter = merger.query(Query::FullScan).await.expect("create merger");
-            tree.compact_with_iterator(iter, 0, Writer::new(&handle).await, handle.block_size())
-                .await
-                .expect("compact failed");
+            tree.compact_with_iterator(
+                iter,
+                0,
+                Writer::new(&handle).await,
+                handle.block_size(),
+                Option::<NoOpYielder>::None,
+            )
+            .await
+            .expect("compact failed");
         }
         tree.set_layers(layers_from_handles([handle]).await.expect("layers_from_handles failed"));
         let found_item = tree.find(&item.key).await.expect("find failed").expect("not found");

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::lsm_tree::types::{LayerIterator, MergeableKey, Value};
-use crate::lsm_tree::{LSMTree, LockedLayer, Query};
+use crate::lsm_tree::{LSMTree, LockedLayer, Query, Yielder};
 use crate::object_handle::WriteBytes;
 use crate::object_store::journal;
 use crate::serialized_types::LATEST_VERSION;
@@ -25,10 +25,11 @@ type Layers<K, V> = Vec<LockedLayer<K, V>>;
 
 /// Picks an appropriate set of layers to flush from the tree and writes them to writer.  After
 /// successfully writing a new layer, it returns the layers that should be kept and the old layers
-/// that should be purged.
+/// that should be purged.  `yielder` will be used to periodically yield.
 pub async fn flush<'a, K: MergeableKey, V: Value>(
     tree: &'a LSMTree<K, V>,
     writer: impl WriteBytes + Send,
+    yielder: Option<impl Yielder>,
 ) -> Result<(Layers<K, V>, Layers<K, V>), Error>
 where
     LSMTree<K, V>: MajorCompactable<K, V>,
@@ -86,9 +87,9 @@ where
         let iter = merger.query(Query::FullScan).await?;
         if layers_to_keep.is_empty() {
             let major_iter = LSMTree::<K, V>::major_iter(iter).await?;
-            tree.compact_with_iterator(major_iter, total_len, writer, block_size).await
+            tree.compact_with_iterator(major_iter, total_len, writer, block_size, yielder).await
         } else {
-            tree.compact_with_iterator(iter, total_len, writer, block_size).await
+            tree.compact_with_iterator(iter, total_len, writer, block_size, yielder).await
         }
         .context("ObjectStore::flush")?;
     }

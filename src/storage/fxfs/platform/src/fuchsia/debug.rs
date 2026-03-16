@@ -636,7 +636,7 @@ pub async fn handle_debug_request(
 ) -> Result<(), fidl::Error> {
     match request {
         DebugRequest::Compact { responder } => {
-            responder.send(fs.journal().compact().await.map_err(map_to_raw_status))
+            responder.send(fs.journal().force_compact().await.map_err(map_to_raw_status))
         }
         DebugRequest::DeleteProfile { responder, volume, profile } => responder
             .send(volumes.delete_profile(&volume, &profile).await.map_err(Status::into_raw)),

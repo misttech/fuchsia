@@ -575,7 +575,7 @@ impl FxFilesystem {
         if self.journal().image_builder_mode().is_some() {
             self.journal().allocate_journal().await?;
             self.journal().set_image_builder_mode(None);
-            self.journal().compact().await?;
+            self.journal().force_compact().await?;
         }
         assert_eq!(self.closed.swap(true, Ordering::SeqCst), false);
         self.shutdown_event.notify(usize::MAX);
