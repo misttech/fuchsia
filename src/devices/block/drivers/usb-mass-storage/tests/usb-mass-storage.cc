@@ -278,10 +278,9 @@ class UsbBanjoServer : public ddk::UsbProtocol<UsbBanjoServer> {
             memcpy(&cmd, cbw.CBWCB, sizeof(cmd));
 
             // Push reply
-            fbl::Array<unsigned char> reply(new unsigned char[UMS_INQUIRY_TRANSFER_LENGTH],
+            fbl::Array<unsigned char> reply(new unsigned char[UMS_INQUIRY_TRANSFER_LENGTH](),
                                             UMS_INQUIRY_TRANSFER_LENGTH);
             if (!cmd.reserved_and_evpd) {
-              memset(reply.data(), 0, UMS_INQUIRY_TRANSFER_LENGTH);
               reply[0] = 0;     // Peripheral Device Type: Direct access block device
               reply[1] = 0x80;  // Removable
               reply[2] = 6;     // Version SPC-4
