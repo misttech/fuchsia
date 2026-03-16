@@ -670,10 +670,13 @@ class OverlayFsAccessTest : public OverlayFsTest {
 
     ASSERT_NO_FATAL_FAILURE(Mount());
 
+    // Allow all users to read, write and traverse the root of the overlay.
+    ASSERT_THAT(chmod(overlay_.c_str(), 0777), SyscallSucceeds());
+
     ASSERT_THAT(chmod((overlay_ + "/lower_readable").c_str(), 0600), SyscallSucceeds());
     ASSERT_THAT(chmod((overlay_ + "/upper_readable").c_str(), 0644), SyscallSucceeds());
-    ASSERT_THAT(chmod((lower_ + "/lower_writable").c_str(), 0600), SyscallSucceeds());
-    ASSERT_THAT(chmod((lower_ + "/upper_writable").c_str(), 0666), SyscallSucceeds());
+    ASSERT_THAT(chmod((overlay_ + "/lower_writable").c_str(), 0600), SyscallSucceeds());
+    ASSERT_THAT(chmod((overlay_ + "/upper_writable").c_str(), 0666), SyscallSucceeds());
   }
 
   static constexpr unsigned int kOtherUid = 65534;
@@ -692,22 +695,23 @@ TEST_F(OverlayFsAccessTest, MounterAndOtherAccessChecks) {
 
     ASSERT_NE(getuid(), 0u);
 
-    std::string content;
-
     // Other UID can read if it has access in the overlay, even if it could not read directly from
     // `lower_`.
-    EXPECT_TRUE(files::ReadFileToString(overlay_ + "/readable", &content));
-    EXPECT_FALSE(files::ReadFileToString(overlay_ + "/lower_readable", &content));
-    EXPECT_TRUE(files::ReadFileToString(overlay_ + "/upper_readable", &content));
+    EXPECT_THAT(open((overlay_ + "/readable").c_str(), O_RDONLY), SyscallSucceeds());
+    EXPECT_THAT(open((overlay_ + "/lower_readable").c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(open((overlay_ + "/upper_readable").c_str(), O_RDONLY), SyscallSucceeds());
 
     // Other UID can write if it has access in the overlay, even if it could not write directly via
     // `lower_`.
-    EXPECT_TRUE(files::WriteFile(overlay_ + "/writable", "written:writable"));
-    EXPECT_FALSE(files::WriteFile(overlay_ + "/lower_writable", "written:lower_writable"));
-    EXPECT_TRUE(files::WriteFile(overlay_ + "/upper_writable", "written:upper_writable"));
+    EXPECT_THAT(open((overlay_ + "/writable").c_str(), O_WRONLY), SyscallSucceeds());
+    EXPECT_THAT(open((overlay_ + "/lower_writable").c_str(), O_WRONLY),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(open((overlay_ + "/upper_writable").c_str(), O_WRONLY), SyscallSucceeds());
 
     // Other UID can create a new file, which should be owned by them.
-    EXPECT_TRUE(files::WriteFile(overlay_ + "/new_file", "written:new_file"));
+    EXPECT_THAT(open((overlay_ + "/new_file").c_str(), O_WRONLY | O_CREAT, 0666),
+                SyscallSucceeds());
   });
   ASSERT_TRUE(helper.WaitForChildren());
 
