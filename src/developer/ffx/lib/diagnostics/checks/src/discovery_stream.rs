@@ -134,7 +134,7 @@ pub(crate) fn build_discovery_stream(
     if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         if let Some(fastboot_devices_file) = fastboot_file_path {
             config.set_fastboot_file_watcher(
-                FastbootWatcher::new(fastboot_devices_file, sender).bug()?,
+                FastbootWatcher::new(ctx.clone(), fastboot_devices_file, sender).bug()?,
             )
         }
     }

@@ -444,7 +444,11 @@ fn wait_for_devices(
 
     if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         if let Some(fastboot_devices_file) = fastboot_devices_file_path {
-            config.set_fastboot_file_watcher(FastbootWatcher::new(fastboot_devices_file, sender)?)
+            config.set_fastboot_file_watcher(FastbootWatcher::new(
+                context.clone(),
+                fastboot_devices_file,
+                sender,
+            )?)
         }
     }
 
