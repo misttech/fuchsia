@@ -6,12 +6,12 @@ principals. Also verifies other protocol exposed by `memory_monitor2`
 
 The test it verifies the features are availability, but does not verify the data.
 """
+import asyncio
 import json
 import re
-import time
 from pathlib import Path
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
 
@@ -24,10 +24,10 @@ def assertContainsRegex(reg_str: str, content: str) -> None:
     )
 
 
-class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class MemoryMonitor2EndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
     def write_output(self, cmd_output: str, filename: str) -> None:
@@ -48,7 +48,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             "memory_monitor2.cm", [prov["name"] for prov in providers]
         )
 
-    def test_memory_traces_content_collect(self) -> None:
+    async def test_memory_traces_content_collect(self) -> None:
         CATEGORY = "memory:kernel"
         EXPECTED_EVENTS = {
             "kmem_stats_a",
@@ -58,7 +58,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             "memory_stall",
         }
         trace_path = Path(self.test_case_path) / "trace.fxt"
-        with self.dut.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[CATEGORY],
             download=True,
             directory=str(trace_path.parent),
@@ -66,7 +66,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         ):
             # Events are logged every seconds. It is not very nice to have to wait a given amount
             # of time. If that proves brittle, we should fallback on a larger value.
-            time.sleep(4)
+            await asyncio.sleep(4)
 
         model = trace_importing.create_model_from_trace_file_path(
             trace_path, patterns=EXPECTED_EVENTS
