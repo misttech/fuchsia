@@ -363,6 +363,14 @@ type PresentArgs = resource table {
     /// Unused.  Originally intended to be a renaming of `release_fences`, but was never hooked up.
     @available(removed=24)
     6: server_signal_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
+
+    /// Flatland will signal all `present_fences` when the frame corresponding to this `Present`
+    /// is reported as displayed by the display hardware.  Additionally, each fence will have the
+    /// timestamp of the corresponding vsync written into it.
+    ///
+    /// The default `present_fences` value is the empty vector.
+    @available(added=HEAD)
+    7: present_fences vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
 };
 
 /// A user-defined identifier for future presentation info. A maximum of 8
