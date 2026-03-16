@@ -6,12 +6,15 @@
 import ipaddress
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List
 
+from antlion import utils
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
+from mobly import logger
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
@@ -307,3 +310,19 @@ class OpenWrtAP:
             "ipv6_private": ipv6_private_addresses,
             "ipv6_public": ipv6_public_addresses,
         }
+
+    def download_logs(self, path: str) -> None:
+        """Download all available logs from the OpenWRT AP.
+
+        Args:
+            path: Path to write the logs to.
+        """
+        timestamp = logger.normalize_log_line_timestamp(
+            logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
+        )
+
+        logread_out = self.ssh.run("logread").stdout.decode("utf-8")
+        logread_path = os.path.join(path, f"openwrt_logread_{timestamp}.log")
+        with open(logread_path, "w") as f:
+            f.write(logread_out)
+        _LOGGER.debug("Wrote OpenWRT logread to %s", logread_path)

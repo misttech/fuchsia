@@ -329,6 +329,9 @@ class WifiBaseTest(BaseTestClass):
         if hasattr(self, "access_points"):
             for access_point in self.access_points:
                 access_point.download_ap_logs(current_path)
+        if hasattr(self, "openwrt_aps"):
+            for openwrt_ap in self.openwrt_aps:
+                openwrt_ap.download_logs(current_path)
         if hasattr(self, "iperf_servers"):
             for iperf_server in self.iperf_servers:
                 iperf_server.download_logs(current_path)
