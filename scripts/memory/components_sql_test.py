@@ -14,16 +14,16 @@ from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 
-class ComponentsSqlEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class ComponentsSqlEndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:  # type: ignore[override]
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
         self.dut.ffx.run(
             ["config", "set", "ffx_profile_memory_components", "true"]
         )
 
-    def test_components_sql_creates_db(self) -> None:
+    async def test_components_sql_creates_db(self) -> None:
         detailed_profile = self.dut.ffx.run(
             [
                 "--machine",
