@@ -21,6 +21,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -67,7 +68,8 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   // fuchsia_hardware_usb_dci::UsbDci protocol.
   void ConnectToEndpoint(ConnectToEndpointRequestView req,
                          ConnectToEndpointCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    endpoints_[req->ep_addr] = std::move(req->ep);
+    completer.ReplySuccess();
   }
 
   void SetInterface(SetInterfaceRequestView req, SetInterfaceCompleter::Sync& completer) override {
@@ -138,6 +140,16 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
     stop_completion_ = stop_completion;
   }
 
+  fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> TakeEndpoint(uint8_t addr) {
+    auto it = endpoints_.find(addr);
+    if (it == endpoints_.end()) {
+      return {};
+    }
+    auto ep = std::move(it->second);
+    endpoints_.erase(it);
+    return ep;
+  }
+
  private:
   usb_dci_protocol_t proto_;
   bool controller_started_ = false;
@@ -146,6 +158,7 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
   compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_DCI, this, &usb_dci_protocol_ops_};
+  std::map<uint8_t, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint>> endpoints_;
 };
 
 class FakeUsbFunction
@@ -425,12 +438,10 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   ASSERT_OK(fake_function_result);
   auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
 
-  zx_status_t alloc_status;
-  uint8_t interface_num = 0;
-  // TODO(https://fxbug.dev/439593030): Replace with FIDL call once that's available.
-  dut().RunInDriverContext(
-      [&](UsbPeripheral& driver) { alloc_status = driver.AllocInterface(0, &interface_num); });
-  ASSERT_OK(alloc_status);
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
 
   // Valid descriptors for ValidateFunction (we pass UMS's descriptors)
   usb_interface_descriptor_t intf_desc = {
@@ -561,11 +572,10 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
   ASSERT_OK(fake_function_result);
   auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
 
-  zx_status_t alloc_status;
-  uint8_t interface_num = 0;
-  dut().RunInDriverContext(
-      [&](UsbPeripheral& driver) { alloc_status = driver.AllocInterface(0, &interface_num); });
-  ASSERT_OK(alloc_status);
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
 
   usb_interface_descriptor_t intf_desc = {
       .b_length = sizeof(usb_interface_descriptor_t),
@@ -612,11 +622,10 @@ TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
   ASSERT_OK(fake_function_result);
   auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
 
-  zx_status_t alloc_status;
-  uint8_t interface_num = 0;
-  dut().RunInDriverContext(
-      [&](UsbPeripheral& driver) { alloc_status = driver.AllocInterface(0, &interface_num); });
-  ASSERT_OK(alloc_status);
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
 
   usb_interface_descriptor_t intf_desc = {
       .b_length = sizeof(usb_interface_descriptor_t),
@@ -658,6 +667,274 @@ TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
     env.dci().set_stop_completion(nullptr);
     EXPECT_FALSE(env.dci().controller_started());
   });
+}
+
+TEST_F(UsbPeripheralFunctionTest, AllocResources) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_endpoints1 =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_endpoints2 =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+
+  zx_info_handle_basic_t info1, info2;
+  ASSERT_OK(ep_endpoints1.server.channel().get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1),
+                                                    nullptr, nullptr));
+  ASSERT_OK(ep_endpoints2.server.channel().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2),
+                                                    nullptr, nullptr));
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 2);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  endpoints[0].endpoint = std::move(ep_endpoints1.server);
+  endpoints[1].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+  endpoints[1].endpoint = std::move(ep_endpoints2.server);
+
+  auto strings = fidl::VectorView<fidl::StringView>(arena, 2);
+  strings[0] = fidl::StringView(arena, "string1");
+  strings[1] = fidl::StringView(arena, "string2");
+
+  fidl::WireResult res = function_client->AllocResources(1, endpoints, strings);
+
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
+
+  auto* response = res->value();
+  ASSERT_EQ(response->interface_nums.size(), 1u);
+  ASSERT_EQ(response->endpoint_addrs.size(), 2u);
+  ASSERT_EQ(response->string_indices.size(), 2u);
+
+  uint8_t ep1_addr = response->endpoint_addrs[0];
+  uint8_t ep2_addr = response->endpoint_addrs[1];
+
+  // Verify endpoints connected to DCI.
+  dut().RunInEnvironmentTypeContext([&](UsbPeripheralTestEnvironment& env) {
+    auto dci_ep1 = env.dci().TakeEndpoint(ep1_addr);
+    auto dci_ep2 = env.dci().TakeEndpoint(ep2_addr);
+
+    ASSERT_TRUE(dci_ep1.is_valid());
+    ASSERT_TRUE(dci_ep2.is_valid());
+
+    zx_info_handle_basic_t dci_info1, dci_info2;
+    ASSERT_OK(dci_ep1.channel().get_info(ZX_INFO_HANDLE_BASIC, &dci_info1, sizeof(dci_info1),
+                                         nullptr, nullptr));
+    ASSERT_OK(dci_ep2.channel().get_info(ZX_INFO_HANDLE_BASIC, &dci_info2, sizeof(dci_info2),
+                                         nullptr, nullptr));
+
+    EXPECT_EQ(info1.koid, dci_info1.koid);
+    EXPECT_EQ(info2.koid, dci_info2.koid);
+  });
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  struct {
+    usb_interface_descriptor_t intf;
+    usb_endpoint_descriptor_t ep1;
+    usb_endpoint_descriptor_t ep2;
+  } __PACKED combined_descriptors = {
+      .intf =
+          {
+              .b_length = sizeof(usb_interface_descriptor_t),
+              .b_descriptor_type = USB_DT_INTERFACE,
+              .b_interface_number = response->interface_nums[0],
+              .b_num_endpoints = 2,
+              .b_interface_class = 8,
+              .b_interface_sub_class = 6,
+              .b_interface_protocol = 80,
+              .i_interface = response->string_indices[0],
+          },
+      .ep1 =
+          {
+              .b_length = sizeof(usb_endpoint_descriptor_t),
+              .b_descriptor_type = USB_DT_ENDPOINT,
+              .b_endpoint_address = ep1_addr,
+              .bm_attributes = USB_ENDPOINT_BULK,
+              .w_max_packet_size = 512,
+          },
+      .ep2 =
+          {
+              .b_length = sizeof(usb_endpoint_descriptor_t),
+              .b_descriptor_type = USB_DT_ENDPOINT,
+              .b_endpoint_address = ep2_addr,
+              .bm_attributes = USB_ENDPOINT_BULK,
+              .w_max_packet_size = 512,
+          },
+  };
+
+  std::vector<uint8_t> descriptors_vec(sizeof(combined_descriptors));
+  memcpy(descriptors_vec.data(), &combined_descriptors, sizeof(combined_descriptors));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors_vec.data(), descriptors_vec.size()),
+      std::move(fake_function_endpoint));
+
+  ASSERT_TRUE(configure_res.ok()) << configure_res.status_string();
+  ASSERT_TRUE(configure_res->is_ok());
+}
+
+TEST_F(UsbPeripheralFunctionTest, ResourceCleanupOnClose) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  auto function_client = std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
+  strings[0] = fidl::StringView(arena, "cleanup_test_string");
+
+  fidl::WireResult res = function_client->AllocResources(1, endpoints, strings);
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
+
+  // Verify resources are allocated.
+  UsbPeripheral::ResourceAllocations allocations;
+  dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
+  ASSERT_EQ(allocations.interface_nums.size(), 1u);
+  ASSERT_EQ(allocations.endpoint_addrs.size(), 1u);
+  ASSERT_EQ(allocations.string_indices.size(), 1u);
+
+  // Close the FIDL connection.
+  function_client = {};
+
+  // Verify resources are cleared.
+  bool cleared = false;
+  for (int i = 0; i < 100; i++) {
+    dut().RunInDriverContext(
+        [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
+    if (allocations.interface_nums.empty() && allocations.endpoint_addrs.empty() &&
+        allocations.string_indices.empty()) {
+      cleared = true;
+      break;
+    }
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  }
+  ASSERT_TRUE(cleared);
+}
+
+TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  auto function_client = std::move(function_client_result.value());
+
+  fidl::Arena arena;
+
+  // 1. Initial success allocation to have a baseline of "used" resources.
+  {
+    auto endpoints =
+        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+    auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
+    strings[0] = fidl::StringView(arena, "initial_string");
+
+    fidl::WireResult res = function_client->AllocResources(1, endpoints, strings);
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res.value().is_ok()) << zx_status_get_string(res.value().error_value());
+  }
+
+  UsbPeripheral::ResourceAllocations initial;
+  dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { initial = peripheral.GetResourceAllocations(0); });
+  ASSERT_EQ(initial.interface_nums.size(), 1u);
+  ASSERT_EQ(initial.endpoint_addrs.size(), 1u);
+  ASSERT_EQ(initial.string_indices.size(), 1u);
+
+  // 2. Perform a request that should succeed for strings and endpoints, but
+  //    fails for interfaces. We already have 1 interface. Requesting
+  //    UsbPeripheral::MAX_INTERFACES more should fail.
+  {
+    auto endpoints =
+        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+    auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
+    strings[0] = fidl::StringView(arena, "should_rollback");
+
+    fidl::WireResult res =
+        function_client->AllocResources(UsbPeripheral::kMaxInterfaces, endpoints, strings);
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    EXPECT_STATUS(res.value().error_value(), ZX_ERR_NO_RESOURCES);
+  }
+
+  // Verify only initial resources remain.
+  UsbPeripheral::ResourceAllocations allocations;
+  dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
+  EXPECT_EQ(allocations.interface_nums, initial.interface_nums);
+  EXPECT_EQ(allocations.endpoint_addrs, initial.endpoint_addrs);
+  EXPECT_EQ(allocations.string_indices, initial.string_indices);
+
+  // 3. Perform a request that should succeed for interfaces and endpoints, but
+  //    fails for strings. Global strings (3) + Initial function strings taken.
+  //    Requesting enough to exceed UsbPeripheral::MAX_STRINGS should fail.
+  {
+    auto endpoints =
+        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+    std::vector<fidl::StringView> strings_vec(UsbPeripheral::kMaxStrings,
+                                              fidl::StringView(arena, "too_many"));
+
+    fidl::WireResult res = function_client->AllocResources(
+        1, endpoints,
+        fidl::VectorView<fidl::StringView>::FromExternal(strings_vec.data(), strings_vec.size()));
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    EXPECT_STATUS(res.value().error_value(), ZX_ERR_NO_RESOURCES);
+  }
+
+  // Verify only initial resources remain.
+  dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
+  EXPECT_EQ(allocations.interface_nums, initial.interface_nums);
+  EXPECT_EQ(allocations.endpoint_addrs, initial.endpoint_addrs);
+  EXPECT_EQ(allocations.string_indices, initial.string_indices);
+
+  // 4. Perform a request that should succeed for strings and interfaces, but
+  //    fails for endpoints. Initial function IN endpoint (1) taken. Total IN
+  //    endpoints available: UsbPeripheral::IN_EP_END -
+  //    UsbPeripheral::IN_EP_START + 1.
+  {
+    size_t total_in_eps = UsbPeripheral::kInEpEnd - UsbPeripheral::kInEpStart + 1;
+    auto endpoints = fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(
+        arena, total_in_eps);
+    for (size_t i = 0; i < total_in_eps; i++) {
+      endpoints[i].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+      auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      endpoints[i].endpoint = std::move(ep_endpoints.server);
+    }
+
+    auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
+    strings[0] = fidl::StringView(arena, "should_rollback");
+
+    fidl::WireResult res = function_client->AllocResources(1, endpoints, strings);
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    EXPECT_STATUS(res.value().error_value(), ZX_ERR_NO_RESOURCES);
+  }
+
+  // Verify only initial resources remain.
+  dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
+  EXPECT_EQ(allocations.interface_nums, initial.interface_nums);
+  EXPECT_EQ(allocations.endpoint_addrs, initial.endpoint_addrs);
+  EXPECT_EQ(allocations.string_indices, initial.string_indices);
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 #define SRC_DEVICES_USB_DRIVERS_USB_PERIPHERAL_USB_PERIPHERAL_H_
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
@@ -99,6 +100,16 @@ class UsbPeripheral : public fdf::DriverBase,
   UsbPeripheral(fdf::DriverStartArgs start_args,
                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
+  static constexpr uint8_t kMaxInterfaces = UsbConfiguration::MAX_INTERFACES;
+  static constexpr uint8_t kMaxStrings = 255;
+  static constexpr uint8_t kMaxStringLength = 126;
+
+  // OUT endpoints are in range 1 - 15, IN endpoints are in range 17 - 31.
+  static constexpr uint8_t kOutEpStart = 1;
+  static constexpr uint8_t kOutEpEnd = 15;
+  static constexpr uint8_t kInEpStart = 17;
+  static constexpr uint8_t kInEpEnd = 31;
+
   // fdf::DriverBase implementation.
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
@@ -113,13 +124,33 @@ class UsbPeripheral : public fdf::DriverBase,
                               SetStateChangeListenerCompleter::Sync& completer) override;
 
   zx_status_t SetDeviceDescriptor(DeviceDescriptor desc);
-  zx_status_t AllocInterface(size_t function_index, uint8_t* out_intf_num);
-  zx_status_t AllocEndpoint(size_t function_index, uint8_t direction, uint8_t* out_address);
-  zx_status_t AllocStringDesc(std::string desc, uint8_t* out_index);
   zx_status_t ValidateFunction(size_t function_index, void* descriptors, size_t length,
                                uint8_t* out_num_interfaces);
   zx_status_t FunctionRegistered();
   void FunctionCleared();
+
+  struct StringDescriptor {
+    std::string text;
+    std::optional<size_t> function_index;
+    bool allocated = false;
+  };
+
+  struct ResourceAllocations {
+    std::vector<uint8_t> interface_nums;
+    std::vector<uint8_t> endpoint_addrs;
+    std::vector<uint8_t> string_indices;
+  };
+
+  zx::result<ResourceAllocations> AllocResources(
+      size_t function_index, uint8_t interface_count,
+      std::span<fuchsia_hardware_usb_function::EndpointResource> endpoints,
+      std::span<std::string> strings);
+
+  void ReleaseResources(size_t function_index) __TA_EXCLUDES(lock_);
+
+  // Returns currently allocated resources for the given function.
+  // For testing purposes only.
+  ResourceAllocations GetResourceAllocations(size_t function_index) __TA_EXCLUDES(lock_);
 
   inline const ddk::UsbDciProtocolClient& dci() const { return dci_; }
   inline const fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci>& dci_new() const {
@@ -163,15 +194,6 @@ class UsbPeripheral : public fdf::DriverBase,
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
 
-  static constexpr uint8_t MAX_STRINGS = 255;
-  static constexpr uint8_t MAX_STRING_LENGTH = 126;
-
-  // OUT endpoints are in range 1 - 15, IN endpoints are in range 17 - 31.
-  static constexpr uint8_t OUT_EP_START = 1;
-  static constexpr uint8_t OUT_EP_END = 15;
-  static constexpr uint8_t IN_EP_START = 17;
-  static constexpr uint8_t IN_EP_END = 31;
-
   // For mapping b_endpoint_address value to/from index in range 0 - 31.
   static inline uint8_t EpAddressToIndex(uint8_t addr) {
     return static_cast<uint8_t>(((addr) & 0xF) | (((addr) & 0x80) >> 3));
@@ -194,6 +216,16 @@ class UsbPeripheral : public fdf::DriverBase,
   zx_status_t SetDefaultConfig(std::vector<FunctionDescriptor>& functions);
   void RequestComplete(usb_request_t* req);
 
+  zx_status_t AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num)
+      __TA_REQUIRES(lock_);
+  zx_status_t AllocEndpointLocked(size_t function_index,
+                                  fuchsia_hardware_usb_function::EndpointDirection direction,
+                                  uint8_t* out_address) __TA_REQUIRES(lock_);
+  zx_status_t AllocStringDescLocked(std::optional<size_t> function_index, std::string desc,
+                                    uint8_t* out_index) __TA_REQUIRES(lock_);
+  zx_status_t AllocStringDesc(std::optional<size_t> function_index, std::string desc,
+                              uint8_t* out_index) __TA_EXCLUDES(lock_);
+
   bool AllFunctionsRegistered() const __TA_REQUIRES(lock_);
   UsbFunction& GetFunction(size_t index);
   const UsbFunction& GetFunction(size_t index) const;
@@ -215,7 +247,7 @@ class UsbPeripheral : public fdf::DriverBase,
   // Map from endpoint index to function index.
   std::optional<size_t> endpoint_map_[USB_MAX_EPS];
   // Strings for USB string descriptors.
-  std::vector<std::string> strings_ __TA_GUARDED(lock_);
+  std::vector<StringDescriptor> strings_ __TA_GUARDED(lock_);
   // List of usb_function_t.
   std::vector<UsbConfiguration> configurations_;
   // mutex for protecting our state

@@ -76,6 +76,8 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
   void Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) override;
+  void AllocResources(AllocResourcesRequest& request,
+                      AllocResourcesCompleter::Sync& completer) override;
 
   zx::result<> AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                         const std::string& child_node_name,
@@ -88,6 +90,13 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
 
   const size_t index_;
   uint8_t configuration_;
+  // This is a cheeky guard to prevent FIDL-releated side-effects until function
+  // drivers are all moved to FIDL. It prevents us from releasing allocated
+  // resources if they have not been allocated via the FIDL API.
+  //
+  // TODO(https://fxbug.dev/439593030): Remove this flag once we decide to move
+  // all resources to the FIDL interface.
+  bool alloc_resources_over_fidl_ = false;
   UsbPeripheral* peripheral_;
   ddk::UsbFunctionInterfaceProtocolClient function_intf_;
   // TODO(https://fxbug.dev/492519815): We're assuming a synchronous call into

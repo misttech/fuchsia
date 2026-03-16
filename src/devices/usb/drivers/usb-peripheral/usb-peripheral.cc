@@ -174,8 +174,7 @@ zx::result<> UsbPeripheral::Start() {
   zx_status_t status;
   if (!config.kboot_functions().empty()) {
     fdf::debug("-driver.usb.peripheral kboot overrides: {}", config.kboot_functions());
-    status = peripheral_config.AddFunctions(
-        config.kboot_functions() | std::views::split(','));
+    status = peripheral_config.AddFunctions(config.kboot_functions() | std::views::split(','));
   } else {
     status = peripheral_config.AddFunctions(std::views::all(config.functions()));
   }
@@ -189,14 +188,15 @@ zx::result<> UsbPeripheral::Start() {
   device_desc_.id_vendor = peripheral_config.vid();
   device_desc_.id_product = peripheral_config.pid();
 
-  status = AllocStringDesc(peripheral_config.manufacturer(), &device_desc_.i_manufacturer);
+  status =
+      AllocStringDesc(std::nullopt, peripheral_config.manufacturer(), &device_desc_.i_manufacturer);
   if (status != ZX_OK) {
     fdf::error("Failed to allocate manufacturer string descriptor: {}",
                zx_status_get_string(status));
     return zx::error(status);
   }
 
-  status = AllocStringDesc(peripheral_config.product(), &device_desc_.i_product);
+  status = AllocStringDesc(std::nullopt, peripheral_config.product(), &device_desc_.i_product);
   if (status != ZX_OK) {
     fdf::error("Failed to allocate product string descriptor: {}", zx_status_get_string(status));
     return zx::error(status);
@@ -207,7 +207,7 @@ zx::result<> UsbPeripheral::Start() {
     fdf::error("Failed to get serial number: {}", serial);
     return serial.take_error();
   }
-  status = AllocStringDesc(std::move(serial.value()), &device_desc_.i_serial_number);
+  status = AllocStringDesc(std::nullopt, std::move(serial.value()), &device_desc_.i_serial_number);
   if (status != ZX_OK) {
     fdf::error("Failed to add serial number descriptor: {}", zx_status_get_string(status));
     return zx::error(status);
@@ -267,18 +267,38 @@ zx::result<std::string> UsbPeripheral::GetSerialNumber() {
   return zx::ok(std::string{kDefaultSerialNumber});
 }
 
-zx_status_t UsbPeripheral::AllocStringDesc(std::string desc, uint8_t* out_index) {
-  TRACE_DURATION("usb-peripheral", __func__);
+zx_status_t UsbPeripheral::AllocStringDesc(std::optional<size_t> function_index, std::string desc,
+                                           uint8_t* out_index) {
   fbl::AutoLock lock(&lock_);
+  return AllocStringDescLocked(function_index, std::move(desc), out_index);
+}
 
-  if (strings_.size() >= MAX_STRINGS) {
+zx_status_t UsbPeripheral::AllocStringDescLocked(std::optional<size_t> function_index,
+                                                 std::string desc, uint8_t* out_index) {
+  TRACE_DURATION("usb-peripheral", __func__);
+  // Try to find an empty slot first.
+  for (size_t i = 0; i < strings_.size(); i++) {
+    if (!strings_[i].allocated) {
+      strings_[i] = {
+          .text = std::move(desc),
+          .function_index = function_index,
+          .allocated = true,
+      };
+      *out_index = static_cast<uint8_t>(i + 1);
+      return ZX_OK;
+    }
+  }
+
+  if (strings_.size() >= kMaxStrings) {
     fdf::error("String descriptor limit reached");
     return ZX_ERR_NO_RESOURCES;
   }
-  desc.resize(MAX_STRING_LENGTH);
-  strings_.push_back(std::move(desc));
 
-  // String indices are 1-based.
+  strings_.push_back({
+      .text = std::move(desc),
+      .function_index = function_index,
+      .allocated = true,
+  });
   *out_index = static_cast<uint8_t>(strings_.size());
   return ZX_OK;
 }
@@ -472,42 +492,41 @@ zx_status_t UsbPeripheral::StopController() {
   return ZX_OK;
 }
 
-zx_status_t UsbPeripheral::AllocInterface(size_t function_index, uint8_t* out_intf_num) {
+zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
-  fbl::AutoLock lock(&lock_);
   auto& function = GetFunction(function_index);
   ZX_ASSERT(function.configuration() < configurations_.size());
   auto& configuration = configurations_[function.configuration()];
   auto& interface_map = configuration.interface_map;
-  for (uint8_t i = 0; i < std::size(interface_map); i++) {
+  for (size_t i = 0; i < std::size(interface_map); i++) {
     if (!interface_map[i].has_value()) {
       interface_map[i] = function_index;
-      *out_intf_num = i;
+      *out_intf_num = static_cast<uint8_t>(i);
       return ZX_OK;
     }
   }
-
+  fdf::error("Exceeded maximum supported interfaces.");
   return ZX_ERR_NO_RESOURCES;
 }
 
-zx_status_t UsbPeripheral::AllocEndpoint(size_t function_index, uint8_t direction,
-                                         uint8_t* out_address) {
+zx_status_t UsbPeripheral::AllocEndpointLocked(
+    size_t function_index, fuchsia_hardware_usb_function::EndpointDirection direction,
+    uint8_t* out_address) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index, "direction",
-                 direction);
+                 fidl::ToUnderlying(direction));
   uint8_t start, end;
 
-  if (direction == USB_DIR_OUT) {
-    start = OUT_EP_START;
-    end = OUT_EP_END;
-  } else if (direction == USB_DIR_IN) {
-    start = IN_EP_START;
-    end = IN_EP_END;
+  if (direction == fuchsia_hardware_usb_function::EndpointDirection::kOut) {
+    start = kOutEpStart;
+    end = kOutEpEnd;
+  } else if (direction == fuchsia_hardware_usb_function::EndpointDirection::kIn) {
+    start = kInEpStart;
+    end = kInEpEnd;
   } else {
     fdf::error("Invalid direction.");
     return ZX_ERR_INVALID_ARGS;
   }
 
-  fbl::AutoLock lock(&lock_);
   for (uint8_t endpoint_index = start; endpoint_index <= end; endpoint_index++) {
     if (!endpoint_map_[endpoint_index].has_value()) {
       endpoint_map_[endpoint_index] = function_index;
@@ -518,6 +537,84 @@ zx_status_t UsbPeripheral::AllocEndpoint(size_t function_index, uint8_t directio
 
   fdf::error("Exceeded maximum supported endpoints.");
   return ZX_ERR_NO_RESOURCES;
+}
+
+zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
+    size_t function_index, uint8_t interface_count,
+    std::span<fuchsia_hardware_usb_function::EndpointResource> endpoints,
+    std::span<std::string> strings) {
+  TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
+  fbl::AutoLock lock(&lock_);
+
+  ResourceAllocations allocations;
+
+  // Save current state for rollback if needed.
+  std::vector<uint8_t> allocated_strings;
+
+  auto cleanup = fit::defer([&]() {
+    // Lock is held beyond the deferred action.
+    ([]() __TA_ASSERT(lock_) {})();
+    UsbFunction& function = GetFunction(function_index);
+    UsbConfiguration& configuration = configurations_[function.configuration()];
+    for (uint8_t intf : allocations.interface_nums) {
+      configuration.interface_map[intf].reset();
+    }
+    for (uint8_t ep_addr : allocations.endpoint_addrs) {
+      endpoint_map_[EpAddressToIndex(ep_addr)].reset();
+    }
+    for (uint8_t string_index : allocated_strings) {
+      StringDescriptor& string_descriptor = strings_[string_index - 1];
+      string_descriptor.text.clear();
+      string_descriptor.function_index.reset();
+      string_descriptor.allocated = false;
+    }
+    while (!strings_.empty() && !strings_.back().allocated) {
+      strings_.pop_back();
+    }
+  });
+
+  for (uint8_t i = 0; i < interface_count; i++) {
+    uint8_t intf_num;
+    zx_status_t status = AllocInterfaceLocked(function_index, &intf_num);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    allocations.interface_nums.push_back(intf_num);
+  }
+
+  for (fuchsia_hardware_usb_function::EndpointResource& ep : endpoints) {
+    uint8_t ep_addr;
+    zx_status_t status = AllocEndpointLocked(function_index, ep.direction(), &ep_addr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    allocations.endpoint_addrs.push_back(ep_addr);
+  }
+
+  for (std::string& str : strings) {
+    uint8_t str_idx;
+    zx_status_t status = AllocStringDescLocked(function_index, std::move(str), &str_idx);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    allocations.string_indices.push_back(str_idx);
+    allocated_strings.push_back(str_idx);
+  }
+
+  // If all allocations succeeded, connect endpoints.
+  for (size_t i = 0; i < endpoints.size(); i++) {
+    if (!endpoints[i].endpoint().is_valid()) {
+      continue;
+    }
+    zx_status_t status =
+        ConnectToEndpoint(allocations.endpoint_addrs[i], std::move(endpoints[i].endpoint()));
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+  }
+
+  cleanup.cancel();
+  return zx::ok(std::move(allocations));
 }
 
 zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index,
@@ -577,7 +674,7 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
         fdf::error("Invalid string index: {}", string_index);
         return ZX_ERR_INVALID_ARGS;
       }
-      const char* string = strings_[string_index].c_str();
+      const char* string = strings_[string_index].text.c_str();
       unsigned index = 2;
 
       // convert ASCII to UTF16
@@ -1001,18 +1098,18 @@ zx_status_t UsbPeripheral::SetDeviceDescriptor(DeviceDescriptor desc) {
     device_desc_.id_vendor = desc.id_vendor;
     device_desc_.id_product = desc.id_product;
     device_desc_.bcd_device = desc.bcd_device;
-    zx_status_t status =
-        AllocStringDesc(std::string(desc.manufacturer.data(), desc.manufacturer.size()),
-                        &device_desc_.i_manufacturer);
+    zx_status_t status = AllocStringDesc(
+        std::nullopt, std::string(desc.manufacturer.data(), desc.manufacturer.size()),
+        &device_desc_.i_manufacturer);
     if (status != ZX_OK) {
       return status;
     }
-    status = AllocStringDesc(std::string(desc.product.data(), desc.product.size()),
+    status = AllocStringDesc(std::nullopt, std::string(desc.product.data(), desc.product.size()),
                              &device_desc_.i_product);
     if (status != ZX_OK) {
       return status;
     }
-    status = AllocStringDesc(std::string(desc.serial.data(), desc.serial.size()),
+    status = AllocStringDesc(std::nullopt, std::string(desc.serial.data(), desc.serial.size()),
                              &device_desc_.i_serial_number);
     if (status != ZX_OK) {
       return status;
@@ -1107,6 +1204,68 @@ const UsbFunction& UsbPeripheral::GetFunction(size_t index) const {
   const auto& function = functions_[index];
   ZX_ASSERT(function != nullptr);
   return *function;
+}
+
+void UsbPeripheral::ReleaseResources(size_t function_index) {
+  TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
+  fbl::AutoLock lock(&lock_);
+
+  // Clear entries in interface_map for all configurations.
+  for (auto& config : configurations_) {
+    for (auto& intf : config.interface_map) {
+      if (intf == function_index) {
+        intf.reset();
+      }
+    }
+  }
+
+  // Clear entries in endpoint_map_.
+  for (auto& ep : endpoint_map_) {
+    if (ep == function_index) {
+      ep.reset();
+    }
+  }
+
+  // Clear entries in strings_.
+  for (auto& str : strings_) {
+    if (str.function_index == function_index) {
+      str.text.clear();
+      str.function_index.reset();
+      str.allocated = false;
+    }
+  }
+
+  // If there are trailing empty strings, we can truncate the vector.
+  while (!strings_.empty() && !strings_.back().allocated) {
+    strings_.pop_back();
+  }
+}
+
+UsbPeripheral::ResourceAllocations UsbPeripheral::GetResourceAllocations(size_t function_index) {
+  fbl::AutoLock lock(&lock_);
+  ResourceAllocations allocations;
+
+  for (const auto& config : configurations_) {
+    for (size_t i = 0; i < std::size(config.interface_map); i++) {
+      if (config.interface_map[i] == function_index) {
+        allocations.interface_nums.push_back(static_cast<uint8_t>(i));
+      }
+    }
+  }
+
+  for (size_t i = 0; i < std::size(endpoint_map_); i++) {
+    if (endpoint_map_[i] == function_index) {
+      allocations.endpoint_addrs.push_back(EpIndexToAddress(static_cast<uint8_t>(i)));
+    }
+  }
+
+  for (size_t i = 0; i < strings_.size(); i++) {
+    if (strings_[i].function_index == function_index) {
+      allocations.string_indices.push_back(static_cast<uint8_t>(i + 1));
+    }
+  }
+
+  return allocations;
 }
 
 }  // namespace usb_peripheral

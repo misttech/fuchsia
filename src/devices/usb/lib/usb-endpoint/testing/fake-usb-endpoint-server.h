@@ -240,6 +240,17 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
           completer) override {
     completer.Reply(fit::ok());
   }
+
+  void AllocResources(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
+    fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+    response.interface_nums() = {};
+    response.endpoint_addrs() = {};
+    response.string_indices() = {};
+    completer.Reply(fit::ok(std::move(response)));
+  }
 };
 
 }  // namespace fake_usb_endpoint

@@ -8,6 +8,11 @@ using zx;
 using fuchsia.hardware.usb.endpoint;
 using fuchsia.hardware.usb.descriptor;
 
+const MAX_STRING_LEN uint32 = 126;
+const MAX_STRINGS uint32 = 255;
+const MAX_ENDPOINTS uint32 = 255;
+const MAX_INTERFACES uint32 = 32;
+
 @discoverable
 closed protocol UsbFunction {
     /// Connects to endpoint. Returns
@@ -37,8 +42,43 @@ closed protocol UsbFunction {
         iface client_end:UsbFunctionInterface;
     }) -> () error zx.Status;
 
-    // TODO(https://fxbug.dev/42178882): More functions to come. Equivalents to
-    // //sdk/banjo/fuchsia.hardware.usb.function/usb-function.fidl
+    /// Allocates resources for the function.
+    ///
+    /// This function is used to allocate resources for the function.
+    ///
+    /// `interface_count` informs how many interfaces to create.
+    /// `interface_nums` returns the allocate interface numbers referencing
+    ///  the requested interfaces.
+    ///
+    /// `endpoints` is a vector of endpoints to allocate. The direction and
+    ///  endpoint server end are provided.
+    /// `endpoint_addrs` returns a vector of the same size containing the
+    /// allocated endpoint addresses. On success the endpoint server ends are
+    /// connected to a server. Closed otherwise.
+    ///
+    /// `strings` is a vector of strings to allocate.
+    /// `string_indices` returns a vector of the same size containing the
+    /// allocated string indices.
+    ///
+    /// Returns the interface ids, endpoint ids, and string ids that were
+    /// allocated. On error, no resources are allocated. Returns:
+    ///  * `ZX_ERR_NO_RESOURCES` if any resource namespace numbers are
+    ///  exhausted.
+    ///
+    /// The allocated resource numbers and addresses remain allocated for the
+    /// lifetime of the connection to `UsbFunction`.
+    strict AllocResources(resource struct {
+        interface_count uint8;
+        endpoints vector<@generated_name("EndpointResource") resource struct {
+            direction EndpointDirection;
+            endpoint server_end:fuchsia.hardware.usb.endpoint.Endpoint;
+        }>:MAX_ENDPOINTS;
+        strings vector<string:MAX_STRING_LEN>:MAX_STRINGS;
+    }) -> (struct {
+        interface_nums vector<uint8>:MAX_INTERFACES;
+        endpoint_addrs vector<uint8>:MAX_ENDPOINTS;
+        string_indices vector<uint8>:MAX_STRINGS;
+    }) error zx.Status;
 };
 
 /// Protocol offered to [`UsbFunction`] instances to handle host-initiated
@@ -82,6 +122,13 @@ open protocol UsbFunctionInterface {
         interface uint8;
         alt_setting uint8;
     }) -> () error zx.Status;
+};
+
+
+/// The direction of a USB endpoint.
+type EndpointDirection = strict enum : uint8 {
+    OUT = 0x00;
+    IN = 0x80;
 };
 
 

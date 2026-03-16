@@ -64,6 +64,28 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     return result.take_error();
   }
 
+  bindings_.set_empty_set_handler([this]() {
+    if (!alloc_resources_over_fidl_) {
+      return;
+    }
+    // We need to release all allocated resources when our channel is closed.
+    // Which also means that we need to close our connection with the function
+    // interface to make sure that resources are not used after they've been
+    // released.
+    if (function_intf_fidl_closed_.has_value()) {
+      function_intf_fidl_closed_->Cancel();
+    }
+    bool valid_fidl = function_intf_fidl_.is_valid();
+    if (valid_fidl) {
+      function_intf_fidl_.TakeClientEnd();
+    }
+    descriptors_.reset();
+    peripheral_->ReleaseResources(index_);
+    if (valid_fidl) {
+      peripheral_->DeviceStateChanged();
+    }
+  });
+
   zx::result result = outgoing->AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
       fuchsia_hardware_usb_function::UsbFunctionService::InstanceHandler({
           .device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
@@ -159,12 +181,36 @@ zx_status_t UsbFunction::UsbFunctionCancelAll(uint8_t ep_address) {
 
 zx_status_t UsbFunction::UsbFunctionAllocInterface(uint8_t* out_intf_num) {
   TRACE_DURATION("usb-peripheral", __func__);
-  return peripheral_->AllocInterface(index_, out_intf_num);
+  zx::result result = peripheral_->AllocResources(index_, 1, {}, {});
+  if (result.is_error()) {
+    return result.error_value();
+  }
+  *out_intf_num = result->interface_nums[0];
+  return ZX_OK;
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocEp(uint8_t direction, uint8_t* out_address) {
   TRACE_DURATION("usb-peripheral", __func__);
-  return peripheral_->AllocEndpoint(index_, direction, out_address);
+  fuchsia_hardware_usb_function::EndpointDirection fidl_direction;
+  switch (direction) {
+    case USB_DIR_OUT:
+      fidl_direction = fuchsia_hardware_usb_function::EndpointDirection::kOut;
+      break;
+    case USB_DIR_IN:
+      fidl_direction = fuchsia_hardware_usb_function::EndpointDirection::kIn;
+      break;
+    default:
+      return ZX_ERR_INVALID_ARGS;
+  }
+  fuchsia_hardware_usb_function::EndpointResource ep{{
+      .direction = fidl_direction,
+  }};
+  zx::result result = peripheral_->AllocResources(index_, 0, {&ep, 1}, {});
+  if (result.is_error()) {
+    return result.error_value();
+  }
+  *out_address = result->endpoint_addrs[0];
+  return ZX_OK;
 }
 
 zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
@@ -228,7 +274,13 @@ zx_status_t UsbFunction::UsbFunctionDisableEp(uint8_t address) {
 
 zx_status_t UsbFunction::UsbFunctionAllocStringDesc(const char* str, uint8_t* out_index) {
   TRACE_DURATION("usb-peripheral", __func__);
-  return peripheral_->AllocStringDesc(str, out_index);
+  std::string string_desc(str);
+  auto result = peripheral_->AllocResources(index_, 0, {}, {&string_desc, 1});
+  if (result.is_error()) {
+    return result.error_value();
+  }
+  *out_index = result->string_indices[0];
+  return ZX_OK;
 }
 
 void UsbFunction::UsbFunctionRequestQueue(usb_request_t* usb_request,
@@ -289,6 +341,25 @@ void UsbFunction::ConnectToEndpoint(ConnectToEndpointRequest& request,
     return;
   }
   completer.Reply(fit::ok());
+}
+
+void UsbFunction::AllocResources(AllocResourcesRequest& request,
+                                 AllocResourcesCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
+  zx::result result = peripheral_->AllocResources(index_, request.interface_count(),
+                                                  request.endpoints(), request.strings());
+  if (result.is_error()) {
+    completer.Reply(fit::as_error(result.error_value()));
+    return;
+  }
+
+  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+  response.interface_nums(std::move(result->interface_nums));
+  response.endpoint_addrs(std::move(result->endpoint_addrs));
+  response.string_indices(std::move(result->string_indices));
+  alloc_resources_over_fidl_ = true;
+  completer.Reply(fit::ok(std::move(response)));
 }
 
 void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) {
