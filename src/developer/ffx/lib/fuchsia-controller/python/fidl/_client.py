@@ -27,7 +27,11 @@ from ._fidl_common import (
 )
 from ._ipc import GlobalHandleWaker
 
+# The active TXID (mutable).
 TXID: TXID_Type = 0
+
+# The TXID of a FIDL event.
+EVENT_TXID: TXID_Type = 0
 # Simple client ID. Monotonically increasing for each client.
 _CLIENT_ID = 0
 _LOGGER = logging.getLogger("fidl.client")
@@ -63,26 +67,17 @@ class FidlClient(metaclass=FidlMeta):
         )
 
     def close_cleanly(self):
-        """Closes the underlying channel safely.
+        """Closes the underlying channel.
 
         This is so-named to avoid name conflicts with existing FIDL methods.
-        A potential other method here is to make this appear private (leading underscore).
         """
-        _LOGGER.debug(f"{self} closing from caller")
-        self._close()
+        if self._channel is not None:
+            self._channel.close()
+            # self._channel = None is NOT done here, as it may be used in pending tasks.
+            # The handle being closed will result in errors in those tasks.
 
     def __str__(self):
         return f"client:{type(self).__name__}:{self.id}"
-
-    def __del__(self):
-        _LOGGER.debug(f"{self} closing from GC")
-        self._close()
-
-    def _close(self):
-        if self._channel is not None:
-            self._channel_waker.unregister(self._channel)
-            self._channel.close()
-            self._channel = None
 
     async def _get_staged_message(self, txid: TXID_Type):
         res = await self.staged_messages[txid].get()
@@ -99,7 +94,7 @@ class FidlClient(metaclass=FidlMeta):
     def _clean_staging(self, txid: TXID_Type):
         self.staged_messages.pop(txid)
         # Events are never added to this set, since they're always pending.
-        if txid != 0:
+        if txid != EVENT_TXID:
             self.pending_txids.remove(txid)
 
     def _decode(self, txid: TXID_Type, msg: FidlMessage) -> Dict[str, Any]:
@@ -152,104 +147,92 @@ class FidlClient(metaclass=FidlMeta):
             self.staged_messages[txid] = asyncio.Queue(1)
         with self._channel_waker.registration(self._channel, name=str(self)):
             while True:
-                # The main gist of this loop is:
-                # 1.) Try to read from the channel.
-                #   a.) If we read the message and it matches out TXID we're done.
-                #   b.) If we read the message and it doesn't match our TXID, we "stage" the message for
-                #       another task to read later, then we wait.
-                #   c.) If we get a ZX_ERR_SHOULD_WAIT, we need to wait.
-                # 2.) Once we're waiting, we select on either the handle being ready to read again, or
-                #     on a staged message becoming available.
-                # 3.) If the select returns something that isn't a staged message, continue the loop
-                #     again.
-                #
-                # It's pretty straightforward on paper but requires a bit of bookkeeping for the corner
-                # cases to prevent memory leaks.
+                if self.epitaph_received is not None:
+                    raise self.epitaph_received
+
+                # 1. Try to read from the channel.
                 try:
-                    if self.epitaph_received is not None:
-                        raise self.epitaph_received
                     msg = self._channel.read()
                     self._epitaph_check(msg)
                     recvd_txid = parse_txid(msg)
                     if recvd_txid == txid:
-                        if txid != 0:
+                        if txid != EVENT_TXID:
                             return self._decode(txid, msg)
                         else:
-                            # There's additional message processing for events, so instead return the
-                            # raw bytes/handles.
                             self._clean_staging(txid)
                             return msg
-                    if recvd_txid != 0 and recvd_txid not in self.pending_txids:
-                        self._channel = None
+
+                    if (
+                        recvd_txid != EVENT_TXID
+                        and recvd_txid not in self.pending_txids
+                    ):
                         _LOGGER.warning(
                             f"{self} received unexpected TXID: {recvd_txid}"
                         )
+                        # Unexpected TXID is often a sign of a bad server or a serious bug.
+                        # We don't close the channel here, but we raise.
                         raise RuntimeError(
-                            f"{self} received unexpected TXID. Channel closed and invalid. "
-                            + "Continuing to use this FIDL client after this exception will result "
-                            + "in undefined behavior"
+                            f"{self} received unexpected TXID: {recvd_txid}"
                         )
+
                     self._stage_message(recvd_txid, msg)
-                except EpitaphError as ep:
-                    _LOGGER.warning(f"{self} received epitaph error: {ep}")
-                    raise ep
                 except fc.FcTransportStatus as e:
-                    err_code = e.code()
-                    if err_code != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
-                        _LOGGER.warning(f"{self} received channel error: {e}")
+                    if e.code() != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
                         raise e
+
+                # 2. Wait for either:
+                #    - The channel being readable again.
+                #    - A staged message for our TXID becoming available.
+                #    - An epitaph being received.
+                #
+                #    This is handled with a task group in the event that
+                #    there are task cancellations they apply to the other
+                #    tasks in the task group, making cleanup predictable.
                 try:
                     async with asyncio.TaskGroup() as tg:
-                        channel_waker_task = tg.create_task(
+                        read_ready_task = asyncio.create_task(
                             self._channel_waker.wait_ready(self._channel)
                         )
-                        staged_msg_task = tg.create_task(
+                        staged_msg_task = asyncio.create_task(
                             self._get_staged_message(txid)
                         )
-                        epitaph_event_task = tg.create_task(
-                            self._epitaph_event_wait()
+                        epitaph_task = asyncio.create_task(
+                            self.epitaph_event.wait()
                         )
+
                         done, pending = await asyncio.wait(
-                            [
-                                channel_waker_task,
-                                staged_msg_task,
-                                epitaph_event_task,
-                            ],
+                            [read_ready_task, staged_msg_task, epitaph_task],
                             return_when=asyncio.FIRST_COMPLETED,
                         )
+
                         for p in pending:
                             p.cancel()
-                # Unwrap an exception if it's the only one. The particular case
-                # we care about is when an epitaph is raised as an exception.
                 except ExceptionGroup as eg:
+                    # If there is only a single exception, raise this as the
+                    # main exception. We care particularly if there is an
+                    # epitaph exception raised.
                     if len(eg.exceptions) == 1:
                         raise eg.exceptions[0] from None
                     raise
 
-                # Multiple notifications happened at the same time.
-                if len(done) > 1:
-                    results = [r.result() for r in done]
-                    # Order of asyncio.wait is not guaranteed, so check all
-                    # results. If there's an epitaph, running the "result()"
-                    # function will raise an exception, so there are
-                    # only two values we can ever have here.
-                    first = results.pop()
-                    second = results.pop()
-                    if type(first) == int:
-                        msg = second
-                    else:
-                        msg = first
+                if staged_msg_task in done:
+                    # If we got a staged message, we're done.
+                    msg = staged_msg_task.result()
+                    # If read_ready_task was also done, we should "re-notify" because we didn't read.
+                    if read_ready_task in done:
+                        self._channel_waker.post_ready(self._channel)
 
-                    # Since both the channel and the staged message were available, we've chosen to take
-                    # the staged message. To ensure another task can be awoken, we must post an event
-                    # saying the channel still needs to be read, since we've essentilly stolen it from
-                    # another task.
-                    self._channel_waker.post_ready(self._channel)
-                    return self._decode(txid, msg)
-                # Only one notification came in.
-                msg = done.pop().result()
-                if type(msg) != int:  # Not a FIDL channel response
-                    return self._decode(txid, msg)
+                    if txid != EVENT_TXID:
+                        return self._decode(txid, msg)
+                    else:
+                        self._clean_staging(txid)
+                        return msg
+
+                if epitaph_task in done:
+                    # This will raise the epitaph error.
+                    raise self.epitaph_received
+
+                # If only read_ready_task reached here, we just loop again and try to read().
 
     def _send_two_way_fidl_request(
         self, ordinal, library, msg_obj, response_ident
@@ -267,7 +250,6 @@ class FidlClient(metaclass=FidlMeta):
         """
         global TXID
         TXID += 1
-        self._channel_waker.register(self._channel, name=str(self))
         self.pending_txids.add(TXID)
         self._send_one_way_fidl_request(TXID, ordinal, library, msg_obj)
 

@@ -110,7 +110,6 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         waker.post_ready(channel)
         with self.assertRaises(RuntimeError):
             await proxy._read_and_decode(10)
-        self.assertEqual(proxy._channel, None)
 
     async def test_staging_stages(self) -> None:
         channel = Mock()
