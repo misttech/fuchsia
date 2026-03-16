@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import json
 import os
 import re
@@ -179,39 +180,68 @@ def print_comments(comments_data):
 
 
 def main():
-    print("Finding Change-Id from HEAD...")
-    change_id_str = get_change_id()
-    if not change_id_str:
-        print("Error: Could not find Change-Id in HEAD commit message.")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Fetch unresolved comments for a Gerrit change."
+    )
+    parser.add_argument(
+        "change_url",
+        nargs="?",
+        help="Optional Gerrit change URL. If not provided, uses Change-Id from HEAD.",
+    )
+    args = parser.parse_args()
 
-    print(f"Found Change-Id: {change_id_str}")
+    if args.change_url:
+        change_url = args.change_url
+        print(f"Using provided URL: {change_url}")
+        match = re.search(r"^(https?://[^/]+)(?:.*/\+/|/|/q/)(\d+)", change_url)
+        if not match:
+            print(
+                "Error: Could not extract base URL and change number from provided URL."
+            )
+            sys.exit(1)
 
-    print("Checking git remote...")
-    remote_url = get_remote_url()
-    if not remote_url:
-        print("Error: Could not determine git remote URL.")
-        sys.exit(1)
+        base_url = match.group(1)
+        change_number = match.group(2)
+        use_gob_curl = "git.corp.google.com" in base_url
 
-    print(f"Found Remote: {remote_url}")
-    base_url, use_gob_curl = parse_remote_url(remote_url)
-    if not base_url:
-        print(
-            f"Error: Could not determine Gerrit host from remote: {remote_url}"
-        )
-        sys.exit(1)
+        print(f"Using Gerrit host: {base_url}")
+        if use_gob_curl:
+            print("Using gob-curl for authentication.")
+        print(f"Found Change {change_number} ({base_url}/c/{change_number})")
+    else:
+        print("Finding Change-Id from HEAD...")
+        change_id_str = get_change_id()
+        if not change_id_str:
+            print("Error: Could not find Change-Id in HEAD commit message.")
+            sys.exit(1)
 
-    print(f"Using Gerrit host: {base_url}")
-    if use_gob_curl:
-        print("Using gob-curl for authentication.")
+        print(f"Found Change-Id: {change_id_str}")
 
-    change_info = get_change_details(base_url, change_id_str, use_gob_curl)
-    if not change_info:
-        print(f"Error: Change {change_id_str} not found on Gerrit.")
-        sys.exit(1)
+        print("Checking git remote...")
+        remote_url = get_remote_url()
+        if not remote_url:
+            print("Error: Could not determine git remote URL.")
+            sys.exit(1)
 
-    change_number = change_info.get("_number")
-    print(f"Found Change {change_number} ({base_url}/c/{change_number})")
+        print(f"Found Remote: {remote_url}")
+        base_url, use_gob_curl = parse_remote_url(remote_url)
+        if not base_url:
+            print(
+                f"Error: Could not determine Gerrit host from remote: {remote_url}"
+            )
+            sys.exit(1)
+
+        print(f"Using Gerrit host: {base_url}")
+        if use_gob_curl:
+            print("Using gob-curl for authentication.")
+
+        change_info = get_change_details(base_url, change_id_str, use_gob_curl)
+        if not change_info:
+            print(f"Error: Change {change_id_str} not found on Gerrit.")
+            sys.exit(1)
+
+        change_number = change_info.get("_number")
+        print(f"Found Change {change_number} ({base_url}/c/{change_number})")
 
     print("Fetching comments...")
     comments_data = get_comments(base_url, change_number, use_gob_curl)
