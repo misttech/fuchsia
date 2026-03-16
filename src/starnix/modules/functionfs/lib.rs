@@ -5,10 +5,8 @@
 #![recursion_limit = "256"]
 
 use fidl::endpoints::SynchronousProxy;
-use fidl_fuchsia_hardware_adb as fadb;
-use fuchsia_async as fasync;
 use futures_util::StreamExt;
-use starnix_core::power::{OwnedMessageCounterHandle, create_proxy_for_wake_events_counter_zero};
+use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_message_handled};
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
@@ -34,6 +32,7 @@ use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::{Arc, mpsc};
 use zerocopy::IntoBytes;
+use {fidl_fuchsia_hardware_adb as fadb, fuchsia_async as fasync};
 
 // The node identifiers of different nodes in FunctionFS.
 const ROOT_NODE_ID: ino_t = 1;
@@ -77,7 +76,7 @@ struct WriteCommand {
 /// clearing the proxy signal, but only clearing the kernel signal if we have an outstanding read.
 async fn handle_adb(
     proxy: fadb::UsbAdbImpl_Proxy,
-    message_counter: OwnedMessageCounterHandle,
+    message_counter: Option<zx::Counter>,
     read_commands: async_channel::Receiver<ReadCommand>,
     write_commands: async_channel::Receiver<WriteCommand>,
     state: Arc<Mutex<FunctionFsState>>,
@@ -99,7 +98,7 @@ async fn handle_adb(
     /// closes, we've unbound from the driver, and the module sends a FUNCTIONFS_UNBIND event.
     async fn handle_events(
         mut stream: fadb::UsbAdbImpl_EventStream,
-        message_counter: &OwnedMessageCounterHandle,
+        message_counter: &Option<zx::Counter>,
         state: Arc<Mutex<FunctionFsState>>,
     ) {
         let queue_event = |event| {
@@ -123,7 +122,7 @@ async fn handle_adb(
             // We can simply clear this after getting a response because we care about
             // reads. Allow new FIDL messages to come through and only go to sleep if
             // we have an outstanding read.
-            message_counter.mark_handled();
+            message_counter.as_ref().map(mark_proxy_message_handled);
         }
 
         queue_event(usb_functionfs_event_type_FUNCTIONFS_UNBIND);
@@ -139,13 +138,13 @@ async fn handle_adb(
     /// counters.
     async fn handle_idle_timeouts(
         timeouts: async_channel::Receiver<zx::MonotonicInstant>,
-        message_counter: &OwnedMessageCounterHandle,
+        message_counter: &Option<zx::Counter>,
     ) {
         timeouts
             .for_each(|timeout| async move {
                 use fasync::WakeupTime;
                 timeout.into_timer().await;
-                message_counter.mark_handled();
+                message_counter.as_ref().map(mark_proxy_message_handled);
             })
             .await
     }
@@ -390,9 +389,6 @@ impl FunctionFsRootDir {
         let (device_proxy, adb_proxy, message_counter) =
             connect_to_device(AdbProxyMode::WakeContainer)?;
         state.device_proxy = Some(device_proxy);
-
-        let message_counter =
-            kernel.suspend_resume_manager.add_message_counter("adb", message_counter);
 
         let (read_command_sender, read_command_receiver) = async_channel::unbounded();
         state.adb_read_channel = Some(read_command_sender);
