@@ -15,7 +15,7 @@ use net_types::ip::IpAddress;
 use netlink_packet_core::{ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload};
 use netlink_packet_route::address::{AddressAttribute, AddressMessage};
 use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
-use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
+use netlink_packet_route::{AddressFamily, RouteNetlinkMessage, RouteNetlinkMessageParseMode};
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -771,8 +771,11 @@ where
         read_buf.reset();
         let n = socket.read(locked, current_task, read_buf)?;
 
-        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&read_buf.data()[..n])
-            .expect("netlink should always send well-formed messages");
+        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &read_buf.data()[..n],
+            RouteNetlinkMessageParseMode::Strict,
+        )
+        .expect("netlink should always send well-formed messages");
         match msg.payload {
             NetlinkPayload::Done(_) => break,
             NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(msg)) => {
@@ -874,7 +877,10 @@ where
 
     read_buf.reset();
     let n = socket.read(locked, current_task, read_buf)?;
-    let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&read_buf.data()[..n])
-        .expect("netlink should always send well-formed messages");
+    let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+        &read_buf.data()[..n],
+        RouteNetlinkMessageParseMode::Strict,
+    )
+    .expect("netlink should always send well-formed messages");
     Ok(msg)
 }

@@ -10,7 +10,7 @@ use crate::address::AddressMessage;
 use crate::link::{LinkAttribute, LinkExtentMask, LinkMessage};
 use crate::route::{RouteHeader, RouteMessage};
 use crate::rule::{RuleHeader, RuleMessage};
-use crate::{AddressFamily, RouteNetlinkMessage};
+use crate::{AddressFamily, RouteNetlinkMessage, RouteNetlinkMessageParseMode};
 
 #[test]
 fn test_get_link() {
@@ -40,7 +40,10 @@ fn test_get_link() {
         })),
     );
 
-    assert_eq!(NetlinkMessage::deserialize(&raw).unwrap(), expected);
+    assert_eq!(
+        NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Strict).unwrap(),
+        expected
+    );
     let mut buffer = vec![0; expected.buffer_len()];
     expected.emit(&mut buffer);
     assert_eq!(buffer.as_slice(), raw);
@@ -55,7 +58,7 @@ fn test_get_link() {
 // header and attributes.
 
 #[test]
-fn test_malformed_get_route_from_iproute2() {
+fn test_parse_malformed_get_route_from_iproute2_relaxed() {
     // wireshark capture of nlmon against command:
     //   ip route show
     let raw: Vec<u8> = vec![
@@ -79,11 +82,14 @@ fn test_malformed_get_route_from_iproute2() {
         })),
     );
 
-    assert_eq!(NetlinkMessage::deserialize(&raw).unwrap(), expected);
+    assert_eq!(
+        NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Relaxed).unwrap(),
+        expected
+    );
 }
 
 #[test]
-fn test_malformed_get_address_from_iproute2() {
+fn test_parse_malformed_get_address_from_iproute2_relaxed() {
     // wireshark capture of nlmon against command:
     //   ip addr show
     let raw: Vec<u8> = vec![
@@ -103,11 +109,14 @@ fn test_malformed_get_address_from_iproute2() {
         NetlinkPayload::from(RouteNetlinkMessage::GetAddress(AddressMessage::default())),
     );
 
-    assert_eq!(NetlinkMessage::deserialize(&raw).unwrap(), expected);
+    assert_eq!(
+        NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Relaxed).unwrap(),
+        expected
+    );
 }
 
 #[test]
-fn test_malformed_get_rule_from_iproute2() {
+fn test_parse_malformed_get_rule_from_iproute2_relaxed() {
     // wireshark capture of nlmon against command:
     //   ip rule show
     let raw: Vec<u8> = vec![
@@ -130,5 +139,8 @@ fn test_malformed_get_rule_from_iproute2() {
         })),
     );
 
-    assert_eq!(NetlinkMessage::deserialize(&raw).unwrap(), expected);
+    assert_eq!(
+        NetlinkMessage::deserialize(&raw, RouteNetlinkMessageParseMode::Relaxed).unwrap(),
+        expected
+    );
 }

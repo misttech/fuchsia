@@ -11,7 +11,7 @@ use netlink_packet_core::{
 };
 use netlink_packet_route::RouteNetlinkMessageParseError;
 use netlink_packet_utils::nla::NlaError;
-use netlink_packet_utils::{DecodeError, Parseable};
+use netlink_packet_utils::{DecodeError, Parseable, ParseableParametrized};
 use std::fmt::Debug;
 
 use crate::multicast_groups::ModernGroup;
@@ -125,6 +125,7 @@ impl<M, B> MaybeParsedNetlinkMessage for UnparsedNetlinkMessage<B, M>
 where
     B: AsRef<[u8]>,
     M: NetlinkDeserializable + MessageWithPermission,
+    M::DeserializeOptions: Default,
     M::Error: Into<DecodeError>,
 {
     type Message = M;
@@ -134,11 +135,14 @@ where
         let data = data.as_ref();
         let netlink_buffer =
             NetlinkBuffer::new(&data).map_err(|error| ParseError { error, header: None })?;
-        NetlinkMessage::<M>::parse(&netlink_buffer).map_err(|error| ParseError {
-            error,
-            // Silently drop the parsing error here, the error from parsing the
-            // NetlinkMessage itself should be enough.
-            header: NetlinkHeader::parse(&netlink_buffer).ok(),
+        let options = M::DeserializeOptions::default();
+        NetlinkMessage::<M>::parse_with_param(&netlink_buffer, options).map_err(|error| {
+            ParseError {
+                error,
+                // Silently drop the parsing error here, the error from parsing the
+                // NetlinkMessage itself should be enough.
+                header: NetlinkHeader::parse(&netlink_buffer).ok(),
+            }
         })
     }
 }

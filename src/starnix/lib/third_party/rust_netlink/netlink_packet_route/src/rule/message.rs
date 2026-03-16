@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use super::{RuleAttribute, RuleError, RuleHeader, RuleMessageBuffer};
+use crate::RouteNetlinkMessageParseMode;
+use netlink_packet_utils::ParseableParametrized;
 use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
@@ -22,19 +24,29 @@ impl Emitable for RuleMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<RuleMessageBuffer<&'a T>> for RuleMessage {
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<RuleMessageBuffer<&'a T>, RouteNetlinkMessageParseMode> for RuleMessage
+{
     type Error = RuleError;
-    fn parse(buf: &RuleMessageBuffer<&'a T>) -> Result<Self, RuleError> {
+    fn parse_with_param(
+        buf: &RuleMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, RuleError> {
         // unwrap: RuleHeader never fails to parse.
         let header = RuleHeader::parse(buf).unwrap();
-        let attributes = Vec::<RuleAttribute>::parse(buf)?;
+        let attributes = Vec::<RuleAttribute>::parse_with_param(buf, mode.into())?;
         Ok(RuleMessage { header, attributes })
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<RuleMessageBuffer<&'a T>> for Vec<RuleAttribute> {
+impl<'a, T: AsRef<[u8]> + 'a> ParseableParametrized<RuleMessageBuffer<&'a T>, NlaParseMode>
+    for Vec<RuleAttribute>
+{
     type Error = RuleError;
-    fn parse(buf: &RuleMessageBuffer<&'a T>) -> Result<Self, RuleError> {
-        buf.parse_attributes(NlaParseMode::default(), RuleAttribute::parse)
+    fn parse_with_param(
+        buf: &RuleMessageBuffer<&'a T>,
+        mode: NlaParseMode,
+    ) -> Result<Self, RuleError> {
+        buf.parse_attributes(mode, RuleAttribute::parse)
     }
 }

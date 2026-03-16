@@ -27,6 +27,7 @@ use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
 use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader, NetlinkSerializable};
 use netlink_packet_generic::GenlMessage;
+use netlink_packet_generic::message::EmptyDeserializeOptions;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
@@ -1670,7 +1671,11 @@ async fn handle_nl80211_message<I: IfaceManager>(
         fidl_wlanix::Nl80211Message::Message(m) => m.payload,
         _ => return Ok(()),
     };
-    let deserialized = GenlMessage::<Nl80211>::deserialize(&NetlinkHeader::default(), &payload[..]);
+    let deserialized = GenlMessage::<Nl80211>::deserialize(
+        &NetlinkHeader::default(),
+        &payload[..],
+        EmptyDeserializeOptions,
+    );
     let Ok(message) = deserialized else {
         responder
             .take()
@@ -2630,8 +2635,12 @@ mod tests {
     // write-only attribute is included, this function will panic.
     fn expect_nl80211_message(message: &fidl_wlanix::Nl80211Message) -> GenlMessage<Nl80211> {
         let message = assert_matches!(message, fidl_wlanix::Nl80211Message::Message(m) => m);
-        GenlMessage::deserialize(&NetlinkHeader::default(), &message.payload)
-            .expect("Failed to deserialize genetlink message")
+        GenlMessage::deserialize(
+            &NetlinkHeader::default(),
+            &message.payload,
+            EmptyDeserializeOptions,
+        )
+        .expect("Failed to deserialize genetlink message")
     }
 
     #[fuchsia::test]

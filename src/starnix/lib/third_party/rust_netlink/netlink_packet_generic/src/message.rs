@@ -149,13 +149,22 @@ where
     }
 }
 
+/// `GenlMessage` deserialization does not take any options.
+#[derive(Default)]
+pub struct EmptyDeserializeOptions;
+
 impl<F> NetlinkDeserializable for GenlMessage<F>
 where
     F: ParseableParametrized<[u8], GenlHeader> + Debug,
     F::Error: Into<DecodeError>,
 {
+    type DeserializeOptions = EmptyDeserializeOptions;
     type Error = DecodeError;
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        _options: EmptyDeserializeOptions,
+    ) -> Result<Self, Self::Error> {
         let buffer = GenlBuffer::new(payload)?;
         GenlMessage::parse_with_param(&buffer, header.message_type)
     }

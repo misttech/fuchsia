@@ -24,6 +24,7 @@ use netlink_packet_core::{
     ErrorMessage, NETLINK_HEADER_LEN, NLMSG_ERROR, NetlinkBuffer, NetlinkDeserializable,
     NetlinkHeader, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };
+use netlink_packet_generic::message::EmptyDeserializeOptions;
 use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use std::marker::PhantomData;
@@ -1353,7 +1354,7 @@ impl SocketOps for GenericNetlinkSocket {
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
-        match NetlinkMessage::<GenericMessage>::deserialize(&bytes) {
+        match NetlinkMessage::<GenericMessage>::deserialize(&bytes, EmptyDeserializeOptions) {
             Err(e) => {
                 log_warn!("Failed to process write; data could not be deserialized: {:?}", e);
                 error!(EINVAL)
@@ -1681,7 +1682,10 @@ impl SocketOps for AuditNetlinkSocket {
         _dest_address: &mut Option<SocketAddress>,
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
-        match NetlinkMessage::<GenericMessage>::deserialize(&(data.peek_all()?)) {
+        match NetlinkMessage::<GenericMessage>::deserialize(
+            &(data.peek_all()?),
+            EmptyDeserializeOptions,
+        ) {
             Ok(nl_message) => {
                 let header = nl_message.header;
                 security::check_netlink_send_access(current_task, socket, header.message_type)?;
@@ -1827,8 +1831,8 @@ impl SocketOps for AuditNetlinkSocket {
 mod tests {
     use super::*;
 
-    use netlink_packet_route::RouteNetlinkMessage;
     use netlink_packet_route::route::RouteMessage;
+    use netlink_packet_route::{RouteNetlinkMessage, RouteNetlinkMessageParseMode};
     use test_case::test_case;
 
     // Successfully send the message and observe it's stored in the queue.
@@ -1863,8 +1867,11 @@ mod tests {
             address,
             Some(SocketAddress::Netlink(NetlinkAddress { pid: 0, groups: 1 << MODERN_GROUP }))
         );
-        let actual_message = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&data)
-            .expect("message should deserialize into RtnlMessage");
+        let actual_message = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &data,
+            RouteNetlinkMessageParseMode::Strict,
+        )
+        .expect("message should deserialize into RtnlMessage");
         assert_eq!(actual_message, message);
         assert_eq!(socket_inner.lock().receive_buffer.capacity(), final_queue_size);
     }

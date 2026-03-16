@@ -58,9 +58,18 @@ impl NetlinkSerializable for SockDiagRequest {
     }
 }
 
+/// `SOCK_DIAG` message deserialization does not take any options.
+#[derive(Default)]
+pub struct EmptyDeserializeOptions;
+
 impl NetlinkDeserializable for SockDiagRequest {
+    type DeserializeOptions = EmptyDeserializeOptions;
     type Error = DecodeError;
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        _options: EmptyDeserializeOptions,
+    ) -> Result<Self, Self::Error> {
         let buffer = SockDiagBuffer::new(&payload)?;
         SockDiagRequest::parse_with_param(&buffer, header.message_type)
     }
@@ -119,8 +128,13 @@ impl NetlinkSerializable for SockDiagResponse {
 }
 
 impl NetlinkDeserializable for SockDiagResponse {
+    type DeserializeOptions = EmptyDeserializeOptions;
     type Error = DecodeError;
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        _options: EmptyDeserializeOptions,
+    ) -> Result<Self, Self::Error> {
         let buffer = SockDiagBuffer::new(&payload)?;
         SockDiagResponse::parse_with_param(&buffer, header.message_type)
     }

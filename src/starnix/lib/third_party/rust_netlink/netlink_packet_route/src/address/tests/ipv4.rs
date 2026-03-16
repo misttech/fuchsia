@@ -2,13 +2,13 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::address::{
     AddressAttribute, AddressFlags, AddressHeader, AddressHeaderFlags, AddressMessage,
     AddressMessageBuffer, AddressScope, CacheInfo,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // TODO(Gris Ge): Need test for `AddressAttribute::Broadcast`
 
@@ -43,7 +43,14 @@ fn test_ipv4_get_loopback_address() {
         ],
     };
 
-    assert_eq!(expected, AddressMessage::parse(&AddressMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        AddressMessage::parse_with_param(
+            &AddressMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

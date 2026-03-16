@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer};
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip rule add priority 1001 fwmark 0x20 suppress_prefixlength 8
@@ -39,7 +39,14 @@ fn test_ipv4_fwmark_suppress_prefixlength() {
             RuleAttribute::FwMask(0xffffffff),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -82,7 +89,14 @@ fn test_ipv6_fwmark_suppress_ifgroup() {
             RuleAttribute::SuppressIfGroup(89),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

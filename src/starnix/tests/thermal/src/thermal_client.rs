@@ -8,6 +8,7 @@ use netlink_packet_core::{NLM_F_REQUEST, NetlinkMessage, NetlinkPayload};
 use netlink_packet_generic::GenlMessage;
 use netlink_packet_generic::ctrl::nlas::{GenlCtrlAttrs, McastGrpAttrs};
 use netlink_packet_generic::ctrl::{GenlCtrl, GenlCtrlCmd};
+use netlink_packet_generic::message::EmptyDeserializeOptions;
 use nix::sys::socket;
 use std::collections::{HashMap, HashSet};
 use std::os::fd::{AsFd, AsRawFd};
@@ -200,7 +201,9 @@ fn check_nlctrl_is_available() {
 
     let mut rxbuf = vec![0u8; 1024];
     socket::recvfrom::<socket::NetlinkAddr>(nl_socket.as_raw_fd(), &mut rxbuf).unwrap();
-    let rx_packet = <NetlinkMessage<GenlMessage<GenlCtrl>>>::deserialize(&rxbuf).unwrap();
+    let rx_packet =
+        <NetlinkMessage<GenlMessage<GenlCtrl>>>::deserialize(&rxbuf, EmptyDeserializeOptions)
+            .unwrap();
 
     if let NetlinkPayload::InnerMessage(genlmsg) = rx_packet.payload {
         if GenlCtrlCmd::NewFamily == genlmsg.payload.cmd {
@@ -291,7 +294,9 @@ fn check_thermal_is_available() -> HashMap<String, u32> {
 
     let mut rxbuf = vec![0u8; 1024];
     socket::recvfrom::<socket::NetlinkAddr>(nl_socket.as_raw_fd(), &mut rxbuf).unwrap();
-    let rx_packet = <NetlinkMessage<GenlMessage<GenlCtrl>>>::deserialize(&rxbuf).unwrap();
+    let rx_packet =
+        <NetlinkMessage<GenlMessage<GenlCtrl>>>::deserialize(&rxbuf, EmptyDeserializeOptions)
+            .unwrap();
 
     let genlmsg = assert_matches!(rx_packet.payload, NetlinkPayload::InnerMessage(g) => g);
     assert_eq!(genlmsg.payload.cmd, GenlCtrlCmd::NewFamily);
@@ -358,8 +363,11 @@ fn check_thermal_sampling_returns_samples(sampling_group_id: u32) {
             &rxbuf[..recv_size]
         );
 
-        let rx_packet =
-            <NetlinkMessage<GenlMessage<GenlThermalPayload>>>::deserialize(&rxbuf).unwrap();
+        let rx_packet = <NetlinkMessage<GenlMessage<GenlThermalPayload>>>::deserialize(
+            &rxbuf,
+            EmptyDeserializeOptions,
+        )
+        .unwrap();
         let genlmsg = assert_matches!(rx_packet.payload, NetlinkPayload::InnerMessage(m) => m);
         assert_eq!(GenlThermalCmd::ThermalGenlSamplingTemp, genlmsg.payload.cmd);
 

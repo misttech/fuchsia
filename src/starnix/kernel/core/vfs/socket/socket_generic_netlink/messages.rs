@@ -6,6 +6,7 @@ use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader, NetlinkSerializa
 use netlink_packet_generic::GenlMessage;
 use netlink_packet_generic::constants::GENL_ID_CTRL;
 use netlink_packet_generic::ctrl::GenlCtrl;
+use netlink_packet_generic::message::EmptyDeserializeOptions;
 use netlink_packet_utils::DecodeError;
 
 #[derive(Clone, Debug)]
@@ -18,13 +19,17 @@ pub enum GenericMessage {
 }
 
 impl NetlinkDeserializable for GenericMessage {
+    type DeserializeOptions = EmptyDeserializeOptions;
     type Error = DecodeError;
 
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        options: EmptyDeserializeOptions,
+    ) -> Result<Self, Self::Error> {
         match header.message_type {
-            GENL_ID_CTRL => {
-                GenlMessage::<GenlCtrl>::deserialize(header, payload).map(GenericMessage::Ctrl)
-            }
+            GENL_ID_CTRL => GenlMessage::<GenlCtrl>::deserialize(header, payload, options)
+                .map(GenericMessage::Ctrl),
             family => Ok(GenericMessage::Other { family, payload: payload.to_vec() }),
         }
     }

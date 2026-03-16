@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::route::{RouteProtocol, RouteRealm};
 use crate::rule::flags::RuleFlags;
 use crate::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer, RulePortRange,
 };
-use crate::{AddressFamily, IpProtocol};
+use crate::{AddressFamily, IpProtocol, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip rule add priority 1009 sport 80 dport 8080 ipproto tcp realms 199
@@ -45,7 +45,14 @@ fn test_ipv4_tcp_sport_dport_realm() {
             RuleAttribute::Realm(RouteRealm { source: 0, destination: 199 }),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -91,7 +98,14 @@ fn test_ipv4_udp_sport_range_dport_range_reals_src_dst() {
             RuleAttribute::Realm(RouteRealm { source: 199, destination: 200 }),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

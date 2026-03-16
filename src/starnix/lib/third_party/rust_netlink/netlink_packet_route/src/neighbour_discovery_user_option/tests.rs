@@ -1,11 +1,10 @@
-use netlink_packet_core::{NetlinkHeader, NetlinkMessage};
-
-use crate::RouteNetlinkMessage;
 use crate::neighbour_discovery_user_option::NeighbourDiscoveryIcmpV6Type;
 use crate::neighbour_discovery_user_option::header::{
     NeighbourDiscoveryIcmpType, NeighbourDiscoveryUserOptionHeader,
 };
 use crate::neighbour_discovery_user_option::nla::Nla;
+use crate::{RouteNetlinkMessage, RouteNetlinkMessageParseMode};
+use netlink_packet_core::{NetlinkHeader, NetlinkMessage};
 
 use super::NeighbourDiscoveryUserOptionMessage;
 
@@ -39,7 +38,8 @@ fn nduseropt() {
     ];
 
     let actual: NetlinkMessage<RouteNetlinkMessage> =
-        NetlinkMessage::deserialize(&data[..]).expect("deserialize netlink message");
+        NetlinkMessage::deserialize(&data[..], RouteNetlinkMessageParseMode::Strict)
+            .expect("deserialize netlink message");
 
     let want: NetlinkMessage<RouteNetlinkMessage> = NetlinkMessage::new(
         {

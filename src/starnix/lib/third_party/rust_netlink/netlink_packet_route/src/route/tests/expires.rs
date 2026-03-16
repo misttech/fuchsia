@@ -3,14 +3,15 @@
 use std::net::Ipv6Addr;
 use std::str::FromStr;
 
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::ParseableParametrized;
+use netlink_packet_utils::traits::Emitable;
 
-use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     RouteAttribute, RouteHeader, RouteMessage, RouteMessageBuffer, RouteProtocol, RouteScope,
     RouteType,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 #[test]
 // wireshark capture(netlink message header removed) of nlmon against command:
@@ -42,7 +43,14 @@ fn test_ipv6_route_expires() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

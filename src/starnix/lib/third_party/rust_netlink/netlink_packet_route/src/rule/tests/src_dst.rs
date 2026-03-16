@@ -3,12 +3,12 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer};
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip rule add priority 1000 from 192.0.2.1 to 203.0.113.1 blackhole
@@ -42,7 +42,14 @@ fn test_ipv4_src_dst_blackhole() {
             RuleAttribute::Source(Ipv4Addr::from_str("192.0.2.1").unwrap().into()),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -88,7 +95,14 @@ fn test_ipv6_src_dst_goto() {
             RuleAttribute::Source(Ipv6Addr::from_str("2001:db8:1::1").unwrap().into()),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

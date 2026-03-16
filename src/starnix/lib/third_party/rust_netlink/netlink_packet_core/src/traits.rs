@@ -5,10 +5,15 @@ use std::error::Error;
 
 /// A `NetlinkDeserializable` type can be deserialized from a buffer
 pub trait NetlinkDeserializable: Sized {
+    type DeserializeOptions: Default + Send + Sync;
     type Error: Error + Send + Sync + 'static;
 
     /// Deserialize the given buffer into `Self`.
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error>;
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        options: Self::DeserializeOptions,
+    ) -> Result<Self, Self::Error>;
 }
 
 pub trait NetlinkSerializable {

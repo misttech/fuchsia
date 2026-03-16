@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer, RuleUidRange,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip rule add l3mdev priority 1999
@@ -40,7 +40,14 @@ fn test_ipv4_l3mdev() {
             RuleAttribute::L3MDev(true),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -82,7 +89,14 @@ fn test_ipv6_l3mdev_uid() {
             RuleAttribute::UidRange(RuleUidRange { start: 1000, end: 1999 }),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

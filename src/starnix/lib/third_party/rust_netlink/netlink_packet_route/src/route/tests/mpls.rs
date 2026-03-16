@@ -3,15 +3,16 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::ParseableParametrized;
+use netlink_packet_utils::traits::Emitable;
 
-use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     MplsLabel, RouteAddress, RouteAttribute, RouteCacheInfo, RouteHeader, RouteLwEnCapType,
     RouteLwTunnelEncap, RouteMessage, RouteMessageBuffer, RouteMplsIpTunnel,
     RouteMplsTtlPropagation, RoutePreference, RouteProtocol, RouteScope, RouteType,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip link add dummy1 type dummy
@@ -63,7 +64,14 @@ fn test_mpls_route_to_ipv4() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -133,7 +141,14 @@ fn test_ipv6_to_mpls_route() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -184,7 +199,14 @@ fn test_mpls_route_to_ipv6() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -241,7 +263,14 @@ fn test_mpls_route_relable_new_dst() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -301,7 +330,14 @@ fn test_mpls_ttl_propagate() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

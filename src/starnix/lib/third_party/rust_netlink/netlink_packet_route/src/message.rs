@@ -19,6 +19,7 @@ use crate::tc::{TcError, TcMessage, TcMessageBuffer};
 use netlink_packet_core::{
     NetlinkDeserializable, NetlinkHeader, NetlinkPayload, NetlinkSerializable,
 };
+use netlink_packet_utils::nla::NlaParseMode;
 use netlink_packet_utils::{DecodeError, Emitable, Parseable, ParseableParametrized};
 use thiserror::Error;
 
@@ -168,14 +169,41 @@ fn looks_like_bad_iproute2_dump_req<'a, T: AsRef<[u8]> + ?Sized>(
     (as_link_msg == bad_req_format).then_some(as_link_msg.header.interface_family)
 }
 
-impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffer<&'a T>, u16>
+/// Describes how to handle errors when parsing `NETLINK_ROUTE` messages.
+#[derive(Default)]
+pub enum RouteNetlinkMessageParseMode {
+    /// Parsing fails if fields are not correctly initialized. Corresponds to
+    /// the `NETLINK_GET_STRICT_CHK` option.
+    #[default]
+    Strict,
+    /// Parsing may not fail if e.g. irrelevant fields are set or
+    /// unknown/invalid attributes are provided.
+    Relaxed,
+}
+
+impl From<RouteNetlinkMessageParseMode> for NlaParseMode {
+    fn from(mode: RouteNetlinkMessageParseMode) -> Self {
+        match mode {
+            RouteNetlinkMessageParseMode::Strict => NlaParseMode::Strict,
+            RouteNetlinkMessageParseMode::Relaxed => NlaParseMode::Relaxed,
+        }
+    }
+}
+
+struct RouteNetlinkMessageParseConfig {
+    message_type: u16,
+    parse_mode: RouteNetlinkMessageParseMode,
+}
+
+impl<'a, T: AsRef<[u8]> + ?Sized>
+    ParseableParametrized<RouteNetlinkMessageBuffer<&'a T>, RouteNetlinkMessageParseConfig>
     for RouteNetlinkMessage
 {
     type Error = RouteNetlinkMessageParseError;
 
     fn parse_with_param(
         buf: &RouteNetlinkMessageBuffer<&'a T>,
-        message_type: u16,
+        RouteNetlinkMessageParseConfig { message_type, parse_mode }: RouteNetlinkMessageParseConfig,
     ) -> Result<Self, Self::Error> {
         let message = match message_type {
             // Link messages
@@ -208,16 +236,18 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // Address messages
             RTM_NEWADDR | RTM_GETADDR | RTM_DELADDR => {
                 let msg = match AddressMessageBuffer::new(&buf.inner()) {
-                    Ok(buffer) => AddressMessage::parse(&buffer).or_else(|e| {
-                        if message_type == RTM_GETADDR
-                            && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
-                        {
-                            let mut message = AddressMessage::default();
-                            message.header.family = af.into();
-                            return Ok(message);
-                        }
-                        Err(e)
-                    })?,
+                    Ok(buffer) => {
+                        AddressMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
+                            if message_type == RTM_GETADDR
+                                && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
+                            {
+                                let mut message = AddressMessage::default();
+                                message.header.family = af.into();
+                                return Ok(message);
+                            }
+                            Err(e)
+                        })?
+                    }
                     // HACK: iproute2 sends invalid RTM_GETADDR message, where
                     // the header is limited to the
                     // interface family (1 byte) and 3 bytes of padding.
@@ -284,16 +314,18 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // Route messages
             RTM_NEWROUTE | RTM_GETROUTE | RTM_DELROUTE => {
                 let msg = match RouteMessageBuffer::new(&buf.inner()) {
-                    Ok(buffer) => RouteMessage::parse(&buffer).or_else(|e| {
-                        if message_type == RTM_GETROUTE
-                            && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
-                        {
-                            let mut message = RouteMessage::default();
-                            message.header.address_family = af;
-                            return Ok(message);
-                        }
-                        Err(e)
-                    })?,
+                    Ok(buffer) => {
+                        RouteMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
+                            if message_type == RTM_GETROUTE
+                                && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
+                            {
+                                let mut message = RouteMessage::default();
+                                message.header.address_family = af;
+                                return Ok(message);
+                            }
+                            Err(e)
+                        })?
+                    }
                     // HACK: iproute2 sends invalid RTM_GETROUTE message, where
                     // the header is limited to the
                     // interface family (1 byte) and 3 bytes of padding.
@@ -337,7 +369,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
                 let buf_inner = buf.inner();
                 let buffer = RuleMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = RuleMessage::parse(&buffer).or_else(|e| {
+                let msg = RuleMessage::parse_with_param(&buffer, parse_mode).or_else(|e| {
                     if message_type == RTM_GETRULE
                         && let Some(af) = looks_like_bad_iproute2_dump_req(buf)
                     {
@@ -765,11 +797,22 @@ impl NetlinkSerializable for RouteNetlinkMessage {
 }
 
 impl NetlinkDeserializable for RouteNetlinkMessage {
+    type DeserializeOptions = RouteNetlinkMessageParseMode;
     type Error = RouteNetlinkMessageParseError;
 
-    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+    fn deserialize(
+        header: &NetlinkHeader,
+        payload: &[u8],
+        options: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, Self::Error> {
         let buf = RouteNetlinkMessageBuffer::new(payload);
-        match RouteNetlinkMessage::parse_with_param(&buf, header.message_type) {
+        match RouteNetlinkMessage::parse_with_param(
+            &buf,
+            RouteNetlinkMessageParseConfig {
+                message_type: header.message_type,
+                parse_mode: options,
+            },
+        ) {
             Err(e) => Err(e),
             Ok(message) => Ok(message),
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use crate::AddressFamily;
 use crate::address::{AddressAttribute, AddressError, AddressHeaderFlags, AddressScope};
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlaParseMode, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 use zerocopy::byteorder::native_endian::U32;
@@ -16,7 +16,7 @@ pub struct AddressMessageBuffer {
     payload: [u8],
 }
 
-use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::{DecodeError, ParseableParametrized};
 
 #[derive(
     FromBytes,
@@ -126,20 +126,28 @@ impl Parseable<AddressMessageBuffer> for AddressHeader {
     }
 }
 
-impl<'a> Parseable<AddressMessageBuffer> for AddressMessage {
+impl<'a> ParseableParametrized<AddressMessageBuffer, RouteNetlinkMessageParseMode>
+    for AddressMessage
+{
     type Error = AddressError;
-    fn parse(buf: &AddressMessageBuffer) -> Result<Self, AddressError> {
+    fn parse_with_param(
+        buf: &AddressMessageBuffer,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, AddressError> {
         Ok(AddressMessage {
             // ok to unwrap, we never fail parsing the header.
             header: AddressHeader::parse(buf).unwrap(),
-            attributes: Vec::<AddressAttribute>::parse(buf)?,
+            attributes: Vec::<AddressAttribute>::parse_with_param(buf, mode.into())?,
         })
     }
 }
 
-impl<'a> Parseable<AddressMessageBuffer> for Vec<AddressAttribute> {
+impl<'a> ParseableParametrized<AddressMessageBuffer, NlaParseMode> for Vec<AddressAttribute> {
     type Error = AddressError;
-    fn parse(buf: &AddressMessageBuffer) -> Result<Self, AddressError> {
-        buf.parse_attributes(NlaParseMode::default(), AddressAttribute::parse)
+    fn parse_with_param(
+        buf: &AddressMessageBuffer,
+        mode: NlaParseMode,
+    ) -> Result<Self, AddressError> {
+        buf.parse_attributes(mode, AddressAttribute::parse)
     }
 }

@@ -3,14 +3,15 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::ParseableParametrized;
+use netlink_packet_utils::traits::Emitable;
 
-use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     RouteAttribute, RouteHeader, RouteMessage, RouteMessageBuffer, RouteProtocol, RouteScope,
     RouteType, RouteVia,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // Setup:
 //      ip route add 192.0.2.1 via inet6 2001:db8:1:: dev lo
@@ -45,7 +46,14 @@ fn test_ipv4_route_via() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RouteMessage::parse_with_param(
+            &RouteMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

@@ -4,6 +4,7 @@ use super::super::AddressFamily;
 use super::attribute::RTA_ENCAP_TYPE;
 use super::error::RouteError;
 use super::{RouteAttribute, RouteHeader, RouteLwEnCapType, RouteMessageBuffer, RouteType};
+use crate::RouteNetlinkMessageParseMode;
 use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
@@ -25,28 +26,37 @@ impl Emitable for RouteMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<RouteMessageBuffer<&'a T>> for RouteMessage {
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<RouteMessageBuffer<&'a T>, RouteNetlinkMessageParseMode>
+    for RouteMessage
+{
     type Error = RouteError;
-    fn parse(buf: &RouteMessageBuffer<&'a T>) -> Result<Self, RouteError> {
+    fn parse_with_param(
+        buf: &RouteMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, RouteError> {
         // unwrap: RouteHeader can't fail.
         let header = RouteHeader::parse(buf).unwrap();
         let address_family = header.address_family;
         let route_type = header.kind;
         Ok(RouteMessage {
             header,
-            attributes: Vec::<RouteAttribute>::parse_with_param(buf, (address_family, route_type))?,
+            attributes: Vec::<RouteAttribute>::parse_with_param(
+                buf,
+                (mode.into(), address_family, route_type),
+            )?,
         })
     }
 }
 
 impl<'a, T: AsRef<[u8]> + 'a>
-    ParseableParametrized<RouteMessageBuffer<&'a T>, (AddressFamily, RouteType)>
+    ParseableParametrized<RouteMessageBuffer<&'a T>, (NlaParseMode, AddressFamily, RouteType)>
     for Vec<RouteAttribute>
 {
     type Error = RouteError;
     fn parse_with_param(
         buf: &RouteMessageBuffer<&'a T>,
-        (address_family, route_type): (AddressFamily, RouteType),
+        (mode, address_family, route_type): (NlaParseMode, AddressFamily, RouteType),
     ) -> Result<Self, RouteError> {
         let mut encap_type = RouteLwEnCapType::None;
         // The RTA_ENCAP_TYPE is provided __after__ RTA_ENCAP, we should find
@@ -65,7 +75,7 @@ impl<'a, T: AsRef<[u8]> + 'a>
                 }
             }
         }
-        buf.parse_attributes(NlaParseMode::default(), |b| {
+        buf.parse_attributes(mode, |b| {
             RouteAttribute::parse_with_param(b, (address_family, route_type, encap_type))
         })
     }

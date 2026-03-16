@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use anyhow::Context;
-use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::{DecodeError, ParseableParametrized};
 
 use crate::payload::{NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, NLMSG_OVERRUN};
 use crate::{
@@ -39,9 +39,12 @@ where
     I::Error: Into<DecodeError>,
 {
     /// Parse the given buffer as a netlink message
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, DecodeError> {
+    pub fn deserialize(buffer: &[u8], options: I::DeserializeOptions) -> Result<Self, DecodeError> {
         let netlink_buffer = NetlinkBuffer::new(&buffer)?;
-        <Self as Parseable<NetlinkBuffer<&&[u8]>>>::parse(&netlink_buffer)
+        <Self as ParseableParametrized<
+            NetlinkBuffer<&&[u8]>,
+            I::DeserializeOptions,
+        >>::parse_with_param(&netlink_buffer, options)
     }
 }
 
@@ -83,14 +86,18 @@ where
     }
 }
 
-impl<'buffer, B, I> Parseable<NetlinkBuffer<&'buffer B>> for NetlinkMessage<I>
+impl<'buffer, B, I> ParseableParametrized<NetlinkBuffer<&'buffer B>, I::DeserializeOptions>
+    for NetlinkMessage<I>
 where
     B: AsRef<[u8]> + 'buffer,
     I: NetlinkDeserializable,
     I::Error: Into<DecodeError>,
 {
     type Error = DecodeError;
-    fn parse(buf: &NetlinkBuffer<&'buffer B>) -> Result<Self, DecodeError> {
+    fn parse_with_param(
+        buf: &NetlinkBuffer<&'buffer B>,
+        options: I::DeserializeOptions,
+    ) -> Result<Self, DecodeError> {
         use self::NetlinkPayload::*;
 
         let header = <NetlinkHeader as Parseable<NetlinkBuffer<&'buffer B>>>::parse(buf)
@@ -113,7 +120,7 @@ where
             }
             NLMSG_OVERRUN => Overrun(bytes.to_vec()),
             message_type => {
-                let inner_msg = I::deserialize(&header, bytes).map_err(|err| {
+                let inner_msg = I::deserialize(&header, bytes, options).map_err(|err| {
                     DecodeError::FailedToParseMessageWithType {
                         message_type,
                         source: Box::new(err.into()),
@@ -194,9 +201,14 @@ mod tests {
     }
 
     impl NetlinkDeserializable for FakeNetlinkInnerMessage {
+        type DeserializeOptions = ();
         type Error = DecodeError;
 
-        fn deserialize(_header: &NetlinkHeader, _payload: &[u8]) -> Result<Self, Self::Error> {
+        fn deserialize(
+            _header: &NetlinkHeader,
+            _payload: &[u8],
+            _options: (),
+        ) -> Result<Self, Self::Error> {
             unimplemented!("unused by tests")
         }
     }
@@ -221,7 +233,7 @@ mod tests {
         assert_eq!(done_buf.code(), done_msg.code);
         assert_eq!(done_buf.extended_ack(), &done_msg.extended_ack);
 
-        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf).unwrap()).unwrap();
+        let got = NetlinkMessage::parse_with_param(&NetlinkBuffer::new(&buf).unwrap(), ()).unwrap();
         assert_eq!(got, want);
     }
 
@@ -247,7 +259,7 @@ mod tests {
         let error_buf = ErrorBuffer::new(&buf[header.buffer_len()..]).unwrap();
         assert_eq!(error_buf.code(), error_msg.code);
 
-        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf).unwrap()).unwrap();
+        let got = NetlinkMessage::parse_with_param(&NetlinkBuffer::new(&buf).unwrap(), ()).unwrap();
         assert_eq!(got, want);
     }
 }

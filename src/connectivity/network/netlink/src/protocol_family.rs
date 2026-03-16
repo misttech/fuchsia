@@ -1710,9 +1710,14 @@ pub(crate) mod testutil {
     }
 
     impl NetlinkDeserializable for FakeNetlinkInnerMessage {
+        type DeserializeOptions = ();
         type Error = DecodeError;
 
-        fn deserialize(_header: &NetlinkHeader, _payload: &[u8]) -> Result<Self, Self::Error> {
+        fn deserialize(
+            _header: &NetlinkHeader,
+            _payload: &[u8],
+            _options: (),
+        ) -> Result<Self, Self::Error> {
             unimplemented!()
         }
     }

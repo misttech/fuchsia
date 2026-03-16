@@ -335,12 +335,6 @@ pub enum NlaParseMode {
     Relaxed,
 }
 
-impl Default for NlaParseMode {
-    fn default() -> Self {
-        NlaParseMode::Strict
-    }
-}
-
 /// A type that can iterate over and parse Netlink attributes.
 pub trait HasNlas {
     /// Returns an iterator over the Netlink attribute buffers in `self`, or

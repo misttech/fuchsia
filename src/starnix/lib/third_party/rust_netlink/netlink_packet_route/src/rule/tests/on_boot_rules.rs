@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer};
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 // wireshark capture(netlink message header removed) of nlmon against command:
 //   ip -4 rule show
@@ -34,7 +34,14 @@ fn test_ipv4_rule() {
             RuleAttribute::Priority(32766),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -70,7 +77,14 @@ fn test_ipv6_rule() {
             RuleAttribute::Priority(32766),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        RuleMessage::parse_with_param(
+            &RuleMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

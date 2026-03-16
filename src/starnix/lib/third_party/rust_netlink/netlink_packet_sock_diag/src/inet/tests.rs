@@ -7,6 +7,7 @@ use std::time::Duration;
 use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader, NetlinkSerializable};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
+use crate::EmptyDeserializeOptions;
 use crate::constants::*;
 use crate::inet::nlas::Nla;
 use crate::inet::{
@@ -172,6 +173,6 @@ fn sock_destroy_serialization() {
     header.message_type = SOCK_DESTROY;
     header.length = (buf.len() + 16) as u32;
 
-    let parsed = SockDiagRequest::deserialize(&header, &buf).unwrap();
+    let parsed = SockDiagRequest::deserialize(&header, &buf, EmptyDeserializeOptions).unwrap();
     assert_eq!(parsed, msg);
 }

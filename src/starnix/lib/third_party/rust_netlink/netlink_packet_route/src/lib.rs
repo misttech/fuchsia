@@ -35,6 +35,7 @@ pub use self::address_family_fallback::AddressFamily;
 pub use self::ip::IpProtocol;
 pub use self::message::{
     RouteNetlinkMessage, RouteNetlinkMessageBuffer, RouteNetlinkMessageParseError,
+    RouteNetlinkMessageParseMode,
 };
 
 /// The `netlink-packet-route` crate is designed to abstract Netlink route
