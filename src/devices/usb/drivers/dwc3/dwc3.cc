@@ -13,12 +13,14 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
 #include <fidl/fuchsia.hardware.vreg/cpp/fidl.h>
+#include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/defer.h>
+#include <lib/sync/completion.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 #include <zircon/syscalls.h>
@@ -52,6 +54,35 @@ class QualcommExtension final : public PlatformExtension {
   enum class BusPath : uint8_t { kUsbDdr, kUsbIpa, kDdrUsb };
   enum class State : uint8_t { kNone, kNominal, kSvs, kMin };
 
+  class InterconnectHandler {
+   public:
+    explicit InterconnectHandler(
+        std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients) {
+      for (auto& [path, client_end] : interconnect_clients) {
+        interconnect_clients_.emplace(
+            path, fidl::Client<fhi::Path>(std::move(client_end),
+                                          fdf::Dispatcher::GetCurrent()->async_dispatcher()));
+      }
+    }
+
+    void SetBandwidth(BusPath path, uint32_t average, uint32_t peak,
+                      fit::callback<void()> callback) {
+      interconnect_clients_.at(path)
+          ->SetBandwidth({{.average_bandwidth_bps = average, .peak_bandwidth_bps = peak}})
+          .Then([path = path, callback = std::move(callback)](
+                    fidl::Result<fhi::Path::SetBandwidth>& result) mutable {
+            if (result.is_error()) {
+              fdf::error("Failed to set bandwidth for path {}: {}", static_cast<uint8_t>(path),
+                         result.error_value().FormatDescription());
+            }
+            callback();
+          });
+    }
+
+   private:
+    std::unordered_map<BusPath, fidl::Client<fhi::Path>> interconnect_clients_;
+  };
+
  public:
   class HsPhyCtrl : public hwreg::RegisterBase<HsPhyCtrl, uint32_t> {
    public:
@@ -66,12 +97,15 @@ class QualcommExtension final : public PlatformExtension {
                     std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
                     std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients,
                     fidl::ClientEnd<freset::Reset> reset_client,
-                    fidl::ClientEnd<fvreg::Vreg> regulator_client)
+                    fidl::ClientEnd<fvreg::Vreg> regulator_client,
+                    fdf::Dispatcher interconnect_dispatcher)
       : mmio_(mmio),
-        interconnect_clients_{std::move(interconnect_clients)},
         clock_clients_{std::move(clock_clients)},
         reset_client_(std::move(reset_client)),
-        regulator_client_(std::move(regulator_client)) {}
+        regulator_client_(std::move(regulator_client)),
+        interconnect_dispatcher_(std::move(interconnect_dispatcher)),
+        interconnect_handler_(interconnect_dispatcher_.async_dispatcher(), std::in_place,
+                              std::move(interconnect_clients)) {}
 
   // PlatformExtension interface implementation.
   zx::result<> Start() override {
@@ -154,16 +188,17 @@ class QualcommExtension final : public PlatformExtension {
   }
 
   zx::result<> VoteBandwidth(State state);
+  void SetInterconnectBandwidths(State state);
   zx::result<> VoteVoltage(bool on);
   zx::result<> VoteClocks(bool on);
 
   State state_ = State::kNone;
   fdf::MmioView mmio_;
-  std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients_;
-  std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients_;
   fidl::ClientEnd<freset::Reset> reset_client_;
   fidl::ClientEnd<fvreg::Vreg> regulator_client_;
+  fdf::Dispatcher interconnect_dispatcher_;
+  async_patterns::DispatcherBound<InterconnectHandler> interconnect_handler_;
   bool power_on_{false};
 };
 
@@ -216,13 +251,33 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
     return nullptr;
   }
 
+  auto dispatcher =
+      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                          "dwc3-interconnect", [](fdf_dispatcher_t*) {});
+  if (dispatcher.is_error()) {
+    fdf::error("Failed to create interconnect dispatcher: {}", dispatcher.status_string());
+    return nullptr;
+  }
+
   return std::make_unique<QualcommExtension>(mmio, std::move(interconnect_clients),
                                              std::move(clock_clients), *std::move(reset_client),
-                                             *std::move(regulator_client));
+                                             *std::move(regulator_client), std::move(*dispatcher));
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
   TRACE_DURATION("dwc3", "QualcommExtension::VoteBandwidth", "state", static_cast<uint8_t>(state));
+  if (state_ == state) {
+    // Already in the correct state
+    return zx::ok();
+  }
+  state_ = state;
+  SetInterconnectBandwidths(state_);
+  return zx::ok();
+}
+
+void QualcommExtension::SetInterconnectBandwidths(State state) {
+  TRACE_DURATION("dwc3", "QualcommExtension::SetInterconnectBandwidths", "state",
+                 static_cast<uint8_t>(state));
   static const std::unordered_map<State, std::unordered_map<BusPath, std::pair<uint32_t, uint32_t>>>
       kVoteMap = {
           {
@@ -259,26 +314,21 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
           },
       };
 
-  if (state_ == state) {
-    // Already in the correct state
-    return zx::ok();
-  }
-  state_ = state;
+  const auto& votes = kVoteMap.at(state);
+  sync_completion_t completion;
+  auto count = std::make_shared<std::atomic_size_t>(votes.size());
 
-  for (const auto& [path, vote] : kVoteMap.at(state_)) {
+  for (const auto& [path, vote] : votes) {
     const auto& [average, peak] = vote;
-    fidl::Result result = fidl::Call(interconnect_clients_.at(path))
-                              ->SetBandwidth({{
-                                  .average_bandwidth_bps = average,
-                                  .peak_bandwidth_bps = peak,
-                              }});
-    if (result.is_error()) {
-      fdf::error("Failed to set bandwidth: {}", result.error_value());
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
-    }
+    interconnect_handler_.AsyncCall(&InterconnectHandler::SetBandwidth, path, average, peak,
+                                    [count, &completion]() {
+                                      if (count->fetch_sub(1) == 1) {
+                                        sync_completion_signal(&completion);
+                                      }
+                                    });
   }
 
-  return zx::ok();
+  sync_completion_wait(&completion, ZX_TIME_INFINITE);
 }
 
 zx::result<> QualcommExtension::VoteVoltage(bool on) {

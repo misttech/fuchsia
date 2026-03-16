@@ -73,6 +73,7 @@ cc_library(
         "@fuchsia_sdk//fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
         "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_cpp",
         "@fuchsia_sdk//pkg/async-cpp",
+        "@fuchsia_sdk//pkg/async_patterns_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_logging_cpp",
         "@fuchsia_sdk//pkg/driver_metadata_cpp",
