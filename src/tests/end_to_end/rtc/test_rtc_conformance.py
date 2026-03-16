@@ -9,7 +9,7 @@ import logging
 import random
 from typing import Any, Literal
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -46,14 +46,14 @@ class TimeIt(contextlib.ContextDecorator):
         return False  # Never suppress raised exceptions.
 
 
-class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
+class RtcTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """fuchsia.hardware.rtc.Device protocol conformance Test."""
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def teardown_class(self) -> None:
+    async def teardown_class(self) -> None:
         """Post-test teardown logic.
 
         Because this test affects the real value in the RTC, the value needs to
@@ -62,15 +62,15 @@ class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
         the value stored in the RTC chip.
         """
         LOGGER.info("Reverting RTC to host walltime")
-        self.rtc.set(datetime.datetime.now())
-        LOGGER.info("Walltime is now: %s", self.rtc.get())
-        super().teardown_class()
+        await self.rtc.set(datetime.datetime.now())
+        LOGGER.info("Walltime is now: %s", await self.rtc.get())
+        await super().teardown_class()
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.rtc = self.dut.rtc
 
-    def test_rtc(self) -> None:
+    async def test_rtc(self) -> None:
         """Test the fuchsia.hardware.rtc.Device protocol.
 
         This test verifies that the RTC can be written to, read from, and
@@ -93,14 +93,14 @@ class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
         base_time = datetime.datetime(randyear, 12, 20, 23, 30, 0)
         LOGGER.info("Setting RTC time: %s", base_time)
         with TimeIt("Set()"):
-            self.rtc.set(base_time)
+            await self.rtc.set(base_time)
 
         # Ensure the time was actually set by re-reading the time and ensuring
         # the time elapsed is within some reasonable threshold. The threshold
         # value may need tuning. The value read here will be used as a benchmark
         # later (post-reboot).
         with TimeIt("Get()"):
-            rtc_time1 = self.rtc.get()
+            rtc_time1 = await self.rtc.get()
 
         LOGGER.info("Time read off RTC is: %s", rtc_time1)
         asserts.assert_less(
@@ -111,10 +111,10 @@ class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
         # total elapsed time is within some reasonable threshold. This needs to
         # account for the time spent actually rebooting the device.
         with TimeIt("Reboot") as reboot:
-            self.dut.reboot()
+            await self.dut.reboot()
 
         with TimeIt("Get()"):
-            rtc_time2 = self.rtc.get()
+            rtc_time2 = await self.rtc.get()
 
         LOGGER.info("Expected RTC time %s", rtc_time1 + reboot.time_elapsed)
         LOGGER.info("Time read off RTC is: %s", rtc_time2)
