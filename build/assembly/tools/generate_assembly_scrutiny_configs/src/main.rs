@@ -213,31 +213,22 @@ fn main() -> Result<()> {
         let required = aib.required_to_be_in(&FeatureSetLevel::Standard, &args.build_type)
             && aib.required_to_be_in(&FeatureSetLevel::Utility, &args.build_type);
 
-        let bootfs_package_manifests: Vec<&Utf8PathBuf> = aib
-            .drivers
-            .iter()
-            .filter(|d| d.set == PackageSet::Bootfs)
-            .map(|d| d.package.as_utf8_pathbuf())
-            .chain(aib.packages.iter().filter_map(|p| {
-                if p.set == PackageSet::Bootfs { Some(p.package.as_utf8_pathbuf()) } else { None }
-            }))
-            .collect();
+        let bootfs_package_manifests: Vec<&Utf8PathBuf> =
+            aib.drivers
+                .iter()
+                .filter(|d| d.set == PackageSet::Bootfs)
+                .map(|d| &d.package)
+                .chain(aib.packages.iter().filter_map(|p| {
+                    if p.set == PackageSet::Bootfs { Some(&p.package) } else { None }
+                }))
+                .collect();
         let static_package_manifests: Vec<&Utf8PathBuf> = aib
             .packages
             .iter()
             .filter_map(|p| {
-                if p.set.is_in_blobs_assuming_standard_mode() {
-                    Some(p.package.as_utf8_pathbuf())
-                } else {
-                    None
-                }
+                if p.set.is_in_blobs_assuming_standard_mode() { Some(&p.package) } else { None }
             })
-            .chain(
-                aib.drivers
-                    .iter()
-                    .filter(|d| d.set == PackageSet::Base)
-                    .map(|d| d.package.as_utf8_pathbuf()),
-            )
+            .chain(aib.drivers.iter().filter(|d| d.set == PackageSet::Base).map(|d| &d.package))
             .collect();
 
         let bootfs_package_names = bootfs_package_manifests

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use assembly_container::{FileType, WalkPaths};
-use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use camino::Utf8PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -143,15 +142,12 @@ impl std::fmt::Display for PackageSet {
 }
 
 /// Details about a package that contains drivers.
-#[derive(
-    Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema, SupportsFileRelativePaths,
-)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DriverDetails {
     /// The package containing the driver.
     #[schemars(schema_with = "path_schema")]
-    #[file_relative_paths]
-    pub package: FileRelativePathBuf,
+    pub package: Utf8PathBuf,
 
     /// The driver components within the package, e.g. meta/foo.cm.
     #[schemars(schema_with = "vec_path_schema")]
@@ -164,19 +160,18 @@ impl WalkPaths for DriverDetails {
         found: &mut F,
         dest: Utf8PathBuf,
     ) -> anyhow::Result<()> {
-        found(self.package.as_mut_utf8_pathbuf(), dest.join("package"), FileType::PackageManifest)
+        found(&mut self.package, dest.join("package"), FileType::PackageManifest)
     }
 }
 
 /// This defines one or more drivers in a package, and which package set they
 /// belong to.
-#[derive(
-    Clone, Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths, JsonSchema,
-)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PackagedDriverDetails {
     /// The package containing the driver.
-    pub package: FileRelativePathBuf,
+    #[schemars(schema_with = "path_schema")]
+    pub package: Utf8PathBuf,
 
     /// Which set this package belongs to.
     pub set: PackageSet,
@@ -192,18 +187,17 @@ impl WalkPaths for PackagedDriverDetails {
         found: &mut F,
         dest: Utf8PathBuf,
     ) -> anyhow::Result<()> {
-        found(self.package.as_mut_utf8_pathbuf(), dest.join("package"), FileType::PackageManifest)
+        found(&mut self.package, dest.join("package"), FileType::PackageManifest)
     }
 }
 
 /// This defines a package, and which package set it belongs to.
-#[derive(
-    Clone, Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths, JsonSchema,
-)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PackageDetails {
     /// A package to add.
-    pub package: FileRelativePathBuf,
+    #[schemars(schema_with = "path_schema")]
+    pub package: Utf8PathBuf,
 
     /// Which set this package belongs to.
     pub set: PackageSet,
@@ -215,7 +209,7 @@ impl WalkPaths for PackageDetails {
         found: &mut F,
         dest: Utf8PathBuf,
     ) -> anyhow::Result<()> {
-        found(self.package.as_mut_utf8_pathbuf(), dest.join("package"), FileType::PackageManifest)
+        found(&mut self.package, dest.join("package"), FileType::PackageManifest)
     }
 }
 

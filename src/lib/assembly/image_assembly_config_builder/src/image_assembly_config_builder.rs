@@ -333,7 +333,7 @@ impl ImageAssemblyConfigBuilder {
             driver_set.try_insert_unique(
                 package_url,
                 DriverDetails {
-                    package: driver_details.package,
+                    package: driver_details.package.into(),
                     components: driver_details.components,
                 },
             )?;
@@ -627,8 +627,7 @@ impl ImageAssemblyConfigBuilder {
         packages: &Vec<PackageDetails>,
     ) -> Result<()> {
         for entry in packages {
-            let manifest_path: Utf8PathBuf =
-                entry.package.clone().resolve_from_dir(&bundle_path)?.into();
+            let manifest_path: Utf8PathBuf = bundle_path.as_ref().join(&entry.package);
             self.add_package_from_path(manifest_path, PackageOrigin::AIB, &entry.set)?;
         }
 

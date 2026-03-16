@@ -69,7 +69,6 @@ impl DriverManifestBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assembly_file_relative_path::FileRelativePathBuf;
     use assembly_test_util::generate_test_manifest;
     use camino::Utf8PathBuf;
     use std::fs::File;
@@ -89,9 +88,7 @@ mod tests {
         driver_package_manifest_file.flush()?;
 
         let driver_details = DriverDetails {
-            package: FileRelativePathBuf::FileRelative(
-                driver_package_manifest_file_path.to_owned(),
-            ),
+            package: driver_package_manifest_file_path.to_owned(),
             components: vec![Utf8PathBuf::from("meta/foobar.cm")],
         };
         let mut driver_manifest_builder = DriverManifestBuilder::default();
