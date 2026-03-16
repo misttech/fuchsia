@@ -65,6 +65,11 @@ impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
     }
 }
 
+/// Helper to wrap programmatic values in a ContextSpanned wrapper.
+pub fn synthetic_span<T>(value: T) -> ContextSpanned<T> {
+    ContextSpanned { value, origin: Arc::new(PathBuf::from("programmatic_manifest.cml")) }
+}
+
 /// Hydrate is used to translate a type to a
 /// Result<ContextSpanned> type. The ContextSpanned type is used by validation.
 ///

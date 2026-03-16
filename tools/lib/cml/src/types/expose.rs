@@ -401,6 +401,35 @@ pub struct ContextExpose {
     pub source_availability: Option<ContextSpanned<SourceAvailability>>,
 }
 
+impl Default for ContextExpose {
+    fn default() -> Self {
+        Self {
+            origin: Arc::new(PathBuf::new()),
+
+            from: ContextSpanned {
+                value: OneOrMany::One(ExposeFromRef::Self_),
+                origin: Arc::new(PathBuf::new()),
+            },
+
+            service: None,
+            protocol: None,
+            directory: None,
+            runner: None,
+            resolver: None,
+            dictionary: None,
+            config: None,
+            to: None,
+            r#as: None,
+            rights: None,
+            subdir: None,
+            event_stream: None,
+            scope: None,
+            availability: None,
+            source_availability: None,
+        }
+    }
+}
+
 impl ContextCapabilityClause for ContextExpose {
     fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
         option_one_or_many_as_ref_context(&self.service)

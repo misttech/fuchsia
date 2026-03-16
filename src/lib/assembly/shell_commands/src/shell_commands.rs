@@ -7,8 +7,9 @@ use assembly_config_schema::assembly_input_bundle::ShellCommands;
 use assembly_constants::{BootfsPackageDestination, PackageDestination};
 use assembly_package_utils::PackageInternalPathBuf;
 use camino::{Utf8Path, Utf8PathBuf};
-use cml::types::document::Document;
-use cml::types::expose::{Expose, ExposeFromRef};
+use cml::types::common::synthetic_span;
+use cml::types::document::DocumentContext;
+use cml::types::expose::{ContextExpose, ExposeFromRef};
 use cml::types::right::{Right, Rights};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, RelativeTo};
@@ -143,16 +144,20 @@ impl ShellCommandsBuilder {
         let subdir = cml::RelativePath::new("bin").unwrap();
         let name = cml::Name::new("bin").unwrap();
         let rights = Rights(vec![Right::ReadExecuteAlias]);
-        exposes.push(Expose {
+
+        exposes.push(synthetic_span(ContextExpose {
             // unwrap is safe, because try_new cannot fail with "pkg".
-            directory: Some(cml::OneOrMany::One(cml::Name::new("pkg").unwrap())),
-            r#as: Some(name),
-            subdir: Some(subdir),
-            rights: Some(rights),
-            ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Framework))
-        });
-        let cml = Document { expose: Some(exposes), ..Default::default() };
-        let out_data = cml::compile(&cml, cml::CompileOptions::default())
+            directory: Some(synthetic_span(cml::OneOrMany::One(cml::Name::new("pkg").unwrap()))),
+            from: synthetic_span(cml::OneOrMany::One(ExposeFromRef::Framework)),
+            r#as: Some(synthetic_span(name)),
+            subdir: Some(synthetic_span(subdir)),
+            rights: Some(synthetic_span(rights)),
+            ..Default::default()
+        }));
+
+        let cml = DocumentContext { expose: Some(exposes), ..Default::default() };
+
+        let out_data = cml::translate::compile_context(&cml, cml::CompileOptions::default())
             .context("compiling shell command routes")?;
         let cm_name = "shell-commands.cm";
         let cm_path = out_dir.as_ref().join(cm_name);

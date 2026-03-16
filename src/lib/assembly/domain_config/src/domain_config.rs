@@ -7,8 +7,9 @@ use assembly_constants::FileEntry;
 use assembly_platform_configuration::{DomainConfig, FileOrContents};
 use camino::{Utf8Path, Utf8PathBuf};
 use cml::RelativePath;
-use cml::types::document::Document;
-use cml::types::expose::{Expose, ExposeFromRef};
+use cml::types::common::synthetic_span;
+use cml::types::document::DocumentContext;
+use cml::types::expose::{ContextExpose, ExposeFromRef};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use std::io::Write;
@@ -49,13 +50,17 @@ impl DomainConfigPackage {
                 .with_context(|| format!("Calculating relative path for {directory}"))?;
             let name = cml::Name::new(&directory)
                 .with_context(|| format!("Calculating name for {directory}"))?;
-            exposes.push(Expose {
+
+            exposes.push(synthetic_span(ContextExpose {
                 // unwrap is safe, because try_new cannot fail with "pkg".
-                directory: Some(cml::OneOrMany::One(cml::Name::new("pkg").unwrap())),
-                r#as: Some(name),
-                subdir: Some(subdir),
-                ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Framework))
-            });
+                directory: Some(synthetic_span(cml::OneOrMany::One(
+                    cml::Name::new("pkg").unwrap(),
+                ))),
+                r#as: Some(synthetic_span(name)),
+                subdir: Some(synthetic_span(subdir)),
+                from: synthetic_span(cml::OneOrMany::One(ExposeFromRef::Framework)),
+                ..Default::default()
+            }));
 
             if directory_config.entries.is_empty() {
                 // Add an empty file to the directory to ensure the directory gets created.
@@ -96,16 +101,19 @@ impl DomainConfigPackage {
         }
 
         if self.config.expose_directories {
-            let cml = Document { expose: Some(exposes), ..Default::default() };
-            let out_data = cml::compile(&cml, cml::CompileOptions::default())
+            let cml = DocumentContext { expose: Some(exposes), ..Default::default() };
+            let out_data = cml::translate::compile_context(&cml, cml::CompileOptions::default())
                 .with_context(|| format!("compiling domain config routes"))?;
+
             let cm_name = format!("{}.cm", &self.config.name);
             let cm_path = outdir.join(&cm_name);
             let mut cm_file = std::fs::File::create(&cm_path)
                 .with_context(|| format!("creating domain config routes: {cm_path}"))?;
+
             cm_file
                 .write_all(&persist(&out_data)?)
                 .with_context(|| format!("writing domain config routes: {cm_path}"))?;
+
             builder
                 .add_file_to_far(format!("meta/{cm_name}"), &cm_path)
                 .with_context(|| format!("adding file to domain config package: {cm_path}"))?;
@@ -114,6 +122,7 @@ impl DomainConfigPackage {
         let manifest = builder
             .build(&outdir, metafar_path)
             .with_context(|| format!("building domain config package: {}", &self.config.name))?;
+
         Ok((manifest_path, manifest))
     }
 }

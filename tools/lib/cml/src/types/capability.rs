@@ -403,6 +403,35 @@ pub struct ContextCapability {
     pub delivery: Option<ContextSpanned<DeliveryType>>,
 }
 
+impl Default for ContextCapability {
+    fn default() -> Self {
+        Self {
+            origin: Arc::new(PathBuf::new()),
+            service: None,
+            protocol: None,
+            directory: None,
+            storage: None,
+            runner: None,
+            resolver: None,
+            event_stream: None,
+            dictionary: None,
+            config: None,
+            path: None,
+            rights: None,
+            from: None,
+            backing_dir: None,
+            subdir: None,
+            storage_id: None,
+            config_type: None,
+            config_max_size: None,
+            config_max_count: None,
+            config_element_type: None,
+            value: None,
+            delivery: None,
+        }
+    }
+}
+
 impl CanonicalizeContext for ContextCapability {
     fn canonicalize_context(&mut self) {
         // Sort the names of the capabilities. Only capabilities with OneOrMany values are included here.

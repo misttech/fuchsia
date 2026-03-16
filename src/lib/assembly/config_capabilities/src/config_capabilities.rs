@@ -5,15 +5,18 @@
 use anyhow::{Context, Result};
 use assembly_util::NamedMap;
 use camino::{Utf8Path, Utf8PathBuf};
-use cml::types::capability::Capability;
-use cml::types::document::Document;
-use cml::types::expose::{Expose, ExposeFromRef};
+
+use cml::translate::compile_context;
+use cml::types::expose::{ContextExpose, ExposeFromRef};
+use cml::{Availability, CompileOptions, ContextCapability, DocumentContext, OneOrMany};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use serde::Serialize;
 use serde_json::Value;
 use std::io::Write;
 use std::num::NonZeroU32;
+
+use cml::types::common::synthetic_span;
 
 /// The inner type of a vector configuration capability.
 pub use cm_rust::ConfigNestedValueType;
@@ -27,7 +30,7 @@ pub use cm_rust::ConfigValueType;
 /// availability optional config capabilities - when explicitly absent, they must route to "void".
 pub type CapabilityNamedMap = NamedMap<String, Config>;
 
-/// This represents a single configuration capabilility. It can easily be
+/// This represents a single configuration capability. It can easily be
 /// converted into CML.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Config {
@@ -63,32 +66,34 @@ impl Config {
         self.value.clone()
     }
 
-    fn as_capability(&self, name: cml::Name) -> Option<Capability> {
+    fn as_capability(&self, name: cml::Name) -> Option<ContextCapability> {
         if self.value == Value::Null {
             return None;
         }
-        Some(Capability {
-            config: Some(name),
-            config_type: Some((&self.type_).into()),
-            config_max_size: self.get_max_size(),
-            config_max_count: self.get_max_count(),
-            config_element_type: self.get_nested_value_types(),
-            value: Some(self.value.clone()),
+        Some(ContextCapability {
+            config: Some(synthetic_span(name)),
+            config_type: Some(synthetic_span((&self.type_).into())),
+            config_max_size: self.get_max_size().map(synthetic_span),
+            config_max_count: self.get_max_count().map(synthetic_span),
+            config_element_type: self.get_nested_value_types().map(synthetic_span),
+            value: Some(synthetic_span(self.value.clone())),
             ..Default::default()
         })
     }
 
-    fn as_expose(&self, name: cml::Name) -> Expose {
+    fn as_expose(&self, name: cml::Name) -> ContextExpose {
         if self.value == Value::Null {
-            return Expose {
-                config: Some(cml::OneOrMany::One(name)),
-                availability: Some(cml::Availability::Optional),
-                ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Void))
+            return ContextExpose {
+                config: Some(synthetic_span(OneOrMany::One(name))),
+                availability: Some(synthetic_span(Availability::Optional)),
+                from: synthetic_span(OneOrMany::One(ExposeFromRef::Void)),
+                ..Default::default()
             };
         }
-        Expose {
-            config: Some(cml::OneOrMany::One(name)),
-            ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Self_))
+        ContextExpose {
+            config: Some(synthetic_span(OneOrMany::One(name))),
+            from: synthetic_span(OneOrMany::One(ExposeFromRef::Self_)),
+            ..Default::default()
         }
     }
 
@@ -123,35 +128,41 @@ pub fn build_config_capability_package(
     builder.manifest_path(&manifest_path);
     builder.manifest_blobs_relative_to(RelativeTo::File);
 
-    // Build the CML.
-    let (cml_capabilities, exposes): (Vec<Option<Capability>>, Vec<Expose>) = capabilities
+    let (cml_capabilities, exposes) = capabilities
         .into_iter()
-        .map(|c| {
-            let (name, config) = c;
+        .map(|(name, config)| {
             let cml_name = cml::Name::new(name.as_str())
                 .with_context(|| format! {"Invalid configuration name: {}", name})?;
-            Ok((config.as_capability(cml_name.clone()), config.as_expose(cml_name)))
+
+            let cap = config.as_capability(cml_name.clone()).map(synthetic_span);
+            let exp = synthetic_span(config.as_expose(cml_name));
+
+            Ok((cap, exp))
         })
         .collect::<Result<std::vec::Vec<_>>>()?
         .into_iter()
-        .unzip();
-    let cml_capabilities = cml_capabilities.into_iter().flatten().collect();
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Create the CM file.
-    let cml = Document {
+    let cml_capabilities: Vec<_> = cml_capabilities.into_iter().flatten().collect();
+
+    let cml = DocumentContext {
         expose: Some(exposes),
         capabilities: Some(cml_capabilities),
         ..Default::default()
     };
-    let out_data = cml::compile(&cml, cml::CompileOptions::default())
+
+    let out_data = compile_context(&cml, CompileOptions::default())
         .with_context(|| format!("compiling config capability CML"))?;
+
     let cm_name = format!("config.cm");
     let cm_path = outdir.join(&cm_name);
     let mut cm_file = std::fs::File::create(&cm_path)
         .with_context(|| format!("creating config capability CML: {cm_path}"))?;
+
     cm_file
         .write_all(&persist(&out_data)?)
         .with_context(|| format!("writing config capability CML: {cm_path}"))?;
+
     builder
         .add_file_to_far(format!("meta/{cm_name}"), &cm_path)
         .with_context(|| format!("adding file to config capability package: {cm_path}"))?;
@@ -159,6 +170,7 @@ pub fn build_config_capability_package(
     let manifest = builder
         .build(&outdir, metafar_path)
         .with_context(|| format!("building config capability package"))?;
+
     Ok((manifest_path, manifest))
 }
 
