@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_element::ManagerProxy;
 use ffx_session_remove_args::SessionRemoveCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_element::ManagerProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct RemoveTool {
@@ -45,12 +45,13 @@ pub async fn remove_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_element::ManagerRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_element::ManagerRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_remove_element() {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
             ManagerRequest::ProposeElement { .. } => unreachable!(),
             ManagerRequest::RemoveElement { name, responder } => {
                 assert_eq!(name, "foo");
@@ -59,7 +60,8 @@ mod test {
         });
 
         let remove_cmd = SessionRemoveCommand { name: "foo".to_string() };
-        let response = remove_impl(proxy, remove_cmd, &mut std::io::stdout()).await;
+        let mut writer = Vec::new();
+        let response = remove_impl(proxy, remove_cmd, &mut writer).await;
         assert!(response.is_ok());
     }
 }
