@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod disable;
+pub mod doctor;
 pub mod dump;
 pub mod host;
 pub mod list;

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::subcommands::disable::args::DisableCommand;
+use super::subcommands::doctor::args::DoctorCommand;
 use super::subcommands::dump::args::DumpCommand;
 use super::subcommands::host::args::HostCommand;
 use super::subcommands::list::args::ListCommand;
@@ -45,6 +46,7 @@ impl<T: argh::ArgsInfo> argh::ArgsInfo for Boxed<T> {
 use static_checks_lib::args::StaticChecksCommand;
 
 pub type BoxedDisableCommand = Boxed<DisableCommand>;
+pub type BoxedDoctorCommand = Boxed<DoctorCommand>;
 pub type BoxedDumpCommand = Boxed<DumpCommand>;
 pub type BoxedListCommand = Boxed<ListCommand>;
 pub type BoxedListCompositesCommand = Boxed<ListCompositesCommand>;
@@ -75,6 +77,7 @@ pub struct DriverCommand {
 #[argh(subcommand)]
 pub enum DriverSubCommand {
     Disable(BoxedDisableCommand),
+    Doctor(BoxedDoctorCommand),
     Dump(BoxedDumpCommand),
     List(BoxedListCommand),
     ListComposites(BoxedListCompositesCommand),
@@ -94,6 +97,7 @@ pub enum DriverSubCommand {
 #[argh(subcommand)]
 pub enum DriverSubCommand {
     Disable(BoxedDisableCommand),
+    Doctor(BoxedDoctorCommand),
     Dump(BoxedDumpCommand),
     List(BoxedListCommand),
     ListComposites(BoxedListCompositesCommand),

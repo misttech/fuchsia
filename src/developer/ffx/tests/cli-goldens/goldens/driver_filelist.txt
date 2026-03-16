@@ -1,5 +1,6 @@
 ffx/driver.golden
 ffx/driver/disable.golden
+ffx/driver/doctor.golden
 ffx/driver/dump.golden
 ffx/driver/host.golden
 ffx/driver/host/list.golden

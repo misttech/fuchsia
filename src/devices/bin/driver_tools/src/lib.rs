@@ -28,6 +28,15 @@ pub async fn driver(
                 .await
                 .context("Dump subcommand failed")?;
         }
+        DriverSubCommand::Doctor(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(subcmd.0.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::doctor::doctor(*subcmd.0, driver_development_proxy, writer)
+                .await
+                .context("Doctor subcommand failed")?;
+        }
         DriverSubCommand::List(subcmd) => {
             let driver_development_proxy = driver_connector
                 .get_driver_development_proxy(subcmd.0.select)

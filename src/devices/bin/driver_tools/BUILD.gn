@@ -52,6 +52,8 @@ rustc_library("lib") {
     "src/lib.rs",
     "src/subcommands/disable/args.rs",
     "src/subcommands/disable/mod.rs",
+    "src/subcommands/doctor/args.rs",
+    "src/subcommands/doctor/mod.rs",
     "src/subcommands/dump/args.rs",
     "src/subcommands/dump/mod.rs",
     "src/subcommands/host/args.rs",
