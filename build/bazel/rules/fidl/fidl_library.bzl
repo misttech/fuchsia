@@ -10,6 +10,7 @@ load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",
     "get_allowlist_target",
     "get_api_file_path",
+    "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
 )
@@ -408,7 +409,7 @@ def _fidl_library_impl(
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
             allowlist = allowlist,
             testonly = testonly,
-            visibility = visibility,
+            visibility = get_atom_visibility(visibility, is_fidl_library = True),
         )
 
         # TODO(https://fxbug.dev/428285014): Implmenent sdk_fidl_json_data.

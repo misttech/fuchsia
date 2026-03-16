@@ -79,13 +79,20 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
 
     fail("Create a separate allowlist when adding support for other categories or stability.")
 
-def get_atom_visibility(target_visibility):
+def get_atom_visibility(target_visibility, is_fidl_library = False):
     """Returns the visibility to use for an atom target.
 
     The atom's visibility should allow IDK contents/definition rules to depend
     on the atom in addition to the visibility specified to the macro.
     The built-in visibility labels cannot be used in combination with other
     labels so handle them specifically.
+
+    Args:
+        target_visibility: The visibility of the underlying target.
+        is_fidl_library: Whether the atom is a FIDL library.
+
+    Returns:
+        A visibility list that also allows access by targets that define the IDK.
     """
 
     # TODO(https://fxbug.dev/431287514): Support package `default_visibility`.
@@ -93,7 +100,7 @@ def get_atom_visibility(target_visibility):
         return target_visibility
 
     # All atoms must be visible to the targets defining the IDK.
-    atom_visibility = ["//sdk:__pkg__"]
+    atom_visibility = ["//sdk/fidl:__pkg__" if is_fidl_library else "//sdk:__pkg__"]
 
     if "//visibility:private" not in target_visibility:
         atom_visibility += target_visibility
