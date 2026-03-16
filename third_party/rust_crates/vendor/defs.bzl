@@ -337,7 +337,7 @@ _NORMAL_DEPENDENCIES = {
             "chrono-english": Label("//third_party/rust_crates/vendor/chrono-english-0.1.8:chrono_english"),
             "ciborium": Label("//third_party/rust_crates/vendor/ciborium-0.2.2:ciborium"),
             "cipher": Label("//third_party/rust_crates/vendor/cipher-0.4.4:cipher"),
-            "clap": Label("//third_party/rust_crates/vendor/clap-4.5.50:clap"),
+            "clap": Label("//third_party/rust_crates/vendor/clap-4.6.0:clap"),
             "cmac": Label("//third_party/rust_crates/vendor/cmac-0.7.2:cmac"),
             "cpio": Label("//third_party/rust_crates/vendor/cpio-0.4.1:cpio"),
             "crc": Label("//third_party/rust_crates/vendor/crc-1.8.1:crc"),

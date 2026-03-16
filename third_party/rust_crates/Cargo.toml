@@ -84,7 +84,7 @@ chrono = { version = "0.4.44", default-features = false }
 chrono-english = "0.1.8"
 ciborium = { version = "0.2.2", features = ["std"] }
 cipher = "0.4.4"
-clap = { version = "4.5.50", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }
+clap = { version = "4.6.0", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }
 cmac = "0.7.2"
 cpio = "0.4.1"
 crc = "1.8.1"
