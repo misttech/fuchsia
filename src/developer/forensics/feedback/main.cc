@@ -9,6 +9,9 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/processargs.h>
 
+#include <lib/zx/job.h>
+#include <lib/zx/process.h>
+
 #include <cstdlib>
 #include <memory>
 
@@ -32,6 +35,12 @@ int main() {
   forensics::component::Component component;
   fuchsia_logging::LogSettingsBuilder builder;
   builder.WithTags({"forensics", "feedback"}).BuildAndInitialize();
+
+  if (const zx_status_t status = zx::job::default_job()->set_critical(
+          ZX_JOB_CRITICAL_PROCESS_RETCODE_NONZERO, *zx::process::self());
+      status != ZX_OK) {
+    FX_LOGS(WARNING) << "Failed to set process as critical to its job: " << status;
+  }
 
   const std::optional<SnapshotConfig> snapshot_config = GetSnapshotConfig();
   if (!snapshot_config) {
