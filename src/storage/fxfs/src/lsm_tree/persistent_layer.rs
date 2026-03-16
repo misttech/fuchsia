@@ -1317,10 +1317,7 @@ mod tests {
     async fn test_block_seek_duplicate_keys() {
         // At the upper end of the supported size.
         const BLOCK_SIZE: u64 = 512;
-        // Items will be 37 bytes each. Max length varint u64 is 9 bytes, 3 of those plus one
-        // straight encoded sequence number for another 8 bytes. Then 2 more for each seek table
-        // entry.
-        const ITEMS_TO_FILL_BLOCK: u64 = BLOCK_SIZE / 37;
+        const ITEMS_PER_PHASE: u64 = 50;
 
         let mut to_find = Vec::new();
 
@@ -1341,7 +1338,7 @@ mod tests {
             // First fill the front with a duplicate leading u64 amount, then look at the start,
             // middle and end of the range.
             {
-                let items = ITEMS_TO_FILL_BLOCK * 3;
+                let items = ITEMS_PER_PHASE * 3;
                 for i in 0..items {
                     writer
                         .write(
@@ -1359,7 +1356,7 @@ mod tests {
 
             // Add some filler of all different leading u64.
             {
-                let items = ITEMS_TO_FILL_BLOCK * 3;
+                let items = ITEMS_PER_PHASE * 3;
                 for _ in 0..items {
                     writer
                         .write(
@@ -1375,7 +1372,7 @@ mod tests {
             // Fill the middle with a duplicate leading u64 amount, then look at the start,
             // middle and end of the range.
             {
-                let items = ITEMS_TO_FILL_BLOCK * 3;
+                let items = ITEMS_PER_PHASE * 3;
                 for i in 0..items {
                     writer
                         .write(
@@ -1393,7 +1390,7 @@ mod tests {
 
             // Add some filler of all different leading u64.
             {
-                let items = ITEMS_TO_FILL_BLOCK * 3;
+                let items = ITEMS_PER_PHASE * 3;
                 for _ in 0..items {
                     writer
                         .write(
@@ -1409,7 +1406,7 @@ mod tests {
             // Fill the end with a duplicate leading u64 amount, then look at the start,
             // middle and end of the range.
             {
-                let items = ITEMS_TO_FILL_BLOCK * 3;
+                let items = ITEMS_PER_PHASE * 3;
                 for i in 0..items {
                     writer
                         .write(
@@ -1440,14 +1437,8 @@ mod tests {
     async fn test_two_seek_blocks() {
         // At the upper end of the supported size.
         const BLOCK_SIZE: u64 = 512;
-        // Items will be 37 bytes each. Max length varint u64 is 9 bytes, 3 of those plus one
-        // straight encoded sequence number for another 8 bytes. Then 2 more for each seek table
-        // entry.
-        const ITEMS_TO_FILL_BLOCK: u64 = BLOCK_SIZE / 37;
-        // Add enough items to create enough blocks that the seek table can't fit into a single
-        // block. Entries are 8 bytes. Remember to add one because the first block entry is omitted,
-        // then add one more to overflow into the next block.
-        const ITEM_COUNT: u64 = ITEMS_TO_FILL_BLOCK * ((BLOCK_SIZE / 8) + 2);
+        const ITEMS_PER_PHASE: u64 = 50;
+        const ITEM_COUNT: u64 = ITEMS_PER_PHASE * ((BLOCK_SIZE / 8) + 2);
 
         let mut to_find = Vec::new();
 
@@ -1497,11 +1488,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_full_seek_block() {
         const BLOCK_SIZE: u64 = 512;
-
-        // Items will be 37 bytes each. Max length varint u64 is 9 bytes, 3 of those plus one
-        // straight encoded sequence number for another 8 bytes. Then 2 more for each seek table
-        // entry.
-        const ITEMS_TO_FILL_BLOCK: u64 = BLOCK_SIZE / 37;
+        const ITEMS_PER_PHASE: u64 = 50;
 
         // How many entries there are in a seek table block.
         const SEEK_TABLE_ENTRIES: u64 = BLOCK_SIZE / 8;
@@ -1509,9 +1496,9 @@ mod tests {
         // Number of entries to fill a seek block would need one more block of entries, but we're
         // starting low here on purpose to do a range and make sure we hit the size we are
         // interested in.
-        const START_ENTRIES_COUNT: u64 = ITEMS_TO_FILL_BLOCK * SEEK_TABLE_ENTRIES;
+        const START_ENTRIES_COUNT: u64 = ITEMS_PER_PHASE * SEEK_TABLE_ENTRIES;
 
-        for entries in START_ENTRIES_COUNT..START_ENTRIES_COUNT + (ITEMS_TO_FILL_BLOCK * 2) {
+        for entries in START_ENTRIES_COUNT..START_ENTRIES_COUNT + (ITEMS_PER_PHASE * 2) {
             let handle = FakeObjectHandle::new_with_block_size(
                 Arc::new(FakeObject::new()),
                 BLOCK_SIZE as usize,
@@ -1546,13 +1533,9 @@ mod tests {
     #[fuchsia::test]
     async fn test_ignore_bloom_filter_on_older_versions() {
         const BLOCK_SIZE: u64 = 512;
-        // Items will be 37 bytes each. Max length varint u64 is 9 bytes, 3 of those plus one
-        // straight encoded sequence number for another 8 bytes. Then 2 more for each seek table
-        // entry.
-        const ITEMS_TO_FILL_BLOCK: u64 = BLOCK_SIZE / 37;
+        const ITEMS_PER_PHASE: u64 = 50;
         // Add enough items to create enough blocks for a bloom filter to be necessary.
-        const ITEM_COUNT: u64 =
-            (1 + MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER as u64) * ITEMS_TO_FILL_BLOCK;
+        const ITEM_COUNT: u64 = (1 + MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER as u64) * ITEMS_PER_PHASE;
 
         let old_version_handle =
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
@@ -1610,11 +1593,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_key_exists_no_bloom_filter() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: u64 = 8192;
         // Not enough items to trigger a bloom filter.
         const ITEM_COUNT: i32 = 100;
 
-        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        let handle =
+            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
         {
             let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
                 Writer::new(&handle).await,
