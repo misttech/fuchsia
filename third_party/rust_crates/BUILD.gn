@@ -18078,7 +18078,6 @@ rustc_library("syn-v1_0_109") {
   visibility += [ "//src/developer/ffx/lib/protocols/macros:*" ]
   visibility += [ "//src/developer/ffx/lib/validation/proc_macro:*" ]
   visibility += [ "//src/developer/ffx/plugins/fuzz/shell_args:*" ]
-  visibility += [ "//src/lib/assembly/file_relative_path:*" ]
   visibility += [ "//src/lib/diagnostics/inspect/derive/macro:*" ]
   visibility +=
       [ "//src/lib/fidl_table_validation/fidl_table_validation_derive:*" ]

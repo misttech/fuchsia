@@ -1070,7 +1070,6 @@ visibility = [
   "//src/developer/ffx/lib/protocols/macros:*",
   "//src/developer/ffx/lib/validation/proc_macro:*",
   "//src/developer/ffx/plugins/fuzz/shell_args:*",
-  "//src/lib/assembly/file_relative_path:*",
   "//src/lib/diagnostics/inspect/derive/macro:*",
   "//src/lib/fidl_table_validation/fidl_table_validation_derive:*",
   "//src/lib/from-enum:*",
