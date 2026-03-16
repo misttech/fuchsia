@@ -132,21 +132,25 @@ impl SagEventLogger {
             }
             .boxed()
         });
+
+        let system_suspend_state = Arc::new(Mutex::new(
+            EnumStateRecorder::new(
+                "system_suspend_state".to_string(),
+                c"power",
+                // Current capacity would cover 3 hours with one suspend/resume cycle per
+                // minute.
+                RecorderOptions { lazy_record: false, capacity: 360, ..Default::default() },
+            )
+            .expect("Failed to create system_suspend_state recorder"),
+        ));
+        system_suspend_state.lock().record(SystemSuspendState::Active);
+
         Self {
             event_log,
             event_log_times,
             _event_log_stats: Rc::new(RefCell::new(event_log_stats)),
             cumulative_suspend_duration: Arc::new(AtomicI64::new(0)),
-            system_suspend_state: Arc::new(Mutex::new(
-                EnumStateRecorder::new(
-                    "system_suspend_state".to_string(),
-                    c"power",
-                    // Current capacity would cover 3 hours with one suspend/resume cycle per
-                    // minute.
-                    RecorderOptions { lazy_record: false, capacity: 360, ..Default::default() },
-                )
-                .expect("Failed to create system_suspend_state recorder"),
-            )),
+            system_suspend_state,
         }
     }
 
