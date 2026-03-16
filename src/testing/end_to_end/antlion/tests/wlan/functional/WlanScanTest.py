@@ -133,7 +133,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             if t.security == Security.WPA2
             else None
         )
-        if self.openwrt_ap:
+        if hasattr(self, "openwrt_ap"):
             config = AccessPointConfig.generate(
                 band=t.band,
                 ssid=ssid,
@@ -142,7 +142,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=t.band)
-        elif self.access_point:
+        elif hasattr(self, "access_point"):
             band = ConfigMapper.to_hostapd_band(t.band)
             security = ConfigMapper.to_hostapd_security(t.security)
             setup_ap(
@@ -223,7 +223,7 @@ class WlanScanTest(base_test.WifiBaseTest):
     def test_basic_scan_request(self) -> None:
         """Verify a general scan trigger returns at least one result"""
         ssid = AccessPointConfig.random_string(20)
-        if self.openwrt_aps:
+        if hasattr(self, "openwrt_ap"):
             config = AccessPointConfig.generate(
                 band=Band.BAND_2G,
                 ssid=ssid,
@@ -231,7 +231,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
-        elif self.access_point:
+        elif hasattr(self, "access_point"):
             setup_ap(
                 access_point=self.access_point,
                 profile_name="whirlwind",
