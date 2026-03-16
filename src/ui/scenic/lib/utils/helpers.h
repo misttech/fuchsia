@@ -73,7 +73,8 @@ SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sy
 // Creates default constraints for |buffer_collection|
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
     uint32_t buffer_count, uint32_t kWidth, uint32_t kHeight,
-    fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8);
+    fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8,
+    bool set_min_max_size = false);
 
 void PrettyPrintMat3(std::string, const std::array<float, 9>& mat3);
 

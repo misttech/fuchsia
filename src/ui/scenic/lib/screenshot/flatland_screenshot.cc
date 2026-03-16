@@ -120,9 +120,12 @@ void FlatlandScreenshot::AllocateBuffers() {
 
   // We only need 1 buffer since it gets reused on every Take() call.
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  // Inform sysmem of the exact dimensions to prevent wasted memory from sysmem padding for
+  // lavapipe block size.
+  constexpr bool kSetMinMaxSize = true;
   set_constraints_request.set_constraints(
       utils::CreateDefaultConstraints(/*buffer_count=*/1, display_size_.width, display_size_.height,
-                                      CompositionToImages2Format(raw_format_)));
+                                      CompositionToImages2Format(raw_format_), kSetMinMaxSize));
   buffer_collection->SetConstraints(std::move(set_constraints_request));
 
   fuchsia::sysmem2::NodeSetNameRequest set_name_request;

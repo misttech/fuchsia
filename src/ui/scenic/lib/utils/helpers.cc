@@ -192,7 +192,8 @@ SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sy
 }
 
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia::images2::PixelFormat format) {
+    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia::images2::PixelFormat format,
+    bool set_min_max_size) {
   fuchsia::sysmem2::BufferCollectionConstraints constraints;
   constraints.mutable_buffer_memory_constraints()->set_cpu_domain_supported(true);
   constraints.mutable_buffer_memory_constraints()->set_ram_domain_supported(true);
@@ -207,6 +208,10 @@ fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
 
   image_constraints.set_required_min_size({.width = width, .height = height});
   image_constraints.set_required_max_size({.width = width, .height = height});
+  if (set_min_max_size) {
+    image_constraints.set_min_size({.width = width, .height = height});
+    image_constraints.set_max_size({.width = width, .height = height});
+  }
   image_constraints.set_bytes_per_row_divisor(4);
   return constraints;
 }
