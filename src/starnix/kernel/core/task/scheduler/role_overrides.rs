@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use itertools::Itertools as _;
-use regex::Error;
-use regex::bytes::RegexSet;
+use bstr::ByteSlice;
+use regex_lite::{Error, Regex};
 use starnix_task_command::TaskCommand;
 
 /// Per-container overrides for thread roles.
 #[derive(Debug)]
 pub struct RoleOverrides {
-    process_filter: RegexSet,
-    thread_filter: RegexSet,
+    process_filter: Vec<Regex>,
+    thread_filter: Vec<Regex>,
     role_names: Vec<String>,
 }
 
@@ -34,13 +33,18 @@ impl RoleOverrides {
         debug_assert_eq!(self.process_filter.len(), self.role_names.len());
         debug_assert_eq!(self.thread_filter.len(), self.role_names.len());
 
-        // RegexSet iterators are sorted, we can assume they'll be in ascending order.
-        let process_match_indices =
-            self.process_filter.matches(process_name.as_bytes()).into_iter();
-        let thread_match_indices = self.thread_filter.matches(thread_name.as_bytes()).into_iter();
-        let mut indices_with_both_matching =
-            process_match_indices.merge(thread_match_indices).duplicates();
-        indices_with_both_matching.next().map(|i| self.role_names[i].as_str())
+        // NOTE(https://fxbug.dev/483609435): This used to be more elegantly expressed
+        // via use of regex::bytes::RegexSet, but regex_lite doesn't (yet?) offer RegexSet.
+        let process_name = process_name.as_bytes().to_str().ok()?;
+        let thread_name = thread_name.as_bytes().to_str().ok()?;
+        for index in 0..self.process_filter.len() {
+            if self.process_filter[index].is_match(process_name)
+                && self.thread_filter[index].is_match(thread_name)
+            {
+                return Some(self.role_names[index].as_str());
+            }
+        }
+        None
     }
 }
 
@@ -67,8 +71,16 @@ impl RoleOverridesBuilder {
     /// Compile all of the provided regular expressions and return a `RoleOverrides`.
     pub fn build(self) -> Result<RoleOverrides, Error> {
         Ok(RoleOverrides {
-            process_filter: RegexSet::new(self.process_patterns)?,
-            thread_filter: RegexSet::new(self.thread_patterns)?,
+            process_filter: self
+                .process_patterns
+                .into_iter()
+                .map(|pattern| Regex::new(pattern.as_str()))
+                .collect::<Result<Vec<Regex>, Error>>()?,
+            thread_filter: self
+                .thread_patterns
+                .into_iter()
+                .map(|pattern| Regex::new(pattern.as_str()))
+                .collect::<Result<Vec<Regex>, Error>>()?,
             role_names: self.role_names,
         })
     }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use itertools::Itertools;
-use regex::Regex;
+use regex_lite::Regex;
 use starnix_core::mm::{
     MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE, ProcMapsFile, ProcSmapsFile,
 };

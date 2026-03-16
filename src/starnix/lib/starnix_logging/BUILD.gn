@@ -35,7 +35,7 @@ rustc_library("starnix_logging") {
     "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:regex",
+    "//third_party/rust_crates:regex-lite",
   ]
 
   test_deps = [ "//third_party/rust_crates:pretty_assertions" ]

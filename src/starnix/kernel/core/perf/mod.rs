@@ -8,7 +8,7 @@ use fidl_fuchsia_cpu_profiler as profiler;
 use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt;
 use futures::channel::mpsc as future_mpsc;
-use regex::Regex;
+use regex_lite::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
