@@ -1,5 +1,11 @@
 [
     {
+        name: "Ext4",
+        process: "",
+        vmo: "^ext4!.*$",
+        event_code: 81,
+    },
+    {
         name: "StarnixKernel",
         process: "starnix_kernel.cm",
         vmo: "",
