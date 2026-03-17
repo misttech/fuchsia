@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{KeyboardProxy, KeyboardSettings};
 use ffx_setui_keyboard_args::Keyboard;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{KeyboardProxy, KeyboardSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("setui"))]
@@ -58,15 +58,16 @@ async fn command(proxy: KeyboardProxy, keyboard: Keyboard) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::KeyboardRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::KeyboardRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
         const NUM: i64 = 7;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             KeyboardRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -83,14 +84,15 @@ mod test {
 
     #[test_case(
         Keyboard {
-            keymap: Some(fidl_fuchsia_input::KeymapId::FrAzerty),
+            keymap: Some(fdomain_fuchsia_input::KeymapId::FrAzerty),
             autorepeat_delay: Some(-1),
             autorepeat_period: Some(-2),
         }; "Test keyboard invalid autorepeat inputs."
     )]
     #[fuchsia::test]
     async fn validate_keyboard_failure(expected_keyboard: Keyboard) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             KeyboardRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -114,21 +116,22 @@ mod test {
 
     #[test_case(
         Keyboard {
-            keymap: Some(fidl_fuchsia_input::KeymapId::UsQwerty),
+            keymap: Some(fdomain_fuchsia_input::KeymapId::UsQwerty),
             autorepeat_delay: Some(2),
             autorepeat_period: Some(3),
         }; "Test keyboard set() output."
     )]
     #[test_case(
         Keyboard {
-            keymap: Some(fidl_fuchsia_input::KeymapId::UsDvorak),
+            keymap: Some(fdomain_fuchsia_input::KeymapId::UsDvorak),
             autorepeat_delay: Some(3),
             autorepeat_period: Some(4),
         }; "Test keyboard set() output with different values."
     )]
     #[fuchsia::test]
     async fn validate_keyboard_set_output(expected_keyboard: Keyboard) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             KeyboardRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -151,14 +154,15 @@ mod test {
     )]
     #[test_case(
         Keyboard {
-            keymap: Some(fidl_fuchsia_input::KeymapId::UsDvorak),
+            keymap: Some(fdomain_fuchsia_input::KeymapId::UsDvorak),
             autorepeat_delay: Some(7),
             autorepeat_period: Some(8),
         }; "Test keyboard watch() output with non-empty Keyboard."
     )]
     #[fuchsia::test]
     async fn validate_keyboard_watch_output(expected_keyboard: Keyboard) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             KeyboardRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::KeyboardSettings;
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::KeyboardSettings;
 use regex::Regex;
 use std::num::ParseIntError;
 
@@ -21,7 +21,7 @@ pub struct Keyboard {
     ///   - UsColemak
     ///
     #[argh(option, short = 'k', from_str_fn(str_to_keymap))]
-    pub keymap: Option<fidl_fuchsia_input::KeymapId>,
+    pub keymap: Option<fdomain_fuchsia_input::KeymapId>,
 
     /// delay value of autorepeat values for the keyboard. Values should be a positive integer plus
     /// an SI time unit. Valid units are s, ms. If this value and autorepeat_period are zero, the
@@ -53,7 +53,7 @@ impl From<Keyboard> for KeyboardSettings {
             autorepeat: if src.autorepeat_delay.is_none() && src.autorepeat_period.is_none() {
                 None
             } else {
-                Some(fidl_fuchsia_settings::Autorepeat {
+                Some(fdomain_fuchsia_settings::Autorepeat {
                     delay: src.autorepeat_delay.unwrap_or(0),
                     period: src.autorepeat_period.unwrap_or(0),
                 })
@@ -63,13 +63,13 @@ impl From<Keyboard> for KeyboardSettings {
     }
 }
 
-/// Converts a single string of keymap id value into a fidl_fuchsia_input::KeymapId.
-fn str_to_keymap(src: &str) -> Result<fidl_fuchsia_input::KeymapId, String> {
+/// Converts a single string of keymap id value into a fdomain_fuchsia_input::KeymapId.
+fn str_to_keymap(src: &str) -> Result<fdomain_fuchsia_input::KeymapId, String> {
     Ok(match src.to_lowercase().as_str() {
-        "usqwerty" => fidl_fuchsia_input::KeymapId::UsQwerty,
-        "frazerty" => fidl_fuchsia_input::KeymapId::FrAzerty,
-        "usdvorak" => fidl_fuchsia_input::KeymapId::UsDvorak,
-        "uscolemak" => fidl_fuchsia_input::KeymapId::UsColemak,
+        "usqwerty" => fdomain_fuchsia_input::KeymapId::UsQwerty,
+        "frazerty" => fdomain_fuchsia_input::KeymapId::FrAzerty,
+        "usdvorak" => fdomain_fuchsia_input::KeymapId::UsDvorak,
+        "uscolemak" => fdomain_fuchsia_input::KeymapId::UsColemak,
         _ => return Err(String::from("Couldn't parse keymap id.")),
     })
 }
