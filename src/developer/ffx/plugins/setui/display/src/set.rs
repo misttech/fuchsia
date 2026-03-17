@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
+use fdomain_fuchsia_settings::{DisplayProxy, DisplaySettings};
 use ffx_setui_display_args::SetArgs;
-use fidl_fuchsia_settings::{DisplayProxy, DisplaySettings};
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn set<W: std::io::Write>(proxy: DisplayProxy, args: SetArgs, w: &mut W) -> Result<()> {
@@ -26,13 +26,14 @@ async fn command(proxy: DisplayProxy, settings: DisplaySettings) -> WatchOrSetRe
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::{DisplayRequest, LowLightMode, Theme, ThemeMode, ThemeType};
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::{DisplayRequest, LowLightMode, Theme, ThemeMode, ThemeType};
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_set() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -81,7 +82,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_display_set_output(expected_display: SetArgs) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }

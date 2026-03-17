@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::{DisplaySettings, LowLightMode, Theme};
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::{DisplaySettings, LowLightMode, Theme};
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -86,37 +86,39 @@ fn str_to_field(src: &str) -> Result<Field, String> {
 )]
 pub struct WatchArgs {}
 
-fn str_to_low_light_mode(src: &str) -> Result<fidl_fuchsia_settings::LowLightMode, String> {
+fn str_to_low_light_mode(src: &str) -> Result<fdomain_fuchsia_settings::LowLightMode, String> {
     match src {
-        "enable" | "e" => Ok(fidl_fuchsia_settings::LowLightMode::Enable),
-        "disable" | "d" => Ok(fidl_fuchsia_settings::LowLightMode::Disable),
-        "disable_immediately" | "i" => Ok(fidl_fuchsia_settings::LowLightMode::DisableImmediately),
+        "enable" | "e" => Ok(fdomain_fuchsia_settings::LowLightMode::Enable),
+        "disable" | "d" => Ok(fdomain_fuchsia_settings::LowLightMode::Disable),
+        "disable_immediately" | "i" => {
+            Ok(fdomain_fuchsia_settings::LowLightMode::DisableImmediately)
+        }
         _ => Err(String::from("Couldn't parse low light mode")),
     }
 }
 
-fn str_to_theme(src: &str) -> Result<fidl_fuchsia_settings::Theme, String> {
+fn str_to_theme(src: &str) -> Result<fdomain_fuchsia_settings::Theme, String> {
     match src {
         "default" => Ok(Theme {
-            theme_type: Some(fidl_fuchsia_settings::ThemeType::Default),
+            theme_type: Some(fdomain_fuchsia_settings::ThemeType::Default),
             ..Default::default()
         }),
         "dark" => Ok(Theme {
-            theme_type: Some(fidl_fuchsia_settings::ThemeType::Dark),
+            theme_type: Some(fdomain_fuchsia_settings::ThemeType::Dark),
             ..Default::default()
         }),
         "light" => Ok(Theme {
-            theme_type: Some(fidl_fuchsia_settings::ThemeType::Light),
+            theme_type: Some(fdomain_fuchsia_settings::ThemeType::Light),
             ..Default::default()
         }),
         "darkauto" => Ok(Theme {
-            theme_type: Some(fidl_fuchsia_settings::ThemeType::Dark),
-            theme_mode: Some(fidl_fuchsia_settings::ThemeMode::AUTO),
+            theme_type: Some(fdomain_fuchsia_settings::ThemeType::Dark),
+            theme_mode: Some(fdomain_fuchsia_settings::ThemeMode::AUTO),
             ..Default::default()
         }),
         "lightauto" => Ok(Theme {
-            theme_type: Some(fidl_fuchsia_settings::ThemeType::Light),
-            theme_mode: Some(fidl_fuchsia_settings::ThemeMode::AUTO),
+            theme_type: Some(fdomain_fuchsia_settings::ThemeType::Light),
+            theme_mode: Some(fdomain_fuchsia_settings::ThemeMode::AUTO),
             ..Default::default()
         }),
         _ => Err(String::from("Couldn't parse theme.")),

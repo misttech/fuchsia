@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl_fuchsia_settings::DisplayProxy;
+use fdomain_fuchsia_settings::DisplayProxy;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn watch<W: std::io::Write>(proxy: DisplayProxy, w: &mut W) -> Result<()> {
@@ -17,9 +17,9 @@ async fn command(proxy: DisplayProxy) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_settings::{DisplayRequest, DisplaySettings};
     use ffx_setui_display_args::SetArgs;
-    use fidl_fuchsia_settings::{DisplayRequest, DisplaySettings};
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[test_case(
@@ -47,7 +47,8 @@ mod test {
     #[fuchsia::test]
     async fn validate_display_watch_output(expected_display: SetArgs) -> Result<()> {
         let expected_display_clone = expected_display.clone();
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

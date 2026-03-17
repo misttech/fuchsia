@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::DisplayProxy;
 use ffx_setui_display_args::{Display, SubCommandEnum};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::DisplayProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 pub use utils;
 
@@ -51,9 +51,9 @@ async fn run_command<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_settings::{DisplayRequest, DisplaySettings};
     use ffx_setui_display_args::{Field, GetArgs, SetArgs};
-    use fidl_fuchsia_settings::{DisplayRequest, DisplaySettings};
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_run_command() {
@@ -66,7 +66,8 @@ mod test {
             screen_enabled: None,
         };
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

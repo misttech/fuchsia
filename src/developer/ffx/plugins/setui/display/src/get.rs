@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use fdomain_fuchsia_settings::DisplayProxy;
 use ffx_setui_display_args::{Field, GetArgs};
-use fidl_fuchsia_settings::DisplayProxy;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn get<W: std::io::Write>(proxy: DisplayProxy, args: GetArgs, w: &mut W) -> Result<()> {
@@ -36,9 +36,9 @@ async fn command(proxy: DisplayProxy, args: GetArgs) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_settings::{DisplayRequest, DisplaySettings};
     use ffx_setui_display_args::SetArgs;
-    use fidl_fuchsia_settings::{DisplayRequest, DisplaySettings};
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_get() {
@@ -51,7 +51,8 @@ mod test {
             screen_enabled: None,
         };
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
@@ -77,7 +78,8 @@ mod test {
             screen_enabled: None,
         };
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DisplayRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
