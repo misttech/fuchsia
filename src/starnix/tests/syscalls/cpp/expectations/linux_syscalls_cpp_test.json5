@@ -51,18 +51,6 @@
                 // TODO(https://fxbug.dev/342416456): Not Machina-specific. Rework the test to take
                 // into account logs from the system. Skipped since it's flakey.
                 "SyslogTest.ProcKmsgPoll",
-
-                // TODO(https://fxbug.dev/437164512): CAP_SYS_ADMIN behaves differently on earlier
-                // kernel version (e.g. Machina's current 5.10) than on later versions (e.g. 6.10).
-                // In particular, the (observed) behavior is inconsistent when set in conjunction
-                // with absence of CAP_SYSLOG. As such, we'll skip all the tests which both set
-                // CAP_SYS_ADMIN and not CAP_SYSLOG until Machina's kernel version is uprev'd.
-                // Note that these need to be skipped, because other options (e.g. root) also
-                // interact with expected syslog access. That can lead to expectations behaving
-                // unexpectedly, for example being given access (due to root) when it would be
-                // denied on newer kernels. All that said, the CAP_SYS_ADMIN and CAP_SYSLOG are
-                // the greatest common denominator for all the differences in behavior.
-                "SyslogAccessTestAll*_SysAdmin_NoSyslog_*",
             ],
         },
         {
@@ -183,6 +171,25 @@
                 "SysfsPowerTest.LastSuspendTimeFileContainsExpectedContents",
                 "SysfsPowerTest.WakeLockWithTimeout",
                 "SysfsPowerTest.WakeLockFileWrite",
+
+                // WONTFIX(https://fxbug.dev/437164512): The Android (and gLinux) kernel is modified
+                // with higher security access restrictions than the standard Linux kernel. In
+                // particular, CAP_SYS_ADMIN is used as a fallback permission for many syslog access
+                // checks in standard Linux 6.6. This was later removed, and Android kernels have
+                // removed it even sooner still. As such, these tests where CAP_SYS_ADMIN is enabled
+                // will fail on Machina, since the fallthrough logic breaks our expectations.
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionC*_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionRead/*_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionReadClear/*_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionOpen/*_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionSizeUnread/*_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.ProcKmsgRead/Root_SysAdmin_NoSyslog_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.ProcKmsgRead/User_SysAdmin_NoSyslog_DacOverride_*Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.ProcKmsg*Write/*_SysAdmin_NoSyslog_DacOverride_*",
+                "SyslogAccessTestAll/SyslogAccessTest.ProcKmsgTrunc/*_SysAdmin_NoSyslog_DacOverride_*",
+                "SyslogAccessTestAll/SyslogAccessTest.DevKmsgRead/*_SysAdmin_NoSyslog*_Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionReadAll/*_SysAdmin_NoSyslog*_Restrict",
+                "SyslogAccessTestAll/SyslogAccessTest.SyslogActionSizeBuffer/*_SysAdmin_NoSyslog*_Restrict",
 
                 // TODO(https://fxbug.dev/436914573): Reliant on an Android-specific kernel feature.
                 "TouchStandbyTest.WriteTouchStandbyState",
