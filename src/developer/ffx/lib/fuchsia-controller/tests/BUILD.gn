@@ -46,8 +46,6 @@ group("fuchsia_controller_fidl_test_data") {
 }
 
 python_host_test("fuchsia_controller_ir_test") {
-  # TODO(https://fxbug.dev/346628306): Resolve mypy errors and enable type checking
-  enable_mypy = false
   main_source = "ir.py"
   libraries = [ "//src/developer/ffx/lib/fuchsia-controller/cpp:fidl_codec" ]
   test_data_deps = [ ":fuchsia_controller_test_data" ]
@@ -64,8 +62,6 @@ python_host_test("fuchsia_controller_encode_test") {
 }
 
 python_host_test("fuchsia_controller_errors_test") {
-  # TODO(https://fxbug.dev/346628306): Resolve mypy errors and enable type checking
-  enable_mypy = false
   main_source = "errors.py"
   libraries =
       [ "//src/developer/ffx/lib/fuchsia-controller:fuchsia_controller_py" ]
@@ -73,8 +69,6 @@ python_host_test("fuchsia_controller_errors_test") {
 }
 
 python_host_test("fuchsia_controller_isolate_directory_test") {
-  # TODO(https://fxbug.dev/346628306): Resolve mypy errors and enable type checking
-  enable_mypy = false
   main_source = "isolate_directory.py"
   libraries =
       [ "//src/developer/ffx/lib/fuchsia-controller:fuchsia_controller_py" ]
@@ -94,8 +88,6 @@ python_host_test("fuchsia_controller_e2e_test") {
 }
 
 python_host_test("fuchsia_controller_fidl_channel_test") {
-  # TODO(https://fxbug.dev/346628306): Resolve mypy errors and enable type checking
-  enable_mypy = false
   main_source = "fidl_channel.py"
   libraries = [
     "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
@@ -105,8 +97,6 @@ python_host_test("fuchsia_controller_fidl_channel_test") {
 }
 
 python_host_test("fuchsia_controller_socket_test") {
-  # TODO(https://fxbug.dev/346628306): Resolve mypy errors and enable type checking
-  enable_mypy = false
   main_source = "socket_tests.py"
   libraries = [
     "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
