@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::{LightState, LightValue};
+use fdomain_fuchsia_ui_types::ColorRgb;
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::{LightState, LightValue};
-use fidl_fuchsia_ui_types::ColorRgb;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -32,8 +32,8 @@ pub struct LightGroup {
     pub rgb: Vec<ColorRgb>,
 }
 
-/// Converts a comma-separated string of RGB values into a fidl_fuchsia_ui_types::ColorRgb.
-fn str_to_rgb(src: &str) -> Result<fidl_fuchsia_ui_types::ColorRgb, String> {
+/// Converts a comma-separated string of RGB values into a fdomain_fuchsia_ui_types::ColorRgb.
+fn str_to_rgb(src: &str) -> Result<fdomain_fuchsia_ui_types::ColorRgb, String> {
     let mut part_iter =
         src.split(',').map(|p| p.parse::<f32>().map_err(|_| "failed to parse color value"));
 
@@ -50,11 +50,11 @@ fn str_to_rgb(src: &str) -> Result<fidl_fuchsia_ui_types::ColorRgb, String> {
 
 fn color_from_parts<'a, T>(
     part_iter: &mut T,
-) -> Option<Result<fidl_fuchsia_ui_types::ColorRgb, String>>
+) -> Option<Result<fdomain_fuchsia_ui_types::ColorRgb, String>>
 where
     T: Iterator<Item = Result<f32, &'a str>>,
 {
-    Some(Ok(fidl_fuchsia_ui_types::ColorRgb {
+    Some(Ok(fdomain_fuchsia_ui_types::ColorRgb {
         red: match part_iter.next()? {
             Ok(c) => c,
             Err(e) => return Some(Err(e.to_string())),
