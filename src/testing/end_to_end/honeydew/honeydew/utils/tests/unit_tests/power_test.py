@@ -13,7 +13,7 @@ import fuchsia_inspect
 from mobly import signals
 
 from honeydew import errors
-from honeydew.fuchsia_device import fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
@@ -26,6 +26,11 @@ class PowerTests(unittest.TestCase):
         super().setUp()
         self.mock_device = mock.MagicMock(spec=fuchsia_device.FuchsiaDevice)
         self.mock_device.device_name = "test-device"
+        self.mock_async_device = mock.MagicMock(
+            spec=async_fuchsia_device.AsyncFuchsiaDevice
+        )
+        self.mock_async_device.device_name = "test-device"
+        self.mock_device.as_async.return_value = self.mock_async_device
 
     def test_get_sag_suspend_stats_success(self) -> None:
         """Test case for get_sag_suspend_stats() success case."""
@@ -46,7 +51,7 @@ class PowerTests(unittest.TestCase):
             payload=payload,
             version=1,
         )
-        self.mock_device.get_inspect_data.return_value = (
+        self.mock_async_device.get_inspect_data.return_value = (
             fuchsia_inspect.InspectDataCollection(data=[inspect_data])
         )
 
@@ -58,13 +63,13 @@ class PowerTests(unittest.TestCase):
             stats.total_time_in_suspend, timedelta(microseconds=1000)
         )
 
-        self.mock_device.get_inspect_data.assert_called_once_with(
+        self.mock_async_device.get_inspect_data.assert_called_once_with(
             selectors=["bootstrap/system-activity-governor:root"]
         )
 
     def test_get_sag_suspend_stats_empty_data(self) -> None:
         """Test case for get_sag_suspend_stats() when no data is returned."""
-        self.mock_device.get_inspect_data.return_value = (
+        self.mock_async_device.get_inspect_data.return_value = (
             fuchsia_inspect.InspectDataCollection(data=[])
         )
 
@@ -81,7 +86,7 @@ class PowerTests(unittest.TestCase):
             payload=None,
             version=1,
         )
-        self.mock_device.get_inspect_data.return_value = (
+        self.mock_async_device.get_inspect_data.return_value = (
             fuchsia_inspect.InspectDataCollection(data=[inspect_data])
         )
 
@@ -105,7 +110,7 @@ class PowerTests(unittest.TestCase):
             payload=payload,
             version=1,
         )
-        self.mock_device.get_inspect_data.return_value = (
+        self.mock_async_device.get_inspect_data.return_value = (
             fuchsia_inspect.InspectDataCollection(data=[inspect_data])
         )
 
@@ -115,8 +120,8 @@ class PowerTests(unittest.TestCase):
             power.get_sag_suspend_stats(self.mock_device)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_exception_during_suspend(
         self,
         mock_get_stats: mock.MagicMock,
@@ -135,23 +140,25 @@ class PowerTests(unittest.TestCase):
         )
         mock_get_stats.return_value = stats_before
 
-        self.mock_device.suspend.side_effect = RuntimeError("Suspend failed")
+        self.mock_async_device.suspend.side_effect = RuntimeError(
+            "Suspend failed"
+        )
 
         with self.assertRaisesRegex(RuntimeError, "Suspend failed"):
             power.suspend_resume(self.mock_device, deadline)
 
-        self.mock_device.suspend.assert_called_once()
+        self.mock_async_device.suspend.assert_called_once()
         mock_sleep.assert_not_called()
-        self.mock_device.resume.assert_called_once()
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.resume.assert_called_once()
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_success(
         self,
         mock_get_stats: mock.MagicMock,
@@ -177,19 +184,19 @@ class PowerTests(unittest.TestCase):
 
         power.suspend_resume(self.mock_device, deadline)
 
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
         )
-        self.mock_device.suspend.assert_called_once()
+        self.mock_async_device.suspend.assert_called_once()
         mock_sleep.assert_called_once()
-        self.mock_device.resume.assert_called_once()
+        self.mock_async_device.resume.assert_called_once()
         self.assertEqual(mock_get_stats.call_count, 2)
 
     @mock.patch("honeydew.utils.deadline.datetime")
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_retry_success(
         self,
         mock_get_stats: mock.MagicMock,
@@ -231,19 +238,19 @@ class PowerTests(unittest.TestCase):
 
         power.suspend_resume(self.mock_device, deadline)
 
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
         )
-        self.assertEqual(self.mock_device.suspend.call_count, 2)
+        self.assertEqual(self.mock_async_device.suspend.call_count, 2)
         self.assertEqual(mock_sleep.call_count, 2)
-        self.assertEqual(self.mock_device.resume.call_count, 2)
+        self.assertEqual(self.mock_async_device.resume.call_count, 2)
         self.assertEqual(mock_get_stats.call_count, 4)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_timeout(
         self,
         mock_get_stats: mock.MagicMock,
@@ -279,19 +286,19 @@ class PowerTests(unittest.TestCase):
         ):
             power.suspend_resume(self.mock_device, deadline)
 
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
         )
-        self.mock_device.suspend.assert_called_once()
+        self.mock_async_device.suspend.assert_called_once()
         mock_sleep.assert_called_once()
-        self.mock_device.resume.assert_called_once()
+        self.mock_async_device.resume.assert_called_once()
         self.assertEqual(mock_get_stats.call_count, 2)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_ffx_error_raises(
         self,
         mock_get_stats: mock.MagicMock,
@@ -299,7 +306,7 @@ class PowerTests(unittest.TestCase):
         mock_datetime: mock.MagicMock,
     ) -> None:
         """Test case for suspend_resume() when ffx session drop-power-lease fails."""
-        self.mock_device.ffx.run.side_effect = RuntimeError("ffx failed")
+        self.mock_async_device.ffx.run.side_effect = RuntimeError("ffx failed")
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = t0
         deadline = Deadline.from_timeout(timedelta(minutes=5))
@@ -307,15 +314,15 @@ class PowerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "ffx failed"):
             power.suspend_resume(self.mock_device, deadline)
 
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
         )
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
-    @mock.patch.object(control_flows, "sleep_until_deadline")
-    @mock.patch.object(power, "get_sag_suspend_stats")
+    @mock.patch.object(control_flows, "async_sleep_until_deadline")
+    @mock.patch.object(power, "async_get_sag_suspend_stats")
     def test_suspend_resume_no_deadline(
         self,
         mock_get_stats: mock.MagicMock,
@@ -340,7 +347,7 @@ class PowerTests(unittest.TestCase):
 
         power.suspend_resume(self.mock_device)
 
-        self.mock_device.ffx.run.assert_called_once_with(
+        self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
             # TODO(b/492542002) "ffx session drop-power-lease" should support "--machine json"
             machine=ffx_types.MachineFormat.RAW,
