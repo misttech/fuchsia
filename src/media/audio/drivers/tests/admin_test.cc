@@ -13,6 +13,7 @@
 #include <zircon/rights.h>
 #include <zircon/time.h>
 
+#include <cmath>
 #include <cstring>
 #include <numeric>
 #include <optional>

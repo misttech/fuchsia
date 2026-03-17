@@ -7,6 +7,8 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/device/audio.h>
 
+#include <cmath>
+
 #include <fbl/algorithm.h>
 
 #include "src/media/audio/drivers/lib/audio-proto-utils/include/audio-proto-utils/format-utils.h"

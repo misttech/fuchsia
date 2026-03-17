@@ -11,6 +11,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/compiler.h>
 
+#include <cmath>
 #include <optional>
 #include <string>
 
