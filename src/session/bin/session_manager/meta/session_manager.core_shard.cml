@@ -260,7 +260,6 @@
             protocol: [
                 "fuchsia.device.NameProvider",
                 "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.paver.Paver",
