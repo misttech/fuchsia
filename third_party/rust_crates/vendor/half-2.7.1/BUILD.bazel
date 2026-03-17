@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "half",
     package_url = "https://github.com/VoidStarKat/half-rs",
-    package_version = "2.6.0",
+    package_version = "2.7.1",
 )
 
 license(
@@ -77,8 +77,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.6.0",
+    version = "2.7.1",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.42:zerocopy",
     ],
 )

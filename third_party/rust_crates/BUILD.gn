@@ -416,7 +416,7 @@ group("gpt") {
 }
 
 group("half") {
-  public_deps = [ ":half-v2_6_0" ]
+  public_deps = [ ":half-v2_7_1" ]
 }
 
 group("handlebars") {
@@ -4072,7 +4072,7 @@ rustc_library("ciborium-ll-v0_2_2") {
 
   deps = []
   deps += [ ":ciborium-io-v0_2_2" ]
-  deps += [ ":half-v2_6_0" ]
+  deps += [ ":half-v2_7_1" ]
 
   rustenv = []
 
@@ -8067,19 +8067,19 @@ rustc_library("group-v0_12_1") {
   applicable_licenses = [ ":group-v0_12_1.license" ]
 }
 
-license("half-v2_6_0.license") {
+license("half-v2_7_1.license") {
   public_package_name = "half"
   license_files = [
-    "//third_party/rust_crates/vendor/half-2.6.0/LICENSE",
-    "//third_party/rust_crates/vendor/half-2.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/half-2.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/half-2.7.1/LICENSE",
+    "//third_party/rust_crates/vendor/half-2.7.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/half-2.7.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("half-v2_6_0") {
+rustc_library("half-v2_7_1") {
   crate_name = "half"
-  source_root = "//third_party/rust_crates/vendor/half-2.6.0/src/lib.rs"
-  output_name = "half-f0c9951ad7f78e05"
+  source_root = "//third_party/rust_crates/vendor/half-2.7.1/src/lib.rs"
+  output_name = "half-6ced9fb0bd678a46"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -8087,6 +8087,7 @@ rustc_library("half-v2_6_0") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
+  deps += [ ":zerocopy-v0_8_42" ]
   if (false) {
     deps += [ ":crunchy-v0_2_3" ]
   }
@@ -8095,8 +8096,8 @@ rustc_library("half-v2_6_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f0c9951ad7f78e05",
-    "-Cextra-filename=-f0c9951ad7f78e05",
+    "-Cmetadata=6ced9fb0bd678a46",
+    "-Cextra-filename=-6ced9fb0bd678a46",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -8104,7 +8105,7 @@ rustc_library("half-v2_6_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":half-v2_6_0.license" ]
+  applicable_licenses = [ ":half-v2_7_1.license" ]
 }
 
 license("handlebars-v4_3_5.license") {

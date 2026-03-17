@@ -1039,14 +1039,14 @@ alias(
 )
 
 alias(
-    name = "half-2.6.0",
-    actual = "//third_party/rust_crates/vendor/half-2.6.0:half",
+    name = "half-2.7.1",
+    actual = "//third_party/rust_crates/vendor/half-2.7.1:half",
     tags = ["manual"],
 )
 
 alias(
     name = "half",
-    actual = "//third_party/rust_crates/vendor/half-2.6.0:half",
+    actual = "//third_party/rust_crates/vendor/half-2.7.1:half",
     tags = ["manual"],
 )
 

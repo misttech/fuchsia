@@ -124,7 +124,7 @@ futures-util = "=0.3.31"
 getrandom = { version = "0.3.3", default-features = false, features = ["std"] }
 glob = "0.3.3"
 gpt = "3.0.0"
-half = "2.6.0"
+half = "2.7.1"
 handlebars = "4.3.5"
 hashbrown = { version = "0.16.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
 hashlink = "0.11.0"
