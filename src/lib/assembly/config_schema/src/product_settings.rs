@@ -137,13 +137,10 @@ pub struct StarnixContainerConfig {
     /// Name of the starnix container
     pub name: String,
     /// Path to package containing base resources to include.
-    #[walk_paths]
-    #[schemars(schema_with = "path_schema")]
-    pub base: StarnixBasePackage,
+    pub base: String,
     /// Config for HAL packages
-    #[walk_paths]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub hals: Vec<StarnixHalConfig>,
+    pub hals: Vec<String>,
     /// Whether to skip including HALs as subpackages.
     pub skip_subpackages: bool,
     /// Path to fstab, will go in /odm which overrides the one in /vendor
@@ -167,30 +164,10 @@ pub struct StarnixContainerConfig {
     pub images_or_package: StarnixImagesOrPackage,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
-#[serde(default, deny_unknown_fields, transparent)]
-pub struct StarnixBasePackage {
-    /// Path to the base package
-    #[schemars(schema_with = "path_schema")]
-    pub manifest: Utf8PathBuf,
-}
-
-impl WalkPaths for StarnixBasePackage {
-    fn walk_paths_with_dest<F: WalkPathsFn>(
-        &mut self,
-        found: &mut F,
-        dest: Utf8PathBuf,
-    ) -> anyhow::Result<()> {
-        found(&mut self.manifest, dest, FileType::PackageManifest)
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, WalkPaths)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
 pub enum StarnixImagesOrPackage {
-    #[walk_paths]
     Images(StarnixImages),
-    #[walk_paths]
     #[schemars(schema_with = "crate::common::path_schema")]
     Package(Utf8PathBuf),
 }
@@ -201,14 +178,28 @@ impl Default for StarnixImagesOrPackage {
     }
 }
 
+impl WalkPaths for StarnixImagesOrPackage {
+    fn walk_paths_with_dest<F: WalkPathsFn>(
+        &mut self,
+        found: &mut F,
+        dest: Utf8PathBuf,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Images(images) => images.walk_paths_with_dest(found, dest.join("images")),
+            Self::Package(manifest) => {
+                found(manifest, dest.join("package"), FileType::PackageManifest)
+            }
+        }
+    }
+}
+
 impl StarnixImagesOrPackage {
-    /// Returns true if this is the `Images` variant.
-    fn is_images(&self) -> bool {
+    pub fn is_images(&self) -> bool {
         matches!(self, Self::Images(_))
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, WalkPaths, PartialEq)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Clone, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct StarnixImages {
     /// Path to an Android system image
@@ -225,24 +216,6 @@ pub struct StarnixImages {
     #[schemars(schema_with = "path_schema")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ramdisk: Vec<Utf8PathBuf>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
-#[serde(default, deny_unknown_fields)]
-pub struct StarnixHalConfig {
-    /// Path to the hal package
-    #[schemars(schema_with = "path_schema")]
-    pub manifest: Utf8PathBuf,
-}
-
-impl WalkPaths for StarnixHalConfig {
-    fn walk_paths_with_dest<F: WalkPathsFn>(
-        &mut self,
-        found: &mut F,
-        dest: Utf8PathBuf,
-    ) -> anyhow::Result<()> {
-        found(&mut self.manifest, dest, FileType::PackageManifest)
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -822,22 +795,6 @@ mod tests {
     }
 
     #[test]
-    fn test_starnix_hal_config_walk_paths() {
-        let mut hal_config = StarnixHalConfig { manifest: "path/to/manifest.json".into() };
-        let mut paths = Vec::new();
-        let mut callback = |path: &mut Utf8PathBuf, dest: Utf8PathBuf, file_type: FileType| {
-            paths.push((path.clone(), dest, file_type));
-            Ok(())
-        };
-        hal_config.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
-
-        assert_eq!(
-            paths,
-            vec![("path/to/manifest.json".into(), "dest".into(), FileType::PackageManifest)]
-        );
-    }
-
-    #[test]
     fn product_tee_serialization() {
         let product_config = ProductSettings { tee: Tee::Undefined, ..Default::default() };
         let serialized = serde_json::to_value(product_config).unwrap();
@@ -984,9 +941,9 @@ mod tests {
         images_or_package.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
 
         let expected_images: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = vec![
-            ("path/to/system".into(), "dest/Images/system".into(), FileType::Unknown),
-            ("path/to/vendor".into(), "dest/Images/vendor".into(), FileType::Unknown),
-            ("path/to/ramdisk".into(), "dest/Images/ramdisk/0".into(), FileType::Unknown),
+            ("path/to/system".into(), "dest/images/system".into(), FileType::Unknown),
+            ("path/to/vendor".into(), "dest/images/vendor".into(), FileType::Unknown),
+            ("path/to/ramdisk".into(), "dest/images/ramdisk/0".into(), FileType::Unknown),
         ];
         assert_eq!(paths, expected_images);
 
@@ -1000,7 +957,7 @@ mod tests {
         images_or_package.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
 
         let expected_package: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> =
-            vec![("path/to/package".into(), "dest/Package".into(), FileType::Unknown)];
+            vec![("path/to/package".into(), "dest/package".into(), FileType::PackageManifest)];
         assert_eq!(paths, expected_package);
     }
 }

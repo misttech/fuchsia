@@ -13,10 +13,6 @@ load(
 load(":utils.bzl", "collect_package_file_deps", "create_pkg_detail")
 
 def _fuchsia_starnix_container_impl(ctx):
-    hals_config = []
-    for hal in ctx.attr.hals:
-        hals_config.append(create_pkg_detail(hal))
-
     all_files = [ctx.file.system]
     if ctx.attr.vendor:
         all_files.append(ctx.file.vendor)
@@ -24,14 +20,13 @@ def _fuchsia_starnix_container_impl(ctx):
         all_files.append(ctx.file.fstab)
     all_files += ctx.files.ramdisk
     all_files += ctx.files.init
-    all_files += ctx.files.hals
-    all_files += collect_package_file_deps(ctx.attr.base)
+
     return [
         DefaultInfo(files = depset(all_files)),
         FuchsiaStarnixContainerInfo(
             name = ctx.attr.package_name if ctx.attr.package_name else ctx.label.name,
-            hals = hals_config,
-            base = ctx.attr.base[FuchsiaPackageInfo].package_manifest.path,
+            hals = ctx.attr.hals,
+            base = ctx.attr.base,
             skip_subpackages = ctx.attr.skip_subpackages,
             system = ctx.file.system.path,
             vendor = ctx.file.vendor.path if ctx.attr.vendor else None,
@@ -48,14 +43,11 @@ fuchsia_starnix_container = rule(
         "package_name": attr.string(
             doc = "Name of the starnix container package",
         ),
-        "hals": attr.label_list(
-            doc = "List of HAL packages",
-            allow_files = True,
-            providers = [[FuchsiaAssembledPackageInfo], [FuchsiaPackageInfo]],
+        "hals": attr.string_list(
+            doc = "Package names of HALs to include",
         ),
-        "base": attr.label(
-            doc = "Path to package containing base resources to include",
-            providers = [FuchsiaPackageInfo],
+        "base": attr.string(
+            doc = "Name of package containing base resources to include",
             mandatory = True,
         ),
         "skip_subpackages": attr.bool(

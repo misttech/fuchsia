@@ -62,8 +62,7 @@ mod tests {
     };
     use crate::platform_settings::{BuildType, FeatureSetLevel};
     use crate::product_settings::{
-        ProductPackageDetails, StarnixBasePackage, StarnixContainerConfig, StarnixHalConfig,
-        StarnixImages, StarnixImagesOrPackage,
+        ProductPackageDetails, StarnixContainerConfig, StarnixImages, StarnixImagesOrPackage,
     };
     use assembly_constants::FileEntry;
     use assembly_package_utils::PackageInternalPathBuf;
@@ -188,14 +187,11 @@ mod tests {
               starnix_containers: [
                 {
                   name: "wear_os",
-                  base: "path/to/base",
+                  name: "wear_os",
+                  base: "container_base",
                   hals: [
-                    {
-                      manifest: "path/to/hal_a"
-                    },
-                    {
-                      manifest: "path/to/hal_b"
-                    },
+                    "hal_a",
+                    "hal_b",
                   ],
                   skip_subpackages: true,
                   images_or_package:
@@ -252,14 +248,11 @@ mod tests {
             config.product.starnix_containers,
             vec![StarnixContainerConfig {
                 name: "wear_os".to_string(),
-                base: StarnixBasePackage { manifest: "path/to/base".into() },
+                base: "container_base".to_string(),
                 skip_subpackages: true,
                 fstab: Some("".into()),
                 init: vec![],
-                hals: vec![
-                    StarnixHalConfig { manifest: "path/to/hal_a".into() },
-                    StarnixHalConfig { manifest: "path/to/hal_b".into() },
-                ],
+                hals: vec!["hal_a".to_string(), "hal_b".to_string()],
                 images_or_package: StarnixImagesOrPackage::Images(StarnixImages {
                     system: "path/to/system.img".into(),
                     vendor: Some("path/to/vendor.img".into()),

@@ -29,13 +29,10 @@
         "packages": {
             "base": {
                 "ams-light-test": {
-                    "manifest": "packages/ams-light-test",
-                    "config_data": [
-                        {
-                            "source": "product/packages/base/ams-light-test/config_data/destination.json/config_data.json",
-                            "destination": "destination.json"
-                        }
-                    ]
+                    "manifest": "packages/ams-light-test"
+                },
+                "starnix_container_for_test": {
+                    "manifest": "packages/starnix_container_for_test"
                 }
             }
         },
@@ -56,22 +53,45 @@
                 "repository": "unknown",
                 "version": "unversioned"
             },
-            "pibs": []
+            "pibs": [
+                {
+                    "name": "testing_pib",
+                    "repository": "unknown",
+                    "version": "fake_version_123"
+                }
+            ]
         },
         "starnix_containers": [
             {
                 "name": "starnix_container_for_test",
-                "base": "packages/ams-light-test",
+                "base": "pkg_for_test",
                 "hals": [
-                    {
-                        "manifest": "packages/ams-light-test"
-                    }
+                    "ams-light-test"
                 ],
                 "skip_subpackages": true,
                 "images_or_package": {
-                    "package": "product/starnix_containers/0/images_or_package/Package/package_manifest.json"
+                    "package": "packages/starnix_container_for_test"
                 }
             }
         ]
+    },
+    "product_input_bundles": {
+        "testing_pib": {
+            "packages": {
+                "for_product_config": {
+                    "ams-light-test": {
+                        "manifest": "packages/ams-light-test"
+                    },
+                    "pkg_for_test": {
+                        "manifest": "packages/pkg_for_test"
+                    }
+                }
+            },
+            "release_info": {
+                "name": "testing_pib",
+                "repository": "unknown",
+                "version": "fake_version_123"
+            }
+        }
     }
 }

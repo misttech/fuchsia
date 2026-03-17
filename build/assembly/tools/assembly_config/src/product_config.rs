@@ -4,8 +4,8 @@
 
 use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs};
 use anyhow::{Context, Result};
-use assembly_config_schema::ProductConfig;
-use assembly_config_schema::product_settings::StarnixImagesOrPackage;
+use assembly_config_schema::product_settings::{ProductPackageDetails, StarnixImagesOrPackage};
+use assembly_config_schema::{BuildType, ProductConfig};
 use assembly_container::AssemblyContainer;
 use assembly_release_info::{ProductReleaseInfo, ReleaseInfo};
 use assembly_util::{get_release_repository, get_release_version, validate_release_info_string};
@@ -47,6 +47,11 @@ pub fn new(args: &ProductArgs) -> Result<()> {
     // Build starnix container
     let starnix_containers = &mut config.product.starnix_containers;
     let temp_dir = tempfile::tempdir().context("creating temp dir for starnix containers")?;
+    let package_set = if config.platform.build_type == BuildType::Eng {
+        &mut config.product.packages.cache
+    } else {
+        &mut config.product.packages.base
+    };
     for container in starnix_containers {
         let (system, ramdisk, vendor) = match &container.images_or_package {
             StarnixImagesOrPackage::Images(i) => {
@@ -61,11 +66,38 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         std::fs::create_dir_all(&outdir_path).context("creating container temp dir")?;
         let outdir =
             Utf8PathBuf::try_from(outdir_path).context("converting temp dir path to utf8")?;
+        let base = find_package_in_pibs(&config.product_input_bundles, &container.base)
+            .with_context(|| {
+                format!(
+                    "finding starnix base package '{}' in product input bundles",
+                    &container.base
+                )
+            })?
+            .clone();
+        let hals = container
+            .hals
+            .iter()
+            .map(|name| {
+                let hal_package = find_package_in_pibs(&config.product_input_bundles, name)
+                    .with_context(|| {
+                        format!("finding starnix hal package '{}' in product input bundles", name)
+                    })?;
+                package_set.insert(
+                    name.clone(),
+                    ProductPackageDetails {
+                        manifest: hal_package.clone(),
+                        config_data: Vec::new(),
+                    },
+                );
+                Ok(hal_package.clone())
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         StarnixContainerGenerator {
             name: container.name.clone(),
             outdir: outdir.clone(),
-            base: container.base.manifest.clone(),
-            hals: container.hals.iter().map(|hal| hal.manifest.clone()).collect(),
+            base,
+            hals,
             skip_subpackages: container.skip_subpackages,
             system,
             ramdisk,
@@ -77,7 +109,11 @@ pub fn new(args: &ProductArgs) -> Result<()> {
 
         // Update the container to point to the new package.
         let manifest_path = outdir.join("package_manifest.json");
-        container.images_or_package = StarnixImagesOrPackage::Package(manifest_path);
+        container.images_or_package = StarnixImagesOrPackage::Package(manifest_path.clone());
+        package_set.insert(
+            container.name.clone(),
+            ProductPackageDetails { manifest: manifest_path, config_data: vec![] },
+        );
     }
     // Build systems generally don't add package names to the config, so it
     // serializes index numbers in place of package names by default.
@@ -199,6 +235,15 @@ fn find_package_in_product<'a>(
             return None;
         },
     )
+}
+
+fn find_package_in_pibs<'a>(
+    product_input_bundles: &'a std::collections::BTreeMap<String, ProductInputBundle>,
+    package_name: impl AsRef<str>,
+) -> Option<&'a Utf8PathBuf> {
+    product_input_bundles.values().find_map(|pib| {
+        pib.packages.for_product_config.get(package_name.as_ref()).map(|pkg| &pkg.manifest)
+    })
 }
 
 #[cfg(test)]

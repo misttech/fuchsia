@@ -24,6 +24,7 @@ load(
     "fuchsia_prebuilt_product_configuration",
     "fuchsia_prebuilt_product_configuration_extract_package",
     "fuchsia_product_configuration",
+    "fuchsia_product_input_bundle",
     "fuchsia_product_ota_config",
     "fuchsia_starnix_container",
     "fuchsia_virtual_device",
@@ -60,6 +61,15 @@ AMS_LIGHT_TEST_ABI_REVISION = "0xECCEA2F70ACD6FC0"
 fuchsia_prebuilt_package(
     name = "prebuilt_ams_light",
     archive = ":test_data/ams-light-test-0.far",
+)
+
+fuchsia_package(
+    name = "prebuilt_ams_light_hal",
+    package_name = "ams-light-test-hal",
+    components = [
+        ":empty_component",
+    ],
+    fuchsia_api_level = "HEAD",
 )
 
 fuchsia_prebuilt_package(
@@ -273,16 +283,25 @@ _testing_product_config_json = {
 
 fuchsia_starnix_container(
     name = "starnix_container_for_test",
-    base = ":prebuilt_ams_light",
+    base = "pkg_for_test",
     fstab = None,
     hals = [
-        ":prebuilt_ams_light",
+        "ams-light-test",
     ],
     init = [],
     ramdisk = [],
     skip_subpackages = True,
     system = "test_data/ext4.img",
     vendor = "test_data/ext4.img",
+)
+
+fuchsia_product_input_bundle(
+    name = "testing_pib",
+    packages_for_product_config = [
+        ":container_base_pkg",
+        ":prebuilt_ams_light",
+    ],
+    version = "fake_version_123",
 )
 
 # buildifier: leave-alone
@@ -292,6 +311,9 @@ fuchsia_product_configuration(
     # Product configuration items
     base_packages = [
         ":assembled_ams_light",
+    ],
+    product_input_bundles = [
+        ":testing_pib",
     ],
     base_driver_packages = [
         ":prebuilt_driver",

@@ -95,13 +95,14 @@ def _fuchsia_product_configuration_impl(ctx):
     for container in ctx.attr.starnix_containers:
         container_detail = container[FuchsiaStarnixContainerInfo]
 
-        images = {
-            "system": container_detail.system,
-        }
+        images = {}
+        if container_detail.system:
+            images["system"] = container_detail.system
         if container_detail.vendor:
             images["vendor"] = container_detail.vendor
         if container_detail.ramdisk:
             images["ramdisk"] = container_detail.ramdisk
+
         starnix_containers.append(
             {
                 "name": container_detail.name,
@@ -110,9 +111,7 @@ def _fuchsia_product_configuration_impl(ctx):
                 "init": container_detail.init,
                 "hals": container_detail.hals,
                 "skip_subpackages": container_detail.skip_subpackages,
-                "images_or_package": {
-                    "images": images,
-                },
+                "images_or_package": {"images": images},
             },
         )
 
