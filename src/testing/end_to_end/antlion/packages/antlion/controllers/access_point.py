@@ -889,7 +889,7 @@ def setup_ap(
     setup_bridge: bool = False,
     is_ipv6_enabled: bool = False,
     is_nat_enabled: bool = True,
-    country: str = "US",
+    country: str | None = None,
 ) -> list[str]:
     """Creates a hostapd profile and runs it on an ap. This is a convenience
     function that allows us to start an ap with a single function, without first

@@ -1,7 +1,6 @@
 # Copyright 2025 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
 from __future__ import annotations
 
 from typing import Any, FrozenSet, TypeVar
@@ -61,7 +60,7 @@ def create_ap_preset(
     wnm_features: FrozenSet[hostapd_constants.WnmFeature] = frozenset(),
     bss_settings: list[Any] = [],
     ap_max_inactivity: int | None = None,
-    country: str = "US",
+    country: str | None = None,
 ) -> hostapd_config.HostapdConfig:
     """AP preset config generator.  This a wrapper for hostapd_config but
        but supplies the default settings for the preset that is selected.
@@ -261,6 +260,7 @@ def create_ap_preset(
             vht_bandwidth=None,
             wnm_features=wnm_features,
             ap_max_inactivity=ap_max_inactivity,
+            country=country,
         )
     elif profile_name == "whirlwind_11ag_legacy":
         if frequency < 5000:
@@ -288,6 +288,7 @@ def create_ap_preset(
             vht_bandwidth=None,
             wnm_features=wnm_features,
             ap_max_inactivity=ap_max_inactivity,
+            country=country,
         )
     elif profile_name == "mistral":
         hidden = _get_or_default(hidden, False)

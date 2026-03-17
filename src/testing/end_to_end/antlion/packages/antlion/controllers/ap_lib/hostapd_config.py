@@ -100,7 +100,7 @@ class HostapdConfig(object):
         additional_parameters: dict[str, Any] | None = None,
         set_ap_defaults_profile: str = "whirlwind",
         ap_max_inactivity: int | None = None,
-        country: str = "US",
+        country: str | None = None,
     ) -> None:
         """Construct a HostapdConfig.
 
@@ -149,7 +149,8 @@ class HostapdConfig(object):
             set_ap_defaults_profile: profile name to load defaults from
             ap_max_inactivity: See hostapd.conf's ap_max_inactivity setting.
             country: The two-character country code for the AP to beacon that
-                it is operating in.
+                it is operating in. If none is provided, but one is required,
+                US will be used.
         """
         if n_capabilities is None:
             n_capabilities = []
@@ -688,12 +689,15 @@ class HostapdConfig(object):
             # local_pwr_constraint. And to set local_pwr_constraint,
             # we must first set ieee80211d. And to set ieee80211d, ...
             # Point being: order matters here.
-            conf[
-                "country_code"
-            ] = self._country  # Required for local_pwr_constraint
+            # Country is required for local_pwr_constraint
+            conf["country_code"] = self._country if self._country else "US"
             conf["ieee80211d"] = 1  # Required for local_pwr_constraint
             conf["local_pwr_constraint"] = 0  # No local constraint
             conf["spectrum_mgmt_required"] = 1  # Requires local_pwr_constraint
+        elif self._country:
+            conf["country_code"] = self._country
+            # Required for the country to be sent in beacons.
+            conf["ieee80211d"] = 1
         if self._ap_max_inactivity:
             conf["ap_max_inactivity"] = self._ap_max_inactivity
 
