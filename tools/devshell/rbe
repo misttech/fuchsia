@@ -11,9 +11,10 @@
 ##      Verify authentication to RBE services through reclient and bazel.
 ##      Options:
 ##        -f,--force: Always request a fresh authentication token.
-##        All other unknown options are forwarded to 'gcloud auth login'.
+##        All other unknown options are forwarded to 'gcloud auth application-default login'.
 ##      Testing tips:
 ##        To revoke gcloud credentials: gcloud auth revoke
+##        To revoke ADC credentials: rm ~/.config/gcloud/application_default_credentials.json
 ##        To revoke LOAS credentials: loas_destroy
 ##
 ##  fx rbe check_loas [options...]
@@ -124,9 +125,9 @@ function ensure_gcloud() {
   }
 }
 
-readonly global_gcloud_auth_args=(auth login --update-adc)
+readonly global_gcloud_auth_args=(auth application-default login)
 function gcloud_auth() {
-  # "$@" args are forwarded to 'gcloud auth login'
+  # "$@" args are forwarded to 'gcloud auth application-default login'
   ensure_gcloud &&
     echo "running: gcloud ${global_gcloud_auth_args[*]}" "$@" &&
     echo "If you see a warning about running on a \"Google Compute Engine virtual machine\", hit 'Y' to continue to use a personal account." &&
@@ -350,8 +351,11 @@ function ensure_loas() {
 # only last one hour.
 function ensure_oauth() {
   ensure_gcloud && {
-    # Check for the user's id among list of credentialed accounts.
-    "$gcloud" auth list 2>&1 | grep -q -w "$USER@google.com" || gcloud_auth
+    # Check if Application Default Credentials are valid.
+    # We used to check `gcloud auth list`, but that doesn't guarantee
+    # that ADC is set up, especially for restricted users (TVCs) who
+    # need to use `gcloud auth application-default login` specifically.
+    "$gcloud" auth application-default print-access-token &>/dev/null || gcloud_auth
   }
 }
 

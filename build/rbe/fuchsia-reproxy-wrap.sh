@@ -291,12 +291,12 @@ EOF
     }
 
     # Instruct user to authenticate if needed.
-    "$gcloud" auth list 2>&1 | grep -q -w "$USER@google.com" || {
+    "$gcloud" auth application-default print-access-token &>/dev/null || {
       cat <<EOF
-Did not find credentialed account (\`gcloud auth list\`): $USER@google.com.
+Did not find valid Application Default Credentials (ADC).
 
 To authenticate, run 'fx rbe auth' or
-  gcloud auth login --update-adc
+  gcloud auth application-default login
 
 EOF
       exit 1
