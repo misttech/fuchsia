@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import argparse
+import os
 import subprocess
 
 from fuchsia.tools.fuchsia_task_lib import *
@@ -53,13 +54,21 @@ class FuchsiaTaskRegisterDriver(FuchsiaTask):
             else "{{PACKAGE_NAME}}"
         )
 
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(os.environ)
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+
         subprocess.check_call(
             [
                 *ffx,
                 "driver",
                 "register",
                 args.url.replace("{{PACKAGE_NAME}}", package_name),
-            ]
+            ],
+            env=env,
         )
 
         # If disable url is provided, we will disable the pre-existing driver
@@ -72,7 +81,8 @@ class FuchsiaTaskRegisterDriver(FuchsiaTask):
                     "driver",
                     "disable",
                     args.disable_url.replace("{{PACKAGE_NAME}}", package_name),
-                ]
+                ],
+                env=env,
             )
 
 

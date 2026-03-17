@@ -4,6 +4,7 @@
 """Validate the contents of component manifests."""
 
 import argparse
+import os
 import subprocess
 
 
@@ -49,6 +50,13 @@ def validate_component_manifest(
     #   meta/hello_rust.cm
     #   meta/package
 
+    # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+    # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+    # inheritance which can confuse child Python processes.
+    env = dict(os.environ)
+    env.pop("RUNFILES_DIR", None)
+    env.pop("RUNFILES_MANIFEST_FILE", None)
+
     subprocess.check_call(
         [
             cmc,
@@ -57,7 +65,8 @@ def validate_component_manifest(
             component_manifest,
             "--package-manifest",
             package_manifest,
-        ]
+        ],
+        env=env,
     )
 
 

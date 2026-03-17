@@ -4,6 +4,7 @@
 """Tool to check that the binary is not exporting restricted symbols."""
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -37,9 +38,17 @@ def parse_args():
 
 def run(*command):
     try:
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(os.environ)
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+
         return subprocess.check_output(
             command,
             text=True,
+            env=env,
         ).strip()
     except subprocess.CalledProcessError as e:
         print(e.stdout)

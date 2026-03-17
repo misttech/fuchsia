@@ -79,7 +79,15 @@ def _invoke_identify_license(
     ]
 
     _log(f"identify_license invocation = {command}")
-    result = subprocess.run(command, text=True, capture_output=True)
+
+    # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+    # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+    # inheritance which can confuse child Python processes.
+    env = dict(os.environ)
+    env.pop("RUNFILES_DIR", None)
+    env.pop("RUNFILES_MANIFEST_FILE", None)
+
+    result = subprocess.run(command, text=True, capture_output=True, env=env)
     if result.returncode != 0:
         raise RuntimeError(
             f"""Failed to invoke {command}

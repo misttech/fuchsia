@@ -66,6 +66,13 @@ def main():
         create_empty(args.ids_txt)
         return 0
 
+    # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+    # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+    # inheritance which can confuse child Python processes.
+    env = dict(os.environ)
+    env.pop("RUNFILES_DIR", None)
+    env.pop("RUNFILES_MANIFEST_FILE", None)
+
     # Strip symbols from the ELF.
     subprocess.check_call(
         [
@@ -73,7 +80,8 @@ def main():
             "--strip-all",
             args.elf_with_symbols_file,
             args.elf_stripped,
-        ]
+        ],
+        env=env,
     )
 
     # Get Build ID.

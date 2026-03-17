@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import argparse
+import os
 import re
 import subprocess
 from enum import Enum
@@ -91,7 +92,14 @@ class FuchsiaTaskTestEnumeratedComponents(FuchsiaTask):
             retries_left = i - 1
             is_first_try = retries_left == retries
             try:
-                subprocess.check_call(cmd)
+                # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+                # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+                # inheritance which can confuse child Python processes.
+                env = dict(os.environ)
+                env.pop("RUNFILES_DIR", None)
+                env.pop("RUNFILES_MANIFEST_FILE", None)
+
+                subprocess.check_call(cmd, env=env)
                 return (
                     TestingResult.PASS if is_first_try else TestingResult.FLAKE
                 )
@@ -121,6 +129,13 @@ class FuchsiaTaskTestEnumeratedComponents(FuchsiaTask):
         )
 
         try:
+            # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+            # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+            # inheritance which can confuse child Python processes.
+            env = dict(os.environ)
+            env.pop("RUNFILES_DIR", None)
+            env.pop("RUNFILES_MANIFEST_FILE", None)
+
             contents = subprocess.check_output(
                 [
                     args.ffx_package,
@@ -130,6 +145,7 @@ class FuchsiaTaskTestEnumeratedComponents(FuchsiaTask):
                     "list",
                     args.package_archive,
                 ],
+                env=env,
                 text=True,
             )
             component_names = re.findall(r"\bmeta/(\S+)\.cm\b", contents)

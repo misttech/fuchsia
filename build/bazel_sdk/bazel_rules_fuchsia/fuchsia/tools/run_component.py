@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import argparse
+import os
 import subprocess
 
 from fuchsia.tools.fuchsia_task_lib import *
@@ -64,6 +65,13 @@ class FuchsiaTaskRunComponent(FuchsiaTask):
             else args.url
         )
 
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(os.environ)
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+
         if args.session:
             subprocess.check_call(
                 [
@@ -71,7 +79,8 @@ class FuchsiaTaskRunComponent(FuchsiaTask):
                     "session",
                     "add",
                     url,
-                ]
+                ],
+                env=env,
             )
         else:
             subprocess.check_call(
@@ -82,7 +91,8 @@ class FuchsiaTaskRunComponent(FuchsiaTask):
                     args.moniker,
                     url,
                     "--recreate",
-                ]
+                ],
+                env=env,
             )
 
 

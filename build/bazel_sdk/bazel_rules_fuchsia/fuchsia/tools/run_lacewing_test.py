@@ -113,7 +113,15 @@ def run_lacewing_test(
         *test_args,
     ]
     log(f"DEBUG: Running subcommand: {shlex.join(map(str, command))}")
-    return subprocess.run(command).returncode
+
+    # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+    # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+    # inheritance which can confuse child Python processes.
+    env = dict(os.environ)
+    env.pop("RUNFILES_DIR", None)
+    env.pop("RUNFILES_MANIFEST_FILE", None)
+
+    return subprocess.run(command, env=env).returncode
 
 
 def copy_lacewing_outputs(test_bed: str, output_path: Path) -> None:

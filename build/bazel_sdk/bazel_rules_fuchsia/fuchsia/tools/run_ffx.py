@@ -4,14 +4,23 @@
 # found in the LICENSE file.
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 
 
 def run(*command) -> None:
     try:
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(os.environ)
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+
         subprocess.check_call(
             " ".join([str(arg) for arg in command]),
+            env=env,
             shell=True,
         )
     except subprocess.CalledProcessError as e:

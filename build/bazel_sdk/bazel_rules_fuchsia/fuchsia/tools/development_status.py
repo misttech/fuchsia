@@ -5,6 +5,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -13,8 +14,16 @@ from fuchsia.tools.fuchsia_task_lib import Terminal
 
 def run(*command):
     try:
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(os.environ)
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+
         return subprocess.check_output(
             command,
+            env=env,
             text=True,
         ).strip()
     except subprocess.CalledProcessError as e:
@@ -24,8 +33,17 @@ def run(*command):
 
 def run_checked(*command):
     try:
+        # Workaround for https://github.com/bazel-contrib/rules_python/issues/3518
+        # Clean up environment to avoid RUNFILES_DIR/RUNFILES_MANIFEST_FILE
+        # inheritance which can confuse child Python processes.
+        env = dict(kwargs.get("env", os.environ))
+        env.pop("RUNFILES_DIR", None)
+        env.pop("RUNFILES_MANIFEST_FILE", None)
+        kwargs["env"] = env
+
         subprocess.run(
             command,
+            env=env,
             stderr=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
         ).check_returncode()
