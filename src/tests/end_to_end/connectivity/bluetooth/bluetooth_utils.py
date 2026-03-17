@@ -3,12 +3,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Bluetooth Utils for Sample Test"""
+import asyncio
 import logging
 import re
-import time
 from typing import Any, List
 
-from honeydew.fuchsia_device import fuchsia_device
+import fuchsia_async_extension
+from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_WAITING_SECS = 10
@@ -40,15 +41,43 @@ def retrieve_device_id(
     raise FileNotFoundError
 
 
-def forget_all_bt_devices(device: fuchsia_device.FuchsiaDevice) -> None:
+async def forget_all_bt_devices_async(
+    device: async_fuchsia_device.AsyncFuchsiaDevice,
+) -> None:
     """Unpairs and deletes any BT peer pairing data from the device."""
-    data = device.bluetooth_gap.get_known_remote_devices()
+    data = await device.bluetooth_gap.get_known_remote_devices()
     _LOGGER.info(data)
     for identifier in data.keys():
         if data[str(identifier)]["connected"]:
-            device.bluetooth_gap.forget_device(
+            await device.bluetooth_gap.forget_device(
                 identifier=data[identifier]["id"]
             )
+
+
+def forget_all_bt_devices(device: fuchsia_device.FuchsiaDevice) -> None:
+    """Unpairs and deletes any BT peer pairing data from the device."""
+    fuchsia_async_extension.get_loop().run_until_complete(
+        forget_all_bt_devices_async(device.as_async())
+    )
+
+
+async def verify_bt_connection_async(
+    identifier: str,
+    device: async_fuchsia_device.AsyncFuchsiaDevice,
+    wait_secs: int = DEFAULT_WAITING_SECS,
+    num_retries: int = DEFAULT_RETRIES_ATTEMPT,
+) -> bool:
+    """Verifies BT connection between peer identifier and device."""
+    _LOGGER.info("Checking if device is connected to %s", identifier)
+    for _ in range(num_retries):
+        data = await device.bluetooth_gap.get_known_remote_devices()
+        _LOGGER.info(data)
+        if data[str(identifier)]["connected"]:
+            _LOGGER.info("Connection is active")
+            return True
+        _LOGGER.info("Connection is not active, Checking in 10 seconds")
+        await asyncio.sleep(wait_secs)
+    return False
 
 
 def verify_bt_connection(
@@ -58,15 +87,28 @@ def verify_bt_connection(
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
 ) -> bool:
     """Verifies BT connection between peer identifier and device."""
-    _LOGGER.info("Checking if device is connected to %s", identifier)
+    return fuchsia_async_extension.get_loop().run_until_complete(
+        verify_bt_connection_async(
+            identifier, device.as_async(), wait_secs, num_retries
+        )
+    )
+
+
+async def verify_bt_pairing_async(
+    identifier: str,
+    device: async_fuchsia_device.AsyncFuchsiaDevice,
+    wait_secs: int = DEFAULT_WAITING_SECS,
+    num_retries: int = DEFAULT_RETRIES_ATTEMPT,
+) -> bool:
+    """Verifies BT pairing between peer identifier and device"""
+    _LOGGER.info("Checking if device is paired to %s", identifier)
     for _ in range(num_retries):
-        data = device.bluetooth_gap.get_known_remote_devices()
-        _LOGGER.info(data)
-        if data[str(identifier)]["connected"]:
-            _LOGGER.info("Connection is active")
+        data = await device.bluetooth_gap.get_known_remote_devices()
+        if data[str(identifier)]["bonded"]:
+            _LOGGER.info("Pairing is complete")
             return True
-        _LOGGER.info("Connection is not active, Checking in 10 seconds")
-        time.sleep(wait_secs)
+        _LOGGER.info("Pairing is not completed, Checking in 10 seconds")
+        await asyncio.sleep(wait_secs)
     return False
 
 
@@ -77,12 +119,8 @@ def verify_bt_pairing(
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
 ) -> bool:
     """Verifies BT pairing between peer identifier and device"""
-    _LOGGER.info("Checking if device is paired to %s", identifier)
-    for _ in range(num_retries):
-        data = device.bluetooth_gap.get_known_remote_devices()
-        if data[str(identifier)]["bonded"]:
-            _LOGGER.info("Pairing is complete")
-            return True
-        _LOGGER.info("Pairing is not completed, Checking in 10 seconds")
-        time.sleep(wait_secs)
-    return False
+    return fuchsia_async_extension.get_loop().run_until_complete(
+        verify_bt_pairing_async(
+            identifier, device.as_async(), wait_secs, num_retries
+        )
+    )
