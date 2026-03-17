@@ -5,6 +5,7 @@
 use crate::disk_builder::{DataSpec, DiskBuilder, VolumesSpec};
 use anyhow::Error;
 use fake_keymint::FakeKeymint;
+
 use ffeedback::FileReportResults;
 use fidl::prelude::*;
 use fs_management::filesystem::DirBasedBlockConnector;
@@ -13,14 +14,15 @@ use fuchsia_component_test::LocalComponentHandles;
 use futures::channel::mpsc::{self};
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
 
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_feedback as ffeedback,
-    fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_security_keymint as fkeymint, fidl_fuchsia_storage_partitions as fpartitions,
-};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_feedback as ffeedback;
+use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_security_keymint as fkeymint;
+use fidl_fuchsia_storage_partitions as fpartitions;
 
 /// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
 const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
@@ -29,13 +31,21 @@ pub fn new_mocks(
     vmo: Option<zx::Vmo>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     force_fxfs_provisioner_failure: bool,
+    keymint: Arc<FakeKeymint>,
 ) -> impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), Error>> + Sync + Send + 'static
 {
     let vmo = vmo.map(Arc::new);
     let mock = move |handles: LocalComponentHandles| {
         let vmo_clone = vmo.clone();
-        run_mocks(handles, vmo_clone, crash_reports_sink.clone(), force_fxfs_provisioner_failure)
-            .boxed()
+        let keymint_clone = keymint.clone();
+        run_mocks(
+            handles,
+            vmo_clone,
+            crash_reports_sink.clone(),
+            force_fxfs_provisioner_failure,
+            keymint_clone,
+        )
+        .boxed()
     };
 
     mock
@@ -46,15 +56,23 @@ async fn run_mocks(
     vmo: Option<Arc<zx::Vmo>>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     force_fxfs_provisioner_failure: bool,
+    keymint_instance: Arc<FakeKeymint>,
 ) -> Result<(), Error> {
+    let keymint_for_sealing = keymint_instance.clone();
+    let keymint_for_admin = keymint_instance.clone();
+
     let export = vfs::pseudo_directory! {
         "svc" => vfs::pseudo_directory! {
-            fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-                run_keymint(stream)
-            }),
-            fkeymint::AdminMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-                run_keymint_admin(stream)
-            }),
+            fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(
+                move |stream| {
+                    run_keymint(stream, keymint_for_sealing.clone()).boxed()
+                }
+            ),
+            fkeymint::AdminMarker::PROTOCOL_NAME => vfs::service::host(
+                move |stream| {
+                    run_keymint_admin(stream, keymint_for_admin.clone()).boxed()
+                }
+            ),
             fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
                 let vmo_clone = vmo.clone();
                 run_boot_items(stream, vmo_clone)
@@ -63,7 +81,10 @@ async fn run_mocks(
                 run_crash_reporter(stream, crash_reports_sink.clone())
             }),
             ffxfsprovisioner::FxfsProvisionerMarker::PROTOCOL_NAME => vfs::service::host(
-                move |stream| { run_fxfs_provisioner(stream, force_fxfs_provisioner_failure) }
+                move |stream| {
+                    run_fxfs_provisioner(
+                        stream, force_fxfs_provisioner_failure, keymint_instance.clone())
+                }
             ),
         },
     };
@@ -122,6 +143,7 @@ async fn run_crash_reporter(
 async fn run_fxfs_provisioner(
     mut stream: ffxfsprovisioner::FxfsProvisionerRequestStream,
     force_failure: bool,
+    keymint: Arc<FakeKeymint>,
 ) {
     while let Some(request) = stream.next().await {
         match request.unwrap() {
@@ -152,6 +174,7 @@ async fn run_fxfs_provisioner(
                     Box::new(DirBasedBlockConnector::new(partition_service, "/volume".to_string()));
 
                 let mut disk_builder = DiskBuilder::new();
+                disk_builder.with_keymint_instance(keymint.clone());
                 disk_builder
                     .format_volumes(VolumesSpec { fxfs_blob: true, create_data_partition: true })
                     .format_data(DataSpec { format: Some("fxfs"), ..Default::default() });
@@ -166,14 +189,10 @@ async fn run_fxfs_provisioner(
     }
 }
 
-static KEYMINT: LazyLock<FakeKeymint> = LazyLock::new(FakeKeymint::default);
-
-async fn run_keymint(stream: fkeymint::SealingKeysRequestStream) {
-    let keymint = &*KEYMINT;
+async fn run_keymint(stream: fkeymint::SealingKeysRequestStream, keymint: Arc<FakeKeymint>) {
     keymint.run_sealing_keys_service(stream).await.unwrap();
 }
 
-async fn run_keymint_admin(stream: fkeymint::AdminRequestStream) {
-    let keymint = &*KEYMINT;
+async fn run_keymint_admin(stream: fkeymint::AdminRequestStream, keymint: Arc<FakeKeymint>) {
     keymint.run_admin_service(stream).await.unwrap();
 }

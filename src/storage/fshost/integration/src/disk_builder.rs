@@ -5,16 +5,20 @@
 use blob_writer::BlobWriter;
 use block_client::{BlockClient as _, RemoteBlockClient};
 use delivery_blob::{CompressionMode, Type1Blob};
-use fake_keymint::with_keymint_service;
+use fake_keymint::{FakeKeymint, with_keymint_service};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{
     BlobCreatorProxy, CryptManagementMarker, CryptManagementProxy, CryptMarker, KeyPurpose,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_logger as flogger;
+use fidl_fuchsia_storage_block as fblock;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, Filesystem, ServingMultiVolumeFilesystem,
 };
 use fs_management::format::constants::{F2FS_MAGIC, FXFS_MAGIC, MINFS_MAGIC};
 use fs_management::{BLOBFS_TYPE_GUID, DATA_TYPE_GUID, FVM_TYPE_GUID, Fvm, Fxfs};
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_svc;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_hash::Hash;
@@ -30,10 +34,6 @@ use uuid::Uuid;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, HandleBased};
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_logger as flogger, fidl_fuchsia_storage_block as fblock,
-    fuchsia_async as fasync,
-};
 
 pub const TEST_DISK_BLOCK_SIZE: u32 = 512;
 pub const FVM_SLICE_SIZE: u64 = 32 * 1024;
@@ -78,18 +78,24 @@ const KEY_BAG_CONTENTS: &'static str = r#"
     }
 }"#;
 
-async fn generate_keymint_file_contents() -> Vec<u8> {
-    with_keymint_service(|keymint, _| async move {
-        let keymint = keymint.into_proxy();
+async fn generate_keymint_file_contents(
+    old_blob: Option<&[u8]>,
+    custom_keymint: Option<Arc<FakeKeymint>>,
+) -> Vec<u8> {
+    let serve_keymint = |keymint_proxy: fidl_fuchsia_security_keymint::SealingKeysProxy| async move {
         let key_info = b"fuchsia";
-        let key_blob = keymint.create_sealing_key(&key_info[..]).await.unwrap().unwrap();
+        let key_blob = keymint_proxy.create_sealing_key(&key_info[..]).await.unwrap().unwrap();
+        assert!(!key_blob.is_empty());
 
         let data_key_sealed =
-            keymint.seal(&key_info[..], &key_blob, DATA_KEY.deref()).await.unwrap().unwrap();
-        let metadata_key_sealed =
-            keymint.seal(&key_info[..], &key_blob, METADATA_KEY.deref()).await.unwrap().unwrap();
+            keymint_proxy.seal(&key_info[..], &key_blob, DATA_KEY.deref()).await.unwrap().unwrap();
+        let metadata_key_sealed = keymint_proxy
+            .seal(&key_info[..], &key_blob, METADATA_KEY.deref())
+            .await
+            .unwrap()
+            .unwrap();
 
-        let json = json!({
+        let mut json = json!({
             "sealing_key_info": key_info,
             "sealing_key_blob": key_blob,
             "sealed_keys": {
@@ -98,10 +104,56 @@ async fn generate_keymint_file_contents() -> Vec<u8> {
             }
         });
 
-        Ok(serde_json::to_vec_pretty(&json).unwrap())
-    })
-    .await
-    .unwrap()
+        if let Some(old) = old_blob {
+            json.as_object_mut().unwrap().insert(
+                "old_blob".to_string(),
+                serde_json::Value::Array(
+                    old.iter().map(|&b| serde_json::Value::Number(b.into())).collect(),
+                ),
+            );
+        }
+
+        serde_json::to_vec_pretty(&json).unwrap()
+    };
+
+    if let Some(fake_keymint) = custom_keymint {
+        // When we have a custom injected mock FakeKeymint, we don't need to spin up FIDL proxies
+        // and background tasks. The mock natively generates and registers its own bytes.
+        let key_info = b"fuchsia".to_vec();
+
+        // We simulate what the hardware would do during an initial "seal" of data and
+        // metadata keys.
+        let key_blob = fake_keymint.generate_static_sealing_key(&key_info);
+
+        let data_key_sealed =
+            fake_keymint.generate_static_sealed_data(&key_info, &key_blob, DATA_KEY.deref());
+        let metadata_key_sealed =
+            fake_keymint.generate_static_sealed_data(&key_info, &key_blob, METADATA_KEY.deref());
+
+        let mut json = json!({
+            "sealing_key_info": key_info,
+            "sealing_key_blob": key_blob,
+            "sealed_keys": {
+                "data.data": data_key_sealed,
+                "data.metadata": metadata_key_sealed,
+            }
+        });
+
+        if let Some(old) = old_blob {
+            json.as_object_mut().unwrap().insert(
+                "old_blob".to_string(),
+                serde_json::Value::Array(
+                    old.iter().map(|&b| serde_json::Value::Number(b.into())).collect(),
+                ),
+            );
+        }
+
+        serde_json::to_vec_pretty(&json).unwrap()
+    } else {
+        with_keymint_service(|proxy, _| async move { Ok(serve_keymint(proxy.into_proxy()).await) })
+            .await
+            .unwrap()
+    }
 }
 
 pub const TEST_BLOB_CONTENTS: [u8; 1000] = [1; 1000];
@@ -199,6 +251,7 @@ pub async fn write_blob(blob_creator: BlobCreatorProxy, data: &[u8]) -> Hash {
     hash
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Disk {
     Prebuilt(zx::Vmo, Option<[u8; 16]>),
     Builder(DiskBuilder),
@@ -248,7 +301,6 @@ enum FxfsType {
     FxBlob(ServingMultiVolumeFilesystem, RealmInstance),
 }
 
-#[derive(Debug)]
 pub struct DiskBuilder {
     size: u64,
     // Overrides all other options.  The disk will be unformatted.
@@ -271,6 +323,34 @@ pub struct DiskBuilder {
     // The type guid of the ramdisk when it's created for the test fshost.
     type_guid: Option<[u8; 16]>,
     system_partition_label: &'static str,
+    /// If set, pre-populates the keymint sealing key metadata on disk with
+    /// this content as the previous sealing key. Our crypt policy
+    /// code should attempt to delete this key when unseal is called.
+    keymint_old_blob: Option<Vec<u8>>,
+    /// Allows a keymint instance to be provided instead of the default one.
+    keymint: Option<std::sync::Arc<FakeKeymint>>,
+}
+
+impl std::fmt::Debug for DiskBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiskBuilder")
+            .field("size", &self.size)
+            .field("uninitialized", &self.uninitialized)
+            .field("blob_hash", &self.blob_hash)
+            .field("data_volume_size", &self.data_volume_size)
+            .field("fvm_slice_size", &self.fvm_slice_size)
+            .field("data_spec", &self.data_spec)
+            .field("volumes_spec", &self.volumes_spec)
+            .field("corrupt_data", &self.corrupt_data)
+            .field("gpt", &self.gpt)
+            .field("format_volume_manager", &self.format_volume_manager)
+            .field("legacy_data_label", &self.legacy_data_label)
+            .field("fs_switch", &self.fs_switch)
+            .field("type_guid", &self.type_guid)
+            .field("system_partition_label", &self.system_partition_label)
+            .field("keymint_old_blob", &self.keymint_old_blob)
+            .finish_non_exhaustive()
+    }
 }
 
 impl DiskBuilder {
@@ -296,11 +376,28 @@ impl DiskBuilder {
             fs_switch: None,
             type_guid: Some(DEFAULT_TEST_TYPE_GUID),
             system_partition_label: "fvm",
+            keymint_old_blob: None,
+            keymint: None,
         }
+    }
+
+    pub fn with_crypt_policy(&mut self, policy: crypt_policy::Policy) -> &mut Self {
+        self.data_spec.crypt_policy = policy;
+        self
+    }
+
+    pub fn with_keymint_instance(&mut self, keymint: std::sync::Arc<FakeKeymint>) -> &mut Self {
+        self.keymint = Some(keymint);
+        self
     }
 
     pub fn set_uninitialized(&mut self) -> &mut Self {
         self.uninitialized = true;
+        self
+    }
+
+    pub fn with_keymint_old_blob(&mut self, blob: Vec<u8>) -> &mut Self {
+        self.keymint_old_blob = Some(blob);
         self
     }
 
@@ -666,7 +763,11 @@ impl DiskBuilder {
                 )
                 .await
                 .unwrap();
-                let contents = generate_keymint_file_contents().await;
+                let contents = generate_keymint_file_contents(
+                    self.keymint_old_blob.as_deref(),
+                    self.keymint.clone(),
+                )
+                .await;
                 let mut contents_ref = contents.as_slice();
                 if self.corrupt_data && fxblob {
                     contents_ref = &TEST_BLOB_CONTENTS;

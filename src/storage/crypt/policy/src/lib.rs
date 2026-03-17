@@ -97,13 +97,13 @@ impl TeeDerivedKeySource {
 /// sealing key.  The contents of this struct can be persistently stored, as it contains no
 /// plaintext secrets.
 ///
-/// Note that it is intentional that this struct does not implement serde::{Serialize, Deserialize};
-/// clients of KeymintSealedKeySource are better equipped to choose an appropriate format and manage
-/// versioning.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeymintSealedData {
     pub sealing_key_info: Vec<u8>,
     pub sealing_key_blob: Vec<u8>,
     pub sealed_keys: BTreeMap<String, Vec<u8>>,
+    #[serde(default)]
+    pub old_blob: Option<Vec<u8>>,
 }
 
 impl KeymintSealedData {
@@ -118,7 +118,12 @@ impl KeymintSealedData {
         let sealing_key_blob = kms_stateless::create_sealing_key(&sealing_key_info[..])
             .await
             .context("Failed to create sealing key")?;
-        Ok(Self { sealing_key_info, sealing_key_blob, sealed_keys: BTreeMap::default() })
+        Ok(Self {
+            sealing_key_info,
+            sealing_key_blob,
+            sealed_keys: BTreeMap::default(),
+            old_blob: None,
+        })
     }
 
     /// Generates and seals a new key named `label`.  Updates this struct to contain the sealed key
@@ -134,21 +139,67 @@ impl KeymintSealedData {
         Ok(key)
     }
 
-    /// Unseals a key previously created via [`Self::create_key`].  Returns the unsealed key.
-    pub async fn unseal_key(&self, label: &str) -> Result<Vec<u8>, Error> {
+    /// Unseals a key previously created via [`Self::create_key`].
+    /// Returns either the unsealed key, or a `UnsealResult::KeyRequiresUpgrade` if the
+    /// hardware determines the sealing protocol format is too old.
+    pub async fn unseal_key(&self, label: &str) -> Result<UnsealResult, Error> {
         let sealed = self.sealed_keys.get(label).ok_or_else(|| anyhow!("Key not found"))?;
-        Ok(kms_stateless::unseal(
+        match kms_stateless::unseal(
             &self.sealing_key_info[..],
             &self.sealing_key_blob[..],
             &sealed[..],
         )
-        .await?)
+        .await
+        {
+            Ok(key) => Ok(UnsealResult::Success(key)),
+            Err(e) => {
+                if let kms_stateless::SealingKeysError::Unseal(
+                    fidl_fuchsia_security_keymint::UnsealError::KeyRequiresUpgrade,
+                ) = e
+                {
+                    return Ok(UnsealResult::KeyRequiresUpgrade);
+                }
+                Err(e.into())
+            }
+        }
     }
+
+    /// Attempts to upgrade the hardware sealing blob for the current configuration.
+    /// In the event of a successful upgrade, the previous active blob is moved to `old_blob`
+    /// for cleanup.
+    pub async fn upgrade_sealing_blob(&mut self) -> Result<(), Error> {
+        let new_blob = kms_stateless::upgrade_sealing_key(
+            &self.sealing_key_info[..],
+            &self.sealing_key_blob[..],
+        )
+        .await?;
+
+        let old_blob = std::mem::replace(&mut self.sealing_key_blob, new_blob);
+        if self.old_blob.is_some() {
+            tracing::warn!(
+                "Overwriting an existing old_blob during upgrade. A Keymint key has been leaked."
+            );
+        }
+        self.old_blob = Some(old_blob);
+
+        Ok(())
+    }
+}
+
+/// A strictly typed result indicating if the hardware unseal succeeded or required an upgrade.
+pub enum UnsealResult {
+    Success(Vec<u8>),
+    KeyRequiresUpgrade,
 }
 
 /// Deletes all keymint-managed keys.
 pub async fn delete_all_keymint_keys() -> Result<(), Error> {
     Ok(kms_stateless::delete_all_keys().await?)
+}
+
+/// Deletes a specific keymint-managed key.
+pub async fn delete_sealing_key(key_blob: &[u8]) -> Result<(), Error> {
+    Ok(kms_stateless::delete_sealing_key(key_blob).await?)
 }
 
 #[derive(Debug)]

@@ -48,7 +48,8 @@ struct Inner {
     epoch: u64,
 
     /// An optional async hook that is called before `DeleteSealingKey` performs the deletion.
-    /// If the hook returns `Some(err)`, that error is returned to the client and the deletion is skipped.
+    /// If the hook returns `Some(err)`, that error is returned to the client and the deletion is
+    /// skipped.
     /// If the hook returns `None`, the deletion proceeds normally.
     /// The hook can also hang indefinitely to simulate a crash.
     delete_hook: Option<DeleteHook>,
@@ -77,25 +78,23 @@ impl Inner {
         let len = key_info.len().min(16);
         key_bytes[..len].copy_from_slice(&key_info[..len]);
 
-        // XOR epoch into the first 8 bytes to ensure keys change with epoch.
-        let epoch_bytes = epoch.to_le_bytes();
-        for i in 0..8 {
-            key_bytes[i] ^= epoch_bytes[i];
-        }
-
+        // Cipher should be stable for a given key_info so that we can unseal secrets
+        // after an epoch bump (which triggers a blob upgrade but shouldn't break decryption).
         let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&key_bytes));
         let key_blobs = vec![blob_for_key(key_info, epoch)];
         SealingKey { cipher, key_blobs }
     }
 
     fn handle_create_request(&mut self, key_info: KeyInfo) -> Vec<u8> {
-        self.sealing_keys
+        let epoch = self.epoch;
+        let sealing_key = self
+            .sealing_keys
             .entry(key_info.clone())
-            .or_insert_with(|| Self::derive_key(&key_info, self.epoch))
-            .key_blobs
-            .last()
-            .unwrap()
-            .clone()
+            .or_insert_with(|| Self::derive_key(&key_info, epoch));
+        if !sealing_key.key_blobs.iter().any(|b| epoch_from_blob(b) == Some(epoch)) {
+            sealing_key.key_blobs.push(blob_for_key(&key_info, epoch));
+        }
+        sealing_key.key_blobs.iter().find(|b| epoch_from_blob(b) == Some(epoch)).unwrap().clone()
     }
 
     /// Handles a seal request.
@@ -180,7 +179,7 @@ impl Inner {
     /// Handles an upgrade request.
     ///
     /// If the key_blob is not found, it will return an error.
-    /// Otherwise, it will create a new key blob with the current epoch and add it to the key blobs.
+    /// Otherwise, it will return a new key blob for the current epoch.
     /// Note that the old key blob will continue to work (but require an upgrade) until deleted.
     fn handle_upgrade_request(
         &mut self,
@@ -197,7 +196,9 @@ impl Inner {
             return Err(UpgradeError::FailedUpgrade);
         }
         let upgraded = blob_for_key(&key_info, self.epoch);
-        sealing_key.key_blobs.push(upgraded.clone());
+        if !sealing_key.key_blobs.contains(&upgraded) {
+            sealing_key.key_blobs.push(upgraded.clone());
+        }
         Ok(upgraded)
     }
 
@@ -207,29 +208,17 @@ impl Inner {
     /// Otherwise, it will remove the key blob from the key blobs.
     /// The sealing key will no longer be valid after this call.
     fn handle_delete_request(&mut self, key_blob: &[u8]) -> Result<(), DeleteError> {
-        // Note that we don't have key_info here.
-        // This is unfortunate given a key_blob is tied to a key_info and it means we have to
-        // linear scan all sealing keys to find one that matches.
-        let mut found = false;
-        let mut to_delete = vec![];
-        for (key_info, sealing_key) in self.sealing_keys.iter_mut() {
-            if let Some(ix) = sealing_key.key_blobs.iter().position(|kb| kb == key_blob) {
-                sealing_key.key_blobs.remove(ix);
-                found = true;
+        let mut removed = false;
+        self.sealing_keys.retain(|_, sealing_key| {
+            let initial_len = sealing_key.key_blobs.len();
+            sealing_key.key_blobs.retain(|kb| kb != key_blob);
+            if sealing_key.key_blobs.len() < initial_len {
+                removed = true;
             }
-            if sealing_key.key_blobs.is_empty() {
-                to_delete.push(key_info.clone());
-            }
-        }
-        if !found {
-            warn!("Failed to locate matching key for deletion");
-            Err(DeleteError::FailedDelete)
-        } else {
-            for key_info in to_delete {
-                self.sealing_keys.remove(&key_info);
-            }
-            Ok(())
-        }
+            !sealing_key.key_blobs.is_empty()
+        });
+
+        if removed { Ok(()) } else { Err(DeleteError::FailedDelete) }
     }
 
     fn has_key_blob(&self, key_blob: &[u8]) -> bool {
@@ -266,16 +255,16 @@ impl FakeKeymint {
     pub fn insert_sealing_key(&self, key_info: &[u8], blobs: Vec<Vec<u8>>) {
         let mut inner = self.inner.lock();
         if let Some(existing) = inner.sealing_keys.get_mut(key_info) {
-            existing.key_blobs.extend(blobs);
+            for blob in blobs {
+                if !existing.key_blobs.contains(&blob) {
+                    existing.key_blobs.push(blob);
+                }
+            }
         } else {
-            let initial_key_material =
-                Inner::derive_key(&key_info.to_vec(), 0).key_blobs.last().unwrap().clone();
             inner.sealing_keys.insert(
                 key_info.to_vec(),
                 SealingKey {
-                    cipher: Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(
-                        &initial_key_material[..16],
-                    )),
+                    cipher: Inner::derive_key(&key_info.to_vec(), 0).cipher,
                     key_blobs: blobs,
                 },
             );

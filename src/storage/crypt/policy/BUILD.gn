@@ -7,10 +7,13 @@ import("//build/rust/rustc_library.gni")
 rustc_library("lib") {
   edition = "2024"
   deps = [
+    "//sdk/fidl/fuchsia.security.keymint:fuchsia.security.keymint_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-fs",
     "//src/security/lib/kms-stateless/rust",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:tracing",
   ]
   sources = [ "src/lib.rs" ]
   name = "crypt_policy"

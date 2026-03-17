@@ -263,6 +263,7 @@ template("fshost_integration_test_package") {
       "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-component",
       "//src/lib/fuchsia-fs",
+      "//src/storage/crypt/policy",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
       "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
       "//src/storage/lib/blob_writer:blob-writer",
@@ -281,8 +282,10 @@ template("fshost_integration_test_package") {
     if (data_filesystem_variant == "fxblob") {
       deps += [
         "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
+        "//sdk/fidl/fuchsia.security.keymint:fuchsia.security.keymint_rust",
         "//src/lib/diagnostics/reader/rust",
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/security/lib/fake-keymint",
         "//src/storage/crypt/policy",
       ]
     }
@@ -434,12 +437,17 @@ template("fshost_integration_test_package") {
         "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
         "//src/lib/fuchsia-fs",
+        "//src/security/lib/fake-keymint",
         "//src/storage/crypt/policy",
         "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
         "//src/storage/lib/block_server:vmo_backed_block_server",
         "//src/storage/lib/fs_management/rust:fs_management",
         "//third_party/rust_crates:assert_matches",
+        "//third_party/rust_crates:futures",
+        "//third_party/rust_crates:log",
       ]
     }
 

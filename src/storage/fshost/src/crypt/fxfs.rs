@@ -22,22 +22,23 @@
 use crate::device::constants::{DATA_VOLUME_LABEL, UNENCRYPTED_VOLUME_LABEL};
 use anyhow::{Context, Error, anyhow};
 use crypt_policy::{
-    KeyConsumer, KeySource, KeymintSealedData, format_sources, get_policy, unseal_sources,
+    KeyConsumer, KeySource, KeymintSealedData, delete_sealing_key, format_sources, get_policy,
+    unseal_sources,
 };
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component::{self as fcomponent, RealmMarker};
+use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptMarker, KeyPurpose};
+use fidl_fuchsia_io as fio;
 use fs_management::filesystem::{ServingMultiVolumeFilesystem, ServingVolume};
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, open_childs_exposed_directory,
 };
 use key_bag::{AES128_KEY_SIZE, AES256_KEY_SIZE, Aes256Key, KeyBagManager, WrappingKey};
-use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 struct KeyManager {
     dir: fio::DirectoryProxy,
@@ -51,65 +52,104 @@ const KEYMINT_PERSISTENCE_FILE: &'static str = "keymint.0";
 
 const KEYBAG_FILE_NAME: &str = "fxfs-data";
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct PersistentKeymintSealedDataV0 {
-    sealing_key_info: Vec<u8>,
-    sealing_key_blob: Vec<u8>,
-    sealed_keys: BTreeMap<String, Vec<u8>>,
-}
-
-impl From<PersistentKeymintSealedDataV0> for KeymintSealedData {
-    fn from(value: PersistentKeymintSealedDataV0) -> Self {
-        Self {
-            sealing_key_info: value.sealing_key_info,
-            sealing_key_blob: value.sealing_key_blob,
-            sealed_keys: value.sealed_keys,
-        }
-    }
-}
-
-impl From<KeymintSealedData> for PersistentKeymintSealedDataV0 {
-    fn from(value: KeymintSealedData) -> Self {
-        Self {
-            sealing_key_info: value.sealing_key_info,
-            sealing_key_blob: value.sealing_key_blob,
-            sealed_keys: value.sealed_keys,
-        }
-    }
-}
-
 impl KeyManager {
     async fn load_keymint_data(&self) -> Result<Option<KeymintSealedData>, Error> {
-        match fuchsia_fs::directory::read_file(&self.dir, KEYMINT_PERSISTENCE_FILE).await {
-            Ok(contents) => {
-                let data: PersistentKeymintSealedDataV0 =
-                    serde_json::from_slice(&contents[..]).context("deserializing key data")?;
-                Ok(Some(data.into()))
+        let contents =
+            match fuchsia_fs::directory::read_file(&self.dir, KEYMINT_PERSISTENCE_FILE).await {
+                Err(err) if err.is_not_found_error() => return Ok(None),
+                res => res?,
+            };
+
+        let mut data: KeymintSealedData =
+            serde_json::from_slice(&contents).context("deserializing key data")?;
+
+        if let Some(old) = data.old_blob.take() {
+            log::info!("Found old keymint state. Cleaning up old sealing key.");
+            // We MUST attempt hardware deletion first before scrubbing the recovery file.
+            // If we scrub the file first and crash, we permanently leak the hardware slot.
+            if let Err(e) = delete_sealing_key(&old).await {
+                log::warn!("Failed to delete old sealing key; continuing anyway: {e:?}");
             }
-            Err(err) if err.is_not_found_error() => return Ok(None),
-            Err(err) => return Err(anyhow!(err)),
+            // If hardware is cleaned, or if it failed (meaning it could have already been deleted
+            // on a previous boot before a crash), scrub the recovery marker from memory so we don't
+            // try to delete it again repeatedly on future boots, and persist the change.
+            if let Err(e) = self.store_keymint_data(&data).await {
+                log::warn!("Failed to rewrite keymint data after deleting old key: {e:?}");
+            }
         }
+
+        Ok(Some(data))
     }
 
-    async fn store_keymint_data(&self, data: KeymintSealedData) -> Result<(), Error> {
-        let bytes = serde_json::to_vec(&PersistentKeymintSealedDataV0::from(data))
-            .context("seriaizing key data")?;
+    async fn store_keymint_data(&self, data: &KeymintSealedData) -> Result<(), Error> {
+        let bytes = serde_json::to_vec(data).context("serializing key data")?;
         fuchsia_fs::directory::atomic_write_file(&self.dir, KEYMINT_PERSISTENCE_FILE, &bytes[..])
             .await?;
+        self.dir
+            .sync()
+            .await
+            .context("FIDL sync failed")?
+            .map_err(zx::Status::from_raw)
+            .context("Sync failed")?;
         Ok(())
     }
 
-    async fn unseal_keymint_keys(&mut self) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
-        let (data, metadata) = {
-            let keymint = if let Some(data) =
-                self.load_keymint_data().await.context("Failed to load keymint data")?
-            {
-                data
-            } else {
-                return Ok(None);
-            };
-            (keymint.unseal_key("data.data").await?, keymint.unseal_key("data.metadata").await?)
+    async fn commit_keymint_upgrade(&self, keymint: &mut KeymintSealedData) -> Result<(), Error> {
+        self.store_keymint_data(keymint).await.context("Failed to store upgraded keymint data")?;
+
+        if let Some(old) = keymint.old_blob.take() {
+            if let Err(e) = delete_sealing_key(&old).await {
+                log::warn!("Failed to delete old sealing key; continuing anyway: {e:?}");
+            }
+            if let Err(e) = self.store_keymint_data(keymint).await {
+                log::warn!("Failed to rewrite keymint data after deleting old key: {e:?}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_key_unseal(
+        &self,
+        keymint: &mut KeymintSealedData,
+        label: &str,
+    ) -> Result<Vec<u8>, Error> {
+        let mut upgraded = false;
+        let key = loop {
+            match keymint.unseal_key(label).await? {
+                crypt_policy::UnsealResult::Success(key) => {
+                    break key;
+                }
+                crypt_policy::UnsealResult::KeyRequiresUpgrade => {
+                    // Hardware requested an upgrade. Perform the upgrade logic.
+                    if upgraded {
+                        return Err(anyhow!("KeyRequiresUpgrade returned twice"));
+                    }
+                    keymint
+                        .upgrade_sealing_blob()
+                        .await
+                        .context("Failed to upgrade sealing key")?;
+                    upgraded = true;
+                }
+            }
         };
+
+        if upgraded {
+            self.commit_keymint_upgrade(keymint).await?;
+        }
+
+        Ok(key)
+    }
+
+    async fn unseal_keymint_keys(&mut self) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
+        let Some(mut keymint) =
+            self.load_keymint_data().await.context("Failed to load keymint data")?
+        else {
+            return Ok(None);
+        };
+
+        let data = self.handle_key_unseal(&mut keymint, "data.data").await?;
+        let metadata = self.handle_key_unseal(&mut keymint, "data.metadata").await?;
+
         Ok(Some((
             Aes256Key::try_from(data).map_err(|_| anyhow!("Invalid data key"))?,
             Aes256Key::try_from(metadata).map_err(|_| anyhow!("Invalid metadata key"))?,
@@ -124,15 +164,11 @@ impl KeyManager {
             log::warn!(err:?; "Failed to delete keymint keys.  Proceeding anyways.");
         }
 
-        let (data, metadata) = {
-            let mut keymint = KeymintSealedData::new().await?;
-            let keys = (
-                keymint.create_key("data.data").await?,
-                keymint.create_key("data.metadata").await?,
-            );
-            self.store_keymint_data(keymint).await.context("Failed to store keymint data")?;
-            keys
-        };
+        let mut keymint = KeymintSealedData::new().await?;
+        let data = keymint.create_key("data.data").await?;
+        let metadata = keymint.create_key("data.metadata").await?;
+        self.store_keymint_data(&keymint).await.context("Failed to store keymint data")?;
+
         Ok(Some((
             Aes256Key::try_from(data).map_err(|_| anyhow!("Invalid data key"))?,
             Aes256Key::try_from(metadata).map_err(|_| anyhow!("Invalid metadata key"))?,
@@ -181,10 +217,12 @@ impl KeyManager {
                 keybag = Some(if create {
                     KeyBagManager::create(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))?
                 } else {
-                    match KeyBagManager::open(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))? {
-                        Some(keybag) => keybag,
-                        None => return Ok(None),
-                    }
+                    let Some(bag) =
+                        KeyBagManager::open(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))?
+                    else {
+                        return Ok(None);
+                    };
+                    bag
                 });
             }
 
@@ -245,17 +283,15 @@ pub async fn unlock_data_volume(
             )
             .await
             {
-                Ok(dir) => dir,
                 Err(err) if err.is_not_found_error() => return Ok(None),
-                Err(err) => return Err(anyhow!(err)),
+                res => res?,
             };
             let mut key_manager = KeyManager { dir };
-            let (data_unwrapped, metadata_unwrapped) =
-                if let Some(keys) = key_manager.unwrap_or_create_keys(false).await? {
-                    keys
-                } else {
-                    return Ok(None);
-                };
+            let Some((data_unwrapped, metadata_unwrapped)) =
+                key_manager.unwrap_or_create_keys(false).await?
+            else {
+                return Ok(None);
+            };
 
             let crypt_service =
                 CryptService::new(data_unwrapped, metadata_unwrapped, &config.fxfs_crypt_url)

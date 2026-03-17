@@ -6,8 +6,20 @@ use assert_matches::assert_matches;
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::ArchiveReader;
 use disk_builder::Disk;
+use fake_keymint::FakeKeymint;
 use fidl::endpoints::{ServiceMarker as _, create_proxy};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_feedback as ffeedback;
+use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
 use fidl_fuchsia_fxfs::{BlobReaderMarker, CryptManagementProxy, CryptProxy, KeyPurpose};
+use fidl_fuchsia_hardware_block_volume as fvolume;
+use fidl_fuchsia_hardware_ramdisk as framdisk;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_security_keymint as fkeymint;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_partitions as fpartitions;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{
     connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_root,
 };
@@ -18,14 +30,6 @@ use futures::{FutureExt as _, StreamExt as _};
 use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
 use std::pin::pin;
 use std::time::Duration;
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_driver_test as fdt,
-    fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner,
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_hardware_ramdisk as framdisk,
-    fidl_fuchsia_io as fio, fidl_fuchsia_security_keymint as fkeymint,
-    fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
-    fuchsia_async as fasync,
-};
 
 pub mod disk_builder;
 mod mocks;
@@ -64,6 +68,8 @@ pub struct TestFixtureBuilder {
     zbi_ramdisk: Option<disk_builder::DiskBuilder>,
     storage_host: bool,
     force_fxfs_provisioner_failure: bool,
+    keymint: std::sync::Arc<FakeKeymint>,
+    crypt_policy: crypt_policy::Policy,
 }
 
 impl TestFixtureBuilder {
@@ -76,6 +82,8 @@ impl TestFixtureBuilder {
             zbi_ramdisk: None,
             storage_host,
             force_fxfs_provisioner_failure: false,
+            keymint: std::sync::Arc::new(FakeKeymint::default()),
+            crypt_policy: crypt_policy::Policy::Null,
         }
     }
 
@@ -83,13 +91,42 @@ impl TestFixtureBuilder {
         &mut self.fshost
     }
 
+    pub fn keymint(&mut self) -> std::sync::Arc<FakeKeymint> {
+        self.keymint.clone()
+    }
+
+    pub fn with_keymint_instance(mut self, keymint: std::sync::Arc<FakeKeymint>) -> Self {
+        self.keymint = keymint.clone();
+        if let Some(Disk::Builder(ref mut disk_builder)) = self.disk {
+            disk_builder.with_keymint_instance(keymint.clone());
+        }
+        for disk in &mut self.extra_disks {
+            if let Disk::Builder(disk_builder) = disk {
+                disk_builder.with_keymint_instance(keymint.clone());
+            }
+        }
+        self
+    }
+
     pub fn with_disk(&mut self) -> &mut disk_builder::DiskBuilder {
         self.disk = Some(Disk::Builder(disk_builder::DiskBuilder::new()));
+        self.disk
+            .as_mut()
+            .unwrap()
+            .builder()
+            .with_crypt_policy(self.crypt_policy)
+            .with_keymint_instance(self.keymint.clone());
         self.disk.as_mut().unwrap().builder()
     }
 
     pub fn with_extra_disk(&mut self) -> &mut disk_builder::DiskBuilder {
         self.extra_disks.push(Disk::Builder(disk_builder::DiskBuilder::new()));
+        self.extra_disks
+            .last_mut()
+            .unwrap()
+            .builder()
+            .with_crypt_policy(self.crypt_policy)
+            .with_keymint_instance(self.keymint.clone());
         self.extra_disks.last_mut().unwrap().builder()
     }
 
@@ -120,6 +157,15 @@ impl TestFixtureBuilder {
 
     pub fn with_crypt_policy(mut self, policy: crypt_policy::Policy) -> Self {
         self.fshost.set_crypt_policy(policy);
+        self.crypt_policy = policy;
+        if let Some(Disk::Builder(ref mut disk_builder)) = self.disk {
+            disk_builder.with_crypt_policy(policy);
+        }
+        for disk in &mut self.extra_disks {
+            if let Disk::Builder(disk_builder) = disk {
+                disk_builder.with_crypt_policy(policy);
+            }
+        }
         self
     }
 
@@ -150,7 +196,12 @@ impl TestFixtureBuilder {
             None => None,
         };
         let (tx, crash_reports) = mpsc::channel(32);
-        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, self.force_fxfs_provisioner_failure);
+        let mocks = mocks::new_mocks(
+            maybe_zbi_vmo,
+            tx,
+            self.force_fxfs_provisioner_failure,
+            self.keymint.clone(),
+        );
 
         let mocks = builder
             .add_local_child("mocks", move |h| mocks(h).boxed(), ChildOptions::new())
