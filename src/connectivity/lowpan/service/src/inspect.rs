@@ -1775,6 +1775,99 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             );
                         }
+                        if let Some(x) = telemetry_data.network_data {
+                            inspector.root().record_child(
+                                "net_data",
+                                |net_data_child| {
+                                    if let Some(y) = x.on_mesh_prefixes {
+                                        net_data_child.record_child(
+                                            "on_mesh_prefixes",
+                                            |on_mesh_prefixes_child| {
+                                                for (index, config) in y.iter().enumerate() {
+                                                    on_mesh_prefixes_child.record_child(
+                                                        format!("prefix_{}", index),
+                                                        |prefix_node| {
+                                                            if let Some(z) = &config.prefix {
+                                                                prefix_node.record_string(
+                                                                    "prefix",
+                                                                    z,
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.preference {
+                                                                prefix_node.record_int(
+                                                                    "preference",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.preferred {
+                                                                prefix_node.record_bool(
+                                                                    "preferred",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.slaac {
+                                                                prefix_node.record_bool(
+                                                                    "slaac",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.dhcp {
+                                                                prefix_node.record_bool(
+                                                                    "dhcp",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.configure {
+                                                                prefix_node.record_bool(
+                                                                    "configure",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.default_route {
+                                                                prefix_node.record_bool(
+                                                                    "default_route",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.on_mesh {
+                                                                prefix_node.record_bool(
+                                                                    "on_mesh",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.stable {
+                                                                prefix_node.record_bool(
+                                                                    "stable",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.nd_dns {
+                                                                prefix_node.record_bool(
+                                                                    "nd_dns",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.dp {
+                                                                prefix_node.record_bool(
+                                                                    "dp",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.rloc16 {
+                                                                prefix_node.record_uint(
+                                                                    "rloc16",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
+                                },
+                            );
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

@@ -1332,6 +1332,27 @@ where
             }
         }
 
+        // Get the full network data from received from the Leader.
+        let on_mesh_prefixes = ot
+            .iter_on_mesh_prefixes()
+            .take(32) // Limit the number of routers to 32 per the FIDL definition.
+            .map(|config| fidl_fuchsia_lowpan_experimental::BorderRouterConfig {
+                prefix: Some(config.prefix().to_string()),
+                preference: Some(config.preference() as i8),
+                preferred: Some(config.is_preferred()),
+                slaac: Some(config.is_slaac()),
+                dhcp: Some(config.is_dhcp()),
+                configure: Some(config.is_configure()),
+                default_route: Some(config.is_default_route()),
+                on_mesh: Some(config.is_on_mesh()),
+                stable: Some(config.is_stable()),
+                nd_dns: Some(config.is_nd_dns()),
+                dp: Some(config.is_domain_prefix()),
+                rloc16: Some(config.rloc16()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1392,6 +1413,10 @@ where
             active_dataset: Some(active_dataset),
             multiradio_neighbor_info: Some(multiradio_neighbor_info),
             router_info: Some(router_info),
+            network_data: Some(fidl_fuchsia_lowpan_experimental::NetworkData {
+                on_mesh_prefixes: Some(on_mesh_prefixes),
+                ..Default::default()
+            }),
             ..Default::default()
         })
     }

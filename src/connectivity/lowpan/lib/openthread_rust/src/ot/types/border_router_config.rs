@@ -132,8 +132,25 @@ impl BorderRouterConfig {
         self.0.set_mNdDns(x)
     }
 
+    /// Returns the value of the `router_preference`.
+    /// Since mPreference remains an unsigned value after conversion from otBorderRouterConfig
+    /// (see binding.rs), so explicitly sign-extend it from a u32 to an i32 here to ensure the
+    /// expected values of -1, 0, or 1.
+    pub fn preference(&self) -> RoutePreference {
+        RoutePreference::from_i32((self.0.mPreference() << 30) >> 30)
+            .expect("Invalid route preference")
+    }
+
+    /// Sets the value of the `router_preference`.
+    pub fn set_preference(&mut self, pref: RoutePreference) {
+        self.0.set_mPreference(pref as i32)
+    }
+
     /// Returns the routing preference for this `BorderRouterConfig`.
     /// If this config is not a default route, returns `None`.
+    /// Since mPreference remains an unsigned value after conversion from otBorderRouterConfig
+    /// (see binding.rs), so explicitly sign-extend it from a u32 to an i32 here to ensure the
+    /// expected values of -1, 0, or 1.
     pub fn default_route_preference(&self) -> Option<RoutePreference> {
         if self.0.mDefaultRoute() {
             Some(RoutePreference::from_i32(self.0.mPreference()).expect("Invalid route preference"))
@@ -192,6 +209,26 @@ impl BorderRouterConfig {
     /// Sets the value of the `dp` (domain prefix) flag.
     pub fn set_domain_prefix(&mut self, x: bool) {
         self.0.set_mDp(x)
+    }
+
+    /// Returns the value of the `configure` flag.
+    pub fn is_configure(&self) -> bool {
+        self.0.mConfigure()
+    }
+
+    /// Sets the value of the `configure` flag.
+    pub fn set_configure(&mut self, x: bool) {
+        self.0.set_mConfigure(x)
+    }
+
+    /// Returns the value of the `default_route` flag.
+    pub fn is_default_route(&self) -> bool {
+        self.0.mDefaultRoute()
+    }
+
+    /// Sets the value of the `default_route` flag.
+    pub fn set_default_route(&mut self, x: bool) {
+        self.0.set_mDefaultRoute(x)
     }
 
     // TODO(rquattle): Needs OpenThread update
