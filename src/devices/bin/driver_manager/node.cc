@@ -1872,8 +1872,9 @@ void Node::StartDriver(
                   }
 
                   if (!found_driver_host) {
-                    self->driver_host_ = (*self->node_manager_)
-                                             ->GetDriverHost(self->driver_host_name_for_colocation_);
+                    self->driver_host_ =
+                        (*self->node_manager_)
+                            ->GetDriverHost(self->driver_host_name_for_colocation_);
                     if (self->driver_host_) {
                       found_driver_host = true;
                       if (use_dynamic_linker != self->driver_host()->IsDynamicLinkingEnabled()) {
@@ -2249,79 +2250,76 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
     bool is_primary;
   };
 
-  std::shared_ptr<ResultAsyncSharder<ShardResult>> sharder =
-      std::make_shared<ResultAsyncSharder<ShardResult>>(
-          total_shards, [this, callback = std::move(callback)](
-                            zx::result<std::vector<ShardResult>> result) mutable {
-            if (result.is_error()) {
-              callback(result.take_error());
-              return;
-            }
+  std::shared_ptr<ResultAsyncSharder<ShardResult>> sharder = std::make_shared<
+      ResultAsyncSharder<ShardResult>>(
+      total_shards,
+      [this, callback = std::move(callback)](zx::result<std::vector<ShardResult>> result) mutable {
+        if (result.is_error()) {
+          callback(result.take_error());
+          return;
+        }
 
-            std::unordered_map<std::string, std::vector<DirInfo>> dirs;
-            for (ShardResult& shard : result.value()) {
-              std::unordered_map<std::string, std::string> target_to_source_instance_mapping;
-              for (auto& mapping : shard.offer.renamed_instances) {
-                target_to_source_instance_mapping[mapping.target_name()] = mapping.source_name();
-              }
+        std::unordered_map<std::string, std::vector<DirInfo>> dirs;
+        for (ShardResult& shard : result.value()) {
+          std::unordered_map<std::string, std::string> target_to_source_instance_mapping;
+          for (auto& mapping : shard.offer.renamed_instances) {
+            target_to_source_instance_mapping[mapping.target_name()] = mapping.source_name();
+          }
 
-              dirs[shard.offer.service_name].emplace_back(DirInfo{
-                  .dir = std::move(shard.dir),
-                  .target_service_name = shard.offer.service_name,
-                  .target_to_source_instance_mapping = target_to_source_instance_mapping,
-                  .parent_name = shard.parent_name,
-                  .is_primary = shard.is_primary,
-              });
-            }
-
-            std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_sandbox::DirReceiver>>
-                map;
-
-            for (auto& offer : offers()) {
-              if (offer.transport != OfferTransport::Dictionary ||
-                  !dirs.contains(offer.service_name)) {
-                continue;
-              }
-
-              auto [client, server] =
-                  fidl::Endpoints<fuchsia_component_sandbox::DirReceiver>::Create();
-              map[offer.service_name] = std::move(client);
-              dir_receivers_.emplace_back(std::move(server), std::move(dirs[offer.service_name]),
-                                          dispatcher_);
-              dirs.erase(offer.service_name);
-            }
-
-            (*node_manager_)
-                ->dictionary_util()
-                .CreateDictionaryWith(
-                    std::move(map),
-                    [this, callback = std::move(callback)](
-                        zx::result<fuchsia_component_sandbox::CapabilityId> result) mutable {
-                      if (!result.is_ok()) {
-                        callback(result.take_error());
-                        return;
-                      }
-
-                      ZX_ASSERT_MSG(!subtree_dictionary_ref_.has_value(),
-                                    "Cannot set dictionary_ref_ on node %s", name().c_str());
-                      dictionary_ref_ = result.value();
-                      (*node_manager_)
-                          ->dictionary_util()
-                          .CopyExportDictionary(
-                              dictionary_ref_.value(),
-                              [this, callback = std::move(callback)](
-                                  zx::result<fuchsia_component_sandbox::DictionaryRef>
-                                      result) mutable {
-                                if (result.is_error()) {
-                                  callback(result.take_error());
-                                  return;
-                                }
-
-                                offers_dictionary_ = std::move(result.value());
-                                callback(zx::ok());
-                              });
-                    });
+          dirs[shard.offer.service_name].emplace_back(DirInfo{
+              .dir = std::move(shard.dir),
+              .target_service_name = shard.offer.service_name,
+              .target_to_source_instance_mapping = target_to_source_instance_mapping,
+              .parent_name = shard.parent_name,
+              .is_primary = shard.is_primary,
           });
+        }
+
+        std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_sandbox::DirReceiver>>
+            map;
+
+        for (auto& offer : offers()) {
+          if (offer.transport != OfferTransport::Dictionary || !dirs.contains(offer.service_name)) {
+            continue;
+          }
+
+          auto [client, server] = fidl::Endpoints<fuchsia_component_sandbox::DirReceiver>::Create();
+          map[offer.service_name] = std::move(client);
+          dir_receivers_.emplace_back(std::move(server), std::move(dirs[offer.service_name]),
+                                      dispatcher_);
+          dirs.erase(offer.service_name);
+        }
+
+        (*node_manager_)
+            ->dictionary_util()
+            .CreateDictionaryWith(
+                std::move(map),
+                [this, callback = std::move(callback)](
+                    zx::result<fuchsia_component_sandbox::CapabilityId> result) mutable {
+                  if (!result.is_ok()) {
+                    callback(result.take_error());
+                    return;
+                  }
+
+                  ZX_ASSERT_MSG(!subtree_dictionary_ref_.has_value(),
+                                "Cannot set dictionary_ref_ on node %s", name().c_str());
+                  dictionary_ref_ = result.value();
+                  (*node_manager_)
+                      ->dictionary_util()
+                      .CopyExportDictionary(
+                          dictionary_ref_.value(),
+                          [this, callback = std::move(callback)](
+                              zx::result<fuchsia_component_sandbox::DictionaryRef> result) mutable {
+                            if (result.is_error()) {
+                              callback(result.take_error());
+                              return;
+                            }
+
+                            offers_dictionary_ = std::move(result.value());
+                            callback(zx::ok());
+                          });
+                });
+      });
 
   for (auto& [_, entries] : service_map) {
     for (const auto& [dictionary_ref, offer, parent_name, is_primary] : entries) {
@@ -2372,7 +2370,7 @@ NodeInfo Node::GetRemovalTrackerInfo() {
       .driver_url = driver_url(),
       .collection = collection_,
       .state = GetNodeState(),
-      .host = driver_host(),
+      .node = weak_from_this(),
   };
 }
 

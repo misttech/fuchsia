@@ -9,6 +9,8 @@
 
 #include <src/devices/lib/log/log.h>
 
+#include "src/devices/bin/driver_manager/node.h"
+
 namespace driver_manager {
 
 namespace {
@@ -91,7 +93,11 @@ void NodeRemovalTracker::OnRemovalTimeout() {
     }
 
     if (node.state == NodeState::kWaitingOnDriver) {
-      node.host->TriggerStackTrace();
+      if (auto locked_node = node.node.lock()) {
+        if (auto host = locked_node->driver_host()) {
+          host->TriggerStackTrace();
+        }
+      }
     }
 
     // This log message is load-bearing server-side as it's used to identify the hanging driver.
