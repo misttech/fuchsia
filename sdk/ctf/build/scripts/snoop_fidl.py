@@ -8,7 +8,7 @@ import os
 from time import monotonic
 from typing import Any, List
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 from trace_processing import trace_importing, trace_model
 
@@ -22,13 +22,12 @@ _LOGGER = logging.getLogger(__name__)
 # the test output directory.
 
 
-class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
-        """Initialize all DUT(s)"""
-        super().setup_class()
+class FidlReaderTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def test_integration_testcase(self) -> None:
+    async def test_integration_testcase(self) -> None:
         data_writer = JsonWriter(self.log_path)
         device_test_url = self.user_params.get(
             "device_test_url", "URL Not Found"
@@ -45,7 +44,7 @@ class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
             realm=test_realm_name,
             log_severity=(min_severity, max_severity),
         )
-        with self.device.tracing.trace_session(
+        async with self.device.tracing.trace_session(
             categories=[
                 "kernel:meta",
                 "kernel:ipc",
