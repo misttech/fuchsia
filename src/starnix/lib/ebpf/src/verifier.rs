@@ -89,7 +89,7 @@ impl MemoryId {
     }
 
     /// Returns whether `self` and `other` represent the same type. This is true if both have the
-    /// same if and if they both have parent, parents must also match.
+    /// same id and if they both have parent, parents must also match.
     fn matches(&self, other: &MemoryId) -> bool {
         if self.id != other.id {
             return false;
@@ -101,7 +101,7 @@ impl MemoryId {
     }
 }
 
-/// The type of a filed in a strcut pointed by `Type::PtrToStruct`.
+/// The type of a field in a struct pointed by `Type::PtrToStruct`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldType {
     /// Read-only scalar value.
