@@ -153,7 +153,7 @@ inline void Scheduler::RescheduleMask(cpu_mask_t cpus_to_reschedule_mask) {
   // not quite sure yet.
   ChainLockTransaction* const active_clt = ChainLockTransaction::Active();
   if (active_clt == nullptr) {
-    Preempt();
+    Preempt(PreemptType::Reschedule);
     return;
   }
 
@@ -164,13 +164,13 @@ inline void Scheduler::RescheduleMask(cpu_mask_t cpus_to_reschedule_mask) {
     active_clt->AssertNumLocksHeld(0);
     ChainLockGuard guard{current_thread->get_lock()};
     active_clt->Finalize();
-    PreemptLocked(current_thread);
+    PreemptLocked(current_thread, PreemptType::Reschedule);
     return;
   }
 
   active_clt->AssertNumLocksHeld(1);
   current_thread->get_lock().AssertHeld();
-  PreemptLocked(current_thread);
+  PreemptLocked(current_thread, PreemptType::Reschedule);
 }
 
 inline void Scheduler::RescheduleCpus(cpu_mask_t cpu_mask) {

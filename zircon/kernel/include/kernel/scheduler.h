@@ -234,12 +234,20 @@ class Scheduler {
   static void Yield(Thread* current_thread)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock());
 
+  // Indicates the type of preemption for diagnostic/tracing purposes.
+  enum class PreemptType : uint8_t {
+    Irq,
+    FlushPending,
+    Reschedule,
+  };
+  static fxt::StringRef<fxt::RefType::kId> ToStringRef(PreemptType preempt_type);
+
   // No chainlocks should be held when calling preempt.  The thread's lock will
   // be obtained unconditionally in the process.
   //
   // If holding a spinlock, the preemption will be deferred via self-IPI until
   // all spinlock are released and interrupts are re-enabled.
-  static void Preempt() TA_EXCL(chainlock_transaction_token);
+  static void Preempt(PreemptType preempt_type) TA_EXCL(chainlock_transaction_token);
 
   static void Reschedule(Thread* current_thread)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock());
@@ -570,7 +578,7 @@ class Scheduler {
   void InitializeProcessingRate(SchedProcessingRate scale);
 
   static inline void RescheduleMask(cpu_mask_t cpus_to_reschedule_mask);
-  static void PreemptLocked(Thread* current_thread)
+  static void PreemptLocked(Thread* current_thread, PreemptType preempt_type)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock());
 
   // Unconditionally perform an expensive check of as many scheduler invariants

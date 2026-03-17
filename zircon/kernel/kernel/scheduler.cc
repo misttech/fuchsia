@@ -206,6 +206,20 @@ fxt::StringRef<fxt::RefType::kId> Scheduler::ToStringRef(Placement placement) {
   }
 }
 
+fxt::StringRef<fxt::RefType::kId> Scheduler::ToStringRef(PreemptType preempt_type) {
+  using fxt::operator""_intern;
+  switch (preempt_type) {
+    case PreemptType::Irq:
+      return "irq"_intern;
+    case PreemptType::FlushPending:
+      return "flush-pending"_intern;
+    case PreemptType::Reschedule:
+      return "reschedule"_intern;
+    default:
+      return "[unknown]"_intern;
+  }
+}
+
 // Records details about the threads entering/exiting the run queues for various
 // CPUs, as well as which task on each CPU is currently active. These events are
 // used for trace analysis to compute statistics about overall utilization,
@@ -3009,15 +3023,16 @@ void Scheduler::Yield(Thread* const current_thread) {
   }
 }
 
-void Scheduler::Preempt() {
+void Scheduler::Preempt(PreemptType preempt_type) {
   Thread* current_thread = Thread::Current::Get();
   SingleChainLockGuard thread_guard{IrqSaveOption, current_thread->get_lock(),
                                     CLT_TAG("Scheduler::Preempt")};
-  PreemptLocked(current_thread);
+  PreemptLocked(current_thread, preempt_type);
 }
 
-void Scheduler::PreemptLocked(Thread* current_thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt");
+void Scheduler::PreemptLocked(Thread* current_thread, PreemptType preempt_type) {
+  ktrace::Scope trace =
+      LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt", ("type", ToStringRef(preempt_type)));
   const cpu_num_t current_cpu = arch_curr_cpu_num();
 
   // If any spinlocks are held, we can't immediately reschedule.  Instead, send

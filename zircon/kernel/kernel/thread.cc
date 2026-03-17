@@ -1649,7 +1649,6 @@ void Thread::Current::Yield() {
  * queue and then yields the cpu to another thread.
  */
 void Thread::Current::Preempt() {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt: int");
   Thread* current_thread = Thread::Current::Get();
 
   current_thread->canary_.Assert();
@@ -1660,7 +1659,7 @@ void Thread::Current::Preempt() {
     CPU_STATS_INC(preempts);
   }
 
-  Scheduler::Preempt();
+  Scheduler::Preempt(Scheduler::PreemptType::Irq);
 }
 
 /**
@@ -1713,7 +1712,7 @@ void PreemptionState::FlushPendingContinued(Flush flush) {
     // TODO(johngro): We cannot be holding the current thread's lock while we do
     // this.  Is there a good way to enforce this requirement via either static
     // annotation or dynamic checks?
-    Scheduler::Preempt();
+    Scheduler::Preempt(Scheduler::PreemptType::FlushPending);
   } else if ((flush & FlushRemote) != 0) {
     // The current cpu is ignored by mp_reschedule if present in the mask.
     mp_reschedule(pending_mask, 0);
