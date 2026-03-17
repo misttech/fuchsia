@@ -5,6 +5,7 @@
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::usb_config::{UsbConfig, UsbPeripheralFunction};
+use assembly_constants::BoardFeature;
 
 pub(crate) struct UsbSubsystem;
 
@@ -29,13 +30,13 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
         )?;
 
         // Include xHCI driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::xhci") {
+        if context.board_config.provides_feature(BoardFeature::Xhci) {
             builder.platform_bundle("xhci_driver")?;
         }
-        if context.board_config.provides_feature("fuchsia::usb_host") {
+        if context.board_config.provides_feature(BoardFeature::UsbHost) {
             builder.platform_bundle("usb_host_drivers")?;
         }
-        if context.board_config.provides_feature("fuchsia::usb_peripheral_support") {
+        if context.board_config.provides_feature(BoardFeature::UsbPeripheralSupport) {
             for function in usb.peripheral.functions() {
                 match (function, context.feature_set_level, context.build_type) {
                     (UsbPeripheralFunction::Adb, _, _) => {

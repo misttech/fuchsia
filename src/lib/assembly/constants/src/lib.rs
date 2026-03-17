@@ -6,8 +6,11 @@
 
 //! Constants use throughout assembly including file destinations and kernel arguments.
 
+mod board_features;
 mod files;
 mod kernel_args;
+
+pub use board_features::BoardFeature;
 
 pub use files::{
     BlobfsCompiledPackageDestination, BootfsCompiledPackageDestination, BootfsDestination,

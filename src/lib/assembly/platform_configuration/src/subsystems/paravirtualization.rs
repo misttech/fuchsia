@@ -6,6 +6,7 @@ use crate::subsystems::prelude::*;
 use anyhow::bail;
 use assembly_config_schema::FeatureControl;
 use assembly_config_schema::platform_settings::paravirtualization_config::PlatformParavirtualizationConfig;
+use assembly_constants::BoardFeature;
 
 pub(crate) struct ParavirtualizationSubsystem;
 
@@ -18,7 +19,7 @@ impl DefineSubsystemConfiguration<PlatformParavirtualizationConfig>
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         let enabled = &virtualization_config.enabled;
-        let supported = context.board_config.provides_feature("fuchsia::paravirtualization");
+        let supported = context.board_config.provides_feature(BoardFeature::Paravirtualization);
         match (enabled, supported) {
             (FeatureControl::Required, false) => bail!(
                 "Product requires paravirtualization, but board doesn't provide feature: fuchsia::paravirtualization"

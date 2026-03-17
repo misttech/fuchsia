@@ -10,6 +10,7 @@ use assembly_config_schema::platform_settings::driver_framework_config::{
     DriverFrameworkConfig, TestFuzzingConfig,
 };
 use assembly_config_schema::platform_settings::storage_config::StorageConfig;
+use assembly_constants::BoardFeature;
 use assembly_images_config::FilesystemImageMode;
 
 pub(crate) struct DriverFrameworkSubsystemConfig;
@@ -47,7 +48,7 @@ impl
         }
 
         let rust_driver_manager =
-            context.board_config.provides_feature("fuchsia::rust_driver_manager");
+            context.board_config.provides_feature(BoardFeature::RustDriverManager);
         let heapdump = development_support.heapdump.driver_framework;
         match (rust_driver_manager, heapdump) {
             (true, true) => {
@@ -156,7 +157,7 @@ impl
             software_ids.push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO_LEGACY);
         }
 
-        if context.board_config.provides_feature("fuchsia::fake_battery")
+        if context.board_config.provides_feature(BoardFeature::FakeBattery)
             && matches!(
                 context.feature_set_level,
                 FeatureSetLevel::Utility | FeatureSetLevel::Standard
@@ -188,8 +189,8 @@ impl
         )?;
 
         // Include bus-pci or bus-kpci driver through platform AIBs.
-        let bus_pci = context.board_config.provides_feature("fuchsia::bus_pci");
-        let bus_kpci = context.board_config.provides_feature("fuchsia::bus_kpci");
+        let bus_pci = context.board_config.provides_feature(BoardFeature::BusPci);
+        let bus_kpci = context.board_config.provides_feature(BoardFeature::BusKpci);
 
         if bus_pci && bus_kpci {
             return Err(anyhow!(
@@ -208,7 +209,7 @@ impl
             builder.platform_bundle("bus_kpci_driver")?;
         }
 
-        let interconnect = context.board_config.provides_feature("fuchsia::interconnect");
+        let interconnect = context.board_config.provides_feature(BoardFeature::Interconnect);
         if interconnect {
             builder.platform_bundle("interconnect_driver")?;
         }

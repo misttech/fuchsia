@@ -8,7 +8,7 @@ use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueTyp
 use assembly_config_schema::platform_settings::ui_config::{
     PlatformUiConfig, UnsignedIntegerRangeInclusive,
 };
-use assembly_constants::{FileEntry, PackageDestination, PackageSetDestination};
+use assembly_constants::{BoardFeature, FileEntry, PackageDestination, PackageSetDestination};
 
 pub(crate) struct UiSubsystem;
 
@@ -18,7 +18,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         ui_config: &PlatformUiConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        if context.board_config.provides_feature("fuchsia::input") {
+        if context.board_config.provides_feature(BoardFeature::Input) {
             builder.platform_bundle("input_drivers")?;
         }
 

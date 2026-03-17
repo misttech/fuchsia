@@ -21,6 +21,7 @@ rustc_library("constants") {
     "//third_party/rust_crates:strum_macros",
   ]
   sources = [
+    "src/board_features.rs",
     "src/files.rs",
     "src/kernel_args.rs",
     "src/lib.rs",

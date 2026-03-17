@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
+use assembly_constants::BoardFeature;
 
 pub(crate) struct RadarSubsystemConfig;
 impl DefineSubsystemConfiguration<()> for RadarSubsystemConfig {
@@ -11,7 +12,7 @@ impl DefineSubsystemConfiguration<()> for RadarSubsystemConfig {
         _: &(),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        if context.board_config.provides_feature("fuchsia::radar")
+        if context.board_config.provides_feature(BoardFeature::Radar)
             && matches!(context.feature_set_level, FeatureSetLevel::Standard)
         {
             if matches!(context.build_type, BuildType::Eng | BuildType::UserDebug) {

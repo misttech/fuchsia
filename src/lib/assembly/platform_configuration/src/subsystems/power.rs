@@ -6,7 +6,7 @@ use crate::subsystems::prelude::*;
 use anyhow::Context;
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::power_config::PowerConfig;
-use assembly_constants::{BootfsDestination, FileEntry};
+use assembly_constants::{BoardFeature, BootfsDestination, FileEntry};
 
 pub(crate) struct PowerManagementSubsystem;
 
@@ -90,7 +90,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 "fuchsia.power.WaitForSuspendingToken",
                 Config::new(
                     ConfigValueType::Bool,
-                    context.board_config.provides_feature("fuchsia::suspending_token").into(),
+                    context.board_config.provides_feature(BoardFeature::SuspendingToken).into(),
                 ),
             )?;
 
@@ -98,7 +98,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 "fuchsia.power.UseSuspender",
                 Config::new(
                     ConfigValueType::Bool,
-                    context.board_config.provides_feature("fuchsia::suspender").into(),
+                    context.board_config.provides_feature(BoardFeature::Suspender).into(),
                 ),
             )?;
 
@@ -145,7 +145,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             Config::new(
                 ConfigValueType::Bool,
                 serde_json::Value::Bool(
-                    context.board_config.provides_feature("fuchsia::cpu_power_boost"),
+                    context.board_config.provides_feature(BoardFeature::CpuPowerBoost),
                 ),
             ),
         )?;
@@ -156,7 +156,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 ConfigValueType::Bool,
                 context
                     .board_config
-                    .provides_feature("fuchsia::runtime_processor_power_management")
+                    .provides_feature(BoardFeature::RuntimeProcessorPowerManagement)
                     .into(),
             ),
         )?;
@@ -176,8 +176,8 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                     (config.storage_power_management_enabled
                         || context
                             .board_config
-                            .provides_feature("fuchsia::storage_power_management"))
-                        && context.board_config.provides_feature("fuchsia::suspending_token"),
+                            .provides_feature(BoardFeature::StoragePowerManagement))
+                        && context.board_config.provides_feature(BoardFeature::SuspendingToken),
                 ),
             ),
         )?;
@@ -193,7 +193,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         }
 
         // Include fake-battery driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::fake_battery") {
+        if context.board_config.provides_feature(BoardFeature::FakeBattery) {
             // We only need this driver feature in the utility / standard feature set levels.
             if *context.feature_set_level == FeatureSetLevel::Standard
                 || *context.feature_set_level == FeatureSetLevel::Utility
@@ -203,20 +203,20 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         }
 
         // Include fake-power-sensor through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::fake_power_sensor")
+        if context.board_config.provides_feature(BoardFeature::FakePowerSensor)
             && *context.feature_set_level == FeatureSetLevel::Standard
             && *context.build_type == BuildType::Eng
         {
             builder.platform_bundle("fake_power_sensor")?;
         }
 
-        if context.board_config.provides_feature("fuchsia::pwm") {
+        if context.board_config.provides_feature(BoardFeature::Pwm) {
             builder.platform_bundle("pwm_driver")?;
         }
-        if context.board_config.provides_feature("fuchsia::power") {
+        if context.board_config.provides_feature(BoardFeature::Power) {
             builder.platform_bundle("power_driver")?;
         }
-        if context.board_config.provides_feature("fuchsia::shared_registers") {
+        if context.board_config.provides_feature(BoardFeature::SharedRegisters) {
             builder.platform_bundle("registers_driver")?;
         }
 

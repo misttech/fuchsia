@@ -5,6 +5,7 @@
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
+use assembly_constants::BoardFeature;
 
 pub(crate) struct GraphicsSubsystemConfig;
 impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
@@ -32,7 +33,7 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
         }
 
         if *context.feature_set_level == FeatureSetLevel::Standard
-            && context.board_config.provides_feature("fuchsia::vulkan_gpu")
+            && context.board_config.provides_feature(BoardFeature::VulkanGpu)
         {
             builder.platform_bundle("vulkan_loader")?;
         }

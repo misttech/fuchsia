@@ -8,7 +8,7 @@ use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::development_support_config::StorageToolsConfig;
 use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
 use assembly_config_schema::platform_settings::storage_config::StorageConfig;
-use assembly_constants::{BootfsDestination, FileEntry};
+use assembly_constants::{BoardFeature, BootfsDestination, FileEntry};
 use assembly_images_config::{
     BlobfsLayout, DataFilesystemFormat, FilesystemImageMode, FlexibleSize, FvmConfig, GptMode,
     VolumeConfig,
@@ -37,7 +37,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // Include legacy paver implementation in all feature sets above "embeddable" if the board
         // doesn't include it. Embeddable doesn't support paving.
         if *context.feature_set_level != FeatureSetLevel::Embeddable
-            && !context.board_config.provides_feature("fuchsia::paver")
+            && !context.board_config.provides_feature(BoardFeature::Paver)
         {
             builder.platform_bundle("paver_legacy")?;
         }
@@ -64,11 +64,11 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
 
         if storage_config.keymint_enabled {
             ensure!(
-                context.board_config.provides_feature("fuchsia::keymint"),
+                context.board_config.provides_feature(BoardFeature::Keymint),
                 "fuchsia::keymint is not provided by the board, can't use keymint."
             );
             std::fs::write(&data_encryption_config_path, "keymint")
-        } else if context.board_config.provides_feature("fuchsia::keysafe_ta") {
+        } else if context.board_config.provides_feature(BoardFeature::KeysafeTa) {
             std::fs::write(&data_encryption_config_path, "tee")
         } else {
             std::fs::write(&data_encryption_config_path, "null")
@@ -76,7 +76,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         .context("Could not write data encryption configuration")?;
 
         let inline_crypto = Config::new_bool(
-            context.board_config.provides_feature("fuchsia::storage_inline_crypto"),
+            context.board_config.provides_feature(BoardFeature::StorageInlineCrypto),
         );
 
         let block_config_path = gendir.join("fshost_block_config.json");
@@ -133,7 +133,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let sdmmc_command_queueing = storage_config.sdmmc_command_queueing_enabled;
         if sdmmc_command_queueing {
             ensure!(
-                context.board_config.provides_feature("fuchsia::sdmmc_cqe"),
+                context.board_config.provides_feature(BoardFeature::SdmmcCqe),
                 "SDMMC command queueing requires fuchsia::sdmmc_cqe"
             );
         }
@@ -334,7 +334,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         // Include SDHCI driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::sdhci") {
+        if context.board_config.provides_feature(BoardFeature::Sdhci) {
             builder.platform_bundle("sdhci_driver")?;
         }
 
@@ -345,19 +345,19 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         // Include UFS PCI driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::ufs_pci") {
+        if context.board_config.provides_feature(BoardFeature::UfsPci) {
             builder.platform_bundle("ufs_pci_driver")?;
         }
 
         // Include UFS PDev driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::ufs_pdev") {
+        if context.board_config.provides_feature(BoardFeature::UfsPdev) {
             builder.platform_bundle("ufs_pdev_driver")?;
         }
 
         // In engineering builds, include the ufsutil CLI tool when UFS device
         // support is enabled.
-        if (context.board_config.provides_feature("fuchsia::ufs_pci")
-            || context.board_config.provides_feature("fuchsia::ufs_pdev"))
+        if (context.board_config.provides_feature(BoardFeature::UfsPci)
+            || context.board_config.provides_feature(BoardFeature::UfsPdev))
             && context.build_type == &BuildType::Eng
         {
             builder.platform_bundle("ufsutil")?;

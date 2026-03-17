@@ -6,6 +6,7 @@ use crate::subsystems::prelude::*;
 use crate::util;
 use anyhow::{bail, ensure};
 use assembly_config_schema::platform_settings::media_config::{AudioConfig, PlatformMediaConfig};
+use assembly_constants::BoardFeature;
 
 pub(crate) struct MediaSubsystem;
 impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
@@ -19,10 +20,10 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
         {
             builder.platform_bundle("audio_development_support")?;
 
-            if context.board_config.provides_feature("fuchsia::video_encoders") {
+            if context.board_config.provides_feature(BoardFeature::VideoEncoders) {
                 builder.platform_bundle("video_development_support")?;
             }
-            if context.board_config.provides_feature("fuchsia::intel_hda") {
+            if context.board_config.provides_feature(BoardFeature::IntelHda) {
                 builder.platform_bundle("intel_hda")?;
             }
         }
@@ -30,7 +31,7 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
         match &media_config.audio {
             Some(AudioConfig::FullStack(config)) => {
                 builder.platform_bundle("audio_core_routing")?;
-                if !context.board_config.provides_feature("fuchsia::custom_audio_core") {
+                if !context.board_config.provides_feature(BoardFeature::CustomAudioCore) {
                     builder.platform_bundle("audio_core")?;
                 }
                 if config.use_adc_device {

@@ -9,7 +9,7 @@ use assembly_config_schema::platform_settings::kernel_config::{
     MemoryReclamationStrategy, OOMBehavior, OOMRebootTimeout, PagetableEvictionPolicy,
     PlatformKernelConfig,
 };
-use assembly_constants::{BootfsDestination, FileEntry, KernelArg};
+use assembly_constants::{BoardFeature, BootfsDestination, FileEntry, KernelArg};
 use camino::Utf8Path;
 use serde_json::Value;
 use std::fs::File;
@@ -99,18 +99,18 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
 
         // If the board supports the PMM checker, and this is an eng build-type
         // build, enable the pmm checker.
-        if context.board_config.provides_feature("fuchsia::pmm_checker")
-            && context.board_config.provides_feature("fuchsia::pmm_checker_auto")
+        if context.board_config.provides_feature(BoardFeature::PmmChecker)
+            && context.board_config.provides_feature(BoardFeature::PmmCheckerAuto)
         {
             anyhow::bail!(
                 "Board provides conflicting features of 'fuchsia::pmm_checker' and 'fuchsia::pmm_checker_auto'"
             );
         }
-        if context.board_config.provides_feature("fuchsia::pmm_checker")
+        if context.board_config.provides_feature(BoardFeature::PmmChecker)
             && context.build_type == &BuildType::Eng
         {
             builder.platform_bundle("kernel_pmm_checker_enabled")?;
-        } else if context.board_config.provides_feature("fuchsia::pmm_checker_auto")
+        } else if context.board_config.provides_feature(BoardFeature::PmmCheckerAuto)
             && context.build_type == &BuildType::Eng
         {
             builder.platform_bundle("kernel_pmm_checker_enabled_auto")?;

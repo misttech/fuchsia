@@ -18,7 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use assembly_config_schema::platform_settings::icu_config::{ICU_CONFIG_INFO, ICUMap, Revision};
 use assembly_config_schema::{BoardConfig, BuildType, FeatureSetLevel, ICUConfig};
 use assembly_constants::{
-    BootfsDestination, CompiledPackageDestination, FileEntry, KernelArg, PackageSetDestination,
+    BoardFeature, BootfsDestination, CompiledPackageDestination, FileEntry, KernelArg,
+    PackageSetDestination,
 };
 use assembly_named_file_map::NamedFileMap;
 use assembly_util::NamedMap;
@@ -747,23 +748,23 @@ impl BootfsConfigBuilder for BootfsConfig {
 
 pub(crate) trait BoardConfigExt {
     /// Returns whether or not this board provides the named feature.
-    fn provides_feature(&self, name: impl AsRef<str>) -> bool;
+    fn provides_feature(&self, feature: BoardFeature) -> bool;
 }
 
 impl BoardConfigExt for BoardConfig {
     /// Returns whether or not this board provides the named feature.
-    fn provides_feature(&self, name: impl AsRef<str>) -> bool {
+    fn provides_feature(&self, feature: BoardFeature) -> bool {
         // .contains(&str) doesn't work for Vec<String>, so it's neccessary
         // to use .iter().any(...) instead.
-        let name = name.as_ref();
-        self.provided_features.iter().any(|f| f == name)
+        let feature_str = feature.as_ref();
+        self.provided_features.iter().any(|f| f == feature_str)
     }
 }
 
 impl BoardConfigExt for Option<&BoardConfig> {
-    fn provides_feature(&self, name: impl AsRef<str>) -> bool {
+    fn provides_feature(&self, feature: BoardFeature) -> bool {
         match self {
-            Some(board_config) => board_config.provides_feature(name),
+            Some(board_config) => board_config.provides_feature(feature),
             _ => false,
         }
     }
@@ -1157,13 +1158,13 @@ mod tests {
     fn test_provides_feature() {
         let board_config = BoardConfig {
             name: "sample".to_owned(),
-            provided_features: vec!["feature_a".into(), "feature_b".into()],
+            provided_features: vec!["fuchsia::fan".into(), "fuchsia::gnss".into()],
             ..Default::default()
         };
 
-        assert!(board_config.provides_feature("feature_a"));
-        assert!(board_config.provides_feature("feature_b"));
-        assert!(!board_config.provides_feature("feature_c"));
+        assert!(board_config.provides_feature(BoardFeature::Fan));
+        assert!(board_config.provides_feature(BoardFeature::Gnss));
+        assert!(!board_config.provides_feature(BoardFeature::Input));
     }
 
     #[test]

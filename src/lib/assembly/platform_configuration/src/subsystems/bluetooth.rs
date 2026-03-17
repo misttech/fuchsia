@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
+use assembly_constants::BoardFeature;
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigValueType};
@@ -84,7 +85,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         }
 
         // Include bt-transport-uart driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::bt_transport_uart")
+        if context.board_config.provides_feature(BoardFeature::BtTransportUart)
             && (*context.feature_set_level == FeatureSetLevel::Standard
                 || *context.feature_set_level == FeatureSetLevel::Utility)
         {

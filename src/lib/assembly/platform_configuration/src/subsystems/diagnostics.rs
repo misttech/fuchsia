@@ -13,7 +13,7 @@ use assembly_config_schema::platform_settings::diagnostics_config::{
 };
 use assembly_config_schema::platform_settings::storage_config::StorageConfig;
 use assembly_constants::{
-    BootfsDestination, BootfsPackageDestination, FileEntry, PackageSetDestination,
+    BoardFeature, BootfsDestination, BootfsPackageDestination, FileEntry, PackageSetDestination,
 };
 use assembly_util::read_config;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -227,7 +227,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             FeatureSetLevel::Bootstrap | FeatureSetLevel::Utility | FeatureSetLevel::Embeddable => {
             }
             FeatureSetLevel::Standard => {
-                if context.board_config.provides_feature("fuchsia::mali_gpu") {
+                if context.board_config.provides_feature(BoardFeature::MaliGpu) {
                     builder.platform_bundle("diagnostics_triage_detect_mali")?;
                 }
             }

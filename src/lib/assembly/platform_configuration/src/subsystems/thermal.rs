@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
+use assembly_constants::BoardFeature;
 
 pub(crate) struct ThermalSubsystem;
 impl DefineSubsystemConfiguration<()> for ThermalSubsystem {
@@ -13,7 +14,7 @@ impl DefineSubsystemConfiguration<()> for ThermalSubsystem {
     ) -> anyhow::Result<()> {
         if (*context.feature_set_level == FeatureSetLevel::Utility
             || *context.feature_set_level == FeatureSetLevel::Standard)
-            && context.board_config.provides_feature("fuchsia::fan")
+            && context.board_config.provides_feature(BoardFeature::Fan)
         {
             builder.platform_bundle("fan")?;
         }

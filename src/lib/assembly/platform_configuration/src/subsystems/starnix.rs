@@ -8,6 +8,7 @@ use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueTyp
 use assembly_config_schema::platform_settings::starnix_config::{
     NetworkManagerTreatment, PlatformStarnixConfig, SocketMarkTreatment,
 };
+use assembly_constants::BoardFeature;
 use starnix_features::{Feature, FeatureAndArgs};
 
 pub(crate) struct StarnixSubsystem;
@@ -36,8 +37,8 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             );
             builder.platform_bundle("starnix_support")?;
 
-            let has_fullmac = context.board_config.provides_feature("fuchsia::wlan_fullmac");
-            let has_softmac = context.board_config.provides_feature("fuchsia::wlan_softmac");
+            let has_fullmac = context.board_config.provides_feature(BoardFeature::WlanFullmac);
+            let has_softmac = context.board_config.provides_feature(BoardFeature::WlanSoftmac);
             let has_wifi = *enable_android_support && (has_fullmac || has_softmac);
             let has_wakeup_test = if *enable_wakeup_test {
                 ensure!(

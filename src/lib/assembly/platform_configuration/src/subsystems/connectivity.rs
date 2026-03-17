@@ -10,7 +10,7 @@ use assembly_config_schema::platform_settings::connectivity_config::{
     NetstackVersion, NetworkingConfig, PlatformConnectivityConfig, WlanPolicyLayer,
     WlanRecoveryProfile, WlanRoamingMode, WlanRoamingPolicy, WlanRoamingProfile,
 };
-use assembly_constants::{FileEntry, PackageDestination, PackageSetDestination};
+use assembly_constants::{BoardFeature, FileEntry, PackageDestination, PackageSetDestination};
 
 pub(crate) struct ConnectivitySubsystemConfig;
 impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySubsystemConfig {
@@ -160,7 +160,7 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             // The use of netstack3 can be forcibly required by the board,
             // otherwise it's selectable by the product.
             match (
-                context.board_config.provides_feature("fuchsia::network_require_netstack3"),
+                context.board_config.provides_feature(BoardFeature::NetworkRequireNetstack3),
                 connectivity_config.network.netstack_version,
             ) {
                 (true, _) | (false, NetstackVersion::Netstack3) => {
@@ -213,8 +213,8 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                     .field("suspend_enabled", false)?;
             }
 
-            let has_fullmac = context.board_config.provides_feature("fuchsia::wlan_fullmac");
-            let has_softmac = context.board_config.provides_feature("fuchsia::wlan_softmac");
+            let has_fullmac = context.board_config.provides_feature(BoardFeature::WlanFullmac);
+            let has_softmac = context.board_config.provides_feature(BoardFeature::WlanSoftmac);
             if has_fullmac || has_softmac {
                 // Select the policy layer
                 match connectivity_config.wlan.policy_layer {
@@ -389,13 +389,13 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
         }
 
         // Include realtek-8211f driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::realtek_8211f") {
+        if context.board_config.provides_feature(BoardFeature::Realtek8211f) {
             // We only need this driver feature in the utility / standard feature set levels.
             builder.platform_bundle("realtek_8211f_driver")?;
         }
 
         // Include GNSS service through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::gnss") {
+        if context.board_config.provides_feature(BoardFeature::Gnss) {
             builder.platform_bundle("gnss")?;
         }
 
