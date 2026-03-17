@@ -213,10 +213,12 @@ zx::result<> UsbPeripheral::Start() {
     return zx::error(status);
   }
 
-  status = SetDefaultConfig(peripheral_config.functions());
-  if (status != ZX_OK) {
-    fdf::error("Failed to set default config: {}", zx_status_get_string(status));
-    return zx::error(status);
+  if (!peripheral_config.functions().empty()) {
+    status = SetDefaultConfig(peripheral_config.functions());
+    if (status != ZX_OK) {
+      fdf::error("Failed to set default config: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
   }
 
   usb_monitor_.Start();
