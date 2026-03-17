@@ -342,12 +342,18 @@ class WlanphyDeviceTest : public ::testing::Test {
     EXPECT_EQ(ZX_OK, prepare_stop_result.status_value());
   }
   void WaitForCommandCompletion() {
+    FakeWlanPhyImpl* fake_wlan_phy = nullptr;
     driver_test().RunInEnvironmentTypeContext(
-        [](TestEnvironment& env) { return env.fake_phyimpl_parent_.WaitForCompletion(); });
+        [&](TestEnvironment& env) { fake_wlan_phy = &env.fake_phyimpl_parent_; });
+    ASSERT_NE(fake_wlan_phy, nullptr);
+    fake_wlan_phy->WaitForCompletion();
   }
   void WaitForNotifyClient() {
+    FakeWlanPhyImpl* fake_wlan_phy = nullptr;
     driver_test().RunInEnvironmentTypeContext(
-        [](TestEnvironment& env) { return env.fake_phyimpl_parent_.WaitForNotifyClient(); });
+        [&](TestEnvironment& env) { fake_wlan_phy = &env.fake_phyimpl_parent_; });
+    ASSERT_NE(fake_wlan_phy, nullptr);
+    fake_wlan_phy->WaitForNotifyClient();
   }
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
   // The FIDL client to communicate with wlanphy device.
