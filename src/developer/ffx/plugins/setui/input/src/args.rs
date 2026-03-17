@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::InputState;
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::InputState;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -13,7 +13,7 @@ use fidl_fuchsia_settings::InputState;
 pub struct Input {
     #[argh(option, short = 't', from_str_fn(str_to_device_type))]
     /// the type of input device. Valid options are camera and microphone
-    pub device_type: Option<fidl_fuchsia_settings::DeviceType>,
+    pub device_type: Option<fdomain_fuchsia_settings::DeviceType>,
 
     #[argh(option, short = 'n', long = "name")]
     /// the name of the device. Must be unique within a device type
@@ -22,25 +22,25 @@ pub struct Input {
     #[argh(option, short = 's', long = "state", from_str_fn(str_to_device_state))]
     /// the device state flags, pass a comma separated string of the values available, active,
     /// muted, disabled and error. E.g. "-s available,active"
-    pub device_state: Option<fidl_fuchsia_settings::DeviceState>,
+    pub device_state: Option<fdomain_fuchsia_settings::DeviceState>,
 }
 
-fn str_to_device_type(src: &str) -> Result<fidl_fuchsia_settings::DeviceType, String> {
+fn str_to_device_type(src: &str) -> Result<fdomain_fuchsia_settings::DeviceType, String> {
     let device_type = src.to_lowercase();
     match device_type.as_ref() {
-        "microphone" | "m" => Ok(fidl_fuchsia_settings::DeviceType::Microphone),
-        "camera" | "c" => Ok(fidl_fuchsia_settings::DeviceType::Camera),
+        "microphone" | "m" => Ok(fdomain_fuchsia_settings::DeviceType::Microphone),
+        "camera" | "c" => Ok(fdomain_fuchsia_settings::DeviceType::Camera),
         _ => Err(String::from("Unidentified device type")),
     }
 }
 
-fn str_to_device_state(src: &str) -> Result<fidl_fuchsia_settings::DeviceState, String> {
-    use fidl_fuchsia_settings::ToggleStateFlags;
+fn str_to_device_state(src: &str) -> Result<fdomain_fuchsia_settings::DeviceState, String> {
+    use fdomain_fuchsia_settings::ToggleStateFlags;
 
     #[allow(clippy::manual_try_fold, reason = "mass allow for https://fxbug.dev/381896734")]
-    Ok(fidl_fuchsia_settings::DeviceState {
+    Ok(fdomain_fuchsia_settings::DeviceState {
         toggle_flags: Some(src.to_lowercase().split(",").fold(
-            Ok(fidl_fuchsia_settings::ToggleStateFlags::empty()),
+            Ok(fdomain_fuchsia_settings::ToggleStateFlags::empty()),
             |acc, flag| {
                 acc.and_then(|acc| {
                     Ok(match flag {
