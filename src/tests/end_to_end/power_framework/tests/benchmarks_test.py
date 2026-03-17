@@ -5,26 +5,26 @@
 import logging
 import os
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 from trace_processing import trace_importing, trace_model
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class PowerBenchmarksTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
         """Initialize all DUT(s)"""
-        super().setup_class()
+        await super().setup_class()
         self.device = self.fuchsia_devices[0]
 
-    def test_integration_testcase(self) -> None:
+    async def test_integration_testcase(self) -> None:
         _LOGGER.info("Running power framework benchmarks Lacewing test...")
         # The power-framework-bench-integration runs the benchmark for
         # Takewakelease
         # Toggle levels
         host_output_path = self.test_case_path
-        with self.device.tracing.trace_session(
+        async with self.device.tracing.trace_session(
             categories=[
                 "kernel:sched",
                 "kernel:meta",
