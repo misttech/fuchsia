@@ -13,7 +13,6 @@
 
 #include <cstdint>
 #include <map>
-#include <optional>
 #include <span>
 
 #include <fbl/auto_lock.h>
@@ -52,26 +51,24 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
                      public FenceListener {
  public:
   // `controller` must outlive the newly created client.
-  Client(Controller* controller, display::ClientPriority priority, ClientId client_id);
+  // `priority`, `client_id`, `coordinator_server_end` and
+  // `coordinator_listener_client_end` must be valid.
+  Client(Controller* controller, display::ClientPriority priority, ClientId client_id,
+         fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
+         fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
+             coordinator_listener_client_end);
 
   Client(const Client&) = delete;
   Client& operator=(const Client&) = delete;
 
   ~Client() override;
 
-  zx_status_t Bind(inspect::Node client_node,
-                   fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end,
-                   fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-                       coordinator_listener_client_end);
-
-  zx::result<> BindForTesting(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end,
-                              fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-                                  coordinator_listener_client_end);
+  // Must be called exactly once.
+  void AttachInspectNode(inspect::Node client_node);
 
   void OnDisplayVsync(display::DisplayId display_id, zx_instant_mono_t timestamp,
                       display::DriverConfigStamp driver_config_stamp);
   void OnCaptureComplete();
-  void OnClientDead();
   void SubmitSpecialConfigs();
 
   inspect::Node& node() { return node_; }
@@ -86,17 +83,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void UpdateConfigStampMapping(ConfigStampPair stamps);
 
   static constexpr uint32_t kMaxImageHandles = 8;
-
-  // Binds the `Client` to the server-side channel of the `Coordinator`
-  // protocol.
-  //
-  // Must be called exactly once in production code.
-  //
-  // `coordinator_server_end` and `coordinator_listener_client_end` must be valid.
-  void Bind(fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-            fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-                coordinator_listener_client_end,
-            fidl::OnUnboundFn<Client> unbound_callback);
 
   void OnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                          std::span<const display::DisplayId> removed_display_ids);
@@ -120,9 +106,17 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   // `FenceListener`:
   void OnFenceSignaled(Fence& fence) override;
 
-  void TearDown(zx_status_t epitaph);
+  // Closes the FIDL connection.
+  //
+  // Called when the Coordinator is shutting down. Under normal operation, the Coordinator
+  // services a client until it closes the FIDL connection.
+  void CloseFidlConnection(zx_status_t epitaph);
 
-  bool IsValid() const { return valid_; }
+  // Releases resources allocated for this client.
+  //
+  // Must be called before the Client instance is destroyed.
+  void ReleaseResources();
+
   ClientId id() const { return id_; }
   display::ClientPriority priority() const { return priority_; }
   void CaptureCompleted();
@@ -189,6 +183,9 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
  private:
   display::ConfigCheckResult CheckConfigImpl();
 
+  // Called when the client closes the FIDL channel to the Coordinator.
+  void OnClientFidlBindingClosed(fidl::UnbindInfo unbind_info);
+
   // Submits the client's current (most recent) committed configuration.
   //
   // The client must have a committed configuration.
@@ -247,7 +244,9 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   Controller& controller_;
   const display::ClientPriority priority_;
   const ClientId id_;
-  bool valid_ = false;
+
+  bool attach_inspect_node_called_ = false;
+  bool release_resources_called_ = false;
 
   Image::Map images_;
   CaptureImage::Map capture_images_;
@@ -286,7 +285,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
 
   Layer::Map layers_;
 
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_display::Coordinator>> binding_;
+  fidl::ServerBinding<fuchsia_hardware_display::Coordinator> binding_;
   fidl::WireSyncClient<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_;
 
   // Capture related bookkeeping.

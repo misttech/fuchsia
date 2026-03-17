@@ -100,7 +100,11 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                       display::DriverConfigStamp driver_config_stamp) override;
 
-  void OnClientDead(Client* client);
+  // `client` must not be null.
+  //
+  // `client` is removed from the client set and destroyed during this call.
+  void OnClientDisconnected(Client* client);
+
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
   void SubmitConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
@@ -167,6 +171,8 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   void OpenCoordinatorWithListenerForPrimary(
       OpenCoordinatorWithListenerForPrimaryRequestView request,
       OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) override;
+
+  const ClientSet& ClientsForTesting() const { return clients_; }
 
  private:
   // Initializes logic that is not suitable for the constructor.

@@ -1439,12 +1439,11 @@ void Client::CaptureCompleted() {
   current_capture_image_id_ = display::kInvalidImageId;
 }
 
-void Client::TearDown(zx_status_t epitaph) {
-  TRACE_DURATION("gfx", "Display::Client::TearDown");
-  fdf::info("Tearing down Client 0x{:x} (ID = {})", reinterpret_cast<uintptr_t>(this), id_.value());
-
+void Client::CloseFidlConnection(zx_status_t epitaph) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  draft_display_config_was_validated_ = false;
+
+  TRACE_DURATION("gfx", "Display::Client::CloseFidlConnection");
+  fdf::info("Closing FIDL connection for client: priority {}, ID {}", priority_, id_.value());
 
   // See `fuchsia.hardware.display/Coordinator` protocol documentation in `coordinator.fidl`,
   // which describes the epitaph values that will be set when the channel closes.
@@ -1452,25 +1451,28 @@ void Client::TearDown(zx_status_t epitaph) {
     case ZX_ERR_INVALID_ARGS:
     case ZX_ERR_BAD_STATE:
     case ZX_ERR_NO_MEMORY:
-      fdf::info("TearDown() called with epitaph {}", zx::make_result(epitaph));
+    case ZX_OK:
       break;
     default:
-      fdf::info("TearDown() called with epitaph {}; using catchall ZX_ERR_INTERNAL instead",
-                zx::make_result(epitaph));
+      fdf::info(
+          "CloseFidlConnection() called with epitaph {}; using catchall ZX_ERR_INTERNAL instead",
+          zx::make_result(epitaph));
       epitaph = ZX_ERR_INTERNAL;
   }
 
-  // Teardown stops events from the channel, but not from the ddk, so we
-  // need to make sure we don't try to teardown multiple times.
-  if (!IsValid()) {
-    return;
-  }
-  valid_ = false;
-
-  // Break FIDL connections.
-  binding_->Close(epitaph);
-  binding_.reset();
+  binding_.Close(epitaph);
   coordinator_listener_ = fidl::WireSyncClient<fuchsia_hardware_display::CoordinatorListener>();
+}
+
+void Client::ReleaseResources() {
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+  ZX_DEBUG_ASSERT_MSG(!release_resources_called_, "ReleaseResources() already called");
+
+  TRACE_DURATION("gfx", "Display::Client::ReleaseResources");
+  fdf::info("Releasing resources for client: priority {}, ID {}", priority_, id_.value());
+
+  release_resources_called_ = true;
+  draft_display_config_was_validated_ = false;
 
   CleanUpAllImages();
   fdf::info("Releasing {} capture images cur={}, pending={}", capture_images_.size(),
@@ -1594,37 +1596,28 @@ void Client::AcknowledgeVsync(AcknowledgeVsyncRequestView request,
   fdf::trace("Cookie {} Acked\n", ack_cookie.value());
 }
 
-void Client::Bind(
+Client::Client(
+    Controller* controller, display::ClientPriority priority, ClientId client_id,
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end,
-    fidl::OnUnboundFn<Client> unbound_callback) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT(coordinator_server_end.is_valid());
-  ZX_DEBUG_ASSERT(coordinator_listener_client_end.is_valid());
-  ZX_DEBUG_ASSERT_MSG(!valid_, "Bind() already called");
-
-  valid_ = true;
-
-  // Keep a copy of FIDL binding so we can safely unbind from it during shutdown.
-  binding_ = fidl::BindServer(controller_.driver_dispatcher()->async_dispatcher(),
-                              std::move(coordinator_server_end), this, std::move(unbound_callback));
-
-  coordinator_listener_ = fidl::WireSyncClient<fuchsia_hardware_display::CoordinatorListener>(
-      std::move(coordinator_listener_client_end));
-}
-
-Client::Client(Controller* controller, display::ClientPriority priority, ClientId client_id)
+    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener_client_end)
     : controller_(*controller),
       priority_(priority),
       id_(client_id),
-      fences_(this, controller->driver_dispatcher()->borrow()) {
+      fences_(this, controller->driver_dispatcher()->borrow()),
+      binding_(controller_.driver_dispatcher()->async_dispatcher(),
+               std::move(coordinator_server_end), this,
+               std::mem_fn(&Client::OnClientFidlBindingClosed)),
+      coordinator_listener_(std::move(coordinator_listener_client_end)) {
   ZX_DEBUG_ASSERT(controller != nullptr);
   ZX_DEBUG_ASSERT(priority != display::ClientPriority::kInvalid);
   ZX_DEBUG_ASSERT(client_id != kInvalidClientId);
+  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+  ZX_DEBUG_ASSERT(coordinator_listener_.is_valid());
 }
 
 Client::~Client() {
-  ZX_DEBUG_ASSERT(!valid_);
+  ZX_DEBUG_ASSERT(release_resources_called_);
+  ZX_DEBUG_ASSERT(attach_inspect_node_called_);
 
   ZX_DEBUG_ASSERT(layers_.size() == 0);
 }
@@ -1680,11 +1673,11 @@ void Client::DrainVsyncQueue() {
       });
 }
 
-void Client::OnClientDead() {
+void Client::OnClientFidlBindingClosed(fidl::UnbindInfo unbind_info) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
-  // Deletes `this`.
-  controller_.OnClientDead(this);
+  // Ultimately results in deleting `this`.
+  controller_.OnClientDisconnected(this);
 }
 
 void Client::UpdateConfigStampMapping(ConfigStampPair stamps) {
@@ -1698,50 +1691,13 @@ void Client::UpdateConfigStampMapping(ConfigStampPair stamps) {
   });
 }
 
-zx_status_t Client::Bind(
-    inspect::Node client_node,
-    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-        coordinator_listener_client_end) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
+void Client::AttachInspectNode(inspect::Node client_node) {
+  ZX_DEBUG_ASSERT_MSG(!attach_inspect_node_called_, "AttachInspectNode() already called");
 
+  attach_inspect_node_called_ = true;
   node_ = std::move(client_node);
   node_.RecordUint("priority", priority().ValueForLogging());
   is_owner_property_ = node_.CreateBool("is_owner", false);
-
-  fidl::OnUnboundFn<Client> unbound_callback =
-      [this](Client* client, fidl::UnbindInfo info,
-             fidl::ServerEnd<fuchsia_hardware_display::Coordinator> ch) {
-        ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
-        // Make sure we `TearDown()` so that no further tasks are scheduled on
-        // the driver dispatcher.
-        client->TearDown(ZX_OK);
-
-        // The client has died. Notify the controller, which will free the Client
-        // instance.
-        OnClientDead();
-      };
-
-  Bind(std::move(coordinator_server_end), std::move(coordinator_listener_client_end),
-       std::move(unbound_callback));
-  return ZX_OK;
-}
-
-zx::result<> Client::BindForTesting(
-    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
-    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
-        coordinator_listener_client_end) {
-  ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
-
-  // `Client` created by tests may not have a full-fledged display engine.
-  // The production client teardown logic doesn't work here so we replace it with a no-op unbound
-  // callback instead.
-  fidl::OnUnboundFn<Client> unbound_callback =
-      [](Client*, fidl::UnbindInfo, fidl::ServerEnd<fuchsia_hardware_display::Coordinator>) {};
-  Bind(std::move(coordinator_server_end), std::move(coordinator_listener_client_end),
-       std::move(unbound_callback));
-  return zx::ok();
 }
 
 }  // namespace display_coordinator

@@ -103,23 +103,32 @@ class ClientTest : public ::testing::Test {
 
     auto [coordinator_client_end, coordinator_server_end] =
         fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
+    coordinator_client_end_ = std::move(coordinator_client_end);
 
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
 
-    client_.emplace(&controller_.value(), display::ClientPriority::kPrimary, ClientId(1));
-    ASSERT_OK(
-        client_->BindForTesting(std::move(coordinator_server_end), std::move(listener_client_end)));
+    zx::result<> create_result = controller_->CreateClient(display::ClientPriority::kPrimary,
+                                                           std::move(coordinator_server_end),
+                                                           std::move(listener_client_end));
+    ASSERT_OK(create_result);
+
+    client_ = controller_->ClientsForTesting().GetClientOwningDisplays();
+    ASSERT_EQ(display::ClientPriority::kPrimary, client_->priority());
+    ASSERT_EQ(ClientId(1), client_->id());
   }
 
   void TearDown() override {
-    client_->TearDown(ZX_ERR_CONNECTION_ABORTED);
-
+    client_ = nullptr;
+    controller_->PrepareStop();
+    driver_runtime_.RunUntilIdle();
+    controller_.reset();
     driver_runtime_.ShutdownAllDispatchers(/*dut_initial_dispatcher=*/nullptr);
   }
 
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
   fdf_testing::DriverRuntime driver_runtime_;
+  inspect::Inspector inspector_;
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_ = driver_runtime_.GetForegroundDispatcher();
 
@@ -127,8 +136,9 @@ class ClientTest : public ::testing::Test {
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_display::CoordinatorListener>>
       listener_server_binding_;
 
+  fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator_client_end_;
   std::optional<Controller> controller_;
-  std::optional<Client> client_;
+  Client* client_ = nullptr;
 };
 
 TEST_F(ClientTest, ClientVSyncDelivery) {
@@ -170,6 +180,13 @@ TEST_F(ClientTest, ClientMustDrainUntilThrottledPendingStamps) {
   EXPECT_EQ(client_->pending_displayed_config_stamps().size(), 1u);
   EXPECT_EQ(client_->pending_displayed_config_stamps().front().driver_stamp,
             display::DriverConfigStamp(kDriverStampValues.back()));
+}
+
+TEST_F(ClientTest, ClientClosesFidlConnection) {
+  client_ = nullptr;
+  coordinator_client_end_.reset();
+  driver_runtime_.RunUntilIdle();
+  EXPECT_EQ(nullptr, controller_->ClientsForTesting().GetClientOwningDisplays());
 }
 
 }  // namespace

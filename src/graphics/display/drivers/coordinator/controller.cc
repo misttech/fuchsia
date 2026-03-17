@@ -442,15 +442,15 @@ void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virt
   clients_.SetVirtconMode(virtcon_mode);
 }
 
-void Controller::OnClientDead(Client* client) {
+void Controller::OnClientDisconnected(Client* client) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(client != nullptr);
-
-  fdf::info("Client {} dead", client->id().value());
 
   if (unbinding_) {
     return;
   }
+
+  // `ClientSet::OnClientDisconnected()` logs the client disconnection.
   clients_.OnClientDisconnected(client);
 }
 
@@ -660,7 +660,7 @@ void Controller::PrepareStop() {
 
   {
     unbinding_ = true;
-    clients_.CloseAll();
+    clients_.Clear();
 
     vsync_monitor_.Deinitialize();
 

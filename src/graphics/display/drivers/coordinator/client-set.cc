@@ -27,7 +27,9 @@ namespace display_coordinator {
 
 ClientSet::ClientSet(inspect::Node root_node) : root_node_(std::move(root_node)) {}
 
-ClientSet::~ClientSet() = default;
+ClientSet::~ClientSet() {
+  ZX_DEBUG_ASSERT_MSG(clients_.empty(), "Clear() must be called before the ClientSet is destroyed");
+}
 
 void ClientSet::DispatchOnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                                           std::span<const display::DisplayId> removed_display_ids) {
@@ -116,17 +118,13 @@ zx::result<ClientId> ClientSet::ConnectClient(
 
   ClientId client_id = next_client_id_;
   ++next_client_id_;
-  auto client = std::make_unique<Client>(controller, client_priority, client_id);
+  auto client = std::make_unique<Client>(controller, client_priority, client_id,
+                                         std::move(coordinator_server_end),
+                                         std::move(coordinator_listener_client_end));
 
   inspect::Node client_inspect_node =
       root_node_.CreateChild(fbl::StringPrintf("client-%" PRIu64, client_id.value()));
-  zx_status_t status =
-      client->Bind(std::move(client_inspect_node), std::move(coordinator_server_end),
-                   std::move(coordinator_listener_client_end));
-  if (status != ZX_OK) {
-    fdf::warn("Failed to initialize client: {}", status);
-    return zx::error(status);
-  }
+  client->AttachInspectNode(std::move(client_inspect_node));
 
   Client* client_ptr = client.get();
   clients_.push_back(std::move(client));
@@ -197,8 +195,7 @@ std::optional<display::ClientPriority> ClientSet::FindConfigStampSource(
 void ClientSet::OnClientDisconnected(Client* client) {
   ZX_DEBUG_ASSERT(client != nullptr);
 
-  fdf::info("Client at priority {} with ID {} disconnected", client->priority(),
-            client->id().value());
+  fdf::info("Client disconnected: priority {}, ID {}", client->priority(), client->id().value());
 
   if (client == virtcon_client_) {
     virtcon_client_ = nullptr;
@@ -207,15 +204,19 @@ void ClientSet::OnClientDisconnected(Client* client) {
   } else if (client == primary_client_) {
     primary_client_ = nullptr;
     primary_client_ready_ = false;
-  } else {
-    ZX_DEBUG_ASSERT_MSG(false, "Dead client is neither Virtcon nor Primary");
   }
+
   if (client == client_owning_displays_) {
     client_owning_displays_ = nullptr;
   }
 
-  clients_.remove_if(
-      [client](std::unique_ptr<Client>& list_client) { return list_client.get() == client; });
+  for (auto clients_it = clients_.begin(); clients_it != clients_.end(); ++clients_it) {
+    if (clients_it->get() == client) {
+      clients_it->get()->ReleaseResources();
+      clients_.erase(clients_it);
+      break;
+    }
+  }
 
   HandleClientOwnershipChanges();
 }
@@ -241,21 +242,19 @@ void ClientSet::HandleClientOwnershipChanges() {
   }
 }
 
-void ClientSet::CloseAll() {
+void ClientSet::Clear() {
   for (const std::unique_ptr<Client>& client : clients_) {
-    client->TearDown(ZX_ERR_CONNECTION_ABORTED);
+    client->CloseFidlConnection(ZX_ERR_CONNECTION_ABORTED);
+    client->ReleaseResources();
   }
 
-  // TODO(costan): Find a better workaround.
-  //
-  // We do not clear `clients_` here. `Client::TearDown()` will trigger
-  // `OnClientDead()` which will call `OnClientDisconnected()` to remove the
-  // client from the list.
   client_owning_displays_ = nullptr;
   primary_client_ = nullptr;
   primary_client_ready_ = false;
   virtcon_client_ = nullptr;
   virtcon_client_ready_ = false;
+
+  clients_.clear();
 }
 
 Client* ClientSet::GetClientOwningDisplays() const { return client_owning_displays_; }
