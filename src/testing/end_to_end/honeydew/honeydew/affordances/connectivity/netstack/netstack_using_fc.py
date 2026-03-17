@@ -126,7 +126,10 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
             self._state_proxy.get_watcher(
                 options=f_net_interfaces.WatcherOptions(
                     address_properties_interest=None,
-                    include_non_assigned_addresses=None,
+                    # When an IP address is undergoing DAD, it cannot yet be used.
+                    # Ask netstack to avoid reporting the address until it is
+                    # actually ready to use.
+                    include_non_assigned_addresses=False,
                 ),
                 watcher=server.take(),
             )
