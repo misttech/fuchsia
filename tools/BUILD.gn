@@ -7,6 +7,7 @@ if (is_host) {
     testonly = true
 
     public_deps = [
+      "//build/bazel/host:bazel_root_host_tools.debroot",
       "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool",
       "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool",
       "//tools/auto_owners",
@@ -19,7 +20,6 @@ if (is_host) {
       "//tools/component_manager_config",
       "//tools/configc:install",
       "//tools/create:install",
-      "//tools/debroot",
       "//tools/doc_checker",
       "//tools/dupefinder",
       "//tools/fidl",
