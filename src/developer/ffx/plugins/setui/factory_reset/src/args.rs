@@ -6,7 +6,7 @@ use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
 #[ffx_command()]
-#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone, Copy)]
 #[argh(subcommand, name = "factory_reset")]
 /// get or set factory reset settings
 pub struct FactoryReset {

@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{FactoryResetProxy, FactoryResetSettings};
 use ffx_setui_factory_reset_args::FactoryReset;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{FactoryResetProxy, FactoryResetSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -65,15 +65,16 @@ async fn command(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::FactoryResetRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::FactoryResetRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
         const ALLOWED: bool = true;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             FactoryResetRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -99,7 +100,8 @@ mod test {
     async fn validate_factory_reset_set_output(
         expected_is_local_reset_allowed: bool,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             FactoryResetRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -138,7 +140,8 @@ mod test {
     async fn validate_factory_reset_watch_output(
         expected_is_local_reset_allowed: Option<bool>,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             FactoryResetRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
