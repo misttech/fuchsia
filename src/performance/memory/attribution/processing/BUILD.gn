@@ -18,7 +18,7 @@ rustc_library("processing") {
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:regex",
+    "//third_party/rust_crates:regex-lite",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:zerocopy",
   ]

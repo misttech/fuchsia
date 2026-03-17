@@ -7,6 +7,7 @@ use crate::{
     GlobalPrincipalIdentifier, InflatedPrincipal, InflatedResource, PrincipalType,
     ResourceReference, ZXName, fplugin_serde,
 };
+use bstr::ByteSlice;
 use core::default::Default;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use fplugin::Vmo;
@@ -305,30 +306,36 @@ const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 15] = [
 /// Returns the name of a VMO category when the name match on of the rules.
 /// This is used for presentation and aggregation.
 pub fn vmo_name_to_digest_name(name: &str) -> &str {
-    static RULES: std::sync::LazyLock<Vec<(regex::Regex, &'static str)>> =
+    static RULES: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
         std::sync::LazyLock::new(|| {
             VMO_DIGEST_NAME_MAPPING
                 .iter()
-                .map(|&(pattern, replacement)| (regex::Regex::new(pattern).unwrap(), replacement))
+                .map(|&(pattern, replacement)| {
+                    (regex_lite::Regex::new(pattern).unwrap(), replacement)
+                })
                 .collect()
         });
     RULES.iter().find(|(regex, _)| regex.is_match(name.trim())).map_or(name, |rule| rule.1)
 }
 
 pub fn vmo_name_to_digest_zxname(name: &ZXName) -> &ZXName {
-    static RULES: std::sync::LazyLock<Vec<(regex::bytes::Regex, ZXName)>> =
+    static RULES: std::sync::LazyLock<Vec<(regex_lite::Regex, ZXName)>> =
         std::sync::LazyLock::new(|| {
             VMO_DIGEST_NAME_MAPPING
                 .iter()
                 .map(|&(pattern, replacement)| {
                     (
-                        regex::bytes::Regex::new(pattern).unwrap(),
+                        regex_lite::Regex::new(pattern).unwrap(),
                         ZXName::try_from_bytes(replacement.as_bytes()).unwrap(),
                     )
                 })
                 .collect()
         });
-    RULES.iter().find(|(regex, _)| regex.is_match(name.as_bstr())).map_or(name, |rule| &rule.1)
+    if let Ok(name_str) = name.as_bstr().to_str() {
+        RULES.iter().find(|(regex, _)| regex.is_match(name_str)).map_or(name, |rule| &rule.1)
+    } else {
+        name
+    }
 }
 
 #[cfg(test)]

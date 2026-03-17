@@ -22,7 +22,7 @@ use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use futures::AsyncReadExt;
 use json::JsonConvertible;
-use regex::bytes::Regex;
+use regex_lite::Regex;
 use serde::Serialize;
 use std::io::Write;
 use std::thread::sleep;

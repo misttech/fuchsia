@@ -4,9 +4,10 @@
 
 use crate::{ProcessedAttributionData, ZXName};
 use anyhow::Result;
+use bstr::ByteSlice;
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
-use regex::bytes::Regex;
+use regex_lite::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -48,19 +49,24 @@ pub struct BucketDefinition {
 impl BucketDefinition {
     /// Tests whether a process matches this bucket's definition, based on its name.
     fn process_match(&self, process: &ZXName) -> bool {
-        self.process.as_ref().is_none_or(|p| p.is_match(process.as_bstr()))
+        self.process.as_ref().is_none_or(|process_regex| {
+            process
+                .as_bstr()
+                .to_str()
+                .is_ok_and(|process_name| process_regex.is_match(process_name))
+        })
     }
 
     /// Tests whether a VMO matches this bucket's definition, based on its name.
     fn vmo_match(&self, vmo: &ZXName) -> bool {
-        self.vmo.as_ref().is_none_or(|v| v.is_match(vmo.as_bstr()))
+        self.vmo.as_ref().is_none_or(|vmo_regex| {
+            vmo.as_bstr().to_str().is_ok_and(|vmo_name| vmo_regex.is_match(vmo_name))
+        })
     }
 
     /// Tests whether any of the specified principal names match this bucket's definition.
     fn principals_match(&self, principals: &Vec<&str>) -> bool {
-        self.principal
-            .as_ref()
-            .is_none_or(|a| principals.iter().any(|name| a.is_match(name.as_bytes())))
+        self.principal.as_ref().is_none_or(|a| principals.iter().any(|name| a.is_match(name)))
     }
 }
 
@@ -419,6 +425,7 @@ mod tests {
         PrincipalType, ProcessedAttributionData, Resource, ResourceReference, attribute_vmos,
     };
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use regex_lite::Regex;
 
     fn get_attribution_data() -> ProcessedAttributionData {
         attribute_vmos(AttributionData {

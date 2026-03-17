@@ -9,7 +9,7 @@ use attribution_processing::{
     Resource, ZXName, digest, fplugin_serde,
 };
 use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
-use regex::bytes::Regex;
+use regex_lite::Regex;
 use serde::Serialize;
 
 #[derive(Serialize)]

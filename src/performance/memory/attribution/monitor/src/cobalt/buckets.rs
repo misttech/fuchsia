@@ -205,7 +205,7 @@ mod tests {
     };
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
     use futures::{TryFutureExt, TryStreamExt, try_join};
-    use regex::bytes::Regex;
+    use regex_lite::Regex;
 
     fn get_data() -> ProcessedAttributionData {
         let attribution_data = AttributionData {
