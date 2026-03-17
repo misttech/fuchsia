@@ -23,6 +23,9 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_starnix_binder as fbinder;
+use fidl_fuchsia_unknown as funknown;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
@@ -57,10 +60,6 @@ use syncio::{
     zxio_node_attributes_t,
 };
 use zx::{Counter, HandleBased as _};
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder,
-    fidl_fuchsia_unknown as funknown,
-};
 
 fn is_special(file_info: &fio::FileInfo) -> bool {
     matches!(
@@ -1186,9 +1185,9 @@ impl FsNodeOps for RemoteNode {
     ) -> Result<(), Errno> {
         node.fail_if_locked(current_task)?;
 
-        will_dirty(&[&self.node], || {
-            self.node.io.truncate(length).map_err(|status| from_status_like_fdio!(status))
-        })
+        let _guard = self.node.info_state.dirty_op_guard(true);
+
+        self.node.io.truncate(length).map_err(|status| from_status_like_fdio!(status))
     }
 
     fn allocate(
@@ -1470,6 +1469,22 @@ impl FsNodeOps for RemoteNode {
         descriptor.root_hash[..root_hash.len()].copy_from_slice(&root_hash);
         Ok(descriptor)
     }
+
+    fn get_size(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        node: &FsNode,
+        current_task: &CurrentTask,
+    ) -> Result<usize, Errno> {
+        if self.node.info_state.is_size_accurate() {
+            node.info()
+        } else {
+            node.fetch_and_refresh_info(locked, current_task)?
+        }
+        .size
+        .try_into()
+        .map_err(|_| errno!(EINVAL))
+    }
 }
 
 struct RemoteSpecialNode {
@@ -1684,7 +1699,21 @@ impl FileOps for RemoteFileObject {
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         will_dirty(&[&***file.node()], || {
-            Self::io(file).write_from_input_buffer(offset as u64, data)
+            let written = Self::io(file).write_from_input_buffer(offset as u64, data)?;
+
+            // If we increased the file size, we need to update that here so that `NodeInfo::size`
+            // is accurate.  This is done so that we can optimize `get_size`.  If the file has been
+            // truncated, then the size might not be accurate, but we track that separately and
+            // `get_size` will fetch the file size from the remote end in that case.
+            if written > 0 {
+                file.node().update_info(|info| {
+                    if offset + written > info.size {
+                        info.size = offset + written;
+                    }
+                });
+            }
+
+            Ok(written)
         })
     }
 
@@ -2142,22 +2171,30 @@ impl InfoState {
     /// refreshed.
     const PENDING_REFRESH: u32 = 0x4000_0000;
 
+    /// When this bit is set, it means the node has been truncated and so the size might not be
+    /// accurate.
+    const TRUNCATED: u32 = 0x2000_0000;
+
+    /// The remaining bits are used to track a count of the number of in-flight dirty operations.
+    const COUNT_MASK: u32 = Self::TRUNCATED - 1;
+
     fn new(dirty: bool) -> Self {
         Self(AtomicU32::new(if dirty { 0 } else { Self::IN_SYNC }))
     }
 
     /// This guard should be taken whilst an operation that might result in dirty node information
-    /// is in flight.
-    fn dirty_op_guard(&self) -> DirtyOpGuard<'_> {
+    /// is in flight.  If `for_truncate` is true, this will also set the `TRUNCATED` bit.
+    fn dirty_op_guard(&self, for_truncate: bool) -> DirtyOpGuard<'_> {
         // Increment the count indicating a dirty operation is in flight and also clear the
         // `IN_SYNC` bit to indicate the node information will need refreshing from its external
         // source.
         let mut current = self.0.load(Ordering::Relaxed);
+        let for_truncate = if for_truncate { Self::TRUNCATED } else { 0 };
         loop {
-            assert!(current | Self::IN_SYNC | Self::PENDING_REFRESH != u32::MAX); // Check overflow
+            assert!(current & Self::COUNT_MASK != Self::COUNT_MASK); // Check overflow
             match self.0.compare_exchange_weak(
                 current,
-                (current & !Self::IN_SYNC) + 1,
+                ((current & !Self::IN_SYNC) + 1) | for_truncate,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
@@ -2185,14 +2222,18 @@ impl InfoState {
         //
         // NOTE: Multiple threads can be refreshing at the same time, but only one of them will
         // succeed in setting the `PENDING_REFRESH` bit.
-        while current == 0 {
+        let mut did_set_pending_refresh = false;
+        while current & !Self::TRUNCATED == 0 {
             match self.0.compare_exchange_weak(
-                0,
-                Self::IN_SYNC | Self::PENDING_REFRESH,
+                current,
+                current | Self::IN_SYNC | Self::PENDING_REFRESH,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
-                Ok(_) => break,
+                Ok(_) => {
+                    did_set_pending_refresh = true;
+                    break;
+                }
                 Err(old) => current = old,
             }
         }
@@ -2206,9 +2247,28 @@ impl InfoState {
 
         let result = refresh(info);
 
-        // If we set the PENDING_REFRESH bit above, we must clear it now.
-        if current == 0 {
+        if did_set_pending_refresh {
             if result.is_ok() {
+                // If the TRUNCATED bit was set, we can clear it now so long as no other dirty
+                // operations took place.
+                if current & Self::TRUNCATED != 0 {
+                    // Assuming no other thread has changed the state, this is what we
+                    // expect the current value to be.
+                    let mut current = Self::TRUNCATED | Self::IN_SYNC | Self::PENDING_REFRESH;
+                    while current == Self::TRUNCATED | Self::IN_SYNC | Self::PENDING_REFRESH {
+                        match self.0.compare_exchange_weak(
+                            current,
+                            Self::IN_SYNC,
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                        ) {
+                            Ok(_) => return result,
+                            Err(old) => current = old,
+                        }
+                    }
+                    // In this case, we fall through and just clear the PENDING_REFRESH bit, but we
+                    // leave the TRUNCATED bit untouched.
+                }
                 self.0.fetch_and(!Self::PENDING_REFRESH, Ordering::Relaxed);
             } else {
                 // If there was an error, we should also clear the IN_SYNC bit to indicate the node
@@ -2218,6 +2278,25 @@ impl InfoState {
         }
 
         result
+    }
+
+    /// Returns true if the size is accurate.
+    fn is_size_accurate(&self) -> bool {
+        // The size returned by `get_size` is accurate so long as the file hasn't been truncated.
+        // If there are writes currently outstanding, then it's also not safe to return the current
+        // size.  To understand why, consider the following scenario:
+        //
+        //    1. Thread A issues a write.
+        //    2. Thread B performs a read which sees the write from thread A.
+        //    3. Thread B now tries to seek to the end of the file.  It should be consistent with
+        //       the read in #2.
+        //
+        // #3 needs to see the end-of-file as it is after the write, but it's possible that thread A
+        // hasn't updated the size yet even though the write has been completed at the remote end.
+        // For that reason, whilst there are potential writes outstanding, we must ask the remote
+        // end for the size.
+        let state = self.0.load(Ordering::Relaxed);
+        state & (Self::TRUNCATED | Self::COUNT_MASK) == 0
     }
 }
 
@@ -2248,7 +2327,7 @@ fn will_dirty<'a, N: TryInto<&'a BaseNode> + Copy, T>(nodes: &[N], f: impl FnOnc
     let _guards: SmallVec<[_; 4]> = nodes
         .iter()
         .filter_map(|n| N::try_into(*n).ok())
-        .map(|n| n.info_state.dirty_op_guard())
+        .map(|n| n.info_state.dirty_op_guard(false))
         .collect();
 
     f()
@@ -2258,27 +2337,31 @@ fn will_dirty<'a, N: TryInto<&'a BaseNode> + Copy, T>(nodes: &[N], f: impl FnOnc
 mod test {
     use super::*;
     use crate::mm::PAGE_SIZE;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::*;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::socket::{SocketFile, SocketMessageFlags};
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
     use fidl::endpoints::{ServerEnd, create_request_stream};
+    use fidl_fuchsia_io as fio;
     use flyweights::FlyByteStr;
+    use fuchsia_async as fasync;
     use fuchsia_runtime::UtcDuration;
     use futures::StreamExt;
     use fxfs_testing::{TestFixture, TestFixtureOptions};
+    use starnix_sync::Mutex;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
     use starnix_uapi::file_mode::{AccessCheck, mode};
     use starnix_uapi::ino_t;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
-    use std::sync::atomic::AtomicU32;
+    use std::sync::Barrier;
+    use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::HandleBased;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
@@ -3625,7 +3708,7 @@ mod test {
     #[::fuchsia::test]
     async fn test_cached_attribute_refresh_behavior() {
         let (client, mut stream) = create_request_stream::<fio::FileMarker>();
-        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let barrier = Arc::new(Barrier::new(2));
         let barrier_clone = barrier.clone();
         let get_attrs_count = Arc::new(AtomicU32::new(0));
         let get_attrs_count_clone = get_attrs_count.clone();
@@ -3646,11 +3729,8 @@ mod test {
                     fio::FileRequest::Resize { length: _, responder } => {
                         let barrier_clone = barrier_clone.clone();
                         fasync::Task::spawn(async move {
-                            fasync::unblock(move || {
-                                barrier_clone.wait();
-                                barrier_clone.wait();
-                            })
-                            .await;
+                            barrier_clone.async_wait().await;
+                            barrier_clone.async_wait().await;
                             responder.send(Ok(())).unwrap();
                         })
                         .detach();
@@ -3722,14 +3802,14 @@ mod test {
     #[::fuchsia::test]
     async fn test_attribute_refresh_during_concurrent_dirty_operation() {
         let (client, mut stream) = create_request_stream::<fio::FileMarker>();
-        let get_attrs_started = Arc::new(std::sync::Barrier::new(2));
+        let get_attrs_started = Arc::new(Barrier::new(2));
         let get_attrs_started_clone = get_attrs_started.clone();
-        let finish_get_attrs = Arc::new(std::sync::Barrier::new(2));
+        let finish_get_attrs = Arc::new(Barrier::new(2));
         let finish_get_attrs_clone = finish_get_attrs.clone();
 
-        let resize_started = Arc::new(std::sync::Barrier::new(2));
+        let resize_started = Arc::new(Barrier::new(2));
         let resize_started_clone = resize_started.clone();
-        let finish_resize = Arc::new(std::sync::Barrier::new(2));
+        let finish_resize = Arc::new(Barrier::new(2));
         let finish_resize_clone = finish_resize.clone();
 
         let get_attrs_count = Arc::new(AtomicU32::new(0));
@@ -3977,6 +4057,492 @@ mod test {
         server_task.await;
     }
 
+    trait AsyncBarrier {
+        async fn async_wait(&self);
+    }
+
+    impl AsyncBarrier for Arc<Barrier> {
+        async fn async_wait(&self) {
+            let this = self.clone();
+            fasync::unblock(move || this.wait()).await;
+        }
+    }
+
+    #[derive(Default)]
+    struct MockRemoteFs {
+        get_attrs_count: AtomicU32,
+        file_size: AtomicUsize,
+        write_offsets: Mutex<Vec<u64>>,
+        data: Mutex<Vec<u8>>,
+        get_attrs_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
+        write_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
+    }
+
+    impl MockRemoteFs {
+        async fn handle_file_requests(
+            self: Arc<Self>,
+            mut stream: fio::FileRequestStream,
+            control_handle: fio::FileControlHandle,
+        ) {
+            let size = self.file_size.load(Ordering::SeqCst) as u64;
+            let info = fio::FileInfo {
+                attributes: Some(fio::NodeAttributes2 {
+                    mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
+                    immutable_attributes: fio::ImmutableNodeAttributes {
+                        id: Some(2),
+                        link_count: Some(1),
+                        content_size: Some(size),
+                        storage_size: Some(size),
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            };
+            let _ = control_handle.send_on_representation(fio::Representation::File(info));
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::GetAttributes { responder, .. } => {
+                        // Spawn a separate task so that we can handle concurrent calls.
+                        let this = self.clone();
+                        fasync::Task::spawn(async move {
+                            this.get_attrs_count.fetch_add(1, Ordering::SeqCst);
+                            let size = this.file_size.load(Ordering::SeqCst) as u64;
+                            let hook = this.get_attrs_hook.lock().take();
+                            if let Some(hook) = hook {
+                                hook.await;
+                            }
+                            responder
+                                .send(Ok((
+                                    &fio::MutableNodeAttributes { ..Default::default() },
+                                    &fio::ImmutableNodeAttributes {
+                                        id: Some(2),
+                                        link_count: Some(1),
+                                        content_size: Some(size),
+                                        storage_size: Some(size),
+                                        ..Default::default()
+                                    },
+                                )))
+                                .unwrap();
+                        })
+                        .detach();
+                    }
+                    fio::FileRequest::ReadAt { count, offset, responder } => {
+                        let data = self.data.lock();
+                        let start = std::cmp::min(offset as usize, data.len());
+                        let end = std::cmp::min(start + count as usize, data.len());
+                        responder.send(Ok(&data[start..end])).unwrap();
+                    }
+                    fio::FileRequest::WriteAt { offset, data, responder, .. } => {
+                        // Spawn a separate task so that we can test concurrent writes.
+                        let self_clone = Arc::clone(&self);
+                        fasync::Task::spawn(async move {
+                            self_clone.write_offsets.lock().push(offset);
+                            let end = offset as usize + data.len();
+                            {
+                                let mut mock_data = self_clone.data.lock();
+                                if end > mock_data.len() {
+                                    mock_data.resize(end, 0);
+                                }
+                                mock_data[offset as usize..end].copy_from_slice(&data);
+                            }
+                            let mut current_size = self_clone.file_size.load(Ordering::SeqCst);
+                            while end > current_size {
+                                match self_clone.file_size.compare_exchange_weak(
+                                    current_size,
+                                    end,
+                                    Ordering::SeqCst,
+                                    Ordering::SeqCst,
+                                ) {
+                                    Ok(_) => break,
+                                    Err(actual) => current_size = actual,
+                                }
+                            }
+                            let hook = self_clone.write_hook.lock().take();
+                            if let Some(hook) = hook {
+                                hook.await;
+                            }
+                            responder.send(Ok(data.len() as u64)).unwrap();
+                        })
+                        .detach();
+                    }
+                    fio::FileRequest::Resize { length, responder, .. } => {
+                        self.file_size.store(length as usize, Ordering::SeqCst);
+                        responder.send(Ok(())).unwrap();
+                    }
+                    fio::FileRequest::Seek { origin, offset, responder } => {
+                        let new_offset = match origin {
+                            fio::SeekOrigin::Start => offset as u64,
+                            fio::SeekOrigin::Current => 0,
+                            fio::SeekOrigin::End => {
+                                (self.file_size.load(Ordering::SeqCst) as i64 + offset) as u64
+                            }
+                        };
+                        responder.send(Ok(new_offset)).unwrap();
+                    }
+                    fio::FileRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        async fn handle_directory_requests(
+            self: Arc<Self>,
+            mut stream: fio::DirectoryRequestStream,
+            control_handle: fio::DirectoryControlHandle,
+        ) {
+            let info = fio::DirectoryInfo {
+                attributes: Some(fio::NodeAttributes2 {
+                    mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
+                    immutable_attributes: fio::ImmutableNodeAttributes {
+                        id: Some(1),
+                        link_count: Some(1),
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            };
+            let _ = control_handle.send_on_representation(fio::Representation::Directory(info));
+            let mut file_tasks = Vec::new();
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::DirectoryRequest::Open { path, object, .. } => {
+                        if path == "file" {
+                            let self_clone = Arc::clone(&self);
+                            file_tasks.push(fasync::Task::spawn(async move {
+                                let (stream, control_handle) =
+                                    ServerEnd::<fio::FileMarker>::new(object)
+                                        .into_stream_and_control_handle();
+                                self_clone.handle_file_requests(stream, control_handle).await;
+                            }));
+                        }
+                    }
+                    fio::DirectoryRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => {}
+                }
+            }
+            for task in file_tasks {
+                let _ = task.await;
+            }
+        }
+
+        async fn run(self: Arc<Self>, mut stream: fio::DirectoryRequestStream) {
+            let mut sub_tasks = Vec::new();
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::DirectoryRequest::Open { path, object, .. } => {
+                        if path == "." {
+                            let self_clone = Arc::clone(&self);
+                            sub_tasks.push(fasync::Task::spawn(async move {
+                                let (stream, control_handle) =
+                                    ServerEnd::<fio::DirectoryMarker>::new(object)
+                                        .into_stream_and_control_handle();
+                                self_clone.handle_directory_requests(stream, control_handle).await;
+                            }));
+                        }
+                    }
+                    fio::DirectoryRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    fio::DirectoryRequest::QueryFilesystem { responder } => {
+                        responder.send(0i32, None).unwrap();
+                    }
+                    _ => {}
+                }
+            }
+            for sub_task in sub_tasks {
+                let _ = sub_task.await;
+            }
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_size_uses_cache_unless_truncated() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let fs = RemoteFs::new_fs(
+                locked,
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let mut context = LookupContext::default();
+            let file_node = root
+                .lookup_child(locked, current_task, &mut context, "file".into())
+                .expect("lookup failed");
+
+            // 1. Initial get_size.
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
+            {
+                let _size =
+                    file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+            }
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
+
+            // 2. Open in append mode and write.
+            let file_handle = file_node
+                .open(
+                    locked,
+                    current_task,
+                    OpenFlags::RDWR | OpenFlags::APPEND,
+                    AccessCheck::default(),
+                )
+                .expect("open failed");
+
+            {
+                let mut data = VecInputBuffer::new(b"foo");
+                let written =
+                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                assert_eq!(written, 3);
+            }
+            assert_eq!(
+                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
+                3
+            );
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
+            assert_eq!(*state.write_offsets.lock(), vec![0]);
+
+            // 3. Truncate. This should invalidate the cache.
+            file_node
+                .entry
+                .node
+                .truncate(locked, current_task, &file_node.mount, 0)
+                .expect("truncate failed");
+            assert_eq!(state.file_size.load(Ordering::SeqCst), 0);
+
+            // 4. get_size again. Should trigger a request.
+            {
+                let size =
+                    file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+                assert_eq!(size, 0);
+            }
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 1);
+
+            // 5. Append again. It should append at offset 0.
+            {
+                let mut data = VecInputBuffer::new(b"bar");
+                let written =
+                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                assert_eq!(written, 3);
+            }
+            assert_eq!(
+                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
+                3
+            );
+            // write calls seek(End, 0) which calls get_size, which uses the cache if it was just
+            // refreshed.
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 1);
+            assert_eq!(*state.write_offsets.lock(), vec![0, 0]);
+
+            // 6. Truncate to 10 and append.
+            file_node
+                .entry
+                .node
+                .truncate(locked, current_task, &file_node.mount, 10)
+                .expect("truncate failed");
+            {
+                let mut data = VecInputBuffer::new(b"baz");
+                let written =
+                    file_handle.write(locked, current_task, &mut data).expect("write failed");
+                assert_eq!(written, 3);
+            }
+            // write calls seek(End, 0). Since truncate was called, cache is invalid.
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 2);
+            assert_eq!(
+                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
+                13
+            );
+            assert_eq!(*state.write_offsets.lock(), vec![0, 0, 10]);
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_size_during_refresh_after_truncate() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let fs = RemoteFs::new_fs(
+                locked,
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let mut context = LookupContext::default();
+            let file_node = root
+                .lookup_child(locked, current_task, &mut context, "file".into())
+                .expect("lookup failed");
+
+            // Fill cache.
+            assert_eq!(
+                file_node.entry.node.get_size(locked, current_task).expect("get_size failed"),
+                0
+            );
+
+            // Truncate to 10.
+            file_node
+                .entry
+                .node
+                .truncate(locked, current_task, &file_node.mount, 10)
+                .expect("truncate failed");
+
+            // Set barrier to pause GetAttributes.
+            let barrier = Arc::new(Barrier::new(2));
+            {
+                let barrier = barrier.clone();
+                *state.get_attrs_hook.lock() = Some(Box::pin(async move {
+                    barrier.async_wait().await;
+                    barrier.async_wait().await;
+                }));
+            }
+
+            // Spawn thread to call get_size. It will pause when it hits the first barrier.
+            let file_node_clone = file_node.clone();
+            let (result1, request) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |locked, current_task| {
+                    let size = file_node_clone
+                        .entry
+                        .node
+                        .get_size(locked, current_task)
+                        .expect("get_size failed");
+                    assert_eq!(size, 10);
+                })
+                .build_with_async_result();
+            current_task.kernel().kthreads.spawner().spawn_from_request(request);
+
+            // Wait for the first barrier to be reached.
+            barrier.async_wait().await;
+
+            // Set up the next request so it unblocks the first request.
+            *state.get_attrs_hook.lock() =
+                Some(Box::pin(async move { barrier.async_wait().await }));
+
+            // Another get_size call should not use cached size (0) while refresh is in progress.
+            let (result2, request) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |locked, current_task| {
+                    let size = file_node
+                        .entry
+                        .node
+                        .get_size(locked, current_task)
+                        .expect("get_size failed");
+                    assert_eq!(size, 10);
+                })
+                .build_with_async_result();
+            current_task.kernel().kthreads.spawner().spawn_from_request(request);
+
+            result1.await.unwrap();
+            result2.await.unwrap();
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_size_during_outstanding_write() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let fs = RemoteFs::new_fs(
+                locked,
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let mut context = LookupContext::default();
+            let file_node = root
+                .lookup_child(locked, current_task, &mut context, "file".into())
+                .expect("lookup failed");
+
+            // Open the file.
+            let file_handle = file_node
+                .open(locked, current_task, OpenFlags::RDWR, AccessCheck::default())
+                .expect("open failed");
+
+            // Set hook to stall the write response.
+            let barrier = Arc::new(Barrier::new(2));
+            {
+                let barrier = barrier.clone();
+                *state.write_hook.lock() = Some(Box::pin(async move {
+                    barrier.async_wait().await;
+                    barrier.async_wait().await;
+                }));
+            }
+
+            // Start write in another thread.
+            let file_handle_clone = file_handle.clone();
+            current_task.kernel().kthreads.spawner().spawn_from_request(
+                SpawnRequestBuilder::new()
+                    .with_sync_closure(move |locked, current_task| {
+                        let mut data = VecInputBuffer::new(b"hello");
+                        file_handle_clone
+                            .write(locked, current_task, &mut data)
+                            .expect("write failed");
+                    })
+                    .build(),
+            );
+
+            // Wait until the mock has processed the write and hit the hook.
+            barrier.async_wait().await;
+
+            // On this thread, verify that a read sees the new data.
+            {
+                let mut data = VecOutputBuffer::new(5);
+                let read =
+                    file_handle.read_at(locked, current_task, 0, &mut data).expect("read failed");
+                assert_eq!(read, 5);
+                assert_eq!(data.data(), b"hello");
+            }
+
+            // Now call get_size and it should see the correct size.
+            let size =
+                file_node.entry.node.get_size(locked, current_task).expect("get_size failed");
+            assert_eq!(
+                size, 5,
+                "get_size should return the updated size even if a write is outstanding"
+            );
+
+            // Unblock the write.
+            barrier.async_wait().await;
+        })
+        .await;
+
+        server_task.await;
+    }
+
     #[test]
     fn test_info_state_initial_state() {
         let state = InfoState::new(true); // dirty
@@ -3990,10 +4556,45 @@ mod test {
     fn test_info_state_dirty_op_guard() {
         let state = InfoState::new(false);
         {
-            let _guard = state.dirty_op_guard();
+            let _guard = state.dirty_op_guard(false);
             assert_eq!(state.0.load(Ordering::Relaxed), 1); // IN_SYNC bit cleared, count 1
+            assert!(!state.is_size_accurate());
         }
         assert_eq!(state.0.load(Ordering::Relaxed), 0);
+        assert!(state.is_size_accurate());
+
+        {
+            let _guard = state.dirty_op_guard(true);
+            assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED | 1);
+            assert!(!state.is_size_accurate());
+        }
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED);
+        assert!(!state.is_size_accurate());
+
+        {
+            let _guard1 = state.dirty_op_guard(true);
+            let _guard2 = state.dirty_op_guard(true);
+            assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED | 2);
+            assert!(!state.is_size_accurate());
+        }
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED);
+        assert!(!state.is_size_accurate());
+    }
+
+    #[test]
+    fn test_info_state_refresh_clears_truncated() {
+        let state = InfoState::new(true);
+        // Set TRUNCATED bit.
+        {
+            let _guard = state.dirty_op_guard(true);
+        }
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED);
+
+        let info = RwLock::new(FsNodeInfo::default());
+        state.maybe_refresh(&info, |_| Ok(()), |_| unreachable!()).unwrap();
+
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::IN_SYNC);
+        assert!(state.is_size_accurate());
     }
 
     #[test]
@@ -4035,7 +4636,7 @@ mod test {
                 &info,
                 |_| {
                     // Simulate a dirty op starting while refresh is in progress
-                    let _guard = state.dirty_op_guard();
+                    let _guard = state.dirty_op_guard(false);
                     assert_eq!(state.0.load(Ordering::Relaxed), InfoState::PENDING_REFRESH | 1);
                     Ok(())
                 },
@@ -4094,7 +4695,6 @@ mod test {
         use crate::vfs::FdFlags;
         use starnix_uapi::user_address::UserAddress;
         use starnix_uapi::{MAP_SHARED, MS_SYNC, PROT_READ, PROT_WRITE};
-        use std::sync::atomic::{AtomicUsize, Ordering};
 
         // Counter to track Fxfs transactions
         let commit_count = Arc::new(AtomicUsize::new(0));
@@ -4189,6 +4789,72 @@ mod test {
         })
         .await;
 
+        fixture.close().await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_size() {
+        let fixture = TestFixture::new().await;
+        let (server, client) = zx::Channel::create();
+        fixture.root().clone(server.into()).expect("clone failed");
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+            let fs = RemoteFs::new_fs(
+                locked,
+                &kernel,
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
+                rights,
+            )
+            .expect("new_fs failed");
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o666);
+            let node = root
+                .create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+                .expect("create_node failed");
+            let file = node
+                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                .expect("open failed");
+
+            // Initial size should be 0.
+            assert_eq!(
+                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
+                0
+            );
+
+            // Write some data.
+            let mut data = VecInputBuffer::new(b"hello");
+            file.write(locked, &current_task, &mut data).expect("write failed");
+
+            // Size should be 5.
+            assert_eq!(
+                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
+                5
+            );
+
+            // Truncate to 10.
+            node.truncate(locked, &current_task, 10).expect("truncate failed");
+
+            // Size should be 10.
+            assert_eq!(
+                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
+                10
+            );
+
+            // Truncate to 3.
+            node.truncate(locked, &current_task, 3).expect("truncate failed");
+
+            // Size should be 3.
+            assert_eq!(
+                node.entry.node.get_size(locked, &current_task).expect("get_size failed"),
+                3
+            );
+        })
+        .await;
         fixture.close().await;
     }
 }

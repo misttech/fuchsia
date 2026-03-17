@@ -915,6 +915,17 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     fn is_private(&self) -> bool {
         false
     }
+
+    /// Returns the size of the file.
+    fn get_size(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        node: &FsNode,
+        current_task: &CurrentTask,
+    ) -> Result<usize, Errno> {
+        let info = node.fetch_and_refresh_info(locked, current_task)?;
+        Ok(info.size.try_into().map_err(|_| errno!(EINVAL))?)
+    }
 }
 
 impl<T> From<T> for Box<dyn FsNodeOps>
@@ -1201,10 +1212,10 @@ pub enum TimeUpdateType {
 }
 
 // Public re-export of macros allows them to be used like regular rust items.
-pub use {
-    fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
-    fs_node_impl_xattr_delegate,
-};
+pub use fs_node_impl_dir_readonly;
+pub use fs_node_impl_not_dir;
+pub use fs_node_impl_symlink;
+pub use fs_node_impl_xattr_delegate;
 
 pub struct SpecialNode;
 
@@ -2333,6 +2344,11 @@ impl FsNode {
         })
     }
 
+    /// Returns the current size of the file.  This is inherently racy, so any caller that
+    /// might want to use the value returned should hold their own locks if necessary.  For
+    /// example, if using the value here to implement append (which is the case at the time
+    /// of writing this comment), locks must be held to prevent the file size being changed
+    /// concurrently.
     // TODO(https://fxbug.dev/454730248): This is probably the wrong way to implement O_APPEND.
     pub fn get_size<L>(
         &self,
@@ -2342,8 +2358,7 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let info = self.fetch_and_refresh_info(locked, current_task)?;
-        Ok(info.size.try_into().map_err(|_| errno!(EINVAL))?)
+        self.ops().get_size(locked.cast_locked::<FileOpsCore>(), self, current_task)
     }
 
     fn statx_timestamp_from_time(time: UtcInstant) -> statx_timestamp {
