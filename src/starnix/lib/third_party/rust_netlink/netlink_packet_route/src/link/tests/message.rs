@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+use netlink_packet_utils::nla::HasNlas;
 use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;

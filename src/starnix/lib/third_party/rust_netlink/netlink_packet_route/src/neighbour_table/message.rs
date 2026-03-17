@@ -3,7 +3,9 @@
 use super::{
     NeighbourTableAttribute, NeighbourTableError, NeighbourTableHeader, NeighbourTableMessageBuffer,
 };
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use crate::RouteNetlinkMessageParseMode;
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
+use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[non_exhaustive]
@@ -23,28 +25,32 @@ impl Emitable for NeighbourTableMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<NeighbourTableMessageBuffer<&'a T>>
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<NeighbourTableMessageBuffer<&'a T>, RouteNetlinkMessageParseMode>
     for NeighbourTableMessage
 {
     type Error = NeighbourTableError;
-    fn parse(buf: &NeighbourTableMessageBuffer<&'a T>) -> Result<Self, NeighbourTableError> {
+    fn parse_with_param(
+        buf: &NeighbourTableMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, NeighbourTableError> {
         Ok(NeighbourTableMessage {
             // unwrap: we always succeed at parsing the header
             header: NeighbourTableHeader::parse(buf).unwrap(),
-            attributes: Vec::<NeighbourTableAttribute>::parse(buf)?,
+            attributes: Vec::<NeighbourTableAttribute>::parse_with_param(buf, mode.into())?,
         })
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<NeighbourTableMessageBuffer<&'a T>>
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<NeighbourTableMessageBuffer<&'a T>, NlaParseMode>
     for Vec<NeighbourTableAttribute>
 {
     type Error = NeighbourTableError;
-    fn parse(buf: &NeighbourTableMessageBuffer<&'a T>) -> Result<Self, NeighbourTableError> {
-        let mut attributes = vec![];
-        for nla_buf in buf.attributes() {
-            attributes.push(NeighbourTableAttribute::parse(&nla_buf?)?);
-        }
-        Ok(attributes)
+    fn parse_with_param(
+        buf: &NeighbourTableMessageBuffer<&'a T>,
+        mode: NlaParseMode,
+    ) -> Result<Self, NeighbourTableError> {
+        buf.parse_attributes(mode, NeighbourTableAttribute::parse)
     }
 }

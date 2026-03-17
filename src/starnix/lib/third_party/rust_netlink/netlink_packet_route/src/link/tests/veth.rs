@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
@@ -40,7 +40,14 @@ fn test_veth_get_link_info() {
         attributes: vec![LinkAttribute::LinkInfo(vec![LinkInfo::Kind(InfoKind::Veth)])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -102,7 +109,14 @@ fn test_crate_veth() {
         ..Default::default()
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

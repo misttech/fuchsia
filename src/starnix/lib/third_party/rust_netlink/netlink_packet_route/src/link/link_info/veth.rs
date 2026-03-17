@@ -3,7 +3,9 @@
 use anyhow::Context;
 use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
+
+use crate::RouteNetlinkMessageParseMode;
 
 use super::super::{LinkMessage, LinkMessageBuffer};
 
@@ -54,7 +56,10 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for InfoVeth {
             VETH_INFO_PEER => {
                 let err = "failed to parse veth link info";
                 let buffer = LinkMessageBuffer::new(&payload).context(err)?;
-                Peer(LinkMessage::parse(&buffer).context(err)?)
+                Peer(
+                    LinkMessage::parse_with_param(&buffer, RouteNetlinkMessageParseMode::Relaxed)
+                        .context(err)?,
+                )
             }
             kind => Other(DefaultNla::parse(buf).context(format!("unknown NLA type {kind}"))?),
         })

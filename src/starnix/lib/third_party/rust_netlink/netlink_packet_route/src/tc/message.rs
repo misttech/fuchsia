@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use super::{TcAttribute, TcError, TcHeader, TcMessageBuffer};
+use crate::RouteNetlinkMessageParseMode;
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -25,30 +27,34 @@ impl TcMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<TcMessageBuffer<&'a T>> for TcMessage {
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<TcMessageBuffer<&'a T>, RouteNetlinkMessageParseMode> for TcMessage
+{
     type Error = TcError;
-    fn parse(buf: &TcMessageBuffer<&'a T>) -> Result<Self, TcError> {
+    fn parse_with_param(
+        buf: &TcMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, TcError> {
         Ok(Self {
             header: TcHeader::parse(buf).unwrap(),
-            attributes: Vec::<TcAttribute>::parse(buf)?,
+            attributes: Vec::<TcAttribute>::parse_with_param(buf, mode.into())?,
         })
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<TcMessageBuffer<&'a T>> for Vec<TcAttribute> {
+impl<'a, T: AsRef<[u8]> + 'a> ParseableParametrized<TcMessageBuffer<&'a T>, NlaParseMode>
+    for Vec<TcAttribute>
+{
     type Error = TcError;
-    fn parse(buf: &TcMessageBuffer<&'a T>) -> Result<Self, TcError> {
-        let mut attributes = vec![];
+    fn parse_with_param(buf: &TcMessageBuffer<&'a T>, mode: NlaParseMode) -> Result<Self, TcError> {
         let mut kind = String::new();
-
-        for nla_buf in buf.attributes() {
-            let attribute = TcAttribute::parse_with_param(&nla_buf?, kind.as_str())?;
+        buf.parse_attributes(mode, |nla_buf| {
+            let attribute = TcAttribute::parse_with_param(nla_buf, kind.as_str())?;
             if let TcAttribute::Kind(s) = &attribute {
                 kind = s.to_string();
             }
-            attributes.push(attribute)
-        }
-        Ok(attributes)
+            Ok(attribute)
+        })
     }
 }
 

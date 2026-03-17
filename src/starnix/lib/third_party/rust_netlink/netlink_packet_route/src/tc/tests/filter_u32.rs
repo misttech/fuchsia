@@ -2,7 +2,7 @@
 
 use std::net::Ipv4Addr;
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::tc::filters::{TcU32OptionFlags, TcU32SelectorFlags};
@@ -87,7 +87,14 @@ fn test_get_filter_u32() {
         ],
     };
 
-    assert_eq!(expected, TcMessage::parse(&TcMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        TcMessage::parse_with_param(
+            &TcMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

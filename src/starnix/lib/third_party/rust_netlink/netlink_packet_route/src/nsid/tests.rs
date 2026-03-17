@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::nsid::{NsidAttribute, NsidHeader, NsidMessage, NsidMessageBuffer};
@@ -19,7 +19,14 @@ fn test_ip_netns_query_reply() {
         attributes: vec![NsidAttribute::Id(99)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        NsidMessage::parse_with_param(
+            &NsidMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -42,7 +49,14 @@ fn test_ip_netns_query() {
         attributes: vec![NsidAttribute::Fd(6)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        NsidMessage::parse_with_param(
+            &NsidMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -62,7 +76,14 @@ fn test_ip_netns_query_target_ns_id() {
         attributes: vec![NsidAttribute::TargetNsid(99)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        NsidMessage::parse_with_param(
+            &NsidMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

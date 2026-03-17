@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::neighbour_table::{
@@ -60,7 +60,11 @@ fn test_ipv4_neighbour_table() {
 
     assert_eq!(
         expected,
-        NeighbourTableMessage::parse(&NeighbourTableMessageBuffer::new(&raw).unwrap()).unwrap()
+        NeighbourTableMessage::parse_with_param(
+            &NeighbourTableMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
     );
 
     let mut buf = vec![0; expected.buffer_len()];
@@ -156,7 +160,11 @@ fn test_ipv4_neighbour_table_stats_config() {
 
     assert_eq!(
         expected,
-        NeighbourTableMessage::parse(&NeighbourTableMessageBuffer::new(&raw).unwrap()).unwrap()
+        NeighbourTableMessage::parse_with_param(
+            &NeighbourTableMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
     );
 
     let mut buf = vec![0; expected.buffer_len()];

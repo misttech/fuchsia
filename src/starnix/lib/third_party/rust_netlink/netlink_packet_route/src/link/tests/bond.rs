@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     BondMode, BondPortState, InfoBond, InfoBondPort, InfoData, InfoKind, InfoPortData,
     InfoPortKind, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType, LinkMessage,
     LinkMessageBuffer, MiiStatus,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 #[test]
 fn test_bond_link_info() {
@@ -80,7 +80,14 @@ fn test_bond_link_info() {
         ])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -128,7 +135,14 @@ fn test_bond_port_link_info() {
         ])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

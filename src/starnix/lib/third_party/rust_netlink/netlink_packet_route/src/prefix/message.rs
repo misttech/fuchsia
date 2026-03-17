@@ -3,7 +3,9 @@
 use super::attribute::PrefixAttribute;
 use super::error::PrefixError;
 use super::header::{PrefixHeader, PrefixMessageBuffer};
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use crate::RouteNetlinkMessageParseMode;
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
+use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct PrefixMessage {
@@ -35,24 +37,31 @@ impl<T: AsRef<[u8]>> Parseable<PrefixMessageBuffer<T>> for PrefixHeader {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<PrefixMessageBuffer<&'a T>> for PrefixMessage {
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<PrefixMessageBuffer<&'a T>, RouteNetlinkMessageParseMode>
+    for PrefixMessage
+{
     type Error = PrefixError;
-    fn parse(buf: &PrefixMessageBuffer<&'a T>) -> Result<Self, PrefixError> {
+    fn parse_with_param(
+        buf: &PrefixMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, PrefixError> {
         Ok(Self {
             // Unwrap: ok, we never return an error above.
             header: PrefixHeader::parse(buf).unwrap(),
-            attributes: Vec::<PrefixAttribute>::parse(buf)?,
+            attributes: Vec::<PrefixAttribute>::parse_with_param(buf, mode.into())?,
         })
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<PrefixMessageBuffer<&'a T>> for Vec<PrefixAttribute> {
+impl<'a, T: AsRef<[u8]> + 'a> ParseableParametrized<PrefixMessageBuffer<&'a T>, NlaParseMode>
+    for Vec<PrefixAttribute>
+{
     type Error = PrefixError;
-    fn parse(buf: &PrefixMessageBuffer<&'a T>) -> Result<Self, PrefixError> {
-        let mut nlas = vec![];
-        for nla_buf in buf.nlas() {
-            nlas.push(PrefixAttribute::parse(&nla_buf?)?);
-        }
-        Ok(nlas)
+    fn parse_with_param(
+        buf: &PrefixMessageBuffer<&'a T>,
+        mode: NlaParseMode,
+    ) -> Result<Self, PrefixError> {
+        buf.parse_attributes(mode, PrefixAttribute::parse)
     }
 }

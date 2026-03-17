@@ -3,7 +3,7 @@
 use std::net::Ipv6Addr;
 
 use netlink_packet_utils::nla::DefaultNla;
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
@@ -41,7 +41,14 @@ fn test_parsing_link_vrf() {
         ])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -299,7 +306,11 @@ fn test_link_info_with_ifla_vrf_port_table() {
             ]),
         ],
     };
-    let link = LinkMessage::parse(&LinkMessageBuffer::new(&data).unwrap()).unwrap();
+    let link = LinkMessage::parse_with_param(
+        &LinkMessageBuffer::new(&data).unwrap(),
+        crate::RouteNetlinkMessageParseMode::Strict,
+    )
+    .unwrap();
     assert_eq!(expected, link);
     // FIXME: the packet we write is not a perfect match with the
     // packet we received from the kernel.

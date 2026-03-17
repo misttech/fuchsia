@@ -3,7 +3,7 @@
 use std::net::Ipv6Addr;
 use std::str::FromStr;
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::prefix::attribute::PrefixAttribute;
 use crate::prefix::cache_info::CacheInfo;
@@ -30,8 +30,11 @@ fn test_new_prefix() {
         0xff, 0xff, 0xff, 0xfa,
         0xff, 0xff, 0xff, 0xff,
     ];
-    let actual = PrefixMessage::parse(&PrefixMessageBuffer::new(&data).unwrap())
-        .expect("Generated PrefixMessage");
+    let actual = PrefixMessage::parse_with_param(
+        &PrefixMessageBuffer::new(&data).unwrap(),
+        crate::RouteNetlinkMessageParseMode::Strict,
+    )
+    .expect("Generated PrefixMessage");
 
     let expected = PrefixMessage {
         header: PrefixHeader {

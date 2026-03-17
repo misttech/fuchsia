@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::{DecodeError, Emitable, Parseable};
 
 use crate::AddressFamily;
@@ -12,8 +12,8 @@ buffer!(NsidMessageBuffer(NSID_HEADER_LEN) {
     payload: (slice, NSID_HEADER_LEN..),
 });
 
-impl<'a, T: AsRef<[u8]> + ?Sized> NsidMessageBuffer<&'a T> {
-    pub fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, NlaError>> {
+impl<'a, T: AsRef<[u8]> + ?Sized> HasNlas for NsidMessageBuffer<&'a T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(self.payload())
     }
 }

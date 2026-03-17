@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_utils::nla::{DefaultNla, NlaBuffer};
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, Parseable, ParseableParametrized};
 
-use crate::AddressFamily;
 use crate::link::af_spec::VecAfSpecBridge;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
@@ -13,6 +12,7 @@ use crate::link::{
     LinkHeader, LinkInfo, LinkLayerType, LinkMessage, LinkMessageBuffer, LinkXdp, Map, State,
     Stats, Stats64, XdpAttached,
 };
+use crate::{AddressFamily, RouteNetlinkMessageParseMode};
 
 #[test]
 fn test_parse_link_bridge_no_extention_mask() {
@@ -384,7 +384,14 @@ fn test_parse_link_bridge_no_extention_mask() {
         ],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -502,7 +509,14 @@ fn test_bridge_port_link_info() {
         ])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        LinkMessage::parse_with_param(
+            &LinkMessageBuffer::new(&raw).unwrap(),
+            RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

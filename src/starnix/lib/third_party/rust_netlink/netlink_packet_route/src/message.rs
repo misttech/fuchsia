@@ -19,7 +19,7 @@ use netlink_packet_core::{
     NetlinkDeserializable, NetlinkHeader, NetlinkPayload, NetlinkSerializable,
 };
 use netlink_packet_utils::nla::NlaParseMode;
-use netlink_packet_utils::{DecodeError, Emitable, Parseable, ParseableParametrized};
+use netlink_packet_utils::{DecodeError, Emitable, ParseableParametrized};
 use thiserror::Error;
 
 const RTM_NEWLINK: u16 = 16;
@@ -167,7 +167,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             // Link messages
             RTM_NEWLINK | RTM_GETLINK | RTM_DELLINK | RTM_SETLINK => {
                 let msg = match LinkMessageBuffer::new(&buf.inner()) {
-                    Ok(buf) => LinkMessage::parse(&buf)
+                    Ok(buf) => LinkMessage::parse_with_param(&buf, parse_mode)
                         .map_err(RouteNetlinkMessageParseError::InvalidLinkMessage)?,
                     // HACK: iproute2 sends invalid RTM_GETLINK message, where
                     // the header is limited to the
@@ -226,7 +226,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = NeighbourMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = NeighbourMessage::parse(&buffer)?;
+                let msg = NeighbourMessage::parse_with_param(&buffer, parse_mode)?;
                 match message_type {
                     RTM_GETNEIGH => RouteNetlinkMessage::GetNeighbour(msg),
                     RTM_NEWNEIGH => RouteNetlinkMessage::NewNeighbour(msg),
@@ -240,7 +240,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = NeighbourTableMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = NeighbourTableMessage::parse(&buffer)
+                let msg = NeighbourTableMessage::parse_with_param(&buffer, parse_mode)
                     .map_err(RouteNetlinkMessageParseError::InvalidNeighbourTableMessage)?;
                 match message_type {
                     RTM_GETNEIGHTBL => RouteNetlinkMessage::GetNeighbourTable(msg),
@@ -251,9 +251,10 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             }
 
             RTM_NEWNDUSEROPT => {
-                let msg = NeighbourDiscoveryUserOptionMessage::parse(
+                let msg = NeighbourDiscoveryUserOptionMessage::parse_with_param(
                     &NeighbourDiscoveryUserOptionMessageBuffer::new(&buf.inner())
                         .map_err(NeighbourDiscoveryUserOptionError::ParseBuffer)?,
+                    parse_mode,
                 )?;
                 RouteNetlinkMessage::NewNeighbourDiscoveryUserOption(msg)
             }
@@ -299,7 +300,9 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = PrefixMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                RouteNetlinkMessage::NewPrefix(PrefixMessage::parse(&buffer)?)
+                RouteNetlinkMessage::NewPrefix(PrefixMessage::parse_with_param(
+                    &buffer, parse_mode,
+                )?)
             }
             RTM_NEWRULE | RTM_GETRULE | RTM_DELRULE => {
                 let buf_inner = buf.inner();
@@ -320,7 +323,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = TcMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = TcMessage::parse(&buffer)?;
+                let msg = TcMessage::parse_with_param(&buffer, parse_mode)?;
                 match message_type {
                     RTM_NEWQDISC => RouteNetlinkMessage::NewQueueDiscipline(msg),
                     RTM_DELQDISC => RouteNetlinkMessage::DelQueueDiscipline(msg),
@@ -343,7 +346,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let buf_inner = buf.inner();
                 let buffer = NsidMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
-                let msg = NsidMessage::parse(&buffer)?;
+                let msg = NsidMessage::parse_with_param(&buffer, parse_mode)?;
                 match message_type {
                     RTM_NEWNSID => RouteNetlinkMessage::NewNsId(msg),
                     RTM_DELNSID => RouteNetlinkMessage::DelNsId(msg),

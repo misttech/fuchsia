@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_utils::DecodeError;
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
 use crate::AddressFamily;
@@ -13,8 +13,8 @@ buffer!(NeighbourTableMessageBuffer(NEIGHBOUR_TABLE_HEADER_LEN) {
     payload: (slice, NEIGHBOUR_TABLE_HEADER_LEN..),
 });
 
-impl<'a, T: AsRef<[u8]> + ?Sized> NeighbourTableMessageBuffer<&'a T> {
-    pub fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, NlaError>> {
+impl<'a, T: AsRef<[u8]> + ?Sized> HasNlas for NeighbourTableMessageBuffer<&'a T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(self.payload())
     }
 }

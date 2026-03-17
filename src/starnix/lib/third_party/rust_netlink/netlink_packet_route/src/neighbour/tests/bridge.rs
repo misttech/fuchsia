@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::neighbour::flags::NeighbourFlags;
@@ -31,7 +31,11 @@ fn test_bridge_neighbour_show() {
 
     assert_eq!(
         expected,
-        NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw).unwrap()).unwrap()
+        NeighbourMessage::parse_with_param(
+            &NeighbourMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
     );
 
     let mut buf = vec![0; expected.buffer_len()];

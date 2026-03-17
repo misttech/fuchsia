@@ -346,7 +346,7 @@ pub trait HasNlas {
     fn parse_attributes<'a, A, E>(
         &'a self,
         mode: NlaParseMode,
-        parse_fn: impl Fn(&NlaBuffer<&'a [u8]>) -> Result<A, E>,
+        mut parse_fn: impl FnMut(&NlaBuffer<&'a [u8]>) -> Result<A, E>,
     ) -> Result<Vec<A>, E>
     where
         E: From<NlaError>,

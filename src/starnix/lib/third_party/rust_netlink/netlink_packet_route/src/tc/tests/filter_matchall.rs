@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::{Emitable, Parseable};
+use netlink_packet_utils::{Emitable, ParseableParametrized};
 
 use crate::AddressFamily;
 use crate::tc::{
@@ -153,7 +153,14 @@ fn test_get_filter_matchall() {
         ],
     };
 
-    assert_eq!(expected, TcMessage::parse(&TcMessageBuffer::new(&raw).unwrap()).unwrap());
+    assert_eq!(
+        expected,
+        TcMessage::parse_with_param(
+            &TcMessageBuffer::new(&raw).unwrap(),
+            crate::RouteNetlinkMessageParseMode::Strict
+        )
+        .unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

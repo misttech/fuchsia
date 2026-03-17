@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::nla::HasNlas;
+use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 use std::convert::TryFrom as _;
 
 use super::NeighbourDiscoveryUserOptionError;
@@ -9,6 +10,7 @@ use super::buffer::{
 };
 use super::header::NeighbourDiscoveryUserOptionHeader;
 use super::nla::Nla;
+use crate::RouteNetlinkMessageParseMode;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
@@ -66,29 +68,29 @@ impl Emitable for NeighbourDiscoveryUserOptionMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<NeighbourDiscoveryUserOptionMessageBuffer<&'a T>>
-    for NeighbourDiscoveryUserOptionMessage
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<
+        NeighbourDiscoveryUserOptionMessageBuffer<&'a T>,
+        RouteNetlinkMessageParseMode,
+    > for NeighbourDiscoveryUserOptionMessage
 {
     type Error = NeighbourDiscoveryUserOptionError;
 
-    fn parse(
+    fn parse_with_param(
         buf: &NeighbourDiscoveryUserOptionMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
     ) -> Result<Self, NeighbourDiscoveryUserOptionError> {
         let header = NeighbourDiscoveryUserOptionHeader::parse(buf)
             .map_err(NeighbourDiscoveryUserOptionError::InvalidHeader)?;
 
-        let mut nlas = Vec::new();
-        for nla_buf in buf.nlas() {
-            nlas.push(
-                Nla::parse(&nla_buf.map_err(NeighbourDiscoveryUserOptionError::InvalidNla)?)
-                    .map_err(NeighbourDiscoveryUserOptionError::InvalidNla)?,
-            );
-        }
+        let attributes = buf
+            .parse_attributes(mode.into(), Nla::parse)
+            .map_err(NeighbourDiscoveryUserOptionError::InvalidNla)?;
 
         Ok(NeighbourDiscoveryUserOptionMessage {
             header,
             option_body: buf.option_body().to_vec(),
-            attributes: nlas,
+            attributes,
         })
     }
 }

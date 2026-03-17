@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::{DecodeError, Emitable};
 
 const PREFIX_HEADER_LEN: usize = 12;
@@ -17,8 +17,8 @@ buffer!(PrefixMessageBuffer(PREFIX_HEADER_LEN) {
     payload: (slice, PREFIX_HEADER_LEN..),
 });
 
-impl<'a, T: AsRef<[u8]> + ?Sized> PrefixMessageBuffer<&'a T> {
-    pub fn nlas(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, NlaError>> {
+impl<'a, T: AsRef<[u8]> + ?Sized> HasNlas for PrefixMessageBuffer<&'a T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(self.payload())
     }
 }

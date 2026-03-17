@@ -2,7 +2,7 @@
 
 use crate::AddressFamily;
 use netlink_packet_utils::DecodeError;
-use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
 const TC_HEADER_LEN: usize = 20;
@@ -18,8 +18,8 @@ buffer!(TcMessageBuffer(TC_HEADER_LEN) {
     payload: (slice, TC_HEADER_LEN..),
 });
 
-impl<'a, T: AsRef<[u8]> + ?Sized> TcMessageBuffer<&'a T> {
-    pub fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, NlaError>> {
+impl<'a, T: AsRef<[u8]> + ?Sized> HasNlas for TcMessageBuffer<&'a T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
         NlasIterator::new(self.payload())
     }
 }

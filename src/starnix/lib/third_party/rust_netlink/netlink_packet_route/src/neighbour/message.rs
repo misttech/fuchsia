@@ -2,6 +2,8 @@
 
 use super::super::AddressFamily;
 use super::{NeighbourAttribute, NeighbourError, NeighbourHeader, NeighbourMessageBuffer};
+use crate::RouteNetlinkMessageParseMode;
+use netlink_packet_utils::nla::{HasNlas, NlaParseMode};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -22,31 +24,39 @@ impl Emitable for NeighbourMessage {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<NeighbourMessageBuffer<&'a T>> for NeighbourMessage {
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<NeighbourMessageBuffer<&'a T>, RouteNetlinkMessageParseMode>
+    for NeighbourMessage
+{
     type Error = NeighbourError;
-    fn parse(buf: &NeighbourMessageBuffer<&'a T>) -> Result<Self, NeighbourError> {
+    fn parse_with_param(
+        buf: &NeighbourMessageBuffer<&'a T>,
+        mode: RouteNetlinkMessageParseMode,
+    ) -> Result<Self, NeighbourError> {
         // unwrap: parsing the header is always ok.
         let header = NeighbourHeader::parse(buf).unwrap();
         let address_family = header.family;
         Ok(NeighbourMessage {
             header,
-            attributes: Vec::<NeighbourAttribute>::parse_with_param(buf, address_family)?,
+            attributes: Vec::<NeighbourAttribute>::parse_with_param(
+                buf,
+                (mode.into(), address_family),
+            )?,
         })
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> ParseableParametrized<NeighbourMessageBuffer<&'a T>, AddressFamily>
+impl<'a, T: AsRef<[u8]> + 'a>
+    ParseableParametrized<NeighbourMessageBuffer<&'a T>, (NlaParseMode, AddressFamily)>
     for Vec<NeighbourAttribute>
 {
     type Error = NeighbourError;
     fn parse_with_param(
         buf: &NeighbourMessageBuffer<&'a T>,
-        address_family: AddressFamily,
+        (mode, address_family): (NlaParseMode, AddressFamily),
     ) -> Result<Self, NeighbourError> {
-        let mut attributes = vec![];
-        for nla_buf in buf.attributes() {
-            attributes.push(NeighbourAttribute::parse_with_param(&nla_buf?, address_family)?);
-        }
-        Ok(attributes)
+        buf.parse_attributes(mode, |nla_buf| {
+            NeighbourAttribute::parse_with_param(nla_buf, address_family)
+        })
     }
 }

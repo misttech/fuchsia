@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_utils::DecodeError;
-use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
+use netlink_packet_utils::nla::{HasNlas, NlaBuffer, NlaError, NlasIterator};
 
 pub const NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN: usize = 16;
 
@@ -16,6 +16,12 @@ buffer!(NeighbourDiscoveryUserOptionMessageBuffer() {
     padding_3: (u32, 12..16),
     payload: (slice, NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN..),
 });
+
+impl<'a, T: AsRef<[u8]> + ?Sized> HasNlas for NeighbourDiscoveryUserOptionMessageBuffer<&'a T> {
+    fn attributes(&self) -> impl Iterator<Item = Result<NlaBuffer<&[u8]>, NlaError>> {
+        NlasIterator::new(&self.payload()[self.options_length() as usize..])
+    }
+}
 
 impl<T: AsRef<[u8]>> NeighbourDiscoveryUserOptionMessageBuffer<T> {
     pub fn new(buffer: T) -> Result<Self, DecodeError> {
@@ -43,10 +49,5 @@ impl<T: AsRef<[u8]>> NeighbourDiscoveryUserOptionMessageBuffer<T> {
 impl<'a, T: AsRef<[u8]> + ?Sized> NeighbourDiscoveryUserOptionMessageBuffer<&'a T> {
     pub fn option_body(&self) -> &[u8] {
         &self.payload()[..self.options_length() as usize]
-    }
-
-    pub fn nlas(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, DecodeError>> {
-        NlasIterator::new(&self.payload()[self.options_length() as usize..])
-            .map(|result| result.map_err(DecodeError::from))
     }
 }
