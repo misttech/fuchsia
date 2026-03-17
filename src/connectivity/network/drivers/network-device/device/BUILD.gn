@@ -51,6 +51,7 @@ driver_source_split("device") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",
   ]
 

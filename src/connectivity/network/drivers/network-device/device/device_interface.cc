@@ -11,6 +11,7 @@
 #include <lib/fidl/cpp/wire/sync_call.h>
 #include <lib/fidl/cpp/wire/traits.h>
 #include <lib/fit/defer.h>
+#include <lib/trace/event.h>
 
 #include <fbl/alloc_checker.h>
 
@@ -497,12 +498,16 @@ void DeviceInterface::RemovePort(
 void DeviceInterface::CompleteRx(
     fuchsia_hardware_network_driver::wire::NetworkDeviceIfcCompleteRxRequest* request, fdf::Arena&,
     CompleteRxCompleter::Sync&) {
+  LOGF_TRACE("%s(_, %lu)", __FUNCTION__, request->rx.size());
+  TRACE_DURATION("network-device", "CompleteRx", "count", request->rx.size());
   rx_queue_->CompleteRxList(request->rx);
 }
 
 void DeviceInterface::CompleteTx(
     fuchsia_hardware_network_driver::wire::NetworkDeviceIfcCompleteTxRequest* request, fdf::Arena&,
     CompleteTxCompleter::Sync&) {
+  LOGF_TRACE("%s(_, %lu)", __FUNCTION__, request->tx.size());
+  TRACE_DURATION("network-device", "CompleteTx", "count", request->tx.size());
   tx_queue_->CompleteTxList(request->tx);
 }
 
@@ -1246,7 +1251,8 @@ void DeviceInterface::NotifyTxReturned(bool was_full) {
 }
 
 void DeviceInterface::QueueRxSpace(cpp20::span<netdriver::wire::RxSpaceBuffer> rx) {
-  LOGF_TRACE("%s(_, %ld)", __FUNCTION__, rx.size());
+  LOGF_TRACE("%s(_, %lu)", __FUNCTION__, rx.size());
+  TRACE_DURATION("network-device", "QueueRxSpace", "count", rx.size());
   fdf::Arena arena('NETD');
   fidl::VectorView data =
       fidl::VectorView<netdriver::wire::RxSpaceBuffer>::FromExternal(rx.data(), rx.size());
@@ -1257,8 +1263,8 @@ void DeviceInterface::QueueRxSpace(cpp20::span<netdriver::wire::RxSpaceBuffer> r
 }
 
 void DeviceInterface::QueueTx(cpp20::span<netdriver::wire::TxBuffer> tx) {
-  LOGF_TRACE("%s(_, %ld)", __FUNCTION__, tx.size());
-
+  LOGF_TRACE("%s(_, %lu)", __FUNCTION__, tx.size());
+  TRACE_DURATION("network-device", "QueueTx", "count", tx.size());
   fdf::Arena arena('NETD');
   fidl::VectorView data =
       fidl::VectorView<netdriver::wire::TxBuffer>::FromExternal(tx.data(), tx.size());
