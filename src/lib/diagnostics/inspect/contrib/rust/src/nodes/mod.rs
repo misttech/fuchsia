@@ -9,9 +9,11 @@ use std::borrow::Cow;
 use std::{fmt, marker};
 pub use zx::{BootTimeline, MonotonicTimeline};
 
+mod dedupe_log;
 mod list;
 mod lru_cache;
 
+pub use dedupe_log::DedupeLogNode;
 pub use list::BoundedListNode;
 pub use lru_cache::LruCacheNode;
 
