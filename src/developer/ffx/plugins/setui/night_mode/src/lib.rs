@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{NightModeProxy, NightModeSettings};
 use ffx_setui_night_mode_args::NightMode;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{NightModeProxy, NightModeSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -62,15 +62,16 @@ async fn command(proxy: NightModeProxy, night_mode_enabled: Option<bool>) -> Wat
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::NightModeRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::NightModeRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
         const ENABLED: bool = true;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             NightModeRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -94,7 +95,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_night_mode_set_output(expected_night_mode_enabled: bool) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             NightModeRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -130,7 +132,8 @@ mod test {
     async fn validate_night_mode_watch_output(
         expected_night_mode_enabled: Option<bool>,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             NightModeRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
