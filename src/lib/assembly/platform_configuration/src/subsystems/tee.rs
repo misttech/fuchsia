@@ -538,7 +538,7 @@ mod tests {
             assert_eq!(component.component_name, "tee-clients");
             assert_eq!(component.shards.len(), 1);
 
-            shard = component.shards[0].clone().into();
+            shard = component.shards[0].clone();
         } else {
             panic!("unexpected compiled package definition: {compiled_package:#?}");
         }
@@ -704,7 +704,7 @@ mod tests {
             assert_eq!(component.component_name, "tee_manager");
             assert_eq!(component.shards.len(), 1);
 
-            shard = component.shards[0].clone().into();
+            shard = component.shards[0].clone();
         } else {
             panic!("unexpected compiled package definition: {compiled_package:#?}");
         }
