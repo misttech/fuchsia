@@ -24,7 +24,6 @@
 
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/client-vsync-queue.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/drivers/coordinator/display-config.h"
@@ -33,6 +32,7 @@
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/drivers/coordinator/layer.h"
 #include "src/graphics/display/lib/api-types/cpp/buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -52,7 +52,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
                      public FenceListener {
  public:
   // `controller` must outlive the newly created client.
-  Client(Controller* controller, ClientPriority priority, ClientId client_id);
+  Client(Controller* controller, display::ClientPriority priority, ClientId client_id);
 
   Client(const Client&) = delete;
   Client& operator=(const Client&) = delete;
@@ -124,7 +124,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
 
   bool IsValid() const { return valid_; }
   ClientId id() const { return id_; }
-  ClientPriority priority() const { return priority_; }
+  display::ClientPriority priority() const { return priority_; }
   void CaptureCompleted();
 
   uint8_t GetMinimumRgb() const { return client_minimum_rgb_; }
@@ -245,7 +245,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   inspect::BoolProperty is_owner_property_;
 
   Controller& controller_;
-  const ClientPriority priority_;
+  const display::ClientPriority priority_;
   const ClientId id_;
   bool valid_ = false;
 

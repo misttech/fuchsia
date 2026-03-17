@@ -52,8 +52,6 @@ source_set("shared") {
     "capture-image.cc",
     "capture-image.h",
     "client-id.h",
-    "client-priority.cc",
-    "client-priority.h",
     "client-set.cc",
     "client-set.h",
     "client-vsync-queue.cc",

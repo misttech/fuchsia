@@ -15,7 +15,7 @@
 #include <span>
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 
@@ -46,9 +46,11 @@ class ClientSet {
                                  std::span<const display::DisplayId> removed_display_ids);
 
   // Dispatches the VSync to the client that submitted the configuration.
+  //
+  // `display_id`, `vsync_config_stamp`, and `client_priority` must be valid.
   void DispatchOnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                               display::DriverConfigStamp vsync_config_stamp,
-                              ClientPriority client_priority);
+                              display::ClientPriority client_priority);
 
   // Dispatches the event to all clients.
   void DispatchOnCaptureComplete();
@@ -56,9 +58,11 @@ class ClientSet {
   // May change the client that owns the displays.
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
-  // `controller` must be null and must outlive the ClientSet.
+  // `controller` must be non-null and must outlive the ClientSet.
+  // `client_priority`, `coordinator_server_end`, and
+  // `coordinator_listener_client_end` must be valid.
   zx::result<ClientId> ConnectClient(
-      Controller* controller, ClientPriority client_priority,
+      Controller* controller, display::ClientPriority client_priority,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
           coordinator_listener_client_end);
@@ -84,7 +88,7 @@ class ClientSet {
   // Returns nullopt if the applied configuration does not belong to any of the
   // current clients. This happens if the client that applied the configuration
   // has disconnected.
-  std::optional<ClientPriority> FindConfigStampSource(
+  std::optional<display::ClientPriority> FindConfigStampSource(
       display::DriverConfigStamp driver_config_stamp);
 
   // Closes all the client connections.

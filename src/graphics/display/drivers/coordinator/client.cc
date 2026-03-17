@@ -41,12 +41,12 @@
 
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/client-vsync-queue.h"
 #include "src/graphics/display/drivers/coordinator/engine-driver-client.h"
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/lib/api-types/cpp/buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -858,8 +858,8 @@ void Client::SetVirtconMode(SetVirtconModeRequestView request,
                             SetVirtconModeCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::SetVirtconMode");
 
-  if (priority_ != ClientPriority::kVirtcon) {
-    fdf::error("SetVirtconMode() called by {} client", DebugStringFromClientPriority(priority_));
+  if (priority_ != display::ClientPriority::kVirtcon) {
+    fdf::error("SetVirtconMode() called by non-Virtcon client with priority: {}", priority_);
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
@@ -1613,12 +1613,13 @@ void Client::Bind(
       std::move(coordinator_listener_client_end));
 }
 
-Client::Client(Controller* controller, ClientPriority priority, ClientId client_id)
+Client::Client(Controller* controller, display::ClientPriority priority, ClientId client_id)
     : controller_(*controller),
       priority_(priority),
       id_(client_id),
       fences_(this, controller->driver_dispatcher()->borrow()) {
   ZX_DEBUG_ASSERT(controller != nullptr);
+  ZX_DEBUG_ASSERT(priority != display::ClientPriority::kInvalid);
   ZX_DEBUG_ASSERT(client_id != kInvalidClientId);
 }
 
@@ -1705,7 +1706,7 @@ zx_status_t Client::Bind(
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
   node_ = std::move(client_node);
-  node_.RecordString("priority", DebugStringFromClientPriority(priority()));
+  node_.RecordUint("priority", priority().ValueForLogging());
   is_owner_property_ = node_.CreateBool("is_owner", false);
 
   fidl::OnUnboundFn<Client> unbound_callback =

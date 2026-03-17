@@ -11,6 +11,8 @@ library_sources = [
   "backlight-state.cc",
   "backlight-state.h",
   "buffer-collection-id.h",
+  "client-priority.cc",
+  "client-priority.h",
   "color-conversion.cc",
   "color-conversion.h",
   "color.cc",
@@ -91,6 +93,7 @@ source_set("cpp-cxx17") {
 test_sources = [
   "alpha-mode-test.cc",
   "backlight-state-test.cc",
+  "client-priority-test.cc",
   "color-conversion-test.cc",
   "color-test.cc",
   "config-check-result-test.cc",

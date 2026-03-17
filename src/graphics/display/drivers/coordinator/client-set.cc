@@ -17,9 +17,9 @@
 
 #include <fbl/string_printf.h>
 
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/client.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 
@@ -43,19 +43,22 @@ void ClientSet::DispatchOnDisplaysChanged(std::span<const display::DisplayId> ad
 
 void ClientSet::DispatchOnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                                        display::DriverConfigStamp vsync_config_stamp,
-                                       ClientPriority client_priority) {
+                                       display::ClientPriority client_priority) {
   ZX_DEBUG_ASSERT(display_id != display::kInvalidDisplayId);
   ZX_DEBUG_ASSERT(vsync_config_stamp != display::kInvalidDriverConfigStamp);
+  ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
 
   zx_instant_mono_t fidl_timestamp = timestamp.get();
-  switch (client_priority) {
-    case ClientPriority::kPrimary:
-      primary_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
-      break;
-    case ClientPriority::kVirtcon:
-      virtcon_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
-      break;
+  if (client_priority == display::ClientPriority::kPrimary) {
+    primary_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
+    return;
   }
+  if (client_priority == display::ClientPriority::kVirtcon) {
+    virtcon_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
+    return;
+  }
+  ZX_DEBUG_ASSERT_MSG(false, "Unsupported ClientPriority: %" PRIu32,
+                      client_priority.ValueForLogging());
 }
 
 void ClientSet::DispatchOnCaptureComplete() {
@@ -76,7 +79,9 @@ void ClientSet::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtc
 
 namespace {
 
-void PrintChannelKoids(ClientPriority client_priority, const zx::channel& channel) {
+void PrintChannelKoids(display::ClientPriority client_priority, const zx::channel& channel) {
+  ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
+
   zx_info_handle_basic_t info{};
   size_t actual, avail;
   zx_status_t status = channel.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), &actual, &avail);
@@ -86,26 +91,26 @@ void PrintChannelKoids(ClientPriority client_priority, const zx::channel& channe
   }
   ZX_DEBUG_ASSERT(actual == avail);
   fdf::info("Client connecting at priority {} - FIDL client end: 0x{:x} server end: 0x{:x}",
-            DebugStringFromClientPriority(client_priority), info.related_koid, info.koid);
+            client_priority, info.related_koid, info.koid);
 }
 
 }  // namespace
 
 zx::result<ClientId> ClientSet::ConnectClient(
-    Controller* controller, ClientPriority client_priority,
+    Controller* controller, display::ClientPriority client_priority,
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
   ZX_DEBUG_ASSERT(controller != nullptr);
+  ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
   ZX_DEBUG_ASSERT(coordinator_server_end.is_valid());
   ZX_DEBUG_ASSERT(coordinator_listener_client_end.is_valid());
 
   PrintChannelKoids(client_priority, coordinator_server_end.channel());
 
-  if ((client_priority == ClientPriority::kVirtcon && virtcon_client_ != nullptr) ||
-      (client_priority == ClientPriority::kPrimary && primary_client_ != nullptr)) {
-    fdf::debug("Client already bound at priority {}",
-               DebugStringFromClientPriority(client_priority));
+  if ((client_priority == display::ClientPriority::kVirtcon && virtcon_client_ != nullptr) ||
+      (client_priority == display::ClientPriority::kPrimary && primary_client_ != nullptr)) {
+    fdf::debug("Client already bound at priority {}", client_priority);
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
 
@@ -126,19 +131,20 @@ zx::result<ClientId> ClientSet::ConnectClient(
   Client* client_ptr = client.get();
   clients_.push_back(std::move(client));
 
-  fdf::info("Client connected at priority {} with ID {}",
-            DebugStringFromClientPriority(client_priority), client_ptr->id().value());
+  fdf::info("Client connected at priority {} with ID {}", client_priority,
+            client_ptr->id().value());
 
-  switch (client_priority) {
-    case ClientPriority::kVirtcon:
-      ZX_DEBUG_ASSERT(virtcon_client_ == nullptr);
-      ZX_DEBUG_ASSERT(!virtcon_client_ready_);
-      virtcon_client_ = client_ptr;
-      break;
-    case ClientPriority::kPrimary:
-      ZX_DEBUG_ASSERT(primary_client_ == nullptr);
-      ZX_DEBUG_ASSERT(!primary_client_ready_);
-      primary_client_ = client_ptr;
+  if (client_priority == display::ClientPriority::kVirtcon) {
+    ZX_DEBUG_ASSERT(virtcon_client_ == nullptr);
+    ZX_DEBUG_ASSERT(!virtcon_client_ready_);
+    virtcon_client_ = client_ptr;
+  } else if (client_priority == display::ClientPriority::kPrimary) {
+    ZX_DEBUG_ASSERT(primary_client_ == nullptr);
+    ZX_DEBUG_ASSERT(!primary_client_ready_);
+    primary_client_ = client_ptr;
+  } else {
+    ZX_DEBUG_ASSERT_MSG(false, "Unsupported ClientPriority: %" PRIu32,
+                        client_priority.ValueForLogging());
   }
   HandleClientOwnershipChanges();
 
@@ -169,7 +175,7 @@ void ClientSet::SendInitialState(ClientId client_id,
   }
 }
 
-std::optional<ClientPriority> ClientSet::FindConfigStampSource(
+std::optional<display::ClientPriority> ClientSet::FindConfigStampSource(
     display::DriverConfigStamp driver_config_stamp) {
   for (const std::unique_ptr<Client>& client : clients_) {
     const std::list<Client::ConfigStampPair>& pending_stamps =
@@ -191,8 +197,8 @@ std::optional<ClientPriority> ClientSet::FindConfigStampSource(
 void ClientSet::OnClientDisconnected(Client* client) {
   ZX_DEBUG_ASSERT(client != nullptr);
 
-  fdf::info("Client at priority {} with ID {} disconnected",
-            DebugStringFromClientPriority(client->priority()), client->id().value());
+  fdf::info("Client at priority {} with ID {} disconnected", client->priority(),
+            client->id().value());
 
   if (client == virtcon_client_) {
     virtcon_client_ = nullptr;

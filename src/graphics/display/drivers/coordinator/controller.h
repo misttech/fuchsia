@@ -30,7 +30,6 @@
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/client-set.h"
 #include "src/graphics/display/drivers/coordinator/display-info.h"
 #include "src/graphics/display/drivers/coordinator/engine-driver-client.h"
@@ -39,6 +38,7 @@
 #include "src/graphics/display/drivers/coordinator/id-map.h"
 #include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/drivers/coordinator/vsync-monitor.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
@@ -150,8 +150,10 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
   // Typically called by OpenController/OpenVirtconController. However, this is made public
   // for use by testing services which provide a fake display controller.
+  //
+  // `client_priority` must be valid.
   zx_status_t CreateClient(
-      ClientPriority client_priority,
+      display::ClientPriority client_priority,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
           coordinator_listener_client_end);

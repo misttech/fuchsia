@@ -41,7 +41,6 @@
 
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/client-set.h"
 #include "src/graphics/display/drivers/coordinator/client.h"
 #include "src/graphics/display/drivers/coordinator/display-config.h"
@@ -49,6 +48,7 @@
 #include "src/graphics/display/drivers/coordinator/layer.h"
 #include "src/graphics/display/drivers/coordinator/post-display-task.h"
 #include "src/graphics/display/drivers/coordinator/vsync-monitor.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
@@ -230,7 +230,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
   }
 
   // Obsolete stamps will be removed in `Client::OnDisplayVsync()`.
-  std::optional<ClientPriority> config_stamp_source =
+  std::optional<display::ClientPriority> config_stamp_source =
       clients_.FindConfigStampSource(driver_config_stamp);
 
   if (!display_info.pending_layer_change) {
@@ -493,10 +493,11 @@ zx::result<fbl::Vector<display::PixelFormat>> Controller::GetSupportedPixelForma
 }
 
 zx_status_t Controller::CreateClient(
-    ClientPriority client_priority,
+    display::ClientPriority client_priority,
     fidl::ServerEnd<fidl_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
+  ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   fbl::AllocChecker alloc_checker;
@@ -559,7 +560,7 @@ void Controller::OpenCoordinatorWithListenerForVirtcon(
   ZX_DEBUG_ASSERT(request->has_coordinator_listener());
 
   zx_status_t create_status =
-      CreateClient(ClientPriority::kVirtcon, std::move(request->coordinator()),
+      CreateClient(display::ClientPriority::kVirtcon, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()));
   if (create_status == ZX_OK) {
     completer.ReplySuccess();
@@ -576,7 +577,7 @@ void Controller::OpenCoordinatorWithListenerForPrimary(
   ZX_DEBUG_ASSERT(request->has_coordinator_listener());
 
   zx_status_t create_status =
-      CreateClient(ClientPriority::kPrimary, std::move(request->coordinator()),
+      CreateClient(display::ClientPriority::kPrimary, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()));
   if (create_status == ZX_OK) {
     completer.ReplySuccess();

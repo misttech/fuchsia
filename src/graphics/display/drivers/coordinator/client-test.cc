@@ -24,9 +24,9 @@
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/drivers/coordinator/client-id.h"
-#include "src/graphics/display/drivers/coordinator/client-priority.h"
 #include "src/graphics/display/drivers/coordinator/controller.h"
 #include "src/graphics/display/drivers/coordinator/engine-driver-client-fidl.h"
+#include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
@@ -106,7 +106,7 @@ class ClientTest : public ::testing::Test {
 
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
 
-    client_.emplace(&controller_.value(), ClientPriority::kPrimary, ClientId(1));
+    client_.emplace(&controller_.value(), display::ClientPriority::kPrimary, ClientId(1));
     ASSERT_OK(
         client_->BindForTesting(std::move(coordinator_server_end), std::move(listener_client_end)));
   }
