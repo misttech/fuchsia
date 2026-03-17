@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{DoNotDisturbProxy, DoNotDisturbSettings};
 use ffx_setui_do_not_disturb_args::DoNotDisturb;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{DoNotDisturbProxy, DoNotDisturbSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -57,8 +57,8 @@ async fn command(proxy: DoNotDisturbProxy, do_not_disturb: DoNotDisturb) -> Watc
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::DoNotDisturbRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::DoNotDisturbRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
@@ -66,7 +66,8 @@ mod test {
         const USER: bool = true;
         const NIGHT_MODE: bool = false;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DoNotDisturbRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -105,7 +106,8 @@ mod test {
     async fn validate_do_not_disturb_set_output(
         expected_do_not_disturb: DoNotDisturb,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DoNotDisturbRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -140,7 +142,8 @@ mod test {
     async fn validate_do_not_disturb_watch_output(
         expected_do_not_disturb: DoNotDisturb,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             DoNotDisturbRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

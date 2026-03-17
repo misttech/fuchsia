@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::DoNotDisturbSettings;
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::DoNotDisturbSettings;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone, Copy)]
