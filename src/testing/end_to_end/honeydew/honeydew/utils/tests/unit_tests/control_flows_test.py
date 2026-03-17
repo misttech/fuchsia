@@ -24,7 +24,7 @@ class _RetryAbortingErrorSubClass(RetryAbortingError):
 
 
 class RetryTest(unittest.TestCase):
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     def test_retry_succeeds_on_first_try(self, mock_sleep: mock.Mock) -> None:
         mock_task = mock.Mock(return_value=1)
         retry(
@@ -83,7 +83,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_task.call_count, 3)
         self.assertEqual(mock_sleep_for_duration.call_count, 2)
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -92,8 +92,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
         mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
@@ -109,11 +109,9 @@ class RetryTest(unittest.TestCase):
 
         self.assertEqual(mock_task.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 2)
-        mock_sleep.assert_has_calls(
-            [mock.call(timedelta(seconds=1)), mock.call(timedelta(seconds=1))]
-        )
+        mock_sleep.assert_has_calls([mock.call(1), mock.call(1)])
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_never_succeeds_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -122,8 +120,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
         mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
@@ -141,13 +139,10 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_task.call_count, 5)
         self.assertEqual(mock_sleep.call_count, 4)
         mock_sleep.assert_has_calls(
-            [
-                mock.call(timedelta(seconds=duration))
-                for duration in [1, 2, 4, 8]
-            ]
+            [mock.call(duration) for duration in [1, 2, 4, 8]]
         )
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_deadline_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -156,8 +151,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
         mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
@@ -174,15 +169,14 @@ class RetryTest(unittest.TestCase):
 
         self.assertEqual(mock_task.call_count, 5)
 
-        expected_sleep_durations = [25, 50, 100, 200]
+        expected_sleep_durations = [25, 50, 60, 40, 60, 60, 60, 20]
 
         expected_sleep_calls = [
-            mock.call(timedelta(seconds=float(duration)))
-            for duration in expected_sleep_durations
+            mock.call(float(duration)) for duration in expected_sleep_durations
         ]
         mock_sleep.assert_has_calls(expected_sleep_calls)
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     def test_retry_until_deadline_succeeds_on_first_try(
         self, mock_sleep: mock.Mock
     ) -> None:
@@ -242,7 +236,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_task.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 2)
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_sleep(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -251,8 +245,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
 
@@ -270,11 +264,9 @@ class RetryTest(unittest.TestCase):
 
         self.assertEqual(mock_task.call_count, 2)
         self.assertEqual(mock_sleep.call_count, 1)
-        mock_sleep.assert_called_once_with(
-            timedelta(seconds=expected_sleep_duration)
-        )
+        mock_sleep.assert_called_once_with(expected_sleep_duration)
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -283,8 +275,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
 
@@ -304,12 +296,11 @@ class RetryTest(unittest.TestCase):
 
         expected_sleep_durations = [1, 2, 4, 8]
         expected_sleep_calls = [
-            mock.call(timedelta(seconds=duration))
-            for duration in expected_sleep_durations
+            mock.call(duration) for duration in expected_sleep_durations
         ]
         mock_sleep.assert_has_calls(expected_sleep_calls)
 
-    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
+    @mock.patch("time.sleep")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -318,8 +309,8 @@ class RetryTest(unittest.TestCase):
             2024, 7, 10, tzinfo=timezone.utc
         )
 
-        def advance_now(delta: timedelta) -> None:
-            mock_datetime.now.return_value += delta
+        def advance_now(delta: float) -> None:
+            mock_datetime.now.return_value += timedelta(seconds=delta)
 
         mock_sleep.side_effect = advance_now
 
@@ -338,17 +329,18 @@ class RetryTest(unittest.TestCase):
 
         self.assertEqual(mock_task.call_count, 5)
 
-        # TODO(https://fxbug.dev/492835436): Fix lack of actual backoff cap and
-        # update these values
         expected_sleep_durations = [
             25,
             50,
-            100,
-            200,
+            60,
+            40,
+            60,
+            60,
+            60,
+            20,
         ]
         expected_sleep_calls = [
-            mock.call(timedelta(seconds=float(duration)))
-            for duration in expected_sleep_durations
+            mock.call(float(duration)) for duration in expected_sleep_durations
         ]
         mock_sleep.assert_has_calls(expected_sleep_calls)
 
