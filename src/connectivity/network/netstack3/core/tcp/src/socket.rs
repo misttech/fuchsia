@@ -4606,7 +4606,7 @@ fn destroy_socket<I, CC, BC>(
 {
     let weak = id.downgrade();
 
-    core_ctx.with_all_sockets_mut(move |all_sockets| {
+    let (primary, debug_refs) = core_ctx.with_all_sockets_mut(move |all_sockets| {
         let TcpSocketId(rc) = &id;
         let debug_refs = StrongRc::debug_references(rc);
         let entry = all_sockets.entry(id);
@@ -4640,28 +4640,35 @@ fn destroy_socket<I, CC, BC>(
             }
         };
 
-        // There are a number of races that can happen with attempted socket
-        // destruction, but these should not be possible in tests because
-        // they're singlethreaded.
-        #[cfg(test)]
-        let primary = primary.unwrap_or_else(|| {
-            panic!("deferred destruction not allowed in tests. References={debug_refs:?}")
-        });
-        #[cfg(not(test))]
-        let Some(primary) = primary else {
-            return;
-        };
+        (primary, debug_refs)
+    });
 
-        let remove_result =
-            BC::unwrap_or_notify_with_new_reference_notifier(primary, |state| state);
-        match remove_result {
-            RemoveResourceResult::Removed(state) => debug!("destroyed {weak:?} {state:?}"),
-            RemoveResourceResult::Deferred(receiver) => {
-                debug!("deferred removal {weak:?}");
-                bindings_ctx.defer_removal(receiver)
-            }
+    // There are a number of races that can happen with attempted socket
+    // destruction, but these should not be possible in tests because
+    // they're singlethreaded.
+    #[cfg(test)]
+    let primary = primary.unwrap_or_else(|| {
+        panic!("deferred destruction not allowed in tests. References={debug_refs:?}")
+    });
+    #[cfg(not(test))]
+    let primary = {
+        // debug_refs is only referenced in test builds, so reference it here to
+        // silence an unused variable warning;
+        let _ = debug_refs;
+        match primary {
+            Some(primary) => primary,
+            None => return,
         }
-    })
+    };
+
+    let remove_result = BC::unwrap_or_notify_with_new_reference_notifier(primary, |state| state);
+    match remove_result {
+        RemoveResourceResult::Removed(state) => debug!("destroyed {weak:?} {state:?}"),
+        RemoveResourceResult::Deferred(receiver) => {
+            debug!("deferred removal {weak:?}");
+            bindings_ctx.defer_removal(receiver)
+        }
+    }
 }
 
 // Shuts down the listener socket and returns the pending connections and the
