@@ -17,7 +17,7 @@ pub const CRASH_LOOP_LIMIT: usize = 8;
 
 /// While throttled, we should still occasionally file a report with a higher "weight" that can
 /// represent the rest of the crashes.
-const REPORT_EVERY_X_WHILE_THROTTLED: u32 = 10;
+const REPORT_EVERY_X_WHILE_THROTTLED: u32 = 100;
 
 /// Decides whether to throttle crashes for a given process based on how frequently they are
 /// occurring. Records information about throttled crashes for diagnostics.
