@@ -20,7 +20,7 @@ from mobly import test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
+class FuchsiaPowerBaseTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Fuchsia power measurement base test class.
 
     Single device test with power measurement.
@@ -40,8 +40,8 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         power_metric (str): Name of power metric being measured.
     """
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:  # type: ignore[override]
+        await super().setup_class()
         self.metric_name = self.user_params["power_metric"]
         self.power_trace_path = os.path.join(
             self.log_path, f"{self.metric_name}_power_trace.csv"
@@ -49,7 +49,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         self.ffx_test_url = self.user_params["ffx_test_url"]
         self.ffx_test_args = self.user_params["ffx_test_args"]
         self.timeout_sec = self.user_params["timeout_sec"]
-        self.device = self.fuchsia_devices[0]  # type: ignore[name-defined]
+        self.device = self.fuchsia_devices[0]
 
     def _find_measurepower_path(self) -> str:
         path = os.environ.get("MEASUREPOWER_PATH")
@@ -57,7 +57,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             raise RuntimeError("MEASUREPOWER_PATH env variable must be set")
         return path
 
-    def _wait_first_sample(self, proc: subprocess.Popen[Any]) -> None:
+    async def _wait_first_sample(self, proc: subprocess.Popen[Any]) -> None:
         for i in range(10):
             if proc.poll():
                 stdout = proc.stdout.read() if proc.stdout else ""
@@ -72,7 +72,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                 and os.path.getsize(self.power_trace_path) > 0
             ):
                 return
-            time.sleep(1)
+            await asyncio.sleep(1)
         raise RuntimeError(
             f"Timed out while waiting to start power measurement"
         )
@@ -104,7 +104,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                 f"stderr: {stderr}"
             )
 
-    def test_launch_hermetic_test(self) -> None:
+    async def test_launch_hermetic_test(self) -> None:
         """Executes a target-side workload while collecting power measurements.
 
         Power measurement result is streamed to |self.power_trace_path|.
@@ -123,7 +123,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             )
 
         with self._start_power_measurement() as proc:
-            self._wait_first_sample(proc)
+            await self._wait_first_sample(proc)
             ffx_test_args = self.ffx_test_args + [
                 "--output-directory",
                 self.test_case_path,
@@ -155,7 +155,7 @@ class FuchsiaPowerBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                         raise RuntimeError(
                             "Failed to sucessfully launch and wait for the load generator"
                         )
-                    time.sleep(1)
+                    await asyncio.sleep(1)
                     total_waited += 1
 
                 self.device.ffx.run_test_component(
