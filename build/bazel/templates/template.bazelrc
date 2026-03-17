@@ -137,6 +137,15 @@ common --@io_bazel_rules_go//go/config:debug=True
 # See https://fxbug.dev/489925970 for details.
 build --@io_bazel_rules_go//go/config:gc_linkopts="-extldflags,-no-pie"
 
+# Explicitly enable pure mode and disable CGO by default, for build consistency
+# across different build environments (e.g. differnt system libc).
+#
+# For Go targets that needs CGO, they should enable it explicitly and provide
+# Fuchsia's prebuilt sysroot if necessary.
+#
+# See https://fxbug.dev/489925970 for details.
+build --@io_bazel_rules_go//go/config:pure=True
+
 # Do not propagate Starlark flags to the exec config. This will be the default
 # behavior in Bazel 10 (https://github.com/bazelbuild/bazel/issues/26909).
 # Among other things, it avoids building host tools for each API level.
