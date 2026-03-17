@@ -355,7 +355,7 @@ TEST_F(SysfsPowerTest, SuspendStateFileWriteFailsCloseFD) {
   ASSERT_FALSE(attempt_suspend("mem"));
 
   // Closing the epoll file descriptor should remove the wake lock.
-  timer_fd.reset();
+  epoll_fd.reset();
 
   // Attempt to suspend the system now that the implicit wake lock
   // should have been deleted.
