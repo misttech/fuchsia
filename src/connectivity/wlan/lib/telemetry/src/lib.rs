@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context as _, Error, format_err};
+use fidl_fuchsia_power_battery as fidl_battery;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Node as InspectNode;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt, select};
@@ -9,11 +13,7 @@ use log::error;
 use std::boxed::Box;
 use windowed_stats::experimental::inspect::TimeMatrixClient;
 use wlan_common::bss::BssDescription;
-use {
-    fidl_fuchsia_power_battery as fidl_battery, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
-    wlan_legacy_metrics_registry as metrics,
-};
+use wlan_legacy_metrics_registry as metrics;
 
 mod processors;
 pub(crate) mod util;
@@ -60,7 +60,9 @@ pub enum TelemetryEvent {
     /// Unclear power level requested by policy layer
     UnclearPowerDemand(UnclearPowerDemand),
     BatteryChargeStatus(fidl_battery::ChargeStatus),
-    RecoveryEvent,
+    RecoveryEvent {
+        result: Result<(), ()>,
+    },
     SmeTimeout,
     ChipPowerUpFailure,
     ResetTxPowerScenario,
@@ -228,8 +230,8 @@ pub fn serve_telemetry(
                             scan_logger.handle_battery_charge_status(charge_status).await;
                             toggle_logger.handle_battery_charge_status(charge_status).await;
                         }
-                        RecoveryEvent => {
-                            recovery_logger.handle_recovery_event().await;
+                        RecoveryEvent { result } => {
+                            recovery_logger.handle_recovery_event(result).await;
                         }
                         SmeTimeout => {
                             sme_timeout_logger.handle_sme_timeout_event().await;

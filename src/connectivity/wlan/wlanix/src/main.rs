@@ -424,7 +424,7 @@ async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
         }
         fidl_wlanix::WifiChipRequest::TriggerSubsystemRestart { responder } => {
             info!("fidl_wlanix::WifiChipRequest::TriggerSubsystemRestart");
-            telemetry_sender.send(TelemetryEvent::RecoveryEvent);
+            telemetry_sender.send(TelemetryEvent::RecoveryEvent { result: Ok(()) });
             responder.send(Ok(())).context("send TriggerSubsystemRestart response")?;
         }
         fidl_wlanix::WifiChipRequest::ResetTxPowerScenario { responder } => {
@@ -3255,7 +3255,7 @@ mod tests {
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent))
+            Ok(Some(TelemetryEvent::RecoveryEvent { result: Ok(()) }))
         );
     }
 
