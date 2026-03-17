@@ -40,10 +40,8 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	lockedStdout := botanist.NewLockedWriter(ctx, botanist.NewTimestampWriter(os.Stdout))
-	defer lockedStdout.Close()
-	lockedStderr := botanist.NewLockedWriter(ctx, botanist.NewTimestampWriter(os.Stderr))
-	defer lockedStderr.Close()
+	lockedStdout := botanist.NewLockedWriter(botanist.NewTimestampWriter(os.Stdout))
+	lockedStderr := botanist.NewLockedWriter(botanist.NewTimestampWriter(os.Stderr))
 
 	// set up temp file for copying stdout content to a temp file
 	tempFile, _ := os.CreateTemp("", "stdout-copy-*.log")

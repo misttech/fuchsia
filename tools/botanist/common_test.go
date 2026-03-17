@@ -14,59 +14,26 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/streams"
 )
 
-type mockWriter struct {
-	w           io.Writer
-	gotLock     chan struct{}
-	finishWrite chan struct{}
-	done        chan struct{}
-}
-
-func (m *mockWriter) Write(data []byte) (int, error) {
-	m.gotLock <- struct{}{}
-	// Start writing some of the data.
-	n, err := m.w.Write(data[:1])
-	if err != nil {
-		return n, err
+func TestLockedWriterKeepsWritesContiguous(t *testing.T) {
+	const line = "With great power comes great responsibility "
+	var sb strings.Builder
+	lw := NewLockedWriter(&sb)
+	var wg sync.WaitGroup
+	// Write each word in its own Write call. We exploit the fact
+	// that strings.Builder writes all the bytes in one go.
+	for _, s := range strings.SplitAfter(line, " ") {
+		wg.Add(1)
+		go func(s string) {
+			defer wg.Done()
+			lw.Write([]byte(s))
+		}(s)
 	}
-	// Wait for the signal to finish.
-	<-m.finishWrite
-	n2, err := m.w.Write(data[1:])
-	// Signal that the write is complete.
-	m.done <- struct{}{}
-	return n + n2, err
-}
-
-func TestLockedWriter(t *testing.T) {
-	var w strings.Builder
-	mock := &mockWriter{
-		w:           &w,
-		gotLock:     make(chan struct{}, 1),
-		finishWrite: make(chan struct{}, 1),
-		done:        make(chan struct{}, 1),
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	writer := NewLockedWriter(ctx, mock)
-	go writer.Write([]byte("hello"))
-	// Wait for the lock to be acquired.
-	<-mock.gotLock
-	// Attempt to start a new write.
-	go writer.Write([]byte("bye"))
-	// Signal for the first write to complete.
-	mock.finishWrite <- struct{}{}
-	// Wait for the first write to complete.
-	<-mock.done
-	// At this point, the writer should have finished its first write and
-	// may have started the second.
-	if !strings.HasPrefix(w.String(), "hello") {
-		t.Errorf("got %q, want \"hello\"", w.String())
-	}
-	// Signal for the second write to complete.
-	mock.finishWrite <- struct{}{}
-	// Wait for the second write to complete.
-	<-mock.done
-	if w.String() != "hellobye" {
-		t.Errorf("got %q, want \"hellobye\"", w.String())
+	wg.Wait()
+	// Check that each word occurs contiguously in the underlying Writer.
+	for _, w := range strings.SplitAfter(sb.String(), " ") {
+		if !strings.Contains(line, w) {
+			t.Errorf("Failed to find contiguous write, got = %q, want = %q", "", w)
+		}
 	}
 }
 
@@ -86,7 +53,7 @@ func TestStdioWriters(t *testing.T) {
 	var w strings.Builder
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ctx = streams.ContextWithStdout(ctx, NewLockedWriter(ctx, &w))
+	ctx = streams.ContextWithStdout(ctx, NewLockedWriter(&w))
 
 	stdout1, _, flush1 := NewStdioWriters(ctx, "s1")
 	stdout2, _, flush2 := NewStdioWriters(ctx, "s2")

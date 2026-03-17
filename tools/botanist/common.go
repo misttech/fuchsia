@@ -72,51 +72,26 @@ func WaitForProcess(ctx context.Context, process func(context.Context) error, pr
 	return cleanup
 }
 
-// LockedWriter is a wrapper around a writer that locks around each write so
-// that multiple writes won't interleave with each other.
+// LockedWriter wraps an [io.Writer] so that only one Write happens at a time.
 type LockedWriter struct {
-	locks  chan *writeLock
-	writer io.Writer
+	c chan struct{}
+	w io.Writer
 }
 
-type writeLock struct {
-	start chan struct{}
-	end   chan struct{}
-}
-
-// NewLockedWriter returns a LockedWriter that associates a new lock with the
-// provided writer.
-func NewLockedWriter(ctx context.Context, writer io.Writer) *LockedWriter {
-	w := &LockedWriter{
-		locks:  make(chan *writeLock),
-		writer: writer,
+// NewLockedWriter creates a LockedWriter.
+func NewLockedWriter(w io.Writer) *LockedWriter {
+	lw := &LockedWriter{
+		c: make(chan struct{}, 1),
+		w: w,
 	}
-
-	go func() {
-		for lock := range w.locks {
-			// Signal write to start.
-			lock.start <- struct{}{}
-			// Wait for write to finish.
-			<-lock.end
-		}
-	}()
-	return w
+	lw.c <- struct{}{}
+	return lw
 }
 
-func (w *LockedWriter) Write(data []byte) (int, error) {
-	start := make(chan struct{})
-	end := make(chan struct{})
-	// Queue write.
-	w.locks <- &writeLock{start, end}
-	// Wait for turn to start write.
-	<-start
-	// Defer sending struct on chan to signal end of write.
-	defer func() { end <- struct{}{} }()
-	return w.writer.Write(data)
-}
-
-func (w *LockedWriter) Close() {
-	close(w.locks)
+func (lw *LockedWriter) Write(data []byte) (int, error) {
+	<-lw.c
+	defer func() { lw.c <- struct{}{} }()
+	return lw.w.Write(data)
 }
 
 // LineWriter is a wrapper around a writer that writes line by line so
