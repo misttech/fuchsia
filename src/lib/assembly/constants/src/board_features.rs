@@ -103,6 +103,8 @@ pub enum BoardFeature {
     WlanSoftmac,
     /// eXtensible Host Controller Interface (USB 3.0) support.
     Xhci,
+    /// Unknown feature that is not yet added to the enum.
+    Unknown(String),
 }
 
 impl AsRef<str> for BoardFeature {
@@ -155,6 +157,7 @@ impl AsRef<str> for BoardFeature {
             Self::WlanFullmac => "fuchsia::wlan_fullmac",
             Self::WlanSoftmac => "fuchsia::wlan_softmac",
             Self::Xhci => "fuchsia::xhci",
+            Self::Unknown(s) => s.as_str(),
         }
     }
 }
