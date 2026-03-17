@@ -17,10 +17,14 @@ use fxfs::object_store::{
     SetExtendedAttributeMode, StoreObjectHandle, StoreOptions, StoreOwner,
 };
 use fxfs_crypto::{Crypt, WrappingKeyId};
-use std::io::Write;
+use sparse::reader::SparseReader;
+use sparse::{build_sparse_files, unsparse};
+use std::io::{Seek, Write};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::{Arc, Weak};
+use storage_device::DeviceHolder;
+use storage_device::file_backed_device::FileBackedDevice;
 
 pub async fn print_ls(dir: &Directory<ObjectStore>) -> Result<(), Error> {
     const DATE_FMT: &str = "%b %d %Y %T+00";
@@ -329,4 +333,88 @@ pub async fn set_extended_attribute_for_node(
     handle
         .set_extended_attribute(name.to_vec(), value.to_vec(), SetExtendedAttributeMode::Set)
         .await
+}
+
+pub async fn open_device(
+    file_path: &str,
+    read_only: bool,
+) -> Result<(DeviceHolder, Option<tempfile::TempPath>), Error> {
+    let mut file = std::fs::OpenOptions::new().read(true).write(!read_only).open(file_path)?;
+
+    let is_sparse = match SparseReader::is_sparse_file(&mut file) {
+        Ok(res) => res,
+        Err(_) => {
+            file.seek(std::io::SeekFrom::Start(0))?;
+            false
+        }
+    };
+
+    if is_sparse {
+        file.seek(std::io::SeekFrom::Start(0))?;
+        let (mut temp_file, temp_path) = tempfile::NamedTempFile::new()?.into_parts();
+        unsparse(&mut file, &mut temp_file)?;
+        let device_file =
+            std::fs::OpenOptions::new().read(true).write(!read_only).open(&*temp_path)?;
+        let device = DeviceHolder::new(FileBackedDevice::new(device_file, 512));
+        return Ok((device, Some(temp_path)));
+    }
+
+    file.seek(std::io::SeekFrom::Start(0))?;
+    let device = DeviceHolder::new(FileBackedDevice::new(file, 512));
+    Ok((device, None))
+}
+
+pub fn sparsify_and_save(temp_file_path: &std::path::Path, dst_path: &str) -> Result<(), Error> {
+    let parent =
+        std::path::Path::new(dst_path).parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut sparse_files =
+        build_sparse_files("fxfs", temp_file_path.to_str().unwrap(), parent, u64::MAX)?;
+    anyhow::ensure!(sparse_files.len() == 1, "Expected exactly one sparse file");
+    let temp_path = sparse_files.pop().unwrap();
+    temp_path.persist(dst_path)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sparse::builder::{DataSource, SparseImageBuilder};
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_open_device_sparse() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        SparseImageBuilder::new().add_source(DataSource::Skip(4096)).build(&mut temp_file).unwrap();
+
+        let (_, temp_path) = temp_file.into_parts();
+        futures::executor::block_on(async {
+            let (_device, open_path) =
+                open_device(temp_path.to_str().unwrap(), true).await.unwrap();
+            assert!(open_path.is_some());
+        });
+    }
+
+    #[test]
+    fn test_open_device_regular() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, &[1, 2, 3, 4]).unwrap();
+
+        futures::executor::block_on(async {
+            let (_device, temp_path) =
+                open_device(temp_file.path().to_str().unwrap(), true).await.unwrap();
+            assert!(temp_path.is_none());
+        });
+    }
+
+    #[test]
+    fn test_sparsify_and_save() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, &[0; 8192]).unwrap();
+
+        let dst_file = NamedTempFile::new().unwrap();
+        sparsify_and_save(temp_file.path(), dst_file.path().to_str().unwrap()).unwrap();
+
+        let mut check_file = std::fs::File::open(dst_file.path()).unwrap();
+        assert!(SparseReader::is_sparse_file(&mut check_file).unwrap());
+    }
 }

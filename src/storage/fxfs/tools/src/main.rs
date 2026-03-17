@@ -15,11 +15,7 @@ use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use storage_device::DeviceHolder;
-use storage_device::file_backed_device::FileBackedDevice;
 use tools::ops;
-
-const DEFAULT_VOLUME: &str = "default";
 
 #[cfg(target_os = "linux")]
 use {
@@ -57,6 +53,15 @@ struct ImageEditCommand {
     /// path to the image file to read or write
     #[argh(option, short = 'f')]
     file: String,
+
+    /// volume name (default: "default")
+    #[argh(option, default = "String::from(\"default\")")]
+    volume: String,
+
+    /// use insecure encryption (test-only)
+    #[argh(switch)]
+    insecure_crypt: bool,
+
     #[argh(subcommand)]
     subcommand: ImageSubCommand,
 }
@@ -194,63 +199,67 @@ async fn main() -> Result<(), Error> {
     match args.subcommand {
         SubCommand::ImageEdit(cmd) => {
             // TODO(https://fxbug.dev/42177406): Add support for side-loaded encryption keys.
-            let crypt: Arc<dyn Crypt> = Arc::new(new_insecure_crypt());
+            let crypt: Option<Arc<dyn Crypt>> =
+                if cmd.insecure_crypt { Some(Arc::new(new_insecure_crypt())) } else { None };
             match cmd.subcommand {
                 ImageSubCommand::Rm(rmargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).write(true).open(cmd.file)?,
-                        512,
-                    ));
-                    let fs = FxFilesystem::open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt.clone()))
-                        .await?;
-                    ops::unlink(&fs, &vol, &Path::new(&rmargs.path)).await?;
-                    fs.close().await?;
-                    let result = ops::fsck(&fs, args.verbose).await?;
-                    println!("{:?}", result);
+                    let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
+                    {
+                        let fs = FxFilesystem::open(device).await?;
+                        let vol =
+                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        ops::unlink(&fs, &vol, &Path::new(&rmargs.path)).await?;
+                        fs.close().await?;
+                        let result = ops::fsck(&fs, args.verbose).await?;
+                        println!("{:?}", result);
+                    }
+                    if let Some(temp) = temp_file {
+                        ops::sparsify_and_save(&*temp, &cmd.file)?;
+                    }
                     Ok(())
                 }
                 ImageSubCommand::Get(getargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).open(cmd.file)?,
-                        512,
-                    ));
+                    let (device, _temp_file) = ops::open_device(&cmd.file, true).await?;
                     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt)).await?;
+                    let vol = ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
                     let data = ops::get(&vol, &Path::new(&getargs.src)).await?;
                     let mut reader = std::io::Cursor::new(&data);
-                    let mut writer = std::fs::File::create(getargs.dst)?;
-                    std::io::copy(&mut reader, &mut writer)?;
+                    let parent = std::path::Path::new(&getargs.dst)
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."));
+                    let temp_file = tempfile::NamedTempFile::new_in(parent)?;
+                    let (mut file, temp_path) = temp_file.into_parts();
+                    std::io::copy(&mut reader, &mut file)?;
+                    temp_path.persist(&getargs.dst)?;
                     Ok(())
                 }
                 ImageSubCommand::Put(putargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).write(true).open(cmd.file)?,
-                        512,
-                    ));
-                    let fs = FxFilesystem::open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt.clone()))
-                        .await?;
-                    let mut data = Vec::new();
-                    std::fs::File::open(&putargs.src)?.read_to_end(&mut data)?;
-                    ops::put(&fs, &vol, &Path::new(&putargs.dst), data).await?;
-                    fs.close().await?;
-                    let _ = ops::fsck(&fs, args.verbose).await?;
+                    let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
+                    {
+                        let fs = FxFilesystem::open(device).await?;
+                        let vol =
+                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        let mut data = Vec::new();
+                        std::fs::File::open(&putargs.src)?.read_to_end(&mut data)?;
+                        ops::put(&fs, &vol, &Path::new(&putargs.dst), data).await?;
+                        fs.close().await?;
+                        let _ = ops::fsck(&fs, args.verbose).await?;
+                    }
+                    if let Some(temp) = temp_file {
+                        ops::sparsify_and_save(&*temp, &cmd.file)?;
+                    }
                     Ok(())
                 }
                 ImageSubCommand::Format(_) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).write(true).open(cmd.file)?,
-                        512,
-                    ));
-                    mkfs_with_volume(device, DEFAULT_VOLUME, Some(crypt)).await?;
+                    let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
+                    mkfs_with_volume(device, &cmd.volume, crypt.clone()).await?;
+                    if let Some(temp) = temp_file {
+                        ops::sparsify_and_save(&*temp, &cmd.file)?;
+                    }
                     Ok(())
                 }
                 ImageSubCommand::Fsck(_) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).open(cmd.file)?,
-                        512,
-                    ));
+                    let (device, _temp_file) = ops::open_device(&cmd.file, true).await?;
                     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
                     let options = fsck::FsckOptions {
                         on_error: Box::new(|err| eprintln!("{:?}", err.to_string())),
@@ -261,40 +270,41 @@ async fn main() -> Result<(), Error> {
                     Ok(())
                 }
                 ImageSubCommand::Ls(lsargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).open(cmd.file)?,
-                        512,
-                    ));
+                    let (device, _temp_file) = ops::open_device(&cmd.file, true).await?;
                     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt)).await?;
+                    let vol = ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
                     let dir = ops::walk_dir(&vol, &Path::new(&lsargs.path)).await?;
                     ops::print_ls(&dir).await?;
                     Ok(())
                 }
                 ImageSubCommand::Mkdir(mkdirargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).write(true).open(cmd.file)?,
-                        512,
-                    ));
-                    let fs = FxFilesystem::open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt.clone()))
-                        .await?;
-                    ops::mkdir(&fs, &vol, &Path::new(&mkdirargs.path)).await?;
-                    fs.close().await?;
-                    ops::fsck(&fs, args.verbose).await?;
+                    let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
+                    {
+                        let fs = FxFilesystem::open(device).await?;
+                        let vol =
+                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        ops::mkdir(&fs, &vol, &Path::new(&mkdirargs.path)).await?;
+                        fs.close().await?;
+                        ops::fsck(&fs, args.verbose).await?;
+                    }
+                    if let Some(temp) = temp_file {
+                        ops::sparsify_and_save(&*temp, &cmd.file)?;
+                    }
                     Ok(())
                 }
                 ImageSubCommand::Rmdir(rmdirargs) => {
-                    let device = DeviceHolder::new(FileBackedDevice::new(
-                        std::fs::OpenOptions::new().read(true).write(true).open(cmd.file)?,
-                        512,
-                    ));
-                    let fs = FxFilesystem::open(device).await?;
-                    let vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt.clone()))
-                        .await?;
-                    ops::unlink(&fs, &vol, &Path::new(&rmdirargs.path)).await?;
-                    fs.close().await?;
-                    ops::fsck(&fs, args.verbose).await?;
+                    let (device, temp_file) = ops::open_device(&cmd.file, false).await?;
+                    {
+                        let fs = FxFilesystem::open(device).await?;
+                        let vol =
+                            ops::open_volume(&fs, &cmd.volume, NO_OWNER, crypt.clone()).await?;
+                        ops::unlink(&fs, &vol, &Path::new(&rmdirargs.path)).await?;
+                        fs.close().await?;
+                        ops::fsck(&fs, args.verbose).await?;
+                    }
+                    if let Some(temp) = temp_file {
+                        ops::sparsify_and_save(&*temp, &cmd.file)?;
+                    }
                     Ok(())
                 }
             }

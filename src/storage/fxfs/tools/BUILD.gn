@@ -20,10 +20,12 @@ if (is_host) {
       "//src/storage/fxfs/crypto",
       "//src/storage/fxfs/crypto/insecure",
       "//src/storage/fxfs/make-blob-image",
+      "//src/storage/lib/sparse/rust:lib",
       "//src/storage/lib/storage_device",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:chrono",
       "//third_party/rust_crates:rand",
+      "//third_party/rust_crates:tempfile",
       "//third_party/rust_crates:zstd",
       "//third_party/zstd",
     ]
@@ -61,12 +63,12 @@ if (is_host) {
       "//src/storage/fxfs:lib($host_toolchain)",
       "//src/storage/fxfs/crypto",
       "//src/storage/fxfs/crypto/insecure",
-      "//src/storage/lib/storage_device",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:tempfile",
     ]
     if (is_linux) {
       deps += [
