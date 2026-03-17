@@ -492,7 +492,7 @@ zx::result<fbl::Vector<display::PixelFormat>> Controller::GetSupportedPixelForma
   return zx::ok(std::move(pixel_formats));
 }
 
-zx_status_t Controller::CreateClient(
+zx::result<> Controller::CreateClient(
     display::ClientPriority client_priority,
     fidl::ServerEnd<fidl_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
@@ -504,12 +504,12 @@ zx_status_t Controller::CreateClient(
   auto post_task_state = fbl::make_unique_checked<DisplayTaskState>(&alloc_checker);
   if (!alloc_checker.check()) {
     fdf::debug("Failed to alloc client task");
-    return ZX_ERR_NO_MEMORY;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   if (unbinding_) {
     fdf::debug("Client connected during unbind");
-    return ZX_ERR_UNAVAILABLE;
+    return zx::error(ZX_ERR_UNAVAILABLE);
   }
 
   zx::result<ClientId> connect_result =
@@ -517,7 +517,7 @@ zx_status_t Controller::CreateClient(
                              std::move(coordinator_listener_client_end));
   if (connect_result.is_error()) {
     fdf::debug("Failed to connect client: {}", connect_result.status_string());
-    return connect_result.error_value();
+    return connect_result.take_error();
   }
   const ClientId client_id = connect_result.value();
 
@@ -543,7 +543,7 @@ zx_status_t Controller::CreateClient(
                                                                 initialized_display_count);
         clients_.SendInitialState(client_id, current_display_ids);
       });
-  return post_task_result.status_value();
+  return post_task_result;
 }
 
 display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() {
@@ -556,34 +556,58 @@ void Controller::OpenCoordinatorWithListenerForVirtcon(
     OpenCoordinatorWithListenerForVirtconRequestView request,
     OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT(request->has_coordinator());
-  ZX_DEBUG_ASSERT(request->has_coordinator_listener());
 
-  zx_status_t create_status =
+  if (!request->has_coordinator()) {
+    fdf::error("OpenCoordinatorWithListenerForVirtcon() missing required table entry: coordinator");
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+  if (!request->has_coordinator_listener()) {
+    fdf::error(
+        "OpenCoordinatorWithListenerForVirtcon() missing required table entry: "
+        "coordinator_listener");
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  zx::result<> create_client_result =
       CreateClient(display::ClientPriority::kVirtcon, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()));
-  if (create_status == ZX_OK) {
-    completer.ReplySuccess();
-  } else {
-    completer.ReplyError(create_status);
+  if (create_client_result.is_error()) {
+    completer.ReplyError(create_client_result.error_value());
+    return;
   }
+
+  completer.ReplySuccess();
 }
 
 void Controller::OpenCoordinatorWithListenerForPrimary(
     OpenCoordinatorWithListenerForPrimaryRequestView request,
     OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-  ZX_DEBUG_ASSERT(request->has_coordinator());
-  ZX_DEBUG_ASSERT(request->has_coordinator_listener());
 
-  zx_status_t create_status =
+  if (!request->has_coordinator()) {
+    fdf::error("OpenCoordinatorWithListenerForPrimary() missing required table entry: coordinator");
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+  if (!request->has_coordinator_listener()) {
+    fdf::error(
+        "OpenCoordinatorWithListenerForPrimary() missing required table entry: "
+        "coordinator_listener");
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  zx::result<> create_client_result =
       CreateClient(display::ClientPriority::kPrimary, std::move(request->coordinator()),
                    std::move(request->coordinator_listener()));
-  if (create_status == ZX_OK) {
-    completer.ReplySuccess();
-  } else {
-    completer.ReplyError(create_status);
+  if (create_client_result.is_error()) {
+    completer.ReplyError(create_client_result.error_value());
+    return;
   }
+
+  completer.ReplySuccess();
 }
 
 // static

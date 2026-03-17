@@ -152,7 +152,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // for use by testing services which provide a fake display controller.
   //
   // `client_priority` must be valid.
-  zx_status_t CreateClient(
+  zx::result<> CreateClient(
       display::ClientPriority client_priority,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
