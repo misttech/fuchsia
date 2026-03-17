@@ -390,6 +390,13 @@ impl mmio::Mmio for FakeMmio {
                 state.wake_event.notify(usize::MAX);
                 Ok(())
             }
+            (MmioRegionType::Cqhci, offset) if offset == CQHCI_CQ_TCN_OFFSET as usize => {
+                // Emulate W1C semantics
+                let current = buf[idx];
+                let cleared = current & !value;
+                buf[idx] = cleared;
+                Ok(())
+            }
             (MmioRegionType::Cqhci, offset) if offset == CQHCI_CQ_IS_OFFSET as usize => {
                 // Emulate W1C semantics
                 let current = buf[idx];
