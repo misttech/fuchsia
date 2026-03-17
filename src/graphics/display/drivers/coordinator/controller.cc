@@ -552,56 +552,30 @@ display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() 
   return next_driver_buffer_collection_id_++;
 }
 
-void Controller::OpenCoordinatorWithListenerForVirtcon(
-    OpenCoordinatorWithListenerForVirtconRequestView request,
-    OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) {
+void Controller::OpenCoordinator(OpenCoordinatorRequestView request,
+                                 OpenCoordinatorCompleter::Sync& completer) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
   if (!request->has_coordinator()) {
-    fdf::error("OpenCoordinatorWithListenerForVirtcon() missing required table entry: coordinator");
+    fdf::error("OpenCoordinator() missing required table entry: coordinator");
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   if (!request->has_coordinator_listener()) {
-    fdf::error(
-        "OpenCoordinatorWithListenerForVirtcon() missing required table entry: "
-        "coordinator_listener");
+    fdf::error("OpenCoordinator() missing required table entry: coordinator_listener");
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  if (!request->has_priority()) {
+    fdf::error("OpenCoordinator() missing required table entry: priority");
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
   zx::result<> create_client_result =
-      CreateClient(display::ClientPriority::kVirtcon, std::move(request->coordinator()),
-                   std::move(request->coordinator_listener()));
-  if (create_client_result.is_error()) {
-    completer.ReplyError(create_client_result.error_value());
-    return;
-  }
-
-  completer.ReplySuccess();
-}
-
-void Controller::OpenCoordinatorWithListenerForPrimary(
-    OpenCoordinatorWithListenerForPrimaryRequestView request,
-    OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-
-  if (!request->has_coordinator()) {
-    fdf::error("OpenCoordinatorWithListenerForPrimary() missing required table entry: coordinator");
-    completer.Close(ZX_ERR_INVALID_ARGS);
-    return;
-  }
-  if (!request->has_coordinator_listener()) {
-    fdf::error(
-        "OpenCoordinatorWithListenerForPrimary() missing required table entry: "
-        "coordinator_listener");
-    completer.Close(ZX_ERR_INVALID_ARGS);
-    return;
-  }
-
-  zx::result<> create_client_result =
-      CreateClient(display::ClientPriority::kPrimary, std::move(request->coordinator()),
-                   std::move(request->coordinator_listener()));
+      CreateClient(display::ClientPriority(request->priority().value),
+                   std::move(request->coordinator()), std::move(request->coordinator_listener()));
   if (create_client_result.is_error()) {
     completer.ReplyError(create_client_result.error_value());
     return;

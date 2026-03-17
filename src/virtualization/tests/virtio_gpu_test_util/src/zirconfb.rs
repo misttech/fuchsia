@@ -11,7 +11,7 @@ use fidl_fuchsia_hardware_display::{
 };
 use fuchsia_component::client::Service;
 use futures::executor::block_on;
-use futures::{future, TryStreamExt};
+use futures::{TryStreamExt, future};
 use serde_json::json;
 
 async fn connect_to_display_provider() -> Result<ProviderSynchronousProxy, Error> {
@@ -39,14 +39,16 @@ async fn read_info() -> Result<DetectResult, Error> {
         let (dc_proxy, dc_server) = endpoints::create_sync_proxy::<CoordinatorMarker>();
         let (listener_client, listener_requests) =
             endpoints::create_request_stream::<CoordinatorListenerMarker>();
-        let payload =
-            fidl_fuchsia_hardware_display::ProviderOpenCoordinatorWithListenerForPrimaryRequest {
-                coordinator: Some(dc_server),
-                coordinator_listener: Some(listener_client),
-                __source_breaking: fidl::marker::SourceBreaking,
-            };
+        let payload = fidl_fuchsia_hardware_display::ProviderOpenCoordinatorRequest {
+            coordinator: Some(dc_server),
+            coordinator_listener: Some(listener_client),
+            priority: Some(fidl_fuchsia_hardware_display::ClientPriority {
+                value: fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE,
+            }),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
         provider
-            .open_coordinator_with_listener_for_primary(payload, zx::MonotonicInstant::INFINITE)?
+            .open_coordinator(payload, zx::MonotonicInstant::INFINITE)?
             .map_err(zx::Status::from_raw)?;
         (dc_proxy, listener_requests)
     };

@@ -100,14 +100,14 @@ bool ImagePipeSurfaceDisplay::Init() {
 
   fidl::Arena arena;
   auto open_coordinator_request =
-      fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForPrimaryRequest::Builder(
-          arena)
+      fuchsia_hardware_display::wire::ProviderOpenCoordinatorRequest::Builder(arena)
           .coordinator(std::move(coordinator_server))
           .coordinator_listener(std::move(listener_client))
+          .priority(fuchsia_hardware_display::wire::ClientPriority{
+              .value = fuchsia_hardware_display::wire::kPrimaryClientPriorityValue})
           .Build();
   fidl::WireResult open_coordinator_result =
-      fidl::WireCall(provider)->OpenCoordinatorWithListenerForPrimary(
-          std::move(open_coordinator_request));
+      fidl::WireCall(provider)->OpenCoordinator(open_coordinator_request);
   if (!open_coordinator_result.ok()) {
     fprintf(stderr, "%s: Failed to call display.Provider handle %d (%s)\n", kTag,
             open_coordinator_result.status(), open_coordinator_result.FormatDescription().c_str());

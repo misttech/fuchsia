@@ -181,13 +181,14 @@ bool BindDisplay(fidl::ClientEnd<fuchsia_hardware_display::Provider> provider,
 
   fidl::Arena arena;
   auto open_coordinator_request =
-      fuchsia_hardware_display::wire::ProviderOpenCoordinatorWithListenerForPrimaryRequest::Builder(
-          arena)
+      fuchsia_hardware_display::wire::ProviderOpenCoordinatorRequest::Builder(arena)
           .coordinator(std::move(coordinator_server))
           .coordinator_listener(std::move(listener_client))
+          .priority(fuchsia_hardware_display::wire::ClientPriority{
+              .value = fuchsia_hardware_display::wire::kPrimaryClientPriorityValue})
           .Build();
-  fidl::WireResult open_response = fidl::WireCall(provider)->OpenCoordinatorWithListenerForPrimary(
-      std::move(open_coordinator_request));
+  fidl::WireResult open_response =
+      fidl::WireCall(provider)->OpenCoordinator(open_coordinator_request);
   if (!open_response.ok()) {
     printf("Failed to call service handle: %s\n", open_response.FormatDescription().c_str());
     return false;

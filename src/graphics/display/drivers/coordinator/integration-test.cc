@@ -409,47 +409,23 @@ zx::result<> TestFidlClient::OpenCoordinator(
   auto [coordinator_listener_client, coordinator_listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
   fdf::info("Opening coordinator");
-  if (client_priority == display::ClientPriority::kVirtcon) {
-    fidl::Arena arena;
-    auto request = fidl::WireRequest<fuchsia_hardware_display::Provider::
-                                         OpenCoordinatorWithListenerForVirtcon>::Builder(arena)
-                       .coordinator(std::move(coordinator_server))
-                       .coordinator_listener(std::move(coordinator_listener_client))
-                       .Build();
-    fidl::WireResult<fuchsia_hardware_display::Provider::OpenCoordinatorWithListenerForVirtcon>
-        fidl_transport_result = provider->OpenCoordinatorWithListenerForVirtcon(std::move(request));
-    if (!fidl_transport_result.ok()) {
-      fdf::error("FIDL error calling OpenCoordinatorWithListenerForVirtcon: {}",
-                 fidl_transport_result.error());
-      return zx::make_result(fidl_transport_result.status());
-    }
-    fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
-    if (fidl_domain_result.is_error()) {
-      fdf::error("OpenCoordinatorWithListenerForVirtcon failed: {}",
-                 zx::make_result(fidl_domain_result.error_value()));
-      return zx::make_result(fidl_domain_result.error_value());
-    }
-  } else {
-    ZX_DEBUG_ASSERT(client_priority == display::ClientPriority::kPrimary);
-    fidl::Arena arena;
-    auto request = fidl::WireRequest<fuchsia_hardware_display::Provider::
-                                         OpenCoordinatorWithListenerForPrimary>::Builder(arena)
-                       .coordinator(std::move(coordinator_server))
-                       .coordinator_listener(std::move(coordinator_listener_client))
-                       .Build();
-    fidl::WireResult<fuchsia_hardware_display::Provider::OpenCoordinatorWithListenerForPrimary>
-        fidl_transport_result = provider->OpenCoordinatorWithListenerForPrimary(std::move(request));
-    if (!fidl_transport_result.ok()) {
-      fdf::error("FIDL error calling OpenCoordinatorWithListenerForPrimary: {}",
-                 fidl_transport_result.error());
-      return zx::make_result(fidl_transport_result.status());
-    }
-    fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
-    if (fidl_domain_result.is_error()) {
-      fdf::error("OpenCoordinatorWithListenerForPrimary failed: {}",
-                 zx::make_result(fidl_domain_result.error_value()));
-      return zx::make_result(fidl_domain_result.error_value());
-    }
+  fidl::Arena arena;
+  auto request =
+      fidl::WireRequest<fuchsia_hardware_display::Provider::OpenCoordinator>::Builder(arena)
+          .coordinator(std::move(coordinator_server))
+          .coordinator_listener(std::move(coordinator_listener_client))
+          .priority(client_priority.ToFidl())
+          .Build();
+  fidl::WireResult<fuchsia_hardware_display::Provider::OpenCoordinator> fidl_transport_result =
+      provider->OpenCoordinator(std::move(request));
+  if (!fidl_transport_result.ok()) {
+    fdf::error("FIDL error calling OpenCoordinator: {}", fidl_transport_result.error());
+    return zx::make_result(fidl_transport_result.status());
+  }
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  if (fidl_domain_result.is_error()) {
+    fdf::error("OpenCoordinator failed: {}", zx::make_result(fidl_domain_result.error_value()));
+    return zx::make_result(fidl_domain_result.error_value());
   }
 
   coordinator_fidl_client_.Bind(std::move(coordinator_client));

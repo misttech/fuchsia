@@ -165,12 +165,8 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   display::DriverBufferCollectionId GetNextDriverBufferCollectionId();
 
   // `fidl::WireServer<fuchsia_hardware_display::Provider>`:
-  void OpenCoordinatorWithListenerForVirtcon(
-      OpenCoordinatorWithListenerForVirtconRequestView request,
-      OpenCoordinatorWithListenerForVirtconCompleter::Sync& completer) override;
-  void OpenCoordinatorWithListenerForPrimary(
-      OpenCoordinatorWithListenerForPrimaryRequestView request,
-      OpenCoordinatorWithListenerForPrimaryCompleter::Sync& completer) override;
+  void OpenCoordinator(OpenCoordinatorRequestView request,
+                       OpenCoordinatorCompleter::Sync& completer) override;
 
   const ClientSet& ClientsForTesting() const { return clients_; }
 

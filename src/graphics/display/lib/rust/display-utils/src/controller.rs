@@ -100,15 +100,15 @@ impl Coordinator {
 
         // TODO(https://fxbug.dev/42075865): Consider supporting virtcon client
         // connections.
-        let payload = display::ProviderOpenCoordinatorWithListenerForPrimaryRequest {
+        let payload = display::ProviderOpenCoordinatorRequest {
             coordinator: Some(coordinator_server_end),
             coordinator_listener: Some(coordinator_listener_client_end),
+            priority: Some(display::ClientPriority {
+                value: display::PRIMARY_CLIENT_PRIORITY_VALUE,
+            }),
             __source_breaking: fidl::marker::SourceBreaking,
         };
-        let () = provider_proxy
-            .open_coordinator_with_listener_for_primary(payload)
-            .await?
-            .map_err(zx::Status::from_raw)?;
+        let () = provider_proxy.open_coordinator(payload).await?.map_err(zx::Status::from_raw)?;
 
         Self::init_with_proxy_and_listener_requests(
             coordinator_proxy,

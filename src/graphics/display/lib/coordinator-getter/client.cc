@@ -41,13 +41,12 @@ fpromise::promise<CoordinatorClientChannels, zx_status_t> GetCoordinator(
     // The FIDL Client is retained in the `Then` handler, to keep the
     // connection open until the response is received.
     client
-        ->OpenCoordinatorWithListenerForPrimary(
-            {{.coordinator = std::move(coordinator_server),
-              .coordinator_listener = std::move(coordinator_listener_client)}})
+        ->OpenCoordinator({{.coordinator = std::move(coordinator_server),
+                            .coordinator_listener = std::move(coordinator_listener_client),
+                            .priority = fuchsia_hardware_display::ClientPriority(
+                                {.value = fuchsia_hardware_display::kPrimaryClientPriorityValue})}})
         .Then([completer, client = std::move(client)](
-                  fidl::Result<
-                      fuchsia_hardware_display::Provider::OpenCoordinatorWithListenerForPrimary>&
-                      result) {
+                  fidl::Result<fuchsia_hardware_display::Provider::OpenCoordinator>& result) {
           if (result.is_error()) {
             auto& error_value = result.error_value();
             FX_LOGS(ERROR) << "Failed to open coordinator: " << error_value.FormatDescription();

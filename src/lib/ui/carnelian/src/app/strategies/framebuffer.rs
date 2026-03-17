@@ -7,19 +7,17 @@ use crate::app::{Config, InternalSender, MessageInternal};
 use crate::drawing::DisplayRotation;
 use crate::geometry::IntSize;
 use crate::input::report::InputReportHandler;
-use crate::input::{self, listen_for_user_input, DeviceId};
+use crate::input::{self, DeviceId, listen_for_user_input};
+use crate::view::ViewKey;
 use crate::view::strategies::base::{DisplayDirectParams, ViewStrategyParams, ViewStrategyPtr};
 use crate::view::strategies::display_direct::DisplayDirectViewStrategy;
-use crate::view::ViewKey;
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
 use euclid::size2;
 use fidl::endpoints::{self};
 use fidl_fuchsia_hardware_display::{
     CoordinatorListenerMarker, CoordinatorListenerRequest, CoordinatorMarker, CoordinatorProxy,
-    ProviderOpenCoordinatorWithListenerForPrimaryRequest,
-    ProviderOpenCoordinatorWithListenerForVirtconRequest, ProviderProxy,
-    ServiceMarker as DisplayServiceMarker, VirtconMode,
+    ProviderProxy, ServiceMarker as DisplayServiceMarker, VirtconMode,
 };
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -121,25 +119,23 @@ impl DisplayCoordinator {
         let (coordinator, coordinator_server) = endpoints::create_proxy::<CoordinatorMarker>();
         let (listener_client, mut listener_requests) =
             endpoints::create_request_stream::<CoordinatorListenerMarker>();
-        let () = if virtcon_mode.is_some() {
+        let () = {
+            let priority = if virtcon_mode.is_some() {
+                fidl_fuchsia_hardware_display::ClientPriority {
+                    value: fidl_fuchsia_hardware_display::VIRTCON_CLIENT_PRIORITY_VALUE,
+                }
+            } else {
+                fidl_fuchsia_hardware_display::ClientPriority {
+                    value: fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE,
+                }
+            };
             provider
-                .open_coordinator_with_listener_for_virtcon(
-                    ProviderOpenCoordinatorWithListenerForVirtconRequest {
-                        coordinator: Some(coordinator_server),
-                        coordinator_listener: Some(listener_client),
-                        __source_breaking: fidl::marker::SourceBreaking,
-                    },
-                )
-                .await
-        } else {
-            provider
-                .open_coordinator_with_listener_for_primary(
-                    ProviderOpenCoordinatorWithListenerForPrimaryRequest {
-                        coordinator: Some(coordinator_server),
-                        coordinator_listener: Some(listener_client),
-                        __source_breaking: fidl::marker::SourceBreaking,
-                    },
-                )
+                .open_coordinator(fidl_fuchsia_hardware_display::ProviderOpenCoordinatorRequest {
+                    coordinator: Some(coordinator_server),
+                    coordinator_listener: Some(listener_client),
+                    priority: Some(priority),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                })
                 .await
         }
         .context("failed to perform FIDL call")?

@@ -106,16 +106,17 @@ impl DisplayProviderClient {
         let (listener_client, listener_requests) =
             fidl::endpoints::create_request_stream::<display::CoordinatorListenerMarker>();
 
-        let payload = display::ProviderOpenCoordinatorWithListenerForPrimaryRequest {
+        let payload = display::ProviderOpenCoordinatorRequest {
             coordinator: Some(coordinator_server),
             coordinator_listener: Some(listener_client),
+            priority: Some(display::ClientPriority {
+                value: display::PRIMARY_CLIENT_PRIORITY_VALUE,
+            }),
             __source_breaking: fidl::marker::SourceBreaking,
         };
 
-        let () = utils::flatten_zx_error(
-            self.provider.open_coordinator_with_listener_for_primary(payload).await,
-        )
-        .context("Failed to get display Coordinator from Provider")?;
+        let () = utils::flatten_zx_error(self.provider.open_coordinator(payload).await)
+            .context("Failed to get display Coordinator from Provider")?;
 
         Ok(DisplayCoordinatorClient { coordinator: display_coordinator, listener_requests })
     }
@@ -205,9 +206,9 @@ mod tests {
         let provider_service_future = async move {
             let (coordinator_server, coordinator_listener_client) =
                 match provider_request_stream.next().await.unwrap() {
-                    Ok(display::ProviderRequest::OpenCoordinatorWithListenerForPrimary {
+                    Ok(display::ProviderRequest::OpenCoordinator {
                         payload:
-                            display::ProviderOpenCoordinatorWithListenerForPrimaryRequest {
+                            display::ProviderOpenCoordinatorRequest {
                                 coordinator: Some(coordinator_server),
                                 coordinator_listener: Some(coordinator_listener_client),
                                 ..
@@ -274,9 +275,9 @@ mod tests {
         let provider_service_future = async move {
             let (_coordinator_server, coordinator_listener_client) =
                 match provider_request_stream.next().await.unwrap() {
-                    Ok(display::ProviderRequest::OpenCoordinatorWithListenerForPrimary {
+                    Ok(display::ProviderRequest::OpenCoordinator {
                         payload:
-                            display::ProviderOpenCoordinatorWithListenerForPrimaryRequest {
+                            display::ProviderOpenCoordinatorRequest {
                                 coordinator: Some(coordinator_server),
                                 coordinator_listener: Some(coordinator_listener_client),
                                 ..
@@ -312,10 +313,7 @@ mod tests {
 
         let provider_service_future = async move {
             match provider_request_stream.next().await.unwrap() {
-                Ok(display::ProviderRequest::OpenCoordinatorWithListenerForPrimary {
-                    responder,
-                    ..
-                }) => {
+                Ok(display::ProviderRequest::OpenCoordinator { responder, .. }) => {
                     responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED)).unwrap();
                 }
                 request => panic!("Unexpected request to Provider: {:?}", request),
@@ -342,10 +340,7 @@ mod tests {
 
         let provider_service_future = async move {
             match provider_request_stream.next().await.unwrap() {
-                Ok(display::ProviderRequest::OpenCoordinatorWithListenerForPrimary {
-                    responder,
-                    ..
-                }) => {
+                Ok(display::ProviderRequest::OpenCoordinator { responder, .. }) => {
                     responder.send(Ok(())).unwrap();
                 }
                 request => panic!("Unexpected request to Provider: {:?}", request),

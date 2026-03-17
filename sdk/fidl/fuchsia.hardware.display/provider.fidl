@@ -13,38 +13,25 @@ using zx;
 /// be returned.
 @discoverable(server="platform")
 closed protocol Provider {
-    /// Opens a Virtcon client connection to the display coordinator.
+    /// Opens a client connection to the Display Coordinator.
     ///
-    /// On success, `coordinator` and `coordinator_listener` will be bound to
-    /// the display coordinator, as the Virtcon client.
+    /// On success, `coordinator` will be bound to the Display Coordinator
+    /// at the requested priority level, and `coordinator_listener` will receive
+    /// notifications for the newly bound client.
     ///
-    /// No event will be dispatched to the `Coordinator` protocol.
+    /// Fails with `ZX_ERR_ALREADY_BOUND` if the Display Coordinator already has
+    /// a connected client at the given priority level.
     ///
-    /// Returns `ZX_ERR_ALREADY_BOUND` if the display coordinator already has a
-    /// connected Virtcon client.
-    strict OpenCoordinatorWithListenerForVirtcon(resource table {
+    /// Fails with `ZX_ERR_INVALID_ARGS` if one of the required fields is missing.
+    strict OpenCoordinator(resource table {
         /// Required.
         1: coordinator server_end:Coordinator;
 
         /// Required.
         2: coordinator_listener client_end:CoordinatorListener;
-    }) -> () error zx.Status;
 
-    /// Opens a primary client connection to the display coordinator.
-    ///
-    /// On success, `coordinator` and `coordinator_listener` will be bound to
-    /// the display coordinator, as the primary client.
-    ///
-    /// No event will be dispatched to the `Coordinator` protocol.
-    ///
-    /// Returns `ZX_ERR_ALREADY_BOUND` if the display coordinator already has a
-    /// connected primary client.
-    strict OpenCoordinatorWithListenerForPrimary(resource table {
-        /// Required.
-        1: coordinator server_end:Coordinator;
-
-        /// Required.
-        2: coordinator_listener client_end:CoordinatorListener;
+        /// Required. Must be a valid priority.
+        3: priority ClientPriority;
     }) -> () error zx.Status;
 };
 
