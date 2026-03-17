@@ -9,7 +9,9 @@
 //!
 //! See the [`BlockClient`] trait.
 
+use fidl_fuchsia_storage_block as block;
 use fidl_fuchsia_storage_block::{MAX_TRANSFER_UNBOUNDED, VMOID_INVALID};
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::executor::block_on;
@@ -24,9 +26,9 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker};
+use storage_trace as trace;
 use zx::sys::zx_handle_t;
 use zx::{self as zx, HandleBased as _};
-use {fidl_fuchsia_storage_block as block, fuchsia_async as fasync, storage_trace as trace};
 
 pub use cache::Cache;
 
@@ -714,10 +716,12 @@ impl RemoteBlockClient {
         info: block::BlockInfo,
         session: block::SessionProxy,
     ) -> Result<Self, zx::Status> {
+        const SCRATCH_VMO_NAME: zx::Name = zx::Name::new_lossy("block-client-scratch-vmo");
         let fifo =
             session.get_fifo().await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
         let fifo = fasync::Fifo::from_fifo(fifo);
         let temp_vmo = zx::Vmo::create(TEMP_VMO_SIZE as u64)?;
+        temp_vmo.set_name(&SCRATCH_VMO_NAME)?;
         let dup = temp_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let vmo_id =
             session.attach_vmo(dup).await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
@@ -979,6 +983,8 @@ mod tests {
     use block_protocol::ReadOptions;
     use block_server::{BlockServer, DeviceInfo, PartitionInfo};
     use fidl::endpoints::RequestStream as _;
+    use fidl_fuchsia_storage_block as block;
+    use fuchsia_async as fasync;
     use futures::future::{AbortHandle, Abortable, TryFutureExt as _};
     use futures::join;
     use futures::stream::StreamExt as _;
@@ -988,7 +994,6 @@ mod tests {
     use std::num::NonZero;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use {fidl_fuchsia_storage_block as block, fuchsia_async as fasync};
 
     const RAMDISK_BLOCK_SIZE: u64 = 1024;
     const RAMDISK_BLOCK_COUNT: u64 = 1024;
