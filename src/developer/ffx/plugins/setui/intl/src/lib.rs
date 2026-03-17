@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{IntlProxy, IntlSettings};
 use ffx_setui_intl_args::Intl;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{IntlProxy, IntlSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -54,14 +54,15 @@ async fn command(proxy: IntlProxy, settings: IntlSettings) -> WatchOrSetResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_intl::{LocaleId, TemperatureUnit, TimeZoneId};
-    use fidl_fuchsia_settings::{HourCycle, IntlRequest};
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_intl::{LocaleId, TemperatureUnit, TimeZoneId};
+    use fdomain_fuchsia_settings::{HourCycle, IntlRequest};
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             IntlRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -103,7 +104,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_intl_set_output(expected_intl: Intl) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             IntlRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -140,7 +142,8 @@ mod test {
     #[fuchsia::test]
     async fn validate_intl_watch_output(expected_intl: Intl) -> Result<()> {
         let expected_intl_clone = expected_intl.clone();
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             IntlRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_intl::{LocaleId, TemperatureUnit, TimeZoneId};
+use fdomain_fuchsia_settings::{HourCycle, IntlSettings};
 use ffx_core::ffx_command;
-use fidl_fuchsia_intl::{LocaleId, TemperatureUnit, TimeZoneId};
-use fidl_fuchsia_settings::{HourCycle, IntlSettings};
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -36,29 +36,29 @@ pub struct Intl {
     pub clear_locales: bool,
 }
 
-fn str_to_time_zone(src: &str) -> Result<fidl_fuchsia_intl::TimeZoneId, String> {
-    Ok(fidl_fuchsia_intl::TimeZoneId { id: src.to_string() })
+fn str_to_time_zone(src: &str) -> Result<fdomain_fuchsia_intl::TimeZoneId, String> {
+    Ok(fdomain_fuchsia_intl::TimeZoneId { id: src.to_string() })
 }
 
-fn str_to_temperature_unit(src: &str) -> Result<fidl_fuchsia_intl::TemperatureUnit, String> {
+fn str_to_temperature_unit(src: &str) -> Result<fdomain_fuchsia_intl::TemperatureUnit, String> {
     match src.to_lowercase().as_str() {
-        "c" | "celsius" => Ok(fidl_fuchsia_intl::TemperatureUnit::Celsius),
-        "f" | "fahrenheit" => Ok(fidl_fuchsia_intl::TemperatureUnit::Fahrenheit),
+        "c" | "celsius" => Ok(fdomain_fuchsia_intl::TemperatureUnit::Celsius),
+        "f" | "fahrenheit" => Ok(fdomain_fuchsia_intl::TemperatureUnit::Fahrenheit),
         _ => Err(String::from("Couldn't parse temperature")),
     }
 }
 
-fn str_to_locale(src: &str) -> Result<fidl_fuchsia_intl::LocaleId, String> {
-    Ok(fidl_fuchsia_intl::LocaleId { id: src.to_string() })
+fn str_to_locale(src: &str) -> Result<fdomain_fuchsia_intl::LocaleId, String> {
+    Ok(fdomain_fuchsia_intl::LocaleId { id: src.to_string() })
 }
 
-fn str_to_hour_cycle(src: &str) -> Result<fidl_fuchsia_settings::HourCycle, String> {
+fn str_to_hour_cycle(src: &str) -> Result<fdomain_fuchsia_settings::HourCycle, String> {
     match src.to_lowercase().as_str() {
-        "unknown" => Ok(fidl_fuchsia_settings::HourCycle::Unknown),
-        "h11" => Ok(fidl_fuchsia_settings::HourCycle::H11),
-        "h12" => Ok(fidl_fuchsia_settings::HourCycle::H12),
-        "h23" => Ok(fidl_fuchsia_settings::HourCycle::H23),
-        "h24" => Ok(fidl_fuchsia_settings::HourCycle::H24),
+        "unknown" => Ok(fdomain_fuchsia_settings::HourCycle::Unknown),
+        "h11" => Ok(fdomain_fuchsia_settings::HourCycle::H11),
+        "h12" => Ok(fdomain_fuchsia_settings::HourCycle::H12),
+        "h23" => Ok(fdomain_fuchsia_settings::HourCycle::H23),
+        "h24" => Ok(fdomain_fuchsia_settings::HourCycle::H24),
         _ => Err(String::from("Couldn't parse hour cycle")),
     }
 }
