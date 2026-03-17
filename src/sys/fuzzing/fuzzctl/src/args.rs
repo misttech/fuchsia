@@ -227,15 +227,3 @@ impl RunLibFuzzerSubcommand {
         }
     }
 }
-
-impl FromArgs for Box<RunLibFuzzerSubcommand> {
-    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
-        let val = RunLibFuzzerSubcommand::from_args(command_name, args)?;
-        Ok(Box::new(val))
-    }
-}
-
-impl argh::SubCommand for Box<RunLibFuzzerSubcommand> {
-    const COMMAND: &'static argh::CommandInfo =
-        <RunLibFuzzerSubcommand as argh::SubCommand>::COMMAND;
-}

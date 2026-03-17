@@ -127,26 +127,26 @@ alias(
 )
 
 alias(
-    name = "argh-0.1.14",
-    actual = "//third_party/rust_crates/vendor/argh-0.1.14:argh",
+    name = "argh-0.1.19",
+    actual = "//third_party/rust_crates/vendor/argh-0.1.19:argh",
     tags = ["manual"],
 )
 
 alias(
     name = "argh",
-    actual = "//third_party/rust_crates/vendor/argh-0.1.14:argh",
+    actual = "//third_party/rust_crates/vendor/argh-0.1.19:argh",
     tags = ["manual"],
 )
 
 alias(
-    name = "argh_complete-0.1.17",
-    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.17:argh_complete",
+    name = "argh_complete-0.1.19",
+    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.19:argh_complete",
     tags = ["manual"],
 )
 
 alias(
     name = "argh_complete",
-    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.17:argh_complete",
+    actual = "//third_party/rust_crates/vendor/argh_complete-0.1.19:argh_complete",
     tags = ["manual"],
 )
 

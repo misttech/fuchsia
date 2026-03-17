@@ -44,11 +44,11 @@ group("arc-swap") {
 }
 
 group("argh") {
-  public_deps = [ ":argh-v0_1_14" ]
+  public_deps = [ ":argh-v0_1_19" ]
 }
 
 group("argh_complete") {
-  public_deps = [ ":argh_complete-v0_1_17" ]
+  public_deps = [ ":argh_complete-v0_1_19" ]
 }
 
 group("arrayref") {
@@ -1770,30 +1770,30 @@ rustc_library("arc-swap-v1_7_1") {
   applicable_licenses = [ ":arc-swap-v1_7_1.license" ]
 }
 
-license("argh-v0_1_14.license") {
+license("argh-v0_1_19.license") {
   public_package_name = "argh"
-  license_files = [ "//third_party/rust_crates/vendor/argh-0.1.14/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/argh-0.1.19/LICENSE" ]
 }
 
-rustc_library("argh-v0_1_14") {
+rustc_library("argh-v0_1_19") {
   crate_name = "argh"
-  source_root = "//third_party/rust_crates/vendor/argh-0.1.14/src/lib.rs"
-  output_name = "argh-4d8f0d5a8d4a73f8"
+  source_root = "//third_party/rust_crates/vendor/argh-0.1.19/src/lib.rs"
+  output_name = "argh-68b8a220de16b5b9"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":argh_derive-v0_1_14($host_toolchain)" ]
-  deps += [ ":argh_shared-v0_1_17" ]
+  deps += [ ":argh_derive-v0_1_19($host_toolchain)" ]
+  deps += [ ":argh_shared-v0_1_19" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4d8f0d5a8d4a73f8",
-    "-Cextra-filename=-4d8f0d5a8d4a73f8",
+    "-Cmetadata=68b8a220de16b5b9",
+    "-Cextra-filename=-68b8a220de16b5b9",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"help\"",
     "--cfg=feature=\"serde\"",
@@ -1801,58 +1801,58 @@ rustc_library("argh-v0_1_14") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":argh-v0_1_14.license" ]
+  applicable_licenses = [ ":argh-v0_1_19.license" ]
 }
 
-license("argh_complete-v0_1_17.license") {
+license("argh_complete-v0_1_19.license") {
   public_package_name = "argh_complete"
   license_files =
-      [ "//third_party/rust_crates/vendor/argh_complete-0.1.17/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/argh_complete-0.1.19/LICENSE" ]
 }
 
-rustc_library("argh_complete-v0_1_17") {
+rustc_library("argh_complete-v0_1_19") {
   crate_name = "argh_complete"
   source_root =
-      "//third_party/rust_crates/vendor/argh_complete-0.1.17/src/lib.rs"
-  output_name = "argh_complete-5ad02b3e723b6d1d"
+      "//third_party/rust_crates/vendor/argh_complete-0.1.19/src/lib.rs"
+  output_name = "argh_complete-392a6d88a58f47cb"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":argh_shared-v0_1_17" ]
+  deps += [ ":argh_shared-v0_1_19" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5ad02b3e723b6d1d",
-    "-Cextra-filename=-5ad02b3e723b6d1d",
+    "-Cmetadata=392a6d88a58f47cb",
+    "-Cextra-filename=-392a6d88a58f47cb",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":argh_complete-v0_1_17.license" ]
+  applicable_licenses = [ ":argh_complete-v0_1_19.license" ]
 }
 
-license("argh_derive-v0_1_14.license") {
+license("argh_derive-v0_1_19.license") {
   public_package_name = "argh_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/argh_derive-0.1.14/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/argh_derive-0.1.19/LICENSE" ]
 }
 
-rustc_macro("argh_derive-v0_1_14") {
+rustc_macro("argh_derive-v0_1_19") {
   crate_name = "argh_derive"
-  source_root = "//third_party/rust_crates/vendor/argh_derive-0.1.14/src/lib.rs"
-  output_name = "argh_derive-7c6db62fbf24c65b"
+  source_root = "//third_party/rust_crates/vendor/argh_derive-0.1.19/src/lib.rs"
+  output_name = "argh_derive-3cd89d4008c97d41"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":argh_shared-v0_1_17" ]
+  deps += [ ":argh_shared-v0_1_19" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":syn-v2_0_117" ]
@@ -1861,26 +1861,26 @@ rustc_macro("argh_derive-v0_1_14") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7c6db62fbf24c65b",
-    "-Cextra-filename=-7c6db62fbf24c65b",
+    "-Cmetadata=3cd89d4008c97d41",
+    "-Cextra-filename=-3cd89d4008c97d41",
     "--cfg=feature=\"help\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":argh_derive-v0_1_14.license" ]
+  applicable_licenses = [ ":argh_derive-v0_1_19.license" ]
 }
 
-license("argh_shared-v0_1_17.license") {
+license("argh_shared-v0_1_19.license") {
   public_package_name = "argh_shared"
   license_files =
-      [ "//third_party/rust_crates/vendor/argh_shared-0.1.17/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/argh_shared-0.1.19/LICENSE" ]
 }
 
-rustc_library("argh_shared-v0_1_17") {
+rustc_library("argh_shared-v0_1_19") {
   crate_name = "argh_shared"
-  source_root = "//third_party/rust_crates/vendor/argh_shared-0.1.17/src/lib.rs"
-  output_name = "argh_shared-2beabf5b68117ada"
+  source_root = "//third_party/rust_crates/vendor/argh_shared-0.1.19/src/lib.rs"
+  output_name = "argh_shared-b60f0a036336a1af"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -1893,14 +1893,14 @@ rustc_library("argh_shared-v0_1_17") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2beabf5b68117ada",
-    "-Cextra-filename=-2beabf5b68117ada",
+    "-Cmetadata=b60f0a036336a1af",
+    "-Cextra-filename=-b60f0a036336a1af",
     "--cfg=feature=\"serde\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":argh_shared-v0_1_17.license" ]
+  applicable_licenses = [ ":argh_shared-v0_1_19.license" ]
 }
 
 license("arrayref-v0_3_9.license") {
@@ -10471,7 +10471,7 @@ rustc_library("mock-omaha-server-v0_3_8") {
 
   deps = []
   deps += [ ":anyhow-v1_0_102" ]
-  deps += [ ":argh-v0_1_14" ]
+  deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":hex-v0_4_3" ]
