@@ -26,12 +26,16 @@ use crate::sandbox_util::RoutableExt;
 use ::routing::bedrock::program_output_dict::{
     ProgramOutputGenerator, build_program_output_dictionary,
 };
-use ::routing::bedrock::request_metadata::{Metadata, event_stream_metadata};
+use ::routing::bedrock::request_metadata::{
+    IsolatedStoragePath, Metadata, StorageSourceMoniker, StorageSubdir, event_stream_metadata,
+};
 use ::routing::bedrock::sandbox_construction::{
     self, ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
 };
 use ::routing::bedrock::structured_dict::{ComponentInput, StructuredDictMap};
-use ::routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
+use ::routing::capability_source::{
+    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
+};
 use ::routing::component_instance::{
     ComponentInstanceInterface, ResolvedInstanceInterface, ResolvedInstanceInterfaceExt,
     WeakComponentInstanceInterface,
@@ -60,7 +64,14 @@ use errors::{
     ResolveActionError, StopError,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
@@ -72,19 +83,14 @@ use sandbox::{
     Capability, Connector, Data, Dict, DirConnector, RemotableCapability, Request, Routable,
     Router, RouterResponse, WeakInstanceToken,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{fmt, mem};
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    zx,
-};
+use zx;
 
 /// The mutable state of a component instance.
 pub enum InstanceState {
@@ -467,8 +473,13 @@ impl ResolvedInstanceState {
         }
         let child_outgoing_dictionary_routers =
             state.get_child_component_output_dictionary_routers();
-        let (program_output_dict, declared_dictionaries) =
-            build_program_output_dictionary(component, &decl, &MyGenerator {});
+        let (program_output_dict, declared_dictionaries) = build_program_output_dictionary(
+            component,
+            &decl,
+            &component_input,
+            &child_outgoing_dictionary_routers,
+            &MyGenerator {},
+        );
 
         let component_sandbox = build_component_sandbox(
             &component,
@@ -482,11 +493,6 @@ impl ResolvedInstanceState {
             RoutingFailureErrorReporter::new(),
             &AggregateRouter::new,
             &EventStreamUseRouter::new,
-        );
-        Self::extend_program_input_namespace_with_legacy(
-            &component,
-            &state.resolved_component.decl,
-            &component_sandbox.program_input.namespace(),
         );
         Self::extend_program_input_namespace_with_injected_capabilities(
             &component,
@@ -633,6 +639,7 @@ impl ResolvedInstanceState {
         }
         let rights = match capability_decl {
             cm_rust::CapabilityDecl::Directory(decl) => decl.rights,
+            cm_rust::CapabilityDecl::Storage(_) => fio::RW_STAR_DIR,
             cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("unsupported capability type for DirConnector"),
         };
@@ -641,12 +648,25 @@ impl ResolvedInstanceState {
                     have a source path",
         );
         let path = vfs::path::Path::validate_and_split(format!("{}", path)).unwrap();
-        let router = Router::new(DirConnectorOutgoingRouter {
-            source_component: component.as_weak(),
-            capability_source: CapabilitySource::Component(ComponentSource {
+        let capability_source = match capability_decl {
+            cm_rust::CapabilityDecl::Directory(_) | cm_rust::CapabilityDecl::Storage(_) => {
+                CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
+                    capability: capability_decl.clone().into(),
+                    moniker: component.moniker.clone(),
+                    backing_dir_subdir: RelativePath::dot(),
+                    storage_subdir: RelativePath::dot(),
+                    storage_source_moniker: Moniker::root(),
+                })
+            }
+            cm_rust::CapabilityDecl::Service(_) => CapabilitySource::Component(ComponentSource {
                 capability: capability_decl.clone().into(),
                 moniker: component.moniker.clone(),
             }),
+            _ => panic!("unsupported capability type for DirConnector"),
+        };
+        let router = Router::new(DirConnectorOutgoingRouter {
+            source_component: component.as_weak(),
+            capability_source,
             path,
         });
         WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
@@ -655,6 +675,7 @@ impl ResolvedInstanceState {
         )
         .availability(Availability::Required)
         .rights(Some(rights.into()))
+        .inherit_rights(false)
         .target(component)
         .error_info(RouteRequestErrorInfo::from(capability_decl))
         .error_reporter(RoutingFailureErrorReporter::new())
@@ -664,11 +685,6 @@ impl ResolvedInstanceState {
     /// Returns a reference to the component's validated declaration.
     pub fn decl(&self) -> &ComponentDecl {
         &self.resolved_component.decl
-    }
-
-    #[cfg(all(test, feature = "src_model_tests"))]
-    pub fn decl_as_mut(&mut self) -> &mut ComponentDecl {
-        &mut self.resolved_component.decl
     }
 
     /// Returns relevant information and prepares to enter the unresolved state.
@@ -761,31 +777,6 @@ impl ResolvedInstanceState {
             .clone())
     }
 
-    fn extend_program_input_namespace_with_legacy(
-        component: &Arc<ComponentInstance>,
-        decl: &cm_rust::ComponentDecl,
-        out_dict: &Dict,
-    ) {
-        let uses = Self::deduplicate_event_stream(decl.uses.iter());
-        for use_ in uses {
-            if !sandbox_construction::is_supported_use(&use_) {
-                let path: cm_types::Path = match use_ {
-                    cm_rust::UseDecl::Storage(d) => d.target_path.clone(),
-                    other_use => unreachable!("all other uses are non-legacy: {other_use:?}"),
-                };
-                // Legacy capability.
-                let request = RouteRequest::from(use_.clone());
-                let Some(capability) = request.into_capability(component) else {
-                    continue;
-                };
-                match out_dict.insert_capability(&path, capability) {
-                    Ok(()) => {}
-                    Err(e) => warn!("failed to insert {path} in program input dict: {e:?}"),
-                };
-            }
-        }
-    }
-
     async fn extend_program_input_namespace_with_injected_capabilities(
         component: &Arc<ComponentInstance>,
         out_dict: &Dict,
@@ -820,25 +811,6 @@ impl ResolvedInstanceState {
                 }
             }
         }
-    }
-
-    /// This function transforms a sequence of [`UseDecl`] such that the duplicate event stream
-    /// uses by paths are removed.
-    ///
-    /// Different from all other use declarations, multiple event stream capabilities may be used
-    /// at the same path, the semantics being a single FIDL protocol capability is made available
-    /// at that path, subscribing to all the specified events:
-    /// see [`crate::model::events::registry::EventRegistry`].
-    fn deduplicate_event_stream<'a>(
-        iter: std::slice::Iter<'a, UseDecl>,
-    ) -> impl Iterator<Item = &'a UseDecl> {
-        let mut paths = HashSet::new();
-        iter.filter_map(move |use_decl| match use_decl {
-            UseDecl::EventStream(event_stream) => {
-                if !paths.insert(event_stream.target_path.clone()) { None } else { Some(use_decl) }
-            }
-            _ => Some(use_decl),
-        })
     }
 
     /// Returns a [`Dict`] with contents similar to `component_output_dict`, but adds capabilities
@@ -1495,13 +1467,68 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
         _target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
-        let subdir: SubDir =
-            request.metadata.get_metadata().unwrap_or_else(|| SubDir::new(".").unwrap());
+        let subdir: SubDir = request.metadata.get_metadata().unwrap_or_else(|| SubDir::dot());
+        let subdir_relative = subdir.as_ref().clone();
         let subdir = vfs::path::Path::validate_and_split(format!("{}", subdir))
             .map_err(|_| RouterError::InvalidArgs)?;
+        let StorageSubdir(storage_subdir) =
+            request.metadata.get_metadata().unwrap_or_else(|| StorageSubdir(RelativePath::dot()));
+        let StorageSourceMoniker(storage_source_moniker) = request
+            .metadata
+            .get_metadata()
+            .unwrap_or_else(|| StorageSourceMoniker(Moniker::root()));
         let path = subdir.with_prefix(&self.path);
         let rights: Rights = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
         let source_component = self.source_component.upgrade().map_err(RoutingError::from)?;
+        let path = if let Some(IsolatedStoragePath(isolated_storage_path)) =
+            request.metadata.get_metadata()
+        {
+            let isolated_storage_path = vfs::path::Path::validate_and_split(
+                isolated_storage_path.to_string_lossy().into_owned(),
+            )
+            .unwrap();
+            if !debug {
+                source_component.ensure_started(&StartReason::StorageAdmin).await.map_err(
+                    |err| {
+                        RoutingError::from(ComponentInstanceError::StartFailed {
+                            moniker: source_component.moniker.clone(),
+                            err_msg: format!("{err}"),
+                            err_as_zx: err.as_zx_status(),
+                        })
+                    },
+                )?;
+                let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+                let flags =
+                    fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
+                let mut obj_request = vfs::object_request::ObjectRequest::new(
+                    flags,
+                    &fio::Options::default(),
+                    server.into(),
+                );
+                let open_request = vfs::directory::entry::OpenRequest::new(
+                    source_component.execution_scope.clone(),
+                    flags,
+                    path.clone(),
+                    &mut obj_request,
+                );
+                source_component.get_outgoing().clone().open_entry(open_request).unwrap();
+                let _ = fuchsia_fs::directory::create_directory_recursive(
+                    &proxy,
+                    isolated_storage_path.as_str(),
+                    flags,
+                )
+                .await
+                .map_err(|err| {
+                    RoutingError::from(ComponentInstanceError::FailedToCreateStorage {
+                        moniker: source_component.moniker.clone(),
+                        err_msg: format!("{err}"),
+                    })
+                })?;
+            }
+            isolated_storage_path.with_prefix(&path)
+        } else {
+            path
+        };
 
         struct OutgoingDirConnector {
             outgoing_dir: Arc<dyn DirectoryEntry>,
@@ -1558,12 +1585,28 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             path,
             flags: rights.into(),
         });
+        let capability_source =
+            if let CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
+                capability,
+                moniker,
+                backing_dir_subdir: _,
+                storage_subdir: _,
+                storage_source_moniker: _,
+            }) = &self.capability_source
+            {
+                CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
+                    capability: capability.clone(),
+                    moniker: moniker.clone(),
+                    backing_dir_subdir: subdir_relative,
+                    storage_subdir,
+                    storage_source_moniker,
+                })
+            } else {
+                self.capability_source.clone()
+            };
         if debug {
             Ok(RouterResponse::Debug(
-                self.capability_source
-                    .clone()
-                    .try_into()
-                    .expect("failed to convert capability source to Data"),
+                capability_source.try_into().expect("failed to convert capability source to Data"),
             ))
         } else {
             Ok(RouterResponse::Capability(dir_connector))

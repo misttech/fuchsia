@@ -8,12 +8,13 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::{CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon};
 use cm_types::{Availability, Name};
+use fidl_fuchsia_component as fcomponent;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{DowncastErrorForTest, Explain, RouterError};
 use std::sync::Arc;
 use thiserror::Error;
-use {fidl_fuchsia_component as fcomponent, zx_status as zx};
+use zx_status as zx;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,8 @@ pub enum ComponentInstanceError {
         err_msg: String,
         err_as_zx: zx::Status,
     },
+    #[error("failed to create storage for `{moniker}`:\n\t{err_msg}")]
+    FailedToCreateStorage { moniker: Moniker, err_msg: String },
 }
 
 impl ComponentInstanceError {
@@ -64,7 +67,8 @@ impl ComponentInstanceError {
             | ComponentInstanceError::InstanceNotFound { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnavailable {}
             | ComponentInstanceError::InstanceNotExecutable { .. }
-            | ComponentInstanceError::NoAbsoluteUrl { .. } => zx::Status::NOT_FOUND,
+            | ComponentInstanceError::NoAbsoluteUrl { .. }
+            | ComponentInstanceError::FailedToCreateStorage { .. } => zx::Status::NOT_FOUND,
             ComponentInstanceError::StartFailed { err_as_zx, .. } => *err_as_zx,
             ComponentInstanceError::MalformedUrl { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnexpected { .. } => {
@@ -100,7 +104,8 @@ impl From<ComponentInstanceError> for ExtendedMoniker {
             | ComponentInstanceError::NoAbsoluteUrl { moniker, .. }
             | ComponentInstanceError::InstanceNotExecutable { moniker }
             | ComponentInstanceError::ResolveFailed { moniker, .. }
-            | ComponentInstanceError::StartFailed { moniker, .. } => {
+            | ComponentInstanceError::StartFailed { moniker, .. }
+            | ComponentInstanceError::FailedToCreateStorage { moniker, .. } => {
                 ExtendedMoniker::ComponentInstance(moniker)
             }
             ComponentInstanceError::ComponentManagerInstanceUnavailable {}

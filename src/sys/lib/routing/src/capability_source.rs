@@ -16,19 +16,18 @@ use cm_rust::{
     UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_rust_derive::FidlDecl;
-use cm_types::{Name, Path};
+use cm_types::{Name, Path, RelativePath};
 use derivative::Derivative;
 use fidl::{persist, unpersist};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_sys2 as fsys;
 use from_enum::FromEnum;
 use futures::future::BoxFuture;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use sandbox::{Capability, Data};
 use std::fmt;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_internal as finternal,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -200,6 +199,9 @@ pub enum CapabilitySource {
     /// The route for this capability extended outside of component manager at the given moniker,
     /// and we thus don't know where the ultimate terminus of it is.
     RemotedAt(Moniker),
+    /// This capability is a storage capability backed by a directory capability
+    /// originating in some component.
+    StorageBackingDirectory(StorageBackingDirectorySource),
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -286,6 +288,17 @@ pub struct VoidSource {
     pub moniker: Moniker,
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Debug, PartialEq, Clone)]
+#[fidl_decl(fidl_table = "finternal::StorageBackingDirectory")]
+pub struct StorageBackingDirectorySource {
+    pub capability: ComponentCapability,
+    pub moniker: Moniker,
+    pub backing_dir_subdir: RelativePath,
+    pub storage_subdir: RelativePath,
+    pub storage_source_moniker: Moniker,
+}
+
 impl CapabilitySource {
     pub fn source_name(&self) -> Option<&Name> {
         match self {
@@ -304,6 +317,9 @@ impl CapabilitySource {
             Self::Environment(EnvironmentSource { capability, .. }) => capability.source_name(),
             Self::Void(VoidSource { capability, .. }) => Some(capability.source_name()),
             Self::RemotedAt(_) => None,
+            Self::StorageBackingDirectory(StorageBackingDirectorySource { capability, .. }) => {
+                capability.source_name()
+            }
         }
     }
 
@@ -326,6 +342,9 @@ impl CapabilitySource {
             Self::Environment(EnvironmentSource { capability, .. }) => capability.type_name(),
             Self::Void(VoidSource { capability, .. }) => capability.type_name(),
             Self::RemotedAt(_) => unimplemented!(),
+            Self::StorageBackingDirectory(StorageBackingDirectorySource { capability, .. }) => {
+                capability.type_name()
+            }
         }
     }
 
@@ -336,6 +355,7 @@ impl CapabilitySource {
             | Self::Capability(CapabilityToCapabilitySource { moniker, .. })
             | Self::Environment(EnvironmentSource { moniker, .. })
             | Self::Void(VoidSource { moniker, .. })
+            | Self::StorageBackingDirectory(StorageBackingDirectorySource { moniker, .. })
             | Self::AnonymizedAggregate(AnonymizedAggregateSource { moniker, .. })
             | Self::FilteredProvider(FilteredProviderSource { moniker, .. })
             | Self::FilteredAggregateProvider(FilteredAggregateProviderSource {
@@ -353,7 +373,12 @@ impl fmt::Display for CapabilitySource {
             f,
             "{}",
             match self {
-                Self::Component(ComponentSource { capability, moniker }) => {
+                Self::Component(ComponentSource { capability, moniker })
+                | Self::StorageBackingDirectory(StorageBackingDirectorySource {
+                    capability,
+                    moniker,
+                    ..
+                }) => {
                     format!("{} '{}'", capability, moniker)
                 }
                 Self::Framework(FrameworkSource { capability, .. }) => capability.to_string(),

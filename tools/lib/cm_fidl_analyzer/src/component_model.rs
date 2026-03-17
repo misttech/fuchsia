@@ -15,6 +15,7 @@ use cm_rust::{
 use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
 use fidl::prelude::*;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
@@ -34,8 +35,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
-use zx_status::Status;
-use {fidl_fuchsia_sys2 as fsys, zx_status};
+use zx_status::{self, Status};
 
 /// Errors that may occur when building a `ComponentModelForAnalyzer` from
 /// a set of component manifests.
@@ -1223,7 +1223,7 @@ impl ComponentModelForAnalyzer {
         source_moniker: ExtendedMoniker,
     ) -> Result<(), AnalyzerModelError> {
         match source_capability {
-            ComponentCapability::Storage(_) => Ok(()),
+            ComponentCapability::Storage(_) | ComponentCapability::Directory(_) => Ok(()),
             _ => Err(AnalyzerModelError::InvalidSourceCapability(
                 source_moniker,
                 format!("{:?}", source_capability.source_name()),
@@ -1317,8 +1317,16 @@ impl ComponentModelForAnalyzer {
                     let source_component = target.find_absolute(&moniker).await?;
                     (storage_decl, source_component)
                 }
-                CapabilitySource::Void(_) => return Ok(result),
-                _ => unreachable!("unexpected storage source"),
+                CapabilitySource::Component(ComponentSource {
+                    capability: ComponentCapability::Directory(_),
+                    ..
+                })
+                | CapabilitySource::StorageBackingDirectory(_)
+                | CapabilitySource::Namespace(_)
+                | CapabilitySource::Void(_) => {
+                    return Ok(result);
+                }
+                source => unreachable!("unexpected storage source {source:?}"),
             };
             route_capability(
                 RouteRequest::StorageBackingDirectory(storage_decl),
@@ -1360,7 +1368,11 @@ impl ComponentModelForAnalyzer {
                     let source_component = target.find_absolute(&moniker).await?;
                     (storage_decl, source_component)
                 }
-                CapabilitySource::Void(_) => return Ok(result),
+                CapabilitySource::Component(ComponentSource {
+                    capability: ComponentCapability::Directory(_),
+                    ..
+                })
+                | CapabilitySource::Void(_) => return Ok(result),
                 _ => unreachable!("unexpected storage source"),
             };
             route_capability(
@@ -1461,6 +1473,8 @@ mod tests {
     };
     use cm_types::{Name, Url};
     use config_encoder::ConfigFields;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_component_internal as component_internal;
     use maplit::hashmap;
     use moniker::{ChildName, ExtendedMoniker, Moniker};
     use routing::RouteRequest;
@@ -1471,9 +1485,6 @@ mod tests {
     use sandbox::{Capability, Request, RouterResponse};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_internal as component_internal,
-    };
 
     const TEST_URL_PREFIX: &str = "test:///";
     const BOOT_SCHEME: &str = "fuchsia-boot";

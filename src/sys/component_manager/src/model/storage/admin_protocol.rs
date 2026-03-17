@@ -11,7 +11,6 @@
 //! with isolated storage without needing to understand component_manager's storage layout.
 
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::routing::Route;
 use crate::model::storage::{self, BackingDirectoryInfo};
 use ::routing::RouteSource;
 use ::routing::capability_source::{ComponentCapability, ComponentSource};
@@ -19,18 +18,21 @@ use anyhow::{Context, Error, format_err};
 use cm_rust::{StorageDecl, UseDecl};
 use component_id_index::InstanceId;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType};
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_fs::directory as ffs_dir;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::Moniker;
-use routing::RouteRequest;
+use routing::DictExt;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
+use sandbox::{Capability, RouterResponse};
 use std::path::PathBuf;
 use std::sync::Arc;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
 
 #[derive(Debug, PartialEq)]
 enum DirType {
@@ -591,33 +593,48 @@ impl StorageAdmin {
         // subtree that has access to the storage is found, rather than checking every single
         // instance's storage uses as done here.
         while let Some(component) = components_to_visit.pop() {
-            let component_state = match component.lock_resolved_state().await {
-                Ok(state) => state,
-                // A component will not have resolved state if it has already been destroyed. In
-                // this case, its storage has also been removed, so we should skip it.
-                Err(e) => {
-                    debug!(
-                        "Failed to lock component resolved state, it may already be destroyed: {:?}",
-                        e
-                    );
-                    continue;
-                }
+            let (namespace, storage_uses, children) = {
+                let component_state = match component.lock_resolved_state().await {
+                    Ok(state) => state,
+                    // A component will not have resolved state if it has already been destroyed. In
+                    // this case, its storage has also been removed, so we should skip it.
+                    Err(e) => {
+                        debug!(
+                            "Failed to lock component resolved state, it may already be destroyed: {:?}",
+                            e
+                        );
+                        continue;
+                    }
+                };
+                let namespace = component_state.sandbox.program_input.namespace().clone();
+                let storage_uses: Vec<_> = component_state
+                    .decl()
+                    .uses
+                    .iter()
+                    .filter_map(|use_decl| match use_decl {
+                        UseDecl::Storage(use_storage) => Some(use_storage.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                let children: Vec<_> = component_state.children().map(|(_, v)| v.clone()).collect();
+                (namespace, storage_uses, children)
             };
-            let storage_uses =
-                component_state.decl().uses.iter().filter_map(|use_decl| match use_decl {
-                    UseDecl::Storage(use_storage) => Some(use_storage),
-                    _ => None,
-                });
+
             for use_storage in storage_uses {
-                let storage_source =
-                    match RouteRequest::UseStorage(use_storage.clone()).route(&component).await {
-                        Ok(s) => s,
-                        Err(_) => continue,
-                    };
+                let component_weak = component.as_weak().into();
+                let capability = namespace.get_capability(&use_storage.target_path);
+                let router = match capability {
+                    Some(Capability::DirConnectorRouter(router)) => router,
+                    _ => continue,
+                };
+                let storage_source = match router.route(None, true, component_weak).await {
+                    Ok(RouterResponse::Debug(data)) => CapabilitySource::try_from(data)
+                        .expect("failed to convert Data to capability source"),
+                    _ => continue,
+                };
 
                 let backing_dir_info =
-                    match storage::route_backing_directory(&component, storage_source.source).await
-                    {
+                    match storage::route_backing_directory(&component, storage_source).await {
                         Ok(s) => s,
                         Err(_) => continue,
                     };
@@ -631,8 +648,8 @@ impl StorageAdmin {
                     break;
                 }
             }
-            for component in component_state.children().map(|(_, v)| v) {
-                components_to_visit.push(component.clone())
+            for child in children {
+                components_to_visit.push(child);
             }
         }
 

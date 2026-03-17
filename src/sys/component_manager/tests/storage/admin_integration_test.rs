@@ -4,11 +4,14 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
-use fidl::endpoints::{create_endpoints, create_proxy, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_endpoints, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component_test::{
-    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
-    DEFAULT_COLLECTION_NAME,
+    Capability, ChildOptions, DEFAULT_COLLECTION_NAME, LocalComponentHandles, RealmBuilder, Ref,
+    Route,
 };
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
@@ -16,7 +19,6 @@ use futures::sink::SinkExt;
 use futures::{Future, FutureExt, StreamExt, TryStreamExt};
 use maplit::hashset;
 use std::collections::HashSet;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Returns a new mock that writes a file and terminates. The future indicates when writing the file has completed.
 fn new_data_user_mock<T: Into<String>, U: Into<String>>(
@@ -24,9 +26,9 @@ fn new_data_user_mock<T: Into<String>, U: Into<String>>(
     contents: U,
 ) -> (
     impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), anyhow::Error>>
-        + Sync
-        + Send
-        + 'static,
+    + Sync
+    + Send
+    + 'static,
     impl Future<Output = ()>,
 ) {
     let (send, recv) = mpsc::channel(1);
@@ -44,7 +46,7 @@ fn new_data_user_mock<T: Into<String>, U: Into<String>>(
             let file = fuchsia_fs::directory::open_file_async(
                 &data_handle,
                 &filename_clone,
-                fio::PERM_WRITABLE | fio::Flags::FLAG_MAYBE_CREATE,
+                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FLAG_MAYBE_CREATE,
             )
             .expect("failed to open file");
             fuchsia_fs::file::write(&file, &contents_clone).await.expect("write file failed");
@@ -72,7 +74,9 @@ async fn collect_storage_user_monikers<T: AsRef<str>>(
     loop {
         let next = it_proxy.next().await.expect("Error calling next on storage iterator");
         match next.is_empty() {
-            true => break,
+            true => {
+                break;
+            }
             false => storage_monikers.extend(next.into_iter()),
         }
     }
