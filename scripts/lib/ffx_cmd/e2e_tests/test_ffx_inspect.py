@@ -5,32 +5,28 @@
 import logging
 
 import ffx_cmd
-import fuchsia_async_extension
+import fuchsia_base_test
 import fuchsia_inspect
-from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class TestFfxInspect(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
-        """Initialize all DUT(s)"""
-        super().setup_class()
+class TestFfxInspect(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.fuchsia_dut = self.fuchsia_devices[0]
 
-    def test_ffx_inspect_all_data(self) -> None:
+    async def test_ffx_inspect_all_data(self) -> None:
         """ensure that ffx_cmd.inspect can read data from a real device"""
         inner = ffx_cmd.FfxCmd.create_test_inner(
             *self.fuchsia_dut.ffx.generate_ffx_cmd(cmd=[])
         )
         _LOGGER.info("Selecting inspect data")
 
-        ret: fuchsia_inspect.InspectDataCollection = (
-            fuchsia_async_extension.get_loop().run_until_complete(
-                ffx_cmd.inspect(inner=inner).sync()
-            )
-        )
+        ret: fuchsia_inspect.InspectDataCollection = await ffx_cmd.inspect(
+            inner=inner
+        ).sync()
 
         asserts.assert_greater(len(ret.data), 1)
 
