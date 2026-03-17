@@ -47,6 +47,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
         test_info = {
             "name": "my_test",
             "label": "//src/my_test:my_test",
+            "source_label": "//src/my_test:my_test",
             "launcher_execroot_path": "bin/my_test",
             "runtime_deps_json_execroot_path": "bin/my_test.runtime_deps.json",
             "os": "linux",
@@ -63,6 +64,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
         entry = tests_json[0]
         self.assertEqual(entry["test"]["name"], "my_test")
         self.assertEqual(entry["test"]["label"], "//src/my_test:my_test")
+        self.assertEqual(entry["test"]["source_label"], "//src/my_test:my_test")
 
         # Verify path conversion
         # bazel_paths.execroot is fuchsia_dir/out/build_dir/gen/bazel/output_base/execroot/_main
@@ -84,6 +86,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
         test1 = {
             "name": "test1",
             "label": "//t1",
+            "source_label": "//t1",
             "launcher_execroot_path": "p1",
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
@@ -92,6 +95,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
         test2 = {
             "name": "test2",
             "label": "//t2",
+            "source_label": "//t2",
             "launcher_execroot_path": "p2",
             "runtime_deps_json_execroot_path": "d2",
             "os": "linux",
@@ -119,6 +123,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 "test": {
                     "name": "test1",
                     "label": "//t1",
+                    "source_label": "//t1",
                     "path": f"{execroot_path}/p1",
                     "runtime_deps": f"{execroot_path}/d1",
                     "os": "linux",
@@ -134,6 +139,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 "test": {
                     "name": "test2",
                     "label": "//t2",
+                    "source_label": "//t2",
                     "path": f"{execroot_path}/p2",
                     "runtime_deps": f"{execroot_path}/d2",
                     "os": "linux",

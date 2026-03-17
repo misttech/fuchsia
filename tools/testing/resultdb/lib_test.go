@@ -15,6 +15,7 @@ import (
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 
 	"github.com/google/go-cmp/cmp"
+
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder/metadata"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
@@ -42,14 +43,6 @@ func TestParseSummary(t *testing.T) {
 	}
 	if requests[0].TestResults[0].TestId != "test_0" {
 		t.Errorf("Incorrect TestId parsed for first suite. got %s, want test_0", requests[0].TestResults[0].TestId)
-	}
-}
-
-func checkTagValue(t *testing.T, tags map[string]string, key, want string) {
-	if got, ok := tags[key]; !ok {
-		t.Errorf("Did not find %q in tags", key)
-	} else if got != want {
-		t.Errorf("Wrong value for tag %q: got %q, wanted %q", key, got, want)
 	}
 }
 
@@ -87,26 +80,18 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 		tags[tag.Key] = tag.Value
 	}
 
-	if len(extraTags) != 1 {
-		t.Errorf("extraTags(%v) got mutated, this value should not be changed.", extraTags)
+	expectedTags := map[string]string{
+		"key1":              "value1",
+		"gn_label":          detail.GNLabel,
+		"source_label":      detail.SourceLabel,
+		"test_case_count":   "7",
+		"affected":          "false",
+		"is_top_level_test": "true",
+		"owners":            "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com",
 	}
-	// We only expect 5 tags
-	// 1. key1:value1
-	// 2. gn_label:value
-	// 3. test_case_count:value
-	// 4. affected:value
-	// 5. is_top_level_test:value
-	// 6. owners:value
-	if len(tags) != 6 {
-		t.Errorf("tags(%v) contains unexpected values.", tags)
+	if diff := cmp.Diff(expectedTags, tags); diff != "" {
+		t.Errorf("tags differ (-want +got):\n%s", diff)
 	}
-
-	checkTagValue(t, tags, "key1", "value1")
-	checkTagValue(t, tags, "gn_label", detail.GNLabel)
-	checkTagValue(t, tags, "test_case_count", "7")
-	checkTagValue(t, tags, "affected", "false")
-	checkTagValue(t, tags, "is_top_level_test", "true")
-	checkTagValue(t, tags, "owners", "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com")
 
 	if len(result.Artifacts) != 2 {
 		t.Errorf("Got %d artifacts, want 2", len(result.Artifacts))
@@ -158,24 +143,17 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 		tags[tag.Key] = tag.Value
 	}
 
-	if len(extraTags) != 1 {
-		t.Errorf("extraTags(%v) got mutated, this value should not be changed.", extraTags)
+	expectedTags := map[string]string{
+		"key1":              "value1",
+		"gn_label":          detail.GNLabel,
+		"source_label":      detail.SourceLabel,
+		"test_case_count":   "205",
+		"affected":          "false",
+		"is_top_level_test": "true",
 	}
-	// We only expect 5 tags
-	// 1. key1:value1
-	// 2. gn_label:value
-	// 3. test_case_count:value
-	// 4. affected:value
-	// 5. is_top_level_test:value
-	if len(tags) != 5 {
-		t.Errorf("tags(%v) contains unexpected values.", tags)
+	if diff := cmp.Diff(expectedTags, tags); diff != "" {
+		t.Errorf("tags differ (-want +got):\n%s", diff)
 	}
-
-	checkTagValue(t, tags, "key1", "value1")
-	checkTagValue(t, tags, "gn_label", detail.GNLabel)
-	checkTagValue(t, tags, "test_case_count", "205")
-	checkTagValue(t, tags, "affected", "false")
-	checkTagValue(t, tags, "is_top_level_test", "true")
 
 	if len(result.Artifacts) != 2 {
 		t.Errorf("Got %d artifacts, want 2", len(result.Artifacts))
@@ -215,18 +193,15 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		for _, tag := range result.Tags {
 			tags[tag.Key] = tag.Value
 		}
-		// We only expect 3 tags
-		// 1. format:value
-		// 2. is_test_case:value
-		// 3. key1:value1
-		// 4. owners:value
-		if len(tags) != 4 {
-			t.Errorf("tags(%v) contains unexpected values.", tags)
+		expectedTags := map[string]string{
+			"format":       detail.Cases[i].Format,
+			"is_test_case": "true",
+			"key1":         "value1",
+			"owners":       "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com",
 		}
-		checkTagValue(t, tags, "format", detail.Cases[i].Format)
-		checkTagValue(t, tags, "is_test_case", "true")
-		checkTagValue(t, tags, "key1", "value1")
-		checkTagValue(t, tags, "owners", "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com")
+		if diff := cmp.Diff(expectedTags, tags); diff != "" {
+			t.Errorf("tags differ (-want +got):\n%s", diff)
+		}
 		if len(result.Artifacts) != 2 {
 			t.Errorf("Got %d artifacts for test case %d, want 2", len(result.Artifacts), i+1)
 		}
@@ -263,6 +238,7 @@ func createTestSummary(testCount int) *runtests.TestSummary {
 		t = append(t, runtests.TestDetails{
 			Name:                 fmt.Sprintf("test_%d", i),
 			GNLabel:              "some label",
+			SourceLabel:          "some source label",
 			TestResult:           runtests.TestResult{OutputFiles: []string{"some file path"}},
 			Status:               runtests.TestSuccess,
 			StartTime:            time.Now(),
@@ -294,8 +270,9 @@ func createTestDetailWithTestCase(testCase int, outputRoot string) *runtests.Tes
 		})
 	}
 	return &runtests.TestDetails{
-		Name:    "foo",
-		GNLabel: "some label",
+		Name:        "foo",
+		GNLabel:     "some label",
+		SourceLabel: "some source label",
 		TestResult: runtests.TestResult{
 			OutputFiles: []string{"dir-1/outputfile", "dir#2/outputfile"},
 			OutputDir:   "foo",
@@ -344,8 +321,9 @@ func createTestDetailWithPassedAndFailedTestCase(passedTestCase int, failedTestC
 		finalResult = runtests.TestFailure
 	}
 	return &runtests.TestDetails{
-		Name:    "foo",
-		GNLabel: "some label",
+		Name:        "foo",
+		GNLabel:     "some label",
+		SourceLabel: "some source label",
 		TestResult: runtests.TestResult{
 			OutputFiles: []string{"dir-1/outputfile", "dir#2/outputfile"},
 			Cases:       t,

@@ -128,9 +128,10 @@ func (o *TestOutputs) Record(ctx context.Context, result runtests.TestDetails) e
 	// ensures that even if writing the output files fails, the summary won't
 	// reference nonexistent files.
 	o.Summary.Tests = append(o.Summary.Tests, runtests.TestDetails{
-		Name:    result.Name,
-		GNLabel: result.GNLabel,
-		Status:  result.Status,
+		Name:        result.Name,
+		GNLabel:     result.GNLabel,
+		SourceLabel: result.SourceLabel,
+		Status:      result.Status,
 		TestResult: runtests.TestResult{
 			OutputFiles: suiteOutputFiles,
 			OutputDir:   outputRelPath,

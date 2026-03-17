@@ -140,6 +140,13 @@ if (allowed_device_types == []) {
 #     [label_with_toolchain]: The test target. This will be used directly as the
 #     `label` field.
 #
+#   source_label (optional)
+#     [label_no_toolchain]: The build label of the test target that corresponds
+#     to where the test is actually defined in source code. This will be used
+#     directly as the `source_label` field. This defaults to the value of the
+#     `target` field, but should be overridden for Bazel tests where the test's
+#     source code is not colocated with its GN target definition.
+#
 #   package_url (optional)
 #     [string] In the case of a fuchsia test, this describes the packaged test
 #     via a fuchsia package URL. See //docs/the-book/package_url.md for more
@@ -603,6 +610,14 @@ template("test_spec") {
       } else if (defined(new_path)) {
         # Trim leading //.
         new_path = rebase_path(new_path, root_build_dir)
+      }
+
+      source_label = get_label_info(label, "label_no_toolchain")
+      if (defined(invoker.source_label)) {
+        source_label = invoker.source_label
+        assert(
+            source_label == get_label_info(source_label, "label_no_toolchain"),
+            "invoker.source_label ('${source_label}') must be a label_no_toolchain.")
       }
 
       if (!defined(name)) {

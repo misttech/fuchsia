@@ -168,6 +168,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         test1 = {
             "name": "test1",
             "label": "@@//t1",
+            "source_label": "@@//t1",
             "launcher_execroot_path": "p1",
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
@@ -176,6 +177,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         test2 = {
             "name": "test2",
             "label": "@@//t2",
+            "source_label": "@@//t2",
             "launcher_execroot_path": "p2",
             "runtime_deps_json_execroot_path": "d2",
             "os": "linux",
@@ -196,6 +198,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {
                     "name": "test1",
                     "label": "@@//t1",
+                    "source_label": "@@//t1",
                     "path": f"{self.execroot_path}/p1",
                     "runtime_deps": f"{self.execroot_path}/d1",
                     "os": "linux",
@@ -208,6 +211,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {
                     "name": "test2",
                     "label": "@@//t2",
+                    "source_label": "@@//t2",
                     "path": f"{self.execroot_path}/p2",
                     "runtime_deps": f"{self.execroot_path}/d2",
                     "os": "linux",
@@ -243,6 +247,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         test1 = {
             "name": "test1",
             "label": "@@//t1",
+            "source_label": "@@//t1",
             "launcher_execroot_path": "p1",
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
@@ -277,6 +282,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {
                     "name": "test1",
                     "label": "@@//t1",
+                    "source_label": "@@//t1",
                     "path": f"{self.execroot_path}/p1",
                     "runtime_deps": f"{self.execroot_path}/d1",
                     "os": "linux",

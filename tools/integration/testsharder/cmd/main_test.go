@@ -123,11 +123,12 @@ func TestExecute(t *testing.T) {
 			testSpecs: []build.TestSpec{
 				{
 					Test: build.Test{
-						Name:  "host_x64/foo.sh",
-						Path:  "host_x64/foo.sh",
-						OS:    "linux",
-						CPU:   "x64",
-						Label: "//tools/other:foo(//build/toolchain/host_x64)",
+						Name:        "host_x64/foo.sh",
+						Path:        "host_x64/foo.sh",
+						OS:          "linux",
+						CPU:         "x64",
+						Label:       "//tools/other:foo(//build/toolchain/host_x64)",
+						SourceLabel: "//tools/other:foo",
 					},
 					Envs: []build.Environment{
 						{
@@ -150,11 +151,12 @@ func TestExecute(t *testing.T) {
 				},
 				{
 					Test: build.Test{
-						Name:  "host_x64/bar.sh",
-						Path:  "host_x64/bar.sh",
-						OS:    "linux",
-						CPU:   "x64",
-						Label: "//tools/other:bar(//build/toolchain/host_x64)",
+						Name:        "host_x64/bar.sh",
+						Path:        "host_x64/bar.sh",
+						OS:          "linux",
+						CPU:         "x64",
+						Label:       "//tools/other:bar(//build/toolchain/host_x64)",
+						SourceLabel: "//tools/other:bar",
 					},
 					Envs: []build.Environment{
 						{
@@ -754,13 +756,16 @@ func (m *fakeModules) PrebuiltVersions() ([]build.PrebuiltVersion, error) {
 		{
 			Name:    "fuchsia/third_party/android/aemu/release-gfxstream/${platform}",
 			Version: "aemu_version",
-		}, {
+		},
+		{
 			Name:    "fuchsia/third_party/qemu/${platform}",
 			Version: "qemu_version",
-		}, {
+		},
+		{
 			Name:    "fuchsia/third_party/crosvm/${platform}",
 			Version: "crosvm_version",
-		}, {
+		},
+		{
 			Name:    "fuchsia/third_party/edk2",
 			Version: "edk2_version",
 		},
@@ -805,11 +810,12 @@ func fuchsiaTestSpec(basename string, deviceTypes ...string) build.TestSpec {
 	}
 	return build.TestSpec{
 		Test: build.Test{
-			Name:       packageURL(basename),
-			PackageURL: packageURL(basename),
-			OS:         "fuchsia",
-			CPU:        "x64",
-			Label:      fmt.Sprintf("//src/something:%s(//build/toolchain/fuchsia:x64)", basename),
+			Name:        packageURL(basename),
+			PackageURL:  packageURL(basename),
+			OS:          "fuchsia",
+			CPU:         "x64",
+			Label:       fmt.Sprintf("//src/something:%s(//build/toolchain/fuchsia:x64)", basename),
+			SourceLabel: fmt.Sprintf("//src/something:%s", basename),
 		},
 		Envs:       envs,
 		ExpectsSSH: true,
@@ -824,11 +830,12 @@ func isolated(spec build.TestSpec) build.TestSpec {
 func bootTestSpec(basename string) build.TestSpec {
 	return build.TestSpec{
 		Test: build.Test{
-			Name:       packageURL(basename),
-			PackageURL: packageURL(basename),
-			OS:         "fuchsia",
-			CPU:        "x64",
-			Label:      fmt.Sprintf("//src/something:%s(//build/toolchain/fuchsia:x64)", basename),
+			Name:        packageURL(basename),
+			PackageURL:  packageURL(basename),
+			OS:          "fuchsia",
+			CPU:         "x64",
+			Label:       fmt.Sprintf("//src/something:%s(//build/toolchain/fuchsia:x64)", basename),
+			SourceLabel: fmt.Sprintf("//tools/other:%s", basename),
 		},
 		Envs: []build.Environment{
 			{
@@ -851,6 +858,7 @@ func hostTestSpec(basename string) build.TestSpec {
 			OS:              "linux",
 			CPU:             "x64",
 			Label:           fmt.Sprintf("//tools/other:%s(//build/toolchain/host_x64)", basename),
+			SourceLabel:     fmt.Sprintf("//tools/other:%s", basename),
 			RuntimeDepsFile: filepath.Join("runtime_deps", basename+".json"),
 		},
 		Envs: []build.Environment{

@@ -223,6 +223,10 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 	testTags := append([]*resultpb.StringPair{
 		{Key: "gn_label", Value: testDetail.GNLabel},
+		// Most consumers should use `source_label` rather than `gn_label` since
+		// it better corresponds to the location of the test's source code for
+		// Bazel tests.
+		{Key: "source_label", Value: testDetail.SourceLabel},
 		{Key: "test_case_count", Value: strconv.Itoa(len(testDetail.Cases))},
 		{Key: "affected", Value: strconv.FormatBool(testDetail.Affected)},
 		{Key: "is_top_level_test", Value: "true"},

@@ -116,11 +116,12 @@ type serialClient interface {
 // should be changed as needed within the tester's Test() method.
 func BaseTestResultFromTest(test testsharder.Test) *runtests.TestDetails {
 	return &runtests.TestDetails{
-		Name:     test.Name,
-		GNLabel:  test.Label,
-		Status:   runtests.TestFailure,
-		Tags:     test.Tags,
-		Metadata: test.Metadata,
+		Name:        test.Name,
+		GNLabel:     test.Label,
+		SourceLabel: test.SourceLabel,
+		Status:      runtests.TestFailure,
+		Tags:        test.Tags,
+		Metadata:    test.Metadata,
 	}
 }
 

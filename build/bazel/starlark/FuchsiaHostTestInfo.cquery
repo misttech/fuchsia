@@ -23,6 +23,7 @@ def format(target):
         # LINT.IfChange(cquery_output_schema)
         "name": host_test_info.name,
         "label": str(host_test_info.test_label),
+        "source_label": str(host_test_info.test_label),
         # The two paths below are relative to the Bazel execroot, and must be converted
         # by the caller into paths relative to the Ninja build directory.
         "launcher_execroot_path": host_test_info.test_launcher.path,

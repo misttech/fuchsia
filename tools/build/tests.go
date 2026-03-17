@@ -74,6 +74,9 @@ type Test struct {
 	// E.g.: //src/foo/tests:foo_tests(//build/toolchain/fuchsia:x64)
 	Label string `json:"label"`
 
+	// SourceLabel is the build-system agnostic (either GN or Bazel) label corresponding to the test.
+	SourceLabel string `json:"source_label,omitempty"`
+
 	// OS is the operating system in which this test must be executed.
 	OS string `json:"os"`
 

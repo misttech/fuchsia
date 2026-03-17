@@ -433,10 +433,11 @@ func MarkShardsSkipped(shards []*Shard) ([]*Shard, error) {
 				return nil, errSkippedAffectedTest
 			}
 			summary.Tests = append(summary.Tests, runtests.TestDetails{
-				Name:    test.Name,
-				GNLabel: test.Label,
-				Status:  runtests.TestSkipped,
-				Tags:    test.Tags,
+				Name:        test.Name,
+				GNLabel:     test.Label,
+				SourceLabel: test.SourceLabel,
+				Status:      runtests.TestSkipped,
+				Tags:        test.Tags,
 			})
 		}
 		newShard := *shard
@@ -455,10 +456,11 @@ func AddSummariesToShards(shards []*Shard) []*Shard {
 		var summary runtests.TestSummary
 		for _, test := range shard.Tests {
 			summary.Tests = append(summary.Tests, runtests.TestDetails{
-				Name:    test.Name,
-				GNLabel: test.Label,
-				Status:  runtests.TestSkipped,
-				Tags:    test.Tags,
+				Name:        test.Name,
+				GNLabel:     test.Label,
+				SourceLabel: test.SourceLabel,
+				Status:      runtests.TestSkipped,
+				Tags:        test.Tags,
 			})
 		}
 		newShard := *shard

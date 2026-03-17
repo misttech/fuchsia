@@ -81,6 +81,7 @@ def generate_tests_json(
                 "test": {
                     "name": cquery_test["name"],
                     "label": cquery_test["label"],
+                    "source_label": cquery_test["source_label"],
                     "path": make_execroot_path_relative_to_ninja_build_dir(
                         cquery_test["launcher_execroot_path"]
                     ),

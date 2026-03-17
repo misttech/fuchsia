@@ -87,6 +87,9 @@ type TestDetails struct {
 	// GNLabel is label of the test target (with toolchain).
 	GNLabel string `json:"gn_label"`
 
+	// SourceLabel is the build-system agnostic (either GN or Bazel) label corresponding to the test.
+	SourceLabel string `json:"source_label"`
+
 	// Status is the status of the test.
 	Status TestStatus `json:"result"`
 

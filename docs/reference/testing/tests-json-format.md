@@ -185,6 +185,9 @@ know which targets to rebuild when executing tests from `fx test`,
 but only for host tests for which this label actually outputs the
 real test binary. Other types of tests use different label fields
 such as `package_label`.
+- `source_label` - The build-system agnostic (either GN or Bazel) label
+corresponding to the test. Used to determine the location of the test's
+source code for determining ownership and other metadata.
 
 **Host tests only**
 
@@ -258,6 +261,7 @@ by the individual test runner.
     "test": {
       "cpu": "x64",
       "label": "//src/performance/trace2json:trace2json_tests(//build/toolchain:host_x64)",
+      "source_label": "//src/performance/trace2json:trace2json_tests",
       "name": "host_x64/trace2json_tests",
       "os": "linux",
       // This is the path to execute the test both locally and in infra.
@@ -291,6 +295,7 @@ by the individual test runner.
       // This test specified its own manifest.
       "has_generated_manifest": false,
       "label": "//src/diagnostics/lib/sampler-config:sampler-config-tests_test_sampler-config-tests_component(//build/toolchain/fuchsia:x64)",
+      "source_label": "//src/diagnostics/lib/sampler-config:sampler-config-tests_test_sampler-config-tests_component",
       "log_settings": {
         // Any ERROR or FATAL logs will force this test to fail.
         "max_severity": "WARN"

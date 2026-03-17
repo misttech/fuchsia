@@ -87,6 +87,7 @@ func getFakeTestSpecs() []build.TestSpec {
 			Test: build.Test{
 				Name:         "fuchsia-pkg://fuchsia.com/sparky-sparky-boom-test#meta/sparky-sparky-boom-test.cm",
 				Label:        "//src/sys:foo_test(//build/toolchain/fuchsia:x64)",
+				SourceLabel:  "//src/sys:foo_test",
 				OS:           "fuchsia",
 				PackageLabel: "//src/sys:foo_test_package(//build/toolchain/fuchsia:x64)",
 				PackageURL:   "fuchsia-pkg://fuchsia.com/sparky-sparky-boom-test#meta/sparky-sparky-boom-test.cm",

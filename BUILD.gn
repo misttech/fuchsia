@@ -1259,6 +1259,10 @@ build_api_module("prebuilt_versions_location") {
 #     - Required: GN label associated with the test
 #     - Type: label_with_toolchain
 #
+#   * source_label
+#     - Required: GN or Bazel label associated with the test's source code.
+#     - Type: label_no_toolchain
+#
 #   * path
 #     - Required: Path to the test's executable.
 #     - Type: path relative to the testing root.

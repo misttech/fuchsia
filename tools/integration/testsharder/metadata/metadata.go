@@ -13,10 +13,10 @@ import (
 	"regexp"
 	"strings"
 
-	"go.fuchsia.dev/fuchsia/tools/metadata/proto"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
-	"google.golang.org/protobuf/encoding/prototext"
+	"go.fuchsia.dev/fuchsia/tools/metadata/proto"
 )
 
 // An OWNERS file can import another OWNERS file using a line of the form
@@ -39,14 +39,14 @@ func GetMetadata(testSpecs []build.TestSpec, checkoutDir string) (map[string]Tes
 	resultMap := make(map[string]TestMetadata)
 	for _, testSpec := range testSpecs {
 		testName := testSpec.Test.Name
-		gnLabel := testSpec.Test.Label
-		if gnLabel == "" {
-			continue
+		sourceLabel := testSpec.Test.SourceLabel
+		if sourceLabel == "" {
+			return nil, fmt.Errorf("test %q has no source_label", testName)
 		}
 		if checkoutDir == "" {
 			return nil, fmt.Errorf("checkout directory path cannot be empty")
 		}
-		owners, componentId, err := findOwnersAndComponentID(checkoutDir, gnLabel)
+		owners, componentId, err := findOwnersAndComponentID(checkoutDir, sourceLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -55,9 +55,9 @@ func GetMetadata(testSpecs []build.TestSpec, checkoutDir string) (map[string]Tes
 	return resultMap, nil
 }
 
-func findOwnersAndComponentID(checkoutDir string, gnLabel string) ([]string, int, error) {
+func findOwnersAndComponentID(checkoutDir string, sourceLabel string) ([]string, int, error) {
 	// Strip off the toolchain, target name, and leading dashes
-	relativeTestDir := strings.Trim(strings.Split(strings.Split(gnLabel, "(")[0], ":")[0], "/")
+	relativeTestDir := strings.Trim(strings.Split(strings.Split(sourceLabel, "(")[0], ":")[0], "/")
 
 	var owners []string
 	var componentId int
