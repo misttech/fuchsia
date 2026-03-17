@@ -117,7 +117,7 @@ def RunCpuBreakdown(args: argparse.Namespace, trace_path_json: str) -> None:
     model: trace_model.Model = trace_importing.create_model_from_file_path(
         trace_path_json
     )
-    processor = cpu.CpuMetricsProcessor(args.percent_cutoff)
+    processor = cpu.CpuMetricsProcessor(percent_cutoff=args.percent_cutoff)
 
     _, breakdown = processor.process_freeform_metrics(model)
 
@@ -135,7 +135,7 @@ def RunAggBreakdown(args: argparse.Namespace, trace_path_json: str) -> None:
         trace_path_json
     )
     (breakdown, total_time) = cpu.CpuMetricsProcessor(
-        args.percent_cutoff
+        percent_cutoff=args.percent_cutoff
     ).process_metrics_and_get_total_time(model)
     hardware_profile = hardware_configs.configs[args.hardware_profile]
     agg_breakdown = agg_cpu_breakdown.AggCpuBreakdownMetricsProcessor(
