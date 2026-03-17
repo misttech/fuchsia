@@ -13,9 +13,7 @@
 #include <memory>
 #include <optional>
 
-#include "rapidjson/document.h"
 #include "src/graphics/display/lib/coordinator-getter/client.h"
-#include "src/lib/files/file.h"
 #include "src/lib/fxl/functional/cancelable_callback.h"
 #include "src/ui/lib/escher/vk/pipeline_builder.h"
 #include "src/ui/scenic/lib/display/color_converter.h"
@@ -23,13 +21,12 @@
 #include "src/ui/scenic/lib/display/display_power_manager.h"
 #include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/flatland/engine/engine.h"
-#include "src/ui/scenic/lib/flatland/engine/engine_types.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/scheduling/frame_metrics_registry.cb.h"
 #include "src/ui/scenic/lib/scheduling/windowed_frame_predictor.h"
-#include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
+#include "src/ui/scenic/lib/screen_capture/screen_capture_manager.h"
 #include "src/ui/scenic/lib/screenshot/screenshot_manager.h"
 #include "src/ui/scenic/lib/utils/escher_provider.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
@@ -111,9 +108,9 @@ std::string ToString(RendererType type) {
 }
 
 RendererType GetRendererType(const scenic_structured_config::Config& values) {
-  if (ToString(RendererType::NULL_RENDERER).compare(values.renderer()) == 0)
+  if (ToString(RendererType::NULL_RENDERER) == values.renderer())
     return RendererType::NULL_RENDERER;
-  if (ToString(RendererType::VULKAN).compare(values.renderer()) == 0)
+  if (ToString(RendererType::VULKAN) == values.renderer())
     return RendererType::VULKAN;
   FX_LOGS(WARNING) << "Unknown renderer type: " << values.renderer() << ". Falling back to vulkan";
   return RendererType::VULKAN;
@@ -691,14 +688,8 @@ void App::InitializeHeartbeat(display::Display& display) {
   frame_scheduler_.Initialize(
       display.vsync_timing(),
       /*update_sessions*/
-      [this](auto& sessions_to_update, auto trace_id, auto fences_from_previous_presents) {
+      [this](auto& sessions_to_update, auto trace_id) {
         TRACE_DURATION("gfx", "App update_sessions");
-
-        // Flatland doesn't pass release fences into the FrameScheduler. Instead, they are stored
-        // in the FlatlandPresenter and pulled out by the flatland::Engine during rendering.
-        FX_CHECK(fences_from_previous_presents.empty())
-            << "Flatland fences should not be handled by FrameScheduler.";
-
         flatland_manager_->UpdateInstances(sessions_to_update);
         flatland_presenter_->AccumulateReleaseFences(sessions_to_update);
       },

@@ -7,8 +7,6 @@
 #include <lib/async/cpp/time.h>
 #include <lib/async/default.h>
 
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
-
 namespace scheduling::test {
 
 void MockFrameScheduler::SetRenderContinuously(bool render_continuously) {
@@ -29,9 +27,8 @@ std::vector<scheduling::FuturePresentationInfo> MockFrameScheduler::GetFuturePre
     zx::duration requested_prediction_span) {
   if (get_future_presentation_infos_callback_) {
     return get_future_presentation_infos_callback_(requested_prediction_span);
-  } else {
-    return {};
   }
+  return {};
 }
 
 void MockFrameScheduler::RemoveSession(SessionId session_id) {

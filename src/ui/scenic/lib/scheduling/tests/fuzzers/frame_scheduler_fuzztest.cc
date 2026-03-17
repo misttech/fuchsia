@@ -49,8 +49,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* Data, size_t Size) {
   frame_scheduler.Initialize(
       vsync_timing,
       /*update_sessions*/
-      [&update_sessions_count](auto& sessions_to_update, auto trace_id,
-                               auto fences_from_previous_frames) { update_sessions_count++; },
+      [&update_sessions_count](auto& sessions_to_update, auto trace_id) {
+        update_sessions_count++;
+      },
       /*on_cpu_work_done*/
       [&on_cpu_work_done_count] { on_cpu_work_done_count++; },
       /*on_frame_presented*/

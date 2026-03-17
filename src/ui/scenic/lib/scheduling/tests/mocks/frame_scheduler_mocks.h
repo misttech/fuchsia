@@ -5,12 +5,12 @@
 #ifndef SRC_UI_SCENIC_LIB_SCHEDULING_TESTS_MOCKS_FRAME_SCHEDULER_MOCKS_H_
 #define SRC_UI_SCENIC_LIB_SCHEDULING_TESTS_MOCKS_FRAME_SCHEDULER_MOCKS_H_
 
-#include <deque>
-#include <unordered_map>
+#include <lib/zx/time.h>
+
+#include <functional>
 #include <vector>
 
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
-#include "src/ui/scenic/lib/scheduling/vsync_timing.h"
 
 namespace scheduling::test {
 
@@ -37,7 +37,7 @@ class MockFrameScheduler : public FrameScheduler {
   using OnScheduleUpdateForSessionCallback =
       std::function<void(zx::time, SchedulingIdPair, bool, bool)>;
   using OnGetFuturePresentationInfosCallback =
-      std::function<std::vector<FuturePresentationInfo>(zx::duration requested_prediction_span)>;
+      std::function<std::vector<scheduling::FuturePresentationInfo>(zx::duration)>;
   using RemoveSessionCallback = std::function<void(SessionId session_id)>;
 
   // Testing only. Sets mock method callback.

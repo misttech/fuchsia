@@ -283,7 +283,10 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
   FX_DCHECK((presents_.lower_bound(id_pair) == presents_.end()) ||
             (presents_.lower_bound(id_pair)->first.session_id != id_pair.session_id))
       << "PresentIds for a Session must be submitted in order";
-  presents_[id_pair] = std::nullopt;  // Initialize an empty entry in |presents_|.
+
+  // Reserve a slot so we can track and report the time that this present was latched, even if it is
+  // squashed with later ones.
+  presents_[id_pair] = std::nullopt;
 
   TRACE_DURATION("gfx", "DefaultFrameScheduler::ScheduleUpdateForSession",
                  "requested_presentation_time", requested_presentation_time.get() / 1'000'000);
@@ -448,8 +451,10 @@ void DefaultFrameScheduler::HandleFramePresented(uint64_t frame_number, zx::time
 }
 
 void DefaultFrameScheduler::RemoveSession(SessionId session_id) {
-  RemoveSessionIdFromMap(session_id, &presents_);
   RemoveSessionIdFromMap(session_id, &pending_present_requests_);
+  const auto begin_it = presents_.lower_bound({session_id, 0});
+  const auto end_it = presents_.upper_bound({session_id, std::numeric_limits<PresentId>::max()});
+  presents_.erase(begin_it, end_it);
 }
 
 std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesForThisFrame(
@@ -508,21 +513,17 @@ std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesFo
   return updates;
 }
 
-std::vector<zx::event> DefaultFrameScheduler::PrepareUpdates(
-    const std::unordered_map<SessionId, PresentId>& updates, zx::time latched_time,
-    uint64_t frame_number) {
+void DefaultFrameScheduler::PrepareUpdates(const std::unordered_map<SessionId, PresentId>& updates,
+                                           zx::time latched_time, uint64_t frame_number) {
   TRACE_DURATION("gfx", "FrameScheduler::PrepareUpdates");
 
   latched_updates_.push(
       {.frame_number = frame_number, .updated_sessions = updates, .latched_time = latched_time});
-  std::vector<zx::event> fences;
 
   for (const auto& [session_id, present_id] : updates) {
     SetLatchedTimeForPresentsUpTo({.session_id = session_id, .present_id = present_id},
                                   latched_time);
   }
-
-  return fences;
 }
 
 void DefaultFrameScheduler::SetLatchedTimeForPresentsUpTo(SchedulingIdPair id_pair,
@@ -567,8 +568,7 @@ bool DefaultFrameScheduler::ApplyUpdates(zx::time target_presentation_time, zx::
   //   - reuse memory instead of allocating extra frame (more effective with vectors than maps)
   const std::unordered_map<SessionId, PresentId> update_map =
       CollectUpdatesForThisFrame(target_presentation_time);
-  std::vector<zx::event> fences_from_previous_presents =
-      PrepareUpdates(update_map, latched_time, frame_number);
+  PrepareUpdates(update_map, latched_time, frame_number);
 
   // Micro-optimize tracing.
   if (TRACE_CATEGORY_ENABLED("gfx")) {
@@ -582,7 +582,7 @@ bool DefaultFrameScheduler::ApplyUpdates(zx::time target_presentation_time, zx::
     }
   }
 
-  update_sessions_(update_map, frame_number, std::move(fences_from_previous_presents));
+  update_sessions_(update_map, frame_number);
 
   // If anything was updated, we need to render.
   return !update_map.empty();
@@ -640,7 +640,7 @@ std::map<PresentId, zx::time> DefaultFrameScheduler::ExtractLatchTimestampsUpTo(
   FX_DCHECK(std::distance(begin_it, end_it) >= 0);
   std::for_each(begin_it, end_it,
                 [&timestamps](std::pair<const SchedulingIdPair, std::optional<zx::time>>& pair) {
-                  FX_DCHECK(pair.second);
+                  FX_DCHECK(pair.second.has_value());
                   timestamps[pair.first.present_id] = pair.second.value();
                 });
   presents_.erase(begin_it, end_it);

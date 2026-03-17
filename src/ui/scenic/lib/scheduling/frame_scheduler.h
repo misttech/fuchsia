@@ -6,7 +6,6 @@
 #define SRC_UI_SCENIC_LIB_SCHEDULING_FRAME_SCHEDULER_H_
 
 #include <lib/fit/function.h>
-#include <lib/zx/event.h>
 #include <lib/zx/time.h>
 
 #include <unordered_set>

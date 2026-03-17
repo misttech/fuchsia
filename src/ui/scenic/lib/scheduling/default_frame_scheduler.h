@@ -22,9 +22,8 @@
 
 namespace scheduling {
 
-using UpdateSessions =
-    fit::function<void(const std::unordered_map<SessionId, PresentId>& sessions_to_update,
-                       uint64_t trace_id, std::vector<zx::event> fences_from_previous_presents)>;
+using UpdateSessions = fit::function<void(
+    const std::unordered_map<SessionId, PresentId>& sessions_to_update, uint64_t trace_id)>;
 using OnCpuWorkDone = fit::function<void()>;
 using OnFramePresented = fit::function<void(
     const std::unordered_map<SessionId, std::map<PresentId, /*latched_time*/ zx::time>>&
@@ -60,7 +59,7 @@ class DefaultFrameScheduler final : public FrameScheduler {
   void SetRenderContinuously(bool render_continuously) override;
 
   // |FrameScheduler|
-  void ScheduleUpdateForSession(zx::time requested_presentation_time, SchedulingIdPair id_pair,
+  void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
                                 bool squashable, bool schedule_asap) override;
 
   // |FrameScheduler|
@@ -126,9 +125,8 @@ class DefaultFrameScheduler final : public FrameScheduler {
       zx::time target_presentation_time);
 
   // Prepares all per-present data for later OnFrameRendered and OnFramePresented events.
-  // Returns all the release fences from previous presents for each session in |updates|.
-  std::vector<zx::event> PrepareUpdates(const std::unordered_map<SessionId, PresentId>& updates,
-                                        zx::time latched_time, uint64_t frame_number);
+  void PrepareUpdates(const std::unordered_map<SessionId, PresentId>& updates,
+                      zx::time latched_time, uint64_t frame_number);
 
   struct PresentRequest {
     zx::time requested_presentation_time;
@@ -151,8 +149,8 @@ class DefaultFrameScheduler final : public FrameScheduler {
   // Queue of session updates mapped to frame numbers. Used in OnFramePresented.
   std::queue<FrameUpdate> latched_updates_;
 
-  // All currently tracked presents and their associated latched_times.
-  std::map<SchedulingIdPair, /*latched_time*/ std::optional<zx::time>> presents_;
+  // Map of all presents to their latched presentation time.
+  std::map<SchedulingIdPair, std::optional<zx::time>> presents_;
 
   // References.
   async_dispatcher_t* const dispatcher_;

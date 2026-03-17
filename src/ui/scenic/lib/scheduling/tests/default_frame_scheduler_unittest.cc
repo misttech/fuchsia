@@ -7,13 +7,17 @@
 #include <lib/async/cpp/time.h>
 #include <lib/async/default.h>
 
+#include <map>
+#include <unordered_map>
+#include <vector>
+
 #include <gmock/gmock.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/scheduling/windowed_frame_predictor.h"
-#include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace scheduling::test {
+namespace {
 
 class FrameSchedulerTest : public ::gtest::TestLoopFixture {
  protected:
@@ -34,17 +38,16 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
     scheduler_.Initialize(
         vsync_timing_,
         /*update_sessions*/
-        [this](auto& sessions_to_update, auto trace_id, auto fences_from_previous_presents) {
+        [this](auto& sessions_to_update, auto trace_id) {
           ++update_sessions_call_count_;
           last_sessions_to_update_ = sessions_to_update;
-
-          last_received_fences_ = std::move(fences_from_previous_presents);
         },
         /*on_cpu_work_done*/
         [this]() { cpu_work_done_count_++; },
         /*on_frame_presented*/
-        [this](auto latched_times, auto present_times) {
-          last_latched_times_ = latched_times;
+        [this](std::unordered_map<SessionId, std::map<PresentId, zx::time>> latched_times,
+               auto present_times) {
+          last_latched_times_ = std::move(latched_times);
           last_presented_time_ = present_times.presented_time;
           on_frame_presented_call_count_++;
         },
@@ -66,8 +69,7 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
   void ScheduleUpdate(SessionId session_id, zx::time presentation_time, bool squashable = true,
                       bool schedule_asap = false) {
     scheduler_.ScheduleUpdateForSession(
-        presentation_time, {.session_id = session_id, .present_id = next_present_id_++}, squashable,
-        schedule_asap);
+        presentation_time, {session_id, scheduling::GetNextPresentId()}, squashable, schedule_asap);
   }
 
   void FireFramePresentedCallback(std::optional<Timestamps> timestamps = std::nullopt) {
@@ -142,7 +144,6 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
   zx::time last_presented_time_;
 
   std::optional<FramePresentedCallback> frame_presented_callback_;
-  std::vector<zx::event> last_received_fences_;
 
   std::shared_ptr<VsyncTiming> vsync_timing_;
   PresentId next_present_id_ = 1;
@@ -851,7 +852,7 @@ TEST_F(FrameSchedulerTest, ScheduleAsap_WhenNowExceedsPredictedTarget_ShouldClam
   FramePresentedCallback presented_callback;
 
   local_scheduler.Initialize(
-      vsync_timing_, /*update_sessions*/ [](auto&, auto, auto) {}, /*on_cpu_work_done*/ []() {},
+      vsync_timing_, /*update_sessions*/ [](auto&, auto) {}, /*on_cpu_work_done*/ []() {},
       /*on_frame_presented*/
       [&](auto latched_times, auto) {
         if (latched_times.contains(1) && latched_times.at(1).contains(1)) {
@@ -873,7 +874,8 @@ TEST_F(FrameSchedulerTest, ScheduleAsap_WhenNowExceedsPredictedTarget_ShouldClam
 
   // Schedule update ASAP.
   const SchedulingIdPair kIdPair = {1, 1};
-  local_scheduler.ScheduleUpdateForSession(zx::time(0), kIdPair, true, true);
+  local_scheduler.ScheduleUpdateForSession(zx::time(0), kIdPair, /*squashable=*/true,
+                                           /*schedule_asap=*/true);
 
   // Trigger MaybeRenderFrame.
   RunLoopUntilIdle();
@@ -941,4 +943,5 @@ TEST_F(FrameSchedulerTest, ScheduleAsapWithZeroTime_ShouldScheduleASAP) {
   EXPECT_TRUE(frame_presented_callback_.has_value());
 }
 
+}  // namespace
 }  // namespace scheduling::test
