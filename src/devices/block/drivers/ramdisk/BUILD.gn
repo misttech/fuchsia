@@ -83,6 +83,7 @@ fuchsia_cc_driver("ramdisk-driver-v2") {
     "//sdk/lib/zbi-format",
     "//src/devices/lib/driver:driver_runtime",
     "//src/storage/lib/block_server:block_server_cc",
+    "//zircon/system/public",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",

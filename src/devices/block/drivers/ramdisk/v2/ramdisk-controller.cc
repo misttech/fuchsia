@@ -4,17 +4,39 @@
 
 #include "src/devices/block/drivers/ramdisk/v2/ramdisk-controller.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/markers.h>
+#include <fidl/fuchsia.driver.framework/cpp/wire_types.h>
+#include <fidl/fuchsia.hardware.ramdisk/cpp/wire_messaging.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/async/cpp/wait.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fidl/cpp/wire/arena.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fidl/cpp/wire/status.h>
+#include <lib/zircon-assert/zircon/assert.h>
+#include <lib/zx/eventpair.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
-#include <zircon/status.h>
+#include <zircon/system/public/zircon/errors.h>
+#include <zircon/system/public/zircon/syscalls.h>
+#include <zircon/system/public/zircon/syscalls/port.h>
 #include <zircon/types.h>
 
+#include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <string>
+#include <utility>
 
 #include <safemath/checked_math.h>
 
 #include "src/devices/block/drivers/ramdisk/v2/ramdisk.h"
+#include "src/storage/lib/block_server/block_server.h"
 
 namespace ramdisk_v2 {
 
@@ -123,9 +145,18 @@ void RamdiskController::Create(CreateRequestView request, CreateCompleter::Sync&
   zx_handle_t handle = endpoint1.get();
   auto waiter = std::make_unique<async::WaitOnce>(handle, ZX_EVENTPAIR_PEER_CLOSED, 0);
 
-  waiter->Begin(dispatcher(), [this, id, endpoint1 = std::move(endpoint1)](
-                                  async_dispatcher_t*, async::WaitOnce*, zx_status_t,
-                                  const zx_packet_signal_t*) { ramdisks_.erase(id); });
+  waiter->Begin(dispatcher(),
+                [this, id, endpoint1 = std::move(endpoint1)](
+                    async_dispatcher_t*, async::WaitOnce*, zx_status_t, const zx_packet_signal_t*) {
+                  auto controller = ramdisk_controllers_.extract(id);
+                  ZX_ASSERT(!controller.empty());
+                  const fidl::OneWayStatus result = fidl::WireCall(controller.mapped())->Remove();
+                  if (!result.ok()) {
+                    FDF_LOGL(WARNING, logger(), "Failed to remove child ramdisk %d: %s", id,
+                             result.status_string());
+                  }
+                  ZX_ASSERT(ramdisks_.erase(id) == 1);
+                });
 
   fidl::Arena arena;
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
