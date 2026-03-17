@@ -56,7 +56,14 @@ SystemTimeTracker::SystemTimeTracker(async_dispatcher_t* dispatcher, timekeeper:
 
 void SystemTimeTracker::Start() { WriteTimeTask(); }
 
+void SystemTimeTracker::RecordSystemShutdownSignal() { WriteUptimeAndRuntime(); }
+
 void SystemTimeTracker::WriteTimeTask() {
+  WriteUptimeAndRuntime();
+  write_time_task_.PostDelayed(dispatcher_, write_period_);
+}
+
+void SystemTimeTracker::WriteUptimeAndRuntime() {
   rapidjson::Document doc;
   doc.SetObject();
 
@@ -73,8 +80,6 @@ void SystemTimeTracker::WriteTimeTask() {
   if (!files::WriteFile(write_path_, buffer.GetString(), buffer.GetSize())) {
     FX_LOGS_FIRST_N(ERROR, 10) << "Failed to write system time to: " << write_path_;
   }
-
-  write_time_task_.PostDelayed(dispatcher_, write_period_);
 }
 
 }  // namespace forensics::feedback

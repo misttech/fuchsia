@@ -32,10 +32,15 @@ class SystemTimeTracker {
   SystemTimeTracker(async_dispatcher_t* dispatcher, timekeeper::Clock* clock,
                     zx::duration write_period, std::string write_path);
 
+  // Starts periodically recording the system time.
   void Start();
+
+  // Forces a write of the current system time.
+  void RecordSystemShutdownSignal();
 
  private:
   void WriteTimeTask();
+  void WriteUptimeAndRuntime();
 
   async_dispatcher_t* dispatcher_;
   timekeeper::Clock* clock_;

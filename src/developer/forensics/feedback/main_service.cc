@@ -116,7 +116,7 @@ MainService::MainService(
   fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::ShutdownWatcher> handle;
   executor_.schedule_task(
       WaitForShutdownInfo(dispatcher_, handle.NewRequest())
-          .and_then([path = options.graceful_shutdown_info_write_path](
+          .and_then([this, path = options.graceful_shutdown_info_write_path](
                         GracefulShutdownInfoSignal& signal) {
             const GracefulShutdownAction action = signal.Action();
             const std::vector<GracefulShutdownReason> reasons = signal.Reasons();
@@ -124,6 +124,7 @@ MainService::MainService(
                                          ToString(action), ToRawStrings(reasons));
 
             WriteGracefulShutdownInfo(action, reasons, path);
+            system_time_tracker_.RecordSystemShutdownSignal();
             signal.Respond();
           })
           .or_else([](const Error& error) {

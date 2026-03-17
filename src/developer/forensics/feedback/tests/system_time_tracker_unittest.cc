@@ -103,6 +103,21 @@ TEST_F(SystemTimeTrackerTest, FailsGracefullyOnBadPath) {
   EXPECT_FALSE(previous_system_time.has_value());
 }
 
+TEST_F(SystemTimeTrackerTest, RecordSystemShutdownSignal) {
+  SystemTimeTracker tracker(dispatcher(), &clock_, zx::sec(1), system_time_path_);
+
+  tracker.Start();
+
+  RunLoopFor(zx::sec(1));
+  EXPECT_EQ(ReadRuntime(), GetMonotonicTimeMs());
+  EXPECT_EQ(ReadUptime(), GetBootTimeMs());
+
+  RunLoopFor(zx::msec(500));
+  tracker.RecordSystemShutdownSignal();
+  EXPECT_EQ(ReadRuntime(), GetMonotonicTimeMs());
+  EXPECT_EQ(ReadUptime(), GetBootTimeMs());
+}
+
 TEST_F(SystemTimeTrackerTest, GetPreviousSystemTimeSucceed) {
   SystemTimeTracker tracker(dispatcher(), &clock_, zx::sec(1), system_time_path_);
 
