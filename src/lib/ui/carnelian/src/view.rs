@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::app::strategies::framebuffer::DisplayId;
 use crate::app::MessageInternal;
+use crate::app::strategies::framebuffer::DisplayId;
 use crate::geometry::{IntPoint, Size};
 use crate::input::{self, UserInputMessage};
 use crate::message::Message;
@@ -12,11 +12,11 @@ use crate::scene::facets::FacetId;
 use crate::scene::scene::Scene;
 use crate::view::strategies::base::ViewStrategyPtr;
 use crate::{IdFromRaw, MessageTarget};
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use euclid::size2;
 use fuchsia_framebuffer::ImageId;
 use fuchsia_trace::instant;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use std::fmt::{Display, Formatter};
 use zx::{Event, MonotonicInstant};
 
@@ -28,6 +28,7 @@ pub struct DisplayInfo {
     pub horizontal_size_mm: u32,
     pub vertical_size_mm: u32,
     pub using_fallback_size: bool,
+    pub max_layer_count: u32,
 }
 
 impl From<&fidl_fuchsia_hardware_display::Info> for DisplayInfo {
@@ -37,6 +38,7 @@ impl From<&fidl_fuchsia_hardware_display::Info> for DisplayInfo {
             horizontal_size_mm: info.horizontal_size_mm,
             vertical_size_mm: info.vertical_size_mm,
             using_fallback_size: info.using_fallback_size,
+            max_layer_count: info.max_layer_count,
         }
     }
 }

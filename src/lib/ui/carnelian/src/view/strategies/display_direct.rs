@@ -588,12 +588,19 @@ impl ViewStrategy for DisplayDirectViewStrategy {
             );
             let collection_id = self.collection_id;
             let view_key = view_details.key;
+
+            let layers = &[self.display.layer_id.into()];
+            if layers.len() as u32 > self.display.info.max_layer_count {
+                panic!(
+                    "Hardware layer limit ({}) is insufficient for Carnelian (requested {})",
+                    self.display.info.max_layer_count,
+                    layers.len()
+                );
+            }
+
             self.display
                 .coordinator
-                .set_display_layers(
-                    &self.display.display_id.into(),
-                    &[self.display.layer_id.into()],
-                )
+                .set_display_layers(&self.display.display_id.into(), layers)
                 .expect("set_display_layers");
 
             let (_, wait_event_id) =

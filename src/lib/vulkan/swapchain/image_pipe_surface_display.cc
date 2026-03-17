@@ -156,6 +156,7 @@ void ImagePipeSurfaceDisplay::ControllerOnDisplaysChanged(
   width_ = info.modes()[0].active_area().width();
   height_ = info.modes()[0].active_area().height();
   display_id_ = info.id();
+  max_layer_count_ = info.max_layer_count();
   std::deque<VkSurfaceFormatKHR> formats;
 
   for (fuchsia_images2::PixelFormat pixel_format : info.pixel_format()) {
@@ -647,9 +648,15 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
     return false;
   }
 
+  std::vector<fuchsia_hardware_display::LayerId> layers = {layer_id_};
+  if (layers.size() > max_layer_count_) {
+    fprintf(stderr, "%s: Hardware layer limit (%u) is insufficient (requested %zu)\n", kTag,
+            max_layer_count_, layers.size());
+    return false;
+  }
+
   {
-    OneWayResult result = display_coordinator_->SetDisplayLayers(
-        {display_id_, std::vector<fuchsia_hardware_display::LayerId>{layer_id_}});
+    OneWayResult result = display_coordinator_->SetDisplayLayers({display_id_, std::move(layers)});
     if (result.is_error()) {
       fprintf(stderr, "%s: SetDisplayLayers failed: %s\n", kTag,
               result.error_value().FormatDescription().c_str());

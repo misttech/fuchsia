@@ -93,6 +93,8 @@ class ImagePipeSurfaceDisplay final
   // ID of the first display returned, whenever the displays are updated.
   fuchsia_hardware_display_types::DisplayId display_id_ = {
       fuchsia_hardware_display_types::kInvalidDispId};
+  // The maximum number of layers supported by the display device specified by `display_id_`.
+  uint32_t max_layer_count_ = 0;
 
   // Initialized in `CreateImage()`; doesn't change.
   fuchsia_hardware_display::LayerId layer_id_{fuchsia_hardware_display_types::kInvalidDispId};
