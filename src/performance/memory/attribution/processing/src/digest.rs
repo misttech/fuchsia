@@ -393,17 +393,11 @@ impl Digest {
             },
             // This bucket accounts for all populated anonymous memory (non-reclaimable).
             {
-                let size = (|| {
-                    Some(
-                        kmem_stats.total_bytes?
-                            + kmem_stats_compression
-                                .uncompressed_storage_bytes?
-                                .saturating_sub(kmem_stats.free_bytes?)
-                                .saturating_sub(kmem_stats.zram_bytes?)
-                                .saturating_sub(populated_reclaimable_bytes),
-                    )
-                })()
-                .unwrap_or(0);
+                let size = (kmem_stats.total_bytes.unwrap_or(0)
+                    + kmem_stats_compression.uncompressed_storage_bytes.unwrap_or(0))
+                .saturating_sub(kmem_stats.free_bytes.unwrap_or(0))
+                .saturating_sub(kmem_stats.zram_bytes.unwrap_or(0))
+                .saturating_sub(populated_reclaimable_bytes);
 
                 Bucket {
                     name: POPULATED_ANONYMOUS_BYTES.to_string(),
@@ -496,7 +490,7 @@ mod tests {
     fn get_kernel_stats() -> (fkernel::MemoryStats, fkernel::MemoryStatsCompression) {
         (
             fkernel::MemoryStats {
-                total_bytes: Some(1),
+                total_bytes: Some(20),
                 free_bytes: Some(2),
                 wired_bytes: Some(3),
                 total_heap_bytes: Some(4),
@@ -518,7 +512,7 @@ mod tests {
                 ..Default::default()
             },
             fkernel::MemoryStatsCompression {
-                uncompressed_storage_bytes: Some(20),
+                uncompressed_storage_bytes: Some(1),
                 compressed_storage_bytes: Some(21),
                 compressed_fragmentation_bytes: Some(22),
                 compression_time: Some(23),
