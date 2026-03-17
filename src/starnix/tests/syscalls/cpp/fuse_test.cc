@@ -385,7 +385,11 @@ class FuseServer {
     const void* in_payload = message.data() + sizeof(in_header);
 
     std::shared_ptr<Node> node;
-    if (in_header.opcode != FUSE_INIT) {
+    // Attempt node lookup, as it is necessary for most operations. If lookup fails, we will reply
+    // with ENOENT for the request. However, for init and forget operations, we can expect the node
+    // to be nonexistent and therefore skip the lookup.
+    if (in_header.opcode != FUSE_INIT && in_header.opcode != FUSE_FORGET &&
+        in_header.opcode != FUSE_BATCH_FORGET) {
       node = fs_.Lookup(in_header.nodeid);
       if (!node) {
         return WriteDataFreeResponse(in_header, -ENOENT);
