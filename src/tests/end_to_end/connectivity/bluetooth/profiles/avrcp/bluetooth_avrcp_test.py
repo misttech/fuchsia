@@ -3,12 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Bluetooth AVRCP Test"""
+import asyncio
 import logging
-import time
 from typing import List, Tuple
 
+import fuchsia_base_test
 from bluetooth_utils_lib import bluetooth_utils
-from fuchsia_base_test import fuchsia_base_test
 from honeydew.affordances.connectivity.bluetooth.utils.types import (
     BluetoothAcceptPairing,
     BluetoothAvrcpCommand,
@@ -23,8 +23,8 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
-    def pre_run(self) -> None:
+class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: List[Tuple[int]] = []
 
@@ -37,9 +37,9 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
             arg_sets=test_arg_tuple_list,
         )
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """Initialize all DUT(s)"""
-        super().setup_class()
+        await super().setup_class()
         if len(self.fuchsia_devices) < 2:
             raise MultipleFuchsiaDevicesNotFound(
                 "Two FuchsiaDevices are" "required to run BluetoothAvrcpTest"
@@ -47,7 +47,7 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
         self.initiator = self.fuchsia_devices[0]
         self.receiver = self.fuchsia_devices[1]
 
-    def _test_logic(self, iteration: int) -> None:
+    async def _test_logic(self, iteration: int) -> None:
         """Test Logic for Bluetooth Sample Test
         1. Turn on BT discoverability on both devices
         2. Retrieve the receiver's BT address
@@ -70,30 +70,33 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
             "Starting the Bluetooth AVRCP test iteration# %s", iteration
         )
         _LOGGER.info("Initializing Bluetooth and setting discoverability")
-        self.initiator.bluetooth_avrcp.request_discovery(True)
-        self.initiator.bluetooth_avrcp.set_discoverable(True)
-        self.receiver.bluetooth_avrcp.request_discovery(True)
-        self.receiver.bluetooth_avrcp.set_discoverable(True)
-        time.sleep(3)
+        await self.initiator.bluetooth_avrcp.request_discovery(True)
+        await self.initiator.bluetooth_avrcp.set_discoverable(True)
+        await self.receiver.bluetooth_avrcp.request_discovery(True)
+        await self.receiver.bluetooth_avrcp.set_discoverable(True)
+        # TODO(b/309011914): Remove sleep once polling for discoverability is added.
+        await asyncio.sleep(3)
 
         receiver_address = (
-            self.receiver.bluetooth_avrcp.get_active_adapter_address()
+            await self.receiver.bluetooth_avrcp.get_active_adapter_address()
         )
         _LOGGER.info("Receiver address: %s", receiver_address)
-        self.initiator.bluetooth_avrcp.accept_pairing(
+        await self.initiator.bluetooth_avrcp.accept_pairing(
             input_mode=BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
             output_mode=BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
         )
-        self.receiver.bluetooth_avrcp.accept_pairing(
+        await self.receiver.bluetooth_avrcp.accept_pairing(
             input_mode=BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
             output_mode=BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
         )
         _LOGGER.info(
             "Sleep for 5 seconds to wait for dut to listen for receiever"
         )
-        time.sleep(5)
+        await asyncio.sleep(5)
 
-        known_device = self.initiator.bluetooth_avrcp.get_known_remote_devices()
+        known_device = (
+            await self.initiator.bluetooth_avrcp.get_known_remote_devices()
+        )
         receiver_address_converted = bluetooth_utils.sl4f_bt_mac_address(
             mac_address=receiver_address
         )
@@ -102,31 +105,31 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         _LOGGER.info("Identifier: %s", identifier)
         _LOGGER.info("Attempting to initiate pairing")
-        self.initiator.bluetooth_avrcp.pair_device(
+        await self.initiator.bluetooth_avrcp.pair_device(
             identifier=identifier,
             connection_type=BluetoothConnectionType.CLASSIC,
         )
-        time.sleep(5)
+        await asyncio.sleep(5)
 
-        self.initiator.bluetooth_gap.connect_device(
+        await self.initiator.bluetooth_gap.connect_device(
             identifier=identifier,
             connection_type=BluetoothConnectionType.CLASSIC,
         )
         asserts.assert_true(
-            bluetooth_utils.verify_bt_pairing(
+            await bluetooth_utils.verify_bt_pairing_async(
                 identifier=identifier, device=self.initiator
             ),
             msg="Receiver was not paired.",
         )
-        time.sleep(5)
+        await asyncio.sleep(5)
 
         _LOGGER.info("Attempting to start connection")
-        self.initiator.bluetooth_gap.connect_device(
+        await self.initiator.bluetooth_gap.connect_device(
             identifier=identifier,
             connection_type=BluetoothConnectionType.CLASSIC,
         )
         asserts.assert_true(
-            bluetooth_utils.verify_bt_connection(
+            await bluetooth_utils.verify_bt_connection_async(
                 identifier=identifier, device=self.initiator
             ),
             msg="Receiver was not connected.",
@@ -137,20 +140,20 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
             iteration,
         )
 
-        connected = self.receiver.bluetooth_avrcp.get_connected_devices()
+        connected = await self.receiver.bluetooth_avrcp.get_connected_devices()
         _LOGGER.info("Initializing AVRCP service to ID: %s", connected[-1])
-        self.receiver.bluetooth_avrcp.init_avrcp(target_id=connected[-1])
-        time.sleep(5)
-        self.initiator.bluetooth_avrcp.publish_mock_player()
-        time.sleep(5)
+        await self.receiver.bluetooth_avrcp.init_avrcp(target_id=connected[-1])
+        await asyncio.sleep(5)
+        await self.initiator.bluetooth_avrcp.publish_mock_player()
+        await asyncio.sleep(5)
         _LOGGER.info("Sending Pause command to AVRCP Source.")
-        self.receiver.bluetooth_avrcp.send_avrcp_command(
+        await self.receiver.bluetooth_avrcp.send_avrcp_command(
             command=BluetoothAvrcpCommand.PAUSE
         )
-        time.sleep(5)
+        await asyncio.sleep(5)
         _LOGGER.info("Checking if Pause command was sent to AVRCP Source.")
         received_requests = (
-            self.initiator.bluetooth_avrcp.list_received_requests()
+            await self.initiator.bluetooth_avrcp.list_received_requests()
         )
         asserts.assert_equal(
             received_requests[-1],
@@ -158,13 +161,13 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
             msg="AVRCP Pause command not received",
         )
         _LOGGER.info("Sending Play command to AVRCP Source.")
-        self.receiver.bluetooth_avrcp.send_avrcp_command(
+        await self.receiver.bluetooth_avrcp.send_avrcp_command(
             command=BluetoothAvrcpCommand.PLAY
         )
-        time.sleep(5)
+        await asyncio.sleep(5)
         _LOGGER.info("Checking if Play command was sent to AVRCP Source.")
         received_requests = (
-            self.initiator.bluetooth_avrcp.list_received_requests()
+            await self.initiator.bluetooth_avrcp.list_received_requests()
         )
         asserts.assert_equal(
             received_requests[-1], "play", msg="AVRCP Play command not received"
@@ -175,15 +178,15 @@ class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
             iteration,
         )
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         #### Teardown
         _LOGGER.info("Removing all paired devices and " "turning off Bluetooth")
-        self.initiator.bluetooth_avrcp.stop_mock_player()
-        bluetooth_utils.forget_all_bt_devices(self.initiator)
-        bluetooth_utils.forget_all_bt_devices(self.receiver)
-        self.initiator.bluetooth_avrcp.set_discoverable(False)
-        self.receiver.bluetooth_avrcp.set_discoverable(False)
-        return super().teardown_class()
+        await self.initiator.bluetooth_avrcp.stop_mock_player()
+        await bluetooth_utils.forget_all_bt_devices_async(self.initiator)
+        await bluetooth_utils.forget_all_bt_devices_async(self.receiver)
+        await self.initiator.bluetooth_avrcp.set_discoverable(False)
+        await self.receiver.bluetooth_avrcp.set_discoverable(False)
+        return await super().teardown_test()
 
     def _name_func(self, iteration: int) -> str:
         """This function generates the names of each test case based on each
