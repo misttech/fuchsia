@@ -17,6 +17,10 @@ template <class TestClass, typename... Args>
 void RegisterTest(const char* test_name, Args... args) {
   perftest::RegisterTest(test_name, [=](perftest::RepeatState* state) {
     TestClass test(args...);
+
+    // Warm up the test to synchronize with any test helper startup.
+    test.Run();
+
     while (state->KeepRunning()) {
       test.Run();
     }

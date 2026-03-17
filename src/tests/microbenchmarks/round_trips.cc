@@ -653,6 +653,10 @@ void RegisterTestWithSchedulerRole(const char* test_name, const std::string& sch
   perftest::RegisterTest(test_name, [=](perftest::RepeatState* state) {
     CallWithSchedulerRole(sched_role_name, [=] {
       TestClass test(args...);
+
+      // Warm up the test to synchronize with any test helper startup.
+      test.Run();
+
       while (state->KeepRunning()) {
         test.Run();
       }
