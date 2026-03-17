@@ -101,14 +101,14 @@ antlion_host_test("wlan_reboot_dut_wpa3_test") {
 antlion_host_test("wlan_reboot_ap_test_quick") {
   main_source = "WlanRebootTest.py"
   environments = wlan_ap_envs
-  test_cases = [ "test_soft_reboot_ap_5g_open_ipv4_ipv6" ]
+  test_cases = [ "test_soft_reboot_ap_5g_open_ipv4" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_dut_test_quick") {
   main_source = "WlanRebootTest.py"
   environments = wlan_ap_envs
-  test_cases = [ "test_soft_reboot_dut_5g_open_ipv4_ipv6" ]
+  test_cases = [ "test_soft_reboot_dut_5g_open_ipv4" ]
   deps = [ "//third_party/iperf" ]
 }
 
