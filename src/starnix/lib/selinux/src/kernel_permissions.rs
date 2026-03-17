@@ -25,184 +25,146 @@ macro_rules! named_enum {
     }
 }
 
-/// A well-known class in SELinux policy that has a particular meaning in policy enforcement
-/// hooks.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
-pub enum KernelClass {
-    // keep-sorted start
-    /// The SELinux "anon_inode" object class.
-    AnonFsNode,
-    /// The SELinux "binder" object class.
-    Binder,
-    /// The SELinux "blk_file" object class.
-    Block,
-    /// The SELinux "bpf" object class.
-    Bpf,
-    /// The SELinux "capability" object class.
-    Capability,
-    /// The SELinux "capability2" object class.
-    Capability2,
-    /// The SELinux "chr_file" object class.
-    Character,
-    /// The SELinux "dir" object class.
-    Dir,
-    /// The SELinux "fd" object class.
-    Fd,
-    /// The SELinux "fifo_file" object class.
-    Fifo,
-    /// The SELinux "file" object class.
-    File,
-    /// The SELinux "filesystem" object class.
-    FileSystem,
-    /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
-    IcmpSocket,
-    /// The SELinux "key_socket" object class.
-    KeySocket,
-    /// The SELinux "lnk_file" object class.
-    Link,
-    /// The SELinux "memfd_file" object class.
-    MemFdFile,
-    /// The SELinux "netlink_audit_socket" object class.
-    NetlinkAuditSocket,
-    /// The SELinux "netlink_connector_socket" object class.
-    NetlinkConnectorSocket,
-    /// The SELinux "netlink_crypto_socket" object class.
-    NetlinkCryptoSocket,
-    /// The SELinux "netlink_dnrt_socket" object class.
-    NetlinkDnrtSocket,
-    /// The SELinux "netlink_fib_lookup_socket" object class.
-    NetlinkFibLookupSocket,
-    /// The SELinux "netlink_firewall_socket" object class.
-    NetlinkFirewallSocket,
-    /// The SELinux "netlink_generic_socket" object class.
-    NetlinkGenericSocket,
-    /// The SELinux "netlink_ip6fw_socket" object class.
-    NetlinkIp6FwSocket,
-    /// The SELinux "netlink_iscsi_socket" object class.
-    NetlinkIscsiSocket,
-    /// The SELinux "netlink_kobject_uevent_socket" object class.
-    NetlinkKobjectUeventSocket,
-    /// The SELinux "netlink_netfilter_socket" object class.
-    NetlinkNetfilterSocket,
-    /// The SELinux "netlink_nflog_socket" object class.
-    NetlinkNflogSocket,
-    /// The SELinux "netlink_rdma_socket" object class.
-    NetlinkRdmaSocket,
-    /// The SELinux "netlink_route_socket" object class.
-    NetlinkRouteSocket,
-    /// The SELinux "netlink_scsitransport_socket" object class.
-    NetlinkScsitransportSocket,
-    /// The SELinux "netlink_selinux_socket" object class.
-    NetlinkSelinuxSocket,
-    /// The SELinux "netlink_socket" object class.
-    NetlinkSocket,
-    /// The SELinux "netlink_tcpdiag_socket" object class.
-    NetlinkTcpDiagSocket,
-    /// The SELinux "netlink_xfrm_socket" object class.
-    NetlinkXfrmSocket,
-    /// The SELinux "packet_socket" object class.
-    PacketSocket,
-    /// The SELinux "perf_event" object class.
-    PerfEvent,
-    /// The SELinux "process" object class.
-    Process,
-    /// The SELinux "process2" object class.
-    Process2,
-    /// The SELinux "qipcrtr_socket" object class.
-    QipcrtrSocket,
-    /// The SELinux "rawip_socket" object class.
-    RawIpSocket,
-    /// "sctp_socket" class enabled via the "extended_socket_class" policy capability.
-    SctpSocket,
-    /// The SELinux "security" object class.
-    Security,
-    /// The SELinux "sock_file" object class.
-    SockFile,
-    /// The SELinux "socket" object class.
-    Socket,
-    /// The SELinux "system" object class.
-    System,
-    /// The SELinux "tcp_socket" object class.
-    TcpSocket,
-    /// The SELinux "tun_socket" object class.
-    TunSocket,
-    /// The SELinux "udp_socket" object class.
-    UdpSocket,
-    /// The SELinux "unix_dgram_socket" object class.
-    UnixDgramSocket,
-    /// The SELinux "unix_stream_socket" object class.
-    UnixStreamSocket,
-    /// "vsock_socket" class enabled via the "extended_socket_class" policy capability.
-    VSockSocket,
-    // keep-sorted end
-}
+/// Declares an `enum` with the specified subset of values from an existing enum.
+macro_rules! subset_enum {
+    ($(#[$meta:meta])* $name:ident from $existing_enum:ident {
+        $($(#[$variant_meta:meta])* $variant:ident,)*
+    }) => {
+        $(#[$meta])*
+        pub enum $name {
+            $($(#[$variant_meta])* $variant = $existing_enum::$variant as isize,)*
+        }
 
-impl KernelClass {
-    /// Returns the name used to refer to this object class in the SELinux binary policy.
-    pub fn name(&self) -> &'static str {
-        match self {
-            // keep-sorted start
-            Self::AnonFsNode => "anon_inode",
-            Self::Binder => "binder",
-            Self::Block => "blk_file",
-            Self::Bpf => "bpf",
-            Self::Capability => "capability",
-            Self::Capability2 => "capability2",
-            Self::Character => "chr_file",
-            Self::Dir => "dir",
-            Self::Fd => "fd",
-            Self::Fifo => "fifo_file",
-            Self::File => "file",
-            Self::FileSystem => "filesystem",
-            Self::IcmpSocket => "icmp_socket",
-            Self::KeySocket => "key_socket",
-            Self::Link => "lnk_file",
-            Self::MemFdFile => "memfd_file",
-            Self::NetlinkAuditSocket => "netlink_audit_socket",
-            Self::NetlinkConnectorSocket => "netlink_connector_socket",
-            Self::NetlinkCryptoSocket => "netlink_crypto_socket",
-            Self::NetlinkDnrtSocket => "netlink_dnrt_socket",
-            Self::NetlinkFibLookupSocket => "netlink_fib_lookup_socket",
-            Self::NetlinkFirewallSocket => "netlink_firewall_socket",
-            Self::NetlinkGenericSocket => "netlink_generic_socket",
-            Self::NetlinkIp6FwSocket => "netlink_ip6fw_socket",
-            Self::NetlinkIscsiSocket => "netlink_iscsi_socket",
-            Self::NetlinkKobjectUeventSocket => "netlink_kobject_uevent_socket",
-            Self::NetlinkNetfilterSocket => "netlink_netfilter_socket",
-            Self::NetlinkNflogSocket => "netlink_nflog_socket",
-            Self::NetlinkRdmaSocket => "netlink_rdma_socket",
-            Self::NetlinkRouteSocket => "netlink_route_socket",
-            Self::NetlinkScsitransportSocket => "netlink_scsitransport_socket",
-            Self::NetlinkSelinuxSocket => "netlink_selinux_socket",
-            Self::NetlinkSocket => "netlink_socket",
-            Self::NetlinkTcpDiagSocket => "netlink_tcpdiag_socket",
-            Self::NetlinkXfrmSocket => "netlink_xfrm_socket",
-            Self::PacketSocket => "packet_socket",
-            Self::PerfEvent => "perf_event",
-            Self::Process => "process",
-            Self::Process2 => "process2",
-            Self::QipcrtrSocket => "qipcrtr_socket",
-            Self::RawIpSocket => "rawip_socket",
-            Self::SctpSocket => "sctp_socket",
-            Self::Security => "security",
-            Self::SockFile => "sock_file",
-            Self::Socket => "socket",
-            Self::System => "system",
-            Self::TcpSocket => "tcp_socket",
-            Self::TunSocket => "tun_socket",
-            Self::UdpSocket => "udp_socket",
-            Self::UnixDgramSocket => "unix_dgram_socket",
-            Self::UnixStreamSocket => "unix_stream_socket",
-            Self::VSockSocket => "vsock_socket",
-            // keep-sorted end
+        impl From<$name> for $existing_enum {
+            fn from(other: $name) -> Self {
+                match other {
+                    $($name::$variant => Self::$variant,)*
+                }
+            }
         }
     }
 }
 
-impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
-    fn for_class(&self, class: T) -> KernelPermission {
-        assert_eq!(self.class(), class.into());
-        *self
+named_enum! {
+    /// A well-known class in SELinux policy that has a particular meaning in policy enforcement
+    /// hooks.
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
+    KernelClass {
+        // keep-sorted start
+        /// The SELinux "anon_inode" object class.
+        AnonFsNode("anon_inode"),
+        /// The SELinux "binder" object class.
+        Binder("binder"),
+        /// The SELinux "blk_file" object class.
+        Block("blk_file"),
+        /// The SELinux "bpf" object class.
+        Bpf("bpf"),
+        /// The SELinux "capability" object class.
+        Capability("capability"),
+        /// The SELinux "capability2" object class.
+        Capability2("capability2"),
+        /// The SELinux "chr_file" object class.
+        Character("chr_file"),
+        /// The SELinux "dir" object class.
+        Dir("dir"),
+        /// The SELinux "fd" object class.
+        Fd("fd"),
+        /// The SELinux "fifo_file" object class.
+        Fifo("fifo_file"),
+        /// The SELinux "file" object class.
+        File("file"),
+        /// The SELinux "filesystem" object class.
+        FileSystem("filesystem"),
+        /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
+        IcmpSocket("icmp_socket"),
+        /// The SELinux "key_socket" object class.
+        KeySocket("key_socket"),
+        /// The SELinux "lnk_file" object class.
+        Link("lnk_file"),
+        /// The SELinux "memfd_file" object class.
+        MemFdFile("memfd_file"),
+        /// The SELinux "netlink_audit_socket" object class.
+        NetlinkAuditSocket("netlink_audit_socket"),
+        /// The SELinux "netlink_connector_socket" object class.
+        NetlinkConnectorSocket("netlink_connector_socket"),
+        /// The SELinux "netlink_crypto_socket" object class.
+        NetlinkCryptoSocket("netlink_crypto_socket"),
+        /// The SELinux "netlink_dnrt_socket" object class.
+        NetlinkDnrtSocket("netlink_dnrt_socket"),
+        /// The SELinux "netlink_fib_lookup_socket" object class.
+        NetlinkFibLookupSocket("netlink_fib_lookup_socket"),
+        /// The SELinux "netlink_firewall_socket" object class.
+        NetlinkFirewallSocket("netlink_firewall_socket"),
+        /// The SELinux "netlink_generic_socket" object class.
+        NetlinkGenericSocket("netlink_generic_socket"),
+        /// The SELinux "netlink_ip6fw_socket" object class.
+        NetlinkIp6FwSocket("netlink_ip6fw_socket"),
+        /// The SELinux "netlink_iscsi_socket" object class.
+        NetlinkIscsiSocket("netlink_iscsi_socket"),
+        /// The SELinux "netlink_kobject_uevent_socket" object class.
+        NetlinkKobjectUeventSocket("netlink_kobject_uevent_socket"),
+        /// The SELinux "netlink_netfilter_socket" object class.
+        NetlinkNetfilterSocket("netlink_netfilter_socket"),
+        /// The SELinux "netlink_nflog_socket" object class.
+        NetlinkNflogSocket("netlink_nflog_socket"),
+        /// The SELinux "netlink_rdma_socket" object class.
+        NetlinkRdmaSocket("netlink_rdma_socket"),
+        /// The SELinux "netlink_route_socket" object class.
+        NetlinkRouteSocket("netlink_route_socket"),
+        /// The SELinux "netlink_scsitransport_socket" object class.
+        NetlinkScsitransportSocket("netlink_scsitransport_socket"),
+        /// The SELinux "netlink_selinux_socket" object class.
+        NetlinkSelinuxSocket("netlink_selinux_socket"),
+        /// The SELinux "netlink_socket" object class.
+        NetlinkSocket("netlink_socket"),
+        /// The SELinux "netlink_tcpdiag_socket" object class.
+        NetlinkTcpDiagSocket("netlink_tcpdiag_socket"),
+        /// The SELinux "netlink_xfrm_socket" object class.
+        NetlinkXfrmSocket("netlink_xfrm_socket"),
+        /// The SELinux "packet_socket" object class.
+        PacketSocket("packet_socket"),
+        /// The SELinux "perf_event" object class.
+        PerfEvent("perf_event"),
+        /// The SELinux "process" object class.
+        Process("process"),
+        /// The SELinux "process2" object class.
+        Process2("process2"),
+        /// The SELinux "qipcrtr_socket" object class.
+        QipcrtrSocket("qipcrtr_socket"),
+        /// The SELinux "rawip_socket" object class.
+        RawIpSocket("rawip_socket"),
+        /// "sctp_socket" class enabled via the "extended_socket_class" policy capability.
+        SctpSocket("sctp_socket"),
+        /// The SELinux "security" object class.
+        Security("security"),
+        /// The SELinux "sock_file" object class.
+        SockFile("sock_file"),
+        /// The SELinux "socket" object class.
+        Socket("socket"),
+        /// The SELinux "system" object class.
+        System("system"),
+        /// The SELinux "tcp_socket" object class.
+        TcpSocket("tcp_socket"),
+        /// The SELinux "tun_socket" object class.
+        TunSocket("tun_socket"),
+        /// The SELinux "udp_socket" object class.
+        UdpSocket("udp_socket"),
+        /// The SELinux "unix_dgram_socket" object class.
+        UnixDgramSocket("unix_dgram_socket"),
+        /// The SELinux "unix_stream_socket" object class.
+        UnixStreamSocket("unix_stream_socket"),
+        /// "vsock_socket" class enabled via the "extended_socket_class" policy capability.
+        VsockSocket("vsock_socket"),
+        // keep-sorted end
+    }
+}
+
+impl From<FsNodeClass> for KernelClass {
+    fn from(class: FsNodeClass) -> Self {
+        match class {
+            FsNodeClass::File(file_class) => file_class.into(),
+            FsNodeClass::Socket(sock_class) => sock_class.into(),
+        }
     }
 }
 
@@ -213,169 +175,98 @@ pub trait ForClass<T> {
     fn for_class(&self, class: T) -> KernelPermission;
 }
 
-/// Covers the set of classes that inherit from the common "cap" symbol (e.g. "capability" for
-/// now and "cap_userns" after Starnix gains user namespacing support).
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum CapClass {
-    // keep-sorted start
-    /// The SELinux "capability" object class.
-    Capability,
-    // keep-sorted end
-}
-
-impl From<CapClass> for KernelClass {
-    fn from(cap_class: CapClass) -> Self {
-        match cap_class {
-            // keep-sorted start
-            CapClass::Capability => Self::Capability,
-            // keep-sorted end
-        }
+subset_enum! {
+    /// Covers the set of classes that inherit from the common "cap" symbol (e.g. "capability" for
+    /// now and "cap_userns" after Starnix gains user namespacing support).
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    CapClass from KernelClass {
+        // keep-sorted start
+        /// The SELinux "capability" object class.
+        Capability,
+        // keep-sorted end
     }
 }
 
-/// Covers the set of classes that inherit from the common "cap2" symbol (e.g. "capability2" for
-/// now and "cap2_userns" after Starnix gains user namespacing support).
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum Cap2Class {
-    // keep-sorted start
-    /// The SELinux "capability2" object class.
-    Capability2,
-    // keep-sorted end
-}
-
-impl From<Cap2Class> for KernelClass {
-    fn from(cap2_class: Cap2Class) -> Self {
-        match cap2_class {
-            // keep-sorted start
-            Cap2Class::Capability2 => Self::Capability2,
-            // keep-sorted end
-        }
+subset_enum! {
+    /// Covers the set of classes that inherit from the common "cap2" symbol (e.g. "capability2" for
+    /// now and "cap2_userns" after Starnix gains user namespacing support).
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    Cap2Class from KernelClass {
+        // keep-sorted start
+        /// The SELinux "capability2" object class.
+        Capability2,
+        // keep-sorted end
     }
 }
 
-/// A well-known file-like class in SELinux policy that has a particular meaning in policy
-/// enforcement hooks.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum FileClass {
-    // keep-sorted start
-    /// The SELinux "anon_inode" object class.
-    AnonFsNode,
-    /// The SELinux "blk_file" object class.
-    Block,
-    /// The SELinux "chr_file" object class.
-    Character,
-    /// The SELinux "dir" object class.
-    Dir,
-    /// The SELinux "fifo_file" object class.
-    Fifo,
-    /// The SELinux "file" object class.
-    File,
-    /// The SELinux "lnk_file" object class.
-    Link,
-    /// The SELinux "memfd_file" object class.
-    MemFdFile,
-    /// The SELinux "sock_file" object class.
-    SockFile,
-    // keep-sorted end
-}
-
-impl From<FileClass> for KernelClass {
-    fn from(file_class: FileClass) -> Self {
-        match file_class {
-            // keep-sorted start
-            FileClass::AnonFsNode => Self::AnonFsNode,
-            FileClass::Block => Self::Block,
-            FileClass::Character => Self::Character,
-            FileClass::Dir => Self::Dir,
-            FileClass::Fifo => Self::Fifo,
-            FileClass::File => Self::File,
-            FileClass::Link => Self::Link,
-            FileClass::MemFdFile => Self::MemFdFile,
-            FileClass::SockFile => Self::SockFile,
-            // keep-sorted end
-        }
+subset_enum! {
+    /// A well-known file-like class in SELinux policy that has a particular meaning in policy
+    /// enforcement hooks.
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    FileClass from KernelClass {
+        // keep-sorted start
+        /// The SELinux "anon_inode" object class.
+        AnonFsNode,
+        /// The SELinux "blk_file" object class.
+        Block,
+        /// The SELinux "chr_file" object class.
+        Character,
+        /// The SELinux "dir" object class.
+        Dir,
+        /// The SELinux "fifo_file" object class.
+        Fifo,
+        /// The SELinux "file" object class.
+        File,
+        /// The SELinux "lnk_file" object class.
+        Link,
+        /// The SELinux "memfd_file" object class.
+        MemFdFile,
+        /// The SELinux "sock_file" object class.
+        SockFile,
+        // keep-sorted end
     }
 }
 
-/// Distinguishes socket-like kernel object classes defined in SELinux policy.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum SocketClass {
-    // keep-sorted start
-    Icmp,
-    Key,
-    Netlink,
-    NetlinkAudit,
-    NetlinkConnector,
-    NetlinkCrypto,
-    NetlinkDnrt,
-    NetlinkFibLookup,
-    NetlinkFirewall,
-    NetlinkGeneric,
-    NetlinkIp6Fw,
-    NetlinkIscsi,
-    NetlinkKobjectUevent,
-    NetlinkNetfilter,
-    NetlinkNflog,
-    NetlinkRdma,
-    NetlinkRoute,
-    NetlinkScsitransport,
-    NetlinkSelinux,
-    NetlinkTcpDiag,
-    NetlinkXfrm,
-    Packet,
-    Qipcrtr,
-    RawIp,
-    Sctp,
-    /// Generic socket class applied to all socket-like objects for which no more specific
-    /// class is defined.
-    Socket,
-    Tcp,
-    Tun,
-    Udp,
-    UnixDgram,
-    UnixStream,
-    Vsock,
-    // keep-sorted end
-}
-
-impl From<SocketClass> for KernelClass {
-    fn from(socket_class: SocketClass) -> Self {
-        match socket_class {
-            // keep-sorted start
-            SocketClass::Icmp => Self::IcmpSocket,
-            SocketClass::Key => Self::KeySocket,
-            SocketClass::Netlink => Self::NetlinkSocket,
-            SocketClass::NetlinkAudit => Self::NetlinkAuditSocket,
-            SocketClass::NetlinkConnector => Self::NetlinkConnectorSocket,
-            SocketClass::NetlinkCrypto => Self::NetlinkCryptoSocket,
-            SocketClass::NetlinkDnrt => Self::NetlinkDnrtSocket,
-            SocketClass::NetlinkFibLookup => Self::NetlinkFibLookupSocket,
-            SocketClass::NetlinkFirewall => Self::NetlinkFirewallSocket,
-            SocketClass::NetlinkGeneric => Self::NetlinkGenericSocket,
-            SocketClass::NetlinkIp6Fw => Self::NetlinkIp6FwSocket,
-            SocketClass::NetlinkIscsi => Self::NetlinkIscsiSocket,
-            SocketClass::NetlinkKobjectUevent => Self::NetlinkKobjectUeventSocket,
-            SocketClass::NetlinkNetfilter => Self::NetlinkNetfilterSocket,
-            SocketClass::NetlinkNflog => Self::NetlinkNflogSocket,
-            SocketClass::NetlinkRdma => Self::NetlinkRdmaSocket,
-            SocketClass::NetlinkRoute => Self::NetlinkRouteSocket,
-            SocketClass::NetlinkScsitransport => Self::NetlinkScsitransportSocket,
-            SocketClass::NetlinkSelinux => Self::NetlinkSelinuxSocket,
-            SocketClass::NetlinkTcpDiag => Self::NetlinkTcpDiagSocket,
-            SocketClass::NetlinkXfrm => Self::NetlinkXfrmSocket,
-            SocketClass::Packet => Self::PacketSocket,
-            SocketClass::Qipcrtr => Self::QipcrtrSocket,
-            SocketClass::RawIp => Self::RawIpSocket,
-            SocketClass::Sctp => Self::SctpSocket,
-            SocketClass::Socket => Self::Socket,
-            SocketClass::Tcp => Self::TcpSocket,
-            SocketClass::Tun => Self::TunSocket,
-            SocketClass::Udp => Self::UdpSocket,
-            SocketClass::UnixDgram => Self::UnixDgramSocket,
-            SocketClass::UnixStream => Self::UnixStreamSocket,
-            SocketClass::Vsock => Self::VSockSocket,
-            // keep-sorted end
-        }
+subset_enum! {
+    /// Distinguishes socket-like kernel object classes defined in SELinux policy.
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    SocketClass from KernelClass {
+        // keep-sorted start
+        IcmpSocket,
+        KeySocket,
+        NetlinkAuditSocket,
+        NetlinkConnectorSocket,
+        NetlinkCryptoSocket,
+        NetlinkDnrtSocket,
+        NetlinkFibLookupSocket,
+        NetlinkFirewallSocket,
+        NetlinkGenericSocket,
+        NetlinkIp6FwSocket,
+        NetlinkIscsiSocket,
+        NetlinkKobjectUeventSocket,
+        NetlinkNetfilterSocket,
+        NetlinkNflogSocket,
+        NetlinkRdmaSocket,
+        NetlinkRouteSocket,
+        NetlinkScsitransportSocket,
+        NetlinkSelinuxSocket,
+        NetlinkSocket,
+        NetlinkTcpDiagSocket,
+        NetlinkXfrmSocket,
+        PacketSocket,
+        QipcrtrSocket,
+        RawIpSocket,
+        SctpSocket,
+        /// Generic socket class applied to all socket-like objects for which no more specific
+        /// class is defined.
+        Socket,
+        TcpSocket,
+        TunSocket,
+        UdpSocket,
+        UnixDgramSocket,
+        UnixStreamSocket,
+        VsockSocket,
+        // keep-sorted end
     }
 }
 
@@ -385,15 +276,6 @@ impl From<SocketClass> for KernelClass {
 pub enum FsNodeClass {
     File(FileClass),
     Socket(SocketClass),
-}
-
-impl From<FsNodeClass> for KernelClass {
-    fn from(class: FsNodeClass) -> Self {
-        match class {
-            FsNodeClass::File(file_class) => file_class.into(),
-            FsNodeClass::Socket(sock_class) => sock_class.into(),
-        }
-    }
 }
 
 impl From<FileClass> for FsNodeClass {
@@ -567,8 +449,15 @@ permission_enum! {
         /// Permissions for the well-known SELinux "unix_stream_socket" object class.
         UnixStreamSocket(UnixStreamSocketPermission),
         /// "vsock_socket" class permissions, enabled by "extended_socket_class" policy capability.
-        VSockSocket(VsockSocketPermission),
+        VsockSocket(VsockSocketPermission),
         // keep-sorted end
+    }
+}
+
+impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
+    fn for_class(&self, class: T) -> KernelPermission {
+        assert_eq!(self.class(), class.into());
+        *self
     }
 }
 
@@ -873,42 +762,50 @@ impl ForClass<SocketClass> for CommonSocketPermission {
     /// "allow" rules for the correct target object class.
     fn for_class(&self, class: SocketClass) -> KernelPermission {
         match class {
-            SocketClass::Key => KeySocketPermission::from(*self).into(),
-            SocketClass::Netlink => NetlinkSocketPermission::from(*self).into(),
-            SocketClass::NetlinkAudit => NetlinkAuditSocketPermission::from(*self).into(),
-            SocketClass::NetlinkConnector => NetlinkConnectorSocketPermission::from(*self).into(),
-            SocketClass::NetlinkCrypto => NetlinkCryptoSocketPermission::from(*self).into(),
-            SocketClass::NetlinkDnrt => NetlinkDnrtSocketPermission::from(*self).into(),
-            SocketClass::NetlinkFibLookup => NetlinkFibLookupSocketPermission::from(*self).into(),
-            SocketClass::NetlinkFirewall => NetlinkFirewallSocketPermission::from(*self).into(),
-            SocketClass::NetlinkGeneric => NetlinkGenericSocketPermission::from(*self).into(),
-            SocketClass::NetlinkIp6Fw => NetlinkIp6FwSocketPermission::from(*self).into(),
-            SocketClass::NetlinkIscsi => NetlinkIscsiSocketPermission::from(*self).into(),
-            SocketClass::NetlinkKobjectUevent => {
+            SocketClass::KeySocket => KeySocketPermission::from(*self).into(),
+            SocketClass::NetlinkSocket => NetlinkSocketPermission::from(*self).into(),
+            SocketClass::NetlinkAuditSocket => NetlinkAuditSocketPermission::from(*self).into(),
+            SocketClass::NetlinkConnectorSocket => {
+                NetlinkConnectorSocketPermission::from(*self).into()
+            }
+            SocketClass::NetlinkCryptoSocket => NetlinkCryptoSocketPermission::from(*self).into(),
+            SocketClass::NetlinkDnrtSocket => NetlinkDnrtSocketPermission::from(*self).into(),
+            SocketClass::NetlinkFibLookupSocket => {
+                NetlinkFibLookupSocketPermission::from(*self).into()
+            }
+            SocketClass::NetlinkFirewallSocket => {
+                NetlinkFirewallSocketPermission::from(*self).into()
+            }
+            SocketClass::NetlinkGenericSocket => NetlinkGenericSocketPermission::from(*self).into(),
+            SocketClass::NetlinkIp6FwSocket => NetlinkIp6FwSocketPermission::from(*self).into(),
+            SocketClass::NetlinkIscsiSocket => NetlinkIscsiSocketPermission::from(*self).into(),
+            SocketClass::NetlinkKobjectUeventSocket => {
                 NetlinkKobjectUeventSocketPermission::from(*self).into()
             }
-            SocketClass::NetlinkNetfilter => NetlinkNetfilterSocketPermission::from(*self).into(),
-            SocketClass::NetlinkNflog => NetlinkNflogSocketPermission::from(*self).into(),
-            SocketClass::NetlinkRdma => NetlinkRdmaSocketPermission::from(*self).into(),
-            SocketClass::NetlinkRoute => NetlinkRouteSocketPermission::from(*self).into(),
-            SocketClass::NetlinkScsitransport => {
+            SocketClass::NetlinkNetfilterSocket => {
+                NetlinkNetfilterSocketPermission::from(*self).into()
+            }
+            SocketClass::NetlinkNflogSocket => NetlinkNflogSocketPermission::from(*self).into(),
+            SocketClass::NetlinkRdmaSocket => NetlinkRdmaSocketPermission::from(*self).into(),
+            SocketClass::NetlinkRouteSocket => NetlinkRouteSocketPermission::from(*self).into(),
+            SocketClass::NetlinkScsitransportSocket => {
                 NetlinkScsitransportSocketPermission::from(*self).into()
             }
-            SocketClass::NetlinkSelinux => NetlinkSelinuxSocketPermission::from(*self).into(),
-            SocketClass::NetlinkTcpDiag => NetlinkTcpDiagSocketPermission::from(*self).into(),
-            SocketClass::NetlinkXfrm => NetlinkXfrmSocketPermission::from(*self).into(),
-            SocketClass::Packet => PacketSocketPermission::from(*self).into(),
-            SocketClass::Qipcrtr => QipcrtrSocketPermission::from(*self).into(),
-            SocketClass::RawIp => RawIpSocketPermission::from(*self).into(),
-            SocketClass::Sctp => SctpSocketPermission::from(*self).into(),
+            SocketClass::NetlinkSelinuxSocket => NetlinkSelinuxSocketPermission::from(*self).into(),
+            SocketClass::NetlinkTcpDiagSocket => NetlinkTcpDiagSocketPermission::from(*self).into(),
+            SocketClass::NetlinkXfrmSocket => NetlinkXfrmSocketPermission::from(*self).into(),
+            SocketClass::PacketSocket => PacketSocketPermission::from(*self).into(),
+            SocketClass::QipcrtrSocket => QipcrtrSocketPermission::from(*self).into(),
+            SocketClass::RawIpSocket => RawIpSocketPermission::from(*self).into(),
+            SocketClass::SctpSocket => SctpSocketPermission::from(*self).into(),
             SocketClass::Socket => SocketPermission::from(*self).into(),
-            SocketClass::Tcp => TcpSocketPermission::from(*self).into(),
-            SocketClass::Tun => TunSocketPermission::from(*self).into(),
-            SocketClass::Udp => UdpSocketPermission::from(*self).into(),
-            SocketClass::UnixDgram => UnixDgramSocketPermission::from(*self).into(),
-            SocketClass::UnixStream => UnixStreamSocketPermission::from(*self).into(),
-            SocketClass::Vsock => VsockSocketPermission::from(*self).into(),
-            SocketClass::Icmp => IcmpSocketPermission::from(*self).into(),
+            SocketClass::TcpSocket => TcpSocketPermission::from(*self).into(),
+            SocketClass::TunSocket => TunSocketPermission::from(*self).into(),
+            SocketClass::UdpSocket => UdpSocketPermission::from(*self).into(),
+            SocketClass::UnixDgramSocket => UnixDgramSocketPermission::from(*self).into(),
+            SocketClass::UnixStreamSocket => UnixStreamSocketPermission::from(*self).into(),
+            SocketClass::VsockSocket => VsockSocketPermission::from(*self).into(),
+            SocketClass::IcmpSocket => IcmpSocketPermission::from(*self).into(),
         }
     }
 }
@@ -1113,7 +1010,7 @@ socket_class_permission_enum! {
 }
 
 socket_class_permission_enum! {
-    VsockSocketPermission for VSockSocket {
+    VsockSocketPermission for VsockSocket {
     }
 }
 

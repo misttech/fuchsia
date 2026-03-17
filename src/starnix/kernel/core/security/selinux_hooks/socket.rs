@@ -64,78 +64,78 @@ fn compute_socket_security_class(
         || security_server.is_policycap_enabled(PolicyCap::ExtendedSocketClass);
     match domain {
         SocketDomain::Unix => match socket_type {
-            SocketType::Stream | SocketType::SeqPacket => SocketClass::UnixStream,
-            SocketType::Raw | SocketType::Datagram => SocketClass::UnixDgram,
+            SocketType::Stream | SocketType::SeqPacket => SocketClass::UnixStreamSocket,
+            SocketType::Raw | SocketType::Datagram => SocketClass::UnixDgramSocket,
 
             // This combination of domain & type has no unique security class.
             SocketType::Rdm | SocketType::Dccp | SocketType::Packet => SocketClass::Socket,
         },
         SocketDomain::Inet | SocketDomain::Inet6 => match socket_type {
             SocketType::Stream => match protocol {
-                SocketProtocol::IP | SocketProtocol::TCP => SocketClass::Tcp,
+                SocketProtocol::IP | SocketProtocol::TCP => SocketClass::TcpSocket,
 
                 // Protocols other than TCP receive a dedicated security class if extended socket
                 // classes are enabled in the policy.
-                SocketProtocol::SCTP if use_extended_classes() => SocketClass::Sctp,
+                SocketProtocol::SCTP if use_extended_classes() => SocketClass::SctpSocket,
 
                 // Otherwise allow protocols to be treated "rawip_socket", pending a dedicated
                 // security class being introduced.
-                _ => SocketClass::RawIp,
+                _ => SocketClass::RawIpSocket,
             },
             SocketType::Datagram => match protocol {
                 SocketProtocol::IP | SocketProtocol::UDP | SocketProtocol::UDPLITE => {
-                    SocketClass::Udp
+                    SocketClass::UdpSocket
                 }
 
                 // Protocols other than UDP & UDP-Lite receive a dedicated security class if
                 // extended socket classes are enabled in the policy.
                 SocketProtocol::ICMP | SocketProtocol::ICMPV6 if use_extended_classes() => {
-                    SocketClass::Icmp
+                    SocketClass::IcmpSocket
                 }
 
                 // Otherwise allow protocols to be treated "rawip_socket", pending a dedicated
                 // security class being introduced.
-                _ => SocketClass::RawIp,
+                _ => SocketClass::RawIpSocket,
             },
-            SocketType::Raw => SocketClass::RawIp,
+            SocketType::Raw => SocketClass::RawIpSocket,
 
             // This combination of domain & type has no unique security class, so default to the
             // "rawip_socket" class until/unless some more specific class is introduced.
             SocketType::SeqPacket | SocketType::Rdm | SocketType::Dccp | SocketType::Packet => {
-                SocketClass::RawIp
+                SocketClass::RawIpSocket
             }
         },
         SocketDomain::Netlink => match NetlinkFamily::from_raw(protocol.as_raw()) {
-            NetlinkFamily::Route => SocketClass::NetlinkRoute,
-            NetlinkFamily::Firewall => SocketClass::NetlinkFirewall,
-            NetlinkFamily::SockDiag => SocketClass::NetlinkTcpDiag,
-            NetlinkFamily::Nflog => SocketClass::NetlinkNflog,
-            NetlinkFamily::Xfrm => SocketClass::NetlinkXfrm,
-            NetlinkFamily::Selinux => SocketClass::NetlinkSelinux,
-            NetlinkFamily::Iscsi => SocketClass::NetlinkIscsi,
-            NetlinkFamily::Audit => SocketClass::NetlinkAudit,
-            NetlinkFamily::FibLookup => SocketClass::NetlinkFibLookup,
-            NetlinkFamily::Connector => SocketClass::NetlinkConnector,
-            NetlinkFamily::Netfilter => SocketClass::NetlinkNetfilter,
-            NetlinkFamily::Ip6Fw => SocketClass::NetlinkIp6Fw,
-            NetlinkFamily::Dnrtmsg => SocketClass::NetlinkDnrt,
-            NetlinkFamily::KobjectUevent => SocketClass::NetlinkKobjectUevent,
-            NetlinkFamily::Generic => SocketClass::NetlinkGeneric,
-            NetlinkFamily::Scsitransport => SocketClass::NetlinkScsitransport,
-            NetlinkFamily::Rdma => SocketClass::NetlinkRdma,
-            NetlinkFamily::Crypto => SocketClass::NetlinkCrypto,
+            NetlinkFamily::Route => SocketClass::NetlinkRouteSocket,
+            NetlinkFamily::Firewall => SocketClass::NetlinkFirewallSocket,
+            NetlinkFamily::SockDiag => SocketClass::NetlinkTcpDiagSocket,
+            NetlinkFamily::Nflog => SocketClass::NetlinkNflogSocket,
+            NetlinkFamily::Xfrm => SocketClass::NetlinkXfrmSocket,
+            NetlinkFamily::Selinux => SocketClass::NetlinkSelinuxSocket,
+            NetlinkFamily::Iscsi => SocketClass::NetlinkIscsiSocket,
+            NetlinkFamily::Audit => SocketClass::NetlinkAuditSocket,
+            NetlinkFamily::FibLookup => SocketClass::NetlinkFibLookupSocket,
+            NetlinkFamily::Connector => SocketClass::NetlinkConnectorSocket,
+            NetlinkFamily::Netfilter => SocketClass::NetlinkNetfilterSocket,
+            NetlinkFamily::Ip6Fw => SocketClass::NetlinkIp6FwSocket,
+            NetlinkFamily::Dnrtmsg => SocketClass::NetlinkDnrtSocket,
+            NetlinkFamily::KobjectUevent => SocketClass::NetlinkKobjectUeventSocket,
+            NetlinkFamily::Generic => SocketClass::NetlinkGenericSocket,
+            NetlinkFamily::Scsitransport => SocketClass::NetlinkScsitransportSocket,
+            NetlinkFamily::Rdma => SocketClass::NetlinkRdmaSocket,
+            NetlinkFamily::Crypto => SocketClass::NetlinkCryptoSocket,
 
             // No specific netlink security class equivalent.
             NetlinkFamily::Ecryptfs
             | NetlinkFamily::Smc
             | NetlinkFamily::Usersock
-            | NetlinkFamily::Invalid => SocketClass::Netlink,
+            | NetlinkFamily::Invalid => SocketClass::NetlinkSocket,
         },
-        SocketDomain::Vsock if use_extended_classes() => SocketClass::Vsock,
-        SocketDomain::Qipcrtr if use_extended_classes() => SocketClass::Qipcrtr,
+        SocketDomain::Vsock if use_extended_classes() => SocketClass::VsockSocket,
+        SocketDomain::Qipcrtr if use_extended_classes() => SocketClass::QipcrtrSocket,
         SocketDomain::Vsock | SocketDomain::Qipcrtr => SocketClass::Socket,
-        SocketDomain::Packet => SocketClass::Packet,
-        SocketDomain::Key => SocketClass::Key,
+        SocketDomain::Packet => SocketClass::PacketSocket,
+        SocketDomain::Key => SocketClass::KeySocket,
     }
 }
 
@@ -566,7 +566,7 @@ pub(in crate::security) fn check_tun_dev_create_access(
         current_task,
         current_sid,
         current_sid,
-        CommonFsNodePermission::Create.for_class(SocketClass::Tun),
+        CommonFsNodePermission::Create.for_class(SocketClass::TunSocket),
         current_task.into(),
     )
 }
@@ -604,7 +604,7 @@ mod tests {
                 .expect("failed to create socket");
                 assert_eq!(
                     socket_node.node().security_state.lock().class,
-                    SocketClass::UnixStream.into()
+                    SocketClass::UnixStreamSocket.into()
                 );
                 assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
             },
