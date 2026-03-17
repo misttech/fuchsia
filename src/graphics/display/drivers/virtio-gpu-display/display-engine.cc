@@ -25,6 +25,7 @@
 #include <memory>
 #include <utility>
 
+#include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 #include <fbl/string_buffer.h>
@@ -132,16 +133,16 @@ zx::result<display::DriverImageId> DisplayEngine::ImportImage(
   ZX_DEBUG_ASSERT(sysmem_buffer_info->pixel_format_modifier ==
                   fuchsia_images2::wire::PixelFormatModifier::kLinear);
 
-  size_t min_bytes_per_row = sysmem_buffer_info->minimum_bytes_per_row > 0
-                                 ? sysmem_buffer_info->minimum_bytes_per_row
-                                 : static_cast<size_t>(image_metadata.width()) *
-                                       sysmem_buffer_info->pixel_format.EncodingSize();
+  size_t bytes_per_pixel = sysmem_buffer_info->pixel_format.EncodingSize();
+  size_t bytes_per_row = std::max<size_t>(sysmem_buffer_info->minimum_bytes_per_row,
+                                          image_metadata.width() * bytes_per_pixel);
+  bytes_per_row = fbl::round_up(bytes_per_row, sysmem_buffer_info->bytes_per_row_divisor);
 
-  size_t image_size = min_bytes_per_row * static_cast<size_t>(image_metadata.height());
+  size_t image_size = bytes_per_row * static_cast<size_t>(image_metadata.height());
 
   zx::result<ImportedImage> imported_image_result = ImportedImage::Create(
       gpu_device_->bti(), sysmem_buffer_info->image_vmo, sysmem_buffer_info->image_vmo_offset,
-      image_size, *maybe_format, static_cast<uint32_t>(min_bytes_per_row));
+      image_size, *maybe_format, static_cast<uint32_t>(bytes_per_row));
   if (imported_image_result.is_error()) {
     // Create() already logged the error.
     return imported_image_result.take_error();

@@ -122,6 +122,11 @@ zx::result<SysmemBufferInfo> ImportedBufferCollection::GetSysmemMetadata(uint32_
   ZX_DEBUG_ASSERT_MSG(image_format_constraints.has_min_bytes_per_row(),
                       "Sysmem deviated from its contract");
 
+  uint32_t bytes_per_row_divisor = image_format_constraints.has_bytes_per_row_divisor()
+                                       ? image_format_constraints.bytes_per_row_divisor()
+                                       : 1;
+  bytes_per_row_divisor = std::max<uint32_t>(bytes_per_row_divisor, 1);
+
   fuchsia_images2::wire::PixelFormat fidl_pixel_format = image_format_constraints.pixel_format();
   if (!display::PixelFormat::IsSupported(fidl_pixel_format)) {
     fdf::warn("Rejecting access to BufferCollection with unsupported PixelFormat: {}",
@@ -135,6 +140,7 @@ zx::result<SysmemBufferInfo> ImportedBufferCollection::GetSysmemMetadata(uint32_
       .pixel_format_modifier = image_format_constraints.pixel_format_modifier(),
       .minimum_size = image_format_constraints.min_size(),
       .minimum_bytes_per_row = image_format_constraints.min_bytes_per_row(),
+      .bytes_per_row_divisor = bytes_per_row_divisor,
       .coherency_domain = buffer_memory_settings.coherency_domain(),
   });
 }

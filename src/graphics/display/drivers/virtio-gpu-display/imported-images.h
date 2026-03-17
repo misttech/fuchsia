@@ -34,6 +34,9 @@ struct SysmemBufferInfo {
   fuchsia_math::wire::SizeU minimum_size;
   uint32_t minimum_bytes_per_row;
 
+  // Guaranteed to be positive.
+  uint32_t bytes_per_row_divisor;
+
   fuchsia_sysmem2::wire::CoherencyDomain coherency_domain;
 };
 

@@ -98,6 +98,7 @@ class StubBufferCollection : public fidl::testing::WireTestBase<fuchsia_sysmem2:
                     .pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kLinear)
                     .min_size(fuchsia_math::wire::SizeU{.width = 640, .height = 480})
                     .min_bytes_per_row(kRowSize)
+                    .bytes_per_row_divisor(4)
                     .max_size(fuchsia_math::wire::SizeU{.width = 1000, .height = 0xffffffff})
                     .max_bytes_per_row(1000 * kPixelSize)
                     .Build())
