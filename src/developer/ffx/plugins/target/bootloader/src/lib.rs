@@ -9,6 +9,10 @@ use chrono::{DateTime, Duration, Utc};
 use discovery::query::TargetInfoQuery;
 use discovery::{FastbootConnectionState, TargetState};
 use errors::ffx_bail;
+use fdomain_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
+use fdomain_fuchsia_hwinfo::DeviceProxy;
 use ffx_bootloader_args::SubCommand::{Boot, Info, Lock, Unlock};
 use ffx_bootloader_args::{BootCommand, BootloaderCommand, UnlockCommand};
 use ffx_config::EnvironmentContext;
@@ -27,17 +31,13 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgre
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
-};
-use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{Write, stdin};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
