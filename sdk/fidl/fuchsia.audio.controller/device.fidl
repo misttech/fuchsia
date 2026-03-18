@@ -59,8 +59,7 @@ type DeviceRingBuffer = struct {
     /// The device that has a ring buffer.
     selector DeviceSelector;
 
-    /// The ID of an ENDPOINT (with type RING_BUFFER) signal processing element
-    /// of the desired ring buffer.
+    /// The ID of the RING_BUFFER signal processing element for the desired ring buffer.
     ///
     /// For Dai and StreamConfig devices, this should be `DEFAULT_RING_BUFFER_ELEMENT_ID`.
     ring_buffer_element_id fuchsia.hardware.audio.signalprocessing.ElementId;

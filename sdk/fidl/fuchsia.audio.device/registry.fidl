@@ -61,25 +61,25 @@ type Info = table {
 
     /// The union of all formats the device can support, across all combinations of device
     /// configuration settings.
-    /// If the device exposes one or more RingBuffer ENDPOINT elements, this field must be present
-    /// and its vector must contain exactly one entry for each relevant ENDPOINT element.
-    /// If the device exposes NO RingBuffer ENDPOINT elements, this field must be omitted (entirely
+    /// If the device exposes one or more RingBuffer elements, this field must be present
+    /// and its vector must contain exactly one entry for each relevant RingBuffer element.
+    /// If the device exposes NO RingBuffer elements, this field must be omitted (entirely
     /// absent, rather than populated with an empty vector).
     /// If present, must contain at least one element.
     ///
     /// Optional for Composite; absent for Codec.
-    8: ring_buffer_format_sets vector<ElementRingBufferFormatSet>:MAX_COUNT_PROCESSING_ELEMENTS;
+    8: ring_buffer_format_sets vector<ElementRingBufferFormatSet>:MAX_PROCESSING_ELEMENT_COUNT;
 
     /// The union of all DAI formats the device can support, across all combinations
     /// of device configuration settings.
-    /// If the device exposes one or more Dai ENDPOINT elements, this field must be present and its
-    /// vector must contain exactly one entry for each relevant ENDPOINT element.
-    /// If the device exposes NO Dai ENDPOINT elements, this field must be omitted (entirely absent,
+    /// If the device exposes one or more Dai elements, this field must be present and its
+    /// vector must contain exactly one entry for each relevant Dai element.
+    /// If the device exposes NO Dai elements, this field must be omitted (entirely absent,
     /// rather than populated with an empty vector).
     /// If present, must contain at least one element.
     ///
     /// Required for Codec; optional for Composite.
-    9: dai_format_sets vector<ElementDaiFormatSet>:MAX_COUNT_PROCESSING_ELEMENTS;
+    9: dai_format_sets vector<ElementDaiFormatSet>:MAX_PROCESSING_ELEMENT_COUNT;
 
     /// The device's hot-plug capabilities.
     ///
@@ -148,7 +148,7 @@ open protocol Registry {
         /// for the first time, this method returns all available audio devices
         /// (even an empty vector, if no audio devices are present). Subsequent
         /// calls will pend until additional devices become available.
-        1: devices vector<Info>:MAX_COUNT_DEVICES;
+        1: devices vector<Info>:MAX_DEVICE_COUNT;
     }) error RegistryWatchDevicesAddedError;
 
     /// Register for notification when an (active, added) device is removed.

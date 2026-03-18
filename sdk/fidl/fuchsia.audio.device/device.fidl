@@ -15,29 +15,29 @@ alias ElementId = fuchsia.hardware.audio.signalprocessing.ElementId;
 alias TopologyId = fuchsia.hardware.audio.signalprocessing.TopologyId;
 
 /// Maximum number of audio devices in the system at any time.
-const MAX_COUNT_DEVICES uint32 = 256;
+const MAX_DEVICE_COUNT uint32 = 256;
 
 /// Maximum number of `PcmFormatSet`s that a device can report as supported.
-const MAX_COUNT_FORMATS uint32 = fuchsia.hardware.audio.MAX_COUNT_FORMATS;
-const MAX_COUNT_DAI_FORMATS uint32 = fuchsia.hardware.audio.MAX_COUNT_DAI_FORMATS;
+const MAX_FORMAT_COUNT uint32 = fuchsia.hardware.audio.MAX_COUNT_FORMATS;
+const MAX_DAI_FORMAT_COUNT uint32 = fuchsia.hardware.audio.MAX_COUNT_DAI_FORMATS;
 
 /// Maximum number of `ChannelSet`s that a device can report in a single PcmFormatSet.
-const MAX_COUNT_CHANNEL_SETS uint32 = fuchsia.hardware.audio.MAX_COUNT_CHANNEL_SETS;
+const MAX_CHANNEL_SET_COUNT uint32 = fuchsia.hardware.audio.MAX_COUNT_CHANNEL_SETS;
 
 /// Maximum number of distinct sample formats that a single PcmFormatSet can contain.
-const MAX_COUNT_SAMPLE_TYPES uint32 = 32;
+const MAX_SAMPLE_TYPE_COUNT uint32 = 32;
 
 /// Maximum number of frame rates that a device can report in a PcmFormatSet.
-const MAX_COUNT_RATES uint32 = fuchsia.hardware.audio.MAX_COUNT_SUPPORTED_RATES;
+const MAX_RATE_COUNT uint32 = fuchsia.hardware.audio.MAX_COUNT_SUPPORTED_RATES;
 
 /// Maximum number of channels that a device can report as supported.
-const MAX_COUNT_CHANNELS uint32 = fuchsia.hardware.audio.MAX_COUNT_CHANNELS_IN_RING_BUFFER;
+const MAX_CHANNEL_COUNT uint32 = fuchsia.hardware.audio.MAX_COUNT_CHANNELS_IN_RING_BUFFER;
 
 /// Maximum length of the strings for device, manufacturer and product names.
 const MAX_STRING_SIZE uint32 = fuchsia.hardware.audio.MAX_UI_STRING_SIZE;
 
 /// Maximum number of processing elements supported by a single device.
-const MAX_COUNT_PROCESSING_ELEMENTS uint32
+const MAX_PROCESSING_ELEMENT_COUNT uint32
         = fuchsia.hardware.audio.signalprocessing.MAX_COUNT_PROCESSING_ELEMENTS;
 
 /// For devices with Codec drivers, there is only one DAI_INTERCONNECT entity. When a method
@@ -78,24 +78,24 @@ type PcmFormatSet = table {
     /// at least one `ChannelSet` entry.
     ///
     /// Required.
-    1: channel_sets vector<ChannelSet>:MAX_COUNT_CHANNEL_SETS;
+    1: channel_sets vector<ChannelSet>:MAX_CHANNEL_SET_COUNT;
 
     /// The number of sample formats that the device supports. This must
     /// contain least one `AudioSampleFormat` entry.
     ///
     /// Required.
-    2: sample_types vector<fuchsia.audio.SampleType>:MAX_COUNT_SAMPLE_TYPES;
+    2: sample_types vector<fuchsia.audio.SampleType>:MAX_SAMPLE_TYPE_COUNT;
 
     /// The number of frame rates that the device supports. This must contain at
     /// least one frame rate entry.
     ///
     /// Required.
-    3: frame_rates vector<uint32>:MAX_COUNT_RATES;
+    3: frame_rates vector<uint32>:MAX_RATE_COUNT;
 };
 
-/// This table represents the possible RingBuffer formats that this endpoint can support.
+/// This table represents the possible RingBuffer formats that this transport can support.
 type ElementRingBufferFormatSet = table {
-    /// The ID of the element being described. This must match an ENDPOINT (RING_BUFFER) entry
+    /// The ID of the element being described. This must match an RING_BUFFER entry
     /// in the list of elements contained in the device's `Info` table.
     ///
     /// Required.
@@ -104,12 +104,12 @@ type ElementRingBufferFormatSet = table {
     /// The ring_buffer_format_set entries that this element supports.
     ///
     /// Required. Must contain at least one entry.
-    2: format_sets vector<PcmFormatSet>:MAX_COUNT_FORMATS;
+    2: format_sets vector<PcmFormatSet>:MAX_FORMAT_COUNT;
 };
 
-/// This table represents the possible Dai formats that this endpoint can support.
+/// This table represents the possible Dai formats that this transport can support.
 type ElementDaiFormatSet = table {
-    /// The ID of the element being described. This must match an ENDPOINT (DAI_INTERCONNECT)
+    /// The ID of the element being described. This must match a DAI_INTERCONNECT
     /// entry in the list of elements contained in the device's `Info` table. If describing the
     /// supported DAI formats for a Codec device, this value should be
     /// `DEFAULT_DAI_INTERCONNECT_ELEMENT_ID` (1).
@@ -120,7 +120,7 @@ type ElementDaiFormatSet = table {
     /// The dai_format_set entries that this element supports.
     ///
     /// Required. Must contain at least one entry.
-    2: format_sets vector<fuchsia.hardware.audio.DaiSupportedFormats>:MAX_COUNT_DAI_FORMATS;
+    2: format_sets vector<fuchsia.hardware.audio.DaiSupportedFormats>:MAX_DAI_FORMAT_COUNT;
 };
 
 /// One possible channel configuration for the device.
@@ -130,7 +130,7 @@ type ChannelSet = table {
     /// channels supported by this ChannelSet. Must contain at least one entry.
     ///
     /// Required.
-    1: attributes vector<ChannelAttributes>:MAX_COUNT_CHANNELS;
+    1: attributes vector<ChannelAttributes>:MAX_CHANNEL_COUNT;
 
     // TODO(https://fxbug.dev/105130): Incorporate this, once it lands.
     //   2: config AudioChannelConfig;

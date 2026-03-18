@@ -669,7 +669,7 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
                    [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
   ASSERT_NE(devices_node, hierarchy.children().end());
   ASSERT_FALSE(devices_node->children().empty());
-  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxCountDevices);
+  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxDeviceCount);
 
   auto device_node = devices_node->children().begin();
   auto ring_buffer_elements_node =
@@ -701,7 +701,7 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
     ASSERT_EQ(ring_buffer_format_sets_node->name(), kSupportedFormats);
     ASSERT_FALSE(ring_buffer_format_sets_node->children().empty());
     ASSERT_LE(ring_buffer_format_sets_node->children().size(),
-              fuchsia_audio_device::kMaxCountFormats);
+              fuchsia_audio_device::kMaxFormatCount);
     EXPECT_TRUE(ring_buffer_format_sets_node->node().properties().empty());
 
     auto ring_buffer_format_set_node = ring_buffer_format_sets_node->children().begin();
@@ -735,7 +735,7 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
     ASSERT_EQ(channel_counts_node->name(), kChannelCount);
     EXPECT_TRUE(channel_counts_node->node().properties().empty());
     ASSERT_FALSE(channel_counts_node->children().empty());
-    EXPECT_LE(channel_counts_node->children().size(), fuchsia_audio_device::kMaxCountChannelSets);
+    EXPECT_LE(channel_counts_node->children().size(), fuchsia_audio_device::kMaxChannelSetCount);
 
     auto channel_count_node = channel_counts_node->children().begin();
     EXPECT_EQ(channel_count_node->name(), "channel_set_0");
@@ -797,7 +797,7 @@ TEST_F(InspectorTest, SupportedDaiFormats) {
                    [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
   ASSERT_NE(devices_node, hierarchy.children().end());
   ASSERT_FALSE(devices_node->children().empty());
-  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxCountDevices);
+  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxDeviceCount);
 
   auto device_node = devices_node->children().begin();
 
@@ -806,8 +806,7 @@ TEST_F(InspectorTest, SupportedDaiFormats) {
                    [](const inspect::Hierarchy& h) { return h.name() == kDaiElements; });
   ASSERT_NE(dai_elements_node, device_node->children().end());
   ASSERT_FALSE(dai_elements_node->children().empty());
-  ASSERT_LE(dai_elements_node->children().size(),
-            fuchsia_audio_device::kMaxCountProcessingElements);
+  ASSERT_LE(dai_elements_node->children().size(), fuchsia_audio_device::kMaxProcessingElementCount);
 
   auto dai_element_node = dai_elements_node->children().begin();
   ASSERT_EQ(dai_element_node->name(), "0");
@@ -819,7 +818,7 @@ TEST_F(InspectorTest, SupportedDaiFormats) {
   ASSERT_NE(dai_format_sets_node, dai_element_node->children().end());
   ASSERT_EQ(dai_format_sets_node->name(), kSupportedFormats);
   ASSERT_FALSE(dai_format_sets_node->children().empty());
-  EXPECT_LE(dai_format_sets_node->children().size(), fuchsia_audio_device::kMaxCountDaiFormats);
+  EXPECT_LE(dai_format_sets_node->children().size(), fuchsia_audio_device::kMaxDaiFormatCount);
 
   auto dai_format_set_node = dai_format_sets_node->children().begin();
   ASSERT_EQ(dai_format_set_node->name(), "dai_format_set_0");

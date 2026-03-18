@@ -112,11 +112,11 @@ open protocol Control {
     compose fuchsia.hardware.audio.signalprocessing.SignalProcessing;
 
     /// Create the ring buffer used to pass audio to/from this device. If the device is
-    /// Composite, then the targeted RING_BUFFER ENDPOINT must be identified by `element_id`.
+    /// Composite, then the targeted RING_BUFFER element must be identified by `element_id`.
     ///
     /// Should only be called for Composite devices.
     flexible CreateRingBuffer(resource table {
-        /// The element ID for an `ENDPOINT` of type `RING_BUFFER`.
+        /// The ID for an element of type `RING_BUFFER`.
         ///
         /// Required.
         1: element_id ElementId;
@@ -140,14 +140,14 @@ open protocol Control {
         2: ring_buffer fuchsia.audio.RingBuffer;
     }) error ControlCreateRingBufferError;
 
-    /// Set the wire format for the digital interconnect connected to this Codec endpoint.
+    /// Set the wire format for the digital interconnect associated with this element.
     /// This method returns information related to the format that was set, including delay values.
-    /// If the device is Composite, then the targeted DAI_INTERCONNECT ENDPOINT must be identified
+    /// If the device is Composite, then the targeted DAI_INTERCONNECT element must be identified
     /// by `element_id`.
     ///
     /// Should only be called for Codec and Composite devices.
     flexible SetDaiFormat(table {
-        /// The element ID for an `ENDPOINT` of type `DAI_INTERCONNECT`.
+        /// The ID for an element of type `DAI_INTERCONNECT`.
         ///
         /// Required for Composite; ignored for Codec.
         1: element_id ElementId;
