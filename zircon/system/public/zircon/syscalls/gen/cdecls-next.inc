@@ -87,7 +87,3 @@ _ZX_SYSCALL_DECL(system_suspend_enter, zx_status_t, /* no attributes */, 7,
                   zx_instant_boot_t resume_deadline, zx_system_suspend_option_t options,
                   zx_wake_source_report_header_t* header, zx_wake_source_report_entry_t* entries,
                   uint32_t num_entries, uint32_t* actual_entries))
-
-_ZX_SYSCALL_DECL(thread_set_rseq, zx_status_t, /* no attributes */, 3, (vmo, offset, size),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t vmo, uint64_t offset,
-                  uint64_t size))

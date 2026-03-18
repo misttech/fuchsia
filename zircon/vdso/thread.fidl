@@ -622,7 +622,6 @@ closed protocol Thread {
     ///
     /// `ZX_ERR_ACCESS_DENIED`  *vmo* is missing `ZX_RIGHT_READ`, `ZX_RIGHT_WRITE`, or
     /// `ZX_RIGHT_DUPLICATE`.
-    @next
     strict SetRseq(resource struct {
         vmo Handle:VMO;
         offset uint64;
