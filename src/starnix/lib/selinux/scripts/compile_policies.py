@@ -116,14 +116,6 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
-            "new_file/mount_policy.conf",
-        ],
-        "mount_policy.pp",
-    ),
-    (
-        [
-            "base_policy.conf",
-            "new_file/test_policy.conf",
             "new_file/mprotect.conf",
         ],
         "mprotect.pp",
@@ -313,14 +305,6 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/xattr_access_policy.conf",
         ],
         "xattr_access_policy.pp",
-    ),
-    (
-        [
-            "base_policy.conf",
-            "new_file/test_policy.conf",
-            "new_file/overlayfs_policy.conf",
-        ],
-        "overlayfs_policy.pp",
     ),
 ]
 

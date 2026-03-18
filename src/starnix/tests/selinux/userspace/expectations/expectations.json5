@@ -24,19 +24,11 @@
                 // demonstrated in this test.
                 "InheritTest.ExecutableFdRemappedToNull",
 
-                // TODO: https://fxbug.dev/492550768 - Apply filesystem { relabelfrom relabelto }
-                // checks when mounting with fscontext= or context=.
-                "MountTest.FsContextRequiresRelabelFromAndTo",
-
                 // TODO: https://fxbug.dev/409256444 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodYes_PrivateMapping_Modification_MprotectSuccess",
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_SharedMapping_Modification_MprotectSuccess",
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_NoModification_MprotectSuccess",
-
-                // TODO: https://fxbug.dev/403260093 - Correct OverlayFS mounter permission checks.
-                "OverlayFsTest.OpenReadDeniedIfMounterCannotRead",
-                "OverlayFsTest.CopyUpDeniedIfMounterLacksWrite",
 
                 // TODO: https://fxbug.dev/297440106 - Fix zombies to remain in "/proc/<pid>" with correct labels.
                 "ProcAttrTest.ZombieProcPid",
