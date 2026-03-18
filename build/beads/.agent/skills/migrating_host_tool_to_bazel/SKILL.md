@@ -78,8 +78,7 @@ Follow the following steps for migrated library targets (e.g. `go_library`,
 1. Remove the targets you've migrated from `path/to/dir/BUILD.gn`.
 
 2. Run the following command, if it fails with missing GN targets, sync migrated
-   targets back to GN following instructions from
-   [bazel2gn.md](references/bazel2gn.md):
+   targets back to GN using skill [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md):
 
 ```bash
 fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'

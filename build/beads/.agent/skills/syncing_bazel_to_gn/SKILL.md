@@ -1,3 +1,8 @@
+---
+name: syncing-bazel-to-gn
+description: Syncing Bazel targets to GN with bazel2gn
+---
+
 # Syncing Bazel Targets to GN
 
 This process is necessary if you've migrated a target that is still referenced
