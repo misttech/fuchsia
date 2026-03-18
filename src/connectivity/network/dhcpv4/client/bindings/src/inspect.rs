@@ -204,15 +204,15 @@ pub(crate) enum LeaseChangeInspect {
     },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct LeaseInspectProperties {
     pub(crate) ip_address: SpecifiedAddr<net_types::ip::Ipv4Addr>,
     pub(crate) lease_length: fasync::MonotonicDuration,
-    pub(crate) dns_server_count: usize,
-    pub(crate) routers_count: usize,
+    pub(crate) dns_servers: Option<Vec<net_types::ip::Ipv4Addr>>,
+    pub(crate) routers: Option<Vec<net_types::ip::Ipv4Addr>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct LeaseInspect {
     pub(crate) start_time: fasync::MonotonicInstant,
     pub(crate) renewed_time: Option<fasync::MonotonicInstant>,
@@ -226,8 +226,7 @@ impl LeaseInspect {
             start_time,
             renewed_time,
             prefix_len,
-            properties:
-                LeaseInspectProperties { ip_address, lease_length, dns_server_count, routers_count },
+            properties: LeaseInspectProperties { ip_address, lease_length, dns_servers, routers },
         } = self;
         inspector.record_ip_addr("IpAddress", **ip_address);
         inspector.record_instant(diagnostics_traits::instant_property_name!("Start"), start_time);
@@ -246,8 +245,18 @@ impl LeaseInspect {
             }
         }
         inspector.record_int("LeaseLengthSecs", lease_length.into_seconds());
-        inspector.record_usize("DnsServerCount", *dns_server_count);
         inspector.record_uint("PrefixLen", *prefix_len);
-        inspector.record_usize("Routers", *routers_count);
+
+        inspector.record_child("DnsServers", |inspector| {
+            for (i, server) in dns_servers.iter().flatten().enumerate() {
+                inspector.record_display(&format!("{i}"), server);
+            }
+        });
+
+        inspector.record_child("Routers", |inspector| {
+            for (i, router) in routers.iter().flatten().enumerate() {
+                inspector.record_display(&format!("{i}"), router);
+            }
+        });
     }
 }

@@ -1190,10 +1190,10 @@ async fn inspect_with_lease_acquired() {
                 CurrentLease: {
                     PrefixLen: 25u64,
                     "Start@time": AnyUintProperty,
-                    Routers: 0u64,
+                    Routers: {},
                     LeaseLengthSecs: 86400u64,
                     "Renewed@time": "None",
-                    DnsServerCount: 0u64,
+                    DnsServers: {},
                     IpAddress: "192.168.0.3",
                 },
                 CurrentState: {

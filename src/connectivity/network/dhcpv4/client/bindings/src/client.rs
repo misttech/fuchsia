@@ -330,8 +330,10 @@ impl Client {
         let lease_inspect_properties = LeaseInspectProperties {
             ip_address,
             lease_length: lease_time.into(),
-            dns_server_count: dns_servers.as_ref().map(|list| list.len()).unwrap_or(0),
-            routers_count: routers.as_ref().map(|list| list.len()).unwrap_or(0),
+            dns_servers: dns_servers
+                .as_ref()
+                .map(|list| list.iter().cloned().map(Into::into).collect()),
+            routers: routers.as_ref().map(|list| list.iter().cloned().map(Into::into).collect()),
         };
 
         Ok((
@@ -440,8 +442,10 @@ impl Client {
         let lease_inspect_properties = LeaseInspectProperties {
             ip_address: *ip_address,
             lease_length: lease_time.into(),
-            dns_server_count: dns_servers.as_ref().map(|list| list.len()).unwrap_or(0),
-            routers_count: routers.as_ref().map(|list| list.len()).unwrap_or(0),
+            dns_servers: dns_servers
+                .as_ref()
+                .map(|list| list.iter().cloned().map(Into::into).collect()),
+            routers: routers.as_ref().map(|list| list.iter().cloned().map(Into::into).collect()),
         };
 
         Ok((
