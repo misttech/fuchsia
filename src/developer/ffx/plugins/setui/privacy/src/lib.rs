@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{PrivacyProxy, PrivacySettings};
 use ffx_setui_privacy_args::Privacy;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{PrivacyProxy, PrivacySettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -62,15 +62,16 @@ async fn command(proxy: PrivacyProxy, user_data_sharing_consent: Option<bool>) -
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::PrivacyRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::PrivacyRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
         const CONSENT: bool = true;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             PrivacyRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -94,7 +95,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_privacy_set_output(expected_user_data_sharing_consent: bool) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             PrivacyRequest::Set { responder, .. } => {
                 let _ = responder.send(Ok(()));
             }
@@ -130,7 +132,8 @@ mod test {
     async fn validate_privacy_watch_output(
         expected_user_data_sharing_consent: Option<bool>,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             PrivacyRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }
