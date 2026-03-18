@@ -16,7 +16,7 @@ use fuchsia_async as fasync;
 use fuchsia_component_test::RealmInstance;
 use futures::stream::Fuse;
 use futures::{FutureExt, StreamExt, select};
-use log::warn;
+use log::{debug, warn};
 use pretty_assertions::StrComparison;
 
 use serde_json::Value;
@@ -681,8 +681,9 @@ impl TestRealm {
     /// Wait for the Persistent component in this realm to steady state in
     /// Stopped by debouncing start events within a set duration.
     async fn wait_for_stopped_steady_state(&self, event_stream: &mut Fuse<EventStream>) {
+        let mut start_count = 0;
         loop {
-            let timeout = pin!(fasync::Timer::new(MonotonicDuration::from_seconds(1)).fuse());
+            let timeout = pin!(fasync::Timer::new(MonotonicDuration::from_seconds(2)).fuse());
 
             if self
                 .listen_for_event_with_timeout::<Started>(event_stream, timeout)
@@ -690,10 +691,12 @@ impl TestRealm {
                 .unwrap()
                 .is_none()
             {
-                // No start event came within a second; unlikely to start again.
+                // No start event came within 2 seconds; unlikely to start again.
+                debug!("wait_for_stopped_steady_state debounced {start_count} starts");
                 return;
             }
 
+            start_count += 1;
             self.wait_for_event::<Stopped>(event_stream).await;
         }
     }
