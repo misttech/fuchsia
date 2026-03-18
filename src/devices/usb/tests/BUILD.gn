@@ -5,7 +5,6 @@
 group("tests") {
   testonly = true
   deps = [
-    "e2e:tests",
     "usb-hci-test:tests",
     "//src/devices/usb/bin/lsusb:tests",
   ]
