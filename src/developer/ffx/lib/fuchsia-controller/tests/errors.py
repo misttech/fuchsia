@@ -1,7 +1,6 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-# mypy: ignore-errors
 import unittest
 
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
@@ -10,7 +9,7 @@ from fuchsia_controller_py import FcTransportStatus, ZxStatus
 class Errors(unittest.TestCase):
     """Fuchsia Controller ZxStatus error tests"""
 
-    def test_str_format(self):
+    def test_str_format(self) -> None:
         for test_case in [
             "ZX_ERR_INTERNAL",
             "ZX_ERR_NOT_SUPPORTED",
@@ -60,21 +59,21 @@ class Errors(unittest.TestCase):
             err = ZxStatus(ZxStatus.__dict__[test_case])
             self.assertEqual(repr(err), test_case)
 
-    def test_raw_value_matches(self):
+    def test_raw_value_matches(self) -> None:
         err = ZxStatus(ZxStatus.ZX_ERR_NEXT)
         self.assertEqual(err.raw(), ZxStatus.ZX_ERR_NEXT)
 
-    def test_fc_status(self):
+    def test_fc_status(self) -> None:
         err = FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
         self.assertEqual(err.code(), FcTransportStatus.FC_ERR_INTERNAL)
         self.assertEqual(err.desc(), None)
 
-    def test_fc_status_non_string_description(self):
+    def test_fc_status_non_string_description(self) -> None:
         err = FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL, 1)
         with self.assertRaises(RuntimeError):
             _ = err.desc()
 
-    def test_fc_status_unknown(self):
+    def test_fc_status_unknown(self) -> None:
         """Tests that the unknown string shows the ZX status if possible."""
         # This test might be a bit fragile if we expand error types for
         # FcTransportStatus, however it's good to ensure users who may have raised the
