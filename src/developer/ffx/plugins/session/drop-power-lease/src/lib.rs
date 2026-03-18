@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_session_power::HandoffProxy;
 use ffx_session_drop_power_lease_args::SessionDropPowerLeaseCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, user_error};
-use fidl_fuchsia_session_power::HandoffProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct DropPowerLeaseTool {
@@ -37,7 +37,7 @@ pub async fn drop_power_lease_impl<W: std::io::Write>(
     writeln!(writer, "Requesting to dropping power lease on execution state")?;
     let lease = match handoff_proxy.take().await? {
         Ok(lease) => Some(lease),
-        Err(fidl_fuchsia_session_power::HandoffError::AlreadyTaken) if cmd.allow_missing => {
+        Err(fdomain_fuchsia_session_power::HandoffError::AlreadyTaken) if cmd.allow_missing => {
             writeln!(writer, "Lease already dropped, ignoring error.")?;
             None
         }
@@ -55,14 +55,17 @@ pub async fn drop_power_lease_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session_power::HandoffRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session_power::HandoffRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_drop_power_lease() {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let client_clone = std::sync::Arc::clone(&client);
+
+        let proxy = fake_proxy(client, move |req| match req {
             HandoffRequest::Take { responder } => {
-                let _ = responder.send(Ok(fidl::Event::create().into()));
+                let _ = responder.send(Ok(client_clone.create_event().into()));
             }
             x @ _ => unimplemented!("{x:?}"),
         });
@@ -77,9 +80,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_drop_power_lease_already_taken_error() {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(std::sync::Arc::clone(&client), |req| match req {
             HandoffRequest::Take { responder } => {
-                let _ = responder.send(Err(fidl_fuchsia_session_power::HandoffError::AlreadyTaken));
+                let _ =
+                    responder.send(Err(fdomain_fuchsia_session_power::HandoffError::AlreadyTaken));
             }
             x @ _ => unimplemented!("{x:?}"),
         });
@@ -92,9 +97,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_drop_power_lease_already_taken_allow_missing() {
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(std::sync::Arc::clone(&client), |req| match req {
             HandoffRequest::Take { responder } => {
-                let _ = responder.send(Err(fidl_fuchsia_session_power::HandoffError::AlreadyTaken));
+                let _ =
+                    responder.send(Err(fdomain_fuchsia_session_power::HandoffError::AlreadyTaken));
             }
             x @ _ => unimplemented!("{x:?}"),
         });
