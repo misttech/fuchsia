@@ -19,52 +19,61 @@ FlatlandPresenterImpl::FlatlandPresenterImpl(async_dispatcher_t* main_dispatcher
                                              scheduling::FrameScheduler& frame_scheduler)
     : main_dispatcher_(main_dispatcher), frame_scheduler_(frame_scheduler) {}
 
-void FlatlandPresenterImpl::AccumulateReleaseFences(
+void FlatlandPresenterImpl::AccumulateFences(
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& sessions_to_update) {
-  TRACE_DURATION("gfx", "FlatlandPresenterImpl::AccumulateReleaseFences");
+  TRACE_DURATION("gfx", "FlatlandPresenterImpl::AccumulateFences");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-
   for (const auto& [session_id, present_id] : sessions_to_update) {
-    const auto begin_it = release_fences_.lower_bound({session_id, 0});
-    const auto end_it = release_fences_.upper_bound({session_id, present_id});
-    FX_DCHECK(std::distance(begin_it, end_it) >= 0);
-    std::for_each(
-        begin_it, end_it,
-        [this](
-            std::pair<const scheduling::SchedulingIdPair, std::vector<zx::event>>& release_fences) {
-          std::move(std::begin(release_fences.second), std::end(release_fences.second),
-                    std::back_inserter(accumulated_release_fences_));
-        });
-    release_fences_.erase(begin_it, end_it);
+    auto start_it = pending_fences_.lower_bound({session_id, 0});
+    auto end_it = pending_fences_.upper_bound({session_id, present_id});
+
+    for (auto it = start_it; it != end_it; ++it) {
+      // Append release fences.
+      accumulated_fences_.release_fences.insert(
+          accumulated_fences_.release_fences.end(),
+          std::make_move_iterator(it->second.release_fences.begin()),
+          std::make_move_iterator(it->second.release_fences.end()));
+      it->second.release_fences.clear();
+
+      // Append present fences.
+      accumulated_fences_.present_fences.insert(
+          accumulated_fences_.present_fences.end(),
+          std::make_move_iterator(it->second.present_fences.begin()),
+          std::make_move_iterator(it->second.present_fences.end()));
+      it->second.present_fences.clear();
+    }
+    pending_fences_.erase(start_it, end_it);
   }
 }
 
-std::vector<zx::event> FlatlandPresenterImpl::TakeReleaseFences() {
-  TRACE_DURATION("gfx", "FlatlandPresenterImpl::TakeReleaseFences");
+FlatlandPresenterImpl::Fences FlatlandPresenterImpl::TakeFences() {
+  TRACE_DURATION("gfx", "FlatlandPresenterImpl::TakeFences");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-
-  std::vector<zx::event> result(std::move(accumulated_release_fences_));
-  accumulated_release_fences_.clear();
-  return result;
+  Fences taken_fences = std::move(accumulated_fences_);
+  accumulated_fences_ = {};
+  return taken_fences;
 }
 
 void FlatlandPresenterImpl::ScheduleUpdateForSession(zx::time requested_presentation_time,
                                                      scheduling::SchedulingIdPair id_pair,
                                                      bool unsquashable,
                                                      std::vector<zx::event> release_fences,
+                                                     std::vector<zx::counter> present_fences,
                                                      bool schedule_asap) {
   // TODO(https://fxbug.dev/42139440): The FrameScheduler is not thread-safe, but a lock is not
   // sufficient since GFX sessions may access the FrameScheduler without passing through this
   // object. Post a task to the main thread, which is where GFX runs, to account for thread safety.
-  async::PostTask(main_dispatcher_,
-                  [thiz = shared_from_this(), requested_presentation_time, id_pair, unsquashable,
-                   release_fences = std::move(release_fences), schedule_asap]() mutable {
-                    TRACE_DURATION("gfx", "FlatlandPresenterImpl::ScheduleUpdateForSession[task]");
-                    FX_DCHECK(thiz->release_fences_.find(id_pair) == thiz->release_fences_.end());
-                    thiz->release_fences_.emplace(id_pair, std::move(release_fences));
-                    thiz->frame_scheduler_.ScheduleUpdateForSession(
-                        requested_presentation_time, id_pair, !unsquashable, schedule_asap);
-                  });
+  async::PostTask(
+      main_dispatcher_, [thiz = shared_from_this(), requested_presentation_time, id_pair,
+                         unsquashable, release_fences = std::move(release_fences),
+                         present_fences = std::move(present_fences), schedule_asap]() mutable {
+        TRACE_DURATION("gfx", "FlatlandPresenterImpl::ScheduleUpdateForSession[task]");
+        FX_DCHECK(!thiz->pending_fences_.contains(id_pair));
+        thiz->pending_fences_.emplace(id_pair, Fences{.release_fences = std::move(release_fences),
+                                                      .present_fences = std::move(present_fences)});
+        thiz->frame_scheduler_.ScheduleUpdateForSession(requested_presentation_time, id_pair,
+                                                        !unsquashable, schedule_asap);
+      });
 }
 
 std::vector<scheduling::FuturePresentationInfo>
@@ -78,11 +87,11 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
   async::PostTask(main_dispatcher_, [thiz = shared_from_this(), session_id,
                                      release_fence = std::move(release_fence)]() mutable {
     TRACE_DURATION("gfx", "FlatlandPresenterImpl::RemoveSession[task]");
-    // Remove any registered release fences for the removed session.
+    // Remove any registered fences for the removed session.
     {
-      auto start = thiz->release_fences_.lower_bound({session_id, 0});
-      auto end = thiz->release_fences_.lower_bound({session_id + 1, 0});
-      thiz->release_fences_.erase(start, end);
+      auto start = thiz->pending_fences_.lower_bound({session_id, 0});
+      auto end = thiz->pending_fences_.lower_bound({session_id + 1, 0});
+      thiz->pending_fences_.erase(start, end);
     }
 
     scheduling::SchedulingIdPair id_pair{session_id, scheduling::GetNextPresentId()};
@@ -92,7 +101,8 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
       FX_DCHECK(release_fence.value());
       std::vector<zx::event> release_fences;
       release_fences.emplace_back(std::move(*release_fence));
-      thiz->release_fences_.emplace(id_pair, std::move(release_fences));
+      thiz->pending_fences_.emplace(
+          id_pair, Fences{.release_fences = std::move(release_fences), .present_fences = {}});
     }
 
     // Ensure that in case no client is currently rendering we'll still produce a new frame to clean
@@ -101,8 +111,8 @@ void FlatlandPresenterImpl::RemoveSession(scheduling::SessionId session_id,
     // ensures both that there will be no collisions for the |session_id| used and that we'll
     // schedule exactly one frame for the shortest possible timeframe.
     thiz->frame_scheduler_.RemoveSession(session_id);
-    thiz->frame_scheduler_.ScheduleUpdateForSession(zx::time(0), id_pair,
-                                                    /*squashable=*/true, /*schedule_asap=*/false);
+    thiz->frame_scheduler_.ScheduleUpdateForSession(zx::time(0), id_pair, /*squashable=*/true,
+                                                    /*schedule_asap=*/false);
   });
 }
 

@@ -37,41 +37,28 @@ zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref) {
   return fsl::GetKoid(view_ref.reference().get());
 }
 
-template <typename ZX_T>
-static auto CopyZxHandle(const ZX_T& handle) -> ZX_T {
-  ZX_T handle_copy;
-  if (handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &handle_copy) != ZX_OK) {
-    FX_LOGS(ERROR) << "Copying zx object handle failed.";
-    FX_DCHECK(false);
-  }
-  return handle_copy;
-}
-
-zx::event CopyEvent(const zx::event& event) {
-  TRACE_DURATION("gfx", "utils::CopyEvent");
-  return CopyZxHandle(event);
-}
-
-zx::eventpair CopyEventpair(const zx::eventpair& eventpair) {
-  TRACE_DURATION("gfx", "utils::CopyEventpair");
-  return CopyZxHandle(eventpair);
-}
-
-std::vector<zx::event> CopyEventArray(const std::vector<zx::event>& events) {
-  std::vector<zx::event> result;
-  const size_t count = events.size();
-  result.reserve(count);
-  for (size_t i = 0; i < count; i++) {
-    result.push_back(CopyEvent(events[i]));
-  }
-  return result;
-}
-
 bool IsEventSignalled(const zx::event& event, zx_signals_t signal) {
   zx_signals_t pending = 0u;
   event.wait_one(signal, zx::time(), &pending);
   return (pending & signal) != 0u;
 }
+
+// TODO: update file when the API level is updated in <lib/zx/counter.h>
+// This is here so that we can use it within Scenic, i.e. outside of CTF tests.
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+bool IsCounterSignalled(const zx::counter& counter, zx_signals_t signal) {
+  zx_signals_t pending = 0u;
+  counter.wait_one(signal, zx::time(), &pending);
+  return (pending & signal) != 0u;
+}
+
+int64_t ReadCounter(const zx::counter& counter) {
+  int64_t value = 0;
+  zx_status_t status = counter.read(&value);
+  FX_DCHECK(status == ZX_OK);
+  return value;
+}
+#endif
 
 zx::event CreateEvent() {
   TRACE_DURATION("gfx", "CreateEvent");
@@ -88,6 +75,24 @@ std::vector<zx::event> CreateEventArray(size_t n) {
   }
   return events;
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+zx::counter CreateCounter() {
+  TRACE_DURATION("gfx", "CreateCounter");
+  zx::counter counter;
+  FX_CHECK(zx::counter::create(0, &counter) == ZX_OK);
+  return counter;
+}
+
+std::vector<zx::counter> CreateCounterArray(size_t n) {
+  std::vector<zx::counter> counters;
+  counters.reserve(n);
+  for (size_t i = 0; i < n; i++) {
+    counters.push_back(CreateCounter());
+  }
+  return counters;
+}
+#endif
 
 std::vector<zx_koid_t> ExtractKoids(const std::vector<zx::event>& events) {
   TRACE_DURATION("gfx", "utils::ExtractKoids", "count", TA_UINT64(events.size()));
@@ -339,5 +344,20 @@ uint32_t GetPixelsPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_fo
   uint32_t bytes_per_pixel = GetBytesPerPixel(image_format_constraints);
   return GetBytesPerRow(image_format_constraints, image_width, bytes_per_pixel) / bytes_per_pixel;
 }
+
+void SignalReleaseFences(const std::vector<zx::event>& fences) {
+  for (auto& e : fences) {
+    e.signal(0u, ZX_EVENT_SIGNALED);
+  }
+}
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+void SignalPresentFences(const std::vector<zx::counter>& fences, zx::time timestamp) {
+  for (auto& c : fences) {
+    c.write(timestamp.get());
+    c.signal(0u, ZX_COUNTER_SIGNALED);
+  }
+}
+#endif
 
 }  // namespace utils

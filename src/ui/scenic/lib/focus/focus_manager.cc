@@ -180,7 +180,7 @@ fuchsia::ui::views::ViewRef FocusManager::CloneViewRefOf(zx_koid_t koid) const {
       << "all views in the focus chain must exist in the view tree";
   fuchsia::ui::views::ViewRef clone;
   const auto& view_node = snapshot_->view_tree.at(koid);
-  clone.reference = utils::CopyEventpair(view_node.view_ref->eventpair());
+  clone.reference = utils::CopyZxHandle(view_node.view_ref->eventpair());
 
   return clone;
 }

@@ -175,7 +175,7 @@ TEST_F(NullRendererIntegrationTest, RendersContent) {
                   .is_ok());
   fuchsia_ui_composition::PresentArgs args;
   args.release_fences(utils::CreateEventArray(1));
-  auto release_fence_copy = utils::CopyEvent(args.release_fences().value()[0]);
+  auto release_fence_copy = utils::CopyZxHandle(args.release_fences().value()[0]);
   BlockingPresent(this, root_flatland(), std::move(args));
 
   // Ensure that release fence for the previous frame is singalled after a Present.

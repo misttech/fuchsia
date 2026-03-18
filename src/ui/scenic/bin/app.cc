@@ -691,7 +691,7 @@ void App::InitializeHeartbeat(display::Display& display) {
       [this](auto& sessions_to_update, auto trace_id) {
         TRACE_DURATION("gfx", "App update_sessions");
         flatland_manager_->UpdateInstances(sessions_to_update);
-        flatland_presenter_->AccumulateReleaseFences(sessions_to_update);
+        flatland_presenter_->AccumulateFences(sessions_to_update);
       },
       /*on_cpu_work_done*/
       [this] {

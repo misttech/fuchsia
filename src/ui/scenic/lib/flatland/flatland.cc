@@ -273,7 +273,7 @@ Flatland::~Flatland() {
   std::optional<zx::event> image_release_fence;
   if (!images_to_release_->empty()) {
     zx::event evt = utils::CreateEvent();
-    image_release_fence = utils::CopyEvent(evt);
+    image_release_fence = utils::CopyZxHandle(evt);
 
     auto wait = std::make_shared<async::WaitOnce>(evt.get(), ZX_EVENT_SIGNALED);
     zx_status_t status = wait->Begin(
@@ -368,6 +368,9 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   }
   if (!args.acquire_fences().has_value()) {
     args.acquire_fences(std::vector<zx::event>{});
+  }
+  if (!args.present_fences().has_value()) {
+    args.present_fences(std::vector<zx::counter>{});
   }
   if (!args.unsquashable().has_value()) {
     args.unsquashable(false);
@@ -530,7 +533,8 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
                requested_presentation_time = args.requested_presentation_time().value(),
                unsquashable = args.unsquashable().value(), uber_struct = std::move(uber_struct),
                link_operations = std::move(pending_link_operations_),
-               release_fences = std::move(*args.release_fences()), trace_enabled,
+               release_fences = std::move(*args.release_fences()),
+               present_fences = std::move(*args.present_fences()), trace_enabled,
                kLoadBearingTraceNonce, recompute_view_tree]() mutable {
     // NOTE: this name is important for benchmarking.  Do not remove or modify it
     // without also updating the "process_gfx_trace.go" script.
@@ -552,7 +556,8 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     uber_struct_queue_->Push(present_id, std::move(uber_struct), recompute_view_tree);
     flatland_presenter_->ScheduleUpdateForSession(
         zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
-        std::move(release_fences), config_ && config_->schedule_asap().value_or(false));
+        std::move(release_fences), std::move(present_fences),
+        config_ && config_->schedule_asap().value_or(false));
 
     // Finalize Link destruction operations after publishing the new UberStruct. This
     // ensures that any local Transforms referenced by the to-be-deleted Links are already

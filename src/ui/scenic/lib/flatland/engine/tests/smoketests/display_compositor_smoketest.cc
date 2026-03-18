@@ -255,7 +255,7 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {});
+      {}, {}, [](const scheduling::Timestamps&) {});
 }
 
 // TODO(https://fxbug.dev/42154038): Add YUV formats when they are supported by fake or real

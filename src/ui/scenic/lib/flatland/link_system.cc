@@ -59,7 +59,7 @@ LinkSystem::LinkToChild LinkSystem::CreateLinkToChild(
       /* link_resolved = */
       [ref = shared_from_this(), impl, child_transform_handle](LinkToParentInfo info) mutable {
         if (info.view_ref != nullptr) {
-          impl->SetViewRef({.reference = utils::CopyEventpair(info.view_ref->eventpair())});
+          impl->SetViewRef({.reference = utils::CopyZxHandle(info.view_ref->eventpair())});
         }
 
         *child_transform_handle = info.child_transform_handle;

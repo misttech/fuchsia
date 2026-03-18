@@ -144,7 +144,7 @@ void ViewProviderImpl::ScreenCaptureCallback() {
     // Set up event to drop buffer when frame is presented.
     zx::event release_fence;
     zx::event::create(0, &release_fence);
-    present_release_fences_[buffer_index] = utils::CopyEvent(release_fence);
+    present_release_fences_[buffer_index] = utils::CopyZxHandle(release_fence);
 
     std::vector<zx::event> current_release_fences;
     current_release_fences.push_back(std::move(release_fence));

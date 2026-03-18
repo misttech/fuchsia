@@ -13,6 +13,15 @@
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/sys/cpp/service_directory.h>
+#include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
+#include <zircon/availability.h>
+
+// TODO: update file when the API level is updated in <lib/zx/counter.h>
+// This is here so that we can use it within Scenic, i.e. outside of CTF tests.
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#include <lib/zx/counter.h>
+#endif
 #include <lib/zx/event.h>
 
 #include "fuchsia/images2/cpp/fidl.h"
@@ -41,20 +50,50 @@ zx::event CreateEvent();
 // Create a std::vector populated with |n| unsignalled zx::event elements.
 std::vector<zx::event> CreateEventArray(size_t n);
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// Create a zx::counter with initial value 0.
+zx::counter CreateCounter();
+
+// Create a std::vector populated with |n| zx::counter elements.
+std::vector<zx::counter> CreateCounterArray(size_t n);
+#endif
+
 // Create a std::vector populated with koids of the input vector of zx:event.
 std::vector<zx_koid_t> ExtractKoids(const std::vector<zx::event>& events);
 
-// Copy a zx::event.
-zx::event CopyEvent(const zx::event& event);
+// Copy a zx object handle.
+template <typename T>
+T CopyZxHandle(const T& handle) {
+  TRACE_DURATION("gfx", "utils::CopyZxHandle");
+  T handle_copy;
+  if (handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &handle_copy) != ZX_OK) {
+    FX_LOGS(ERROR) << "Copying zx object handle failed.";
+    FX_DCHECK(false);
+  }
+  return handle_copy;
+}
 
-// Copy a zx::eventpair.
-zx::eventpair CopyEventpair(const zx::eventpair& eventpair);
-
-// Copy a std::vector of events.
-std::vector<zx::event> CopyEventArray(const std::vector<zx::event>& events);
+// Copy a std::vector of zx object handles.
+template <typename T>
+std::vector<T> CopyZxHandleVector(const std::vector<T>& handles) {
+  std::vector<T> result;
+  result.reserve(handles.size());
+  for (const auto& h : handles) {
+    result.push_back(CopyZxHandle(h));
+  }
+  return result;
+}
 
 // Synchronously checks whether the event has signalled any of the bits in |signal|.
 bool IsEventSignalled(const zx::event& event, zx_signals_t signal);
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// Synchronously checks whether the counter has signalled any of the bits in |signal|.
+bool IsCounterSignalled(const zx::counter& counter, zx_signals_t signal);
+
+// Synchronously reads the value of the counter.
+int64_t ReadCounter(const zx::counter& counter);
+#endif
 
 // Create sysmem allocator.
 fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClient(
@@ -119,6 +158,16 @@ uint32_t GetPixelsPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_f
                          uint32_t image_width);
 uint32_t GetPixelsPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_format_constraints,
                          uint32_t image_width);
+
+// Signal all fences with ZX_EVENT_SIGNALED.
+void SignalReleaseFences(const std::vector<zx::event>& fences);
+
+// For each fence:
+// - write the timestamp into it
+// - signal it with ZX_COUNTER_SIGNALED
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+void SignalPresentFences(const std::vector<zx::counter>& fences, zx::time timestamp);
+#endif
 
 }  // namespace utils
 

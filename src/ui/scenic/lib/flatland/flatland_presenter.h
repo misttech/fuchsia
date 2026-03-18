@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_PRESENTER_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_PRESENTER_H_
 
+#include <lib/zx/counter.h>
 #include <lib/zx/event.h>
 
 #include <vector>
@@ -32,6 +33,7 @@ class FlatlandPresenter {
   virtual void ScheduleUpdateForSession(zx::time requested_presentation_time,
                                         scheduling::SchedulingIdPair id_pair, bool squashable,
                                         std::vector<zx::event> release_fences,
+                                        std::vector<zx::counter> present_fences,
                                         bool schedule_asap) = 0;
 
   // From scheduling::FrameScheduler::GetFuturePresentationInfos():

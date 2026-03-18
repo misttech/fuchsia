@@ -28,6 +28,19 @@ namespace flatland::test {
 
 namespace {
 
+template <typename T>
+std::vector<zx_koid_t> ExtractKoids(const std::vector<T>& objects) {
+  std::vector<zx_koid_t> result;
+  result.reserve(objects.size());
+  for (const auto& obj : objects) {
+    zx_info_handle_basic_t info;
+    zx_status_t status = obj.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+    FX_DCHECK(status == ZX_OK);
+    result.push_back(info.koid);
+  }
+  return result;
+}
+
 // This harness uses a real loop instead of a test loop since the multithreading test requires the
 // tasks posted by the FlatlandPresenterImpl to run without blocking the worker threads.
 class FlatlandPresenterTest : public LoggingEventLoop, public ::testing::Test {
@@ -51,6 +64,8 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
   });
   bool last_squashable = false;
   bool last_schedule_asap = false;
+  std::vector<zx::event> last_release_fences;
+  std::vector<zx::counter> last_present_fences;
 
   frame_scheduler.set_schedule_update_for_session_callback(
       [&last_presentation_time, &last_id_pair, &last_squashable, &last_schedule_asap](
@@ -73,7 +88,7 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
   bool kScheduleAsap = false;
 
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
-                                      /*release_fences=*/{}, kScheduleAsap);
+                                      /*release_fences=*/{}, /*present_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
   EXPECT_EQ(last_presentation_time, kPresentationTime);
@@ -88,7 +103,8 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
       .present_id = 3,
   });
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair2, kUnsquashable,
-                                      /*release_fences=*/{}, /*schedule_asap=*/kScheduleAsap);
+                                      /*release_fences=*/{}, /*present_fences=*/{},
+                                      /*schedule_asap=*/kScheduleAsap);
   RunLoopUntilIdle();
 
   // zx::time is passed through.
@@ -131,7 +147,7 @@ TEST_F(FlatlandPresenterTest, ScheduleAsapDoesNotModifyPresentationTime) {
   const bool kScheduleAsap = true;
 
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
-                                      /*release_fences=*/{}, kScheduleAsap);
+                                      /*release_fences=*/{}, /*present_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
   // zx::time is passed through.
@@ -197,16 +213,16 @@ TEST_F(FlatlandPresenterTest, GetFuturePresentationInfosForwardsToFrameScheduler
   EXPECT_EQ(presentation_infos[0].presentation_time, kPresentationTime);
 }
 
-// Helper function for TakeReleaseFences test below.  Encapsulates two calls which always happen
-// together in the test: UpdateSessions() and TakeReleaseFences().
-static std::vector<zx::event> TakeReleaseFences(
+// Helper function for TakeFences test below.  Encapsulates two calls which always happen
+// together in the test: AccumulateFences() and TakeFences().
+static FlatlandPresenterImpl::Fences TakeFences(
     const std::shared_ptr<FlatlandPresenterImpl>& presenter,
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& sessions_to_update) {
-  presenter->AccumulateReleaseFences(sessions_to_update);
-  return presenter->TakeReleaseFences();
+  presenter->AccumulateFences(sessions_to_update);
+  return presenter->TakeFences();
 }
 
-TEST_F(FlatlandPresenterTest, TakeReleaseFences) {
+TEST_F(FlatlandPresenterTest, TakeFences) {
   // The frame scheduler isn't actually used for this test, although it *is* required for the
   // presenter to properly stash the release fences (not inherently, just an implementation detail).
   scheduling::test::MockFrameScheduler frame_scheduler;
@@ -215,50 +231,70 @@ TEST_F(FlatlandPresenterTest, TakeReleaseFences) {
   const scheduling::SessionId kSessionIdA = 3;
   const scheduling::SessionId kSessionIdB = 7;
 
-  // Create release fences
+  // Create release and present fences.
   std::vector<zx::event> release_fences_A1 = utils::CreateEventArray(2);
-  std::vector<zx_koid_t> release_fence_koids_A1 = utils::ExtractKoids(release_fences_A1);
+  std::vector<zx_koid_t> release_fence_koids_A1 = ExtractKoids(release_fences_A1);
+  std::vector<zx::counter> present_fences_A1 = utils::CreateCounterArray(2);
+  std::vector<zx_koid_t> present_fence_koids_A1 = ExtractKoids(present_fences_A1);
+
   std::vector<zx::event> release_fences_A2 = utils::CreateEventArray(2);
-  std::vector<zx_koid_t> release_fence_koids_A2 = utils::ExtractKoids(release_fences_A2);
+  std::vector<zx_koid_t> release_fence_koids_A2 = ExtractKoids(release_fences_A2);
+  std::vector<zx::counter> present_fences_A2 = utils::CreateCounterArray(2);
+  std::vector<zx_koid_t> present_fence_koids_A2 = ExtractKoids(present_fences_A2);
+
   std::vector<zx::event> release_fences_B1 = utils::CreateEventArray(2);
-  std::vector<zx_koid_t> release_fence_koids_B1 = utils::ExtractKoids(release_fences_B1);
+  std::vector<zx_koid_t> release_fence_koids_B1 = ExtractKoids(release_fences_B1);
+  std::vector<zx::counter> present_fences_B1 = utils::CreateCounterArray(2);
+  std::vector<zx_koid_t> present_fence_koids_B1 = ExtractKoids(present_fences_B1);
+
   std::vector<zx::event> release_fences_B2 = utils::CreateEventArray(2);
-  std::vector<zx_koid_t> release_fence_koids_B2 = utils::ExtractKoids(release_fences_B2);
+  std::vector<zx_koid_t> release_fence_koids_B2 = ExtractKoids(release_fences_B2);
+  std::vector<zx::counter> present_fences_B2 = utils::CreateCounterArray(2);
+  std::vector<zx_koid_t> present_fence_koids_B2 = ExtractKoids(present_fences_B2);
+
   std::vector<zx::event> release_fences_B3 = utils::CreateEventArray(2);
-  std::vector<zx_koid_t> release_fence_koids_B3 = utils::ExtractKoids(release_fences_B3);
+  std::vector<zx_koid_t> release_fence_koids_B3 = ExtractKoids(release_fences_B3);
+  std::vector<zx::counter> present_fences_B3 = utils::CreateCounterArray(2);
+  std::vector<zx_koid_t> present_fence_koids_B3 = ExtractKoids(present_fences_B3);
 
   const auto present_id_A1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A1},
-                                      /*unsquashable=*/true, std::move(release_fences_A1), false);
+                                      /*unsquashable=*/true, std::move(release_fences_A1),
+                                      std::move(present_fences_A1), false);
   const auto present_id_A2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A2},
-                                      /*unsquashable=*/true, std::move(release_fences_A2), false);
+                                      /*unsquashable=*/true, std::move(release_fences_A2),
+                                      std::move(present_fences_A2), false);
   const auto present_id_B1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B1},
-                                      /*unsquashable=*/true, std::move(release_fences_B1), false);
+                                      /*unsquashable=*/true, std::move(release_fences_B1),
+                                      std::move(present_fences_B1), false);
   const auto present_id_B2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B2},
-                                      /*unsquashable=*/true, std::move(release_fences_B2), false);
+                                      /*unsquashable=*/true, std::move(release_fences_B2),
+                                      std::move(present_fences_B2), false);
 
   // There will be no fences yet, because ScheduleUpdateForSession() stashes the fences in a task
   // dispatched to the main thread, which hasn't run yet.
-  auto fences_empty = TakeReleaseFences(presenter, {
-                                                       {kSessionIdA, present_id_A2},
-                                                       {kSessionIdB, present_id_B1},
-                                                   });
-  EXPECT_TRUE(fences_empty.empty());
+  auto fences_empty = TakeFences(presenter, {
+                                                {kSessionIdA, present_id_A2},
+                                                {kSessionIdB, present_id_B1},
+                                            });
+  EXPECT_TRUE(fences_empty.release_fences.empty());
+  EXPECT_TRUE(fences_empty.present_fences.empty());
 
   // Try to take the same fences.  We should see the fences for A1/A2/B1, but not B2.  Note that we
   // don't explicitly mention A1, but we get the fences for it too, because A2 has a higher present
   // ID for the same session ID.
   RunLoopUntilIdle();
-  auto fences_A1A2B1 = TakeReleaseFences(presenter, {
-                                                        {kSessionIdA, present_id_A2},
-                                                        {kSessionIdB, present_id_B1},
-                                                    });
-  EXPECT_EQ(fences_A1A2B1.size(), release_fence_koids_A1.size() + release_fence_koids_A2.size() +
-                                      release_fence_koids_B1.size());
-  auto fences_A1A2B1_koids = utils::ExtractKoids(fences_A1A2B1);
+  auto fences_A1A2B1 = TakeFences(presenter, {
+                                                 {kSessionIdA, present_id_A2},
+                                                 {kSessionIdB, present_id_B1},
+                                             });
+  EXPECT_EQ(fences_A1A2B1.release_fences.size(), release_fence_koids_A1.size() +
+                                                     release_fence_koids_A2.size() +
+                                                     release_fence_koids_B1.size());
+  auto fences_A1A2B1_koids = ExtractKoids(fences_A1A2B1.release_fences);
   for (auto koid : release_fence_koids_A1) {
     EXPECT_THAT(fences_A1A2B1_koids, testing::Contains(koid));
   }
@@ -269,21 +305,47 @@ TEST_F(FlatlandPresenterTest, TakeReleaseFences) {
     EXPECT_THAT(fences_A1A2B1_koids, testing::Contains(koid));
   }
 
+  EXPECT_EQ(fences_A1A2B1.present_fences.size(), present_fence_koids_A1.size() +
+                                                     present_fence_koids_A2.size() +
+                                                     present_fence_koids_B1.size());
+  std::vector<zx_koid_t> fences_A1A2B1_present_koids = ExtractKoids(fences_A1A2B1.present_fences);
+  for (auto koid : present_fence_koids_A1) {
+    EXPECT_THAT(fences_A1A2B1_present_koids, testing::Contains(koid));
+  }
+  for (auto koid : present_fence_koids_A2) {
+    EXPECT_THAT(fences_A1A2B1_present_koids, testing::Contains(koid));
+  }
+  for (auto koid : present_fence_koids_B1) {
+    EXPECT_THAT(fences_A1A2B1_present_koids, testing::Contains(koid));
+  }
+
   // Register one more present.
   const auto present_id_B3 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B3},
-                                      /*unsquashable=*/true, std::move(release_fences_B3), false);
+                                      /*unsquashable=*/true, std::move(release_fences_B3),
+                                      std::move(present_fences_B3), false);
   RunLoopUntilIdle();
-  auto fences_B2B3 = TakeReleaseFences(presenter, {
-                                                      {kSessionIdB, present_id_B3},
-                                                  });
-  EXPECT_EQ(fences_B2B3.size(), release_fence_koids_B2.size() + release_fence_koids_B3.size());
-  auto fences_B2B3_koids = utils::ExtractKoids(fences_B2B3);
+  auto fences_B2B3 = TakeFences(presenter, {
+                                               {kSessionIdB, present_id_B3},
+                                           });
+  EXPECT_EQ(fences_B2B3.release_fences.size(),
+            release_fence_koids_B2.size() + release_fence_koids_B3.size());
+  auto fences_B2B3_koids = ExtractKoids(fences_B2B3.release_fences);
   for (auto koid : release_fence_koids_B2) {
     EXPECT_THAT(fences_B2B3_koids, testing::Contains(koid));
   }
   for (auto koid : release_fence_koids_B3) {
     EXPECT_THAT(fences_B2B3_koids, testing::Contains(koid));
+  }
+
+  EXPECT_EQ(fences_B2B3.present_fences.size(),
+            present_fence_koids_B2.size() + present_fence_koids_B3.size());
+  std::vector<zx_koid_t> fences_B2B3_present_koids = ExtractKoids(fences_B2B3.present_fences);
+  for (auto koid : present_fence_koids_B2) {
+    EXPECT_THAT(fences_B2B3_present_koids, testing::Contains(koid));
+  }
+  for (auto koid : present_fence_koids_B3) {
+    EXPECT_THAT(fences_B2B3_present_koids, testing::Contains(koid));
   }
 }
 
@@ -351,10 +413,10 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
       async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
 
       for (uint64_t i = 0; i < kNumPresents; ++i) {
-        // ScheduleUpdateForSession() is one of the two functions being tested.
         auto present_id = scheduling::GetNextPresentId();
         presenter->ScheduleUpdateForSession(zx::time(0), {session_id, present_id},
-                                            /*unsquashable=*/true, /*release_fences=*/{}, false);
+                                            /*unsquashable=*/true, /*release_fences=*/{},
+                                            /*present_fences=*/{}, false);
         presents.push_back(present_id);
 
         // Yield with some randomness so the threads get jumbled up a bit.

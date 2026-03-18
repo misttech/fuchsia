@@ -177,7 +177,7 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   uber_struct_queue_->Push(present_id, std::move(uber_struct));
   flatland_presenter_->ScheduleUpdateForSession(zx::time(0), {session_id_, present_id},
                                                 /*squashable=*/true, /*release_fences=*/{},
-                                                /*schedule_asap=*/false);
+                                                /*present_fences=*/{}, /*schedule_asap=*/false);
 }
 
 void FlatlandDisplay::SetDevicePixelRatio(fuchsia::math::VecF device_pixel_ratio) {

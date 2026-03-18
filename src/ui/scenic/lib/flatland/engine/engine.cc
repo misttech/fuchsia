@@ -16,6 +16,7 @@
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/scene_dumper.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
+#include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
 
 // Hardcoded double buffering.
@@ -25,16 +26,6 @@
 static constexpr uint32_t kNumDisplayFramebuffers = 2;
 
 namespace flatland {
-
-namespace {
-
-void SignalAll(const std::vector<zx::event>& events) {
-  for (auto& e : events) {
-    e.signal(0u, ZX_EVENT_SIGNALED);
-  }
-}
-
-}  // namespace
 
 Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
                std::shared_ptr<FlatlandPresenterImpl> flatland_presenter,
@@ -184,12 +175,13 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     });
   }
 
-  auto frame_result = flatland_compositor_->RenderFrame(frame_number, presentation_time,
-                                                        {{.layers = std::move(layers),
-                                                          .images = std::move(images),
-                                                          .display_id = hw_display->display_id()}},
-                                                        flatland_presenter_->TakeReleaseFences(),
-                                                        std::move(callback));
+  auto fences = flatland_presenter_->TakeFences();
+  auto frame_result = flatland_compositor_->RenderFrame(
+      frame_number, presentation_time,
+      {{.layers = std::move(layers),
+        .images = std::move(images),
+        .display_id = hw_display->display_id()}},
+      std::move(fences.release_fences), std::move(fences.present_fences), std::move(callback));
   RecordFrameResult(frame_result);
 }
 
@@ -338,8 +330,10 @@ void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate
     current_scene_state_ = std::move(cleared_scene_state_);
   }
 
-  SignalAll(flatland_presenter_->TakeReleaseFences());
   const zx::time now = async::Now(async_get_default_dispatcher());
+  auto fences = flatland_presenter_->TakeFences();
+  utils::SignalReleaseFences(fences.release_fences);
+  utils::SignalPresentFences(fences.present_fences, now);
   callback({.render_done_time = now, .actual_presentation_time = now});
 }
 

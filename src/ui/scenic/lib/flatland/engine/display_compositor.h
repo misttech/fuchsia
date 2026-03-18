@@ -127,7 +127,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   RenderFrameResult RenderFrame(
       uint64_t frame_number, zx::time presentation_time,
       const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
-      scheduling::FramePresentedCallback callback,
+      std::vector<zx::counter> present_fences, scheduling::FramePresentedCallback callback,
       // Allows customization of behavior for tests.  Default values are used in production.
       RenderFrameTestArgs test_args = RenderFrameTestArgs::Default()) FXL_LOCKS_EXCLUDED(lock_);
 
@@ -220,6 +220,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
                              zx::time presentation_time,
                              const std::vector<RenderData>& render_data_list,
                              std::vector<zx::event> release_fences,
+                             std::vector<zx::counter> present_fences,
                              scheduling::FramePresentedCallback callback)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 

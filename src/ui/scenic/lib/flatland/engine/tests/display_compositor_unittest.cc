@@ -943,9 +943,9 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   static constexpr display::WireConfigStamp kConfigStamp1(1);
   static constexpr display::WireConfigStamp kConfigStamp2(2);
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(2).WillRepeatedly(Return());
-  display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::vector<RenderData>(), {},
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::vector<RenderData>(), {}, {},
                                    [](const scheduling::Timestamps&) {});
-  display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::vector<RenderData>(), {},
+  display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::vector<RenderData>(), {}, {},
                                    [](const scheduling::Timestamps&) {});
 
   EXPECT_EQ(2u, GetPendingApplyConfigs().size());
@@ -1216,7 +1216,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {},
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {}, {},
       [](const scheduling::Timestamps&) {});
 
   // Cleanup: All layers should be destroyed.
@@ -1417,7 +1417,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {},
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {}, {},
       [](const scheduling::Timestamps&) {});
 
   for (uint64_t i = 1; i < layer_id_value; ++i) {
@@ -1672,7 +1672,7 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
   const TransformHandle root_handle = session.graph().CreateTransform();
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}}), {},
+      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}}), {}, {},
       [](const scheduling::Timestamps&) {});
 
   // Cleanup: All layers should be destroyed.

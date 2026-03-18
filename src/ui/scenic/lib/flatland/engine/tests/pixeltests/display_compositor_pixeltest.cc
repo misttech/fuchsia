@@ -951,7 +951,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {});
+      {}, {}, [](const scheduling::Timestamps&) {});
 
   bool images_are_same = [&]() -> bool {
     // The amlogic capture IP block can sometimes be flaky.
@@ -1084,7 +1084,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
         1, zx::time(1),
         GenerateDisplayListForTest(
             {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-        {}, [](const scheduling::Timestamps&) {});
+        {}, {}, [](const scheduling::Timestamps&) {});
 
     // Grab the capture vmo data.
     std::vector<uint8_t> read_values;
@@ -1189,7 +1189,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {});
+      {}, {}, [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
   std::vector<uint8_t> read_values;
@@ -1312,7 +1312,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {});
+      {}, {}, [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
   std::vector<uint8_t> readback_values;
@@ -1486,7 +1486,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
         .height = image_metadatas[1].height,
     });
   }
-  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {},
+  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {}, {},
                                   [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
@@ -1662,7 +1662,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
         .height = image_metadatas[1].height,
     });
   }
-  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {},
+  display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {}, {},
                                   [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
@@ -1888,7 +1888,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {},
+      {}, {}, [](const scheduling::Timestamps&) {},
       // NOTE: this is somewhat redundant, since we also pass enable_direct_to_display=false into
       // the DisplayCompositor constructor.  But, no harm is done.
       DisplayCompositor::RenderFrameTestArgs{.force_gpu_composition = true});
@@ -2138,7 +2138,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {});
+      {}, {}, [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
   // Make sure the render target has the same data as what's being put on the display.
@@ -2337,9 +2337,9 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 1, BLUE, GPU-COMPOSITED //////////////////////////////////////////////////////
 
-  auto render_frame_result = display_compositor->RenderFrame(1, zx::time(1), blue_display_list, {},
-                                                             [](const scheduling::Timestamps&) {},
-                                                             {.force_gpu_composition = true});
+  auto render_frame_result = display_compositor->RenderFrame(
+      1, zx::time(1), blue_display_list, {}, {}, [](const scheduling::Timestamps&) {},
+      {.force_gpu_composition = true});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kGpuComposition);
 
   // Grab the capture vmo data, and compare to the texture data.
@@ -2353,7 +2353,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 2, GREEN, GPU-COMPOSITED //////////////////////////////////////////////////////
 
-  render_frame_result = display_compositor->RenderFrame(2, zx::time(1), green_display_list, {},
+  render_frame_result = display_compositor->RenderFrame(2, zx::time(1), green_display_list, {}, {},
                                                         [](const scheduling::Timestamps&) {},
                                                         {.force_gpu_composition = true});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kGpuComposition);
@@ -2368,7 +2368,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 3, BLUE, DIRECT-TO-DISPLAY //////////////////////////////////////////////////////
 
-  render_frame_result = display_compositor->RenderFrame(3, zx::time(1), blue_display_list, {},
+  render_frame_result = display_compositor->RenderFrame(3, zx::time(1), blue_display_list, {}, {},
                                                         [](const scheduling::Timestamps&) {},
                                                         {.force_gpu_composition = false});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
@@ -2383,7 +2383,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 4, GREEN, DIRECT-TO-DISPLAY //////////////////////////////////////////////////////
 
-  render_frame_result = display_compositor->RenderFrame(4, zx::time(1), green_display_list, {},
+  render_frame_result = display_compositor->RenderFrame(4, zx::time(1), green_display_list, {}, {},
                                                         [](const scheduling::Timestamps&) {},
                                                         {.force_gpu_composition = false});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
@@ -2398,7 +2398,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 5, BLUE, GPU-COMPOSITED //////////////////////////////////////////////////////
 
-  render_frame_result = display_compositor->RenderFrame(5, zx::time(1), blue_display_list, {},
+  render_frame_result = display_compositor->RenderFrame(5, zx::time(1), blue_display_list, {}, {},
                                                         [](const scheduling::Timestamps&) {},
                                                         {.force_gpu_composition = true});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kGpuComposition);
@@ -2413,7 +2413,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // FRAME 6, GREEN, DIRECT-TO-DISPLAY //////////////////////////////////////////////////////
 
-  render_frame_result = display_compositor->RenderFrame(6, zx::time(1), green_display_list, {},
+  render_frame_result = display_compositor->RenderFrame(6, zx::time(1), green_display_list, {}, {},
                                                         [](const scheduling::Timestamps&) {},
                                                         {.force_gpu_composition = false});
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
@@ -2481,7 +2481,7 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
       1, zx::time(1),
       GenerateDisplayListForTest(
           {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, [](const scheduling::Timestamps&) {}, {.force_gpu_composition = false});
+      {}, {}, [](const scheduling::Timestamps&) {}, {.force_gpu_composition = false});
   EXPECT_NE(render_frame_result, DisplayCompositor::RenderFrameResult::kFailure);
 
   // Grab the capture vmo data.

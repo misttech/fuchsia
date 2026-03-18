@@ -10,17 +10,8 @@
 
 #include <iterator>
 
+#include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
-
-namespace {
-
-void SignalAll(const std::vector<zx::event>& events) {
-  for (auto& e : events) {
-    e.signal(0u, ZX_EVENT_SIGNALED);
-  }
-}
-
-}  // namespace
 
 namespace flatland {
 
@@ -30,6 +21,7 @@ ReleaseFenceManager::ReleaseFenceManager(async_dispatcher_t* dispatcher) : dispa
 
 void ReleaseFenceManager::OnGpuCompositedFrame(
     uint64_t frame_number, zx::event render_finished_fence, std::vector<zx::event> release_fences,
+    std::vector<zx::counter> present_fences,
     scheduling::FramePresentedCallback frame_presented_callback) {
   TRACE_DURATION("gfx", "ReleaseFenceManager::OnGpuCompositedFrame", "frame number", frame_number);
   FLATLAND_VERBOSE_LOG << "ReleaseFenceManager::OnGpuCompositedFrame() frame_number="
@@ -37,17 +29,20 @@ void ReleaseFenceManager::OnGpuCompositedFrame(
 
   auto record = NewGpuCompositionFrameRecord(frame_number, std::move(render_finished_fence),
                                              std::move(frame_presented_callback));
+  record->present_fences = std::move(present_fences);
   SignalOrScheduleSignalForReleaseFences(frame_number, *record, std::move(release_fences));
   StashFrameRecord(frame_number, std::move(record));
 }
 
 void ReleaseFenceManager::OnDirectScanoutFrame(
     uint64_t frame_number, std::vector<zx::event> release_fences,
+    std::vector<zx::counter> present_fences,
     scheduling::FramePresentedCallback frame_presented_callback) {
   TRACE_DURATION("gfx", "ReleaseFenceManager::OnDirectScanoutFrame", "frame number", frame_number);
   FLATLAND_VERBOSE_LOG << "ReleaseFenceManager::OnDirectScanoutFrame() frame_number="
                        << frame_number;
   auto record = NewDirectScanoutFrameRecord(std::move(frame_presented_callback));
+  record->present_fences = std::move(present_fences);
   SignalOrScheduleSignalForReleaseFences(frame_number, *record, std::move(release_fences));
   StashFrameRecord(frame_number, std::move(record));
 }
@@ -75,7 +70,7 @@ void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic time
       record.frame_presented = true;
       record.timestamps.actual_presentation_time = timestamp;
 
-      SignalAll(record.release_fences_to_signal_when_frame_presented);
+      utils::SignalReleaseFences(record.release_fences_to_signal_when_frame_presented);
       record.release_fences_to_signal_when_frame_presented.clear();
 
       // The contract with the FrameScheduler dictates that callbacks must be invoked in order.
@@ -111,6 +106,10 @@ bool ReleaseFenceManager::MaybeInvokeFramePresentedCallback(FrameRecord& record)
     // for a subsequent direct-scanout frame to be presented on-screen while the dropped frame is
     // still being rendered.  Since the first/dropped frame gets the same |actual_presentation_time|
     // as the next frame, this would be earlier than the |render_done_time|.
+
+    utils::SignalPresentFences(record.present_fences, record.timestamps.actual_presentation_time);
+    record.present_fences.clear();
+
     record.frame_presented_callback(record.timestamps);
     record.frame_presented_callback = nullptr;
     record.callback_invoked = true;
@@ -141,7 +140,7 @@ void ReleaseFenceManager::SignalOrScheduleSignalForReleaseFences(
   if (previous_frame_it == frame_records_.end()) {
     // Signal the fences immediately, since there is no previous frame whose content corresponds to
     // these fences.
-    SignalAll(release_fences);
+    utils::SignalReleaseFences(release_fences);
     return;
   }
   FrameRecord& previous_frame = *previous_frame_it->second;
@@ -157,7 +156,7 @@ void ReleaseFenceManager::SignalOrScheduleSignalForReleaseFences(
       // async::Wait() here, because we already had to set one up when we received the previous
       // frame, so we might as well piggy-back on that.
       if (previous_frame.render_finished) {
-        SignalAll(release_fences);
+        utils::SignalReleaseFences(release_fences);
       } else {
         FX_DCHECK(previous_frame.release_fences_to_signal_when_render_finished.empty());
         std::move(std::begin(release_fences), std::end(release_fences),
@@ -265,7 +264,7 @@ void ReleaseFenceManager::OnRenderFinished(uint64_t frame_number, zx::time times
     auto& record = *it->second;
     record.render_finished = true;
     record.timestamps.render_done_time = timestamp;
-    SignalAll(record.release_fences_to_signal_when_render_finished);
+    utils::SignalReleaseFences(record.release_fences_to_signal_when_render_finished);
     record.release_fences_to_signal_when_render_finished.clear();
     record.render_finished_wait.reset();  // safe from within WaitOnce() closure.
   }

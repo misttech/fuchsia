@@ -104,6 +104,7 @@ struct PresentArgs {
   zx::time requested_presentation_time;
   std::vector<zx::event> acquire_fences;
   std::vector<zx::event> release_fences;
+  std::vector<zx::counter> present_fences;
   bool unsquashable = false;
 
   // Arguments to the PRESENT_WITH_ARGS macro.
@@ -148,6 +149,7 @@ struct GlobalIdPair {
     present_args.requested_presentation_time((args).requested_presentation_time.get()) \
         .acquire_fences(std::move((args).acquire_fences))                              \
         .release_fences(std::move((args).release_fences))                              \
+        .present_fences(std::move((args).present_fences))                              \
         .unsquashable((args).unsquashable);                                            \
     (flatland)->Present(std::move(present_args));                                      \
     if (expect_success) {                                                              \
@@ -155,7 +157,7 @@ struct GlobalIdPair {
       if (!had_acquire_fences) {                                                       \
         EXPECT_CALL(*mock_flatland_presenter_,                                         \
                     ScheduleUpdateForSession((args).requested_presentation_time, _,    \
-                                             (args).unsquashable, _, _));              \
+                                             (args).unsquashable, _, _, _));           \
       }                                                                                \
       RunLoopUntilIdle();                                                              \
       if (!(args).skip_session_update_and_release_fences) {                            \
@@ -253,10 +255,11 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   void SetUp() override {
     mock_flatland_presenter_ = new ::testing::StrictMock<MockFlatlandPresenter>();
 
-    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _))
+    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _))
         .WillByDefault(::testing::Invoke(
             [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
-                bool unsquashable, std::vector<zx::event> release_fences, bool schedule_asap) {
+                bool unsquashable, std::vector<zx::event> release_fences,
+                std::vector<zx::counter> present_fences, bool schedule_asap) {
               // The ID must not already be registered.
               EXPECT_FALSE(pending_release_fences_.find(id_pair) != pending_release_fences_.end());
               pending_release_fences_[id_pair] = std::move(release_fences);
@@ -606,7 +609,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     EXPECT_CALL(*mock_flatland_presenter_,
                 ScheduleUpdateForSession(
                     zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id},
-                    true, _, _));
+                    true, _, _, _));
     display->SetContent(std::move(parent_token),
                         fidl::NaturalToHLCPP(child_view_watcher_server_end));
     child->CreateView2(std::move(child_token),
@@ -830,8 +833,9 @@ TEST_F(FlatlandTest, PresentWithNoFieldsSet) {
   fuchsia_ui_composition::PresentArgs present_args;
   flatland->Present(std::move(present_args));
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(kDefaultRequestedPresentationTime,
-                                                                  _, kDefaultUnsquashable, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(kDefaultRequestedPresentationTime, _, kDefaultUnsquashable,
+                                       _, _, _));
   RunLoopUntilIdle();
 }
 
@@ -841,12 +845,12 @@ TEST_F(FlatlandTest, PresentWaitsForAcquireFences) {
   // Create two events to serve as acquire fences.
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(2);
-  auto acquire1_copy = utils::CopyEvent(args.acquire_fences[0]);
-  auto acquire2_copy = utils::CopyEvent(args.acquire_fences[1]);
+  auto acquire1_copy = utils::CopyZxHandle(args.acquire_fences[0]);
+  auto acquire2_copy = utils::CopyZxHandle(args.acquire_fences[1]);
 
   // Create an event to serve as a release fence.
   args.release_fences = utils::CreateEventArray(1);
-  auto release_copy = utils::CopyEvent(args.release_fences[0]);
+  auto release_copy = utils::CopyZxHandle(args.release_fences[0]);
 
   // Because the Present includes unsignaled acquire fences, the UberStructSystem shouldn't have any
   // entries and applying session updates shouldn't signal the release fence.
@@ -872,7 +876,7 @@ TEST_F(FlatlandTest, PresentWaitsForAcquireFences) {
   // instance, and the release fence is signaled.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
 
   // After signaling the final acquire fence (and running the loop), there is now a registered
@@ -903,7 +907,7 @@ TEST_F(FlatlandTest, PresentForwardsRequestedPresentationTime) {
   PresentArgs args;
   args.requested_presentation_time = requested_presentation_time;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto acquire_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto acquire_copy = utils::CopyZxHandle(args.acquire_fences[0]);
 
   // Because the Present includes acquire fences, it isn't registered with the presenter immediately
   // upon `Present()`.
@@ -925,7 +929,7 @@ TEST_F(FlatlandTest, PresentForwardsRequestedPresentationTime) {
   // presentation time.
   acquire_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
 
   registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -942,11 +946,11 @@ TEST_F(FlatlandTest, PresentWithSignaledFencesUpdatesImmediately) {
   // Create an event to serve as the acquire fence.
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto acquire_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto acquire_copy = utils::CopyZxHandle(args.acquire_fences[0]);
 
   // Create an event to serve as a release fence.
   args.release_fences = utils::CreateEventArray(1);
-  auto release_copy = utils::CopyEvent(args.release_fences[0]);
+  auto release_copy = utils::CopyZxHandle(args.release_fences[0]);
 
   // Signal the event before the Present() call.
   acquire_copy.signal(0, ZX_EVENT_SIGNALED);
@@ -955,7 +959,7 @@ TEST_F(FlatlandTest, PresentWithSignaledFencesUpdatesImmediately) {
   // update immediately, and the release fence should be signaled. The PRESENT macro only expects
   // the ScheduleUpdateForSession() call when no acquire fences are present, but since this test
   // specifically tests pre-signaled fences, the EXPECT_CALL must be added here.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   PRESENT_WITH_ARGS(flatland, std::move(args), true);
 
   auto registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -972,11 +976,11 @@ TEST_F(FlatlandTest, PresentsUpdateInCallOrder) {
   // Create an event to serve as the acquire fence for the first Present().
   PresentArgs args1;
   args1.acquire_fences = utils::CreateEventArray(1);
-  auto acquire1_copy = utils::CopyEvent(args1.acquire_fences[0]);
+  auto acquire1_copy = utils::CopyZxHandle(args1.acquire_fences[0]);
 
   // Create an event to serve as a release fence.
   args1.release_fences = utils::CreateEventArray(1);
-  auto release1_copy = utils::CopyEvent(args1.release_fences[0]);
+  auto release1_copy = utils::CopyZxHandle(args1.release_fences[0]);
 
   // Present, but do not signal the fence, and ensure Present is registered, the UberStructSystem is
   // empty, and the release fence is unsignaled.
@@ -997,11 +1001,11 @@ TEST_F(FlatlandTest, PresentsUpdateInCallOrder) {
   // Create another event to serve as the acquire fence for the second Present().
   PresentArgs args2;
   args2.acquire_fences = utils::CreateEventArray(1);
-  auto acquire2_copy = utils::CopyEvent(args2.acquire_fences[0]);
+  auto acquire2_copy = utils::CopyZxHandle(args2.acquire_fences[0]);
 
   // Create an event to serve as a release fence.
   args2.release_fences = utils::CreateEventArray(1);
-  auto release2_copy = utils::CopyEvent(args2.release_fences[0]);
+  auto release2_copy = utils::CopyZxHandle(args2.release_fences[0]);
 
   // Present, but do not signal the fence, and ensure there are two Presents registered, but the
   // UberStructSystem is still empty and both release fences are unsignaled.
@@ -1033,7 +1037,7 @@ TEST_F(FlatlandTest, PresentsUpdateInCallOrder) {
   // registered Presents and an UberStruct with a 2-element topology: the local root, and kId.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _)).Times(2);
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _)).Times(2);
   RunLoopUntilIdle();
 
   ApplySessionUpdatesAndSignalFences();
@@ -2749,7 +2753,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
 
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto event_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto event_copy = utils::CopyZxHandle(args.acquire_fences[0]);
 
   PRESENT_WITH_ARGS(parent, std::move(args), true);
 
@@ -2759,7 +2763,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -2786,7 +2790,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
 
   PresentArgs args2;
   args2.acquire_fences = utils::CreateEventArray(1);
-  event_copy = utils::CopyEvent(args2.acquire_fences[0]);
+  event_copy = utils::CopyZxHandle(args2.acquire_fences[0]);
 
   PRESENT_WITH_ARGS(child, std::move(args2), true);
 
@@ -2796,7 +2800,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end2));
@@ -3174,7 +3178,7 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView2) {
   // event is signaled.
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto event_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto event_copy = utils::CopyZxHandle(args.acquire_fences[0]);
 
   // We still don't get the ViewRef, because we haven't signaled the event.
   PRESENT_WITH_ARGS(parent, std::move(args), true);
@@ -3183,7 +3187,7 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView2) {
 
   // Signal the acquire fence to unblock the present.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent->GetRoot());
@@ -3270,7 +3274,7 @@ TEST_F(FlatlandTest, ContentHasPresentedSignalWaitsForAcquireFences) {
   // Present the child with unsignalled acquire fence.
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto acquire1_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto acquire1_copy = utils::CopyZxHandle(args.acquire_fences[0]);
   EXPECT_FALSE(utils::IsEventSignalled(args.acquire_fences[0], ZX_EVENT_SIGNALED));
   PRESENT_WITH_ARGS(child, std::move(args), true);
 
@@ -3279,7 +3283,7 @@ TEST_F(FlatlandTest, ContentHasPresentedSignalWaitsForAcquireFences) {
   EXPECT_FALSE(cvs.has_value());
 
   // Signal the acquire fence.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
@@ -3954,7 +3958,7 @@ TEST_F(FlatlandTest, ReleaseViewportViaFidlClient) {
 
     // Now present.  We do this via the FIDL client to ensure correct sequencing (i.e. this way the
     // `Present()` is guaranteed to follow the `ReleaseViewport()`).
-    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
     async::PostTask(client_server->client_loop().dispatcher(), [&]() {
       fuchsia_ui_composition::PresentArgs present_args;
       present_args.requested_presentation_time(0)
@@ -4002,7 +4006,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
 
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
-  auto event_copy = utils::CopyEvent(args.acquire_fences[0]);
+  auto event_copy = utils::CopyZxHandle(args.acquire_fences[0]);
 
   PRESENT_WITH_ARGS(flatland, std::move(args), true);
 
@@ -4012,7 +4016,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
   // Signal the acquire fence to unbind the link.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -5963,7 +5967,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   // We post this task onto the other Flatland's thread, so that we can have a *chance* of locking
   // the LinkSystem mutex in between the execution of the two link-resolution closures (each of
   // which also locks the LinkSystem mutex).
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
   libsync::Completion completion;
   async::PostTask(child_flatland_thread_loop.dispatcher(), ([&]() {
                     child_flatland->CreateView2(
@@ -6077,7 +6081,7 @@ TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
   std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
 
   EXPECT_CALL(*mock_flatland_presenter_,
-              ScheduleUpdateForSession(_, _, _, _, /*schedule_asap=*/true));
+              ScheduleUpdateForSession(_, _, _, _, _, /*schedule_asap=*/true));
 
   fuchsia_ui_composition::PresentArgs present_args;
   present_args.requested_presentation_time(0);

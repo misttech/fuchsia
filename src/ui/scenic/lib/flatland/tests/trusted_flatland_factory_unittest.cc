@@ -31,10 +31,11 @@ class TrustedFlatlandFactoryTest : public LoggingEventLoop, public ::testing::Te
 
     mock_flatland_presenter_ = std::make_shared<::testing::StrictMock<MockFlatlandPresenter>>();
     EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(_, _)).Times(::testing::AtLeast(0));
-    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _))
+    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _))
         .WillByDefault(::testing::Invoke(
             [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
-                bool unsquashable, std::vector<zx::event> release_fences, bool schedule_asap) {}));
+                bool unsquashable, std::vector<zx::event> release_fences,
+                std::vector<zx::counter> present_fences, bool schedule_asap) {}));
 
     const display::WireDisplayId kDisplayId = {.value = 1};
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers;
