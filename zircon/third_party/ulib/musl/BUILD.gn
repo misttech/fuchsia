@@ -77,7 +77,6 @@ if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
       ":common-impl",
       "ldso",
       "src/ldso",
-      "src/thread:tls_get_addr",
     ]
   }
 

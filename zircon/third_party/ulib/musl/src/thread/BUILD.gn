@@ -32,9 +32,3 @@ source_set("thread") {
 
   configs -= [ "//build/config:symbol_visibility_hidden" ]
 }
-
-source_set("tls_get_addr") {
-  sources = [ "__tls_get_addr.c" ]
-  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
-  configs -= [ "//build/config:symbol_visibility_hidden" ]
-}

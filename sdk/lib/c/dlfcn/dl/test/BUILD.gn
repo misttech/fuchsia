@@ -54,6 +54,12 @@ test("dl-unittests") {
       "//sdk/lib/ld/testing",
       "//src/lib/elfldltl/testing",
     ]
+
+    # When it's not in the libc ABI, this won't necessarily be seen as relevant
+    # to export by the linker.  But some of the TLS test modules dlopen'd will
+    # need it.
+    ldflags = [ "-Wl,--export-dynamic-symbol=__tls_get_addr" ]
+
     if (!is_fuchsia) {
       # For the host test, this sets a DT_RUNPATH using $ORIGIN to find where
       # the modules are copied into a subdirectory of $host_out_dir (where the

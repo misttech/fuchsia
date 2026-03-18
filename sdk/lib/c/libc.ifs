@@ -131,7 +131,6 @@ Symbols:
   - { Name: __tan, Type: Func }
   - { Name: __tandf, Type: Func }
   - { Name: __tanl, Type: Func }
-  - { Name: __tls_get_addr, Type: Func }
   - { Name: __tm_to_tzname, Type: Func }
   - { Name: __tre_mem_alloc_impl, Type: Func }
   - { Name: __tre_mem_destroy, Type: Func }

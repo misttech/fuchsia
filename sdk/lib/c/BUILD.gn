@@ -469,7 +469,6 @@ if (current_toolchain == libc_toolchain) {
   # putting a separate new-libc.ifs into the source tree, generate it as a
   # subset of the libc.ifs that lives in the source tree.
   new_libc_missing_symbols = [
-    "__tls_get_addr",
     "_dl_debug_addr",
     "dl_set_loader_service",
     "dlclose",

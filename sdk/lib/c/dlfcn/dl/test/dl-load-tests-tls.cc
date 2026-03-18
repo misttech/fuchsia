@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/layout.h>
+#include <lib/ld/tls.h>
 
+#include <cassert>
 #include <latch>
 #include <stop_token>
 #include <thread>
@@ -11,6 +13,33 @@
 #include "dl-iterate-phdr-tests.h"
 #include "dl-load-tests.h"
 #include "startup-symbols.h"
+
+using TlsGetAddrGot = elfldltl::Elf<>::TlsGetAddrGot<>;
+
+// If the system libc doesn't provide __tls_get_addr, this one will be found by
+// the tests.  The weak definition in the executable will take precedence under
+// glibc, so don't preempt there.  Only Fuchsia actually omits it from the ABI.
+#ifdef __Fuchsia__
+[[gnu::weak, gnu::visibility("default")]] void* ld::abi::__tls_get_addr(const TlsGetAddrGot& got) {
+  struct CallbackData {
+    const TlsGetAddrGot& got;
+    std::byte* result = nullptr;
+  } callback_data = {.got = got};
+  dl_iterate_phdr(
+      [](dl_phdr_info* info, size_t size, void* data) -> int {
+        CallbackData* callback_data = static_cast<CallbackData*>(data);
+        assert(size >= sizeof(*info));
+        if (info->dlpi_tls_modid != callback_data->got.tls_modid) {
+          return 0;  // Iterate on next module.
+        }
+        callback_data->result = static_cast<std::byte*>(info->dlpi_tls_data) +
+                                callback_data->got.offset + elfldltl::TlsTraits<>::kTlsRelativeBias;
+        return 1;  // Quit iterating.
+      },
+      &callback_data);
+  return callback_data.result;
+}
+#endif
 
 namespace {
 
