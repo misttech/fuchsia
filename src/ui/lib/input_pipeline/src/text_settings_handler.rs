@@ -7,12 +7,14 @@ use crate::{input_device, metrics};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
+use fidl_fuchsia_input as finput;
+use fidl_fuchsia_settings as fsettings;
+use fuchsia_async as fasync;
 use fuchsia_inspect::health::Reporter;
 use futures::{TryFutureExt, TryStreamExt};
 use metrics_registry::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use {fidl_fuchsia_input as finput, fidl_fuchsia_settings as fsettings, fuchsia_async as fasync};
 
 /// The text settings handler instance. Refer to as `text_settings_handler::TextSettingsHandler`.
 /// Its task is to decorate an input event with the keymap identifier.  The instance can
@@ -91,7 +93,8 @@ impl UnhandledInputHandler for TextSettingsHandler {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
                     std::format!(
-                        "uninterested input event: {:?}",
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
                         unhandled_input_event.get_event_type()
                     ),
                 );

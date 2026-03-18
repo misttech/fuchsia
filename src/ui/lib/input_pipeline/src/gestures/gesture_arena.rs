@@ -1091,7 +1091,11 @@ impl InputHandler for GestureArena {
             _ => {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
-                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                    std::format!(
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
+                        input_event.get_event_type()
+                    ),
                 );
                 vec![input_event]
             }

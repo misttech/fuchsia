@@ -47,9 +47,10 @@ use core::fmt;
 use fidl_fuchsia_ui_input3::{KeyEventType, KeyMeaning};
 use fuchsia_inspect::health::Reporter;
 use metrics_registry::InputPipelineErrorMetricDimensionEvent;
+use rust_icu_sys as usys;
+use rust_icu_unorm2 as unorm;
 use std::cell::RefCell;
 use std::rc::Rc;
-use {rust_icu_sys as usys, rust_icu_unorm2 as unorm};
 
 // There probably is a more general method of determining whether the characters
 // are combining characters. But somehow it escapes me now.
@@ -394,7 +395,8 @@ impl DeadKeysHandler {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
                     std::format!(
-                        "uninterested input event: {:?}",
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
                         unhandled_input_event.get_event_type()
                     ),
                 );

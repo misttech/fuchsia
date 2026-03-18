@@ -203,7 +203,8 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
                     std::format!(
-                        "uninterested input event: {:?}",
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
                         unhandled_input_event.get_event_type()
                     ),
                 );
@@ -475,11 +476,12 @@ mod tests {
     use crate::input_handler::InputHandler;
     use crate::testing_utilities;
     use assert_matches::assert_matches;
+    use fuchsia_async as fasync;
+    use fuchsia_inspect;
     use maplit::hashset;
     use std::cell::Cell;
     use std::ops::Add;
     use test_util::{assert_gt, assert_lt, assert_near};
-    use {fuchsia_async as fasync, fuchsia_inspect};
 
     const COUNTS_PER_MM: f32 = 12.0;
     const DEVICE_DESCRIPTOR: input_device::InputDeviceDescriptor =

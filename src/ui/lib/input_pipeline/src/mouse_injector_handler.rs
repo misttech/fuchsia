@@ -162,7 +162,11 @@ impl InputHandler for MouseInjectorHandler {
             _ => {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
-                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                    std::format!(
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
+                        input_event.get_event_type()
+                    ),
                 );
             }
         }

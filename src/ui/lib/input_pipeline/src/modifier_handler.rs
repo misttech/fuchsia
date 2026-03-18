@@ -97,13 +97,18 @@ impl UnhandledInputHandler for ModifierHandler {
             }
             // Pass other events through.
             _ => {
-                self.metrics_logger.log_error(
-                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
-                    std::format!(
-                        "uninterested input event: {:?}",
-                        unhandled_input_event.get_event_type()
-                    ),
-                );
+                if InputEventType::from(&unhandled_input_event.device_event)
+                    == InputEventType::Keyboard
+                {
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                        std::format!(
+                            "{} uninterested input event: {:?}",
+                            self.get_name(),
+                            unhandled_input_event.get_event_type()
+                        ),
+                    );
+                }
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }
@@ -225,13 +230,18 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             }
             // Pass other events through.
             _ => {
-                self.metrics_logger.log_error(
-                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
-                    std::format!(
-                        "uninterested input event: {:?}",
-                        unhandled_input_event.get_event_type()
-                    ),
-                );
+                if InputEventType::from(&unhandled_input_event.device_event)
+                    == InputEventType::Keyboard
+                {
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                        std::format!(
+                            "{} uninterested input event: {:?}",
+                            self.get_name(),
+                            unhandled_input_event.get_event_type()
+                        ),
+                    );
+                }
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }

@@ -82,7 +82,11 @@ impl UnhandledInputHandler for KeymapHandler {
             _ => {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
-                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                    std::format!(
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
+                        input_event.get_event_type()
+                    ),
                 );
                 vec![input_device::InputEvent::from(input_event)]
             }
@@ -156,12 +160,12 @@ mod tests {
     use super::*;
     use crate::input_handler::InputHandler;
     use crate::{consumer_controls_binding, testing_utilities};
+    use fidl_fuchsia_input as finput;
+    use fidl_fuchsia_ui_input3 as finput3;
+    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;
-    use {
-        fidl_fuchsia_input as finput, fidl_fuchsia_ui_input3 as finput3, fuchsia_async as fasync,
-        zx,
-    };
+    use zx;
 
     // A mod-specific version of `testing_utilities::create_keyboard_event`.
     fn create_unhandled_keyboard_event(

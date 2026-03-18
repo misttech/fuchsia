@@ -154,7 +154,8 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                 self.metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
                     std::format!(
-                        "uninterested input event: {:?}",
+                        "{} uninterested input event: {:?}",
+                        self.get_name(),
                         unhandled_input_event.get_event_type()
                     ),
                 );
