@@ -200,9 +200,9 @@ def build_info_for_target(args, target):
 
 
 def is_product_bundle_downloaded(args):
-    # product-bundle list does not support JSON output so we have to parse the output.
+    # product list does not support JSON output so we have to parse the output.
     # this is fragile so migrate once json is supported.
-    output = run(args.ffx, "product-bundle", "list")
+    output = run(args.ffx, "product", "list")
     pb_url = args.expected_product_bundle
     for line in output.split("\n"):
         if line.find(pb_url) >= 0 and line.startswith("*"):

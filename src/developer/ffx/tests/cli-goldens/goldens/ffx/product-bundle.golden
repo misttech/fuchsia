@@ -1,6 +1,6 @@
 {
   "name": "product-bundle",
-  "description": "Manage the construction and usage of a product bundle.",
+  "description": "Manage product bundles. NOTE: 'list' and 'get' have been moved to 'ffx product'",
   "examples": [],
   "flags": [
     {
