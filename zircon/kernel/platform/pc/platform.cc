@@ -64,7 +64,7 @@ namespace {
 lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
     gMappedCrashlog;
 
-constinit EfiCrashlog gEfiCrashlog;
+EfiCrashlog gEfiCrashlog;
 
 void platform_save_bootloader_data() {
   // Record any previous crashlog.
