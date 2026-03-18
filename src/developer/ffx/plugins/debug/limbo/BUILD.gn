@@ -10,7 +10,7 @@ ffx_plugin("ffx_debug_limbo") {
   edition = "2024"
 
   deps = [
-    "//sdk/fidl/fuchsia.exception:fuchsia.exception_rust",
+    "//sdk/fidl/fuchsia.exception:fuchsia.exception_rust_fdomain",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/developer/ffx/lib/fho:lib",
