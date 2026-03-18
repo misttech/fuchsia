@@ -1,8 +1,5 @@
 {
   "tools": {
-    "exclude": [
-      "search_file_content"
-    ],
     "discoveryCommand": ".gemini/call_tool.py discover",
     "callCommand": ".gemini/call_tool.py"
   },
