@@ -5,11 +5,12 @@
 use anyhow::{Result, bail};
 use async_trait::async_trait;
 use errors::ffx_bail;
+use fdomain_fuchsia_kernel as fstats;
+use fdomain_fuchsia_power_metrics::{self as fmetrics, CpuLoad, Metric};
+use ffx_cpu_load_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_power_metrics::{self as fmetrics, CpuLoad, Metric};
-use target_holders::{RemoteControlProxyHolder, moniker};
-use {ffx_cpu_load_args as args_mod, fidl_fuchsia_kernel as fstats};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct CpuLoadTool {
@@ -26,7 +27,7 @@ fho::embedded_plugin!(CpuLoadTool);
 impl FfxMain for CpuLoadTool {
     type Writer = SimpleWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let CpuLoadTool { cmd, rcs_proxy, cpu_logger } = self;
+        let CpuLoadTool { cmd, rcs_proxy, cpu_logger, .. } = self;
         match (cmd.subcommand, cmd.duration) {
             (Some(subcommand), None) => match subcommand {
                 args_mod::SubCommand::Start(start_cmd) => start(cpu_logger, start_cmd).await?,
@@ -34,7 +35,9 @@ impl FfxMain for CpuLoadTool {
             },
             (None, Some(duration)) => {
                 let stats_proxy =
-                    match rcs::kernel_stats(&rcs_proxy, std::time::Duration::from_secs(5)).await {
+                    match rcs_fdomain::kernel_stats(&rcs_proxy, std::time::Duration::from_secs(5))
+                        .await
+                    {
                         Ok(s) => s,
                         Err(e) => ffx_bail!("Could not open fuchsia.kernel.Stats: {e}",),
                     };
@@ -59,6 +62,7 @@ pub async fn measure<W: std::io::Write>(
     if duration.is_zero() {
         bail!("Duration must be > 0");
     }
+
     let cpu_loads = stats_proxy.get_cpu_load(duration.as_nanos() as i64).await?;
     print_loads(cpu_loads, writer)?;
 
@@ -75,8 +79,8 @@ fn print_loads<W: std::io::Write>(cpu_load_pcts: Vec<f32>, writer: &mut W) -> Re
     for (i, load_pct) in cpu_load_pcts.iter().enumerate() {
         writeln!(writer, "CPU {}: {:.2}%", i, load_pct)?;
     }
-
     writeln!(writer, "Total: {:.2}%", cpu_load_pcts.iter().sum::<f32>())?;
+
     Ok(())
 }
 
@@ -115,14 +119,14 @@ pub async fn start(cpu_logger: fmetrics::RecorderProxy, cmd: args_mod::StartComm
             2) Must not be smaller than 500ms if `output_to_syslog` is enabled."
         ),
         Err(fmetrics::RecorderError::AlreadyLogging) => ffx_bail!(
-            "Ffx cpu load is already active. Use \"stop\" subcommand to stop the active \
-            loggingg manually."
+            "Ffx cpu-load logging is already active. Use \"stop\" subcommand to stop the active \
+            logging manually."
         ),
         Err(fmetrics::RecorderError::TooManyActiveClients) => ffx_bail!(
             "Recorder is running too many clients. Retry after any other client is stopped."
         ),
         Err(fmetrics::RecorderError::Internal) => {
-            ffx_bail!("Request failed due to an internal error. Check syslog for more details.")
+            ffx_bail!("Recorder encountered an internal error.")
         }
         _ => Ok(()),
     }
@@ -139,16 +143,17 @@ pub async fn stop(cpu_logger: fmetrics::RecorderProxy) -> Result<()> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_power_metrics::{self as fmetrics};
+    use fdomain_fuchsia_power_metrics::{self as fmetrics};
+    use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::{fake_async_proxy, fake_proxy};
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error
     macro_rules! make_proxy {
-        ($request_type:tt, $error_type:tt) => {
-            fake_proxy(move |req| match req {
+        ($client:expr, $request_type:tt, $error_type:tt) => {
+            fake_proxy($client, move |req| match req {
                 fmetrics::RecorderRequest::$request_type { responder, .. } => {
                     responder.send(Err(fmetrics::RecorderError::$error_type)).unwrap();
                 }
@@ -164,7 +169,8 @@ mod tests {
     /// Tests that invalid arguments are rejected.
     #[fuchsia::test]
     async fn test_invalid_args() {
-        let (proxy, _) = fidl::endpoints::create_proxy::<fstats::StatsMarker>();
+        let client = fdomain_local::local_client_empty();
+        let (proxy, _) = client.create_proxy_and_stream::<fstats::StatsMarker>();
         assert!(measure(proxy, Duration::from_secs(0), &mut std::io::stdout()).await.is_err());
     }
 
@@ -174,7 +180,8 @@ mod tests {
     async fn test_cpu_load_duration() {
         let (duration_request_sender, mut duration_request_receiver) = mpsc::channel(1);
 
-        let proxy = fidl_test_util::spawn_stream_handler(move |req| {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_async_proxy(client, move |req| {
             let mut duration_request_sender = duration_request_sender.clone();
             async move {
                 match req {
@@ -189,8 +196,8 @@ mod tests {
 
         let _ = measure(proxy, Duration::from_secs(1), &mut std::io::stdout()).await.unwrap();
 
-        match duration_request_receiver.try_next() {
-            Ok(Some(duration_request)) => {
+        match duration_request_receiver.next().await {
+            Some(duration_request) => {
                 assert_eq!(duration_request as u128, Duration::from_secs(1).as_nanos())
             }
             e => panic!("Failed to get duration_request: {:?}", e),
@@ -199,7 +206,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_cpu_load_output() {
-        let proxy = fidl_test_util::spawn_stream_handler(move |req| async move {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_async_proxy(client, move |req| async move {
             let data = vec![0.66f32, 1.56, 0.83, 0.71];
             match req {
                 fstats::StatsRequest::GetCpuLoad { responder, .. } => {
@@ -235,7 +243,8 @@ Total: 3.76%
             output_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLogging {
                 client_id,
                 metrics,
@@ -256,7 +265,7 @@ Total: 3.76%
             _ => panic!("Expected RecorderRequest::StartLogging; got {:?}", req),
         });
         start(proxy, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the start logging forever request is dispatched to FIDL requests as expected.
@@ -266,7 +275,8 @@ Total: 3.76%
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLoggingForever {
                 client_id,
                 metrics,
@@ -286,7 +296,7 @@ Total: 3.76%
             _ => panic!("Expected RecorderRequest::StartLoggingForever; got {:?}", req),
         });
         start(proxy, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the stop logging request is dispatched to FIDL requests as expected.
@@ -294,7 +304,8 @@ Total: 3.76%
     async fn test_request_dispatch_stop_logging() {
         // Stop logging
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { client_id, responder } => {
                 assert_eq!(String::from("ffx_cpu"), client_id);
                 responder.send(true).unwrap();
@@ -303,12 +314,13 @@ Total: 3.76%
             _ => panic!("Expected RecorderRequest::StopLogging; got {:?}", req),
         });
         stop(proxy).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     #[fuchsia::test]
     async fn test_stop_logging_error() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { responder, .. } => {
                 responder.send(false).unwrap();
             }
@@ -325,7 +337,8 @@ Total: 3.76%
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, InvalidSamplingInterval);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -334,7 +347,8 @@ Total: 3.76%
     async fn test_start_logging_forever_interval_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, InvalidSamplingInterval);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -346,7 +360,8 @@ Total: 3.76%
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, AlreadyLogging);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -355,7 +370,8 @@ Total: 3.76%
     async fn test_start_logging_forever_already_active_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, AlreadyLogging);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -367,7 +383,8 @@ Total: 3.76%
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, TooManyActiveClients);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -376,7 +393,8 @@ Total: 3.76%
     async fn test_start_logging_forever_too_many_clients_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, TooManyActiveClients);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -388,7 +406,8 @@ Total: 3.76%
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, Internal);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, Internal);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
@@ -397,7 +416,8 @@ Total: 3.76%
     async fn test_start_logging_forever_internal_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, Internal);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, Internal);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
