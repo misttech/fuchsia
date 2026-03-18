@@ -293,14 +293,19 @@
     "search.exclude": {
       // Don't exclude local files used for overrides
       "local/**": false,
+      // Cobalt is frequently updated by Fuchsia developers.
+      "third_party/cobalt/**": false,
+      // Pigweed pw_bluetooth* modules contain Fuchsia Bluetooth source code.
+      // Fuchsia teams use and contribute to other Pigweed modules.
+      "third_party/pigweed/**": false,
 
       // There are some files in third_party we want to be accessible from search.
       // Due to https://github.com/Microsoft/vscode/issues/869 we can't use a
       // blanket exclude and then "un-exclude" the files we want, so instead we
       // list out all the third_party projects here.  This list should be
       // updated from time to time. If you want a path inside third_party to be
-      // included in search, modify this list and leave a comment so that future
-      // updates don't clobber your change.
+      // included in search, modify the entry, move it to the top, and leave a comment
+      // so that future updates don't clobber your change.
       "third_party/abseil-cpp/**": true,
       "third_party/acpica/**": true,
       "third_party/alacritty-migrating/src/**": true,
@@ -318,8 +323,6 @@
       "third_party/boringssl/**": true,
       "third_party/chre/**": true,
       "third_party/chromiumos-xorg-conf/**": true,
-      // Cobalt is frequently updated by Fuchsia developers.
-      "third_party/cobalt/**": false,
       "third_party/cobalt_config/**": true,
       "third_party/colorama/**": true,
       "third_party/crashpad/**": true,
@@ -382,7 +385,6 @@
       "third_party/parameterized/**": true,
       "third_party/pciids/**": true,
       "third_party/perfetto/**": true,
-      "third_party/pigweed/**": true,
       "third_party/protobuf/**": true,
       "third_party/pyjson5/**": true,
       "third_party/pylibs/**": true,
