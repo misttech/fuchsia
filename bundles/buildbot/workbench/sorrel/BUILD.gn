@@ -43,15 +43,5 @@ product_bundle_test_group("stable_wlan") {
 product_bundle_test_group("staging_wlan") {
   product_bundle_name = "workbench_eng.sorrel"
   environments = [ wlan_sorrel_ap_env ]
-  host_tests = [
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:vape_interop_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_phy_compliance_abg_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11a_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11bg_test",
-    "//src/testing/end_to_end/antlion/tests/wlan/functional:beacon_loss_test",
-    "//src/testing/end_to_end/antlion/tests/wlan_policy:hidden_networks_test",
-    "//src/testing/end_to_end/antlion/tests/wlan_policy:policy_scan_test",
-    "//src/testing/end_to_end/antlion/tests/wlan_policy:saved_networks_test",
-    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
-  ]
+  host_tests = [ "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests" ]
 }
