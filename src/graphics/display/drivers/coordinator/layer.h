@@ -138,8 +138,8 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
   // Returns true if an image is ready for use by the display engine.
   bool MarkFenceReady(Fence& fence);
 
-  // Returns true if the layer has any waiting images. An image transitions from "pending" to
-  // "waiting" (in the context of a specific layer) when that layer appears in an applied config.
+  // Returns true if the layer has any waiting images. An image transitions from "draft" to
+  // "waiting" (in the context of a specific layer) when that layer appears in a committed config.
   bool HasWaitingImages() const;
 
   const display::DriverLayer& committed_driver_layer_config() const {

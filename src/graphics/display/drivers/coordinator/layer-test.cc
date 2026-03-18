@@ -80,9 +80,9 @@ class LayerTest : public ::testing::Test {
     return image;
   }
 
-  static void MakeLayerApplied(
-      Layer& layer, fbl::DoublyLinkedList<LayerNode*>& applied_display_config_layer_list) {
-    applied_display_config_layer_list.push_front(&layer.committed_display_config_list_node_);
+  static void MakeLayerCommitted(
+      Layer& layer, fbl::DoublyLinkedList<LayerNode*>& committed_display_config_layer_list) {
+    committed_display_config_layer_list.push_front(&layer.committed_display_config_list_node_);
   }
 
  protected:
@@ -168,8 +168,8 @@ TEST_F(LayerTest, CleanUpImage) {
 
   // Test cleaning up the associated image.
   //
-  // The layer is not in a display's applied configuration list. So, cleaning up
-  // the layer's image doesn't change the applied config.
+  // The layer is not in a display's committed configuration list. So, cleaning up
+  // the layer's image doesn't change the committed config.
   EXPECT_FALSE(layer.CleanUpImage(*displayed_image));
   EXPECT_FALSE(layer.committed_image());
 }
@@ -189,7 +189,7 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
                            display_area);
   layer.SetPrimaryAlpha(display::AlphaMode::kDisable, 0);
 
-  // Clean up images, which doesn't change the applied config.
+  // Clean up images, which doesn't change the committed config.
   {
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
@@ -198,15 +198,15 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
     EXPECT_TRUE(layer.committed_image());
-    // The layer is not in a display's applied configuration list. So, cleaning
-    // up the layer's image doesn't change the applied config.
+    // The layer is not in a display's committed configuration list. So, cleaning
+    // up the layer's image doesn't change the committed config.
     EXPECT_FALSE(layer.CleanUpImage(*image));
     EXPECT_FALSE(layer.committed_image());
   }
 
-  // Clean up images, which changes the applied config.
+  // Clean up images, which changes the committed config.
   {
-    MakeLayerApplied(layer, applied_layers);
+    MakeLayerCommitted(layer, applied_layers);
 
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
@@ -216,8 +216,8 @@ TEST_F(LayerTest, CleanUpImage_CheckConfigChange) {
 
     EXPECT_TRUE(layer.committed_image());
 
-    // The layer is in a display's applied configuration list. So, cleaning up
-    // the layer's image changes the applied config.
+    // The layer is in a display's committed configuration list. So, cleaning up
+    // the layer's image changes the committed config.
     EXPECT_TRUE(layer.CleanUpImage(*image));
     EXPECT_FALSE(layer.committed_image());
 
@@ -258,8 +258,8 @@ TEST_F(LayerTest, CleanUpAllImages) {
 
   ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
-  // The layer is not in a display's applied configuration list. So, cleaning
-  // up the layer's image doesn't change the applied config.
+  // The layer is not in a display's committed configuration list. So, cleaning
+  // up the layer's image doesn't change the committed config.
   EXPECT_FALSE(layer.CleanUpAllImages());
   EXPECT_FALSE(layer.committed_image());
 }
@@ -279,7 +279,7 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
                            display_area);
   layer.SetPrimaryAlpha(display::AlphaMode::kDisable, 0);
 
-  // Clean up all images, which doesn't change the applied config.
+  // Clean up all images, which doesn't change the committed config.
   {
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
@@ -288,15 +288,15 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
     EXPECT_TRUE(layer.committed_image());
-    // The layer is not in a display's applied configuration list. So, cleaning
-    // up the layer's image doesn't change the applied config.
+    // The layer is not in a display's committed configuration list. So, cleaning
+    // up the layer's image doesn't change the committed config.
     EXPECT_FALSE(layer.CleanUpAllImages());
     EXPECT_FALSE(layer.committed_image());
   }
 
-  // Clean up all images, which changes the applied config.
+  // Clean up all images, which changes the committed config.
   {
-    MakeLayerApplied(layer, applied_layers);
+    MakeLayerCommitted(layer, applied_layers);
 
     fbl::RefPtr<Image> image = CreateReadyImage();
     layer.SetImage(image, display::kInvalidEventId);
@@ -305,8 +305,8 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
     ASSERT_TRUE(layer.ActivateLatestReadyImage());
 
     EXPECT_TRUE(layer.committed_image());
-    // The layer is in a display's applied configuration list. So, cleaning up
-    // the layer's image changes the applied config.
+    // The layer is in a display's committed configuration list. So, cleaning up
+    // the layer's image changes the committed config.
     EXPECT_TRUE(layer.CleanUpAllImages());
     EXPECT_FALSE(layer.committed_image());
 

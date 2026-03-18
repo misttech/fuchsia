@@ -76,14 +76,14 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
 
   // TODO(https://fxbug.dev/489243434): Switch away from "applied" terminology.
 
-  // The number of layers in the applied configuration.
+  // The number of layers in the committed configuration.
   uint32_t layer_count = 0;
 
   // Set when a layer change occurs on this display and cleared in vsync
   // when the new layers are all active.
   bool pending_layer_change = false;
 
-  // If a configuration applied by Controller has layer change to occur on the
+  // If a configuration committed by Controller has layer change to occur on the
   // display (i.e. |pending_layer_change| is true), this stores the Controller's
   // config stamp for that configuration; otherwise it stores an invalid stamp.
   display::DriverConfigStamp pending_layer_change_driver_config_stamp;
@@ -92,13 +92,13 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
   bool switching_client = false;
 
   // |config_image_queue| stores image IDs for each display configurations
-  // applied in chronological order.
+  // committed in chronological order.
   // This is used by OnVsync() display events where clients receive image
-  // IDs of the latest applied configuration on each Vsync.
+  // IDs of the latest displayed configuration on each Vsync.
   //
   // A |ClientConfigImages| entry is added to the queue once the config is
-  // applied, and will be evicted when the config (or a newer config) is
-  // already presented on the display at Vsync time.
+  // committed, and will be evicted when the config (or a newer config) is
+  // already displayed at Vsync time.
   //
   // TODO(https://fxbug.dev/42152065): Remove once we remove image IDs in OnVsync() events.
   struct ConfigImages {

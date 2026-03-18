@@ -83,10 +83,10 @@ class ClientSet {
   // This method must be called at most once for a client.
   void OnClientDisconnected(Client* client);
 
-  // Returns the priority of the client that applied the display configuration.
+  // Returns the priority of the client that committed the display configuration.
   //
-  // Returns nullopt if the applied configuration does not belong to any of the
-  // current clients. This happens if the client that applied the configuration
+  // Returns nullopt if the committed configuration does not belong to any of the
+  // current clients. This happens if the client that committed the configuration
   // has disconnected.
   std::optional<display::ClientPriority> FindConfigStampSource(
       display::DriverConfigStamp driver_config_stamp);

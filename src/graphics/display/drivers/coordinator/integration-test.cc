@@ -1746,11 +1746,11 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
 //
 // Here we test the following case:
 //
-//  * ApplyConfig({layer1: image1}) ==> kNoFence1ConfigStamp
+//  * CommitConfig({layer1: image1}) ==> kNoFence1ConfigStamp
 //  - Vsync now should have kNoFence1ConfigStamp
-//  * ApplyConfig({layer1: image2}) ==> kNoFence2ConfigStamp
+//  * CommitConfig({layer1: image2}) ==> kNoFence2ConfigStamp
 //  - Vsync now should have kNoFence2ConfigStamp
-//  * ApplyConfig({}) ==> kNoImageConfigStamp
+//  * CommitConfig({}) ==> kNoImageConfigStamp
 //  - Vsync now should have kNoImageConfigStamp
 TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   // Create and bind primary client.
@@ -1840,14 +1840,14 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
 // images. This matches the usage pattern of Scenic with GPU composition.
 //
 // When applying configurations with waiting images, the ConfigStamp reported by
-// VSync events should match the latest applied configuration that doesn't have
+// VSync events should match the latest committed configuration that doesn't have
 // any waiting image.
 //
 // Here we test the following case:
 //
-//  * ApplyConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
+//  * CommitConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp
-//  * ApplyConfig({layer1: image_with_fence}) ==> kImageWithFenceConfigStamp
+//  * CommitConfig({layer1: image_with_fence}) ==> kImageWithFenceConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp
 //  * Signal kImageWithoutFenceConfigStamp
 //  - Vsync now should have kImageWithFenceConfigStamp
@@ -1944,23 +1944,23 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 }
 
-// This test case covers ApplyConfig() when an applied configuration removes a layer
-// with a waiting image from a previously applied configuration.
+// This test case covers CommitConfig() when a committed configuration removes a layer
+// with a waiting image from a previously committed configuration.
 //
 // VSync events should never include the ConfigStamp of the configuration with the
 // waiting image, because that image never becomes ready.
 //
 // Here we test the following case:
 //
-//  * ApplyConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
+//  * CommitConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp
-//  * ApplyConfig({layerA: img1, waiting on fence}) ==> kImageWithFenceConfigStamp
+//  * CommitConfig({layerA: img1, waiting on fence}) ==> kImageWithFenceConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp
-//  * ApplyConfig({}) ==> kNoImageConfigStamp
+//  * CommitConfig({}) ==> kNoImageConfigStamp
 //  - Vsync now should have kNoImageConfigStamp
 //
 // The fence is never signaled.
-TEST_F(IntegrationTest, ApplyConfigRemovesLayerWithWaitingImage) {
+TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
@@ -2057,8 +2057,8 @@ TEST_F(IntegrationTest, ApplyConfigRemovesLayerWithWaitingImage) {
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 }
 
-// This test case covers ApplyConfig() assigning two different waiting images to
-// the same layer in two different applied configs. The second image becomes
+// This test case covers CommitConfig() assigning two different waiting images to
+// the same layer in two different committed configs. The second image becomes
 // ready at some point, while the first image remains waiting forever.
 //
 // VSync events should never include the ConfigStamp of the configuration with
@@ -2068,11 +2068,11 @@ TEST_F(IntegrationTest, ApplyConfigRemovesLayerWithWaitingImage) {
 //
 // Here we test the following case:
 //
-//  * ApplyConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
+//  * CommitConfig({layer1: image_without_fence}) ==> kImageWithoutFenceConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp
-//  * ApplyConfig({layer1: image_with_fence1, waiting on fence1}) ==> kImageWithFence1ConfigStamp
+//  * CommitConfig({layer1: image_with_fence1, waiting on fence1}) ==> kImageWithFence1ConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp since fence1 is not signaled
-//  * ApplyConfig({layerA: image_with_fence2, waiting on fence2}) ==> kImageWithFence2ConfigStamp
+//  * CommitConfig({layerA: image_with_fence2, waiting on fence2}) ==> kImageWithFence2ConfigStamp
 //  - Vsync now should have kImageWithoutFenceConfigStamp since fence1 and fence2 are not
 //  signaled
 //  * Signal fence2
@@ -2081,7 +2081,7 @@ TEST_F(IntegrationTest, ApplyConfigRemovesLayerWithWaitingImage) {
 //  - Vsync should still have kImageWithFence2ConfigStamp.
 //
 // fence1, the first fence, is never signaled.
-TEST_F(IntegrationTest, ApplyConfigSkipsConfigWithWaitingImage) {
+TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
@@ -2206,7 +2206,7 @@ TEST_F(IntegrationTest, ApplyConfigSkipsConfigWithWaitingImage) {
 }
 
 // TODO(https://fxbug.dev/42171874): Currently the fake-display driver only supports one
-// primary layer. In order to better test ApplyConfig() / OnVsync() behavior,
+// primary layer. In order to better test CommitConfig() / OnVsync() behavior,
 // we should make fake-display driver support multi-layer configurations and
 // then we could add more multi-layer tests.
 

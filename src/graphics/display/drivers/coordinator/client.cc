@@ -774,10 +774,10 @@ void Client::CommitConfig(CommitConfigRequestView request, CommitConfigCompleter
   }
   latest_config_stamp_ = new_config_stamp;
 
-  // Empty applied layer lists for all displays whose layer lists are changing.
+  // Empty committed layer lists for all displays whose layer lists are changing.
   //
   // This guarantees that layers moved between displays don't end up in two
-  // layer lists while each display's applied configuration is updated to match
+  // layer lists while each display's committed configuration is updated to match
   // its draft configuration.
   for (DisplayConfig& display_config : display_configs_) {
     if (display_config.draft_has_layer_list_change_) {
