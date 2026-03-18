@@ -2,14 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/346628306): Remove this comment to ignore mypy errors.
-# mypy: ignore-errors
-
 import asyncio
 import logging
 from abc import abstractmethod
 from inspect import getframeinfo, stack
-from typing import Any, Dict, Set
+from typing import Any, Coroutine, Dict, Set, cast
 
 import fuchsia_controller_py as fc
 from fidl_codec import decode_fidl_response, encode_fidl_message
@@ -25,7 +22,7 @@ from ._fidl_common import (
     parse_ordinal,
     parse_txid,
 )
-from ._ipc import GlobalHandleWaker
+from ._ipc import GlobalHandleWaker, HandleWaker
 
 # The active TXID (mutable).
 TXID: TXID_Type = 0
@@ -45,16 +42,20 @@ class FidlClient(metaclass=FidlMeta):
     ) -> Any:
         ...
 
-    def __init__(self, channel, channel_waker=None):
+    def __init__(
+        self,
+        channel: int | fc.Channel,
+        channel_waker: HandleWaker | None = None,
+    ) -> None:
         global _CLIENT_ID
         self.id = _CLIENT_ID
         _CLIENT_ID += 1
-        if type(channel) is int:
-            self._channel = fc.Channel(channel)
+        if isinstance(channel, int):
+            self._channel: fc.Channel | None = fc.Channel(channel)
         else:
             self._channel = channel
         if channel_waker is None:
-            self._channel_waker = GlobalHandleWaker()
+            self._channel_waker: HandleWaker = GlobalHandleWaker()
         else:
             self._channel_waker = channel_waker
         self.pending_txids: Set[TXID_Type] = set({})
@@ -66,7 +67,7 @@ class FidlClient(metaclass=FidlMeta):
             f"{self} instantiated from {caller.filename}:{caller.lineno}"
         )
 
-    def close_cleanly(self):
+    def close_cleanly(self) -> None:
         """Closes the underlying channel.
 
         This is so-named to avoid name conflicts with existing FIDL methods.
@@ -76,22 +77,22 @@ class FidlClient(metaclass=FidlMeta):
             # self._channel = None is NOT done here, as it may be used in pending tasks.
             # The handle being closed will result in errors in those tasks.
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"client:{type(self).__name__}:{self.id}"
 
-    async def _get_staged_message(self, txid: TXID_Type):
+    async def _get_staged_message(self, txid: TXID_Type) -> FidlMessage:
         res = await self.staged_messages[txid].get()
         self.staged_messages[txid].task_done()
         return res
 
-    def _stage_message(self, txid: TXID_Type, msg: FidlMessage):
+    def _stage_message(self, txid: TXID_Type, msg: FidlMessage) -> None:
         # This should only ever happen if we're a channel reading another channel's response before
         # it has ever made a request.
         if txid not in self.staged_messages:
             self.staged_messages[txid] = asyncio.Queue(1)
         self.staged_messages[txid].put_nowait(msg)
 
-    def _clean_staging(self, txid: TXID_Type):
+    def _clean_staging(self, txid: TXID_Type) -> None:
         self.staged_messages.pop(txid)
         # Events are never added to this set, since they're always pending.
         if txid != EVENT_TXID:
@@ -99,10 +100,16 @@ class FidlClient(metaclass=FidlMeta):
 
     def _decode(self, txid: TXID_Type, msg: FidlMessage) -> Dict[str, Any]:
         self._clean_staging(txid)
-        handles = [m.take() for m in msg[1]]
-        return decode_fidl_response(bytes=msg[0], handles=handles)
+        handles = msg[1]
+        verified_handles: list[int] = [0] * len(handles)
+        for i in range(len(handles)):
+            # Asserting is not enough for mypy, we must also cast.
+            hdl = cast(fc.BaseHandle, handles[i])
+            assert isinstance(hdl, fc.BaseHandle)
+            verified_handles[i] = hdl.take()
+        return decode_fidl_response(bytes=msg[0], handles=verified_handles)
 
-    async def next_event(self) -> FidlMessage:
+    async def next_event(self) -> FidlMessage | None:
         """Attempts to read the next FIDL event from this client.
 
         Returns:
@@ -125,7 +132,7 @@ class FidlClient(metaclass=FidlMeta):
                 raise e
         return None
 
-    def _epitaph_check(self, msg: FidlMessage):
+    def _epitaph_check(self, msg: FidlMessage) -> None:
         # If the epitaph is already set, no need to continue with the remaining
         # work.
         if self.epitaph_received is not None:
@@ -136,15 +143,23 @@ class FidlClient(metaclass=FidlMeta):
             if self.epitaph_received is None:
                 self.epitaph_received = EpitaphError(parse_epitaph_value(msg))
                 self.epitaph_event.set()
+            if self.epitaph_received is not None:
+                raise self.epitaph_received
+
+    async def _epitaph_event_wait(self) -> None:
+        await self.epitaph_event.wait()
+        if self.epitaph_received is not None:
             raise self.epitaph_received
 
-    async def _epitaph_event_wait(self):
-        await self.epitaph_event.wait()
-        raise self.epitaph_received
-
-    async def _read_and_decode(self, txid: int):
+    # TODO(https://fxbug.dev/493309088): This (and many of the other `-> Any` return
+    # values should be returning a specific type, as we're decoding a nested
+    # dictionary type that is specific to FIDL.
+    async def _read_and_decode(self, txid: int) -> Any:
         if txid not in self.staged_messages:
             self.staged_messages[txid] = asyncio.Queue(1)
+        if self._channel is None:
+            raise ValueError("Channel is already closed")
+        msg: FidlMessage
         with self._channel_waker.registration(self._channel, name=str(self)):
             while True:
                 if self.epitaph_received is not None:
@@ -220,6 +235,8 @@ class FidlClient(metaclass=FidlMeta):
                     msg = staged_msg_task.result()
                     # If read_ready_task was also done, we should "re-notify" because we didn't read.
                     if read_ready_task in done:
+                        if self._channel is None:
+                            raise ValueError("Channel is already closed")
                         self._channel_waker.post_ready(self._channel)
 
                     if txid != EVENT_TXID:
@@ -230,13 +247,19 @@ class FidlClient(metaclass=FidlMeta):
 
                 if epitaph_task in done:
                     # This will raise the epitaph error.
-                    raise self.epitaph_received
+                    if self.epitaph_received is not None:
+                        raise self.epitaph_received
+                    return None
 
                 # If only read_ready_task reached here, we just loop again and try to read().
 
     def _send_two_way_fidl_request(
-        self, ordinal, library, msg_obj, response_ident
-    ):
+        self,
+        ordinal: int,
+        library: str,
+        msg_obj: Any,
+        response_ident: str,
+    ) -> Coroutine[Any, Any, Any]:
         """Sends a two-way asynchronous FIDL request.
 
         Args:
@@ -253,15 +276,15 @@ class FidlClient(metaclass=FidlMeta):
         self.pending_txids.add(TXID)
         self._send_one_way_fidl_request(TXID, ordinal, library, msg_obj)
 
-        async def result(txid):
+        async def result(txid: int) -> Any:
             res = await self._read_and_decode(txid)
             return self.construct_response_object(response_ident, res)
 
         return result(TXID)
 
     def _send_one_way_fidl_request(
-        self, txid: int, ordinal: int, library: str, msg_obj
-    ):
+        self, txid: int, ordinal: int, library: str, msg_obj: Any
+    ) -> None:
         """Sends a synchronous one-way FIDL request.
 
         Args:
@@ -279,6 +302,8 @@ class FidlClient(metaclass=FidlMeta):
             txid=txid,
             type_name=type_name,
         )
+        if self._channel is None:
+            raise ValueError("Channel is already closed")
         self._channel.write(encoded_fidl_message)
 
 
@@ -291,6 +316,9 @@ class EventHandlerBase(
 ):
     """Base object for doing FIDL client event handling."""
 
+    client: FidlClient
+    method_map: Dict[int, Any]
+
     @staticmethod
     @abstractmethod
     def construct_response_object(
@@ -298,13 +326,13 @@ class EventHandlerBase(
     ) -> Any:
         ...
 
-    def __init__(self, client: FidlClient):
+    def __init__(self, client: FidlClient) -> None:
         self.client = client
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"event:{type(self.client).__name__}:{self.client.id}"
 
-    async def serve(self):
+    async def serve(self) -> None:
         while True:
             msg = await self.client.next_event()
             # msg is None if the channel has been closed.
@@ -313,17 +341,25 @@ class EventHandlerBase(
             if not await self._handle_request(msg):
                 break
 
-    async def _handle_request(self, msg: FidlMessage):
+    async def _handle_request(self, msg: FidlMessage) -> bool:
         try:
             await self._handle_request_helper(msg)
             return True
         except StopEventHandler:
             return False
 
-    async def _handle_request_helper(self, msg: FidlMessage):
+    async def _handle_request_helper(self, msg: FidlMessage) -> None:
         ordinal = parse_ordinal(msg)
-        handles = [x.take() for x in msg[1]]
-        decoded_msg = decode_fidl_response(bytes=msg[0], handles=handles)
+        handles = msg[1]
+        verified_handles: list[int] = [0] * len(handles)
+        for i in range(len(handles)):
+            # Asserting is not enough for mypy, we must also cast.
+            hdl = cast(fc.BaseHandle, handles[i])
+            assert isinstance(hdl, fc.BaseHandle)
+            verified_handles[i] = hdl.take()
+        decoded_msg = decode_fidl_response(
+            bytes=msg[0], handles=verified_handles
+        )
         method = self.method_map[ordinal]
         request_ident = method.request_ident
         request_obj = self.construct_response_object(request_ident, decoded_msg)

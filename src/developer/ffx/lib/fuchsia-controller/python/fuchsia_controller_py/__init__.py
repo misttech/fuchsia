@@ -5,7 +5,17 @@
 import fuchsia_controller_internal
 from fuchsia_controller_internal import FcTransportStatus, ZxStatus
 
-__all__ = ["FcTransportStatus", "ZxStatus"]
+__all__ = [
+    "FcTransportStatus",
+    "ZxStatus",
+    "Handle",
+    "Channel",
+    "Event",
+    "Socket",
+    "Context",
+    "IsolateDir",
+    "BaseHandle",
+]
 
 from abc import ABC, abstractmethod
 from typing import Self

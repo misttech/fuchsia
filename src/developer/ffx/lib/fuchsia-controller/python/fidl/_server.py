@@ -2,14 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/346628306): Remove this comment to ignore mypy errors.
-# mypy: ignore-errors
-
 import asyncio
 import logging
 from abc import abstractmethod
 from inspect import getframeinfo, stack
-from typing import Any
+from typing import Any, Coroutine, cast
 
 import fuchsia_controller_py as fc
 from fidl_codec import decode_fidl_request, encode_fidl_message
@@ -24,7 +21,7 @@ from ._fidl_common import (
     parse_ordinal,
     parse_txid,
 )
-from ._ipc import GlobalHandleWaker
+from ._ipc import GlobalHandleWaker, HandleWaker
 
 # Rather than make a long server UUID, this will be a monotonically increasing
 # ID to differentiate servers for debugging purposes.
@@ -45,6 +42,10 @@ class ServerBase(
 ):
     """Base object for doing basic FIDL server tasks."""
 
+    _channel: fc.Channel | None
+    library: str
+    method_map: dict[int, Any]
+
     @staticmethod
     @abstractmethod
     def construct_response_object(
@@ -52,16 +53,20 @@ class ServerBase(
     ) -> Any:
         ...
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"server:{type(self).__name__}:{id(self)}"
 
-    def __init__(self, channel: fc.Channel, channel_waker=None):
+    def __init__(
+        self,
+        channel: fc.Channel,
+        channel_waker: HandleWaker | None = None,
+    ) -> None:
         global _SERVER_ID
         self._channel = channel
         self.id = _SERVER_ID
         _SERVER_ID += 1
         if channel_waker is None:
-            self._channel_waker = GlobalHandleWaker()
+            self._channel_waker: HandleWaker = GlobalHandleWaker()
         else:
             self._channel_waker = channel_waker
         caller = getframeinfo(stack()[1][0])
@@ -69,19 +74,26 @@ class ServerBase(
             f"{self} instantiated from {caller.filename}:{caller.lineno}"
         )
 
-    def __del__(self):
+    def __del__(self) -> None:
         _LOGGER.debug(f"{self} closing")
         if self._channel is not None:
             self._channel_waker.unregister(self._channel)
             self._channel = None
 
-    def close(self):
+    def close(
+        self,
+    ) -> Coroutine[Any, Any, DomainError | None] | DomainError | None:
         self.__del__()
+        return None
 
-    def serve(self):
+    def serve(self) -> Coroutine[Any, Any, Any]:
+        if self._channel is None:
+            raise ValueError("Channel is already closed")
         self._channel_waker.register(self._channel, name=str(self))
 
-        async def _serve():
+        async def _serve() -> None:
+            if self._channel is None:
+                raise ValueError("Channel is already closed")
             self._channel_waker.register(self._channel, name=str(self))
             while await self.handle_next_request():
                 pass
@@ -93,7 +105,8 @@ class ServerBase(
             # TODO(b/299946378): Handle case where ordinal is unknown.
             return await self._handle_request_helper()
         except StopServer:
-            self._channel.close()
+            if self._channel is not None:
+                self._channel.close()
             return False
         except Exception as e:
             # Explicitly close the channel instead of deferring closure to the
@@ -171,6 +184,8 @@ class ServerBase(
                 txid=txid,
                 type_name=res.__fidl_raw_type__,
             )
+            if self._channel is None:
+                raise ValueError("Channel is already closed")
             self._channel.write(encoded_fidl_message)
         elif info.empty_response:
             encoded_fidl_message = encode_fidl_message(
@@ -180,11 +195,15 @@ class ServerBase(
                 txid=txid,
                 type_name=None,
             )
+            if self._channel is None:
+                raise ValueError("Channel is already closed")
             self._channel.write(encoded_fidl_message)
         return True
 
     async def _channel_read(self) -> FidlMessage:
         while True:
+            if self._channel is None:
+                raise ValueError("Channel is already closed")
             try:
                 return self._channel.read()
             except fc.FcTransportStatus as e:
@@ -198,18 +217,24 @@ class ServerBase(
                 _LOGGER.warning(f"{self} channel received error: {e}")
                 raise e
 
-    async def _channel_read_and_parse(self):
+    async def _channel_read_and_parse(self) -> tuple[Any, int, int]:
         raw_msg = await self._channel_read()
         ordinal = parse_ordinal(raw_msg)
         txid = parse_txid(raw_msg)
-        handles = [x.take() for x in raw_msg[1]]
-        msg = decode_fidl_request(bytes=raw_msg[0], handles=handles)
+        handles = raw_msg[1]
+        verified_handles: list[int] = [0] * len(handles)
+        for i in range(len(handles)):
+            # Asserting is not enough for mypy, we must also cast.
+            hdl = cast(fc.BaseHandle, handles[i])
+            assert isinstance(hdl, fc.BaseHandle)
+            verified_handles[i] = hdl.take()
+        msg = decode_fidl_request(bytes=raw_msg[0], handles=verified_handles)
         result_obj = self.construct_response_object(
             self.method_map[ordinal].request_ident, msg
         )
         return result_obj, txid, ordinal
 
-    def _send_event(self, ordinal: int, library: str, msg_obj):
+    def _send_event(self, ordinal: int, library: str, msg_obj: Any) -> None:
         type_name = None
         if msg_obj is not None:
             type_name = msg_obj.__fidl_raw_type__
@@ -220,4 +245,6 @@ class ServerBase(
             txid=0,
             type_name=type_name,
         )
+        if self._channel is None:
+            raise ValueError("Channel is already closed")
         self._channel.write(encoded_fidl_message)

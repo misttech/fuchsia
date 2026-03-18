@@ -7,11 +7,12 @@ from typing import Any, Dict
 from unittest.mock import MagicMock, Mock
 
 import fidl_fuchsia_developer_ffx as ffx
+from fidl import HandleWaker
 from fidl_codec import encode_fidl_message, method_ordinal
 from fuchsia_controller_py import Channel, FcTransportStatus
 
 
-class MockWaker:
+class MockWaker(HandleWaker):
     def __init__(self) -> None:
         self.queues: Dict[int, asyncio.Queue[int]] = {}
 
@@ -50,7 +51,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             (bytearray([1, 0, 0, 0]), []),
         ]
         # The proxy here really doesn't matter, we're trying to access internal methods.
-        waker = MockWaker()
+        waker: HandleWaker = MockWaker()
         proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
         proxy.pending_txids.add(2)
@@ -72,7 +73,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
             (bytearray([1, 0, 0, 0]), []),
         ]
-        waker = MockWaker()
+        waker: HandleWaker = MockWaker()
         proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
         waker.post_ready(channel)
@@ -90,7 +91,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
             FcTransportStatus(FcTransportStatus.FC_ERR_SHOULD_WAIT),
         ]
-        waker = MockWaker()
+        waker: HandleWaker = MockWaker()
         proxy = ffx.EchoClient(channel, channel_waker=waker)
         proxy.pending_txids.add(1)
         waker.post_ready(channel)
@@ -105,7 +106,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         channel.__class__ = Channel  # type: ignore[assignment]
         channel.as_int.return_value = 0
         channel.read.side_effect = [(bytearray([1, 0, 0, 0]), ())]
-        waker = MockWaker()
+        waker: HandleWaker = MockWaker()
         proxy = ffx.EchoClient(channel, channel_waker=waker)
         waker.post_ready(channel)
         with self.assertRaises(RuntimeError):

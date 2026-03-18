@@ -2,16 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/346628306): Remove this comment to ignore mypy errors.
-# mypy: ignore-errors
-
 import re
 import sys
 import typing
 from abc import ABCMeta
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import fuchsia_controller_py as fc
 
@@ -19,8 +17,8 @@ import fuchsia_controller_py as fc
 TXID_Type = int
 Ordinal = int
 
-FidlMessage = Tuple[
-    bytes, List[fc.Channel] | List[tuple[int, int, int, int, int]]
+FidlMessage = tuple[
+    bytes, Sequence[fc.BaseHandle] | Sequence[tuple[int, int, int, int, int]]
 ]
 
 # The number of bytes in a FIDL header.
@@ -33,33 +31,37 @@ FIDL_EPITAPH_ORDINAL = 0xFFFFFFFFFFFFFFFF
 class FidlMeta(ABCMeta):
     def __new__(
         meta_cls,
-        name,
-        bases,
-        classdict,
-        required_class_variables: list[(str, type)] = [],
-    ):
-        def _check_required_class_variables(cls):
-            # These class variables are always required.
-            required_class_variables.extend([("__fidl_kind__", str)])
+        name: str,
+        bases: tuple[type, ...],
+        classdict: dict[str, typing.Any],
+        required_class_variables: list[tuple[str, type]] | None = None,
+    ) -> "FidlMeta":
+        if required_class_variables is None:
+            required_class_variables = []
 
-            missing_class_variables = []
-            for var, ty in required_class_variables:
-                if not hasattr(cls, var) or not isinstance(
-                    getattr(cls, var), ty
-                ):
-                    missing_class_variables.append(
-                        (var, type(getattr(cls, var, None)))
+        def _check_required_class_variables(cls: type["FidlMeta"]) -> None:
+            # These class variables are always required.
+            if required_class_variables is not None:
+                required_class_variables.extend([("__fidl_kind__", str)])
+
+                missing_class_variables = []
+                for var, ty in required_class_variables:
+                    if not hasattr(cls, var) or not isinstance(
+                        getattr(cls, var), ty
+                    ):
+                        missing_class_variables.append(
+                            (var, type(getattr(cls, var, None)))
+                        )
+                if len(missing_class_variables) > 0:
+                    raise NotImplementedError(
+                        f"Class {cls} missing (or wrong type) required\nclass variables:\n  {missing_class_variables}"
                     )
-            if len(missing_class_variables) > 0:
-                raise NotImplementedError(
-                    f"Class {cls} missing (or wrong type) required\nclass variables:\n  {missing_class_variables}"
-                )
 
         # If it exists, run the class-defined __init_subclass__ after the injected one.
         if "__init_subclass__" in classdict:
             class_defined_init_subclass = classdict["__init_subclass__"]
 
-            def wrapper(cls):
+            def wrapper(cls: type["FidlMeta"]) -> None:
                 _check_required_class_variables(cls)
                 class_defined_init_subclass(cls)
 
@@ -105,7 +107,11 @@ class StopEventHandler(Exception):
     """An exception used to stop an event handler from continuing."""
 
 
-def internal_kind_to_type(internal_kind: str):
+class FrameworkError(IntEnum):
+    UNKNOWN_METHOD = -2
+
+
+def internal_kind_to_type(internal_kind: str) -> type[FrameworkError]:
     # TODO(https://fxbug.dev/42061151): Remove "transport_error".
     if internal_kind == "framework_error" or internal_kind == "transport_error":
         return FrameworkError
@@ -116,10 +122,6 @@ class EpitaphError(fc.ZxStatus):
     """An exception received when an epitaph has been sent on the channel."""
 
 
-class FrameworkError(IntEnum):
-    UNKNOWN_METHOD = -2
-
-
 @dataclass
 class GenericResult:
     fidl_type: str
@@ -128,27 +130,27 @@ class GenericResult:
     framework_err: FrameworkError | None = None
 
     @property
-    def __fidl_type__(self):
+    def __fidl_type__(self) -> str:
         return self.fidl_type
 
     @property
-    def __fidl_raw_type__(self):
+    def __fidl_raw_type__(self) -> str:
         return self.fidl_type
 
 
-def parse_txid(msg: FidlMessage):
+def parse_txid(msg: FidlMessage) -> int:
     (b, _) = msg
     return int.from_bytes(b[0:4], sys.byteorder)
 
 
-def parse_ordinal(msg: FidlMessage):
+def parse_ordinal(msg: FidlMessage) -> int:
     (b, _) = msg
     start = FIDL_HEADER_SIZE
     end = FIDL_HEADER_SIZE + FIDL_ORDINAL_SIZE
     return int.from_bytes(b[start:end], sys.byteorder)
 
 
-def parse_epitaph_value(msg: FidlMessage):
+def parse_epitaph_value(msg: FidlMessage) -> int:
     (b, _) = msg
     start = FIDL_HEADER_SIZE + FIDL_ORDINAL_SIZE
     end = start + 4
@@ -160,7 +162,7 @@ def parse_epitaph_value(msg: FidlMessage):
     return res
 
 
-def camel_case_to_snake_case(s: str):
+def camel_case_to_snake_case(s: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 

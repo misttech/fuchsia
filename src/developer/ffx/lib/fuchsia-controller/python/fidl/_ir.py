@@ -3,9 +3,6 @@
 # found in the LICENSE file.
 """The library module handles creating Python classes and types based on FIDL IR rules."""
 
-# TODO(https://fxbug.dev/346628306): Remove this comment to ignore mypy errors.
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 import os
@@ -19,7 +16,7 @@ LIB_MAP: Dict[str, str] = {}
 MAP_INIT = False
 
 
-def find_jiri_root(starting_dir: os.PathLike) -> None | os.PathLike:
+def find_jiri_root(starting_dir: str | os.PathLike[str]) -> str | None:
     """Returns the path to a `.jiri_root` if it can be found, else `None`."""
     current_dir = os.path.realpath(starting_dir)
     while True:
