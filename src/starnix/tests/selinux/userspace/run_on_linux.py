@@ -56,6 +56,16 @@ def build_initrd(
         else:
             dest_path = initrd_dir / package_path
         dest_path.parent.mkdir(exist_ok=True, parents=True)
+        # Verify that the binary is built for x86_64 if it is an ELF.
+        if output_path.is_file():
+            file_out = subprocess.check_output(
+                ["file", "-b", str(output_path)], text=True
+            )
+            if "ELF" in file_out and "x86-64" not in file_out:
+                raise ValueError(
+                    f"Binary {output_path} ({package_path}) is not built for x86_64: {file_out.strip()}"
+                )
+
         shutil.copy(output_path, initrd_dir / dest_path)
 
     subprocess.run(
