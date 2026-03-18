@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_fdomain as proto;
 use fidl_message::TransactionHeader;
+use fuchsia_async as _;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use futures::channel::oneshot::Sender as OneshotSender;
@@ -14,7 +16,6 @@ use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker, ready};
-use {fidl_fuchsia_fdomain as proto, fuchsia_async as _};
 
 mod channel;
 mod event;
@@ -46,6 +47,8 @@ pub use socket::{Socket, SocketDisposition, SocketReadStream, SocketWriter};
 // Unsupported handle types.
 #[rustfmt::skip]
 pub use Handle as Clock;
+#[rustfmt::skip]
+pub use Handle as Exception;
 #[rustfmt::skip]
 pub use Handle as Fifo;
 #[rustfmt::skip]
