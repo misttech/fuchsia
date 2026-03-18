@@ -4,7 +4,7 @@
 
 pub mod json {
     use crate::processes_data::processed;
-    use fidl_fuchsia_buildinfo::BuildInfo;
+    use fdomain_fuchsia_buildinfo::BuildInfo;
     use serde::Serialize;
     use std::collections::HashSet;
     use zx_types;
@@ -95,7 +95,7 @@ pub mod json {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_buildinfo::BuildInfo;
+    use fdomain_fuchsia_buildinfo::BuildInfo;
 
     use crate::fuchsia_map::json;
     use crate::processes_data::processed;

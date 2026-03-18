@@ -22,8 +22,8 @@ rustc_library("ffx_process") {
 
   deps = [
     ":ffx_process_args",
-    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
-    "//sdk/fidl/fuchsia.process.explorer:fuchsia.process.explorer_rust",
+    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust_fdomain",
+    "//sdk/fidl/fuchsia.process.explorer:fuchsia.process.explorer_rust_fdomain",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/developer/ffx/config:lib",
@@ -31,7 +31,7 @@ rustc_library("ffx_process") {
     "//src/developer/ffx/lib/symbol-index",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
@@ -49,6 +49,7 @@ rustc_library("ffx_process") {
   ]
 
   test_deps = [
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:pretty_assertions",

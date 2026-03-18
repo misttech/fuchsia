@@ -10,22 +10,22 @@ mod write_human_readable_output;
 
 use anyhow::{Context, Result};
 
+use fdomain_fuchsia_buildinfo::{BuildInfo, ProviderProxy};
+use fdomain_fuchsia_process_explorer::{
+    ProcessExplorerGetStackTraceRequest, ProcessExplorerKillTaskRequest, ProcessExplorerProxy,
+    QueryProxy,
+};
 use ffx_config::EnvironmentContext;
 use ffx_process_args::{Args, ProcessCommand, Task};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_buildinfo::{BuildInfo, ProviderProxy};
-use fidl_fuchsia_process_explorer::{
-    ProcessExplorerGetStackTraceRequest, ProcessExplorerKillTaskRequest, ProcessExplorerProxy,
-    QueryProxy,
-};
 use fuchsia_map::json;
 use futures::AsyncReadExt;
 use processes_data::{processed, raw};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use write_human_readable_output::{
     pretty_print_invalid_koids, pretty_print_processes_data, pretty_print_processes_name_and_koid,
 };
@@ -93,16 +93,17 @@ impl ProcessTool {
 
 /// Returns a buffer containing the data obtained via the QueryProxyInterface.
 async fn get_raw_data(
-    query_proxy: impl fidl_fuchsia_process_explorer::QueryProxyInterface,
+    query_proxy: impl fdomain_fuchsia_process_explorer::QueryProxyInterface
+    + fdomain_client::fidl::Proxy,
 ) -> Result<Vec<u8>> {
     // Create a socket.
-    let (rx, tx) = fidl::Socket::create_stream();
+    let (rx, tx) = query_proxy.domain().create_stream_socket();
 
     // Send one end of the socket to the remote device.
     query_proxy.write_json_processes_data(tx)?;
 
     // Read all the bytes sent from the other end of the socket.
-    let mut rx_async = fidl::AsyncSocket::from_socket(rx);
+    let mut rx_async = rx;
     let mut buffer = Vec::new();
     rx_async.read_to_end(&mut buffer).await?;
 
@@ -111,7 +112,8 @@ async fn get_raw_data(
 
 /// Returns data structured according to ProcessesData obtained via the `QueryProxyInterface`. Performs basic schema validation.
 async fn get_processes_data(
-    query_proxy: impl fidl_fuchsia_process_explorer::QueryProxyInterface,
+    query_proxy: impl fdomain_fuchsia_process_explorer::QueryProxyInterface
+    + fdomain_client::fidl::Proxy,
 ) -> Result<raw::ProcessesData> {
     let buffer = get_raw_data(query_proxy).await?;
     Ok(serde_json::from_slice(&buffer)?)
@@ -167,15 +169,16 @@ fn list_subcommand(
 }
 
 async fn get_tasks_data(
-    query_proxy: impl fidl_fuchsia_process_explorer::QueryProxyInterface,
+    query_proxy: impl fdomain_fuchsia_process_explorer::QueryProxyInterface
+    + fdomain_client::fidl::Proxy,
 ) -> Result<raw::TasksData> {
-    let (rx, tx) = fidl::Socket::create_stream();
+    let (rx, tx) = query_proxy.domain().create_stream_socket();
 
     // Send one end of the socket to the remote device.
     query_proxy.write_json_task_hierarchy_data(tx)?;
 
     // Read all the bytes sent from the other end of the socket.
-    let mut rx_async = fidl::AsyncSocket::from_socket(rx);
+    let mut rx_async = rx;
     let mut buffer = Vec::new();
     rx_async.read_to_end(&mut buffer).await?;
     Ok(serde_json::from_slice(&buffer)?)
@@ -191,7 +194,8 @@ fn get_symbol_for_task_type(task_type: &str) -> &'static str {
 }
 
 async fn tree_subcommand(
-    query_proxy: impl fidl_fuchsia_process_explorer::QueryProxyInterface,
+    query_proxy: impl fdomain_fuchsia_process_explorer::QueryProxyInterface
+    + fdomain_client::fidl::Proxy,
     mut w: MachineWriter<raw::TasksData>,
     threads: bool,
 ) -> Result<()> {
@@ -316,6 +320,7 @@ fn write_symbolized_stack_traces(
         .context("Spawning symbolizer")?;
     let mut stdin = cmd.stdin.take().context("missing stdin")?;
     let mut stdout = BufReader::new(cmd.stdout.take().context("missing stdout")?);
+
     stdin.write_all(stack_trace.as_bytes())?;
     stdin.write_all(BARRIER.as_bytes())?;
 
@@ -340,8 +345,7 @@ fn write_symbolized_stack_traces(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::AsyncWriteExt;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     use std::sync::LazyLock;
     static EXPECTED_PROCESSES_DATA: LazyLock<raw::ProcessesData> =
@@ -400,15 +404,15 @@ mod tests {
     static DATA_WRITTEN_BY_PROCESS_EXPLORER: LazyLock<Vec<u8>> =
         LazyLock::new(|| serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap());
 
-    use fidl_fuchsia_process_explorer::QueryRequest;
+    use fdomain_fuchsia_process_explorer::QueryRequest;
 
     /// Returns a fake query service that writes `EXPECTED_PROCESSES_DATA` serialized to JSON to the socket when `WriteJsonProcessesData` is called.
-    fn setup_fake_query_svc() -> QueryProxy {
-        fake_proxy(|request| match request {
+    fn setup_fake_query_svc(client: std::sync::Arc<fdomain_client::Client>) -> QueryProxy {
+        fake_proxy(client, |request| match request {
             QueryRequest::WriteJsonProcessesData { socket, .. } => {
-                let mut s = fidl::AsyncSocket::from_socket(socket);
                 fuchsia_async::Task::local(async move {
-                    s.write_all(&serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap())
+                    socket
+                        .write_all(&serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap())
                         .await
                         .unwrap();
                 })
@@ -424,7 +428,8 @@ mod tests {
     /// Tests that `get_raw_data` properly reads data from the process explorer query service.
     #[fuchsia::test]
     async fn get_raw_data_test() {
-        let query_proxy = setup_fake_query_svc();
+        let client = fdomain_local::local_client_empty();
+        let query_proxy = setup_fake_query_svc(client);
         let raw_data = get_raw_data(query_proxy).await.expect("failed to get raw data");
         assert_eq!(raw_data, *DATA_WRITTEN_BY_PROCESS_EXPLORER);
     }
@@ -432,7 +437,8 @@ mod tests {
     /// Tests that `get_processes_data` properly reads and parses data from the query service.
     #[fuchsia::test]
     async fn get_processes_data_test() {
-        let query_proxy = setup_fake_query_svc();
+        let client = fdomain_local::local_client_empty();
+        let query_proxy = setup_fake_query_svc(client);
         let processes_data =
             get_processes_data(query_proxy).await.expect("failed to get processes_data");
         assert_eq!(processes_data, *EXPECTED_PROCESSES_DATA);
