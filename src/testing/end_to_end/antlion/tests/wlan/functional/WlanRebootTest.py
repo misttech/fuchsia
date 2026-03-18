@@ -21,10 +21,13 @@ from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.fuchsia_device import FuchsiaDevice
+from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
+    WlanPolicyControllerError,
+)
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import ConnectionState
 from mobly import asserts, signals, test_runner
-from mobly.records import TestResultRecord
 
 DUT_NETWORK_CONNECTION_TIMEOUT = 60
 
@@ -162,34 +165,9 @@ class WlanRebootTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
         self.access_point.stop_all_aps()
-        self.dut.wifi_toggle_state(True)
-        for ad in self.android_devices:
-            ad.droid.wakeLockAcquireBright()
-            ad.droid.wakeUpNow()
-        self.dut.disconnect()
-        if self.fuchsia_device:
-            self.fuchsia_device.configure_wlan()
-
-    def on_fail(self, record: TestResultRecord) -> None:
-        super().on_fail(record)
-        self.access_point.download_ap_logs(self.current_test_info.output_path)
 
     def teardown_test(self) -> None:
-        # TODO(b/273923552): We take a snapshot here and before rebooting the
-        # DUT for every test because the persistence component does not make the
-        # inspect logs available for 120 seconds. This helps for debugging
-        # issues where we need previous state.
-        self.dut.take_bug_report(self.current_test_info.record)
-        self.download_logs()
         self.access_point.stop_all_aps()
-        self.dut.disconnect()
-        for ad in self.android_devices:
-            ad.droid.wakeLockRelease()
-            ad.droid.goToSleepNow()
-        self.dut.turn_location_off_and_scan_toggle_off()
-        self.dut.reset_wifi()
-        if self.fuchsia_device:
-            self.fuchsia_device.deconfigure_wlan()
         super().teardown_test()
 
     def setup_ap(
@@ -209,7 +187,6 @@ class WlanRebootTest(base_test.WifiBaseTest):
             security_mode: The type of security mode.
             password: The PSK or passphase.
         """
-        # TODO(fxb/63719): Add varying AP parameters
         security_profile = Security(
             security_mode=security_mode, password=password
         )
@@ -272,51 +249,6 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 )
         else:
             raise ConnectionError("Failed to retrieve APs ping address.")
-
-    def prepare_dut_for_reconnection(self) -> None:
-        """Perform any actions to ready DUT for reconnection.
-
-        These actions will vary depending on the DUT. eg. android devices may
-        need to be woken up, ambient devices should not require any interaction,
-        etc.
-        """
-        self.dut.wifi_toggle_state(True)
-        for ad in self.android_devices:
-            ad.droid.wakeUpNow()
-
-    def wait_for_dut_network_connection(self, ssid: str) -> None:
-        """Checks if device is connected to given network. Sleeps 1 second
-        between retries.
-
-        Args:
-            ssid: ssid to check connection to.
-        Raises:
-            ConnectionError, if DUT is not connected after all timeout.
-        """
-        self.log.info(
-            f"Checking if DUT is connected to {ssid} network. Will retry for "
-            f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
-        )
-        timeout = time.time() + DUT_NETWORK_CONNECTION_TIMEOUT
-        while time.time() < timeout:
-            try:
-                is_connected = self.dut.is_connected(ssid=ssid)
-            except Exception as err:
-                self.log.debug(
-                    f"SL4* call failed. Retrying in 1 second. Error: {err}"
-                )
-                is_connected = False
-            finally:
-                if is_connected:
-                    self.log.info("Success: DUT has connected.")
-                    break
-                else:
-                    self.log.debug(
-                        f"DUT not connected to network {ssid}...retrying in 1 second."
-                    )
-                    time.sleep(1)
-        else:
-            raise ConnectionError("DUT failed to connect to the network.")
 
     def write_csv_time_to_reconnect(
         self,
@@ -437,14 +369,13 @@ class WlanRebootTest(base_test.WifiBaseTest):
             self.fuchsia_device.wait_for_ipv6_addr(test_interface)
             self.ping_dut_to_ap(band, IpVersionType.IPV6)
 
-        # TODO(b/273923552): We take a snapshot here and during test
-        # teardown for every test because the persistence component does not
-        # make the inspect logs available for 120 seconds. This helps for
-        # debugging issues where we need previous state.
-        self.dut.take_bug_report(self.current_test_info.record)
-
         # DUT reboots
         if reboot_device == DeviceType.DUT:
+            # TODO(b/273923552): We take a snapshot here before reboot
+            # because the persistence component does not make the inspect logs
+            # available for 120 seconds. This helps for debugging issues where
+            # we need previous state.
+            self.dut.take_bug_report(self.current_test_info.record)
             if reboot_type == RebootType.SOFT:
                 self.fuchsia_device.reboot()
             elif reboot_type == RebootType.HARD:
@@ -457,19 +388,28 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 self.access_point.stop_all_aps()
             elif reboot_type == RebootType.HARD:
                 self.access_point.hard_power_cycle(self.pdu_devices)
+            self.log.info(
+                f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
+                f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
+            )
+            self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
+                timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+            )
             self.setup_ap(ssid, band, ip_version, security_mode, password)
 
-        # TODO(b/492147624): Remove this sleep and instead wait for the DUT to
-        # realize that it is disconnected from the AP. This is needed because
-        # synadhd takes a little longer (~5 seconds) to realize that it is
-        # disconnected from the AP.
-        time.sleep(20)
-        self.prepare_dut_for_reconnection()
         uptime = time.time()
         try:
             try:
-                self.wait_for_dut_network_connection(ssid)
-            except ConnectionError as e:
+                self.log.info(
+                    f"Checking if DUT is connected to {ssid} network. Will retry for "
+                    f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
+                )
+                self.fuchsia_device.wlan_policy_controller.wait_for_network_state(
+                    ssid,
+                    ConnectionState.CONNECTED,
+                    timeout_sec=DUT_NETWORK_CONNECTION_TIMEOUT,
+                )
+            except WlanPolicyControllerError as e:
                 if (
                     reboot_device == DeviceType.DUT
                     and security_mode == SecurityMode.WPA3

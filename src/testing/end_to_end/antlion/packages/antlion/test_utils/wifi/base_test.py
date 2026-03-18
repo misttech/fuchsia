@@ -209,6 +209,9 @@ class WifiBaseTest(BaseTestClass):
                 device.take_bug_report()
         self.download_logs()
 
+        for access_point in self.access_points:
+            access_point.stop_all_aps()
+
     def on_fail(self, record: TestResultRecord) -> None:
         """A function that is executed upon a test failure.
 
@@ -233,6 +236,9 @@ class WifiBaseTest(BaseTestClass):
                 self.packet_logger, self.packet_log_pid, test_status=False
             )
             self.packet_log_pid = {}
+
+        # Download support device logs
+        self.download_logs()
 
         # Gets a wlan_device log and calls the generic device fail on DUT.
         for fd in self.fuchsia_devices:
