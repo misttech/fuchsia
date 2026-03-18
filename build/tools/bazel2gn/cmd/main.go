@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/build/tools/bazel2gn"
@@ -118,10 +119,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read GN targets to preserve: %v", err)
 	}
-	finalContent, err := gnFormatted(
+	finalContent, err := gnFormattedWithRetries(
 		context.Background(),
 		*gnBin,
 		toPreserve+"\n"+sentinelComment+"\n"+bazel2gnComment+"\n"+strings.Join(finalLines, "\n"),
+		3,
 	)
 	if err != nil {
 		log.Fatalf("Formatting final GN targets: %v", err)
@@ -205,21 +207,40 @@ func gnTargetsToPreserve(r io.Reader) (string, error) {
 	return ret.String(), nil
 }
 
-func gnFormatted(ctx context.Context, gnBin string, original string) (string, error) {
-	cmd := exec.CommandContext(ctx, gnBin, "format", "--stdin")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return "", fmt.Errorf("cmd.StdinPipe of `gn format`: %v", err)
+// gnFormattedWithRetries formats the given GN targets using `gn format --stdin`.
+//
+// It retries up to nRetries times with exponential backoff if the command times out.
+// The initial timeout is 1 second.
+func gnFormattedWithRetries(ctx context.Context, gnBin string, original string, nRetries int) (string, error) {
+	timeouts := []time.Duration{time.Second}
+	for i := 0; i < nRetries-1; i++ {
+		timeouts = append(timeouts, 2*timeouts[i])
 	}
-	if _, err := io.WriteString(stdin, original); err != nil {
-		return "", fmt.Errorf("writing stdin for `gn format`: %v", err)
+
+	for _, timeout := range timeouts {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, gnBin, "format", "--stdin")
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			return "", fmt.Errorf("cmd.StdinPipe of `gn format`: %v", err)
+		}
+		if _, err := io.WriteString(stdin, original); err != nil {
+			return "", fmt.Errorf("writing stdin for `gn format`: %v", err)
+		}
+		if err := stdin.Close(); err != nil {
+			return "", fmt.Errorf("closing stdin of `gn format`: %v", err)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == -1 {
+				// Most likely killed by timeout, so backoff and retry.
+				continue
+			}
+			return "", fmt.Errorf("`gn format` error: %v\nCombinedOutput:\n%s", err, string(out))
+		}
+		return string(out), nil
 	}
-	if err := stdin.Close(); err != nil {
-		return "", fmt.Errorf("closing stdin of `gn format`: %v", err)
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("`gn format` error: %v\nCombinedOutput:\n%s", err, string(out))
-	}
-	return string(out), nil
+	return "", fmt.Errorf("failed to format GN targets after %d retries", nRetries)
 }
