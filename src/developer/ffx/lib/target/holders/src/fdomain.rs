@@ -10,7 +10,9 @@ mod from_toolbox;
 mod remote_control_proxy;
 
 pub use from_toolbox::{toolbox, toolbox_or};
-pub use remote_control_proxy::{RemoteControlProxyHolder, fake_proxy, open_moniker_fdomain};
+pub use remote_control_proxy::{
+    RemoteControlProxyHolder, fake_async_proxy, fake_proxy, open_moniker_fdomain,
+};
 
 /// A decorator for proxy types in [`crate::FfxTool`] implementations so you can
 /// specify the moniker for the component exposing the proxy you're loading.
