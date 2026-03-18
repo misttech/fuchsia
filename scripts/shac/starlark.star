@@ -4,9 +4,8 @@
 
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 
-def _buildifier(ctx):
-    """Checks Starlark/Bazel file formatting using buildifier."""
-    starlark_files = [
+def _get_starlark_files(ctx):
+    return [
         f
         for f in ctx.scm.affected_files()
         if (
@@ -15,6 +14,10 @@ def _buildifier(ctx):
            ) and
            not f.startswith("third_party/")
     ]
+
+def _buildifier(ctx):
+    """Checks Starlark/Bazel file formatting using buildifier."""
+    starlark_files = _get_starlark_files(ctx)
     if not starlark_files:
         return
 
@@ -62,6 +65,47 @@ def _buildifier(ctx):
             replacements = [str(formatted)],
         )
 
+def _buildifier_lint(ctx):
+    """Lints Starlark/Bazel files using buildifier."""
+    starlark_files = _get_starlark_files(ctx)
+    if not starlark_files:
+        return
+
+    res = os_exec(
+        ctx,
+        [
+            "%s/prebuilt/third_party/buildifier/%s/buildifier" % (
+                get_fuchsia_dir(ctx),
+                cipd_platform_name(ctx),
+            ),
+            "-lint=warn",
+            "-format=json",
+            "-mode=check",
+        ] + starlark_files,
+        ok_retcodes = (0, 4),
+    ).wait()
+
+    if not res.stdout:
+        return
+
+    parsed = json.decode(res.stdout)
+
+    for file_result in parsed.get("files", []):
+        for warning in file_result.get("warnings", []):
+            # Ignore docstring-related warnings, they're not that important.
+            if "docstring" in warning["category"]:
+                continue
+
+            ctx.emit.finding(
+                level = "warning",
+                filepath = file_result["filename"],
+                message = warning["message"],
+                line = warning.get("start", {}).get("line"),
+                col = warning.get("start", {}).get("column"),
+                end_line = warning.get("end", {}).get("line"),
+                end_col = warning.get("end", {}).get("column"),
+            )
+
 def _fuchsia_shac_style_guide(ctx):
     """Enforces shac conventions that are specific to the fuchsia project."""
     starlark_files = [
@@ -97,4 +141,5 @@ def _fuchsia_shac_style_guide(ctx):
 
 def register_starlark_checks():
     shac.register_check(shac.check(_buildifier, formatter = True))
+    shac.register_check(shac.check(_buildifier_lint))
     shac.register_check(shac.check(_fuchsia_shac_style_guide))
