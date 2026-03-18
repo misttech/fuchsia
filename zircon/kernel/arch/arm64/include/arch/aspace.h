@@ -15,6 +15,7 @@
 #include <arch/arm64/mmu.h>
 #include <fbl/canary.h>
 #include <kernel/mutex.h>
+#include <ktl/atomic.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/mapping_cursor.h>
 
@@ -114,8 +115,7 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // new mapping count is non-zero, regardless of the error value, the num_mappings field in the
   // page must be updated by the caller.
   ktl::pair<zx_status_t, uint> MapPageTable(pte_t attrs, bool ro, uint index_shift,
-                                            volatile pte_t* page_table,
-                                            ExistingEntryAction existing_action,
+                                            pte_t* page_table, ExistingEntryAction existing_action,
                                             MappingCursor& cursor, ConsistencyManager& cm)
       TA_REQ(lock_);
 
@@ -130,22 +130,22 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // caller.
   ktl::pair<zx_status_t, uint> UnmapPageTable(VirtualAddressCursor& cursor,
                                               ArchUnmapOptions enlarge, CheckForEmptyPt pt_check,
-                                              uint index_shift, volatile pte_t* page_table,
+                                              uint index_shift, pte_t* page_table,
                                               ConsistencyManager& cm, Reclaim reclaim)
       TA_REQ(lock_);
 
   zx_status_t ProtectPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in, size_t size_in, pte_t attrs,
-                               ArchUnmapOptions enlarge, uint index_shift,
-                               volatile pte_t* page_table, ConsistencyManager& cm) TA_REQ(lock_);
+                               ArchUnmapOptions enlarge, uint index_shift, pte_t* page_table,
+                               ConsistencyManager& cm) TA_REQ(lock_);
 
   size_t HarvestAccessedPageTable(size_t* entry_limit, vaddr_t vaddr_in, vaddr_t vaddr_rel_in,
                                   size_t size_in, uint index_shift,
                                   NonTerminalAction non_terminal_action,
-                                  TerminalAction terminal_action, volatile pte_t* page_table,
+                                  TerminalAction terminal_action, pte_t* page_table,
                                   ConsistencyManager& cm) TA_REQ(lock_);
 
   void MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in, size_t size, uint index_shift,
-                             volatile pte_t* page_table) TA_REQ(lock_);
+                             pte_t* page_table) TA_REQ(lock_);
 
   // Splits a descriptor block into a set of next-level-down page blocks/pages.
   //
@@ -153,8 +153,8 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // the index shift of the page table entry of the descriptor blocking being split.
   // |page_table| is the page table that contains the descriptor block being split,
   // and |pt_index| is the index into that table.
-  zx_status_t SplitLargePage(vaddr_t vaddr, uint index_shift, vaddr_t pt_index,
-                             volatile pte_t* page_table, ConsistencyManager& cm) TA_REQ(lock_);
+  zx_status_t SplitLargePage(vaddr_t vaddr, uint index_shift, vaddr_t pt_index, pte_t* page_table,
+                             ConsistencyManager& cm) TA_REQ(lock_);
 
   pte_t MmuParamsFromFlags(uint mmu_flags);
 
@@ -259,7 +259,7 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // Pointer to the translation table.
   paddr_t tt_phys_ = 0;
   vm_page_t* tt_page_ = nullptr;
-  volatile pte_t* tt_virt_ = nullptr;
+  pte_t* tt_virt_ = nullptr;
 
   // Upper bound of the number of pages allocated to back the translation
   // table.
