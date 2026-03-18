@@ -93,6 +93,9 @@ open protocol TopologyControl {
         element_name ElementName;
         /// Power level of this element to be raised to.
         level PowerLevel;
+        /// Returns immediately if this is set to Unknown.
+        /// Otherwise, waits for the lease to reach this status before returning.
+        wait_for_status fuchsia.power.broker.LeaseStatus;
     }) -> () error LeaseControlError;
 
     // Drop a previously acquired lease.

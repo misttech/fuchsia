@@ -27,6 +27,7 @@ if (is_fuchsia) {
       "//src/lib/fuchsia-component",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:criterion",
+      "//third_party/rust_crates:rand",
     ]
 
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -64,6 +65,7 @@ rustc_test("bin") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:criterion",
+    "//third_party/rust_crates:rand",
   ]
 
   sources = [

@@ -10,13 +10,12 @@ mod daemon_work;
 mod sag_work;
 
 use anyhow::Result;
-use {
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
-    fidl_fuchsia_power_topology_test as fpt,
-};
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_power_topology_test as fpt;
 
-use fuchsia_criterion::criterion::Criterion;
 use fuchsia_criterion::FuchsiaCriterion;
+use fuchsia_criterion::criterion::Criterion;
 use std::sync::Arc;
 
 fn bench_take_wake_lease(
@@ -50,6 +49,16 @@ fn get_daemon_benches() -> criterion::Benchmark {
     })
 }
 
+fn get_large_topology_lease_benches(name: &'static str) -> criterion::Benchmark {
+    let num_elements = 10;
+    let topology_control = daemon_work::prepare_large_topology(num_elements);
+    criterion::Benchmark::new(name, move |b| {
+        b.iter(|| {
+            daemon_work::execute_acquire_and_drop_rand_lease(&topology_control, num_elements);
+        });
+    })
+}
+
 fn main() -> Result<()> {
     let mut c = FuchsiaCriterion::default();
     let internal_c: &mut Criterion = &mut c;
@@ -58,7 +67,8 @@ fn main() -> Result<()> {
         .measurement_time(std::time::Duration::from_millis(100))
         .sample_size(100);
 
-    let _: &mut Criterion = c.bench("fuchsia.power.framework", get_sag_benches("TakeDropWakeLease"));
+    let _: &mut Criterion =
+        c.bench("fuchsia.power.framework", get_sag_benches("TakeDropWakeLease"));
     let sag_arc = sag_work::obtain_sag_proxy();
     let _event_pair = sag_arc
         .take_wake_lease(
@@ -69,6 +79,8 @@ fn main() -> Result<()> {
 
     let _: &mut Criterion = c.bench("fuchsia.power.framework", get_sag_benches("TakeWakeLease"));
     let _: &mut Criterion = c.bench("fuchsia.power.framework", get_daemon_benches());
+    let _: &mut Criterion =
+        c.bench("fuchsia.power.framework", get_large_topology_lease_benches("LargeTopologyLease"));
 
     Ok(())
 }

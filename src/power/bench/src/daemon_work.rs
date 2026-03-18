@@ -6,9 +6,11 @@
 /// Topology Test Daemon.
 use anyhow::Result;
 use fidl::endpoints::create_sync_proxy;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_topology_test as fpt;
 use fuchsia_component::client::connect_to_protocol_sync;
-use {fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_topology_test as fpt};
 
+use rand::Rng;
 use std::sync::Arc;
 
 #[inline(always)]
@@ -22,7 +24,9 @@ fn work_func(
 ) -> Result<()> {
     // Acquire lease for C @ 5.
 
-    let _ = topology_control.acquire_lease("C", 5, zx::MonotonicInstant::INFINITE).unwrap();
+    let _ = topology_control
+        .acquire_lease("C", 5, fbroker::LeaseStatus::Unknown, zx::MonotonicInstant::INFINITE)
+        .unwrap();
     let level = status_channel
         .watch_power_level(zx::MonotonicInstant::INFINITE)
         .expect("Fidl call should work")
@@ -81,4 +85,71 @@ pub(crate) fn execute(
     status_channel: &Arc<fbroker::StatusSynchronousProxy>,
 ) {
     let _ = black_box(work_func(topology_control, status_channel));
+}
+
+fn acquire_and_drop_rand_lease_work_func(
+    topology_control: &fpt::TopologyControlSynchronousProxy,
+    num_elements: usize,
+) -> Result<()> {
+    let mut rng = rand::rng();
+    let i = rng.random_range(0..num_elements);
+
+    let _ = topology_control
+        .acquire_lease(
+            &format!("element_{}", i),
+            1,
+            fbroker::LeaseStatus::Satisfied,
+            zx::MonotonicInstant::INFINITE,
+        )
+        .unwrap();
+
+    let _ = topology_control
+        .drop_lease(&format!("element_{}", i), zx::MonotonicInstant::INFINITE)
+        .unwrap();
+    Ok(())
+}
+
+pub(crate) fn prepare_large_topology(
+    num_elements: usize,
+) -> Arc<fpt::TopologyControlSynchronousProxy> {
+    let topology_control = connect_to_protocol_sync::<fpt::TopologyControlMarker>().unwrap();
+
+    let mut elements = Vec::new();
+
+    for i in 0..num_elements {
+        let name = format!("element_{}", i);
+        let mut deps = Vec::new();
+        if i > 0 {
+            deps.push(fpt::LevelDependency {
+                dependent_level: 1,
+                requires_element: format!("element_{}", i - 1),
+                requires_level: 1,
+            });
+            // Multi-dependencies to trigger exponential explosions natively
+            if i > 1 {
+                deps.push(fpt::LevelDependency {
+                    dependent_level: 1,
+                    requires_element: format!("element_{}", i - 2),
+                    requires_level: 1,
+                });
+            }
+        }
+        elements.push(fpt::Element {
+            element_name: name,
+            initial_current_level: 0,
+            valid_levels: vec![0, 1],
+            dependencies: deps,
+        });
+    }
+
+    let _ = topology_control.create(&elements, zx::MonotonicInstant::INFINITE).unwrap();
+
+    Arc::new(topology_control)
+}
+
+pub(crate) fn execute_acquire_and_drop_rand_lease(
+    topology_control: &fpt::TopologyControlSynchronousProxy,
+    num_elements: usize,
+) {
+    let _ = black_box(acquire_and_drop_rand_lease_work_func(topology_control, num_elements));
 }

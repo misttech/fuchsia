@@ -4,7 +4,12 @@
 
 use anyhow::{Context, Error, Result, anyhow};
 use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_topology_test as fpt;
 use fidl_test_powerelementrunner::ControlMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
@@ -15,11 +20,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use zx::{HandleBased, Rights};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_topology_test as fpt,
-    fuchsia_async as fasync,
-};
 
 const ELEMENTS_COLLECTION: &'static str = "elements";
 
@@ -180,10 +180,16 @@ impl TopologyTestDaemon {
 
         service_fs
             .for_each_concurrent(None, move |request: IncomingRequest| {
-                let ttd = self.clone();
+                let topology_proxy = self.topology_proxy.clone();
                 async move {
                     match request {
                         IncomingRequest::TopologyControl(stream) => {
+                            let ttd = Rc::new(TopologyTestDaemon {
+                                topology_proxy,
+                                internal_topology: PowerTopology {
+                                    elements: RefCell::new(HashMap::new()),
+                                },
+                            });
                             fasync::Task::local(ttd.handle_topology_control_request(stream))
                                 .detach()
                         }
@@ -211,9 +217,11 @@ impl TopologyTestDaemon {
                     responder,
                     element_name,
                     level,
+                    wait_for_status,
                 }) => {
-                    let result =
-                        responder.send(self.clone().acquire_lease(element_name, level).await);
+                    let result = responder.send(
+                        self.clone().acquire_lease(element_name, level, wait_for_status).await,
+                    );
 
                     if let Err(error) = result {
                         warn!(
@@ -277,9 +285,19 @@ impl TopologyTestDaemon {
             fpt::CreateTopologyGraphError::Internal
         })?;
 
-        while elements.len() > 0 {
-            let element = elements.pop().unwrap();
-            self.clone().create_element_recursive(&realm, element, &mut elements).await?
+        {
+            let mut internal_topology_elements = self.internal_topology.elements.borrow_mut();
+            while elements.len() > 0 {
+                let element = elements.pop().unwrap();
+                self.clone()
+                    .create_element_recursive(
+                        &realm,
+                        &mut internal_topology_elements,
+                        element,
+                        &mut elements,
+                    )
+                    .await?
+            }
         }
 
         self.internal_topology.run_power_elements().await.map_err(|err| {
@@ -293,6 +311,7 @@ impl TopologyTestDaemon {
     fn create_element_recursive<'a>(
         self: Rc<Self>,
         realm: &'a fcomponent::RealmProxy,
+        internal_topology_elements: &'a mut HashMap<String, PowerElement>,
         element: fpt::Element,
         elements: &'a mut Vec<fpt::Element>,
     ) -> Pin<Box<dyn Future<Output = fpt::TopologyControlCreateResult> + 'a>> {
@@ -301,19 +320,24 @@ impl TopologyTestDaemon {
             for dependency in element.dependencies {
                 let required_element_name = dependency.requires_element;
                 // If required_element hasn't been created, find it in `elements` and create it.
-                if !self.internal_topology.elements.borrow().contains_key(&required_element_name) {
+                if !internal_topology_elements.contains_key(&required_element_name) {
                     if let Some(index) =
                         elements.iter().position(|e| e.element_name == required_element_name)
                     {
                         let new_element = elements.swap_remove(index);
-                        self.clone().create_element_recursive(realm, new_element, elements).await?;
+                        self.clone()
+                            .create_element_recursive(
+                                realm,
+                                internal_topology_elements,
+                                new_element,
+                                elements,
+                            )
+                            .await?;
                     } else {
                         return Err(fpt::CreateTopologyGraphError::InvalidTopology);
                     }
                 }
-                let internal_topology_elements = &self.internal_topology.elements.borrow();
-                let power_element =
-                    &internal_topology_elements.get(&required_element_name).unwrap();
+                let power_element = internal_topology_elements.get(&required_element_name).unwrap();
                 let token = power_element
                     .assertive_dependency_token
                     .duplicate_handle(Rights::SAME_RIGHTS)
@@ -339,7 +363,7 @@ impl TopologyTestDaemon {
                 fpt::CreateTopologyGraphError::Internal
             })?;
 
-            self.internal_topology.elements.borrow_mut().insert(element_name, power_element);
+            internal_topology_elements.insert(element_name, power_element);
             Ok(())
         })
     }
@@ -348,18 +372,35 @@ impl TopologyTestDaemon {
         self: Rc<Self>,
         element_name: String,
         level: u8,
+        wait_for_status: fbroker::LeaseStatus,
     ) -> fpt::TopologyControlAcquireLeaseResult {
         let elements = self.internal_topology.elements.borrow_mut();
         let element = elements.get(&element_name).ok_or_else(|| {
             warn!(element_name:%; "Failed to find element name in the created topology graph");
             fpt::LeaseControlError::InvalidElement
         })?;
-        let _ = element.lease.borrow_mut().replace(lease(&element.lessor, level).await.map_err(
-            |err| {
-                warn!(err:%, element_name:%, level; "Failed to acquire a lease");
-                fpt::LeaseControlError::Internal
-            },
-        )?);
+
+        let lease_control = lease(&element.lessor, level).await.map_err(|err| {
+            warn!(err:%, element_name:%, level; "Failed to acquire a lease");
+            fpt::LeaseControlError::Internal
+        })?;
+
+        if wait_for_status != fbroker::LeaseStatus::Unknown {
+            let target_status = wait_for_status;
+            let mut current_status = fbroker::LeaseStatus::Unknown;
+            loop {
+                current_status =
+                    lease_control.watch_status(current_status).await.map_err(|err| {
+                        warn!(err:%, element_name:%, level; "Failed to watch lease status");
+                        fpt::LeaseControlError::Internal
+                    })?;
+                if current_status == target_status {
+                    break;
+                }
+            }
+        }
+
+        let _ = element.lease.borrow_mut().replace(lease_control);
 
         Ok(())
     }

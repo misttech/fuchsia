@@ -107,3 +107,33 @@ async fn print_power_broker_inspect_stats(iteration: u32) {
     );
     ()
 }
+
+#[fuchsia::test]
+async fn test_large_topology_lease_benchmark() -> Result<()> {
+    // TODO(b/491223927): I'd like to get this to at least 100, but starting
+    // here, and we'll bump it up as we make improvements.
+    let num_elements = 20;
+    let total: u32 = determine_loop_count();
+
+    println!("Building large topology with {} elements...", num_elements);
+    let topology_control = daemon_work::prepare_large_topology(num_elements);
+    println!("Topology created.");
+
+    let start = Instant::now();
+    for iteration in 0..total {
+        daemon_work::execute_acquire_and_drop_rand_lease(&topology_control, num_elements);
+        if iteration > 0 && iteration % 1000 == 0 {
+            print_power_broker_inspect_stats(iteration).await;
+        }
+    }
+    let duration = start.elapsed();
+    println!("Total execution time over {} iterations: {:?}", total, duration);
+    println!(
+        "Average time for each execution ({} leases acquire/drop) is {:?}",
+        total,
+        duration / total
+    );
+
+    print_power_broker_inspect_stats(total).await;
+    Ok(())
+}

@@ -1,3 +1,4 @@
 fuchsia.power.framework: TakeDropWakeLease
 fuchsia.power.framework: TakeWakeLease
 fuchsia.power.framework: ToggleLease
+fuchsia.power.framework: LargeTopologyLease

@@ -6,11 +6,12 @@ use anyhow::Result;
 use diagnostics_assertions::tree_assertion;
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_topology_test as fpt;
 use fuchsia_component_test::{
     Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
 use log::*;
-use {fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_topology_test as fpt};
 
 const MACRO_LOOP_EXIT: bool = false; // useful in development; prevent hangs from inspect mismatch
 
@@ -186,7 +187,7 @@ async fn test_invalid_element() -> Result<()> {
     assert_eq!(topology_control.create(&element).await.unwrap(), Ok(()));
 
     assert_eq!(
-        topology_control.acquire_lease("element2", 1).await.unwrap(),
+        topology_control.acquire_lease("element2", 1, fbroker::LeaseStatus::Unknown).await.unwrap(),
         Err(fpt::LeaseControlError::InvalidElement)
     );
     assert_eq!(
@@ -274,7 +275,7 @@ async fn test_topology_control() -> Result<()> {
     );
 
     // Acquire lease for C1 @ 5.
-    let _ = topology_control.acquire_lease("C1", 5).await.unwrap();
+    let _ = topology_control.acquire_lease("C1", 5, fbroker::LeaseStatus::Unknown).await.unwrap();
     block_until_power_elements_match!(
         &env.broker_moniker,
         [
@@ -286,7 +287,7 @@ async fn test_topology_control() -> Result<()> {
     );
 
     // Acquire lease for C2 @ 3.
-    let _ = topology_control.acquire_lease("C2", 3).await.unwrap();
+    let _ = topology_control.acquire_lease("C2", 3, fbroker::LeaseStatus::Unknown).await.unwrap();
     block_until_power_elements_match!(
         &env.broker_moniker,
         [
@@ -368,7 +369,7 @@ async fn test_topology_control_and_status() -> Result<()> {
     );
 
     // Acquire lease for C @ 5.
-    let _ = topology_control.acquire_lease("C", 5).await.unwrap();
+    let _ = topology_control.acquire_lease("C", 5, fbroker::LeaseStatus::Unknown).await.unwrap();
     info!("Checking after lease for C");
     let level = status_channel
         .watch_power_level()
