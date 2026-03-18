@@ -83,6 +83,7 @@ crct10dif_pclmul
 crc32_pclmul
 virtio_pci
 crc32c_intel
+overlay
 EOF
 
 # Explicitly disable resume from swap. This is to ensure we never try to to
