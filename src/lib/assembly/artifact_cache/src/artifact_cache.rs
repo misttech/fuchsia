@@ -113,6 +113,20 @@ impl ArtifactCache {
         .await
     }
 
+    /// Resolve a PIB to a local path, downloading it if necessary.
+    pub async fn resolve_pib(&self, pib: String) -> Result<Utf8PathBuf, ArtifactError> {
+        self.resolve_artifact_with_suggestion(
+            pib,
+            "product_input_bundles.json",
+            "product_input_bundle",
+            &[
+                "fuchsia/assembly/product_input_bundles",
+                "fuchsia_internal/assembly/product_input_bundles",
+            ],
+        )
+        .await
+    }
+
     /// Resolve a board to a local path, downloading it if necessary.
     pub async fn resolve_bib_set(&self, bib_set: String) -> Result<Utf8PathBuf, ArtifactError> {
         self.resolve_artifact_with_suggestion(

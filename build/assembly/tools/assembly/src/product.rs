@@ -30,6 +30,7 @@ pub fn assemble(args: ProductArgs) -> Result<()> {
         include_example_aib_for_tests,
         mode,
         board_input_bundle_sets,
+        product_input_bundles,
     } = args;
 
     info!("Reading configuration files.");
@@ -50,7 +51,7 @@ Resulting product is not supported and may misbehave!
     let platform_artifacts = Some(PlatformArtifacts::from_dir_with_path(&input_bundles_dir)?)
         .context("Reading platform artifacts")?;
 
-    let product_config =
+    let mut product_config =
         ProductConfig::from_dir(&product).context("Reading product configuration")?;
 
     let mut board_config =
@@ -67,6 +68,19 @@ Resulting product is not supported and may misbehave!
                 )
                 .context("Reading board input bundle sets")?;
         board_config.merge_board_input_bundle_sets(replace_bib_sets);
+    }
+
+    if !product_input_bundles.is_empty() {
+        // Read the product input bundles that will be used to replace PIBs in the product
+        // with the same name. `insert` will replace any existing entry with that name.
+        let replace_pibs: Vec<product_input_bundle::ProductInputBundle> = product_input_bundles
+            .iter()
+            .map(|path| product_input_bundle::ProductInputBundle::from_dir(&path))
+            .collect::<Result<Vec<product_input_bundle::ProductInputBundle>, anyhow::Error>>()
+            .context("Reading product input bundles")?;
+        for pib in replace_pibs {
+            product_config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
+        }
     }
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
         Some(load_developer_overrides(&overrides_path, suppress_overrides_warning)?)

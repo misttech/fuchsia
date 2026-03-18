@@ -162,6 +162,18 @@
       "short": null,
       "description": "a list of board input bundle sets to override with.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "product-input-bundles"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--product-input-bundles",
+      "short": null,
+      "description": "a list of product input bundles to override with.",
+      "hidden": false
     }
   ],
   "notes": [],

@@ -86,6 +86,10 @@ pub struct CreateCommand {
     #[argh(option)]
     pub bib_set: Vec<String>,
 
+    /// the product input bundles (pibs) to use. See ARTIFACT below.
+    #[argh(option)]
+    pub pib: Vec<String>,
+
     /// the name to add to the output product bundle.
     /// Defaults to product_config.board_config.
     #[argh(option)]

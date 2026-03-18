@@ -82,6 +82,7 @@ mod tests {
             include_example_aib_for_tests: Some(false),
             mode: Default::default(),
             board_input_bundle_sets: vec![],
+            product_input_bundles: vec![],
         };
         assembly_tool.run(&args.to_vec(&env.context)).unwrap();
 

@@ -67,6 +67,10 @@ pub struct ProductArgs {
     /// a list of board input bundle sets to override with.
     #[argh(option)]
     pub board_input_bundle_sets: Vec<Utf8PathBuf>,
+
+    /// a list of product input bundles to override with.
+    #[argh(option)]
+    pub product_input_bundles: Vec<Utf8PathBuf>,
 }
 
 impl ProductArgs {
@@ -117,6 +121,10 @@ impl ProductArgs {
         for bib_set in &self.board_input_bundle_sets {
             args.push("--board-input-bundle-sets".to_string());
             args.push(bib_set.to_string());
+        }
+        for pib in &self.product_input_bundles {
+            args.push("--product-input-bundles".to_string());
+            args.push(pib.to_string());
         }
         args
     }

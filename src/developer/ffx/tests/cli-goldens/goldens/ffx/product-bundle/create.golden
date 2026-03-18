@@ -90,6 +90,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "pib"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--pib",
+      "short": null,
+      "description": "the product input bundles (pibs) to use. See ARTIFACT below.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "output-name"
         }
       },

@@ -323,6 +323,7 @@ impl<'a> BisectionController<'a> {
             include_example_aib_for_tests: Some(false),
             mode: Default::default(),
             board_input_bundle_sets: vec![],
+            product_input_bundles: vec![],
         };
 
         let create_system_outputs = assembly_api::assemble(&self.env_context, product_args)?;

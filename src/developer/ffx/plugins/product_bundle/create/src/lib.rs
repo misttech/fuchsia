@@ -134,6 +134,9 @@ struct SanitizedCreateCommand {
 
     /// The board input bundle sets to use.
     pub bib_sets: Vec<String>,
+
+    /// The product input bundles to use.
+    pub pibs: Vec<String>,
 }
 
 /// What result we want from running `ffx product create`.
@@ -207,6 +210,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             recovery_board_config,
             zbi_only,
             bib_set,
+            pib,
             ..
         } = cmd;
 
@@ -232,6 +236,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             result,
             zbi_only,
             bib_sets: bib_set,
+            pibs: pib,
         })
     }
 }
@@ -270,6 +275,7 @@ async fn sanitized_product_bundle_create(
         cmd.product_config,
         cmd.board_config.clone(),
         cmd.bib_sets.clone(),
+        cmd.pibs.clone(),
     )
     .await?;
     writer
@@ -352,6 +358,7 @@ async fn sanitized_product_bundle_create(
             recovery_product_config,
             cmd.recovery_board_config.unwrap_or_else(|| cmd.board_config.clone()),
             cmd.bib_sets.clone(),
+            vec![],
         )
         .await?;
         let recovery_system = Box::pin(recovery_assembly.create_system(
@@ -415,6 +422,7 @@ mod test {
             auth: AuthFlowChoice::Default,
             zbi_only: false,
             bib_set: vec![],
+            pib: vec![],
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);
@@ -445,6 +453,7 @@ mod test {
             auth: AuthFlowChoice::Default,
             zbi_only: false,
             bib_set: vec![],
+            pib: vec![],
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);

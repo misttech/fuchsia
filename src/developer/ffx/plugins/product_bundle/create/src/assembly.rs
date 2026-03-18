@@ -21,6 +21,8 @@ pub struct Assembly {
     pub board_config_release_info: BoardReleaseInfo,
     pub bib_sets: Vec<Utf8PathBuf>,
     pub bib_set_release_infos: Vec<ReleaseInfo>,
+    pub pibs: Vec<Utf8PathBuf>,
+    pub pib_release_infos: Vec<ReleaseInfo>,
 }
 
 impl Assembly {
@@ -30,6 +32,7 @@ impl Assembly {
         product_config: String,
         board_config: String,
         bib_sets: Vec<String>,
+        pibs: Vec<String>,
     ) -> Result<Self, ArtifactError> {
         let product_config_path = cache.resolve_product(product_config).await?;
         let product_config_release_info = load_product_release_info(&product_config_path)?;
@@ -43,6 +46,14 @@ impl Assembly {
 
         let bib_set_release_infos =
             bib_sets.iter().map(|p| load_bib_set_release_info(p)).collect::<Result<Vec<_>, _>>()?;
+
+        let pibs: Vec<Utf8PathBuf> = futures::future::try_join_all(
+            pibs.into_iter().map(|pib| async move { cache.resolve_pib(pib).await }),
+        )
+        .await?;
+
+        let pib_release_infos =
+            pibs.iter().map(|p| load_pib_release_info(p)).collect::<Result<Vec<_>, _>>()?;
 
         let board_config_release_info = load_board_release_info(&board_config_path)?;
         let arch: assembly_config_schema::board_config::Architecture =
@@ -60,6 +71,8 @@ impl Assembly {
             board_config_release_info,
             bib_sets,
             bib_set_release_infos,
+            pibs,
+            pib_release_infos,
         })
     }
 
@@ -75,6 +88,9 @@ impl Assembly {
         );
         for bib_set in &self.bib_set_release_infos {
             base.push_str(&format!("\n\tbib_set: {}@{}", bib_set.name, bib_set.version));
+        }
+        for pib in &self.pib_release_infos {
+            base.push_str(&format!("\n\tpib: {}@{}", pib.name, pib.version));
         }
         base
     }
@@ -103,7 +119,8 @@ impl Assembly {
             developer_overrides,
             include_example_aib_for_tests: Some(should_configure_example),
             mode: if zbi_only { AssemblyMode::SkipFilesystems } else { Default::default() },
-            board_input_bundle_sets: self.bib_sets,
+            board_input_bundle_sets: self.bib_sets.clone(),
+            product_input_bundles: self.pibs,
         };
         let create_system_outputs = assembly_api::assemble(context, args)?;
         AssembledSystem::from_dir(create_system_outputs.outdir)
