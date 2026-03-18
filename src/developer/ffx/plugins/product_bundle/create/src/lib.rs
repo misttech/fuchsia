@@ -16,9 +16,11 @@ use ffx_config::EnvironmentContext;
 use ffx_product_bundle_create_args::CreateCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
+use gcs;
+use pbms;
 use product_bundle::{ProductBundleBuilder, Slot};
+use structured_ui;
 use tempfile::tempdir;
-use {gcs, pbms, structured_ui};
 
 #[derive(FfxTool)]
 pub struct ProductBundleCreateTool {
@@ -129,6 +131,9 @@ struct SanitizedCreateCommand {
 
     /// Whether to only build the ZBI and skip filesystems.
     pub zbi_only: bool,
+
+    /// The board input bundle sets to use.
+    pub bib_sets: Vec<String>,
 }
 
 /// What result we want from running `ffx product create`.
@@ -201,6 +206,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             recovery_product_config,
             recovery_board_config,
             zbi_only,
+            bib_set,
             ..
         } = cmd;
 
@@ -225,6 +231,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             developer_overrides,
             result,
             zbi_only,
+            bib_sets: bib_set,
         })
     }
 }
@@ -257,9 +264,14 @@ async fn sanitized_product_bundle_create(
     }
 
     let cache = ArtifactCache::new(build_dir, gcs_client)?;
-    let assembly =
-        Assembly::new(&cache, cmd.platform.clone(), cmd.product_config, cmd.board_config.clone())
-            .await?;
+    let assembly = Assembly::new(
+        &cache,
+        cmd.platform.clone(),
+        cmd.product_config,
+        cmd.board_config.clone(),
+        cmd.bib_sets.clone(),
+    )
+    .await?;
     writer
         .line(format!("Staged the artifacts\n{}", assembly.version_string()))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
@@ -339,6 +351,7 @@ async fn sanitized_product_bundle_create(
             cmd.platform.clone(),
             recovery_product_config,
             cmd.recovery_board_config.unwrap_or_else(|| cmd.board_config.clone()),
+            cmd.bib_sets.clone(),
         )
         .await?;
         let recovery_system = Box::pin(recovery_assembly.create_system(
@@ -401,6 +414,7 @@ mod test {
             out: None,
             auth: AuthFlowChoice::Default,
             zbi_only: false,
+            bib_set: vec![],
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);
@@ -430,6 +444,7 @@ mod test {
             out: None,
             auth: AuthFlowChoice::Default,
             zbi_only: false,
+            bib_set: vec![],
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);

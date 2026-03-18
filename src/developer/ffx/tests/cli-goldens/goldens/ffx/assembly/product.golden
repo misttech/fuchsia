@@ -150,6 +150,18 @@
       "short": null,
       "description": "change the default mode assembly runs in to produce test images.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "board-input-bundle-sets"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--board-input-bundle-sets",
+      "short": null,
+      "description": "a list of board input bundle sets to override with.",
+      "hidden": false
     }
   ],
   "notes": [],

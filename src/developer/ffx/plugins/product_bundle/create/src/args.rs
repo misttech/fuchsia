@@ -82,6 +82,10 @@ pub struct CreateCommand {
     #[argh(option)]
     pub recovery_board_config: Option<String>,
 
+    /// the board input bundle sets (bib_sets) to use. See ARTIFACT below.
+    #[argh(option)]
+    pub bib_set: Vec<String>,
+
     /// the name to add to the output product bundle.
     /// Defaults to product_config.board_config.
     #[argh(option)]

@@ -43,7 +43,7 @@ impl ArtifactCache {
         &self,
         product_config: String,
     ) -> Result<Utf8PathBuf, ArtifactError> {
-        self.resolve_product_or_board_with_suggestion(
+        self.resolve_artifact_with_suggestion(
             product_config,
             "products.json",
             "product",
@@ -54,7 +54,7 @@ impl ArtifactCache {
 
     /// Resolve a board to a local path, downloading it if necessary.
     pub async fn resolve_board(&self, board_config: String) -> Result<Utf8PathBuf, ArtifactError> {
-        self.resolve_product_or_board_with_suggestion(
+        self.resolve_artifact_with_suggestion(
             board_config,
             "boards.json",
             "board",
@@ -63,7 +63,7 @@ impl ArtifactCache {
         .await
     }
 
-    async fn resolve_product_or_board_with_suggestion(
+    async fn resolve_artifact_with_suggestion(
         &self,
         artifact: String,
         build_api: &str,
@@ -110,6 +110,20 @@ impl ArtifactCache {
             self.build_dir.as_ref(),
             build_api,
         )?)
+        .await
+    }
+
+    /// Resolve a board to a local path, downloading it if necessary.
+    pub async fn resolve_bib_set(&self, bib_set: String) -> Result<Utf8PathBuf, ArtifactError> {
+        self.resolve_artifact_with_suggestion(
+            bib_set,
+            "board_input_bundle_sets.json",
+            "board_input_bundle_set",
+            &[
+                "fuchsia/assembly/board_input_bundles",
+                "fuchsia_internal/assembly/board_input_bundles",
+            ],
+        )
         .await
     }
 

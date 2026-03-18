@@ -209,6 +209,67 @@ impl BoardConfig {
             .collect::<Result<BTreeMap<String, DirectoryPathBuf>>>()?;
         Ok(self)
     }
+
+    /// Merge the board input bundle sets.
+    pub fn merge_board_input_bundle_sets(&mut self, bib_sets: Vec<crate::BoardInputBundleSet>) {
+        let replace_bib_sets: BTreeMap<String, crate::BoardInputBundleSet> =
+            bib_sets.into_iter().map(|set| (set.name.clone(), set)).collect();
+
+        for (full_bib_name, bib_path) in &mut self.input_bundles {
+            let bib_ref = BibReference::from(full_bib_name);
+
+            // Replace BIBs that are part of a BIB set.
+            if let BibReference::FromBibSet { set, name } = bib_ref
+                && let Some(replace_bib_set) = replace_bib_sets.get(&set)
+                && let Some(replace_bib_entry) = replace_bib_set.board_input_bundles.get(&name)
+            {
+                *bib_path = replace_bib_entry.path.clone();
+            }
+        }
+    }
+}
+
+/// A reference of a BIB found in a board, which can either have been from a
+/// BIB set or added independently not through a set.
+pub enum BibReference {
+    /// A BIB that was added via a BIB set.
+    /// We keep track of the set name, so that we can easily replace the entire
+    /// set of BIBs wholesale.
+    FromBibSet {
+        /// The name of the BIB set.
+        set: String,
+        /// The name of the BIB.
+        name: String,
+    },
+
+    /// A BIB that was added independent of a BIB set.
+    Independent {
+        /// The name of the BIB.
+        name: String,
+    },
+}
+
+impl From<&String> for BibReference {
+    fn from(s: &String) -> Self {
+        let mut parts: Vec<&str> = s.split("::").collect();
+        let bib_name = parts.pop();
+        let set_name = parts.pop();
+        match (set_name, bib_name) {
+            (Some(set), Some(name)) => {
+                Self::FromBibSet { set: set.to_string(), name: name.to_string() }
+            }
+            _ => Self::Independent { name: s.to_string() },
+        }
+    }
+}
+
+impl std::fmt::Display for BibReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FromBibSet { set, name } => write!(f, "{}::{}", set, name),
+            Self::Independent { name } => write!(f, "{}", name),
+        }
+    }
 }
 
 impl BoardInputBundle {
@@ -509,5 +570,53 @@ mod test {
         };
 
         assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn test_merge_board_input_bundle_sets() {
+        let mut board = BoardConfig {
+            input_bundles: [
+                ("myset::mybib".to_string(), DirectoryPathBuf::new("path/to/old/bib".into())),
+                (
+                    "otherset::otherbib".to_string(),
+                    DirectoryPathBuf::new("path/to/other/bib".into()),
+                ),
+                (
+                    "independent_bib".to_string(),
+                    DirectoryPathBuf::new("path/to/independent/bib".into()),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        let bib_set = crate::BoardInputBundleSet {
+            name: "myset".to_string(),
+            board_input_bundles: [(
+                "mybib".to_string(),
+                crate::BoardInputBundleEntry {
+                    path: DirectoryPathBuf::new("path/to/new/bib".into()),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            release_info: Default::default(),
+        };
+
+        board.merge_board_input_bundle_sets(vec![bib_set]);
+
+        assert_eq!(
+            board.input_bundles.get("myset::mybib").unwrap(),
+            &DirectoryPathBuf::new("path/to/new/bib".into())
+        );
+        assert_eq!(
+            board.input_bundles.get("otherset::otherbib").unwrap(),
+            &DirectoryPathBuf::new("path/to/other/bib".into())
+        );
+        assert_eq!(
+            board.input_bundles.get("independent_bib").unwrap(),
+            &DirectoryPathBuf::new("path/to/independent/bib".into())
+        );
     }
 }

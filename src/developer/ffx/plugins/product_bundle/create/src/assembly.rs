@@ -19,6 +19,8 @@ pub struct Assembly {
     pub product_config_release_info: ProductReleaseInfo,
     pub board_config_path: Utf8PathBuf,
     pub board_config_release_info: BoardReleaseInfo,
+    pub bib_sets: Vec<Utf8PathBuf>,
+    pub bib_set_release_infos: Vec<ReleaseInfo>,
 }
 
 impl Assembly {
@@ -27,11 +29,21 @@ impl Assembly {
         platform: Option<String>,
         product_config: String,
         board_config: String,
+        bib_sets: Vec<String>,
     ) -> Result<Self, ArtifactError> {
         let product_config_path = cache.resolve_product(product_config).await?;
         let product_config_release_info = load_product_release_info(&product_config_path)?;
 
         let board_config_path = cache.resolve_board(board_config).await?;
+
+        let bib_sets: Vec<Utf8PathBuf> = futures::future::try_join_all(
+            bib_sets.into_iter().map(|bib_set| async move { cache.resolve_bib_set(bib_set).await }),
+        )
+        .await?;
+
+        let bib_set_release_infos =
+            bib_sets.iter().map(|p| load_bib_set_release_info(p)).collect::<Result<Vec<_>, _>>()?;
+
         let board_config_release_info = load_board_release_info(&board_config_path)?;
         let arch: assembly_config_schema::board_config::Architecture =
             load_board_arch(&board_config_path)?.parse()?;
@@ -46,11 +58,13 @@ impl Assembly {
             product_config_release_info,
             board_config_path,
             board_config_release_info,
+            bib_sets,
+            bib_set_release_infos,
         })
     }
 
     pub fn version_string(&self) -> String {
-        format!(
+        let mut base = format!(
             "\tplatform: {}@{}\n\tproduct_config: {}@{}\n\tboard_config: {}@{}",
             self.platform_release_info.name,
             self.platform_release_info.version,
@@ -58,7 +72,11 @@ impl Assembly {
             self.product_config_release_info.info.version,
             self.board_config_release_info.info.name,
             self.board_config_release_info.info.version,
-        )
+        );
+        for bib_set in &self.bib_set_release_infos {
+            base.push_str(&format!("\n\tbib_set: {}@{}", bib_set.name, bib_set.version));
+        }
+        base
     }
 
     pub async fn create_system(
@@ -85,6 +103,7 @@ impl Assembly {
             developer_overrides,
             include_example_aib_for_tests: Some(should_configure_example),
             mode: if zbi_only { AssemblyMode::SkipFilesystems } else { Default::default() },
+            board_input_bundle_sets: self.bib_sets,
         };
         let create_system_outputs = assembly_api::assemble(context, args)?;
         AssembledSystem::from_dir(create_system_outputs.outdir)

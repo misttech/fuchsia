@@ -7,6 +7,7 @@ use crate::search_space::BisectionStatus;
 use crate::versioned_artifact_set::VersionedArtifactSet;
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
+use assembly_api;
 use assembly_artifact_cache::{ArtifactCache, MOSIdentifier, Slot};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::Architecture;
@@ -18,10 +19,10 @@ use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use product_bundle::{ProductBundleBuilder, Slot as PBSlot};
+use serde_json;
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Write};
 use tempfile::tempdir;
-use {assembly_api, serde_json};
 
 /// The BisectionController runs the entire bisection process.
 /// It maintains a reference to the BisectionPlan and manages the assembly artifact cache.
@@ -321,6 +322,7 @@ impl<'a> BisectionController<'a> {
             developer_overrides: None,
             include_example_aib_for_tests: Some(false),
             mode: Default::default(),
+            board_input_bundle_sets: vec![],
         };
 
         let create_system_outputs = assembly_api::assemble(&self.env_context, product_args)?;

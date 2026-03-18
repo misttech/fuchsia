@@ -78,6 +78,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "bib-set"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--bib-set",
+      "short": null,
+      "description": "the board input bundle sets (bib_sets) to use. See ARTIFACT below.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "output-name"
         }
       },

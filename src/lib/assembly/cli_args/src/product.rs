@@ -63,6 +63,10 @@ pub struct ProductArgs {
     /// change the default mode assembly runs in to produce test images.
     #[argh(option, default = "default_mode()")]
     pub mode: AssemblyMode,
+
+    /// a list of board input bundle sets to override with.
+    #[argh(option)]
+    pub board_input_bundle_sets: Vec<Utf8PathBuf>,
 }
 
 impl ProductArgs {
@@ -109,6 +113,10 @@ impl ProductArgs {
         if !self.mode.is_default() {
             args.push("--mode".to_string());
             args.push(self.mode.to_string());
+        }
+        for bib_set in &self.board_input_bundle_sets {
+            args.push("--board-input-bundle-sets".to_string());
+            args.push(bib_set.to_string());
         }
         args
     }

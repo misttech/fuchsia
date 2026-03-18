@@ -5,7 +5,7 @@
 use crate::{BoardArgs, HybridBoardArgs};
 
 use anyhow::{Context, Result};
-use assembly_config_schema::{BoardConfig, BoardInputBundleSet};
+use assembly_config_schema::{BibReference, BoardConfig, BoardInputBundleSet};
 use assembly_container::{AssemblyContainer, DirectoryPathBuf};
 use assembly_partitions_config::PartitionsConfig;
 use assembly_release_info::{BoardReleaseInfo, ReleaseInfo};
@@ -89,27 +89,13 @@ pub fn hybrid(args: &HybridBoardArgs) -> Result<()> {
     }
 
     // Second, replace the bibs found in `replace_bib_sets`.
-    let replace_bib_sets: BTreeMap<String, BoardInputBundleSet> = args
+    let replace_bib_sets: Vec<BoardInputBundleSet> = args
         .replace_bib_sets
         .iter()
-        .map(|path| {
-            let bib_set = BoardInputBundleSet::from_dir(&path)?;
-            let set_name = bib_set.name.clone();
-            Ok((set_name, bib_set))
-        })
-        .collect::<Result<BTreeMap<String, BoardInputBundleSet>>>()?;
-    for (full_bib_name, bib_path) in &mut config.input_bundles {
-        let bib_ref = BibReference::from(full_bib_name);
+        .map(|path| BoardInputBundleSet::from_dir(&path))
+        .collect::<Result<Vec<BoardInputBundleSet>>>()?;
 
-        // Replace BIBs that are part of a BIB set.
-        if let BibReference::FromBibSet { set, name } = bib_ref {
-            if let Some(replace_bib_set) = replace_bib_sets.get(&set) {
-                if let Some(replace_bib_entry) = replace_bib_set.board_input_bundles.get(&name) {
-                    *bib_path = replace_bib_entry.path.clone();
-                }
-            }
-        }
-    }
+    config.merge_board_input_bundle_sets(replace_bib_sets);
 
     // Replace the partitions config.
     if let Some(partitions_config) = &args.replace_partitions_config {
@@ -123,41 +109,6 @@ pub fn hybrid(args: &HybridBoardArgs) -> Result<()> {
 
     config.write_to_dir(&args.output, args.depfile.as_ref())?;
     Ok(())
-}
-
-/// A reference of a BIB found in a board, which can either have been from a
-/// BIB set or added independently not through a set.
-enum BibReference {
-    /// A BIB that was added via a BIB set.
-    /// We keep track of the set name, so that we can easily replace the entire
-    /// set of BIBs wholesale.
-    FromBibSet { set: String, name: String },
-
-    /// A BIB that was added independent of a BIB set.
-    Independent { name: String },
-}
-
-impl From<&String> for BibReference {
-    fn from(s: &String) -> Self {
-        let mut parts: Vec<&str> = s.split("::").collect();
-        let bib_name = parts.pop();
-        let set_name = parts.pop();
-        match (set_name, bib_name) {
-            (Some(set), Some(name)) => {
-                Self::FromBibSet { set: set.to_string(), name: name.to_string() }
-            }
-            _ => Self::Independent { name: s.to_string() },
-        }
-    }
-}
-
-impl ToString for BibReference {
-    fn to_string(&self) -> String {
-        match self {
-            Self::FromBibSet { set, name } => format!("{}::{}", set, name),
-            Self::Independent { name } => name.clone(),
-        }
-    }
 }
 
 #[cfg(test)]

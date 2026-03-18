@@ -29,6 +29,7 @@ pub fn assemble(args: ProductArgs) -> Result<()> {
         developer_overrides,
         include_example_aib_for_tests,
         mode,
+        board_input_bundle_sets,
     } = args;
 
     info!("Reading configuration files.");
@@ -52,8 +53,21 @@ Resulting product is not supported and may misbehave!
     let product_config =
         ProductConfig::from_dir(&product).context("Reading product configuration")?;
 
-    let board_config =
+    let mut board_config =
         BoardConfig::from_dir(&board_config).context("Reading board configuration")?;
+
+    if !board_input_bundle_sets.is_empty() {
+        // Read the board input bundle sets. The bundles in these sets will replace
+        // the corresponding bundles on the board.
+        let replace_bib_sets: Vec<assembly_config_schema::BoardInputBundleSet> =
+            board_input_bundle_sets
+                .iter()
+                .map(|path| assembly_config_schema::BoardInputBundleSet::from_dir(&path))
+                .collect::<Result<Vec<assembly_config_schema::BoardInputBundleSet>, anyhow::Error>>(
+                )
+                .context("Reading board input bundle sets")?;
+        board_config.merge_board_input_bundle_sets(replace_bib_sets);
+    }
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
         Some(load_developer_overrides(&overrides_path, suppress_overrides_warning)?)
     } else {
