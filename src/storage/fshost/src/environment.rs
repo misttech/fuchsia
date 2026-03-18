@@ -28,23 +28,23 @@ use crypt_policy::{Policy, get_policy};
 use device_watcher::{recursive_wait, recursive_wait_and_open};
 use fidl::endpoints::{Proxy, ServerEnd, ServiceMarker as _, create_proxy};
 use fidl_fuchsia_fs_startup::{MountOptions, VolumesProxy};
+use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy, Guid, VolumeManagerMarker};
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::{
     BlockConnector, ServingMultiVolumeFilesystem, ServingSingleVolumeFilesystem, ServingVolume,
 };
 use fs_management::format::DiskFormat;
 use fs_management::partition::fvm_allocate_partition;
 use fs_management::{Blobfs, ComponentType, F2fs, FSConfig, Fvm, Fxfs, Minfs};
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
+use fuchsia_inspect as finspect;
 use futures::lock::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 use uuid::Uuid;
-use {
-    fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
-    fuchsia_inspect as finspect,
-};
 
 const INITIAL_SLICE_COUNT: u64 = 1;
 

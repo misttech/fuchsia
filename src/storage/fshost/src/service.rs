@@ -175,6 +175,7 @@ async fn create_starnix_volume_impl(
     if let Some(multi_vol_fs) = env.get_container() {
         // If the starnix volume already exists, unmount if mounted and then remove.
         if multi_vol_fs.has_volume(starnix_volume_name).await? {
+            log::info!(starnix_volume_name:%; "Recreating starnix volume");
             multi_vol_fs.remove_volume(starnix_volume_name).await?;
         }
         let mounted_vol = multi_vol_fs
