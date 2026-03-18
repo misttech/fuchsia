@@ -24,16 +24,42 @@ use depfile::Depfile;
 
 #[derive(Debug, Clone)]
 pub struct StarnixContainerGenerator {
-    pub name: String,                //name of the starnix container
-    pub outdir: Utf8PathBuf,         //directory to place outputs into
-    pub base: Utf8PathBuf, //path to package archive containing additional resources to include
-    pub hals: Vec<Utf8PathBuf>, //path to hal package archive
-    pub skip_subpackages: bool, //whether to skip including HALs as subpackages.
-    pub system: Utf8PathBuf, //path to an Android system image
-    pub ramdisk: Vec<Utf8PathBuf>, //path to an arbitrary number of ramdisk images which will be concatenated
-    pub vendor: Option<Utf8PathBuf>, //path to an Android vendor partition image
-    pub fstab: Option<Utf8PathBuf>, //path to fstab, will go in /odm which overrides the one in /vendor
-    pub init: Vec<Utf8PathBuf>, //path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
+    /// Name of the starnix container.
+    pub name: String,
+    /// Directory to place outputs into.
+    pub outdir: Utf8PathBuf,
+    /// Path to package archive containing additional resources to include.
+    pub base: Utf8PathBuf,
+    /// Path to hal package archive.
+    pub hals: Vec<Utf8PathBuf>,
+    /// Whether to skip including HALs as subpackages.
+    pub skip_subpackages: bool,
+    /// Path to an Android system image.
+    pub system: Utf8PathBuf,
+    /// Path to an arbitrary number of ramdisk images which will be concatenated.
+    pub ramdisk: Vec<Utf8PathBuf>,
+    /// Path to an Android vendor partition image.
+    pub vendor: Option<Utf8PathBuf>,
+    /// Path to fstab, will go in /odm which overrides the one in /vendor.
+    pub fstab: Option<Utf8PathBuf>,
+    /// Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
+    pub init: Vec<Utf8PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StarnixContainerRepackager {
+    /// Name of the starnix container.
+    pub name: String,
+    /// Directory to place outputs into.
+    pub outdir: Utf8PathBuf,
+    /// Path to the existing starnix container's package manifest.
+    pub container_manifest_path: Utf8PathBuf,
+    /// Path to package archive containing additional resources to include.
+    pub base: Utf8PathBuf,
+    /// Path to hal package archive.
+    pub hals: Vec<Utf8PathBuf>,
+    /// Whether to skip including HALs as subpackages.
+    pub skip_subpackages: bool,
 }
 
 pub const S_IFDIR: u16 = 0x4000;
@@ -361,6 +387,99 @@ impl StarnixContainerGenerator {
         );
 
         Ok(())
+    }
+}
+
+impl StarnixContainerRepackager {
+    pub fn build(self, deps: &mut Depfile) -> Result<Utf8PathBuf> {
+        let new_base_package_manifest = PackageManifest::try_load_from(&self.base)
+            .with_context(|| format!("Reading new base package: {}", &self.base))?;
+
+        let container_manifest = PackageManifest::try_load_from(&self.container_manifest_path)
+            .with_context(|| {
+                format!("Reading existing starnix container: {}", self.container_manifest_path)
+            })?;
+
+        // Track inputs early so we don't forget.
+        deps.add_inputs(new_base_package_manifest.blobs().iter().map(|b| b.source_path.clone()));
+
+        let mut builder = PackageBuilder::from_manifest(container_manifest, &self.outdir)
+            .context("Parsing container package for repackaging")?;
+
+        builder.overwrite_files(true);
+        builder.overwrite_subpackages(true);
+
+        // Add subpackages from the base package.
+        for subpackage in new_base_package_manifest.subpackages() {
+            let name =
+                subpackage.name.parse::<RelativePackageUrl>().context("parsing subpackage name")?;
+            builder.add_subpackage(
+                &name,
+                subpackage.merkle,
+                subpackage.manifest_path.clone().into(),
+            )?;
+        }
+
+        // Add HALs.
+        if !self.skip_subpackages {
+            for hal in &self.hals {
+                let hal_manifest = PackageManifest::try_load_from(hal)?;
+                let name = hal_manifest
+                    .name()
+                    .to_string()
+                    .parse::<RelativePackageUrl>()
+                    .with_context(|| format!("parsing hal name: {}", hal_manifest.name()))?;
+                builder.add_subpackage(&name, hal_manifest.hash(), hal.clone().into())?;
+            }
+        }
+
+        // Add content blobs from the base package.
+        for blob in new_base_package_manifest.blobs() {
+            if blob.path != PackageManifest::META_FAR_BLOB_PATH {
+                builder.add_file_as_blob(&blob.path, &blob.source_path)?;
+            }
+        }
+
+        // Add meta.far contents (specifically components).
+        let meta_far_blob = new_base_package_manifest
+            .blobs()
+            .iter()
+            .find(|b| b.path == PackageManifest::META_FAR_BLOB_PATH)
+            .context("base package missing meta.far")?;
+        let meta_far_bytes = std::fs::read(&meta_far_blob.source_path)?;
+        let mut far_reader =
+            fuchsia_archive::Utf8Reader::new(std::io::Cursor::new(meta_far_bytes))?;
+        let paths: Vec<String> = far_reader.list().map(|e| e.path().to_string()).collect();
+        for path in paths {
+            if path.ends_with(".cm") {
+                let contents = far_reader.read_file(&path)?;
+                builder.add_contents_to_far(&path, contents, &self.outdir)?;
+            }
+        }
+
+        builder.abi_revision = new_base_package_manifest
+            .abi_revision()
+            .context("base package missing abi_revision")?;
+
+        // Rebuild the starnix container.
+        let metafar_path = self.outdir.join("meta.far");
+        let output_manifest_path = self.outdir.join("package_manifest.json");
+        builder.manifest_path(output_manifest_path.clone());
+        builder.build(&self.outdir, &metafar_path).context("Building new starnix container")?;
+
+        deps.add_outputs(
+            [
+                self.outdir.join("meta.far"),
+                self.outdir.join("meta/fuchsia.abi/abi-revision"),
+                self.outdir.join("meta/fuchsia.pkg/subpackages"),
+                self.outdir.join("meta/package"),
+                output_manifest_path.clone(),
+            ]
+            .iter()
+            .map(|p| p.to_string()),
+        );
+
+        Ok(output_manifest_path)
     }
 }
 

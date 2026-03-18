@@ -649,3 +649,15 @@ fuchsia_package_checker_test(
     package_under_test = ":extracted_ams_light_from_product_config",
     visibility = ["//visibility:public"],
 )
+
+fuchsia_hybrid_product_configuration(
+    name = "repackage_hybrid_config",
+    product_configuration = "test_data/repackage_test",
+    product_input_bundles = ["test_data/repackage_test/pib"],
+)
+
+fuchsia_product_configuration_test(
+    name = "repackage_hybrid_config_test",
+    golden_file = "test_golden_repackaged.json",
+    product_config = ":repackage_hybrid_config",
+)

@@ -15,6 +15,7 @@ use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
 use starnix_container::StarnixContainerGenerator;
+use std::fs;
 use std::io::Cursor;
 
 pub fn new(args: &ProductArgs) -> Result<()> {
@@ -58,8 +59,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
                 Ok((i.system.clone(), i.ramdisk.clone(), i.vendor.clone()))
             }
             StarnixImagesOrPackage::Package(_) => Err(anyhow::anyhow!(
-                // TODO(https://fxbug.dev/450326888): Update starnix container generator crate to support hybrid assembly.
-                "Hybrid starnix containers are not yet supported in assembly_config_tool",
+                "Existing containers from prebuilt product configs should be repackaged using the hybrid product config command",
             )),
         }?;
         let outdir_path = temp_dir.path().join(&container.name);
@@ -74,24 +74,13 @@ pub fn new(args: &ProductArgs) -> Result<()> {
                 )
             })?
             .clone();
-        let hals = container
-            .hals
-            .iter()
-            .map(|name| {
-                let hal_package = find_package_in_pibs(&config.product_input_bundles, name)
-                    .with_context(|| {
-                        format!("finding starnix hal package '{}' in product input bundles", name)
-                    })?;
-                package_set.insert(
-                    name.clone(),
-                    ProductPackageDetails {
-                        manifest: hal_package.clone(),
-                        config_data: Vec::new(),
-                    },
-                );
-                Ok(hal_package.clone())
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
+        for (name, manifest) in container.hals.iter().zip(hals.iter()) {
+            package_set.insert(
+                name.clone(),
+                ProductPackageDetails { manifest: manifest.clone(), config_data: Vec::new() },
+            );
+        }
 
         StarnixContainerGenerator {
             name: container.name.clone(),
@@ -130,6 +119,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
 
 pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     let config = ProductConfig::from_dir(&args.input)?;
+    let mut depfile = Depfile::new();
 
     // Normally this would not be necessary, because all generated configs come
     // from this tool, which adds the package names above, but we still need to
@@ -147,10 +137,67 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     // Replace PIBs that match an existing PIB by name.
     for path in &args.product_input_bundles {
         let pib = ProductInputBundle::from_dir(path)?;
-        config.product_input_bundles.entry(pib.release_info.name.clone()).and_modify(|e| *e = pib);
+        config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
     }
 
-    config.write_to_dir(&args.output, args.depfile.as_ref())?;
+    let temp_repackaged_dir = tempfile::tempdir().context("creating temp repackaged dir")?;
+    let temp_repackaged_path = Utf8PathBuf::from_path_buf(temp_repackaged_dir.path().to_path_buf())
+        .map_err(|p| anyhow::anyhow!("converting temp path to utf8: {:?}", p))?;
+
+    // Repackage starnix containers if they have a prebuilt package.
+    for container in &mut config.product.starnix_containers {
+        let container_manifest_path = match &container.images_or_package {
+            StarnixImagesOrPackage::Package(p) => Ok(p.clone()),
+            _ => Err(anyhow::anyhow!(
+                "The hybrid product config command does not support building starnix containers from images.",
+            )),
+        }?;
+        {
+            let outdir = temp_repackaged_path.join("repackaged_containers").join(&container.name);
+            fs::create_dir_all(&outdir).context("creating repackaged container dir")?;
+
+            let container_base_manifest_path =
+                find_package_in_pibs(&config.product_input_bundles, &container.base)
+                    .with_context(|| {
+                        format!(
+                            "finding starnix base package '{}' in product input bundles",
+                            &container.base
+                        )
+                    })?
+                    .clone();
+
+            let package_set = if config.platform.build_type == BuildType::Eng {
+                &mut config.product.packages.cache
+            } else {
+                &mut config.product.packages.base
+            };
+            let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
+            for (name, manifest) in container.hals.iter().zip(hals.iter()) {
+                package_set.insert(
+                    name.clone(),
+                    ProductPackageDetails { manifest: manifest.clone(), config_data: Vec::new() },
+                );
+            }
+
+            let output_manifest_path = starnix_container::StarnixContainerRepackager {
+                name: container.name.clone(),
+                outdir,
+                container_manifest_path: container_manifest_path.clone(),
+                base: container_base_manifest_path,
+                hals,
+                skip_subpackages: container.skip_subpackages,
+            }
+            .build(&mut depfile)?;
+            container.images_or_package = StarnixImagesOrPackage::Package(output_manifest_path);
+        }
+    }
+
+    config.write_to_dir_with_depfile(&args.output, Some(&mut depfile))?;
+
+    if let Some(depfile_path) = &args.depfile {
+        depfile.write_to(depfile_path)?;
+    }
+
     Ok(())
 }
 
@@ -246,9 +293,26 @@ fn find_package_in_pibs<'a>(
     })
 }
 
+fn find_hals_in_pibs(
+    product_input_bundles: &std::collections::BTreeMap<String, ProductInputBundle>,
+    hal_names: &[String],
+) -> Result<Vec<Utf8PathBuf>> {
+    hal_names
+        .iter()
+        .map(|name| {
+            let hal_package =
+                find_package_in_pibs(product_input_bundles, name).with_context(|| {
+                    format!("finding starnix hal package '{}' in product input bundles", name)
+                })?;
+            Ok(hal_package.clone())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ProductInputBundleArgs;
     use fuchsia_pkg::PackageName;
     use std::fs;
     use std::fs::File;
@@ -434,5 +498,108 @@ mod tests {
 
         assert_eq!(actual_inputs, expected_inputs);
         assert_eq!(actual_outputs, expected_outputs);
+    }
+
+    #[test]
+    fn test_hybrid_repackager() {
+        let tmp_dir = tempdir().unwrap();
+        let tmp_path = Utf8PathBuf::from_path_buf(tmp_dir.path().to_path_buf()).unwrap();
+
+        let gendir = tmp_path.join("gendir");
+        fs::create_dir(&gendir).unwrap();
+
+        // 1. Create base package
+        let base_path = tmp_path.join("base_manifest.json");
+        let base_metafar_path = tmp_path.join("base_meta.far");
+        let mut builder = PackageBuilder::new("base", FAKE_ABI_REVISION);
+        builder.manifest_path(&base_path);
+
+        // Add a blob to the base package.
+        let blob_path = tmp_path.join("blob.txt");
+        fs::write(&blob_path, "blob content").unwrap();
+        builder.add_file_as_blob("data/blob.txt", blob_path).unwrap();
+
+        builder.build(&tmp_path, &base_metafar_path).unwrap();
+
+        // 2. Create HAL package
+        let hal_path = tmp_path.join("hal_manifest.json");
+        let hal_metafar_path = tmp_path.join("hal_meta.far");
+        let mut builder = PackageBuilder::new("hal", FAKE_ABI_REVISION);
+        builder.manifest_path(&hal_path);
+        builder.build(&tmp_path, &hal_metafar_path).unwrap();
+
+        // 3. Create container package (the one to be repackaged)
+        let container_path = tmp_path.join("container_manifest.json");
+        let container_metafar_path = tmp_path.join("container_meta.far");
+        let mut builder = PackageBuilder::new("container", FAKE_ABI_REVISION);
+        builder.manifest_path(&container_path);
+        builder.build(&tmp_path, &container_metafar_path).unwrap();
+
+        // 4. Create PIB
+        let pib_dir = tmp_path.join("pib");
+        fs::create_dir(&pib_dir).unwrap();
+        let pib_args = ProductInputBundleArgs {
+            name: "test_pib".into(),
+            base_packages: vec![],
+            cache_packages: vec![],
+            flexible_packages: vec![],
+            packages_for_product_config: vec![base_path.clone(), hal_path.clone()],
+            output: pib_dir.clone(),
+            version: Some("1.2.3".into()),
+            version_file: None,
+            repo: Some("fuchsia.com".into()),
+            repo_file: None,
+            depfile: None,
+        };
+        crate::product_input_bundle::new(&pib_args).unwrap();
+
+        // 5. Create ProductConfig
+        let product_dir = tmp_path.join("product");
+        fs::create_dir(&product_dir).unwrap();
+        let config_path = product_dir.join("product_configuration.json");
+        let config_value = serde_json::json!({
+            "platform": {
+                "build_type": "eng",
+            },
+            "product": {
+                "starnix_containers": [
+                    {
+                        "name": "container",
+                        "base": "base",
+                        "hals": ["hal"],
+                        "images_or_package": {
+                            "package": container_path.as_str(),
+                        }
+                    }
+                ]
+            }
+        });
+        fs::write(&config_path, config_value.to_string()).unwrap();
+
+        // 6. Call hybrid()
+        let output_dir = tmp_path.join("output");
+        let args = HybridProductArgs {
+            input: product_dir,
+            product_input_bundles: vec![pib_dir],
+            replace_package: vec![],
+            output: output_dir.clone(),
+            depfile: None,
+        };
+        hybrid(&args).unwrap();
+
+        // 7. Verify
+        let output_config = ProductConfig::from_dir(&output_dir).unwrap();
+        let container = &output_config.product.starnix_containers[0];
+        match &container.images_or_package {
+            assembly_config_schema::product_settings::StarnixImagesOrPackage::Package(p) => {
+                assert!(p.starts_with(output_dir.join("packages")));
+                assert!(p.ends_with("container"));
+
+                // Verify that the blob from the base package is in the repackaged container.
+                let repackaged_manifest = PackageManifest::try_load_from(p).unwrap();
+                assert!(repackaged_manifest.blobs().iter().any(|b| b.path == "data/blob.txt"));
+            }
+            _ => panic!("Expected package"),
+        }
     }
 }
