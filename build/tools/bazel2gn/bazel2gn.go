@@ -407,13 +407,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 
 	// Handle any additional work necessary for specific assignments.
 	if attrName == "sdk_headers_for_internal_use" {
-		// While the files in GN's `sdk_headers_for_internal_use` are included
-		// in `public` (or `sources`), that is not the cases for Bazel's
-		// `hdrs_for_internal_use`. To match the GN behavior, add all the files
-		// specified in `hdrs_for_internal_use` to `public` in the GN target.
-		// For more information, see `idk_cc_source_library()`.`
-		ret = append(ret, fmt.Sprintf("public += %s", rhs[0]))
-		ret = append(ret, rhs[1:]...)
+		ret = handle_sdk_headers_for_internal_use(ret, rhs, 0)
 	}
 
 	// Wrap the entire assignment in a condition if appropriate.

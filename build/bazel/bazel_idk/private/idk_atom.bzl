@@ -12,6 +12,24 @@ load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 load(":idk_common.bzl", "get_allowlist_target", "get_atom_visibility")
 
+ConfigurableInfo = provider(
+    doc = "Maps of IDK destination paths to source files.",
+    fields = {
+        "api_contents_map": "A dictionary of files making up the atom's API, mapping the destination path " +
+                            "of  a file relative to the IDK root to its source file label. " +
+                            "Used instead of the attribute of the same name. " +
+                            "May be empty.",
+        "api_contents_map_files": "The `Files` corresponding to the labels in `api_contents_map`. " +
+                                  "Must be the same length and in the same order as `api_contents_map`.",
+        "files_map": "A dictionary of files for this atom, mapping the destination " +
+                     "path of a file relative to the IDK root to its source file label . " +
+                     "Used instead of the attribute of the same name. " +
+                     "May be empty.",
+        "additional_prebuild_info_values": "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings. " +
+                                           "Merged with values from the `additional_prebuild_info` attribute.",
+    },
+)
+
 visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/..."])
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
@@ -59,15 +77,29 @@ def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
     args.add("--output", ctx.outputs.generated_api_file.path)
 
-    # We must use `ctx.files` to ensure we can get the full path to the source,
+    # Locate the map to use.
+    if ctx.attr.configurable_info:
+        if ctx.attr.api_contents_map:
+            fail("`api_contents_map` and `configurable_info` must not be both set at the same time.")
+        configurable_info = ctx.attr.configurable_info[ConfigurableInfo]
+        if not configurable_info.api_contents_map:
+            fail("The `api_contents_map` field in `configurable_info` must not be empty.")
+        map = configurable_info.api_contents_map
+        files = configurable_info.api_contents_map_files
+    else:
+        if not ctx.attr.api_contents_map:
+            fail("The `api_contents_map` attribute must not be empty.")
+        map = ctx.attr.api_contents_map
+        files = ctx.files.api_contents_map
+
+    # We must use `File` objects to ensure we can get the full path to the source
     # files, especially for generated files as is the case for FIDL atoms.
-    for dest_path, source_file in zip(ctx.attr.api_contents_map.keys(), ctx.files.api_contents_map):
+    for dest_path, source_file in zip(map.keys(), files):
         # `add()` supports at most two parameters, so add the third separately.
         args.add("--file", dest_path)
         args.add(source_file.path)
 
-    # `ctx.files.api_contents_map` contains just the source files.
-    inputs_depset = depset(ctx.files.api_contents_map)
+    inputs_depset = depset(files)
 
     ctx.actions.run(
         outputs = [ctx.outputs.generated_api_file],
@@ -88,11 +120,20 @@ _compute_atom_api = rule(
         "api_contents_map": attr.string_keyed_label_dict(
             doc = "A dictionary of files that make up the API for this atom, " +
                   "mapping the destination path of a file relative to the " +
-                  "IDK  root to its source file label.",
-            mandatory = True,
-            allow_empty = False,
+                  "IDK root to its source file label." +
+                  "Either this or `configurable_info` must be specified. " +
+                  "Must be non-empty when specified.",
+            mandatory = False,
+            allow_empty = True,
             default = {},
             allow_files = True,
+        ),
+        "configurable_info": attr.label(
+            doc = "Information about the atom that is configurable and thus may contain `select()` statements. " +
+                  "Either this or `api_contents_map` must be specified. " +
+                  "The `api_contents_map` field must be non-empty when specified.",
+            providers = [ConfigurableInfo],
+            mandatory = False,
         ),
         "generated_api_file": attr.output(
             mandatory = True,
@@ -124,7 +165,7 @@ def _replace_placeholders_in_map(input_map, ctx):
         output_map[_replace_placeholders(key, ctx)] = value
     return output_map
 
-def _get_additional_info(ctx):
+def _get_additional_info(ctx, files_map, additional_prebuild_info):
     """Adds additional fields to `files_map` and `additional_prebuild_info` if appropriate.
 
     Some prebuild info can only be obtained inside the rule implementation. This
@@ -147,8 +188,7 @@ def _get_additional_info(ctx):
         binaries["api_level"] = api_level
         binaries["arch"] = cpu_arch
 
-        additional_prebuild_info = dict(ctx.attr.additional_prebuild_info)
-        files_map = dict(ctx.attr.files_map)
+        files_map = dict(files_map)
 
         lib_info = ctx.attr.underlying_library[PrebuiltLibraryInfo]
         library_type = lib_info.type
@@ -192,22 +232,61 @@ def _get_additional_info(ctx):
 
         if "binaries" in additional_prebuild_info:
             fail("`binaries` should not already be populated in `additional_prebuild_info`.")
+        additional_prebuild_info = dict(additional_prebuild_info)
         additional_prebuild_info["binaries"] = json.encode(binaries)
 
         return additional_prebuild_info, files_map
 
     else:
-        return ctx.attr.additional_prebuild_info, ctx.attr.files_map
+        return additional_prebuild_info, files_map
+
+def _get_file_maps(ctx):
+    """Returns the `api_contents_map` and `files_map` to use for the rule.
+
+    If `ctx.attr.configurable_info` is set, returns the maps from there.
+    Otherwise, returns the maps from `ctx.attr.api_contents_map` and
+    `ctx.attr.files_map`. A list of `Files` corresponding to the labesl in
+    `files_map` is also returned.
+    """
+    if ctx.attr.configurable_info:
+        if ctx.attr.api_contents_map:
+            fail("`api_contents_map` and `configurable_info` must not be both set at the same time.")
+        if ctx.attr.files_map:
+            fail("`files_map` and `configurable_info` must not be both set at the same time.")
+
+        configurable_info = ctx.attr.configurable_info[ConfigurableInfo]
+
+        if not configurable_info.files_map:
+            fail("`files_map` in `configurable_info` must not be empty.")
+
+        api_contents_map = configurable_info.api_contents_map
+        files_map = configurable_info.files_map
+        atom_files_for_depset = ctx.attr.configurable_info[DefaultInfo].files.to_list()
+    else:
+        api_contents_map = ctx.attr.api_contents_map
+        files_map = ctx.attr.files_map
+        atom_files_for_depset = ctx.files.files_map
+
+    return api_contents_map, files_map, atom_files_for_depset
 
 def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
         fail("IDK atom names must end with `_idk`.")
 
-    if (not ctx.attr.api_file_path) != (not ctx.attr.api_contents_map):
-        fail(ctx.attr.name + ": `api_file_path` and `api_contents_map` must be specified together.")
+    # Merge additional prebuild info dictionaries if necessary.
+    additional_prebuild_info = ctx.attr.additional_prebuild_info
+    if ctx.attr.configurable_info:
+        additional_prebuild_info = dict(additional_prebuild_info)
+        additional_prebuild_info.update(ctx.attr.configurable_info[ConfigurableInfo].additional_prebuild_info_values)
+
+    # Locate the maps to use.
+    api_contents_map, files_map, atom_files_for_depset = _get_file_maps(ctx)
+
+    if bool(ctx.attr.api_file_path) != bool(api_contents_map):
+        fail("`api_file_path` and `api_contents_map` must be specified together.")
 
     all_deps_depset = depset(
-        direct = ctx.files.files_map +
+        direct = atom_files_for_depset +
                  ctx.files.idk_deps +
                  ctx.files.underlying_library +
                  ctx.files.atom_build_deps,
@@ -216,7 +295,7 @@ def _create_idk_atom_impl(ctx):
 
     # Though the `files_map` has been modified, there can be no new dependencies
     # so `all_deps_depset` is still correct.
-    additional_prebuild_info, files_map = _get_additional_info(ctx)
+    additional_prebuild_info, files_map = _get_additional_info(ctx, files_map, additional_prebuild_info)
 
     return [
         DefaultInfo(files = all_deps_depset),
@@ -231,7 +310,7 @@ def _create_idk_atom_impl(ctx):
             is_stable = ctx.attr.stable,
             api_area = ctx.attr.api_area,
             api_file_path = ctx.attr.api_file_path,
-            api_contents_map = ctx.attr.api_contents_map,
+            api_contents_map = api_contents_map,
             atom_files_map = _replace_placeholders_in_map(files_map, ctx),
             idk_deps = idk_deps,
             atoms_depset = depset(
@@ -319,14 +398,17 @@ Possible values, from most restrictive to least restrictive:
                   "of  a file relative to the IDK root to its source file label. " +
                   "The set of files will be used to verify that the API has not changed locally. " +
                   "This is very roughly approximated by checking whether the files themselves have changed at all." +
-                  "Required and must not be empty when when `api_file_path` is set.",
+                  "Required and must not be empty when when `api_file_path` is set. " +
+                  "Must be specified if `api_file_path` is specified and `configurable_info` is not. " +
+                  "Mutually exclusive with `configurable_info`.",
             mandatory = False,
             default = {},
             allow_files = True,
         ),
         "files_map": attr.string_keyed_label_dict(
             doc = "A dictionary of files for this atom, mapping the destination " +
-                  "path of a file relative to the IDK root to its source file label.",
+                  "path of a file relative to the IDK root to its source file label . " +
+                  "Mutually exclusive with `configurable_info`.",
             mandatory = False,
             default = {},
             allow_files = True,
@@ -354,6 +436,13 @@ Possible values, from most restrictive to least restrictive:
             mandatory = False,
             default = {},
         ),
+        "configurable_info": attr.label(
+            doc = "Information about the atom that is configurable and thus may contain `select()` statements. " +
+                  "Populated fields are used instead of the corresponding attributes except for " +
+                  "`additional_prebuild_info`, which is merged.",
+            providers = [ConfigurableInfo],
+            mandatory = False,
+        ),
         "_current_api_level": attr.label(
             default = "@//build/bazel:fuchsia_api_level",
         ),
@@ -376,6 +465,7 @@ def _idk_atom_impl(
         allowlist,
         prebuilt_library_format,
         additional_prebuild_info,
+        configurable_info,
         **kwargs):
     if prebuilt_library_format:
         prebuild_info_format = json.decode(additional_prebuild_info["format"])
@@ -395,8 +485,8 @@ def _idk_atom_impl(
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
-    if (not api_file_path) != (not api_contents_map):
-        fail(name + ": `api_file_path` and `api_contents_map` must be specified together.")
+    if bool(api_contents_map) and bool(configurable_info):
+        fail("`api_contents_map` and `configurable_info` must not be both set at the same time.")
 
     is_type_not_requiring_compatibility = type in _TYPES_NOT_REQUIRING_COMPATIBILITY
     if stable and not api_file_path and not is_type_not_requiring_compatibility:
@@ -409,8 +499,8 @@ def _idk_atom_impl(
 
     _verify_api = bool(api_file_path)
     if _verify_api:
-        if not api_contents_map:
-            fail("`api_contents_map` cannot be empty.")
+        if not api_contents_map and not configurable_info:
+            fail("`api_contents_map` cannot be empty when `api_file_path` is specified.")
 
         generate_api_target_name = "%s_generate_api" % name
         verify_api_target_name = "%s_verify_api" % name
@@ -419,6 +509,7 @@ def _idk_atom_impl(
         _compute_atom_api(
             name = generate_api_target_name,
             api_contents_map = api_contents_map,
+            configurable_info = configurable_info,
             generated_api_file = current_api_file,
             testonly = testonly,
             visibility = ["//visibility:private"],
@@ -445,6 +536,7 @@ def _idk_atom_impl(
         api_contents_map = api_contents_map,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = additional_prebuild_info,
+        configurable_info = configurable_info,
         testonly = testonly,
         **kwargs
     )

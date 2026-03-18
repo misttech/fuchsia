@@ -198,11 +198,13 @@ idk_cc_source_library(
         "include/lib/fidl/cpp/types.h",
         "include/lib/fidl/cpp/unknown_interactions_hlcpp.h",
         "include/lib/fidl/cpp/vector.h",
-    ],
-    fuchsia_hdrs = [
-        "include/lib/fidl/cpp/interface_handle.h",
-        "include/lib/fidl/cpp/interface_request.h",
-    ],
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "include/lib/fidl/cpp/interface_handle.h",
+            "include/lib/fidl/cpp/interface_request.h",
+        ],
+        "//conditions:default": [],
+    }),
     api_area = "FIDL",
     category = "partner",
     idk_name = "fidl_cpp_base",

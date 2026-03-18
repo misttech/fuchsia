@@ -53,7 +53,8 @@ wavl_tree_headers = [
 not_needed([ "wavl_tree_headers" ])
 
 sdk_source_set("wire") {
-  sources = [
+  sources = []
+  sources += [
     "arena.cc",
     "coding_errors.cc",
     "display_error.cc",
@@ -81,11 +82,11 @@ sdk_source_set("wire") {
       "transport_channel.cc",
       "unknown_interactions.cc",
     ]
-  }
-  if (!is_fuchsia) {
+  } else {
     sources += [ "transport_channel_host.cc" ]
   }
-  public = [
+  public = []
+  public += [
     "include/lib/fidl/cpp/wire/arena.h",
     "include/lib/fidl/cpp/wire/array.h",
     "include/lib/fidl/cpp/wire/base_wire_result.h",
@@ -129,15 +130,17 @@ sdk_source_set("wire") {
       "include/lib/fidl/cpp/wire/unknown_interaction_handler.h",
     ]
   }
-  sdk_headers_for_internal_use =
-      [
-        "include/lib/fidl/cpp/wire/internal/transport.h",
-        "include/lib/fidl/cpp/wire/internal/framework_err.h",
-      ] + wavl_tree_headers
+  sdk_headers_for_internal_use = []
+  sdk_headers_for_internal_use += [
+    "include/lib/fidl/cpp/wire/internal/transport.h",
+    "include/lib/fidl/cpp/wire/internal/framework_err.h",
+  ]
   public += [
-              "include/lib/fidl/cpp/wire/internal/framework_err.h",
-              "include/lib/fidl/cpp/wire/internal/transport.h",
-            ] + wavl_tree_headers
+    "include/lib/fidl/cpp/wire/internal/framework_err.h",
+    "include/lib/fidl/cpp/wire/internal/transport.h",
+  ]
+  sdk_headers_for_internal_use += wavl_tree_headers
+  public += wavl_tree_headers
   if (is_fuchsia) {
     sdk_headers_for_internal_use += [
       "include/lib/fidl/cpp/wire/internal/arrow.h",
@@ -161,8 +164,7 @@ sdk_source_set("wire") {
       "include/lib/fidl/cpp/wire/internal/thenable.h",
       "include/lib/fidl/cpp/wire/internal/transport_channel.h",
     ]
-  }
-  if (!is_fuchsia) {
+  } else {
     sdk_headers_for_internal_use +=
         [ "include/lib/fidl/cpp/wire/internal/transport_channel_host.h" ]
     public += [ "include/lib/fidl/cpp/wire/internal/transport_channel_host.h" ]

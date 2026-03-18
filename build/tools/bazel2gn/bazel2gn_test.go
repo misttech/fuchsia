@@ -571,41 +571,71 @@ idk_cc_source_library_zx(
 			name: "Fuchsia and non-Fuchsia source files",
 			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
 
+list_of_files = ["baz.cc"]
+list_of_internal_hdrs = ["include/lib/foobar/internal/internal_baz.h"]
+
 idk_cc_source_library(
 	name = "foo",
 	api_area = "Developer",
 	category = "partner",
 	idk_name = "foobar",
 	stable = True,
-	srcs = ["source.cc"],
-	fuchsia_srcs = ["source_fuchsia.cc"],
-	non_fuchsia_srcs = ["source_host.cc"],
-	hdrs = ["include/lib/foobar/foobar.h"],
-	fuchsia_hdrs = ["include/lib/foobar/foobar_fuchsia.h"],
-	hdrs_for_internal_use = ["include/lib/foobar/internal/internal.h"],
-	fuchsia_hdrs_for_internal_use = ["include/lib/foobar/internal/internal_fuchsia.h"],
-	non_fuchsia_hdrs_for_internal_use = ["include/lib/foobar/internal/internal_host.h"],
+	srcs = ["source.cc"] + list_of_files + select({
+		"@platforms//os:fuchsia": ["source_fuchsia.cc"],
+		"//conditions:default": ["source_host.cc"],
+	}),
+	hdrs = ["include/lib/foobar/foobar.h"] + select({
+		"@platforms//os:fuchsia": ["include/lib/foobar/foobar_fuchsia.h"],
+		"//conditions:default": [],
+	}),
+	hdrs_for_internal_use = ["include/lib/foobar/internal/internal.h"] + list_of_internal_hdrs + select({
+		"@platforms//os:fuchsia": [
+			"include/lib/foobar/internal/internal_fuchsia.h",
+			"include/lib/foobar/internal/internal_fuchsia_helper.h",
+		],
+		"//conditions:default": [
+			"include/lib/foobar/internal/internal_host.h"
+		],
+	}),
 )
 `,
-			wantGN: `sdk_source_set("foo") {
+			wantGN: `list_of_files = [
+	"baz.cc",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "list_of_files" ])
+
+list_of_internal_hdrs = [
+	"include/lib/foobar/internal/internal_baz.h",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "list_of_internal_hdrs" ])
+
+sdk_source_set("foo") {
 	sdk_area = "Developer"
 	category = "partner"
 	sdk_name = "foobar"
 	stable = true
-	sources = [
+	sources = []
+	sources += [
 		"source.cc",
 	]
+	sources += list_of_files
 	if (is_fuchsia) {
 		sources += [
 			"source_fuchsia.cc",
 		]
-	}
-	if (!is_fuchsia) {
+	} else {
 		sources += [
 			"source_host.cc",
 		]
 	}
-	public = [
+	public = []
+	public += [
 		"include/lib/foobar/foobar.h",
 	]
 	if (is_fuchsia) {
@@ -613,21 +643,25 @@ idk_cc_source_library(
 			"include/lib/foobar/foobar_fuchsia.h",
 		]
 	}
-	sdk_headers_for_internal_use = [
+	sdk_headers_for_internal_use = []
+	sdk_headers_for_internal_use += [
 		"include/lib/foobar/internal/internal.h",
 	]
 	public += [
 		"include/lib/foobar/internal/internal.h",
 	]
+	sdk_headers_for_internal_use += list_of_internal_hdrs
+	public += list_of_internal_hdrs
 	if (is_fuchsia) {
 		sdk_headers_for_internal_use += [
 			"include/lib/foobar/internal/internal_fuchsia.h",
+			"include/lib/foobar/internal/internal_fuchsia_helper.h",
 		]
 		public += [
 			"include/lib/foobar/internal/internal_fuchsia.h",
+			"include/lib/foobar/internal/internal_fuchsia_helper.h",
 		]
-	}
-	if (!is_fuchsia) {
+	} else {
 		sdk_headers_for_internal_use += [
 			"include/lib/foobar/internal/internal_host.h",
 		]

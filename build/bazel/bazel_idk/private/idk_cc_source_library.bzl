@@ -12,7 +12,7 @@ load(
     "create_verify_no_duplicate_files_target",
     "create_verify_pragma_once_target",
 )
-load(":idk_atom.bzl", "idk_atom")
+load(":idk_atom.bzl", "ConfigurableInfo", "idk_atom")
 load(
     ":idk_common.bzl",
     "get_allowlist_target",
@@ -27,6 +27,61 @@ visibility(["//build/bazel/bazel_idk/..."])
 
 # LINT.IfChange(idk_cc_source_library)
 
+def _build_configurable_info_impl(ctx):
+    if ctx.attr.include_base == "//sdk":
+        path_to_this_directory = "//" + ctx.label.package
+        this_directory_relative_to_sdk = paths.relativize(path_to_this_directory, "//sdk")
+
+    idk_metadata_headers = []
+    idk_header_files_map = {}
+    idk_header_files = []
+
+    for header, header_file in zip(ctx.attr.hdrs, ctx.files.hdrs):
+        if ctx.attr.include_base == "//sdk":
+            # Handle the special case.
+            relative_destination = paths.join(this_directory_relative_to_sdk, header.label.name)
+
+        else:
+            relative_destination = paths.relativize(header.label.name, ctx.attr.include_base)
+        destination = ctx.attr.include_dest + "/" + relative_destination
+        idk_metadata_headers.append(destination)
+        idk_header_files_map[destination] = header
+        idk_header_files.append(header_file)
+
+    files_map = dict(idk_header_files_map)
+
+    idk_metadata_sources = []
+    for source in ctx.attr.srcs:
+        source_dest_path = ctx.attr.idk_root_path + "/" + source.label.name
+        idk_metadata_sources.append(source_dest_path)
+        files_map[source_dest_path] = source
+
+    return [
+        DefaultInfo(files = depset(ctx.files.hdrs + ctx.files.srcs)),
+        ConfigurableInfo(
+            api_contents_map = idk_header_files_map if ctx.attr.stable else {},
+            api_contents_map_files = idk_header_files if ctx.attr.stable else [],
+            files_map = files_map,
+            additional_prebuild_info_values = {
+                "sources": json.encode(idk_metadata_sources),
+                "headers": json.encode(idk_metadata_headers),
+            },
+        ),
+    ]
+
+build_configurable_info = rule(
+    doc = "Adds potentially-configurable properties to a `ConfigurableInfo`.",
+    implementation = _build_configurable_info_impl,
+    attrs = {
+        "idk_root_path": attr.string(mandatory = True),
+        "stable": attr.bool(mandatory = True),
+        "include_dest": attr.string(mandatory = True),
+        "include_base": attr.string(default = "include"),
+        "hdrs": attr.label_list(allow_files = True),
+        "srcs": attr.label_list(allow_files = True),
+    },
+)
+
 # TODO(https://fxbug.dev/428229472): When migrating "zbi-format":
 # * add `non_idk_implementation_deps` (GN equivalent: `non_sdk_deps`) argument.
 # * assert that it is only used for "//sdk/fidl/zbi:zbi.c.checked-in".
@@ -38,13 +93,8 @@ def _idk_cc_source_library_impl(
         stable,
         api_area,
         hdrs,
-        fuchsia_hdrs,
         hdrs_for_internal_use,
-        fuchsia_hdrs_for_internal_use,
-        non_fuchsia_hdrs_for_internal_use,
         srcs,
-        fuchsia_srcs,
-        non_fuchsia_srcs,
         deps,
         fuchsia_deps,
         non_fuchsia_deps,
@@ -87,15 +137,10 @@ def _idk_cc_source_library_impl(
     # IDK may not work this way, so include `hdrs_for_internal_use` as headers
     # in the IDK. This is also consistent with prebuilt libraries where the IDK
     # only includes headers.
-    hdrs_for_idk = hdrs + fuchsia_hdrs + hdrs_for_internal_use + fuchsia_hdrs_for_internal_use
-    srcs_for_idk = srcs + fuchsia_srcs
-    hdrs_for_bazel_library = hdrs + select_for_fuchsia(fuchsia_hdrs)
-    srcs_for_bazel_library = (
-        srcs +
-        select_for_fuchsia(fuchsia_srcs, non_fuchsia_srcs) +
-        hdrs_for_internal_use +
-        select_for_fuchsia(fuchsia_hdrs_for_internal_use, non_fuchsia_hdrs_for_internal_use)
-    )
+    hdrs_for_idk = hdrs + hdrs_for_internal_use
+    srcs_for_idk = srcs
+    hdrs_for_bazel_library = hdrs
+    srcs_for_bazel_library = srcs + hdrs_for_internal_use
 
     if include_base == "//sdk":
         # Some libraries in //sdk/lib/<library_name>[/...] rely on that in-tree
@@ -111,7 +156,6 @@ def _idk_cc_source_library_impl(
         for _ in this_directory_relative_to_sdk.split("/"):
             include_path += "../"
     else:
-        this_directory_relative_to_sdk = None  # Satisfy buildifier.
         include_path = include_base
 
     # TODO(https://fxbug.dev/421888626): Apply the equivalent of GN's
@@ -145,29 +189,6 @@ def _idk_cc_source_library_impl(
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
 
-    # Determine destinations in the IDK for headers and sources.
-    idk_metadata_headers = []
-    idk_metadata_sources = []
-    idk_header_files_map = {}
-
-    for header in hdrs_for_idk:
-        if include_base == "//sdk":
-            # As above, handle the special case.
-            relative_destination = paths.join(this_directory_relative_to_sdk, header.name)
-        else:
-            relative_destination = paths.relativize(header.name, include_base)
-
-        destination = include_dest + "/" + relative_destination
-        idk_metadata_headers.append(destination)
-        idk_header_files_map |= {destination: header}
-
-    idk_files_map = dict(idk_header_files_map)
-
-    for source in srcs_for_idk:
-        source_dest_path = idk_root_path + "/" + source.name
-        idk_metadata_sources.append(source_dest_path)
-        idk_files_map |= {source_dest_path: source}
-
     idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps)
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
@@ -180,8 +201,8 @@ def _idk_cc_source_library_impl(
         # Fuchsia-specific) are checked.
         create_verify_no_duplicate_files_target(
             name = name,
-            hdrs = hdrs + fuchsia_hdrs,
-            hdrs_for_internal_use = hdrs_for_internal_use + fuchsia_hdrs_for_internal_use,
+            hdrs = hdrs,
+            hdrs_for_internal_use = hdrs_for_internal_use,
             srcs = srcs_for_idk,
             testonly = testonly,
             # Required for tests using `create_test_atom_info()`.
@@ -200,21 +221,31 @@ def _idk_cc_source_library_impl(
         ),
     ]
 
-    if stable:
-        api_path = api_file_path
-        api_contents_map = idk_header_files_map
-    else:
-        api_path = None
-        api_contents_map = None
+    api_path = api_file_path if stable else None
 
     # If changing this, also change
     # //build/sdk/idk_prebuild_manifest.gni:cc_source_library.
     additional_prebuild_info_values = {
         "include_dir": include_dest,
-        "sources": idk_metadata_sources,
-        "headers": idk_metadata_headers,
         "file_base": idk_root_path,
+        # "sources" will be added via `configurable_info_name`.
+        # "headers" will be added via `configurable_info_name`.
     }
+
+    # Some of the attributes we need to generate IDK metadata are configurable,
+    # which means they can only be processed in rules. This rule processes
+    # the relevant attributes and puts the results in a `ConfigurableInfo`
+    # provider that can be passed to the atom rule for use.
+    configurable_info_name = name + "_configurable_info"
+    build_configurable_info(
+        name = configurable_info_name,
+        idk_root_path = idk_root_path,
+        stable = stable,
+        include_dest = include_dest,
+        include_base = include_base,
+        hdrs = hdrs_for_idk,
+        srcs = srcs_for_idk,
+    )
 
     idk_atom(
         name = name + "_idk",
@@ -226,10 +257,9 @@ def _idk_cc_source_library_impl(
         stable = stable,
         api_area = api_area,
         api_file_path = api_path,
-        api_contents_map = api_contents_map,
-        files_map = idk_files_map,
         idk_deps = idk_deps,
         atom_build_deps = atom_build_deps,
+        configurable_info = ":" + configurable_info_name,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         allowlist = allowlist,
         testonly = testonly,
@@ -289,17 +319,6 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
             allow_files = True,
             allow_empty = False,
             mandatory = True,
-            configurable = False,
-        ),
-        "fuchsia_hdrs": attr.label_list(
-            doc = """The list of C and C++ header files published by this library to be directly
-included by sources in dependent rules only when targeting Fuchsia. Does not include internal headers that are included from
-public headers but not meant to be included by dependents - see `fuchsia_hdrs_for_internal_use`.
-Atoms providing headers used by these headers must be included in the (public) `deps` or `fuchsia_deps`.
-GN equivalent: `public` inside an `if (is_fuchsia) {}` statement
-GN note: Unlike the GN template, this list does not include `fuchsia_hdrs_for_internal_use`.""",
-            allow_files = True,
-            configurable = False,
         ),
         "hdrs_for_internal_use": attr.label_list(
             doc = """List of C and C++ headers included by headers in `hdrs` that are not
@@ -313,36 +332,6 @@ GN note: Unlike the GN template where this argument specifices headers already i
 elsewhere, such headers are only listed here.""",
             allow_files = True,
             default = [],
-            configurable = False,
-        ),
-        "fuchsia_hdrs_for_internal_use": attr.label_list(
-            doc = """List of C and C++ headers included by headers in `hdrs`
-or `fuchsia_hdrs` only when targeting Fuchsia that are not
-meant to be included by a client of this library. They usually contain implementation details.
-Their contents are not included in documentation but they are included in the `headers` metadata
-for the IDK library. They may be excluded from some but not all API compatibility checks.
-Like `fuchsia_hdrs`, the atoms providing headers used by these headers must be included in the
-(public) `deps` or `fuchsia_deps`.
-GN equivalent: `sdk_headers_for_internal_use` inside an `if (is_fuchsia) {}` statement
-GN note: Unlike the GN template where this argument specifices headers already included
-elsewhere, such headers are only listed here.""",
-            allow_files = True,
-            default = [],
-            configurable = False,
-        ),
-        "non_fuchsia_hdrs_for_internal_use": attr.label_list(
-            doc = """List of C and C++ headers included by headers in `hdrs`
-only when not targeting Fuchsia that are not
-meant to be included by a client of this library. They usually contain implementation details.
-These files are not included in the IDK.
-Like `hdrs`, the atoms providing headers used by these headers must be included in the
-(public) `deps`.
-GN equivalent: `sdk_headers_for_internal_use` inside an `if (!is_fuchsia) {}` statement
-GN note: Unlike the GN template where this argument specifices headers already included
-elsewhere, such headers are only listed here.""",
-            allow_files = True,
-            default = [],
-            configurable = False,
         ),
         "srcs": attr.label_list(
             doc = """The list of C and C++ source and header files that are processed to create the
@@ -352,28 +341,6 @@ GN equivalent: `sources`
 GN note: Unlike the GN template, public headers must actually be in `hdrs`.""",
             allow_files = True,
             default = [],
-            configurable = False,
-        ),
-        "fuchsia_srcs": attr.label_list(
-            doc = """The list of C and C++ source and header files that are processed to create the
-library target only when targeting Fuchsia, excluding those in `fuchsia_hdrs` and `fuchsia_hdrs_for_internal_use`.
-Header files in this list can only be included by other files in this list.
-GN equivalent: `sources` inside an `if (is_fuchsia) {}` statement
-GN note: Unlike the GN template, public headers must actually be in `fuchsia_hdrs`.""",
-            allow_files = True,
-            default = [],
-            configurable = False,
-        ),
-        "non_fuchsia_srcs": attr.label_list(
-            doc = """The list of C and C++ source and header files that are processed to create the
-library target only when not targeting Fuchsia, excluding those in `non_fuchsia_hdrs` and `non_fuchsia_hdrs_for_internal_use`.
-Header files in this list can only be included by other files in this list.
-These files are not included in the IDK.
-GN equivalent: `sources` inside an `if (!is_fuchsia) {}` statement
-GN note: Unlike the GN template, public headers must actually be in `non_fuchsia_hdrs`.""",
-            allow_files = True,
-            default = [],
-            configurable = False,
         ),
         "deps": attr.label_list(
             doc = """List of labels for other IDK elements this element publicly depends on at build time.
@@ -541,7 +508,6 @@ GN equivalent: `sdk_headers`
 GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
             allow_files = True,
             mandatory = True,
-            configurable = False,
         ),
         # zx libraries always use "include" (the default) as the include base. Do not inherit.
         "include_base": None,

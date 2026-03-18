@@ -112,9 +112,9 @@ create_test_atom_info(
     testonly = True,
     additional_prebuild_info = {
         "include_dir": '"pkg/test_source_set/include"',
+        "file_base": '"pkg/test_source_set"',
         "sources": '["pkg/test_source_set/internal/helper.cc","pkg/test_source_set/some_library.cc"]',
         "headers": '["pkg/test_source_set/include/lib/test_lib/test_header.h"]',
-        "file_base": '"pkg/test_source_set"',
     },
     api_area = "Developer",
     api_contents_map = {
@@ -445,29 +445,33 @@ verify_file_path(
     target = ":test_static_library_link_lib_file",
 )
 
-# Tests `fuchsia_*` and `non_fuchsia_*` attributes for header and source files.
-# Also tests that `*hdrs_for_internal_use` appears in the API file as appropriate.
+# Tests use of `select()` with header and source files.
+# Also tests that `hdrs_for_internal_use` appear in the API file as appropriate.
 # buildifier: leave-alone - Preserve attribute ordering for illustrative purposes.
 idk_cc_source_library(
     name = "platform_dependent_source_library",
     testonly = True,
 
     # Source files.
-    srcs = ["platform_dependent_library.cc"],
-    fuchsia_srcs = ["fuchsia_only_source.cc"],
-    non_fuchsia_srcs = ["non_fuchsia_source.cc"],
+    srcs = ["platform_dependent_library.cc"] + select({
+        "@platforms//os:fuchsia": ["fuchsia_only_source.cc"],
+        "//conditions:default": ["non_fuchsia_source.cc"],
+    }),
 
     # Header files.
     hdrs = [
         "include/lib/test_lib/platform_dependent_header.h",
         "include/lib/test_lib/test_header.h",
-    ],
-    fuchsia_hdrs = ["include/lib/test_lib/fuchsia_only_header.h"],
+    ] + select({
+        "@platforms//os:fuchsia": ["include/lib/test_lib/fuchsia_only_header.h"],
+        "//conditions:default": [],
+    }),
 
     # Header files for internal use.
-    hdrs_for_internal_use = ["include/lib/test_lib/internal/internal_header_appears_in_api_file.h"],
-    fuchsia_hdrs_for_internal_use = ["include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"],
-    non_fuchsia_hdrs_for_internal_use = ["include/lib/test_lib/internal/non_fuchsia_internal_header_does_not_appear_in_api_file.h"],
+    hdrs_for_internal_use = ["include/lib/test_lib/internal/internal_header_appears_in_api_file.h"] + select({
+        "@platforms//os:fuchsia": ["include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"],
+        "//conditions:default": ["include/lib/test_lib/internal/non_fuchsia_internal_header_does_not_appear_in_api_file.h"],
+    }),
 
     # IDK-related attributes.
     api_area = "Developer",
@@ -481,9 +485,9 @@ create_test_atom_info(
     testonly = True,
     additional_prebuild_info = {
         "include_dir": '"pkg/platform_dependent_source_library/include"',
+        "file_base": '"pkg/platform_dependent_source_library"',
         "sources": '["pkg/platform_dependent_source_library/platform_dependent_library.cc","pkg/platform_dependent_source_library/fuchsia_only_source.cc"]',
         "headers": '["pkg/platform_dependent_source_library/include/lib/test_lib/platform_dependent_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/test_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/fuchsia_only_header.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/internal_header_appears_in_api_file.h","pkg/platform_dependent_source_library/include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"]',
-        "file_base": '"pkg/platform_dependent_source_library"',
     },
     api_area = "Developer",
     api_contents_map = {
@@ -947,8 +951,8 @@ genrule(
     outs = ["build_only_tests_on_host_toolchain.stamp"],
     cmd = "touch $@",
     tools = [
-        # Verify that a target using `[non_]fuchsia_{hdrs|hdrs_for_internal_use|srcs}`
-        # can be built on the host toolchain.
+        # Verify that a target using `select()` statements for `hdrs`,
+        # `hdrs_for_internal_use`, and `srcs` can be built on the host toolchain.
         ":test_executable_using_platform_dependent_source_library",
 
         # Test linking on the host toolchain where possible.

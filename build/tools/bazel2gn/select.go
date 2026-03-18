@@ -42,6 +42,18 @@ func isSelectCall(expr syntax.Expr) bool {
 	return fn.Fn.(*syntax.Ident).Name == "select"
 }
 
+// Adds additional statements needed for `sdk_headers_for_internal_use`.
+// While the files in GN's `sdk_headers_for_internal_use` are included
+// in `public` (or `sources`), that is not the case for Bazel's
+// `hdrs_for_internal_use`. To match the GN behavior, add all the files
+// specified in `hdrs_for_internal_use` to `public` in the GN target.
+// For more information, see `idk_cc_source_library()`.
+func handle_sdk_headers_for_internal_use(ret []string, rhs []string, indentLevel int) []string {
+	ret = append(ret, indent([]string{fmt.Sprintf("public += %s", rhs[0])}, indentLevel)...)
+	ret = append(ret, indent(rhs[1:], indentLevel)...)
+	return ret
+}
+
 // Converts list concatenation with select calls in them to GN.
 func listConcatWithSelectToGN(attrName string, expr syntax.Expr, transformers []transformer) ([]string, error) {
 	for _, ts := range transformers {
@@ -64,6 +76,11 @@ func listConcatWithSelectToGN(attrName string, expr syntax.Expr, transformers []
 			[]string{fmt.Sprintf("%s += %s", attrName, l[0])},
 			l[1:]...,
 		)
+
+		if attrName == "sdk_headers_for_internal_use" {
+			ret = handle_sdk_headers_for_internal_use(ret, l, 0)
+		}
+
 		return ret, nil
 	case *syntax.BinaryExpr:
 		if v.Op != syntax.PLUS {
@@ -85,7 +102,14 @@ func listConcatWithSelectToGN(attrName string, expr syntax.Expr, transformers []
 		if err != nil {
 			return nil, fmt.Errorf("converting identifier: %v", err)
 		}
-		return []string{fmt.Sprintf("%s += %s", attrName, l[0])}, nil
+		ret := []string{fmt.Sprintf("%s += %s", attrName, l[0])}
+
+		if attrName == "sdk_headers_for_internal_use" {
+			ret = handle_sdk_headers_for_internal_use(ret, l, 0)
+		}
+
+		return ret, nil
+
 	default:
 		return nil, fmt.Errorf("converting list concatenation with select to GN, want call expression, binary expression, list expression, or identifier, got %T", expr)
 	}
@@ -143,6 +167,11 @@ func selectToGN(attrName string, op string, expr *syntax.CallExpr, transformers 
 			1,
 		)...)
 		ret = append(ret, indent(valueInGN[1:], 1)...)
+
+		if attrName == "sdk_headers_for_internal_use" {
+			ret = handle_sdk_headers_for_internal_use(ret, valueInGN, 1)
+		}
+
 		ret = append(ret, "}")
 	}
 
