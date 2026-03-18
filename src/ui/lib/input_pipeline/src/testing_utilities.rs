@@ -10,14 +10,14 @@ use crate::{
     touch_binding,
 };
 use assert_matches::assert_matches;
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_input3 as fidl_ui_input3;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use futures::FutureExt as _;
 use maplit::hashmap;
 use std::collections::{HashMap, HashSet};
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_input3 as fidl_ui_input3, fidl_fuchsia_ui_pointerinjector as pointerinjector,
-    zx,
-};
+use zx;
 
 pub use diagnostics_assertions;
 
@@ -382,20 +382,6 @@ pub fn create_mouse_input_report_relative(
         trace_id: None,
         ..Default::default()
     }
-}
-
-/// Returns an |input_device::InputDeviceDescriptor::Mouse|.
-pub fn get_mouse_device_descriptor() -> input_device::InputDeviceDescriptor {
-    const COUNTS_PER_MM: u32 = 12;
-    input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
-        device_id: 1,
-        absolute_x_range: Some(fidl_input_report::Range { min: -50, max: 50 }),
-        absolute_y_range: Some(fidl_input_report::Range { min: -50, max: 50 }),
-        wheel_v_range: None,
-        wheel_h_range: None,
-        buttons: None,
-        counts_per_mm: COUNTS_PER_MM,
-    })
 }
 
 /// Creates a [`mouse_binding::MouseEvent`] with the provided parameters.

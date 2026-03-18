@@ -9,7 +9,6 @@ group("integration_input_tests") {
 
   deps = [
     "factory-reset-handler:tests",
-    "interaction-state:tests",
     "mouse:tests",
     "starnix-input:tests",
     "text-input:tests",

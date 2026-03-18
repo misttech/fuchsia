@@ -21,7 +21,6 @@ _scene_manager = {
     "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
     "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
-    "//sdk/fidl/fuchsia.input.interaction:fuchsia.input.interaction_rust",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.lightsensor:fuchsia.lightsensor_rust",

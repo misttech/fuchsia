@@ -23,8 +23,6 @@ pub mod ime_handler;
 pub mod incoming;
 pub mod input_handler;
 pub mod inspect_handler;
-#[cfg(fuchsia_api_level_at_least = "HEAD")]
-pub mod interaction_state_handler;
 pub mod keymap_handler;
 pub mod light_sensor;
 pub use light_sensor::{light_sensor_binding, light_sensor_handler};
@@ -42,7 +40,6 @@ pub use incoming::Incoming;
 
 // The following imports prevent unused crate errors when building at a stable API level
 // that is not HEAD.
-use fidl_fuchsia_input_interaction as _;
 use fidl_fuchsia_power_system as _;
 
 pub mod focus_listener;

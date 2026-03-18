@@ -24,7 +24,6 @@
             protocol: [
                 "fuchsia.accessibility.semantics.SemanticsManager",
                 "fuchsia.element.GraphicalPresenter",
-                "fuchsia.input.interaction.Notifier",
                 "fuchsia.input.virtualkeyboard.ControllerCreator",
                 "fuchsia.input.virtualkeyboard.Manager",
                 "fuchsia.ui.composition.Allocator",
@@ -134,7 +133,6 @@
                 // TODO(https://fxbug.dev/42064159): Dismiss() is only implemented for
                 // GFX; support is still needed for Flatland.
                 "fuchsia.element.GraphicalPresenter",
-                "fuchsia.input.interaction.Notifier",
                 "fuchsia.input.virtualkeyboard.ControllerCreator",
                 "fuchsia.input.virtualkeyboard.Manager",
                 "fuchsia.ui.composition.Allocator",

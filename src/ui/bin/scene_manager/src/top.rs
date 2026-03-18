@@ -4,10 +4,6 @@
 
 use crate::color_transform_manager::ColorTransformManager;
 use crate::lib::input_device::InputDeviceType;
-#[cfg(fuchsia_api_level_at_least = "HEAD")]
-use crate::lib::interaction_state_handler::{
-    handle_interaction_notifier_request_stream, init_interaction_hanging_get,
-};
 use crate::lib::light_sensor::Configuration as LightSensorConfiguration;
 use crate::lib::{Dispatcher, Incoming};
 use crate::scene_management::{SceneManager, SceneManagerTrait, ViewingDistance};
@@ -19,7 +15,6 @@ use fidl_fuchsia_element::{
     GraphicalPresenterRequest, GraphicalPresenterRequestStream, PresentViewError, ViewSpec,
 };
 use fidl_fuchsia_input_injection::InputDeviceRegistryRequestStream;
-use fidl_fuchsia_input_interaction::NotifierRequestStream;
 use fidl_fuchsia_lightsensor::SensorRequestStream as LightSensorRequestStream;
 use fidl_fuchsia_recovery_policy::DeviceRequestStream as FactoryResetDeviceRequestStream;
 use fidl_fuchsia_recovery_ui::FactoryResetCountdownRequestStream;
@@ -63,7 +58,6 @@ enum ExposedServices {
     InputDeviceRegistry(InputDeviceRegistryRequestStream),
     LightSensor(LightSensorRequestStream),
     SceneManager(SceneManagerRequestStream),
-    UserInteraction(NotifierRequestStream),
 }
 
 const LIGHT_SENSOR_CONFIGURATION: &'static str = "/sensor-config/config.json";
@@ -122,8 +116,7 @@ pub async fn start(
         .add_fidl_service(ExposedServices::FocusChainProvider)
         .add_fidl_service(ExposedServices::GraphicalPresenter)
         .add_fidl_service(ExposedServices::InputDeviceRegistry)
-        .add_fidl_service(ExposedServices::SceneManager)
-        .add_fidl_service(ExposedServices::UserInteraction);
+        .add_fidl_service(ExposedServices::SceneManager);
 
     let light_sensor_configuration: Option<LightSensorConfiguration> =
         match File::open(LIGHT_SENSOR_CONFIGURATION) {
@@ -177,15 +170,7 @@ pub async fn start(
         display_rotation,
         display_pixel_density,
         viewing_distance,
-        #[cfg(fuchsia_api_level_at_least = "HEAD")]
-        idle_threshold_ms,
-        #[cfg(fuchsia_api_level_at_least = "HEAD")]
-        suspend_enabled,
-        #[cfg(fuchsia_api_level_at_least = "HEAD")]
         attach_a11y_view,
-        enable_button_baton_passing,
-        enable_mouse_baton_passing,
-        enable_touch_baton_passing,
         enable_merge_touch_events,
         ..
     } = Config::from_vmo(&config).expect("bad config vmo");
@@ -249,10 +234,6 @@ pub async fn start(
     // Create a node under root to hang all input pipeline inspect data off of.
     let inspect_node = inspector.root().create_child("input_pipeline");
 
-    // Create state publisher for InteractionStateHandler.
-    let mut interaction_hanging_get = init_interaction_hanging_get();
-    let interaction_state_publisher = interaction_hanging_get.new_publisher();
-
     // Start input pipeline.
     let has_light_sensor_configuration = light_sensor_configuration.is_some();
     if let Ok(input_pipeline) = crate::input_pipeline::handle_input(
@@ -269,12 +250,6 @@ pub async fn start(
         focus_chain_publisher,
         supported_input_devices,
         light_sensor_configuration,
-        idle_threshold_ms as i64,
-        interaction_state_publisher,
-        suspend_enabled,
-        enable_button_baton_passing,
-        enable_mouse_baton_passing,
-        enable_touch_baton_passing,
         enable_merge_touch_events,
     )
     .await
@@ -400,32 +375,6 @@ pub async fn start(
                     Err(e) => {
                         warn!("failed to forward fuchsia.recovery.policy.Device: {:?}", e)
                     }
-                }
-            }
-            ExposedServices::UserInteraction(stream) => {
-                #[cfg(fuchsia_api_level_at_least = "HEAD")]
-                {
-                    let subscriber = interaction_hanging_get.new_subscriber();
-                    fasync::Task::local(async move {
-                        match handle_interaction_notifier_request_stream(stream, subscriber).await
-                        {
-                            Ok(()) => (),
-                            Err(e) => {
-                                warn!(
-                                    "failure while serving fuchsia.input.interaction.Notifier: {:?}",
-                                    e
-                                );
-                            }
-                        }
-                    })
-                    .detach();
-                }
-                #[cfg(fuchsia_api_level_less_than = "HEAD")]
-                {
-                    let _ = stream;
-                    error!(
-                        "scene_manager built without InteractionStateHandler due to stable API level."
-                    )
                 }
             }
             ExposedServices::GraphicalPresenter(stream) => {
