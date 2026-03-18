@@ -34,8 +34,10 @@ class DeviceDetector {
   };
 
   static constexpr DeviceNodeSpecifier kAudioDevNodes[] = {
-      {.path = "/dev/class/audio-composite",
-       .device_type = fuchsia_audio_device::DeviceType::kComposite},
+      {
+          .path = "/dev/class/audio-composite",
+          .device_type = fuchsia_audio_device::DeviceType::kComposite,
+      },
       {.path = "/dev/class/codec", .device_type = fuchsia_audio_device::DeviceType::kCodec},
   };
 
@@ -44,16 +46,19 @@ class DeviceDetector {
   // Upon detection, our DeviceDetectionHandler is run on the dispatcher's thread.
   static zx::result<std::shared_ptr<DeviceDetector>> Create(DeviceDetectionHandler handler,
                                                             DeviceDetectionIdleHandler idle_handler,
-                                                            async_dispatcher_t* dispatcher);
+                                                            async_dispatcher_t* dispatcher,
+                                                            bool ignore_devices);
+
   virtual ~DeviceDetector() = default;
 
  private:
-  static inline constexpr std::string_view kClassName = "DeviceDetector";
+  static constexpr std::string_view kClassName = "DeviceDetector";
 
   DeviceDetector(DeviceDetectionHandler handler, DeviceDetectionIdleHandler idle_handler,
-                 async_dispatcher_t* dispatcher)
+                 async_dispatcher_t* dispatcher, bool ignore_devices)
       : handler_(std::move(handler)),
         idle_handler_(std::move(idle_handler)),
+        ignore_devices_(ignore_devices),
         dispatcher_(dispatcher) {
     initial_detection_complete_by_device_type_.emplace(fuchsia_audio_device::DeviceType::kCodec,
                                                        false);
@@ -74,6 +79,9 @@ class DeviceDetector {
   DeviceDetectionHandler handler_;
   DeviceDetectionIdleHandler idle_handler_;
   std::vector<std::unique_ptr<fsl::DeviceWatcher>> watchers_;
+
+  // If set, don't initialize/control detected devices: allow tests to directly connect to drivers.
+  bool ignore_devices_;
 
   struct DeviceTypeHash {
     std::size_t operator()(fuchsia_audio_device::DeviceType type) const noexcept {

@@ -48,13 +48,17 @@ pub struct AudioCoreConfig {
     pub use_adc_device: bool,
 }
 
-/// Configuration options for the AudioDeviceRegistry stack.
+/// Configuration options for AudioDeviceRegistry.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AudioDeviceRegistryConfig {
     /// Start the ADR during target boot-up, rather than upon first client connection.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub eager_start: bool,
+
+    /// Do not detect/acquire audio devices; allow others to directly connect to audio drivers.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub ignore_devices: bool,
 }
 
 /// The camera settings for the platform.

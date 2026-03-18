@@ -23,17 +23,17 @@ namespace fha = fuchsia_hardware_audio;
 
 zx::result<std::shared_ptr<DeviceDetector>> DeviceDetector::Create(
     DeviceDetectionHandler handler, DeviceDetectionIdleHandler idle_handler,
-    async_dispatcher_t* dispatcher) {
+    async_dispatcher_t* dispatcher, bool ignore_devices) {
   // The constructor is private, forcing clients to use DeviceDetector::Create().
   class MakePublicCtor : public DeviceDetector {
    public:
     MakePublicCtor(DeviceDetectionHandler handler, DeviceDetectionIdleHandler idle_handler,
-                   async_dispatcher_t* dispatcher)
-        : DeviceDetector(std::move(handler), std::move(idle_handler), dispatcher) {}
+                   async_dispatcher_t* dispatcher, bool ignore_devices)
+        : DeviceDetector(std::move(handler), std::move(idle_handler), dispatcher, ignore_devices) {}
   };
 
-  auto detector =
-      std::make_shared<MakePublicCtor>(std::move(handler), std::move(idle_handler), dispatcher);
+  auto detector = std::make_shared<MakePublicCtor>(std::move(handler), std::move(idle_handler),
+                                                   dispatcher, ignore_devices);
 
   if (auto status = detector->StartDeviceWatchers(); status != ZX_OK) {
     return zx::error(status);
@@ -42,7 +42,8 @@ zx::result<std::shared_ptr<DeviceDetector>> DeviceDetector::Create(
 }
 
 zx_status_t DeviceDetector::StartDeviceWatchers() {
-  ADR_LOG_METHOD(kLogDeviceDetection);
+  ADR_LOG_METHOD(kLogDeviceDetection)
+      << "by configuration, devices will be " << (ignore_devices_ ? "ignored" : "detected");
 
   // StartDeviceWatchers should never be called a second time.
   FX_CHECK(watchers_.empty());
@@ -53,6 +54,11 @@ zx_status_t DeviceDetector::StartDeviceWatchers() {
         dev_node.path,
         [this, device_type = dev_node.device_type](
             const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
+          if (ignore_devices_) {
+            ADR_LOG_OBJECT(kLogDeviceDetection || kLogDeviceAddErrorRemove)
+                << device_type << " device was ignored";
+            return;
+          }
           if (!dispatcher_) {
             FX_LOGS(ERROR) << "DeviceWatcher fired but dispatcher is gone";
             Inspector::Singleton()->RecordDetectionFailureOther();

@@ -28,7 +28,6 @@ source_set("fakes") {
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/media/audio/drivers/lib/audio-proto-utils",
     "//src/media/audio/lib/format",
     "//src/media/audio/services/device_registry:common",
     "//src/media/audio/services/device_registry:device_registry_lib",

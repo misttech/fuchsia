@@ -41,6 +41,10 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
             }
             Some(AudioConfig::DeviceRegistry(adr_config)) => {
                 builder.platform_bundle("audio_device_registry")?;
+                builder
+                    .package("audio_device_registry")
+                    .component("meta/audio_device_registry.cm")?
+                    .field("ignore_devices", adr_config.ignore_devices)?;
                 if adr_config.eager_start {
                     builder.platform_bundle("audio_device_registry_eager")?;
                 } else {

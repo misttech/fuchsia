@@ -59,4 +59,8 @@
             from: "self",
         },
     ],
+    config: {
+        // Do not detect/acquire audio devices; allow others to directly connect to audio drivers.
+        ignore_devices: { type: "bool" },
+    },
 }

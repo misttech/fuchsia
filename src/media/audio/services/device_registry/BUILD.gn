@@ -20,6 +20,7 @@ group("tests") {
 ## Packages
 fuchsia_package("device_registry") {
   package_name = "audio_device_registry"
+  validate_structured_config = false
 
   deps = [ ":device_registry_comp" ]
 }
@@ -45,11 +46,21 @@ fuchsia_unittest_package("audio_services_device_registry_warning_unittests") {
 }
 
 ## Components
-fuchsia_component("device_registry_comp") {
+# All components that use structured configuration must declare the manifest separately
+# to avoid a circular dependency.
+fuchsia_component_manifest("device_registry_manifest") {
   component_name = "audio_device_registry"
   manifest = "//src/media/audio/services/device_registry/meta/audio_device_registry.cml"
+}
 
+fuchsia_component("device_registry_comp") {
+  cm_label = ":device_registry_manifest"
   deps = [ ":device_registry_bin" ]
+}
+
+## Configuration
+fuchsia_structured_config_cpp_elf_lib("audio_device_registry_config") {
+  cm_label = ":device_registry_manifest"
 }
 
 ## Executables
@@ -61,6 +72,7 @@ executable("device_registry_bin") {
   ]
 
   deps = [
+    ":audio_device_registry_config",
     ":device_registry_lib",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

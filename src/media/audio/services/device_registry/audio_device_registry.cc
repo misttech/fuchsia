@@ -36,12 +36,12 @@ AudioDeviceRegistry::AudioDeviceRegistry(std::shared_ptr<FidlThread> server_thre
 
 AudioDeviceRegistry::~AudioDeviceRegistry() { ADR_LOG_METHOD(kLogObjectLifetimes); }
 
-zx_status_t AudioDeviceRegistry::StartDeviceDetection() {
+zx_status_t AudioDeviceRegistry::StartDeviceDetection(bool ignore_devices) {
   auto detector_result = media_audio::DeviceDetector::Create(
       [this](std::string_view name, fad::DeviceType device_type, fad::DriverClient driver_client) {
         DeviceDetected(name, device_type, std::move(driver_client));
       },
-      [this]() { InitialDeviceDetectionComplete(); }, thread_->dispatcher());
+      [this]() { InitialDeviceDetectionComplete(); }, thread_->dispatcher(), ignore_devices);
 
   if (detector_result.is_ok()) {
     device_detector_ = detector_result.value();

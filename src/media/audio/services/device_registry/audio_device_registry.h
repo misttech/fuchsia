@@ -39,7 +39,7 @@ class AudioDeviceRegistry : public std::enable_shared_from_this<AudioDeviceRegis
 
   // Kick off device-detection. After AddDevice, the device auto-initializes and then calls one of
   // DeviceIsReady, DeviceHasError or DeviceIsRemoved.
-  zx_status_t StartDeviceDetection();
+  zx_status_t StartDeviceDetection(bool ignore_devices);
   void InitialDeviceDetectionComplete();
 
   zx_status_t RegisterAndServeOutgoing();
@@ -96,7 +96,7 @@ class AudioDeviceRegistry : public std::enable_shared_from_this<AudioDeviceRegis
       const std::shared_ptr<Device>& device_to_control, ElementId element_id);
 
  private:
-  static inline constexpr std::string_view kClassName = "AudioDeviceRegistry";
+  static constexpr std::string_view kClassName = "AudioDeviceRegistry";
 
   void DeviceDetected(std::string_view name, fuchsia_audio_device::DeviceType device_type,
                       fuchsia_audio_device::DriverClient driver_client);

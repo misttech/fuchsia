@@ -30,9 +30,13 @@ namespace fad = fuchsia_audio_device;
 namespace fha = fuchsia_hardware_audio;
 
 // Minimal Codec used to emulate a fake devfs directory for tests.
-class FakeAudioCodec : public fidl::testing::TestBase<fha::CodecConnector>,
-                       public fidl::testing::TestBase<fha::Codec> {
+class FakeAudioCodec : public fidl::testing::TestBase<fha::Codec> {
  public:
+  FakeAudioCodec(const FakeAudioCodec&) = delete;
+  FakeAudioCodec(FakeAudioCodec&&) = delete;
+  FakeAudioCodec& operator=(const FakeAudioCodec&) = delete;
+  FakeAudioCodec& operator=(FakeAudioCodec&&) = delete;
+
   explicit FakeAudioCodec(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
@@ -45,7 +49,7 @@ class FakeAudioCodec : public fidl::testing::TestBase<fha::CodecConnector>,
 
   fbl::RefPtr<fs::Service> AsService() {
     return fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fha::CodecConnector> c) {
-      connector_binding_ = fidl::BindServer(dispatcher(), std::move(c), this);
+      connector_binding_ = fidl::BindServer(dispatcher(), std::move(c), &connector_);
       return ZX_OK;
     });
   }
@@ -54,20 +58,32 @@ class FakeAudioCodec : public fidl::testing::TestBase<fha::CodecConnector>,
   async_dispatcher_t* dispatcher() { return dispatcher_; }
 
  private:
-  // FIDL method for fuchsia.hardware.audio.fha::CodecConnector.
-  void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {
-    binding_ = fidl::BindServer(dispatcher(), std::move(request.codec_protocol()), this);
-  }
+  class Connector : public fidl::Server<fha::CodecConnector> {
+   public:
+    explicit Connector(FakeAudioCodec* parent) : parent_(parent) {}
+    void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {
+      parent_->binding_ =
+          fidl::BindServer(parent_->dispatcher(), std::move(request.codec_protocol()), parent_);
+    }
+
+   private:
+    FakeAudioCodec* parent_;
+  };
 
   async_dispatcher_t* dispatcher_;
+  Connector connector_{this};
   std::optional<fidl::ServerBindingRef<fha::CodecConnector>> connector_binding_;
   std::optional<fidl::ServerBindingRef<fha::Codec>> binding_;
 };
 
 // TODO(https://fxbug.dev/304551042): Convert VirtualAudioComposite to DFv2; remove Connector.
-class FakeAudioComposite : public fidl::testing::TestBase<fha::Composite>,
-                           public fidl::testing::TestBase<fha::CompositeConnector> {
+class FakeAudioComposite : public fidl::testing::TestBase<fha::Composite> {
  public:
+  FakeAudioComposite(const FakeAudioComposite&) = delete;
+  FakeAudioComposite(FakeAudioComposite&&) = delete;
+  FakeAudioComposite& operator=(const FakeAudioComposite&) = delete;
+  FakeAudioComposite& operator=(FakeAudioComposite&&) = delete;
+
   explicit FakeAudioComposite(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
@@ -94,14 +110,7 @@ class FakeAudioComposite : public fidl::testing::TestBase<fha::Composite>,
   async_dispatcher_t* dispatcher() { return dispatcher_; }
 
  private:
-  // FIDL method for fuchsia.hardware.audio.CompositeConnector.
-  // TODO(https://fxbug.dev/304551042): Convert VirtualAudioComposite to DFv2; remove this.
-  void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {
-    binding_ = fidl::BindServer(dispatcher(), std::move(request.composite_protocol()), this);
-  }
-
   async_dispatcher_t* dispatcher_;
-  std::optional<fidl::ServerBindingRef<fha::CompositeConnector>> connector_binding_;
   std::optional<fidl::ServerBindingRef<fha::Composite>> binding_;
 };
 
@@ -130,7 +139,10 @@ class DeviceTracker {
     ASSERT_TRUE(detection_is_expected_) << "Unexpected device detection";
 
     devices_.emplace_back(DeviceConnection{
-        .name = name, .device_type = device_type, .client = std::move(driver_client)});
+        .name = name,
+        .device_type = device_type,
+        .client = std::move(driver_client),
+    });
   };
   DeviceDetectionIdleHandler idle_handler_ = [this]() { detection_idle_received_ = true; };
 
@@ -143,8 +155,6 @@ class DeviceTracker {
 
 class DeviceDetectorTest : public gtest::TestLoopFixture {
  protected:
-  static constexpr zx::duration kCommandTimeout = zx::sec(10);
-
   void SetUp() override {
     // Use our production Inspector during DeviceDetector unittests.
     media_audio::Inspector::Initialize(dispatcher());
@@ -207,7 +217,7 @@ class DeviceDetectorTest : public gtest::TestLoopFixture {
     while (!task_has_run) {
       RunLoopUntilIdle();
     }
-    return {name, codec_dir_, dispatcher()};
+    return {.name = name, .dir = codec_dir_, .dispatcher = dispatcher()};
   }
 
   // Adds a `FakeAudioComposite` to the emulated 'composite' directory that has been installed in
@@ -222,7 +232,7 @@ class DeviceDetectorTest : public gtest::TestLoopFixture {
     while (!task_has_run) {
       RunLoopUntilIdle();
     }
-    return {name, composite_dir_, dispatcher()};
+    return {.name = name, .dir = composite_dir_, .dispatcher = dispatcher()};
   }
 
  private:
@@ -244,29 +254,23 @@ TEST_F(DeviceDetectorTest, DetectExistingDevices) {
   auto composite1 = std::make_shared<FakeAudioComposite>(dispatcher());
   auto codec1 = std::make_shared<FakeAudioCodec>(dispatcher());
 
-  [[maybe_unused]] auto dev1 = AddCompositeDevice(composite0);
-  [[maybe_unused]] auto dev2 = AddCodecDevice(codec0);
-  [[maybe_unused]] auto dev3 = AddCompositeDevice(composite1);
-  [[maybe_unused]] auto dev4 = AddCodecDevice(codec1);
+  [[maybe_unused]] auto dev0 = AddCompositeDevice(composite0);
+  [[maybe_unused]] auto dev1 = AddCodecDevice(codec0);
+  [[maybe_unused]] auto dev2 = AddCompositeDevice(composite1);
+  [[maybe_unused]] auto dev3 = AddCodecDevice(codec1);
 
-  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), true);
+  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), /*detection_is_expected=*/true);
   RunLoopUntilIdle();
   ASSERT_EQ(0u, tracker->size());
   {
     // Create the detector; expect 8 events (1 for each device above);
-    auto device_detector =
-        DeviceDetector::Create(tracker->handler(), tracker->idle_handler(), dispatcher());
-    zx::time deadline = zx::clock::get_monotonic() + kCommandTimeout;
-    while (zx::clock::get_monotonic() < deadline) {
-      // A fake audio device could still be setting up its server end, by the time the
-      // tracker adds it. We wait for the tracker AND the server-ends, to avoid a race.
-      if (composite0->is_bound() && composite1->is_bound() && codec0->is_bound() &&
-          codec1->is_bound() && tracker->size() >= 4) {
-        break;
-      }
-      RunLoopUntilIdle();
-    }
-    RunLoopUntilIdle();  // Allow erroneous extra device additions to reveal themselves.
+    auto device_detector = DeviceDetector::Create(tracker->handler(), tracker->idle_handler(),
+                                                  dispatcher(), /*ignore_devices=*/false);
+    RunLoopUntilIdle();
+    ASSERT_TRUE(composite0->is_bound());
+    ASSERT_TRUE(composite1->is_bound());
+    ASSERT_TRUE(codec0->is_bound());
+    ASSERT_TRUE(codec1->is_bound());
     ASSERT_EQ(tracker->size(), 4u) << "Timed out waiting for preexisting devices to be detected";
 
     int num_composites = 0, num_codecs = 0;
@@ -288,9 +292,9 @@ TEST_F(DeviceDetectorTest, DetectExistingDevices) {
     EXPECT_EQ(num_codecs, 2);
   }
 
-  RunLoopUntilIdle();  // Allow any erroneous device unbinds to reveal themselves.
-
   // After the detector is gone, preexisting devices we detected should still be bound.
+  RunLoopUntilIdle();
+
   std::for_each(tracker->devices().begin(), tracker->devices().end(), [](const auto& device) {
     switch (device.device_type) {
       case fad::DeviceType::kCodec:
@@ -316,37 +320,23 @@ TEST_F(DeviceDetectorTest, DetectHotplugDevices) {
   auto composite = std::make_shared<FakeAudioComposite>(dispatcher());
   auto codec = std::make_shared<FakeAudioCodec>(dispatcher());
 
-  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), true);
+  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), /*detection_is_expected=*/true);
   {
-    auto device_detector =
-        DeviceDetector::Create(tracker->handler(), tracker->idle_handler(), dispatcher());
+    auto device_detector = DeviceDetector::Create(tracker->handler(), tracker->idle_handler(),
+                                                  dispatcher(), /*ignore_devices=*/false);
 
     RunLoopUntilIdle();
     ASSERT_EQ(0u, tracker->size());
 
     // Hotplug a device of each type.
-    [[maybe_unused]] auto dev1 = AddCompositeDevice(composite);
-    auto deadline = zx::clock::get_monotonic() + kCommandTimeout;
-    while (zx::clock::get_monotonic() < deadline) {
-      // Wait for both tracker and device, same as above.
-      if (tracker->size() >= 1u && composite->is_bound()) {
-        break;
-      }
-      RunLoopUntilIdle();
-    }
-    RunLoopUntilIdle();  // Allow erroneous extra device additions to reveal themselves.
+    [[maybe_unused]] auto dev0 = AddCompositeDevice(composite);
+    RunLoopUntilIdle();
+    ASSERT_TRUE(composite->is_bound());
     ASSERT_EQ(tracker->size(), 1u) << "Timed out waiting for composite device to be detected";
 
-    [[maybe_unused]] auto dev2 = AddCodecDevice(codec);
-    deadline = zx::clock::get_monotonic() + kCommandTimeout;
-    while (zx::clock::get_monotonic() < deadline) {
-      // Wait for both tracker and device, same as above.
-      if (tracker->size() >= 2u && codec->is_bound()) {
-        break;
-      }
-      RunLoopUntilIdle();
-    }
-    RunLoopUntilIdle();  // Allow erroneous extra device additions to reveal themselves.
+    [[maybe_unused]] auto dev1 = AddCodecDevice(codec);
+    RunLoopUntilIdle();
+    ASSERT_TRUE(codec->is_bound());
     ASSERT_EQ(tracker->size(), 2u) << "Timed out waiting for codec device to be detected";
 
     EXPECT_EQ(tracker->devices()[0].device_type, fad::DeviceType::kComposite);
@@ -378,11 +368,11 @@ TEST_F(DeviceDetectorTest, DetectHotplugDevices) {
 TEST_F(DeviceDetectorTest, NoDanglingDetectors) {
   auto codec = std::make_shared<FakeAudioCodec>(dispatcher());
   auto composite = std::make_shared<FakeAudioComposite>(dispatcher());
-  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), false);
+  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), /*detection_is_expected=*/false);
 
   {
-    auto device_detector =
-        DeviceDetector::Create(tracker->handler(), tracker->idle_handler(), dispatcher());
+    auto device_detector = DeviceDetector::Create(tracker->handler(), tracker->idle_handler(),
+                                                  dispatcher(), /*ignore_devices=*/false);
     RunLoopUntilIdle();  // Allow erroneous device handler callbacks to reveal themselves.
     ASSERT_EQ(0u, tracker->size());
   }
@@ -392,11 +382,52 @@ TEST_F(DeviceDetectorTest, NoDanglingDetectors) {
   // If a device-detection handler is still in place, these will be inserted into tracker's list.
   [[maybe_unused]] auto dev0 = AddCodecDevice(codec);
   [[maybe_unused]] auto dev1 = AddCompositeDevice(composite);
-
   RunLoopUntilIdle();  // Allow erroneous device handler callbacks to reveal themselves.
   EXPECT_EQ(0u, tracker->size());
   EXPECT_FALSE(codec->is_bound());
   EXPECT_FALSE(composite->is_bound());
+}
+
+// Verify that plug detector disregards preexisting audio devices, if `ignore_devices` is set.
+TEST_F(DeviceDetectorTest, IgnoreDevicesDoesNotDetectExistingDevices) {
+  // Add some devices that will exist before the plug detector is created.
+  auto composite0 = std::make_shared<FakeAudioComposite>(dispatcher());
+  auto codec0 = std::make_shared<FakeAudioCodec>(dispatcher());
+  [[maybe_unused]] auto dev0 = AddCompositeDevice(composite0);
+  [[maybe_unused]] auto dev1 = AddCodecDevice(codec0);
+
+  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), /*detection_is_expected=*/false);
+  RunLoopUntilIdle();
+  ASSERT_EQ(0u, tracker->size());
+
+  {
+    // Create the detector, but expect no events at the DeviceTracker;
+    auto device_detector = DeviceDetector::Create(tracker->handler(), tracker->idle_handler(),
+                                                  dispatcher(), /*ignore_devices=*/true);
+    RunLoopUntilIdle();
+    ASSERT_EQ(tracker->size(), 0u) << "Pre-existing device detected while 'ignore_devices' set";
+  }
+}
+
+// Verify that plug detector ignores subsequently-added audio devices, if `ignore_devices` is set.
+TEST_F(DeviceDetectorTest, IgnoreDevicesDoesNotDetectHotplugDevices) {
+  auto composite = std::make_shared<FakeAudioComposite>(dispatcher());
+  auto codec = std::make_shared<FakeAudioCodec>(dispatcher());
+
+  auto tracker = std::make_shared<DeviceTracker>(dispatcher(), /*detection_is_expected=*/false);
+  {
+    // Create the detector, but expect no events at the DeviceTracker;
+    auto device_detector = DeviceDetector::Create(tracker->handler(), tracker->idle_handler(),
+                                                  dispatcher(), /*ignore_devices=*/true);
+    RunLoopUntilIdle();
+    ASSERT_EQ(0u, tracker->size());
+
+    // Hotplug a device of each type.
+    [[maybe_unused]] auto dev0 = AddCompositeDevice(composite);
+    [[maybe_unused]] auto dev1 = AddCodecDevice(codec);
+    RunLoopUntilIdle();
+    ASSERT_EQ(tracker->size(), 0u) << "Hot-plugged device detected while 'ignore_devices' set";
+  }
 }
 
 }  // namespace

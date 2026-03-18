@@ -442,7 +442,8 @@ mod tests {
             config.platform.media,
             PlatformMediaConfig {
                 audio: Some(AudioConfig::DeviceRegistry(AudioDeviceRegistryConfig {
-                    eager_start: false
+                    eager_start: false,
+                    ignore_devices: false,
                 })),
                 ..Default::default()
             },
