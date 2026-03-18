@@ -207,6 +207,7 @@ fn category_stats<R: std::io::Read>(
 }
 
 fn fidl_messages<R: std::io::Read>(fxt: &mut SessionParser<R>) {
+    let mut name_counts = std::collections::HashMap::new();
     for record in fxt {
         match record {
             Ok(fxt::TraceRecord::Event(fxt::EventRecord {
@@ -216,12 +217,19 @@ fn fidl_messages<R: std::io::Read>(fxt: &mut SessionParser<R>) {
                 ..
             })) => {
                 if category == "kernel:ipc" && name != "ChannelMessage" {
-                    println!("{name}");
+                    *name_counts.entry(name.as_str().to_string()).or_insert(0) += 1;
                 }
             }
             Ok(_) => {}
             Err(parse_err) => eprintln!("WARNING {:#}", parse_err),
         }
+    }
+
+    let mut counts: Vec<_> = name_counts.into_iter().collect();
+    counts.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+
+    for (name, count) in counts {
+        println!("{} {}", count, name);
     }
 }
 
