@@ -6,18 +6,35 @@ use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing;
 use ::routing::RouteRequest;
 use ::routing::component_instance::ComponentInstanceInterface;
-use cm_rust::UseEventStreamDecl;
+use async_trait::async_trait;
+use cm_rust::{UseEventStreamDecl, UseStorageDecl};
+use cm_types::RelativePath;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use log::*;
 use router_error::Explain;
-use sandbox::{Capability, DirEntry};
+use sandbox::{Capability, DirConnectable, DirConnector, DirEntry};
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{
     DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo, OpenRequest,
 };
+use vfs::execution_scope::ExecutionScope;
 
 pub trait RouteRequestExt {
     fn into_capability(self, target: &Arc<ComponentInstance>) -> Option<Capability>;
+}
+
+enum UseDirectoryOrStorage {
+    Storage(UseStorageDecl),
+}
+
+impl From<UseDirectoryOrStorage> for RouteRequest {
+    fn from(r: UseDirectoryOrStorage) -> Self {
+        match r {
+            UseDirectoryOrStorage::Storage(d) => Self::UseStorage(d),
+        }
+    }
 }
 
 impl RouteRequestExt for RouteRequest {
@@ -27,10 +44,10 @@ impl RouteRequestExt for RouteRequest {
                 panic!("Services should use bedrock instead");
             }
             Self::UseDirectory(_) => {
-                panic!("Directories should use bedrock instead");
+                panic!("Services should use bedrock instead");
             }
-            Self::UseStorage(_) => {
-                panic!("Storage should use bedrock instead");
+            Self::UseStorage(decl) => {
+                use_directory_or_storage(UseDirectoryOrStorage::Storage(decl), target)
             }
             Self::UseEventStream(decl) => use_event_stream(decl, target),
             Self::UseProtocol(_) => {
@@ -43,12 +60,134 @@ impl RouteRequestExt for RouteRequest {
                 panic!("Services should use bedrock instead");
             }
             Self::ExposeDirectory(_) => {
-                panic!("Directories should use bedrock instead");
+                panic!("Services should use bedrock instead");
             }
             _ => return None,
         };
         Some(cap)
     }
+}
+
+/// Makes a capability representing the directory described by `use_`. Once the
+/// channel is readable, the future calls `route_directory` to forward the channel to the
+/// source component's outgoing directory and terminates.
+///
+/// `component` is a weak pointer, which is important because we don't want the task
+/// waiting for channel readability to hold a strong pointer to this component lest it
+/// create a reference cycle.
+fn use_directory_or_storage(
+    request: UseDirectoryOrStorage,
+    target: &Arc<ComponentInstance>,
+) -> Capability {
+    let flags = match &request {
+        UseDirectoryOrStorage::Storage(_) => fio::PERM_READABLE | fio::PERM_WRITABLE,
+    };
+
+    // Specify that the capability must be opened as a directory. In particular, this affects
+    // how a devfs-based capability will handle the open call. If this flag is not specified,
+    // devfs attempts to open the directory as a service, which is not what is desired here.
+    let flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
+
+    #[derive(Debug)]
+    struct RouteDirectory {
+        target: WeakComponentInstance,
+        request: RouteRequest,
+    }
+
+    impl DirectoryEntry for RouteDirectory {
+        fn open_entry(self: Arc<Self>, request: OpenRequest<'_>) -> Result<(), zx::Status> {
+            request.spawn(self);
+            Ok(())
+        }
+    }
+
+    impl GetEntryInfo for RouteDirectory {
+        fn entry_info(&self) -> EntryInfo {
+            EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::Directory)
+        }
+    }
+
+    impl DirectoryEntryAsync for RouteDirectory {
+        async fn open_entry_async(
+            self: Arc<Self>,
+            request: OpenRequest<'_>,
+        ) -> Result<(), zx::Status> {
+            if request.path().is_empty() {
+                if !request.wait_till_ready().await {
+                    return Ok(());
+                }
+            }
+
+            // Hold a guard to prevent this task from being dropped during component destruction.
+            let Some(_guard) = request.scope().try_active_guard() else {
+                return Err(zx::Status::PEER_CLOSED);
+            };
+
+            let target = match self.target.upgrade() {
+                Ok(component) => component,
+                Err(e) => {
+                    error!(
+                        "failed to upgrade WeakComponentInstance routing use \
+                         decl `{:?}`: {:?}",
+                        self.request, e
+                    );
+                    return Err(e.as_zx_status());
+                }
+            };
+
+            routing::route_and_open_capability_with_reporting(&self.request, &target, request)
+                .await
+                .map_err(|e| e.as_zx_status())
+        }
+    }
+
+    #[derive(Debug)]
+    struct DirectorySender {
+        dir_entry: Arc<RouteDirectory>,
+        scope: ExecutionScope,
+        allowed_flags: fio::Flags,
+    }
+
+    #[async_trait]
+    impl DirConnectable for DirectorySender {
+        fn maximum_flags(&self) -> fio::Flags {
+            self.allowed_flags
+        }
+
+        fn send(
+            &self,
+            server: ServerEnd<fio::DirectoryMarker>,
+            _subdir: RelativePath,
+            flags: Option<fio::Flags>,
+        ) -> Result<(), ()> {
+            let flags = flags.unwrap_or(self.allowed_flags | fio::Flags::PROTOCOL_DIRECTORY);
+            // Serve this directory on the component's execution scope rather than the namespace
+            // execution scope so that requests don't block namespace teardown, but they will block
+            // component destruction.
+            flags
+                .to_object_request(server)
+                .handle(|object_request| {
+                    Ok(self.dir_entry.clone().open_entry(OpenRequest::new(
+                        self.scope.clone(),
+                        flags,
+                        vfs::path::Path::dot(),
+                        object_request,
+                    )))
+                })
+                .unwrap()
+                .map_err(|_| ())?;
+            Ok(())
+        }
+    }
+
+    // This needs to be a DirConnector, and not Directory, because Directory does not implement Clone
+    // correctly.
+    //
+    // Specifically, if a Directory is cloned and the Directory contained a channel, the clone
+    // will not carry over the epitaph.
+    let scope = target.execution_scope.clone();
+    let dir_entry = Arc::new(RouteDirectory { request: request.into(), target: target.as_weak() });
+    DirConnector::new_sendable(DirectorySender { dir_entry, scope, allowed_flags: flags }).into()
 }
 
 fn use_event_stream(decl: UseEventStreamDecl, target: &Arc<ComponentInstance>) -> Capability {

@@ -68,11 +68,22 @@ pub(super) async fn route_and_open_capability(
         return Ok(RoutingOutcome::FromVoid);
     };
 
-    // clone the source as additional context in case of an error
-    CapabilityOpenRequest::new_from_route_source(source, target, open_request)
-        .map_err(|e| RouterError::NotFound(Arc::new(e)))?
-        .open()
-        .await?;
+    match route_request {
+        RouteRequest::UseStorage(_) | RouteRequest::OfferStorage(_) => {
+            let backing_dir_info =
+                storage::route_backing_directory(target, source.source.clone()).await?;
+            CapabilityOpenRequest::new_from_storage_source(backing_dir_info, target, open_request)
+                .open()
+                .await?;
+        }
+        _ => {
+            // clone the source as additional context in case of an error
+            CapabilityOpenRequest::new_from_route_source(source, target, open_request)
+                .map_err(|e| RouterError::NotFound(Arc::new(e)))?
+                .open()
+                .await?;
+        }
+    };
     Ok(RoutingOutcome::Found)
 }
 

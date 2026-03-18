@@ -801,9 +801,10 @@ impl From<ComponentInstanceError> for ResolverError {
             | ComponentManagerInstanceUnexpected {}
             | InstanceNotFound { .. }
             | InstanceNotExecutable { .. }
-            | ResolveFailed { .. }
-            | StartFailed { .. }
-            | FailedToCreateStorage { .. } => {
+            | ResolveFailed { .. } => {
+                ResolverError::Internal(ClonableError::from(anyhow::format_err!("{:?}", err)))
+            }
+            StartFailed { .. } => {
                 ResolverError::Internal(ClonableError::from(anyhow::format_err!("{:?}", err)))
             }
             NoAbsoluteUrl { .. } => ResolverError::NoParentContext(ClonableError::from(

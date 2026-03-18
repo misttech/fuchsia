@@ -20,16 +20,14 @@ use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
 use fidl::endpoints::{ServerEnd, create_proxy};
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::Moniker;
-use routing::capability_source::StorageBackingDirectorySource;
 use sandbox::Dict;
 use std::path::PathBuf;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
+use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
 
 // TODO: The `use` declaration for storage implicitly carries these rights. While this is
 // correct, it would be more consistent to get the rights from `CapabilityState`.
@@ -154,31 +152,7 @@ pub async fn route_backing_directory(
             let component = target.find_absolute(&moniker).await?;
             (storage_decl, component)
         }
-        CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
-            capability,
-            moniker,
-            backing_dir_subdir,
-            storage_subdir,
-            storage_source_moniker,
-        }) => {
-            let component = target.find_absolute(&moniker).await?;
-            return Ok(BackingDirectoryInfo {
-                storage_provider: Some(component),
-                backing_directory_path: capability
-                    .source_path()
-                    .expect("directory missing source path")
-                    .clone(),
-                backing_directory_subdir: backing_dir_subdir,
-                storage_subdir,
-                storage_source_moniker,
-            });
-        }
-        r => {
-            return Err(RoutingError::unsupported_route_source(
-                target.moniker.clone(),
-                r.type_name().to_string(),
-            ));
-        }
+        r => unreachable!("unexpected storage source: {:?}", r),
     };
 
     let source = RouteRequest::StorageBackingDirectory(storage_decl.clone())
@@ -187,27 +161,14 @@ pub async fn route_backing_directory(
 
     let (dir_source_path, dir_source_instance, dir_subdir) = match source {
         RouteSource {
-            source:
-                CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
-                    capability,
-                    moniker,
-                    mut backing_dir_subdir,
-                    ..
-                }),
+            source: CapabilitySource::Component(ComponentSource { capability, moniker }),
             relative_path,
         } => {
             let dir_source_instance = storage_component.find_absolute(&moniker).await?;
-            if !backing_dir_subdir.extend(relative_path) {
-                return Err(RoutingError::PathTooLong {
-                    moniker: target.moniker.clone().into(),
-                    path: "backing_dir_subdir".to_string(),
-                    keyword: "backing_dir_subdir".into(),
-                });
-            }
             (
                 capability.source_path().expect("directory has no source path?").clone(),
                 Some(dir_source_instance),
-                backing_dir_subdir,
+                relative_path,
             )
         }
         RouteSource {
@@ -218,28 +179,7 @@ pub async fn route_backing_directory(
             None,
             relative_path,
         ),
-        RouteSource {
-            source:
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Directory(decl),
-                    moniker,
-                }),
-            relative_path,
-        } => {
-            let dir_source_instance = storage_component.find_absolute(&moniker).await?;
-            let source_path = decl.source_path.ok_or(RoutingError::UnsupportedRouteSource {
-                source_type: "component_without_path".to_string(),
-                moniker: moniker.clone().into(),
-            })?;
-            (source_path, Some(dir_source_instance), relative_path)
-        }
-        s => {
-            return Err(RoutingError::UnsupportedRouteSource {
-                source_type: format!("{:?}", s.source.type_name()),
-                moniker: target.moniker.clone().into(),
-            }
-            .into());
-        }
+        _ => unreachable!("not valid sources"),
     };
 
     Ok(BackingDirectoryInfo {
@@ -264,6 +204,7 @@ pub async fn open_isolated_storage(
         Some(id) => generate_instance_id_based_storage_path(id),
         None => generate_moniker_based_storage_path(&moniker),
     };
+
     fuchsia_fs::directory::create_directory_recursive(
         &root_dir,
         storage_path.to_str().expect("must be utf-8"),
@@ -456,7 +397,7 @@ fn generate_moniker_based_storage_path(moniker: &Moniker) -> PathBuf {
 /// Generates the component storage directory path for the provided component instance.
 ///
 /// Components which do not have an instance ID use a generate moniker-based storage path instead.
-pub(crate) fn generate_instance_id_based_storage_path(instance_id: &InstanceId) -> PathBuf {
+fn generate_instance_id_based_storage_path(instance_id: &InstanceId) -> PathBuf {
     instance_id.to_string().into()
 }
 

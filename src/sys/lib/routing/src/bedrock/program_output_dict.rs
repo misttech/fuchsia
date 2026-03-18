@@ -2,35 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::{
-    InheritRights, IsolatedStoragePath, Metadata, StorageSourceMoniker, StorageSubdir,
-};
-use crate::bedrock::structured_dict::ComponentInput;
+use crate::DictExt;
 use crate::bedrock::with_policy_check::WithPolicyCheck;
 use crate::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
-use crate::component_instance::{
-    ComponentInstanceInterface, ExtendedInstanceInterface, WeakComponentInstanceInterface,
-    WeakExtendedInstanceInterface,
-};
-use crate::error::RoutingError;
-use crate::rights::Rights;
-use crate::{DictExt, LazyGet, WeakInstanceTokenExt};
+use crate::component_instance::{ComponentInstanceInterface, WeakComponentInstanceInterface};
 use async_trait::async_trait;
-use cm_rust::{CapabilityTypeName, NativeIntoFidl};
-use cm_types::{Path, RelativePath};
-use component_id_index::InstanceId;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_io as fio;
+use cm_rust::NativeIntoFidl;
+use cm_types::Path;
 use log::warn;
-use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use sandbox::{
     Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
@@ -65,8 +49,6 @@ pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
 pub fn build_program_output_dictionary<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::ComponentDecl,
-    component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dict>>,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) -> (Dict, Dict) {
     let program_output_dict = Dict::new();
@@ -78,8 +60,6 @@ pub fn build_program_output_dictionary<C: ComponentInstanceInterface + 'static>(
             capability,
             &program_output_dict,
             &declared_dictionaries,
-            component_input,
-            child_outgoing_dictionary_routers,
             router_gen,
         );
     }
@@ -94,8 +74,6 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
     capability: &cm_rust::CapabilityDecl,
     program_output_dict: &Dict,
     declared_dictionaries: &Dict,
-    component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dict>>,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) {
     match capability {
@@ -130,182 +108,6 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 Ok(()) => (),
                 Err(e) => {
                     warn!("failed to add {} to program output dict: {e:?}", capability.name())
-                }
-            }
-        }
-        cm_rust::CapabilityDecl::Storage(cm_rust::StorageDecl {
-            name,
-            source,
-            backing_dir,
-            subdir,
-            storage_id,
-        }) => {
-            let router: Router<DirConnector> = match source {
-                cm_rust::StorageDirectorySource::Parent => {
-                    component_input.capabilities().get_router_or_not_found(
-                        backing_dir,
-                        RoutingError::storage_from_parent_not_found(
-                            component.moniker(),
-                            backing_dir.clone(),
-                        ),
-                    )
-                }
-                cm_rust::StorageDirectorySource::Self_ => program_output_dict
-                    .get_router_or_not_found(
-                        backing_dir,
-                        RoutingError::BedrockNotPresentInDictionary {
-                            name: backing_dir.to_string(),
-                            moniker: ExtendedMoniker::ComponentInstance(
-                                component.moniker().clone(),
-                            ),
-                        },
-                    ),
-                cm_rust::StorageDirectorySource::Child(child_name) => {
-                    let child_name = ChildName::parse(child_name).expect("invalid child name");
-                    let Some(child_component_output) =
-                        child_outgoing_dictionary_routers.get(&child_name)
-                    else {
-                        panic!(
-                            "use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation",
-                            component.moniker(),
-                            child_name
-                        );
-                    };
-                    child_component_output.clone().lazy_get(
-                        backing_dir.to_owned(),
-                        RoutingError::storage_from_child_expose_not_found(
-                            &child_name,
-                            &component.moniker(),
-                            backing_dir.clone(),
-                        ),
-                    )
-                }
-            };
-
-            #[derive(Debug)]
-            struct StorageBackingDirRouter<C: ComponentInstanceInterface + 'static> {
-                subdir: RelativePath,
-                storage_id: fdecl::StorageId,
-                backing_dir_router: Router<DirConnector>,
-                storage_source_moniker: Moniker,
-                backing_dir_target: WeakInstanceToken,
-                _component_type: PhantomData<C>,
-            }
-
-            #[async_trait]
-            impl<C: ComponentInstanceInterface + 'static> Routable<DirConnector>
-                for StorageBackingDirRouter<C>
-            {
-                async fn route(
-                    &self,
-                    request: Option<Request>,
-                    debug: bool,
-                    target: WeakInstanceToken,
-                ) -> Result<RouterResponse<DirConnector>, RouterError> {
-                    fn generate_moniker_based_storage_path(
-                        subdir: Option<String>,
-                        moniker: &Moniker,
-                        instance_id: Option<&InstanceId>,
-                    ) -> PathBuf {
-                        if let Some(id) = instance_id {
-                            return id.to_string().into();
-                        }
-                        let path = moniker.path();
-                        let mut path = path.iter();
-                        let mut dir_path = vec![];
-                        if let Some(subdir) = subdir {
-                            dir_path.push(subdir);
-                        }
-                        if let Some(p) = path.next() {
-                            dir_path.push(format!("{p}:0"));
-                        }
-                        while let Some(p) = path.next() {
-                            dir_path.push("children".to_string());
-                            dir_path.push(format!("{p}:0"));
-                        }
-
-                        // Storage capabilities used to have a hardcoded set of types, which would be appended
-                        // here. To maintain compatibility with the old paths (and thus not lose data when this was
-                        // migrated) we append "data" here. This works because this is the only type of storage
-                        // that was actually used in the wild.
-                        //
-                        // This is only temporary, until the storage instance id migration changes this layout.
-                        dir_path.push("data".to_string());
-                        dir_path.into_iter().collect()
-                    }
-                    let request = request.ok_or(RouterError::InvalidArgs)?;
-                    let StorageBackingDirRouter {
-                        subdir,
-                        storage_id,
-                        backing_dir_router,
-                        storage_source_moniker,
-                        backing_dir_target,
-                        _component_type: _,
-                    } = self;
-                    let instance: ExtendedInstanceInterface<C> = target.upgrade().unwrap();
-                    let instance = match instance {
-                        ExtendedInstanceInterface::Component(c) => c,
-                        ExtendedInstanceInterface::AboveRoot(_) => {
-                            panic!("unexpected component manager instance")
-                        }
-                    };
-                    let index = instance.component_id_index();
-                    let instance_id = index.id_for_moniker(instance.moniker());
-                    match storage_id {
-                        fdecl::StorageId::StaticInstanceId if instance_id.is_none() => {
-                            return Err(RouterError::from(RoutingError::ComponentNotInIdIndex {
-                                source_moniker: storage_source_moniker.clone(),
-                                target_name: instance.moniker().leaf().map(Into::into),
-                            }));
-                        }
-                        _ => (),
-                    }
-                    let moniker = match WeakInstanceTokenExt::<C>::moniker(&target) {
-                        ExtendedMoniker::ComponentInstance(m) => m,
-                        ExtendedMoniker::ComponentManager => {
-                            panic!("component manager is the target of a storage capability")
-                        }
-                    };
-                    let moniker = match moniker.strip_prefix(&storage_source_moniker) {
-                        Ok(v) => v,
-                        Err(_) => moniker,
-                    };
-                    let subdir_opt = if subdir.is_dot() { None } else { Some(subdir.to_string()) };
-                    let isolated_storage_path =
-                        generate_moniker_based_storage_path(subdir_opt, &moniker, instance_id);
-                    request.metadata.set_metadata(IsolatedStoragePath(isolated_storage_path));
-                    request.metadata.set_metadata(CapabilityTypeName::Directory);
-                    request.metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));
-                    request.metadata.set_metadata(InheritRights(false));
-                    request.metadata.set_metadata(StorageSubdir(subdir.clone()));
-                    request
-                        .metadata
-                        .set_metadata(StorageSourceMoniker(storage_source_moniker.clone()));
-                    backing_dir_router.route(Some(request), debug, backing_dir_target.clone()).await
-                }
-            }
-
-            let router = router.with_policy_check::<C>(
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::from(capability.clone()),
-                    moniker: component.moniker().clone(),
-                }),
-                component.policy_checker().clone(),
-            );
-            let router = Router::new(StorageBackingDirRouter::<C> {
-                subdir: subdir.clone(),
-                storage_id: storage_id.clone(),
-                backing_dir_router: router,
-                storage_source_moniker: component.moniker().clone(),
-                backing_dir_target: WeakInstanceToken {
-                    inner: Arc::new(WeakExtendedInstanceInterface::Component(component.as_weak())),
-                },
-                _component_type: Default::default(),
-            });
-            match program_output_dict.insert_capability(name, router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", name)
                 }
             }
         }
@@ -377,8 +179,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }
             }
         }
-        cm_rust::CapabilityDecl::EventStream(_) => {
-            // Capabilities not supported in bedrock program output dict yet.
+        cm_rust::CapabilityDecl::EventStream(_) | cm_rust::CapabilityDecl::Storage(_) => {
+            // Capabilities which will never appear in a program output dictionary
             return;
         }
     }

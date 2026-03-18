@@ -2,19 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::rights::Rights;
 use crate::subdir::SubDir;
 use cm_rust::{Availability, CapabilityTypeName};
-use cm_types::RelativePath;
 use fidl::{persist, unpersist};
-use fidl_fuchsia_component_internal as finternal;
-use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_io as fio;
-use moniker::Moniker;
 use sandbox::{Capability, Data, Dict, DictKey};
+use {
+    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_io as fio,
+};
 
 /// A type which has accessors for route request metadata of type T.
 pub trait Metadata<T> {
@@ -244,116 +242,6 @@ impl Metadata<SubDir> for Dict {
     }
 }
 
-/// The isolated storage path in the backing directory of the providing
-/// component of a storage capability.
-pub struct IsolatedStoragePath(pub PathBuf);
-
-impl Metadata<IsolatedStoragePath> for Dict {
-    const KEY: &'static str = "isolated_storage_path";
-
-    fn set_metadata(&self, value: IsolatedStoragePath) {
-        let key = DictKey::new(<Self as Metadata<IsolatedStoragePath>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        match self.insert(
-            key,
-            Capability::Data(Data::String(value.0.to_string_lossy().into_owned().into())),
-        ) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
-            Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
-        }
-    }
-
-    fn get_metadata(&self) -> Option<IsolatedStoragePath> {
-        let key = DictKey::new(<Self as Metadata<IsolatedStoragePath>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
-        match capability {
-            Capability::Data(Data::String(isolated_storage_path)) => {
-                Some(IsolatedStoragePath(PathBuf::from(isolated_storage_path.to_string())))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// The subdirectory inside of the storage backing directory's subdirectory to
-/// use, if any. The difference between this and SubDir is that a) the SubDir
-/// generically refers to the subdirectory of a directory capability, and b) the
-/// SubDir is appended to the IsolatedStoragePath first (which is a path into a
-/// backing directory), and component_manager will create the StorageSubdir if
-/// it doesn't exist but won't create SubDir. Accordingly, the complete path to
-/// a storage capability within the backing directory is
-/// {IsolatedStoragePath}/{SubDir}/{StorageSubdir}.
-pub struct StorageSubdir(pub RelativePath);
-
-impl Metadata<StorageSubdir> for Dict {
-    const KEY: &'static str = "storage_subdir";
-
-    fn set_metadata(&self, value: StorageSubdir) {
-        let key = DictKey::new(<Self as Metadata<StorageSubdir>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        match self.insert(key, Capability::Data(Data::String(value.0.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
-            Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
-        }
-    }
-
-    fn get_metadata(&self) -> Option<StorageSubdir> {
-        let key = DictKey::new(<Self as Metadata<StorageSubdir>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
-        match capability {
-            Capability::Data(Data::String(subdir)) => {
-                Some(StorageSubdir(RelativePath::new(subdir).unwrap()))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// The moniker of the component that provides a Storage porcelain capability.
-pub struct StorageSourceMoniker(pub Moniker);
-
-impl Metadata<StorageSourceMoniker> for Dict {
-    const KEY: &'static str = "storage_source_moniker";
-
-    fn set_metadata(&self, value: StorageSourceMoniker) {
-        let key = DictKey::new(<Self as Metadata<StorageSourceMoniker>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        match self.insert(key, Capability::Data(Data::String(value.0.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
-            Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
-        }
-    }
-
-    fn get_metadata(&self) -> Option<StorageSourceMoniker> {
-        let key = DictKey::new(<Self as Metadata<StorageSourceMoniker>>::KEY)
-            .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
-        match capability {
-            Capability::Data(Data::String(moniker)) => {
-                Some(StorageSourceMoniker(Moniker::parse_str(&moniker).unwrap()))
-            }
-            _ => None,
-        }
-    }
-}
-
 /// Returns a `Dict` containing Router Request metadata specifying a Protocol porcelain type.
 pub fn protocol_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
@@ -445,15 +333,5 @@ pub fn event_stream_metadata(
     metadata.set_metadata(CapabilityTypeName::EventStream);
     metadata.set_metadata(availability);
     metadata.set_metadata(route_metadata);
-    metadata
-}
-
-/// Returns a `Dict` containing Router Request metadata specifying a Storage porcelain type.
-pub fn storage_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
-    metadata.set_metadata(CapabilityTypeName::Storage);
-    metadata.set_metadata(availability);
-    metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));
-    metadata.set_metadata(InheritRights(false));
     metadata
 }

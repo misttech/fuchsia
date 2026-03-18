@@ -156,8 +156,6 @@ impl ComponentInstanceForAnalyzer {
         let (program_output_dict, declared_dictionaries) = build_program_output_dictionary(
             &self_,
             &decl,
-            &input,
-            &children_component_output_dictionary_routers,
             &ProgramOutputGenerator {
                 dynamic_dictionaries,
                 executable: decl.get_runner().is_some(),

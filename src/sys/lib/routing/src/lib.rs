@@ -19,29 +19,35 @@ pub mod walk_state;
 
 use crate::bedrock::request_metadata::{
     config_metadata, dictionary_metadata, directory_metadata, protocol_metadata, resolver_metadata,
-    runner_metadata, service_metadata, storage_metadata,
+    runner_metadata, service_metadata,
 };
-use crate::capability_source::{CapabilitySource, InternalCapability, VoidSource};
+use crate::capability_source::{
+    CapabilitySource, ComponentCapability, ComponentSource, InternalCapability, VoidSource,
+};
 use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
-use crate::legacy_router::{ErrorNotFoundFromParent, ErrorNotFoundInChild, RouteBundle, Sources};
+use crate::legacy_router::{
+    CapabilityVisitor, ErrorNotFoundFromParent, ErrorNotFoundInChild, ExposeVisitor, OfferVisitor,
+    RouteBundle, Sources,
+};
 use crate::mapper::DebugRouteMapper;
+use crate::rights::RightsWalker;
+use crate::walk_state::WalkState;
 use cm_rust::{
     Availability, CapabilityTypeName, DebugProtocolRegistration, ExposeConfigurationDecl,
     ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl, ExposeDirectoryDecl, ExposeProtocolDecl,
-    ExposeResolverDecl, ExposeRunnerDecl, ExposeServiceDecl, ExposeTarget, OfferConfigurationDecl,
-    OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl,
-    OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferStorageDecl,
-    OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
-    RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource, UseConfigurationDecl,
-    UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl, UseEventStreamDecl,
-    UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
+    ExposeResolverDecl, ExposeRunnerDecl, ExposeServiceDecl, ExposeSource, ExposeTarget,
+    OfferConfigurationDecl, OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl,
+    OfferEventStreamDecl, OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl,
+    OfferSource, OfferStorageDecl, OfferTarget, RegistrationDeclCommon, RegistrationSource,
+    ResolverRegistration, RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource,
+    UseConfigurationDecl, UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl,
+    UseEventStreamDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_types::{IterablePath, Name, RelativePath};
-use fidl_fuchsia_io::RW_STAR_DIR;
 use from_enum::FromEnum;
 use itertools::Itertools;
-use moniker::{ChildName, Moniker, MonikerError};
+use moniker::{ChildName, ExtendedMoniker, Moniker, MonikerError};
 use router_error::Explain;
 use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
@@ -50,7 +56,7 @@ use sandbox::{
 use std::fmt::Debug;
 use std::sync::Arc;
 use subdir::SubDir;
-use zx_status as zx;
+use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, zx_status as zx};
 
 pub use bedrock::dict_ext::{DictExt, GenericRouterResponse};
 pub use bedrock::lazy_get::LazyGet;
@@ -462,27 +468,7 @@ where
         }
         // Route the backing directory for a storage capability
         RouteRequest::StorageBackingDirectory(storage_decl) => {
-            let component_sandbox = target.component_sandbox().await?;
-            let registration = StorageDeclAsRegistration::from(storage_decl.clone());
-            let source_dictionary = match registration.source {
-                RegistrationSource::Parent => component_sandbox.component_input.capabilities(),
-                RegistrationSource::Self_ => component_sandbox.program_output_dict.clone(),
-                RegistrationSource::Child(static_name) => {
-                    let child_name = ChildName::parse(static_name).expect(
-                        "invalid child name, this should be prevented by manifest validation",
-                    );
-                    let child_component = target.lock_resolved_state().await?.get_child(&child_name).expect("resolver registration references nonexistent static child, this should be prevented by manifest validation");
-                    let child_sandbox = child_component.component_sandbox().await?;
-                    child_sandbox.component_output.capabilities().clone()
-                }
-            };
-            route_capability_inner::<DirConnector, _>(
-                &source_dictionary,
-                &storage_decl.backing_dir,
-                directory_metadata(Availability::Required, Some(RW_STAR_DIR.into()), None),
-                target,
-            )
-            .await
+            route_storage_backing_directory(storage_decl, target, mapper).await
         }
 
         // Route from a UseDecl
@@ -539,13 +525,7 @@ where
             .await
         }
         RouteRequest::UseStorage(use_storage_decl) => {
-            route_capability_inner::<DirConnector, _>(
-                &target.component_sandbox().await?.program_input.namespace(),
-                &use_storage_decl.target_path,
-                storage_metadata(use_storage_decl.availability),
-                target,
-            )
-            .await
+            route_storage(use_storage_decl, target, mapper).await
         }
         RouteRequest::UseRunner(_use_runner_decl) => {
             let router =
@@ -650,22 +630,7 @@ where
             .await
         }
         RouteRequest::OfferStorage(offer_storage_decl) => {
-            let target_dictionary =
-                get_dictionary_for_offer_target(target, &offer_storage_decl).await?;
-            let metadata = storage_metadata(offer_storage_decl.availability);
-            metadata
-                .insert(
-                    Name::new(crate::bedrock::with_policy_check::SKIP_POLICY_CHECKS).unwrap(),
-                    Capability::Data(Data::Uint64(1)),
-                )
-                .unwrap();
-            route_capability_inner::<DirConnector, _>(
-                &target_dictionary,
-                &offer_storage_decl.target_name,
-                metadata,
-                target,
-            )
-            .await
+            route_storage_from_offer(offer_storage_decl, target, mapper).await
         }
         RouteRequest::OfferService(offer_service_bundle) => {
             let first_offer = offer_service_bundle.iter().next().expect("can't route empty bundle");
@@ -886,6 +851,258 @@ where
     )
     .await?;
     Ok(RouteSource::new(source))
+}
+
+async fn route_storage_from_offer<C>(
+    offer_decl: OfferStorageDecl,
+    target: &Arc<C>,
+    mapper: &mut dyn DebugRouteMapper,
+) -> Result<RouteSource, RoutingError>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    let mut availability_visitor = offer_decl.availability;
+    let allowed_sources = Sources::new(CapabilityTypeName::Storage).component();
+    let source = legacy_router::route_from_offer(
+        RouteBundle::from_offer(offer_decl.into()),
+        target.clone(),
+        allowed_sources,
+        &mut availability_visitor,
+        mapper,
+    )
+    .await?;
+    Ok(RouteSource::new(source))
+}
+
+/// The accumulated state of routing a Directory capability.
+#[derive(Clone, Debug)]
+pub struct DirectoryState {
+    rights: WalkState<RightsWalker>,
+    pub subdir: RelativePath,
+    availability_state: Availability,
+}
+
+impl DirectoryState {
+    fn new(rights: RightsWalker, subdir: RelativePath, availability: &Availability) -> Self {
+        DirectoryState {
+            rights: WalkState::at(rights),
+            subdir,
+            availability_state: availability.clone(),
+        }
+    }
+
+    fn advance_with_offer(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        offer: &OfferDirectoryDecl,
+    ) -> Result<(), RoutingError> {
+        self.availability_state =
+            availability::advance_with_offer(moniker, self.availability_state, offer)?;
+        self.advance(moniker, offer.rights.clone(), offer.subdir.clone())
+    }
+
+    fn advance_with_expose(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        expose: &ExposeDirectoryDecl,
+    ) -> Result<(), RoutingError> {
+        self.availability_state =
+            availability::advance_with_expose(moniker, self.availability_state, expose)?;
+        self.advance(moniker, expose.rights.clone(), expose.subdir.clone())
+    }
+
+    fn advance(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        rights: Option<fio::Operations>,
+        mut subdir: RelativePath,
+    ) -> Result<(), RoutingError> {
+        self.rights = self.rights.advance(rights.map(|r| RightsWalker::new(r, moniker.clone())))?;
+        if !subdir.extend(self.subdir.clone()) {
+            return Err(RoutingError::PathTooLong {
+                moniker: moniker.clone(),
+                path: format!("{}/{}", subdir, self.subdir),
+                keyword: "subdir".into(),
+            });
+        }
+        self.subdir = subdir;
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        rights: RightsWalker,
+        mut subdir: RelativePath,
+    ) -> Result<(), RoutingError> {
+        self.rights = self.rights.finalize(Some(rights))?;
+        if !subdir.extend(self.subdir.clone()) {
+            return Err(RoutingError::PathTooLong {
+                moniker: moniker.clone(),
+                path: format!("{}/{}", subdir, self.subdir),
+                keyword: "subdir".into(),
+            });
+        }
+        self.subdir = subdir;
+        Ok(())
+    }
+}
+
+impl OfferVisitor for DirectoryState {
+    fn visit(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        offer: &cm_rust::OfferDecl,
+    ) -> Result<(), RoutingError> {
+        match offer {
+            cm_rust::OfferDecl::Directory(dir) => match dir.source {
+                OfferSource::Framework => self.finalize(
+                    moniker,
+                    RightsWalker::new(fio::RX_STAR_DIR, moniker.clone()),
+                    dir.subdir.clone(),
+                ),
+                _ => self.advance_with_offer(moniker, dir),
+            },
+            _ => Ok(()),
+        }
+    }
+}
+
+impl ExposeVisitor for DirectoryState {
+    fn visit(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        expose: &cm_rust::ExposeDecl,
+    ) -> Result<(), RoutingError> {
+        match expose {
+            cm_rust::ExposeDecl::Directory(dir) => match dir.source {
+                ExposeSource::Framework => self.finalize(
+                    moniker,
+                    RightsWalker::new(fio::RX_STAR_DIR, moniker.clone()),
+                    dir.subdir.clone(),
+                ),
+                _ => self.advance_with_expose(moniker, dir),
+            },
+            _ => Ok(()),
+        }
+    }
+}
+
+impl CapabilityVisitor for DirectoryState {
+    fn visit(
+        &mut self,
+        moniker: &ExtendedMoniker,
+        capability: &cm_rust::CapabilityDecl,
+    ) -> Result<(), RoutingError> {
+        match capability {
+            cm_rust::CapabilityDecl::Directory(dir) => self.finalize(
+                moniker,
+                RightsWalker::new(dir.rights, moniker.clone()),
+                Default::default(),
+            ),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// Verifies that the given component is in the index if its `storage_id` is StaticInstanceId.
+/// - On success, Ok(()) is returned
+/// - RoutingError::ComponentNotInIndex is returned on failure.
+pub async fn verify_instance_in_component_id_index<C>(
+    source: &CapabilitySource,
+    instance: &Arc<C>,
+) -> Result<(), RoutingError>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    let (storage_decl, source_moniker) = match source {
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Storage(storage_decl),
+            moniker,
+        }) => (storage_decl, moniker.clone()),
+        CapabilitySource::Void(VoidSource { .. }) => return Ok(()),
+        _ => unreachable!("unexpected storage source"),
+    };
+
+    if storage_decl.storage_id == fdecl::StorageId::StaticInstanceId
+        && instance.component_id_index().id_for_moniker(instance.moniker()).is_none()
+    {
+        return Err(RoutingError::ComponentNotInIdIndex {
+            source_moniker,
+            target_name: instance.moniker().leaf().map(Into::into),
+        });
+    }
+    Ok(())
+}
+
+/// Routes a Storage capability from `target` to its source, starting from `use_decl`.
+/// Returns the StorageDecl and the storage component's instance.
+pub async fn route_to_storage_decl<C>(
+    use_decl: UseStorageDecl,
+    target: &Arc<C>,
+    mapper: &mut dyn DebugRouteMapper,
+) -> Result<CapabilitySource, RoutingError>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    let mut availability_visitor = use_decl.availability;
+    let allowed_sources = Sources::new(CapabilityTypeName::Storage).component();
+    let source = legacy_router::route_from_use(
+        use_decl.into(),
+        target.clone(),
+        allowed_sources,
+        &mut availability_visitor,
+        mapper,
+    )
+    .await?;
+    Ok(source)
+}
+
+/// Routes a Storage capability from `target` to its source, starting from `use_decl`.
+/// The backing Directory capability is then routed to its source.
+async fn route_storage<C>(
+    use_decl: UseStorageDecl,
+    target: &Arc<C>,
+    mapper: &mut dyn DebugRouteMapper,
+) -> Result<RouteSource, RoutingError>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    let source = route_to_storage_decl(use_decl, &target, mapper).await?;
+    verify_instance_in_component_id_index(&source, target).await?;
+    target.policy_checker().can_route_capability(&source, target.moniker())?;
+    Ok(RouteSource::new(source))
+}
+
+/// Routes the backing Directory capability of a Storage capability from `target` to its source,
+/// starting from `storage_decl`.
+async fn route_storage_backing_directory<C>(
+    storage_decl: StorageDecl,
+    target: &Arc<C>,
+    mapper: &mut dyn DebugRouteMapper,
+) -> Result<RouteSource, RoutingError>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    // Storage rights are always READ+WRITE.
+    let mut state = DirectoryState::new(
+        RightsWalker::new(fio::RW_STAR_DIR, target.moniker().clone()),
+        Default::default(),
+        &Availability::Required,
+    );
+    let allowed_sources = Sources::new(CapabilityTypeName::Directory).component().namespace();
+    let source = legacy_router::route_from_registration(
+        StorageDeclAsRegistration::from(storage_decl.clone()),
+        target.clone(),
+        allowed_sources,
+        &mut state,
+        mapper,
+    )
+    .await?;
+
+    target.policy_checker().can_route_capability(&source, target.moniker())?;
+
+    Ok(RouteSource::new_with_relative_path(source, state.subdir))
 }
 
 /// Routes an EventStream capability from `target` to its source, starting from `use_decl`.

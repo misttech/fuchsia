@@ -4,22 +4,22 @@
 
 mod tests {
     use crate::routing::RoutingTestBuilderForAnalyzer;
-    use cm_fidl_analyzer::route::TargetDecl;
+    use cm_fidl_analyzer::route::{TargetDecl, VerifyRouteResult};
     use cm_rust::{CapabilityDecl, CapabilityTypeName, OfferSource, StorageDirectorySource};
     use cm_rust_testing::*;
     use component_id_index::InstanceId;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_io as fio;
     use moniker::Moniker;
     use routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
     use routing::component_instance::ComponentInstanceInterface;
+    use routing::mapper::RouteSegment;
+    use routing::RegistrationDecl;
     use routing_test_helpers::component_id_index::make_index_file;
     use routing_test_helpers::storage::CommonStorageTest;
     use routing_test_helpers::{
         CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     };
     use std::collections::HashSet;
-    use zx_status;
+    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, zx_status};
 
     #[fuchsia::test]
     async fn storage_dir_from_cm_namespace() {
@@ -281,23 +281,8 @@ mod tests {
             ),
             ("not_consumer", ComponentDeclBuilder::new().build()),
         ];
-        let storage_provider_instance_id = InstanceId::new_random(&mut rand::rng());
-        let index = {
-            let mut index = component_id_index::Index::default();
-            index
-                .insert(
-                    Moniker::parse_str("storage_provider").unwrap(),
-                    storage_provider_instance_id.clone(),
-                )
-                .unwrap();
-            index
-        };
-        let component_id_index_path = make_index_file(index).unwrap();
-        let mut builder = RoutingTestBuilderForAnalyzer::new("directory_provider", components);
-        builder.set_component_id_index_path(
-            component_id_index_path.path().to_owned().try_into().unwrap(),
-        );
-        let test = builder.build().await;
+        let test =
+            RoutingTestBuilderForAnalyzer::new("directory_provider", components).build().await;
         let root = test.look_up_instance(&Moniker::root()).await.expect("root instance");
         let storage_provider = test
             .look_up_instance(&Moniker::parse_str("/storage_provider").unwrap())
@@ -316,24 +301,64 @@ mod tests {
         let storage = route_maps
             .get(&CapabilityTypeName::Storage)
             .expect("expected a storage capability route");
+        let CapabilityDecl::Storage(inner_storage_decl) = storage_decl.clone() else {
+            unreachable!()
+        };
 
-        assert_eq!(storage.len(), 2);
-        for result in storage {
-            assert_eq!(result.using_node, Moniker::parse_str("/storage_provider").unwrap());
-            assert_eq!(result.target_decl, TargetDecl::Offer(offer_storage_decl.clone()));
-            assert_eq!(result.capability, Some("cache".parse().unwrap()));
-            assert!(result.error.is_none());
-            assert!(result.route.is_empty());
-            assert_eq!(
-                result.source,
-                Some(CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Directory(match directory_decl.clone() {
-                        CapabilityDecl::Directory(decl) => decl,
-                        _ => panic!("unexpected capability variant"),
-                    }),
-                    moniker: root.moniker().clone(),
-                }))
-            );
-        }
+        assert_eq!(
+            storage,
+            &vec![
+                VerifyRouteResult {
+                    using_node: Moniker::parse_str("/storage_provider").unwrap(),
+                    target_decl: TargetDecl::Offer(offer_storage_decl.clone()),
+                    capability: Some("cache".parse().unwrap()),
+                    error: None,
+                    route: vec![
+                        RouteSegment::OfferBy {
+                            moniker: Moniker::parse_str("/storage_provider").unwrap(),
+                            capability: offer_storage_decl.clone(),
+                        },
+                        RouteSegment::DeclareBy {
+                            moniker: Moniker::parse_str("/storage_provider").unwrap(),
+                            capability: storage_decl.clone(),
+                        }
+                    ],
+                    source: Some(CapabilitySource::Component(ComponentSource {
+                        capability: ComponentCapability::Directory(match directory_decl.clone() {
+                            CapabilityDecl::Directory(decl) => decl,
+                            _ => panic!("unexpected capability variant"),
+                        }),
+                        moniker: root.moniker().clone(),
+                    })),
+                },
+                VerifyRouteResult {
+                    using_node: Moniker::parse_str("/storage_provider").unwrap(),
+                    target_decl: TargetDecl::Offer(offer_storage_decl),
+                    capability: Some("cache".parse().unwrap()),
+                    error: None,
+                    route: vec![
+                        RouteSegment::RegisterBy {
+                            moniker: Moniker::parse_str("/storage_provider").unwrap(),
+                            capability: RegistrationDecl::Directory(inner_storage_decl.into())
+                        },
+                        RouteSegment::OfferBy {
+                            moniker: Moniker::root(),
+                            capability: offer_directory_decl,
+                        },
+                        RouteSegment::DeclareBy {
+                            moniker: Moniker::root(),
+                            capability: directory_decl.clone(),
+                        }
+                    ],
+                    source: Some(CapabilitySource::Component(ComponentSource {
+                        capability: ComponentCapability::Directory(match directory_decl {
+                            CapabilityDecl::Directory(decl) => decl,
+                            _ => panic!("unexpected capability variant"),
+                        }),
+                        moniker: root.moniker().clone(),
+                    })),
+                }
+            ]
+        );
     }
 }

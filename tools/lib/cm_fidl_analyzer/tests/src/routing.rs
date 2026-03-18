@@ -19,13 +19,9 @@ use cm_rust::*;
 use cm_rust_testing::*;
 use cm_types::{IterablePath, Url};
 use fidl::prelude::*;
-use fidl_fuchsia_component as fcomponent;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_internal as component_internal;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use router_error::Explain;
+use routing::RegistrationDecl;
 use routing::capability_source::{
     BuiltinSource, CapabilitySource, ComponentCapability, ComponentSource, FrameworkSource,
     InternalCapability, NamespaceSource,
@@ -42,7 +38,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use zx_status;
+use {
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
+    fidl_fuchsia_component_internal as component_internal, fidl_fuchsia_io as fio,
+    fidl_fuchsia_sys2 as fsys, zx_status,
+};
 
 const TEST_URL_PREFIX: &str = "test:///";
 // Placeholder for when a component resolves to itself, and its name is unknown as a result.
@@ -1517,6 +1517,88 @@ mod tests {
                 capability: runner_decl.into(),
             })),
         )
+    }
+
+    ///   a
+    ///    \
+    ///     b
+    ///
+    /// a: has storage decl with name "cache" with a source of self at path /data
+    /// a: offers cache storage to b from "mystorage"
+    /// b: uses cache storage as /storage
+    ///
+    /// We expect 2 route maps: one for the storage capability and one for the backing
+    /// directory.
+    #[fuchsia::test]
+    async fn map_route_storage_and_dir_from_parent() {
+        let directory_decl = CapabilityBuilder::directory()
+            .name("data")
+            .path("/data")
+            .rights(fio::RW_STAR_DIR)
+            .build();
+        let storage_decl = CapabilityBuilder::storage()
+            .name("cache")
+            .backing_dir("data")
+            .source(StorageDirectorySource::Self_)
+            .build();
+        let offer_storage_decl = OfferBuilder::storage()
+            .name("cache")
+            .source(OfferSource::Self_)
+            .target(offer_target_static_child("b"))
+            .build();
+        let use_storage_decl = UseBuilder::storage().name("cache").path("/storage").build();
+        let components = vec![
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .capability(storage_decl.clone())
+                    .capability(directory_decl.clone())
+                    .offer(offer_storage_decl.clone())
+                    .child_default("b")
+                    .build(),
+            ),
+            ("b", ComponentDeclBuilder::new().use_(use_storage_decl.clone()).build()),
+        ];
+
+        let test = RoutingTestBuilderForAnalyzer::new("a", components).build().await;
+        let b_component =
+            test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
+        let route_results = test.model.check_use_capability(&use_storage_decl, &b_component).await;
+        assert_eq!(route_results.len(), 2);
+
+        let storage_route_result = &route_results[0];
+        assert!(storage_route_result.error.is_none());
+
+        let backing_dir_route_result = &route_results[1];
+        assert!(backing_dir_route_result.error.is_none());
+
+        assert_eq!(
+            storage_route_result.route,
+            vec![
+                RouteSegment::UseBy {
+                    moniker: ["b"].try_into().unwrap(),
+                    capability: use_storage_decl
+                },
+                RouteSegment::OfferBy { moniker: Moniker::root(), capability: offer_storage_decl },
+                RouteSegment::DeclareBy {
+                    moniker: Moniker::root(),
+                    capability: storage_decl.clone(),
+                }
+            ]
+        );
+        let CapabilityDecl::Storage(storage_decl) = storage_decl else {
+            unreachable!();
+        };
+        assert_eq!(
+            backing_dir_route_result.route,
+            vec![
+                RouteSegment::RegisterBy {
+                    moniker: Moniker::root(),
+                    capability: RegistrationDecl::Directory(storage_decl.into())
+                },
+                RouteSegment::DeclareBy { moniker: Moniker::root(), capability: directory_decl }
+            ]
+        );
     }
 
     ///   a

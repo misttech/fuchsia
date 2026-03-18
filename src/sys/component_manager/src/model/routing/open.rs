@@ -7,6 +7,7 @@ use crate::model::component::{ComponentInstance, ExtendedInstance, WeakComponent
 use crate::model::routing::providers::{
     DefaultComponentCapabilityProvider, NamespaceCapabilityProvider,
 };
+use crate::model::storage::{self, BackingDirectoryInfo};
 use ::routing::RouteSource;
 use ::routing::capability_source::{
     AnonymizedAggregateSource, CapabilitySource, ComponentSource, NamespaceSource,
@@ -14,9 +15,10 @@ use ::routing::capability_source::{
 use ::routing::component_instance::ComponentInstanceInterface;
 use errors::{CapabilityProviderError, ModelError, OpenError};
 use fidl_fuchsia_io as fio;
-use routing::capability_source::StorageBackingDirectorySource;
+use moniker::ExtendedMoniker;
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
+use vfs::remote::remote_dir;
 
 /// A request to open a capability at its source.
 pub enum CapabilityOpenRequest<'a> {
@@ -24,6 +26,12 @@ pub enum CapabilityOpenRequest<'a> {
     OutgoingDirectory {
         open_request: OpenRequest<'a>,
         source: Box<CapabilitySource>,
+        target: &'a Arc<ComponentInstance>,
+    },
+    // Open a storage capability.
+    Storage {
+        open_request: OpenRequest<'a>,
+        source: storage::BackingDirectoryInfo,
         target: &'a Arc<ComponentInstance>,
     },
 }
@@ -45,11 +53,28 @@ impl<'a> CapabilityOpenRequest<'a> {
         Ok(Self::OutgoingDirectory { open_request, source: Box::new(source), target })
     }
 
+    /// Creates a request to open a storage capability with source `storage_source` for `target`.
+    pub fn new_from_storage_source(
+        source: BackingDirectoryInfo,
+        target: &'a Arc<ComponentInstance>,
+        open_request: OpenRequest<'a>,
+    ) -> Self {
+        Self::Storage { open_request, source, target }
+    }
+
     /// Opens the capability in `self`, triggering a `CapabilityRouted` event and binding
     /// to the source component instance if necessary.
     pub async fn open(self) -> Result<(), OpenError> {
-        let Self::OutgoingDirectory { open_request, source, target } = self;
-        Self::open_outgoing_directory(open_request, *source, target).await
+        match self {
+            Self::OutgoingDirectory { open_request, source, target } => {
+                Self::open_outgoing_directory(open_request, *source, target).await
+            }
+            Self::Storage { open_request, source, target } => {
+                Self::open_storage(open_request, &source, target)
+                    .await
+                    .map_err(|e| OpenError::OpenStorageError { err: Box::new(e) })
+            }
+        }
     }
 
     async fn open_outgoing_directory(
@@ -82,6 +107,31 @@ impl<'a> CapabilityOpenRequest<'a> {
         Ok(())
     }
 
+    async fn open_storage(
+        open_request: OpenRequest<'a>,
+        source: &storage::BackingDirectoryInfo,
+        target: &Arc<ComponentInstance>,
+    ) -> Result<(), ModelError> {
+        // As of today, the storage component instance must contain the target. This is because it
+        // is impossible to expose storage declarations up.
+        let moniker = target.moniker().strip_prefix(&source.storage_source_moniker).unwrap();
+
+        let dir_source = source.storage_provider.clone();
+        let storage_dir_proxy =
+            storage::open_isolated_storage(&source, moniker.clone(), target.instance_id())
+                .await
+                .map_err(|e| ModelError::from(e))?;
+
+        open_request.open_remote(remote_dir(storage_dir_proxy)).map_err(|err| {
+            let source_moniker = match &dir_source {
+                Some(r) => ExtendedMoniker::ComponentInstance(r.moniker().clone()),
+                None => ExtendedMoniker::ComponentManager,
+            };
+            ModelError::OpenStorageFailed { source_moniker, moniker, path: String::new(), err }
+        })?;
+        Ok(())
+    }
+
     /// Returns an instance of the default capability provider for the capability at `source`, if
     /// supported.
     async fn get_default_provider(
@@ -89,12 +139,7 @@ impl<'a> CapabilityOpenRequest<'a> {
         source: &CapabilitySource,
     ) -> Result<Option<Box<dyn CapabilityProvider>>, ModelError> {
         match source {
-            CapabilitySource::Component(ComponentSource { capability, moniker })
-            | CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
-                capability,
-                moniker,
-                ..
-            }) => {
+            CapabilitySource::Component(ComponentSource { capability, moniker }) => {
                 // Route normally for a component capability with a source path
                 Ok(match capability.source_path() {
                     Some(_) => Some(Box::new(DefaultComponentCapabilityProvider::new(

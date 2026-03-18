@@ -38,10 +38,5 @@
             to: "#test_realm",
             scope: "#test_realm",
         },
-        {
-            storage: "data",
-            from: "parent",
-            to: "#test_realm",
-        },
     ],
 }

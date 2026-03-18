@@ -30,11 +30,6 @@ use cm_rust::{
 };
 use cm_types::{Availability, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_component as fcomponent;
-use fidl_fuchsia_component_runtime as fruntime;
-use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_sys2 as fsys;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
@@ -45,6 +40,10 @@ use sandbox::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use {
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
+};
 
 fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Router<T>
 where
@@ -440,7 +439,6 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         }
         let rights = match capability {
             cm_rust::CapabilityDecl::Directory(dir_decl) => dir_decl.rights,
-            cm_rust::CapabilityDecl::Storage(_) => fio::RW_STAR_DIR,
             cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("incompatible porcelain type using DirConnector"),
         };

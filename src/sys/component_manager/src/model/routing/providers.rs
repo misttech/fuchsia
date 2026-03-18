@@ -75,10 +75,6 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
             metadata.set_metadata(Rights::from(fio::R_STAR_DIR));
             metadata.set_metadata(InheritRights(true));
         }
-        if porcelain_type == &CapabilityTypeName::Directory {
-            metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));
-            metadata.set_metadata(InheritRights(false));
-        }
         let resp = source
             .get_program_output_dict()
             .await?

@@ -21,7 +21,6 @@ type CapabilitySource = strict union {
     9: environment Environment;
     10: void Void;
     11: remoted_at moniker;
-    12: storage_backing_directory StorageBackingDirectory;
 };
 
 type Component = table {
@@ -77,14 +76,6 @@ type Environment = table {
 type Void = table {
     1: capability InternalCapability;
     2: moniker moniker;
-};
-
-type StorageBackingDirectory = table {
-    1: capability ComponentCapability;
-    2: moniker moniker;
-    3: backing_dir_subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
-    4: storage_subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
-    5: storage_source_moniker moniker;
 };
 
 type AggregateMember = strict union {
