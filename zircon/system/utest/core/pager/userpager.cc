@@ -37,11 +37,12 @@ bool Vmo::CheckVmar(uint64_t offset, uint64_t len, const void* expected) const {
   len *= zx_system_get_page_size();
   offset *= zx_system_get_page_size();
 
+  const uint64_t* expected_cursor = static_cast<const uint64_t*>(expected);
   for (uint64_t i = offset / sizeof(uint64_t); i < (offset + len) / sizeof(uint64_t); i++) {
     const auto* base = reinterpret_cast<const uint64_t*>(base_addr());
     uint64_t actual_val = base[i];
 
-    uint64_t expected_val = expected ? static_cast<const uint64_t*>(expected)[i] : key_ + i;
+    uint64_t expected_val = expected_cursor ? *expected_cursor++ : key_ + i;
     if (actual_val != expected_val) {
       printf("mismatch at byte %zu: expected %zx, actual %zx\n", i * sizeof(actual_val),
              expected_val, actual_val);

@@ -4461,7 +4461,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(OpZeroClone, 0) {
   ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
   ASSERT_EQ(zx_system_get_page_size(), info.committed_bytes);
   vmo->GenerateBufferContents(expected.data() + zx_system_get_page_size(), 1, 1);
-  ASSERT_TRUE(check_buffer_data(vmo, 1, 1, expected.data(), true));
+  ASSERT_TRUE(check_buffer_data(vmo, 1, 1, expected.data() + zx_system_get_page_size(), true));
 
   // No pages should be dirty in the parent.
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
@@ -4485,7 +4485,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(OpZeroClone, 0) {
   // Verify that the parent is unaltered.
   ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
   ASSERT_EQ(zx_system_get_page_size(), info.committed_bytes);
-  ASSERT_TRUE(check_buffer_data(vmo, 1, 1, expected.data(), true));
+  ASSERT_TRUE(check_buffer_data(vmo, 1, 1, expected.data() + zx_system_get_page_size(), true));
 
   // No pages should be dirty in the parent.
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
@@ -5062,7 +5062,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritebackResizedRangeAfterDetach, ZX_VMO_RESIZA
   std::vector<uint8_t> expected(3 * zx_system_get_page_size(), 0);
   memset(expected.data() + 2 * zx_system_get_page_size(), data, sizeof(data));
   // We should be able to read the dirty range both through mappings and with a VMO read.
-  ASSERT_TRUE(check_buffer_data(vmo, 1, 2, expected.data(), true));
+  ASSERT_TRUE(check_buffer_data(vmo, 1, 2, expected.data() + zx_system_get_page_size(), true));
   ASSERT_TRUE(check_buffer_data(vmo, 1, 2, expected.data() + zx_system_get_page_size(), false));
 
   // Can writeback the dirty ranges.
