@@ -9,7 +9,7 @@ ffx_plugin("ffx_target_package_gc") {
   version = "0.1.0"
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
+    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",

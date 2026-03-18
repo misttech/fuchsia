@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_pkg_garbagecollector as fpkg_gc;
 use ffx_target_package_gc_args::GcCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, bug, user_error};
-use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
