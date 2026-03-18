@@ -215,6 +215,11 @@
         "name": "fuchsia.mediastreams/Compression"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.mediastreams/CompressionType",
+        "type": "string:256"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.mediastreams/ENCRYPTION_SCHEME_CBC1",
         "type": "string",
@@ -267,6 +272,16 @@
         "name": "fuchsia.mediastreams/Encryption"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.mediastreams/EncryptionInitVector",
+        "type": "vector<uint8>:16"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.mediastreams/EncryptionKeyId",
+        "type": "vector<uint8>:16"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.mediastreams/EncryptionPattern.clear_blocks",
         "ordinal": "1",
@@ -281,6 +296,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.mediastreams/EncryptionPattern"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.mediastreams/EncryptionScheme",
+        "type": "string:4"
     },
     {
         "kind": "struct/member",

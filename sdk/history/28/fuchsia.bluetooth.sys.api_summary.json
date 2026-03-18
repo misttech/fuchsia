@@ -669,6 +669,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.sys/LocalKey",
+        "type": "fuchsia.bluetooth.sys/Key"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.bluetooth.sys/Ltk.ediv",
         "ordinal": "2",

@@ -395,6 +395,11 @@
         "name": "fuchsia.overnet.protocol/TransferInitiator"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.overnet.protocol/TransferKey",
+        "type": "array<uint8,16>"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.overnet.protocol/TransferWaiter.stream_id",
         "ordinal": "1",

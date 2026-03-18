@@ -694,6 +694,11 @@
         "value": "100"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.fonts/Weight",
+        "type": "uint16"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.fonts/Width.CONDENSED",
         "value": "3"

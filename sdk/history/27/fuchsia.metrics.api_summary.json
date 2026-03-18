@@ -31,6 +31,11 @@
         "type": "int32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.metrics/EventVector",
+        "type": "vector<uint32>:10"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.metrics/HistogramBucket.count",
         "ordinal": "2",
@@ -45,6 +50,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.metrics/HistogramBucket"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.metrics/IntegerHistogram",
+        "type": "vector<fuchsia.metrics/HistogramBucket>:500"
     },
     {
         "kind": "const",

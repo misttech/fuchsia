@@ -62,6 +62,11 @@
         "strictness": "flexible"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.activity/OngoingActivityId",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.ui.activity/Provider.WatchState",
         "strictness": "strict",

@@ -105,6 +105,11 @@
         "transport": "channel"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.power.system/LeaseToken",
+        "type": "zx/Handle:<EVENTPAIR,zx.DUPLICATE,zx.TRANSFER,zx.WAIT>"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.power.system/MAX_ELEMENT_NAME_LEN",
         "type": "uint8",

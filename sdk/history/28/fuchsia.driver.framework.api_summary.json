@@ -863,6 +863,21 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodeName",
+        "type": "string:128"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodeOffersVector",
+        "type": "vector<fuchsia.driver.framework/Offer>:128"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodeProperties",
+        "type": "vector<fuchsia.driver.framework/NodeProperty2>:64"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.driver.framework/NodeProperty.key",
         "ordinal": "1",
@@ -893,6 +908,16 @@
     {
         "kind": "struct",
         "name": "fuchsia.driver.framework/NodeProperty2"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyDictionary",
+        "type": "vector<fuchsia.driver.framework/NodePropertyEntry>"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyDictionary2",
+        "type": "vector<fuchsia.driver.framework/NodePropertyEntry2>"
     },
     {
         "kind": "struct/member",
@@ -944,6 +969,16 @@
         "strictness": "strict"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyKeyString",
+        "type": "string:256"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyKeyUint",
+        "type": "uint32"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.driver.framework/NodePropertyValue.bool_value",
         "ordinal": "3",
@@ -971,6 +1006,31 @@
         "kind": "union",
         "name": "fuchsia.driver.framework/NodePropertyValue",
         "strictness": "flexible"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyValueBool",
+        "type": "bool"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyValueEnum",
+        "type": "string:256"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyValueString",
+        "type": "string:256"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyValueUint",
+        "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.driver.framework/NodePropertyVector",
+        "type": "vector<fuchsia.driver.framework/NodeProperty>:64"
     },
     {
         "kind": "table/member",

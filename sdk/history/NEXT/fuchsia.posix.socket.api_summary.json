@@ -4242,6 +4242,11 @@
         "name": "fuchsia.posix.socket/SendMsgMeta"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket/SharingDomainToken",
+        "type": "zx/Handle:<EVENT,zx.TRANSFER>"
+    },
+    {
         "kind": "bits/member",
         "name": "fuchsia.posix.socket/ShutdownMode.READ",
         "value": "1"
@@ -6574,6 +6579,21 @@
         "name": "fuchsia.posix.socket/TcpCongestionControl",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket/TcpCongestionControlState",
+        "type": "fuchsia.net.tcp/CongestionControlState"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket/TcpInfo",
+        "type": "fuchsia.net.tcp/Info"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket/TcpState",
+        "type": "fuchsia.net.tcp/State"
     },
     {
         "kind": "struct/member",

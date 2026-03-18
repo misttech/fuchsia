@@ -112,6 +112,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.inspect/TreeName",
+        "type": "string:2040"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.inspect/TreeNameIterator.GetNext",
         "strictness": "strict",

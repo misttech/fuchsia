@@ -86,6 +86,11 @@
         "value": "2048"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.test/Name",
+        "type": "string:2048"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.test/Result.status",
         "ordinal": "1",
@@ -254,6 +259,11 @@
         "kind": "struct",
         "name": "fuchsia.test/SuiteRunRequest",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.test/Tag",
+        "type": "string:2048"
     },
     {
         "kind": "library",

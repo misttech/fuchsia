@@ -158,7 +158,7 @@ func Summarize(root fidlgen.Root) summary {
 	s.addProtocols(root.Protocols)
 	s.addElement(&library{r: root})
 
-	// TODO(https://fxbug.dev/42158155): Add aliases.
+	s.addAliases(root.Aliases)
 
 	sort.Sort(s.elements)
 	return summary(s.elements)

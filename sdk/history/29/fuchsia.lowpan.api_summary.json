@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.lowpan/ChannelIndex",
+        "type": "uint16"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.lowpan/DeviceWatcher.WatchDevices",
         "strictness": "strict",
@@ -30,6 +35,11 @@
         "name": "fuchsia.lowpan/DeviceWatcherWatchDevicesResponse"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.lowpan/InterfaceName",
+        "type": "string:32"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.lowpan/MAX_LOWPAN_DEVICES",
         "type": "uint32",
@@ -44,6 +54,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.lowpan/MacAddress"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.lowpan/PowerDbm",
+        "type": "int8"
     },
     {
         "kind": "library",

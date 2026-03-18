@@ -71,6 +71,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointer.augment/Point2",
+        "type": "array<float32,2>"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.ui.pointer.augment/TouchEventWithLocalHit.local_point",
         "ordinal": "3",

@@ -6,6 +6,11 @@
         "value": "4096"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.url/Url",
+        "type": "string:4096"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.url"
     }

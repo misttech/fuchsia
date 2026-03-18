@@ -16,6 +16,11 @@
         "name": "fuchsia.driver.test/DriverLog"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.driver.test/DriverName",
+        "type": "string"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.driver.test/Realm.Start",
         "strictness": "flexible",

@@ -31,6 +31,11 @@
         "strictness": "strict"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket.raw/Protocol",
+        "type": "uint8"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.posix.socket.raw/ProtocolAssociation.associated",
         "ordinal": "2",

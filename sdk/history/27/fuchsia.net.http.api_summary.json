@@ -65,6 +65,16 @@
         "name": "fuchsia.net.http/Header"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.net.http/HeaderName",
+        "type": "vector<uint8>"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.http/HeaderValue",
+        "type": "vector<uint8>"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.net.http/Loader.Fetch",
         "strictness": "strict",
@@ -150,6 +160,11 @@
         "kind": "struct",
         "name": "fuchsia.net.http/LoaderStartRequest",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.http/Method",
+        "type": "string:1024"
     },
     {
         "kind": "table/member",

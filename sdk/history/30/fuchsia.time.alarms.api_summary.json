@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.time.alarms/AlarmId",
+        "type": "string:128"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.time.alarms/InstantUtc.timestamp_utc",
         "ordinal": "1",

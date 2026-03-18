@@ -12,6 +12,7 @@ import (
 type alias struct {
 	named
 	notMember
+	targetType Type
 }
 
 const aliasType Kind = "alias"
@@ -19,21 +20,16 @@ const aliasType Kind = "alias"
 func (a *alias) Serialize() ElementStr {
 	e := a.named.Serialize()
 	e.Kind = aliasType
+	e.Type = a.targetType
 	return e
 }
 
-// addAliases adds the aliases from the declaration map.
-//
-// TODO(https://fxbug.dev/42061636): Add aliases to summaries. This is currently unused.
-func (s *summarizer) addAliases(decls fidlgen.DeclMap) {
-	for d, t := range decls {
-		// Aliases only make an appearance in the decls section, where they are
-		// registered as "alias".
-		if t != "alias" {
-			continue
-		}
+// addAliases adds the aliases from the FIDL IR.
+func (s *summarizer) addAliases(aliases []fidlgen.Alias) {
+	for _, a := range aliases {
 		s.addElement(&alias{
-			named: named{name: Name(d)},
+			named:      named{name: Name(a.Name)},
+			targetType: s.symbols.fidlTypeString(a.Type),
 		})
 	}
 }

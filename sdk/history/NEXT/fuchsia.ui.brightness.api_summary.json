@@ -249,6 +249,11 @@
         "name": "fuchsia.ui.brightness/Control_GetMaxAbsoluteBrightness_Response"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.brightness/brightness",
+        "type": "float32"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.ui.brightness"
     }

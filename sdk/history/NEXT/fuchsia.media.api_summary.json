@@ -2450,6 +2450,11 @@
         "name": "fuchsia.media/Compression"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.media/CompressionType",
+        "type": "string:256"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.media/CryptoFormat.decrypted",
         "ordinal": "2",
@@ -2607,6 +2612,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.media/EncryptionPattern"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media/EncryptionScheme",
+        "type": "string:100"
     },
     {
         "kind": "table/member",
@@ -2769,6 +2779,11 @@
         "name": "fuchsia.media/HevcEncoderSettings"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.media/InitVector",
+        "type": "vector<uint8>:16"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.media/InputAudioCapturerConfiguration.usage",
         "ordinal": "1",
@@ -2783,6 +2798,11 @@
     {
         "kind": "table",
         "name": "fuchsia.media/InputAudioCapturerConfiguration"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media/KeyId",
+        "type": "vector<uint8>:16"
     },
     {
         "kind": "table",

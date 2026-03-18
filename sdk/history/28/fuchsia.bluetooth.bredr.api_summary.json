@@ -409,6 +409,16 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.bredr/ChannelMode",
+        "type": "fuchsia.bluetooth/ChannelMode"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.bredr/ChannelParameters",
+        "type": "fuchsia.bluetooth/ChannelParameters"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.bluetooth.bredr/ConnectParameters.l2cap",
         "ordinal": "1",
@@ -1080,6 +1090,11 @@
         "name": "fuchsia.bluetooth.bredr/ProtocolDescriptor"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.bredr/ProtocolDescriptorList",
+        "type": "vector<fuchsia.bluetooth.bredr/ProtocolDescriptor>:255"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.bluetooth.bredr/ProtocolIdentifier.ATT",
         "value": "7"
@@ -1154,6 +1169,11 @@
         "name": "fuchsia.bluetooth.bredr/ProtocolIdentifier",
         "strictness": "flexible",
         "type": "uint16"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.bredr/RfcommChannel",
+        "type": "uint8"
     },
     {
         "kind": "table/member",

@@ -281,6 +281,11 @@
         "name": "fuchsia.archivist.test/LazyInspectPuppetCommitRequest"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.archivist.test/LogMessage",
+        "type": "string"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.archivist.test/LogPuppet.Eprintln",
         "strictness": "flexible",

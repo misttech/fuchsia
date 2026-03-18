@@ -326,6 +326,11 @@
         "name": "fuchsia.component.decl/ConfigField"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.component.decl/ConfigKey",
+        "type": "string:64"
+    },
+    {
         "kind": "bits/member",
         "name": "fuchsia.component.decl/ConfigMutability.PARENT",
         "value": "1"
@@ -2345,6 +2350,26 @@
     {
         "kind": "struct",
         "name": "fuchsia.component.decl/VoidRef"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component.decl/child_name",
+        "type": "string:1024"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component.decl/dictionary_path",
+        "type": "string:1024"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component.decl/name",
+        "type": "string:100"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component.decl/url_scheme",
+        "type": "string:100"
     },
     {
         "kind": "library",

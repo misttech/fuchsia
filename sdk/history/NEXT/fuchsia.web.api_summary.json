@@ -406,6 +406,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.web/CookieName",
+        "type": "string"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.web/CookiesIterator.GetNext",
         "strictness": "strict",
@@ -1648,6 +1653,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.web/NavigationId",
+        "type": "uint64"
+    },
+    {
         "kind": "bits/member",
         "name": "fuchsia.web/NavigationPhase.FAIL",
         "value": "8"
@@ -1984,6 +1994,16 @@
         "name": "fuchsia.web/RequestedNavigation"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.web/Url",
+        "type": "string:65536"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.web/UrlHostName",
+        "type": "string:255"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.web/UrlRequestAction.ALLOW",
         "value": "1"
@@ -2129,6 +2149,16 @@
     {
         "kind": "table",
         "name": "fuchsia.web/UrlRequestRewriteSubstituteQueryPattern"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.web/UrlSchemeAndHostName",
+        "type": "string:513"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.web/UrlSchemeName",
+        "type": "string:255"
     },
     {
         "kind": "table/member",

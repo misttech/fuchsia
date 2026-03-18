@@ -38,6 +38,11 @@
         "name": "fuchsia.hardware.audio/ChannelSet"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio/ClockDomain",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.hardware.audio/Codec.GetDaiFormats",
         "strictness": "strict",
@@ -936,6 +941,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio/ElementId",
+        "type": "uint64"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.hardware.audio/Format.pcm_format",
         "ordinal": "1",
@@ -1679,10 +1689,20 @@
         "name": "fuchsia.hardware.audio/SupportedFormats"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio/TopologyId",
+        "type": "uint64"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.hardware.audio/UNIQUE_ID_SIZE",
         "type": "uint32",
         "value": "16"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio/UniqueId",
+        "type": "array<uint8,16>"
     },
     {
         "kind": "library",

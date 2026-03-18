@@ -71,6 +71,11 @@
         "value": "300"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.observation.geometry/PixelScale",
+        "type": "array<float32,2>"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.ui.observation.geometry/RotatableExtent.angle_degrees",
         "ordinal": "4",

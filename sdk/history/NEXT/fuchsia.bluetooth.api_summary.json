@@ -539,6 +539,11 @@
         "name": "fuchsia.bluetooth/DeviceClass"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth/DeviceName",
+        "type": "string:248"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.bluetooth/Error.description",
         "ordinal": "3",
@@ -801,6 +806,11 @@
         "name": "fuchsia.bluetooth/PeerId"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth/PeerIdString",
+        "type": "string:16"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.bluetooth/SecurityRequirements.authentication_required",
         "ordinal": "1",
@@ -851,6 +861,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.bluetooth/Uuid"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth/UuidString",
+        "type": "string:36"
     },
     {
         "kind": "table/member",

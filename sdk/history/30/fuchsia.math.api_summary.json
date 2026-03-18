@@ -110,6 +110,11 @@
         "name": "fuchsia.math/PointF"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.math/QuaternionF",
+        "type": "fuchsia.math/Vec4F"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.math/RRectF.bottom_left_radius_x",
         "ordinal": "9",

@@ -67,6 +67,11 @@
         "value": "15"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.net.interfaces/Name",
+        "type": "string:15"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.net.interfaces/PortClass.device",
         "ordinal": "2",

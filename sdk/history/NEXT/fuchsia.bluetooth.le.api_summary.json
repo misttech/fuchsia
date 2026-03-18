@@ -2171,6 +2171,11 @@
         "transport": "channel"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.le/Psm",
+        "type": "uint16"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.bluetooth.le/RemoteDevice.advertising_data",
         "ordinal": "4",

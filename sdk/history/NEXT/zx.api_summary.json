@@ -24,10 +24,50 @@
         "value": "53251"
     },
     {
+        "kind": "alias",
+        "name": "zx/Duration",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/DurationBoot",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/DurationMono",
+        "type": "int64"
+    },
+    {
         "kind": "const",
         "name": "zx/IOB_MAX_REGIONS",
         "type": "uint64",
         "value": "64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/InstantBoot",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/InstantBootTicks",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/InstantMono",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/InstantMonoTicks",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/Koid",
+        "type": "uint64"
     },
     {
         "kind": "const",
@@ -203,6 +243,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "zx/Off",
+        "type": "uint64"
+    },
+    {
         "kind": "const",
         "name": "zx/RIGHTS_BASIC",
         "type": "zx/Rights",
@@ -361,6 +406,26 @@
         "name": "zx/Rights",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/Signals",
+        "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/Status",
+        "type": "int32"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/Ticks",
+        "type": "int64"
+    },
+    {
+        "kind": "alias",
+        "name": "zx/Time",
+        "type": "int64"
     },
     {
         "kind": "library",

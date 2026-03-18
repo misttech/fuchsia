@@ -398,6 +398,11 @@
         "name": "fuchsia.lowpan.thread/MeshcopUpdateTxtEntriesRequest"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.lowpan.thread/OperationalDatasetTlvs",
+        "type": "vector<uint8>:254"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.lowpan.thread/ThreadCapabilities.GetCapabilities",
         "strictness": "strict",

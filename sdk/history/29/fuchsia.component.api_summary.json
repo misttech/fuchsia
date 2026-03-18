@@ -786,6 +786,21 @@
         "name": "fuchsia.component/UnresolvedPayload"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.component/child_name",
+        "type": "string:1024"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component/name",
+        "type": "string:255"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.component/url_scheme",
+        "type": "string:255"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.component"
     }

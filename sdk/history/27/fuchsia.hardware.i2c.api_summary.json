@@ -90,6 +90,11 @@
         "value": "32768"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.i2c/ReadData",
+        "type": "vector<uint8>:32768"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.hardware.i2c/Transaction.data_transfer",
         "ordinal": "1",

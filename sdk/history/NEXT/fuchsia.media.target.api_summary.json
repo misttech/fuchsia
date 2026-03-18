@@ -131,6 +131,11 @@
         "name": "fuchsia.media.target/DiscoveryWatchSessionBindingsResponse"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.media.target/DisplayName",
+        "type": "string:200"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.media.target/Error.CANNOT_BE_GROUPED",
         "value": "2"
@@ -260,6 +265,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.media.target/GroupWatchTargetsResponse"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media.target/Id",
+        "type": "uint64"
     },
     {
         "kind": "protocol/member",

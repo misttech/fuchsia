@@ -11,6 +11,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.tracing.controller/AlertName",
+        "type": "string:14"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.tracing.controller/FxtVersion.major",
         "ordinal": "1",

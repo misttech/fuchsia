@@ -509,6 +509,11 @@
         "type": "uint16"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.pci/ConfigOffset",
+        "type": "uint8"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.hardware.pci/Device.AckInterrupt",
         "strictness": "strict",
@@ -1248,6 +1253,11 @@
         "kind": "enum",
         "name": "fuchsia.hardware.pci/ExtendedCapabilityId",
         "strictness": "flexible",
+        "type": "uint16"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.hardware.pci/ExtendedConfigOffset",
         "type": "uint16"
     },
     {

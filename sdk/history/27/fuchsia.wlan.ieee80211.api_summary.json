@@ -245,6 +245,11 @@
         "value": "11454"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.wlan.ieee80211/MacAddr",
+        "type": "array<uint8,6>"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.wlan.ieee80211/OUI_LEN",
         "type": "uint8",
@@ -627,6 +632,11 @@
     {
         "kind": "table",
         "name": "fuchsia.wlan.ieee80211/SetKeyDescriptor"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.wlan.ieee80211/Ssid",
+        "type": "vector<uint8>:32"
     },
     {
         "kind": "enum/member",

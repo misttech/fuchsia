@@ -218,6 +218,11 @@
         "name": "fuchsia.weave/PairingStateWatcherWatchPairingStateResponse"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.weave/PrivateKey",
+        "type": "vector<uint8>"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.weave/Provisioner.GenerateKeyPair",
         "strictness": "strict",
@@ -289,6 +294,11 @@
         "name": "fuchsia.weave/ResetConfigFlags",
         "strictness": "strict",
         "type": "uint16"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.weave/ServiceEndpointId",
+        "type": "uint64"
     },
     {
         "kind": "protocol/member",

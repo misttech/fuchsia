@@ -105,6 +105,11 @@
         "type": "uint64"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.gpu.magma/ContextId",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.gpu.magma/DependencyInjection.SetMemoryPressureProvider",
         "strictness": "strict",
@@ -390,6 +395,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.gpu.magma/ObjectId",
+        "type": "uint64"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.gpu.magma/ObjectType.BUFFER",
         "value": "11"
@@ -477,6 +487,21 @@
     {
         "kind": "table",
         "name": "fuchsia.gpu.magma/PerformanceCounterEventsOnPerformanceCounterReadCompletedRequest"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.gpu.magma/PerformanceCounterPoolId",
+        "type": "uint64"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.gpu.magma/PerformanceCounterSet",
+        "type": "vector<uint64>:64"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.gpu.magma/PerformanceCounterTriggerId",
+        "type": "uint32"
     },
     {
         "kind": "protocol/member",

@@ -478,6 +478,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.wlan.common/WlanSoftmacHardwareCapability",
+        "type": "uint32"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.wlan.common/WlanSoftmacHardwareCapabilityBit.QOS",
         "value": "512"

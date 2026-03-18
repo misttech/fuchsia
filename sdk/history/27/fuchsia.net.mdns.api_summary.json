@@ -1301,6 +1301,36 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/host_name",
+        "type": "string:255"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/instance_name",
+        "type": "string:63"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/service_name",
+        "type": "string:22"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/subtype_name",
+        "type": "string:63"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/txt_character_string",
+        "type": "vector<uint8>:255"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.net.mdns/txt_string",
+        "type": "string:255"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.net.mdns"
     }

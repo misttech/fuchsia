@@ -1063,6 +1063,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.composition/FuturePresentationInfos",
+        "type": "vector<fuchsia.scenic.scheduling/PresentationInfo>:8"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.ui.composition/GetNextFrameArgs.event",
         "ordinal": "1",

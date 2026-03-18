@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.gpu.agis/ClientId",
+        "type": "uint64"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.gpu.agis/ComponentRegistry.GetVulkanSocket",
         "strictness": "strict",
@@ -149,6 +154,11 @@
         "kind": "enum",
         "name": "fuchsia.gpu.agis/Error",
         "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.gpu.agis/GlobalId",
         "type": "uint32"
     },
     {

@@ -1660,6 +1660,30 @@ closed protocol P {
 ]
 `,
 		},
+		{
+			name: "aliases",
+			fidl: `
+library l;
+type Foo = struct {};
+alias Bar = Foo;
+`,
+			expected: `[
+    {
+        "kind": "alias",
+        "name": "l/Bar",
+        "type": "l/Foo"
+    },
+    {
+        "kind": "struct",
+        "name": "l/Foo"
+    },
+    {
+        "kind": "library",
+        "name": "l"
+    }
+]
+`,
+		},
 	}
 	runGenerateSummaryTests(t, tests)
 }

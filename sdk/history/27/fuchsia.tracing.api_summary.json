@@ -42,6 +42,21 @@
         "type": "uint8"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.tracing/CategoryDescription",
+        "type": "string:400"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.tracing/CategoryName",
+        "type": "string:100"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.tracing/EnabledCategoryList",
+        "type": "vector<string:100>:5000"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.tracing/KnownCategory.description",
         "ordinal": "2",
@@ -86,6 +101,16 @@
         "name": "fuchsia.tracing/MAX_PROVIDER_NAME_LENGTH",
         "type": "uint32",
         "value": "100"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.tracing/ProviderId",
+        "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.tracing/ProviderName",
+        "type": "string:100"
     },
     {
         "kind": "library",

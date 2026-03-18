@@ -282,6 +282,11 @@
         "name": "fuchsia.hardware.audio.signalprocessing/Element"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio.signalprocessing/ElementId",
+        "type": "uint64"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.hardware.audio.signalprocessing/ElementState.bypassed",
         "ordinal": "6",
@@ -1024,6 +1029,11 @@
     {
         "kind": "table",
         "name": "fuchsia.hardware.audio.signalprocessing/Topology"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.hardware.audio.signalprocessing/TopologyId",
+        "type": "uint64"
     },
     {
         "kind": "union/member",

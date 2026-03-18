@@ -54,6 +54,11 @@
         "value": "256"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.temperature/SensorName",
+        "type": "string:256"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.hardware.temperature"
     }

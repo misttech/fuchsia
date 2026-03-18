@@ -124,6 +124,11 @@
         "name": "fuchsia.element/AnnotationKey"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.element/AnnotationKeys",
+        "type": "vector<fuchsia.element/AnnotationKey>:1024"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.element/AnnotationValue.buffer",
         "ordinal": "2",
@@ -140,6 +145,11 @@
         "name": "fuchsia.element/AnnotationValue",
         "strictness": "strict",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.element/Annotations",
+        "type": "vector<fuchsia.element/Annotation>:1024"
     },
     {
         "kind": "protocol/member",

@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.io/Abilities",
+        "type": "fuchsia.io/Operations"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.io/AdvisoryLockRange.length",
         "ordinal": "3",
@@ -702,6 +707,11 @@
         "name": "fuchsia.io/ExtendedAttributeIterator_GetNext_Response"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.io/ExtendedAttributeName",
+        "type": "vector<uint8>:255"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.io/ExtendedAttributeValue.buffer",
         "ordinal": "2",
@@ -1357,6 +1367,11 @@
         "value": "18446744073709551615"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.io/Id",
+        "type": "uint64"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.io/ImmutableNodeAttributes.abilities",
         "ordinal": "2",
@@ -1569,6 +1584,11 @@
     {
         "kind": "table",
         "name": "fuchsia.io/MutableNodeAttributes"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.io/Name",
+        "type": "string:255"
     },
     {
         "kind": "protocol/member",
@@ -2334,6 +2354,11 @@
         "value": "485"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.io/Path",
+        "type": "string:4095"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.io/RW_STAR_DIR",
         "type": "fuchsia.io/Operations",
@@ -2416,6 +2441,11 @@
         "name": "fuchsia.io/Representation",
         "strictness": "flexible",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.io/Rights",
+        "type": "fuchsia.io/Operations"
     },
     {
         "kind": "enum/member",
@@ -2681,6 +2711,21 @@
     {
         "kind": "struct",
         "name": "fuchsia.io/SymlinkObject"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.io/SymlinkTarget",
+        "type": "vector<uint8>:4095"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.io/Token",
+        "type": "zx/Handle:EVENT"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.io/Transfer",
+        "type": "vector<uint8>:8192"
     },
     {
         "kind": "bits/member",

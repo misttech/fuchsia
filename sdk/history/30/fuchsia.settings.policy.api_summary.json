@@ -37,6 +37,11 @@
         "name": "fuchsia.settings.policy/Policy"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.settings.policy/PolicyId",
+        "type": "uint32"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.settings.policy/PolicyParameters.max",
         "ordinal": "2",

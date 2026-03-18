@@ -6570,6 +6570,11 @@
         "name": "fuchsia.posix.socket/TcpInfo"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket/TcpState",
+        "type": "fuchsia.net.tcp/State"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.posix.socket/Timestamp.nanoseconds",
         "ordinal": "1",

@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.location.namedplace/RegionCode",
+        "type": "string:2"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.location.namedplace/RegulatoryRegionConfigurator.SetRegion",
         "strictness": "strict",

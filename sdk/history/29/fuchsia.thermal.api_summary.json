@@ -55,6 +55,11 @@
         "name": "fuchsia.thermal/ClientStateWatcherWatchResponse"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.thermal/ClientType",
+        "type": "string:8"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.thermal/MAX_THERMAL_LOAD",
         "type": "uint32",

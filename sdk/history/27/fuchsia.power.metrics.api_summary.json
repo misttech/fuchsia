@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.power.metrics/ClientId",
+        "type": "string:16"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.power.metrics/CpuLoad.interval_ms",
         "ordinal": "1",

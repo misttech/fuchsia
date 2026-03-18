@@ -245,6 +245,11 @@
         "name": "fuchsia.media.drm/DecryptorParams"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.media.drm/EncryptionScheme",
+        "type": "string:100"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.media.drm/Error.INTERNAL",
         "value": "100"
@@ -295,6 +300,11 @@
         "name": "fuchsia.media.drm/Features",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media.drm/HdcpVersion",
+        "type": "string:16"
     },
     {
         "kind": "table/member",
@@ -520,6 +530,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.media.drm/LicenseInitData"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media.drm/LicenseInitDataType",
+        "type": "string:100"
     },
     {
         "kind": "struct/member",
@@ -860,6 +875,11 @@
         "name": "fuchsia.media.drm/Requirement",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media.drm/SessionId",
+        "type": "string:512"
     },
     {
         "kind": "protocol/member",

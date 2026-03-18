@@ -145,6 +145,11 @@
         "name": "fuchsia.camera3/DeviceGetIdentifierResponse"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.camera3/DeviceId",
+        "type": "uint64"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.camera3/DeviceRebindRequest.request",
         "ordinal": "1",

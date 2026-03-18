@@ -203,10 +203,25 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointerinjector/Extents",
+        "type": "array<array<float32,2>,2>"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.ui.pointerinjector/MAX_INJECT",
         "type": "uint32",
         "value": "128"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointerinjector/Mat3",
+        "type": "array<float32,9>"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointerinjector/Point2",
+        "type": "array<float32,2>"
     },
     {
         "kind": "table/member",
@@ -302,6 +317,16 @@
         "kind": "struct",
         "name": "fuchsia.ui.pointerinjector/RegistryRegisterRequest",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointerinjector/RelativeMotion",
+        "type": "array<float32,2>"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointerinjector/RelativeMotionRange",
+        "type": "array<fuchsia.input.report/Axis,2>"
     },
     {
         "kind": "union/member",

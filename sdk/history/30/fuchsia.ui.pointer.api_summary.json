@@ -32,6 +32,11 @@
         "value": "128"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointer/Mat3",
+        "type": "array<float32,9>"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.ui.pointer/MouseDeviceInfo.buttons",
         "ordinal": "4",
@@ -220,6 +225,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointer/Point2",
+        "type": "array<float32,2>"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.ui.pointer/Rectangle.max",
         "ordinal": "2",
@@ -234,6 +244,16 @@
     {
         "kind": "struct",
         "name": "fuchsia.ui.pointer/Rectangle"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointer/RelativeMotion",
+        "type": "array<float32,2>"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.ui.pointer/RelativeMotionRange",
+        "type": "array<fuchsia.input.report/Axis,2>"
     },
     {
         "kind": "const",

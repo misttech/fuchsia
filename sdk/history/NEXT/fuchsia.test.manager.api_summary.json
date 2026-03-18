@@ -695,6 +695,11 @@
         "name": "fuchsia.test.manager/TestCaseFoundEventDetails"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.test.manager/TestCaseId",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.test.manager/TestCaseIterator.GetNext",
         "strictness": "strict",
@@ -717,6 +722,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.test.manager/TestCaseIteratorGetNextResponse"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.test.manager/TestCaseName",
+        "type": "string:2048"
     },
     {
         "kind": "enum/member",

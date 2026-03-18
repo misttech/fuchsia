@@ -421,6 +421,11 @@
         "value": "8"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.hfp/Memory",
+        "type": "string:256"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.bluetooth.hfp/NetworkInformation.roaming",
         "ordinal": "3",
@@ -470,6 +475,11 @@
         "kind": "table",
         "name": "fuchsia.bluetooth.hfp/NextCall",
         "resourceness": "resource"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.bluetooth.hfp/Number",
+        "type": "string:256"
     },
     {
         "kind": "protocol/member",

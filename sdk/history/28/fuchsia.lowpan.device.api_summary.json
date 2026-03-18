@@ -840,6 +840,11 @@
         "value": "org.zigbee.std.zigbee-ip.1"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.lowpan.device/NetworkType",
+        "type": "string:64"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.lowpan.device/ProvisioningParams.credential",
         "ordinal": "2",

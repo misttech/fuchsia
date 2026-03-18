@@ -167,6 +167,11 @@
         "type": "uint32"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.posix.socket.packet/Protocol",
+        "type": "uint16"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.posix.socket.packet/ProtocolAssociation.all",
         "ordinal": "1",

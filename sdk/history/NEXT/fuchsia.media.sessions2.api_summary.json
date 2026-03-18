@@ -117,6 +117,11 @@
         "resourceness": "resource"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.media.sessions2/Domain",
+        "type": "string:1000"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.media.sessions2/Error.OTHER",
         "value": "1"
@@ -953,6 +958,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.media.sessions2/SessionControlWatchStatusResponse"
+    },
+    {
+        "kind": "alias",
+        "name": "fuchsia.media.sessions2/SessionId",
+        "type": "uint64"
     },
     {
         "kind": "table/member",
