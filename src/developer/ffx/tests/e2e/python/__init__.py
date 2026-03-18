@@ -47,11 +47,6 @@ class FfxTestCase(fuchsia_base_test.AsyncFuchsiaBaseTest):
         Don't wait for the command to return."""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        if "--strict" not in args:
-            cmd += [
-                "--isolate-dir",
-                config.isolate_dir.directory(),
-            ]
         cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
@@ -64,11 +59,6 @@ class FfxTestCase(fuchsia_base_test.AsyncFuchsiaBaseTest):
         """Run ffx in the specific way we need, not the standard Honeydew way"""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        if "--strict" not in args:
-            cmd += [
-                "--isolate-dir",
-                config.isolate_dir.directory(),
-            ]
         cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
@@ -85,11 +75,6 @@ class FfxTestCase(fuchsia_base_test.AsyncFuchsiaBaseTest):
         Also does not check for errors"""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        if "--strict" not in args:
-            cmd += [
-                "--isolate-dir",
-                config.isolate_dir.directory(),
-            ]
         cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)

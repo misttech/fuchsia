@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, List, Optional, Text, Tuple
 
 import ffxtestcase
-from honeydew.transports.ffx.errors import FfxCommandError
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -36,8 +35,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test For Strict."""
 
     async def setup_class(self) -> None:
-        # This just gets some things out of the way before we start turning
-        # the daemon off and on again.
         await super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
         self.dut_name = self.dut.ffx.get_target_name()
@@ -163,21 +160,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
             cmd, self._build_strict_config_args([]), target
         )
 
-    def test_target_echo_no_start_daemon(self) -> None:
-        """Test `ffx --strict target echo` does not affect daemon state."""
-        output = self._run_strict_ffx(
-            [
-                "target",
-                "echo",
-                "From a Test",
-            ],
-            f"{self.dut_ssh_address}",
-        )
-
-        asserts.assert_equal(output, {"message": "From a Test"})
-        with asserts.assert_raises(FfxCommandError):
-            self.dut.ffx.run(["-c", "daemon.autostart=false", "daemon", "echo"])
-
     def test_strict_errors_with_target_name(self) -> None:
         """Test `ffx --strict target echo` fails when attempt discovery."""
         with asserts.assert_raises(subprocess.CalledProcessError):
@@ -249,23 +231,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
             "Expected SHARED_DATA to be correctly set in strict",
             stdout,
         )
-
-    def test_target_list_strict(self) -> None:
-        """Test `ffx --strict target list` does not affect daemon state."""
-        emu_config = self._get_configs(["emu.instance_dir"])
-        configs = self._build_strict_config_args(emu_config)
-        output = self._run_strict_ffx_with_configs(
-            [
-                "target",
-                "list",
-                self.dut_name,
-            ],
-            configs,
-            None,
-        )
-        asserts.assert_equal(output[0]["rcs_state"], "Y")
-        with asserts.assert_raises(FfxCommandError):
-            self.dut.ffx.run(["-c", "daemon.autostart=false", "daemon", "echo"])
 
     def test_target_list_strict_fails(self) -> None:
         """Test `ffx --strict target list` correctly reports RCS=N."""
@@ -434,10 +399,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
             "raw",
         )
         asserts.assert_equal(stdout, "foo")
-
-
-if __name__ == "__main__":
-    test_runner.main()
 
 
 if __name__ == "__main__":

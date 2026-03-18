@@ -13,7 +13,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # These tests just hammer the ffx connection to see if it falls over.
-class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
+class FfxStressTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E stress test"""
 
     def test_stress(self) -> None:

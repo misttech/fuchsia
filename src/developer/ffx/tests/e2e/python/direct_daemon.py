@@ -18,23 +18,42 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 # to the target, not that all daemon-related commands should fail.
 # All we are doing is ensuring that the commands don't exit with a non-
 # zero return code.
-# These tests use `self.run_ffx()` instead of `self.dut.ffx.run()` to
-# ensure that we have specific control of exactly the arguments we need
-# when invoking these commands.
+# These tests use an isolate-dir, because we don't want to interact with
+# the user's daemon, if any.
 class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test for daemon subtools when in direct mode."""
 
     async def setup_class(self) -> None:
-        # This just gets some things out of the way before we start turning
-        # the daemon off and on again.
         await super().setup_class()
-        self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
+        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
+
+    async def teardown_class(self) -> None:
+        # These tests will leave a daemon turned on, but that might effect other
+        # tests that expect the daemon to be off.
+        self.run_ffx(
+            [
+                "--isolate-dir",
+                self.isolate_dir,
+                "daemon",
+                "stop",
+            ]
+        )
+        await super().teardown_class()
+
+    def _run_ffx_direct_isolated(self, cmd: list[str]) -> None:
+        self.run_ffx(
+            [
+                "--isolate-dir",
+                self.isolate_dir,
+                "--direct",
+                *cmd,
+            ],
+        )
 
     def test_direct_daemon_disconnect(self) -> None:
         """Test `ffx --direct daemon disconnect` does not raise an exception."""
-        self.run_ffx(
+        self._run_ffx_direct_isolated(
             [
-                "--direct",
                 "daemon",
                 "disconnect",
             ],
@@ -42,9 +61,8 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
 
     def test_direct_daemon_echo(self) -> None:
         """Test `ffx --direct daemon echo` does not raise an exception."""
-        self.run_ffx(
+        self._run_ffx_direct_isolated(
             [
-                "--direct",
                 "daemon",
                 "echo",
             ],
@@ -52,9 +70,8 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
 
     def test_direct_daemon_stop(self) -> None:
         """Test `ffx --direct daemon stop` does not raise an exception."""
-        self.run_ffx(
+        self._run_ffx_direct_isolated(
             [
-                "--direct",
                 "daemon",
                 "stop",
             ],
@@ -62,9 +79,8 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
 
     def test_direct_daemon_crash(self) -> None:
         """Test `ffx --direct daemon crash` does not raise an exception."""
-        self.run_ffx(
+        self._run_ffx_direct_isolated(
             [
-                "--direct",
                 "daemon",
                 "crash",
             ],

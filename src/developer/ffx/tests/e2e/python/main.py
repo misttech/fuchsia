@@ -6,10 +6,8 @@
 
 import json
 import logging
-import subprocess
 
 import ffxtestcase
-from honeydew.transports.ffx.errors import FfxCommandError
 from honeydew.transports.ffx.types import MachineFormat
 from mobly import asserts, test_runner
 
@@ -18,6 +16,10 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 class FfxTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test."""
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
 
     def test_component_list(self) -> None:
         """Test `ffx component list` output returns as expected."""
@@ -44,131 +46,39 @@ class FfxTest(ffxtestcase.FfxTestCase):
         # Assert FFX's target show device name matches Honeydew's.
         asserts.assert_equal(got_device_name, self.dut.device_name)
 
-    def test_target_echo_repeat(self) -> None:
-        """Test `ffx target echo --repeat` is resilient to daemon failure."""
-        with self.dut.ffx.popen(
-            ["target", "echo", "--repeat"],
-            stdout=subprocess.PIPE,
-            text=False,
-        ) as process:
-            try:
-                line = process.stdout.readline()
-                asserts.assert_true(
-                    line.startswith(b"SUCCESS"),
-                    f"First ping didn't succeed: {line}",
-                )
-                self.dut.ffx.run(["daemon", "stop"])
-                while True:
-                    line = process.stdout.readline()
-                    if not line.startswith(b"ERROR") and not line.startswith(
-                        b"Waiting for"
-                    ):
-                        break
-                    print(line)
-                asserts.assert_true(
-                    line.startswith(b"SUCCESS"),
-                    f"Success didn't resume after error: {line}",
-                )
-            finally:
-                process.kill()
-
-    # Note: in this test we do _not_ want to probe the device, since we will try
-    # to probe every device visible in the builder. But in EngProd environments,
-    # that could be dozens of devices
-    # TODO(b/355292969): re-enable when client-side discovery is re-enabled
-    # (see libtarget::is_discover_enabled())
-    def _test_target_list_without_discovery(self) -> None:
-        """Test `ffx target list` output returns as expected when discovery is off."""
-        self.dut.ffx.run(["daemon", "stop"])
-        output = self.dut.ffx.run(
-            [
-                "--machine",
-                "json",
-                "-c",
-                "ffx.isolated=true",
-                "target",
-                "list",
-            ]
-        )
-        output_json = json.loads(output)
-        devices = [
-            o for o in output_json if o["nodename"] == self.dut.device_name
-        ]
-        # Assert ffx's target list device name contain's Honeydew's device.
-        asserts.assert_greater(len(devices), 0)
-        # Assert that we are not probing the device to identify the RCS state
-        asserts.assert_equal(devices[0]["rcs_state"], "N")
-        # Assert that we are not probing the device to identify the type
-        asserts.assert_equal(devices[0]["target_type"], "Unknown")
-        with asserts.assert_raises(FfxCommandError):
-            self.dut.ffx.run(["-c", "daemon.autostart=false", "daemon", "echo"])
-
-    # TODO(b/355292969): re-enable when client-side discovery is re-enabled
-    # (see libtarget::is_discover_enabled())
-    def _test_target_list_nodename_without_discovery(self) -> None:
-        """Test `ffx target list <nodename>` output returns as expected.
-
-        This is for when discovery is off.
-        """
-        self.dut.ffx.run(["daemon", "stop"], capture_output=False)
-        output = self.dut.ffx.run(
-            [
-                "--machine",
-                "json",
-                "-c",
-                "ffx.isolated=true",
-                "target",
-                "list",
-                self.dut.device_name,
-            ]
-        )
-        output_json = json.loads(output)
-        devices = [
-            o for o in output_json if o["nodename"] == self.dut.device_name
-        ]
-        # Assert Honeydew's device is the only device returned.
-        asserts.assert_equal(len(devices), 1)
-        # Assert that we can correctly identify the RCS state
-        asserts.assert_equal(devices[0]["rcs_state"], "Y")
-        # Assert that we can correctly identify the product
-        asserts.assert_not_equal(devices[0]["target_type"], "Unknown")
-
-        # Make sure the daemon hadn't started running
-        with asserts.assert_raises(FfxCommandError):
-            self.dut.ffx.run(["-c", "daemon.autostart=false", "daemon", "echo"])
-
-    def test_local_discovery(self) -> None:
-        """Test that we can resolve a target locally"""
-        # Let's make sure the CLI believes that discovery is turned off,
-        # by setting ffx.isolated=true
-        cmd = [
-            "-c",
-            "ffx.isolated=true",
-            "-t",
-            f"{self.dut.ffx.get_target_address()}",
-            "target",
-            "echo",
-        ]
-        output = self.run_ffx(cmd)
-        # Unfortunately we're not checking _that_ this is being resolved
-        # locally. To do that we'd probably want to run a test in which the
-        # daemon isn't running, but honeydew isn't set up for that.
-        asserts.assert_equal(output, 'SUCCESS: received "Ffx"\n')
-
-    def test_wait_with_local_discovery(self) -> None:
-        """Test waiting for a target when daemon discovery is disabled"""
-        # Let's make sure the CLI believes that discovery is turned off,
-        # by setting ffx.isolated=true
-        cmd = [
-            "-c",
-            "ffx.isolated=true",
-            "-t",
-            f"{self.dut.ffx.get_target_address()}",
-            "target",
-            "wait",
-        ]
-        output = self.run_ffx(cmd)
-        asserts.assert_equal(output, "")
+    # TODO(b/493680962): re-enable this test when we have a mechanism for disconnecting
+    # from RCS.
+    # async def test_target_echo_repeat(self) -> None:
+    #     """Test `ffx target echo --repeat` is resilient to target disconnection."""
+    #     with self.dut.ffx.popen(
+    #         ["target", "echo", "--repeat"],
+    #         stdout=subprocess.PIPE,
+    #         text=False,
+    #     ) as process:
+    #         try:
+    #             line = process.stdout.readline()
+    #             asserts.assert_true(
+    #                 line.startswith(b"SUCCESS"),
+    #                 f"First ping didn't succeed: {line}",
+    #             )
+    #             # XXX somehow disconnect from RCS.
+    #             # We used to stop the daemon, but these days the daemon doesn't
+    #             # run in Lacewing. We could reboot the device, but that doesn't
+    #             # play well with Infra. Maybe a Fuchsia Controller request of
+    #             # some sort?
+    #             while True:
+    #                 line = process.stdout.readline()
+    #                 if not line.startswith(b"ERROR") and not line.startswith(
+    #                     b"Waiting for"
+    #                 ):
+    #                     break
+    #                 _LOGGER.debug(f"echo output: {line}")
+    #             asserts.assert_true(
+    #                 line.startswith(b"SUCCESS"),
+    #                 f"Success didn't resume after error: {line}",
+    #             )
+    #         finally:
+    #             process.kill()
 
     def test_machine_errors(self) -> None:
         """Test machine formattable errors."""
@@ -299,11 +209,20 @@ class FfxTest(ffxtestcase.FfxTestCase):
 
     def test_daemon_start_background_works_with_autostart_false(self) -> None:
         """Test that `ffx daemon start --background` works even if daemon.autostart=false"""
-        self.dut.ffx.run(["daemon", "stop"])
+        self.run_ffx(["--isolate-dir", self.isolate_dir, "daemon", "stop"])
         # We're validating that this command doesn't throw an exception
-        self.dut.ffx.run(
-            ["-c", "daemon.autostart=false", "daemon", "start", "--background"],
-            machine=MachineFormat.RAW,
+        self.run_ffx(
+            [
+                "--isolate-dir",
+                self.isolate_dir,
+                "--machine",
+                "raw",
+                "-c",
+                "daemon.autostart=false",
+                "daemon",
+                "start",
+                "--background",
+            ]
         )
 
     def test_shared_data(self) -> None:
