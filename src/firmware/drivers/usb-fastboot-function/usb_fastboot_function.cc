@@ -18,52 +18,75 @@ size_t CalculateRxHeaderLength(size_t data_size) {
   // this driver immediately. But if the host sends another 10 bytes of data, the driver will
   // receive a single packet of size (512/1024/1536 + 10) bytes. Thus we adjust the value of bulk
   // request based on the expected amount of data to receive. The size is required to be multiples
-  // of kBulkMaxPacketSize. Thus we adjust it to be the smaller between kBulkReqSize and the round
-  // up value of `data_size' w.r.t kBulkMaxPacketSize. For example, if we are expecting exactly 512
+  // of kPacketSize. Thus we adjust it to be the smaller between kBulkRequestSize and the round
+  // up value of `data_size' w.r.t kPacketSize. For example, if we are expecting exactly 512
   // bytes of data, the following will give 512 exactly.
-  return std::min(static_cast<size_t>(kBulkReqSize), ZX_ROUNDUP(data_size, kBulkMaxPacketSize));
+  return std::min(kBulkRequestSize, ZX_ROUNDUP(data_size, kPacketSize));
 }
 }  // namespace
 
 void UsbFastbootFunction::CleanUpTx(zx_status_t status, usb::FidlRequest req) {
-  send_vmo_.Reset();
   bulk_in_ep_.PutRequest(std::move(req));
-  if (status == ZX_OK) {
-    send_completer_->ReplySuccess();
-  } else {
-    send_completer_->ReplyError(status);
+  if (send_completer_.has_value()) {
+    send_vmo_.Reset();
+    if (status == ZX_OK) {
+      send_completer_->ReplySuccess();
+    } else {
+      send_completer_->ReplyError(status);
+    }
+    send_completer_.reset();
   }
-  send_completer_.reset();
 }
 
-void UsbFastbootFunction::QueueTx(usb::FidlRequest req) {
-  size_t to_send = std::min(static_cast<size_t>(kBulkReqSize), total_to_send_ - sent_size_);
-  auto actual = req.CopyTo(0, static_cast<uint8_t*>(send_vmo_.start()) + sent_size_, to_send,
-                           bulk_in_ep_.GetMapped());
-  ZX_ASSERT(actual.size() == 1);
-  req->data()->at(0).size(actual[0]);
-  if (auto status = req.CacheFlush(bulk_in_ep_.GetMapped()); status != ZX_OK) {
-    ZX_PANIC("Cache flush failed %d", status);
+void UsbFastbootFunction::QueueTx() {
+  std::vector<fuchsia_hardware_usb_request::Request> requests;
+  requests.reserve(kMaxRequestCount);
+
+  while (queued_tx_size_ < total_to_send_) {
+    auto req = bulk_in_ep_.GetRequest();
+    if (!req) {
+      break;
+    }
+
+    const size_t tx_size = std::min(kBulkRequestSize, total_to_send_ - queued_tx_size_);
+    auto actual = req->CopyTo(0, static_cast<uint8_t*>(send_vmo_.start()) + queued_tx_size_,
+                              tx_size, bulk_in_ep_.GetMapped());
+    ZX_ASSERT(actual.size() == 1);
+    (*req)->data()->at(0).size(actual[0]);
+    if (auto status = req->CacheFlush(bulk_in_ep_.GetMapped()); status != ZX_OK) {
+      ZX_PANIC("Cache flush failed %d", status);
+    }
+
+    requests.emplace_back(req->take_request());
+    queued_tx_size_ += tx_size;
   }
 
-  std::vector<fuchsia_hardware_usb_request::Request> requests;
-  requests.emplace_back(req.take_request());
-  auto result = bulk_in_ep_->QueueRequests(std::move(requests));
-  if (result.is_error()) {
-    ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+  if (!requests.empty()) {
+    auto result = bulk_in_ep_->QueueRequests(std::move(requests));
+    if (result.is_error()) {
+      ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    }
   }
 }
 
 void UsbFastbootFunction::TxBatchComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  std::lock_guard<std::mutex> _(send_lock_);
   for (auto& completion : completions) {
     TxComplete(std::move(completion));
+  }
+  if (send_completer_.has_value() && queued_tx_size_ < total_to_send_) {
+    QueueTx();
   }
 }
 
 void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
-  std::lock_guard<std::mutex> _(send_lock_);
   usb::FidlRequest req{std::move(completion.request().value())};
+  if (!send_completer_.has_value()) {
+    bulk_in_ep_.PutRequest(std::move(req));
+    return;
+  }
+
   auto status = *completion.status();
   // Do not queue request on error.
   if (status != ZX_OK) {
@@ -79,7 +102,7 @@ void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion c
     return;
   }
 
-  QueueTx(std::move(req));
+  bulk_in_ep_.PutRequest(std::move(req));
 }
 
 void UsbFastbootFunction::Send(::fuchsia_hardware_fastboot::wire::FastbootImplSendRequest* request,
@@ -97,6 +120,7 @@ void UsbFastbootFunction::Send(::fuchsia_hardware_fastboot::wire::FastbootImplSe
   }
 
   if (zx_status_t status = request->data.get_prop_content_size(&total_to_send_); status != ZX_OK) {
+    total_to_send_ = 0;
     completer.ReplyError(status);
     return;
   }
@@ -114,51 +138,72 @@ void UsbFastbootFunction::Send(::fuchsia_hardware_fastboot::wire::FastbootImplSe
     return;
   }
 
-  auto req = bulk_in_ep_.GetRequest();
-  ZX_ASSERT(req);
   sent_size_ = 0;
+  queued_tx_size_ = 0;
   send_completer_ = completer.ToAsync();
-  QueueTx(std::move(*req));
+  QueueTx();
 }
 
 void UsbFastbootFunction::CleanUpRx(zx_status_t status, usb::FidlRequest req) {
   bulk_out_ep_.PutRequest(std::move(req));
-  if (status == ZX_OK) {
-    receive_completer_->ReplySuccess(receive_vmo_.Release());
-  } else {
-    receive_vmo_.Reset();
-    receive_completer_->ReplyError(status);
+  if (receive_completer_.has_value()) {
+    if (status == ZX_OK) {
+      receive_completer_->ReplySuccess(receive_vmo_.Release());
+    } else {
+      receive_vmo_.Reset();
+      receive_completer_->ReplyError(status);
+    }
+    receive_completer_.reset();
   }
-  receive_completer_.reset();
 }
 
-void UsbFastbootFunction::QueueRx(usb::FidlRequest req) {
-  ZX_ASSERT(req->data()->size() == 1);
-  req.reset_buffers(bulk_out_ep_.GetMapped());
-  req->data()->at(0).size(CalculateRxHeaderLength(requested_size_ - received_size_));
-  if (auto status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped()); status != ZX_OK) {
-    ZX_PANIC("Cache flush and invalidate failed %d", status);
+void UsbFastbootFunction::QueueRx() {
+  std::vector<fuchsia_hardware_usb_request::Request> requests;
+  requests.reserve(kMaxRequestCount);
+  while (queued_rx_size_ < requested_size_) {
+    auto req = bulk_out_ep_.GetRequest();
+    if (!req) {
+      break;
+    }
+
+    ZX_ASSERT((*req)->data()->size() == 1);
+    req->reset_buffers(bulk_out_ep_.GetMapped());
+    const size_t rx_size = CalculateRxHeaderLength(requested_size_ - queued_rx_size_);
+    (*req)->data()->at(0).size(rx_size);  // Each request has one buffer.
+    if (auto status = req->CacheFlushInvalidate(bulk_out_ep_.GetMapped()); status != ZX_OK) {
+      ZX_PANIC("Cache flush and invalidate failed %d", status);
+    }
+
+    requests.emplace_back(req->take_request());
+    queued_rx_size_ += rx_size;
   }
 
-  std::vector<fuchsia_hardware_usb_request::Request> requests;
-  requests.emplace_back(req.take_request());
-  auto result = bulk_out_ep_->QueueRequests(std::move(requests));
-  if (result.is_error()) {
-    ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+  if (!requests.empty()) {
+    auto result = bulk_out_ep_->QueueRequests(std::move(requests));
+    if (result.is_error()) {
+      ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    }
   }
 }
 
 void UsbFastbootFunction::RxBatchComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  std::lock_guard<std::mutex> _(receive_lock_);
   for (auto& completion : completions) {
     RxComplete(std::move(completion));
+  }
+  if (receive_completer_.has_value() && queued_rx_size_ < requested_size_) {
+    QueueRx();
   }
 }
 
 void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
-  std::lock_guard<std::mutex> _(receive_lock_);
-
   usb::FidlRequest req{std::move(completion.request().value())};
+  if (!receive_completer_.has_value()) {
+    bulk_out_ep_.PutRequest(std::move(req));
+    return;
+  }
+
   zx_status_t status = *completion.status();
 
   if (status != ZX_OK) {
@@ -194,7 +239,7 @@ void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion c
     return;
   }
 
-  QueueRx(std::move(req));
+  bulk_out_ep_.PutRequest(std::move(req));
 }
 
 void UsbFastbootFunction::Receive(
@@ -217,18 +262,17 @@ void UsbFastbootFunction::Receive(
   requested_size_ = std::max(uint64_t{1}, request->requested);
   // Create vmo for receiving data. Roundup by `kBulkMaxPacketSize` since USB transmission is in
   // the unit of packet.
-  zx_status_t status = receive_vmo_.CreateAndMap(ZX_ROUNDUP(requested_size_, kBulkMaxPacketSize),
-                                                 "usb fastboot receive");
+  zx_status_t status =
+      receive_vmo_.CreateAndMap(ZX_ROUNDUP(requested_size_, kPacketSize), "usb fastboot receive");
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to create vmo %d.", status);
     completer.ReplyError(status);
     return;
   }
 
-  auto req = bulk_out_ep_.GetRequest();
-  ZX_ASSERT(req);
+  queued_rx_size_ = 0;
   receive_completer_ = completer.ToAsync();
-  QueueRx(std::move(*req));
+  QueueRx();
 }
 
 size_t UsbFastbootFunction::UsbFunctionInterfaceGetDescriptorsSize() {
@@ -347,18 +391,18 @@ zx::result<> UsbFastbootFunction::Start() {
     return zx::error(status);
   }
 
-  // Allocates RX request
-  if (auto actual = bulk_out_ep_.AddRequests(1, kBulkReqSize,
-                                             fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-      actual != 1) {
+  // Allocates RX requests
+  if (size_t actual = bulk_out_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
+                                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
+      actual != kMaxRequestCount) {
     zxlogf(ERROR, "Failed to allocate RX requests");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  // Allocates TX request
-  if (auto actual = bulk_in_ep_.AddRequests(1, kBulkReqSize,
-                                            fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-      actual != 1) {
+  // Allocates TX requests
+  if (size_t actual = bulk_in_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
+                                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
+      actual != kMaxRequestCount) {
     zxlogf(ERROR, "Failed to allocate TX requests");
     return zx::error(ZX_ERR_INTERNAL);
   }

@@ -25,11 +25,12 @@
 
 namespace usb_fastboot_function {
 
-// The higher the value of `kBulkReqSize`, the higher the speed. But if set too high, the driver
-// will start crashing more often due to memory error. Set to 4k for now which is stable and gives
-// decent speed.
-constexpr uint32_t kBulkReqSize = 4 * 1024;
-constexpr uint16_t kBulkMaxPacketSize = 512;
+// The higher the value of `kBulkRequestSize`, the higher the speed. But if set too high, the driver
+// will start crashing more often due to memory error. Note that we allow up to 16 requests to be
+// queued at a time, so we will consume up to 16 * 4k = 64KB of memory for each endpoint.
+constexpr size_t kBulkRequestSize = 4ul * 1024;
+constexpr size_t kPacketSize = 512;
+constexpr size_t kMaxRequestCount = 16;
 
 class UsbFastbootFunction : public fdf::DriverBase,
                             public fidl::WireServer<fuchsia_hardware_fastboot::FastbootImpl>,
@@ -78,6 +79,7 @@ class UsbFastbootFunction : public fdf::DriverBase,
   std::mutex send_lock_;
   size_t total_to_send_ __TA_GUARDED(send_lock_) = 0;
   size_t sent_size_ __TA_GUARDED(send_lock_) = 0;
+  size_t queued_tx_size_ __TA_GUARDED(send_lock_) = 0;
   fzl::OwnedVmoMapper send_vmo_ __TA_GUARDED(send_lock_);
   std::optional<SendCompleter::Async> send_completer_ __TA_GUARDED(send_lock_);
   // In-direction (TX to host).
@@ -88,6 +90,7 @@ class UsbFastbootFunction : public fdf::DriverBase,
   fzl::OwnedVmoMapper receive_vmo_ __TA_GUARDED(receive_lock_);
   size_t received_size_ __TA_GUARDED(receive_lock_) = 0;
   size_t requested_size_ __TA_GUARDED(receive_lock_) = 0;
+  size_t queued_rx_size_ __TA_GUARDED(receive_lock_) = 0;
   std::optional<ReceiveCompleter::Async> receive_completer_ __TA_GUARDED(receive_lock_);
   // Out-direction (RX from host).
   usb::EndpointClient<UsbFastbootFunction> bulk_out_ep_{
@@ -96,14 +99,15 @@ class UsbFastbootFunction : public fdf::DriverBase,
   fidl::ServerBindingGroup<fuchsia_hardware_fastboot::FastbootImpl> bindings_;
 
   // USB request completion callback methods.
-  void RxComplete(fuchsia_hardware_usb_endpoint::Completion completion);
-  void TxComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void RxComplete(fuchsia_hardware_usb_endpoint::Completion completion)
+      __TA_REQUIRES(receive_lock_);
+  void TxComplete(fuchsia_hardware_usb_endpoint::Completion completion) __TA_REQUIRES(send_lock_);
   void RxBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void TxBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void CleanUpRx(zx_status_t status, usb::FidlRequest req) __TA_REQUIRES(receive_lock_);
   void CleanUpTx(zx_status_t status, usb::FidlRequest req) __TA_REQUIRES(send_lock_);
-  void QueueTx(usb::FidlRequest req) __TA_REQUIRES(send_lock_);
-  void QueueRx(usb::FidlRequest req) __TA_REQUIRES(receive_lock_);
+  void QueueTx() __TA_REQUIRES(send_lock_);
+  void QueueRx() __TA_REQUIRES(receive_lock_);
 
   // USB Fastboot interface descriptor.
   struct {
@@ -145,7 +149,7 @@ class UsbFastbootFunction : public fdf::DriverBase,
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
               .bm_attributes = USB_ENDPOINT_BULK,
-              .w_max_packet_size = htole16(kBulkMaxPacketSize),
+              .w_max_packet_size = htole16(uint16_t{kPacketSize}),
               .b_interval = 0,
           },
       .bulk_in_ep =
@@ -154,7 +158,7 @@ class UsbFastbootFunction : public fdf::DriverBase,
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
               .bm_attributes = USB_ENDPOINT_BULK,
-              .w_max_packet_size = htole16(kBulkMaxPacketSize),
+              .w_max_packet_size = htole16(uint16_t{kPacketSize}),
               .b_interval = 0,
           },
       .placehodler_intf =
