@@ -5,11 +5,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_bail;
+use fdomain_fuchsia_power_metrics::{self as fmetrics, Metric, Power, StatisticsArgs};
 use ffx_power_logger_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_power_metrics::{self as fmetrics, Metric, Power, StatisticsArgs};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct PowerLoggerTool {
@@ -109,16 +109,17 @@ pub async fn stop(power_logger: fmetrics::RecorderProxy) -> Result<()> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_power_metrics::{self as fmetrics};
+    use fdomain_fuchsia_power_metrics::{self as fmetrics};
+    use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error
     macro_rules! make_logger {
-        ($request_type:tt, $error_type:tt) => {
-            fake_proxy(move |req| match req {
+        ($client:expr, $request_type:tt, $error_type:tt) => {
+            target_holders::fdomain::fake_proxy($client, move |req| match req {
                 fmetrics::RecorderRequest::$request_type { responder, .. } => {
                     responder.send(Err(fmetrics::RecorderError::$error_type)).unwrap();
                 }
@@ -143,7 +144,8 @@ mod tests {
             output_stats_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLogging {
                 client_id,
                 metrics,
@@ -172,7 +174,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLogging; got {:?}", req),
         });
         start(logger, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
 
         // Start logging: sampling_interval=1s, statistics_interval=2s, duration=forever
         let args = args_mod::StartCommand {
@@ -183,7 +185,8 @@ mod tests {
             output_stats_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLoggingForever {
                 client_id,
                 metrics,
@@ -211,11 +214,12 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLoggingForever; got {:?}", req),
         });
         start(logger, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
 
         // Stop logging
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { client_id, responder } => {
                 assert_eq!(String::from("ffx_power"), client_id);
                 responder.send(true).unwrap();
@@ -224,7 +228,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StopLogging; got {:?}", req),
         });
         stop(logger).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the start logging request is dispatched to FIDL requests as expected.
@@ -239,7 +243,8 @@ mod tests {
             output_stats_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLogging {
                 client_id,
                 metrics,
@@ -268,7 +273,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLogging; got {:?}", req),
         });
         start(logger, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the start logging forever request is dispatched to FIDL requests as expected.
@@ -283,7 +288,8 @@ mod tests {
             output_stats_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLoggingForever {
                 client_id,
                 metrics,
@@ -311,7 +317,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLoggingForever; got {:?}", req),
         });
         start(logger, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the stop logging request is dispatched to FIDL requests as expected.
@@ -319,7 +325,8 @@ mod tests {
     async fn test_request_dispatch_stop_logging() {
         // Stop logging
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { client_id, responder } => {
                 assert_eq!(String::from("ffx_power"), client_id);
                 responder.send(true).unwrap();
@@ -328,12 +335,13 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StopLogging; got {:?}", req),
         });
         stop(logger).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     #[fuchsia::test]
     async fn test_stop_logging_error() {
-        let logger = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let logger = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { responder, .. } => {
                 responder.send(false).unwrap();
             }
@@ -352,7 +360,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, InvalidSamplingInterval);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -366,7 +375,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, InvalidSamplingInterval);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -380,7 +390,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, InvalidStatisticsInterval);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, InvalidStatisticsInterval);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid statistics interval"));
     }
@@ -394,7 +405,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, InvalidStatisticsInterval);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, InvalidStatisticsInterval);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid statistics interval"));
     }
@@ -408,7 +420,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, AlreadyLogging);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -422,7 +435,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, AlreadyLogging);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -436,7 +450,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, TooManyActiveClients);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -450,7 +465,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, TooManyActiveClients);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -464,7 +480,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, NoDrivers);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, NoDrivers);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("no sensor"));
     }
@@ -478,7 +495,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, NoDrivers);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, NoDrivers);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("no sensor"));
     }
@@ -492,7 +510,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLogging, Internal);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLogging, Internal);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
@@ -506,7 +525,8 @@ mod tests {
             output_samples_to_syslog: false,
             output_stats_to_syslog: false,
         };
-        let logger = make_logger!(StartLoggingForever, Internal);
+        let client = fdomain_local::local_client_empty();
+        let logger = make_logger!(client, StartLoggingForever, Internal);
         let error = start(logger, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
