@@ -140,7 +140,32 @@ type SamplingConfig = table {
     3: sample Sample;
 };
 
-/// When a config has multiple SamplingConfigs, the session applies each
+type OnBootAttachConfig = flexible union {
+    /// Attach to an existing component by moniker. If a component doesn't exist
+    /// at that moniker, wait for it to appear and attach to it when it does.
+    1: attach_to_component_moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
+
+    /// Attach to an existing component by url. If the component doesn't
+    /// exist with the specified url, wait for it to appear and attach to it when
+    /// it does.
+    2: attach_to_component_url string:fuchsia.url.MAX_URL_LENGTH;
+};
+
+type OnBootTargetConfig = flexible union {
+    /// An adhoc set of threads/processes/jobs
+    1: tasks vector<Task>:64;
+    /// Profile a component and all tasks it launches
+    2: component OnBootAttachConfig;
+};
+
+@serializable
+type OnBootConfig = table {
+    1: configs vector<SamplingConfig>:64;
+    2: target OnBootTargetConfig;
+};
+
+
+
 /// SamplingConfig to the TargetConfig.
 type Config = resource table {
     1: configs vector<SamplingConfig>:64;
@@ -256,4 +281,9 @@ closed protocol SessionManager {
     strict Status() -> (table {
         1: sessions vector<ProfilerStatus>:MAX;
     }) error ManagerError;
+
+    /// Configures an on-boot profiling session.
+    strict StartSessionOnBoot(table {
+        1: config OnBootConfig;
+    }) -> () error ManagerError;
 };

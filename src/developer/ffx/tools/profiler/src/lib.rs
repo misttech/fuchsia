@@ -123,6 +123,27 @@ fn gather_targets(opts: &args::Attach) -> Result<fidl_fuchsia_cpu_profiler::Targ
     }
 }
 
+fn make_boot_target_config(
+    target_config: &profiler::TargetConfig,
+) -> Result<profiler::OnBootTargetConfig> {
+    match target_config {
+        profiler::TargetConfig::Component(profiler::AttachConfig::AttachToComponentMoniker(
+            moniker,
+        )) => Ok(profiler::OnBootTargetConfig::Component(
+            profiler::OnBootAttachConfig::AttachToComponentMoniker(moniker.clone()),
+        )),
+        profiler::TargetConfig::Component(profiler::AttachConfig::AttachToComponentUrl(url)) => {
+            Ok(profiler::OnBootTargetConfig::Component(
+                profiler::OnBootAttachConfig::AttachToComponentUrl(url.clone()),
+            ))
+        }
+        profiler::TargetConfig::Tasks(tasks) => {
+            Ok(profiler::OnBootTargetConfig::Tasks(tasks.clone()))
+        }
+        _ => ffx_bail!("On-boot profiling requires a component URL or moniker, or tasks"),
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct SessionOpts {
     symbolize: bool,
@@ -326,6 +347,16 @@ impl ProfilerSessionManagerProxy {
         match self {
             Self::Controller(_) => Ok(Err(profiler::ManagerError::Stop)),
             Self::SessionManager(mgr) => mgr.abort_session(req).await,
+        }
+    }
+
+    pub async fn start_session_on_boot(
+        &self,
+        req: &profiler::SessionManagerStartSessionOnBootRequest,
+    ) -> Result<Result<(), profiler::ManagerError>, fidl::Error> {
+        match self {
+            Self::Controller(_) => Ok(Err(profiler::ManagerError::Start)),
+            Self::SessionManager(mgr) => mgr.start_session_on_boot(req).await,
         }
     }
 }
@@ -622,6 +653,40 @@ impl ProfilerTool {
 
         let (targets, config, session_opts, background) = match sub_command {
             ProfilerSubCommand::Attach(opts) => {
+                let target = gather_targets(&opts)?;
+                if opts.on_boot {
+                    let boot_target = make_boot_target_config(&target)?;
+                    let config = profiler::OnBootConfig {
+                        configs: Some(vec![default_sampling_config(
+                            opts.sample_period_us,
+                            opts.unwind_strategy.clone(),
+                        )]),
+                        target: Some(boot_target),
+                        ..Default::default()
+                    };
+
+                    if let ProfilerSessionManagerProxy::SessionManager(mgr) = &session_proxy {
+                        let req = profiler::SessionManagerStartSessionOnBootRequest {
+                            config: Some(config),
+                            ..Default::default()
+                        };
+                        match mgr.start_session_on_boot(&req).await.map_err(|e| bug!(e))? {
+                            Ok(_) => {
+                                writer.line("On-boot profiling session configured. \
+                                             Profiles will be collected when the target component starts.")?;
+                            }
+                            Err(e) => {
+                                ffx_bail!("Failed to start on-boot session: {:?}", e);
+                            }
+                        }
+                        return Ok(());
+                    } else {
+                        ffx_bail!(
+                            "On-boot profiling requires a SessionManager connection, but none could be established."
+                        );
+                    }
+                }
+
                 if opts.background {
                     check_background_args(
                         opts.duration,
@@ -632,7 +697,6 @@ impl ProfilerTool {
                         opts.color_output,
                     )?;
                 }
-                let target = gather_targets(&opts)?;
                 let config = default_sampling_config(opts.sample_period_us, opts.unwind_strategy);
                 let session_opts = create_session_opts(
                     opts.symbolize,
@@ -912,13 +976,58 @@ mod tests {
             output: String::from("output_file"),
             ..Default::default()
         };
-
         let invalid_targets1 = gather_targets(&invalid_args1);
         assert!(invalid_targets1.is_err());
         let invalid_targets2 = gather_targets(&invalid_args2);
         assert!(invalid_targets2.is_err());
         let invalid_targets3 = gather_targets(&invalid_args3);
         assert!(invalid_targets3.is_err());
+    }
+
+    #[test]
+    fn test_make_boot_target_config() {
+        let target_config_moniker = profiler::TargetConfig::Component(
+            profiler::AttachConfig::AttachToComponentMoniker(String::from("core/test")),
+        );
+        let target_moniker = make_boot_target_config(&target_config_moniker);
+        assert!(target_moniker.is_ok());
+        if let Ok(profiler::OnBootTargetConfig::Component(
+            profiler::OnBootAttachConfig::AttachToComponentMoniker(m),
+        )) = target_moniker
+        {
+            assert_eq!(m, "core/test");
+        } else {
+            assert!(false, "Expected ComponentMoniker");
+        }
+
+        let target_config_url =
+            profiler::TargetConfig::Component(profiler::AttachConfig::AttachToComponentUrl(
+                String::from("fuchsia-pkg://fuchsia.com/my-pkg#meta/my-component.cm"),
+            ));
+        let target_url = make_boot_target_config(&target_config_url);
+        assert!(target_url.is_ok());
+        if let Ok(profiler::OnBootTargetConfig::Component(
+            profiler::OnBootAttachConfig::AttachToComponentUrl(u),
+        )) = target_url
+        {
+            assert_eq!(u, "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-component.cm");
+        } else {
+            assert!(false, "Expected ComponentUrl");
+        }
+
+        let target_config_tasks = profiler::TargetConfig::Tasks(vec![profiler::Task::Process(123)]);
+        let empty_targets = make_boot_target_config(&target_config_tasks);
+        assert!(empty_targets.is_ok());
+        if let Ok(profiler::OnBootTargetConfig::Tasks(t)) = empty_targets {
+            assert_eq!(t.len(), 1);
+            if let profiler::Task::Process(pid) = t[0] {
+                assert_eq!(pid, 123);
+            } else {
+                assert!(false, "Expected Task::Process(123)");
+            }
+        } else {
+            assert!(false, "Expected Tasks");
+        }
     }
 
     #[test]

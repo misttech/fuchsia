@@ -6,6 +6,7 @@
         {
             name: "profiler",
             url: "fuchsia-pkg://fuchsia.com/profiler#meta/profiler.cm",
+            startup: "eager",
             environment: "#core-env",
         },
     ],

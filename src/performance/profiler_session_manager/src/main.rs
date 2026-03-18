@@ -2,19 +2,57 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::{persist, unpersist};
 use fidl_fuchsia_cpu_profiler::{SessionManagerRequest, SessionManagerRequestStream};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use log::{error, info};
 use std::sync::Arc;
+
+mod session;
+
 enum ManagedSession {
     Background(session::BackgroundSession),
     Attached(fidl_fuchsia_cpu_profiler::SessionProxy),
     Starting,
+    Error(String),
 }
 
-mod session;
+const ON_BOOT_CONFIG_FILE: &str = "/profiles/on_boot_profiler.bin";
+
+/// Converts an `OnBootConfig` to a `Config`.
+/// These are FIDL generated types so it is not possible to implement
+/// the Into trait.
+fn make_config_from_persisted(
+    obc: fidl_fuchsia_cpu_profiler::OnBootConfig,
+) -> fidl_fuchsia_cpu_profiler::Config {
+    let target = match obc.target {
+        Some(fidl_fuchsia_cpu_profiler::OnBootTargetConfig::Tasks(tasks)) => {
+            Some(fidl_fuchsia_cpu_profiler::TargetConfig::Tasks(tasks))
+        }
+        Some(fidl_fuchsia_cpu_profiler::OnBootTargetConfig::Component(attach)) => match attach {
+            fidl_fuchsia_cpu_profiler::OnBootAttachConfig::AttachToComponentMoniker(m) => {
+                Some(fidl_fuchsia_cpu_profiler::TargetConfig::Component(
+                    fidl_fuchsia_cpu_profiler::AttachConfig::AttachToComponentMoniker(m),
+                ))
+            }
+            fidl_fuchsia_cpu_profiler::OnBootAttachConfig::AttachToComponentUrl(u) => {
+                Some(fidl_fuchsia_cpu_profiler::TargetConfig::Component(
+                    fidl_fuchsia_cpu_profiler::AttachConfig::AttachToComponentUrl(u),
+                ))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+
+    fidl_fuchsia_cpu_profiler::Config {
+        configs: obc.configs,
+        target,
+        __source_breaking: fidl::marker::SourceBreaking,
+    }
+}
 
 enum IncomingRequest {
     SessionManager(SessionManagerRequestStream),
@@ -86,13 +124,54 @@ async fn handle_session_manager_request_stream(
                     }
                     Err(e) => {
                         let mut mgr = mgr_clone.lock();
-                        mgr.current_session = None;
+                        let error_msg = e.to_string();
+                        mgr.current_session = Some(ManagedSession::Error(error_msg));
                         error!("Failed to start background session {}: {:?}", task_id, e);
                         let response = Err(fidl_fuchsia_cpu_profiler::ManagerError::Start);
                         if let Err(e) = responder.send(response.as_ref().map_err(|e| *e)) {
                             error!("Failed to send StartSession error response: {:?}", e);
                         }
                     }
+                }
+            }
+            Ok(SessionManagerRequest::StartSessionOnBoot { payload, responder }) => {
+                info!("StartSessionOnBoot called.");
+                let config = match payload.config {
+                    Some(c) => c,
+                    None => {
+                        error!("No config available when calling StartSessionOnBoot.");
+                        let _ = responder.send(Err(
+                            fidl_fuchsia_cpu_profiler::ManagerError::InvalidConfiguration,
+                        ));
+                        continue;
+                    }
+                };
+
+                let response = match persist(&config) {
+                    Ok(serialized) => {
+                        let write_config = || -> std::io::Result<()> {
+                            use std::io::Write;
+                            let mut f = std::fs::File::create(ON_BOOT_CONFIG_FILE)?;
+                            f.write_all(&serialized)?;
+                            f.sync_data()?;
+                            Ok(())
+                        };
+
+                        if let Err(e) = write_config() {
+                            error!("Failed to write on-boot config to file: {:?}", e);
+                            Err(fidl_fuchsia_cpu_profiler::ManagerError::InvalidConfiguration)
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to serialize profiler config for on-boot: {:?}", e);
+                        Err(fidl_fuchsia_cpu_profiler::ManagerError::InvalidConfiguration)
+                    }
+                };
+
+                if let Err(e) = responder.send(response) {
+                    error!("Failed to send StartSessionOnBoot response: {:?}", e);
                 }
             }
             Ok(SessionManagerRequest::StopSession { payload, responder }) => {
@@ -131,6 +210,13 @@ async fn handle_session_manager_request_stream(
                             error!("Failed to send StopSession response: {e:?}");
                         }
                     }
+                    Some(ManagedSession::Error(e)) => {
+                        error!("Session failed to start: {}", e);
+                        let response = Err(fidl_fuchsia_cpu_profiler::ManagerError::Stop);
+                        if let Err(e) = responder.send(response.as_ref().map_err(|e| *e)) {
+                            error!("Failed to send StopSession response: {:?}", e);
+                        }
+                    }
                     _ => {
                         let response = Err(fidl_fuchsia_cpu_profiler::ManagerError::NoSuchTask);
                         error!("No active session to stop.");
@@ -164,6 +250,7 @@ async fn handle_session_manager_request_stream(
                         }
                         Ok(())
                     }
+                    Some(ManagedSession::Error(_)) => Ok(()),
                     Some(ManagedSession::Starting) | None => {
                         error!("No active session to abort.");
                         Err(fidl_fuchsia_cpu_profiler::ManagerError::NoSuchTask)
@@ -187,17 +274,20 @@ async fn handle_session_manager_request_stream(
                                 ManagedSession::Background(session) => {
                                     Some(fidl_fuchsia_cpu_profiler::ProfilerStatus {
                                         task_id: Some(session.task_id),
-                                        ..Default::default()
+                                        __source_breaking: fidl::marker::SourceBreaking,
                                     })
                                 }
-                                ManagedSession::Attached(_) => {
-                                    Some(fidl_fuchsia_cpu_profiler::ProfilerStatus::default())
+                                ManagedSession::Attached(_) | ManagedSession::Error(_) => {
+                                    Some(fidl_fuchsia_cpu_profiler::ProfilerStatus {
+                                        task_id: None,
+                                        __source_breaking: fidl::marker::SourceBreaking,
+                                    })
                                 }
                                 ManagedSession::Starting => None,
                             })
                             .collect(),
                     ),
-                    ..Default::default()
+                    __source_breaking: fidl::marker::SourceBreaking,
                 });
                 if let Err(e) = responder.send(response.as_ref().map_err(|e| *e)) {
                     error!("Failed to send Status response: {:?}", e);
@@ -229,7 +319,6 @@ async fn handle_session_manager_request_stream(
                             continue;
                         }
                     };
-
                     mgr.current_session = Some(ManagedSession::Attached(proxy.clone()));
                     proxy
                 };
@@ -371,11 +460,70 @@ async fn handle_session_manager_request_stream(
     }
 }
 
+async fn handle_on_boot_config(manager: Arc<Mutex<SessionManager>>) {
+    // Check if there is an on-boot profiler configurations pending and start if so.
+    if std::path::Path::new(ON_BOOT_CONFIG_FILE).exists() {
+        info!("On-boot profiler configuration found. Starting session...");
+        let config_bytes = match std::fs::read(ON_BOOT_CONFIG_FILE) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    info!("No on-boot config found.");
+                } else {
+                    error!("Error reading on-boot config: {}", e);
+                }
+                // If there is no on-boot config, we can just exit.
+                return;
+            }
+        };
+        match unpersist::<fidl_fuchsia_cpu_profiler::OnBootConfig>(&config_bytes) {
+            Ok(on_boot_config) => {
+                let config = make_config_from_persisted(on_boot_config);
+
+                let task_id = {
+                    let mut mgr = manager.lock();
+                    let id = mgr.next_task_id;
+                    mgr.next_task_id += 1;
+                    mgr.current_session = Some(ManagedSession::Starting);
+                    id
+                };
+
+                match session::BackgroundSession::start(task_id, config).await {
+                    Ok(bg_session) => {
+                        let mut mgr = manager.lock();
+                        mgr.current_session = Some(ManagedSession::Background(bg_session));
+                        info!("On-boot session {} started successfully.", task_id);
+                    }
+                    Err(e) => {
+                        error!("Failed to start on-boot background session {}: {:?}", task_id, e);
+                        manager.lock().current_session =
+                            Some(ManagedSession::Error(format!("{:?}", e)));
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to parse on-boot profiler config file: {:?}", e);
+                manager.lock().current_session = Some(ManagedSession::Error(format!(
+                    "Failed to parse on-boot profiler config file: {:?}",
+                    e
+                )));
+            }
+        }
+
+        // Clean up the config file once we've attempted to start it, to avoid loops
+        if let Err(e) = std::fs::remove_file(ON_BOOT_CONFIG_FILE) {
+            error!("Failed to remove on-boot profiler config file: {:?}", e);
+        }
+    }
+}
+
 #[fuchsia::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("profiler_session_manager started");
 
     let manager = Arc::new(Mutex::new(SessionManager::new()));
+
+    handle_on_boot_config(manager.clone()).await;
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::SessionManager);

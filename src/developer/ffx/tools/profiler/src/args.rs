@@ -123,6 +123,10 @@ pub struct Attach {
     /// compiled without frame pointers, such as 32 bit starnix containers.
     #[argh(option, default = "UnwindStrategy::FramePointer")]
     pub unwind_strategy: UnwindStrategy,
+
+    /// run the profiler session when the device reboots.
+    #[argh(switch)]
+    pub on_boot: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]

@@ -15,6 +15,7 @@
         {
             name: "profiler_session_manager",
             url: "profiler_session_manager#meta/profiler_session_manager.cm",
+            startup: "eager",
         },
     ],
     capabilities: [
