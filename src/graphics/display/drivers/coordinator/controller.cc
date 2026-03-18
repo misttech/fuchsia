@@ -500,13 +500,6 @@ zx::result<> Controller::CreateClient(
   ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  fbl::AllocChecker alloc_checker;
-  auto post_task_state = fbl::make_unique_checked<DisplayTaskState>(&alloc_checker);
-  if (!alloc_checker.check()) {
-    fdf::debug("Failed to alloc client task");
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
   if (unbinding_) {
     fdf::debug("Client connected during unbind");
     return zx::error(ZX_ERR_UNAVAILABLE);
@@ -521,29 +514,22 @@ zx::result<> Controller::CreateClient(
   }
   const ClientId client_id = connect_result.value();
 
-  zx::result<> post_task_result = display::PostTask(
-      std::move(post_task_state), *driver_dispatcher()->async_dispatcher(), [this, client_id]() {
-        if (unbinding_) {
-          return;
-        }
+  if (displays_.is_empty()) {
+    std::span<const display::DisplayId> current_display_ids;
+    clients_.SendInitialState(client_id, current_display_ids);
+    return zx::ok();
+  }
 
-        if (displays_.is_empty()) {
-          std::span<const display::DisplayId> current_display_ids;
-          clients_.SendInitialState(client_id, current_display_ids);
-          return;
-        }
-
-        display::DisplayId current_displays[displays_.size()];
-        int initialized_display_count = 0;
-        for (const DisplayInfo& display : displays_) {
-          current_displays[initialized_display_count] = display.id();
-          ++initialized_display_count;
-        }
-        std::span<const display::DisplayId> current_display_ids(current_displays,
-                                                                initialized_display_count);
-        clients_.SendInitialState(client_id, current_display_ids);
-      });
-  return post_task_result;
+  display::DisplayId current_displays[displays_.size()];
+  int initialized_display_count = 0;
+  for (const DisplayInfo& display : displays_) {
+    current_displays[initialized_display_count] = display.id();
+    ++initialized_display_count;
+  }
+  std::span<const display::DisplayId> current_display_ids(current_displays,
+                                                          initialized_display_count);
+  clients_.SendInitialState(client_id, current_display_ids);
+  return zx::ok();
 }
 
 display::DriverBufferCollectionId Controller::GetNextDriverBufferCollectionId() {
