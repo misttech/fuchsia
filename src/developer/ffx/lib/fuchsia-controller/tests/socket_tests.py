@@ -1,7 +1,6 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-# mypy: ignore-errors
 
 import asyncio
 import unittest
@@ -14,7 +13,7 @@ from fidl import AlreadyReadingAll, AsyncChannel, AsyncSocket
 class SocketTests(unittest.IsolatedAsyncioTestCase):
     """Socket tests."""
 
-    async def test_socket_write_then_read(self):
+    async def test_socket_write_then_read(self) -> None:
         """Tests a simple write followed by an immediate read."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
@@ -24,7 +23,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         bytes_out = await async_sock_in.read()
         self.assertEqual(bytes_out, bytes_in)
 
-    def test_socket_write_fails_when_closed(self):
+    def test_socket_write_fails_when_closed(self) -> None:
         """Verifies FC_ERR_SOCKET_WRITE is surfaced when opposing socket is closed."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
@@ -38,7 +37,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
                 )
                 raise e
 
-    async def test_socket_passing(self):
+    async def test_socket_passing(self) -> None:
         """Verifies a socket remains connected when passed through a channel."""
         ctx = Context()
         (chan_out, chan_in) = ctx.channel_create()
@@ -56,11 +55,11 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         bytes_out = await async_sock_in.read()
         self.assertEqual(bytes_out, bytes_in)
 
-    async def test_async_socket(self):
+    async def test_async_socket(self) -> None:
         """Verifies an async socket is able to wait for the other end to complete writing."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
-        sock_in = AsyncSocket(sock_in)
+        async_sock_in = AsyncSocket(sock_in)
         bytes_in = bytearray([1, 2, 3])
 
         async def slow_write(sock: Socket, b: bytes) -> None:
@@ -69,7 +68,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
 
         loop = asyncio.get_running_loop()
         write_task = loop.create_task(slow_write(sock_out, bytes_in))
-        read_task = loop.create_task(sock_in.read())
+        read_task = loop.create_task(async_sock_in.read())
         done, _ = await asyncio.wait([write_task, read_task])
         self.assertEqual(len(done), 2)
         read_bytes = None
@@ -78,48 +77,52 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
                 read_bytes = item.result()
         self.assertEqual(read_bytes, bytes_in)
 
-    async def test_async_socket_write_fails_when_closed(self):
+    async def test_async_socket_write_fails_when_closed(self) -> None:
         """Verifies an async socket write fails in the expected way when the other end is closed."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
         del sock_in
         with self.assertRaises(FcTransportStatus):
-            sock_out = AsyncSocket(sock_out)
+            async_sock_out = AsyncSocket(sock_out)
             try:
-                sock_out.write(bytearray([1, 2, 3]))
+                async_sock_out.write(bytearray([1, 2, 3]))
             except FcTransportStatus as e:
                 self.assertEqual(
                     e.code(), FcTransportStatus.FC_ERR_SOCKET_WRITE
                 )
                 raise e
 
-    async def test_async_socket_read_fails_when_closed(self):
+    async def test_async_socket_read_fails_when_closed(self) -> None:
         """Verifies an async socket read fails in the expected way when the other end is closed."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
         del sock_out
         with self.assertRaises(FcTransportStatus):
-            sock_in = AsyncSocket(sock_in)
+            async_sock_in = AsyncSocket(sock_in)
             try:
-                await sock_in.read()
+                await async_sock_in.read()
             except FcTransportStatus as e:
                 self.assertEqual(e.code(), FcTransportStatus.FC_ERR_FDOMAIN)
                 raise e
 
-    async def test_async_socket_read_fails_when_already_reading_all(self):
+    async def test_async_socket_read_all_twice_fails(self) -> None:
         """Verifies running `read_all()` twice fails."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
         with self.assertRaises(AlreadyReadingAll):
-            sock_out = AsyncSocket(sock_out)
-            task = asyncio.get_running_loop().create_task(sock_out.read_all())
-            await asyncio.gather(sock_out.read_all(), task)
+            async_sock_in = AsyncSocket(sock_in)
+            task = asyncio.get_running_loop().create_task(
+                async_sock_in.read_all()
+            )
+            await asyncio.gather(async_sock_in.read_all(), task)
 
-    async def test_async_socket_read_fails_when_already_reading_all(self):
+    async def test_async_socket_read_all_then_read_fails(self) -> None:
         """Verifies running `read_all()` then `read()` fails."""
         ctx = Context()
         (sock_out, sock_in) = ctx.socket_create()
         with self.assertRaises(AlreadyReadingAll):
-            sock_out = AsyncSocket(sock_out)
-            task = asyncio.get_running_loop().create_task(sock_out.read_all())
-            await asyncio.gather(sock_out.read_all(), task)
+            async_sock_in = AsyncSocket(sock_in)
+            task = asyncio.get_running_loop().create_task(
+                async_sock_in.read_all()
+            )
+            await asyncio.gather(async_sock_in.read(), task)
