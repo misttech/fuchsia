@@ -75,6 +75,39 @@ with this:
 * `fx shell` [connect to a target shell](#connect-to-a-target-shell)
 * [and many other small tasks](#performing-other-common-tasks)
 
+## Target, host, and end-to-end contexts {#target-host-e2e-contexts}
+
+Fuchsia development involves compiling and running code for different
+environments:
+
+1.  **Target**: The Fuchsia device or emulator (e.g., x64 or arm64 Fuchsia).
+2.  **Host**: Your development workstation (e.g., Linux or macOS).
+
+### `fx build`
+
+*   **`fx build` (Default)**: Builds artifacts intended to run on the **Fuchsia
+    target** (drivers, components, command line tools).
+*   **`fx build --host`**: Builds tools or tests intended to run on your
+    **development host** (e.g., `fidlc` compiler, `zxdb` debugger, host-side
+    unit tests, end_to_end tests).
+*   **When to use `--host`**: Use it when you are working on a developer tool, a
+    host-side test, or need to build a host binary without building the entire
+    Fuchsia system image.
+
+### `fx test`
+
+*   **`fx test` (Default)**: Runs the selected tests. It automatically detects
+    whether a test is a host test or a device test and executes it in the
+    appropriate environment.
+*   **`fx test --host`**: **Filters** the selection to **only run host tests**
+    (running on your workstation).
+*   **`fx test --device`**: **Filters** the selection to **only run device
+    tests** (running on the Fuchsia device/emulator).
+*   **`fx test --e2e`**: **Enables running end-to-end tests**. These tests run
+    on the host machine but interact with the Fuchsia device to test system-wide
+    behaviors. They are typically excluded from default test runs because they
+    require a connected device and can be slow or create heavy loads.
+
 ## Configure a build {#configure-a-build}
 
 First let's configure the build. To do this you need to make a few choices:
@@ -82,19 +115,26 @@ First let's configure the build. To do this you need to make a few choices:
 * What [product configuration](#key-product-configurations) do you want?
   (unsure: try `workbench_eng`)
 * What board are you building for? (unsure: try `x64`)
-* What extra [test targets](#key-bundles) do you want? (unsure: try
-  `//bundles/tools`, and if you're working on features, you probably want
-  `//bundles/tests`)
+* What extra [build targets](#key-bundles) do you want? (e.g.:
+  `--with-test //my/team:tests`)
 
 Armed with our above choices (if you didn't read above, do so now), you are
 ready to configure your build:
 
 ```posix-terminal
-fx set workbench_eng.x64 --with //bundles/tests
+fx set workbench_eng.x64 --with-test //my/team:tests
 ```
 
 Once you ran `fx set` in your checkout, there is no need to run it again unless
 you need to modify the arguments that follow.
+
+To add more tests to your build configuration without running `fx set`, you can
+use these commands:
+
+*   **`fx add-test <label>`**: Appends a target-side test label (adds to
+    `developer_test_labels`).
+*   **`fx add-host-test <label>`**: Appends a host-side test label qualified
+    for the host toolchain (adds to `host_test_labels`).
 
 `fx set` stores its configuration in an `args.gn` file in the output directory.
 The output directly is `out/default`. You can specify a different directory
@@ -122,8 +162,16 @@ graph.
 
 The `--with` option has three variants related to how packages are deployed to a
 Fuchsia device: `--with-base`, `--with-cache`, and `--with` (implies
-`universe`). (Note, `fx set` also has a `--with-host` option, for building
-host-only targets, such as host-based tools and libraries.)
+`universe`).
+
+In addition to these deployment axes, `fx set` provides flags for specific
+contexts:
+
+*   **`--with-host`**: Adds tools or tests that run on your **development host**
+    (e.g., `zxdb`). These are not deployed to the Fuchsia device. See [Host
+    Context](#target-host-e2e-contexts).
+*   **`--with-test`**: Adds specific **tests** to the build (e.g.,
+    `//my/team:tests`). These are served ephemerally on demand.
 
 So what are `base`, `cache` and `universe`?
 
@@ -185,7 +233,7 @@ important configurations to be familiar with:
 
 ### Key additional build targets {#key-bundles}
 
-The `--with` flag for `fx set` takes in arbitrary
+The `--with` and `--with-test` flags for `fx set` take in arbitrary
 [build targets](/docs/development/build/build_system/fuchsia_build_system_overview.md#build-targets).
 For convenience, a number of bundles are defined, which include a variety of
 commonly used build targets. It is important to be familiarized with the
