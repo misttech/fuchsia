@@ -794,6 +794,7 @@ impl<
                     UnifiedEvent::NeighborsEvent(event) => {
                         neighbors_worker.get_mut().handle_neighbor_watcher_event(
                             event,
+                            route_clients.get_ref(),
                         ).expect("should not fail to handle neighbor event");
                         Cleanup::None
                     },

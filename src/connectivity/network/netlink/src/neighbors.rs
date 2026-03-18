@@ -10,15 +10,18 @@ use std::net::IpAddr;
 use std::num::NonZeroU64;
 
 use crate::Errno;
-use crate::client::InternalClient;
+use crate::client::{ClientTable, InternalClient};
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::Sender;
+use crate::multicast_groups::ModernGroup;
+use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
 use crate::protocol_family::ProtocolFamily;
 use crate::protocol_family::route::NetlinkRoute;
 use crate::util::respond_to_completer;
 use derivative::Derivative;
 use futures::StreamExt as _;
 use futures::channel::oneshot;
+use linux_uapi::rtnetlink_groups_RTNLGRP_NEIGH;
 use net_types::ip::IpVersion;
 use netlink_packet_core::{
     NLM_F_APPEND, NLM_F_CREATE, NLM_F_EXCL, NLM_F_MULTIPART, NLM_F_REPLACE, NetlinkMessage,
@@ -75,6 +78,15 @@ impl NetlinkNeighborMessage {
         if is_dump {
             msg.header.flags |= NLM_F_MULTIPART;
         }
+        msg.finalize();
+        msg
+    }
+
+    /// Wrap the inner [`NeighbourMessage`] in an [`RtnlMessage::DelNeighbour`].
+    pub(crate) fn into_rtnl_del_neighbor(self) -> NetlinkMessage<RouteNetlinkMessage> {
+        let NetlinkNeighborMessage(message) = self;
+        let mut msg: NetlinkMessage<RouteNetlinkMessage> =
+            RouteNetlinkMessage::DelNeighbour(message).into();
         msg.finalize();
         msg
     }
@@ -628,14 +640,18 @@ impl NeighborsWorker {
         (Self { neighbor_table, neighbors_controller }, neighbor_event_stream)
     }
 
-    pub(crate) fn handle_neighbor_watcher_event(
+    pub(crate) fn handle_neighbor_watcher_event<
+        S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
+    >(
         &mut self,
         event: fnet_neighbor_ext::Event,
+        clients: &ClientTable<NetlinkRoute, S>,
     ) -> Result<(), HandleWatchEventError> {
-        match event {
+        let message_for_group = match event {
             fnet_neighbor_ext::Event::Removed(entry) => {
                 match self.neighbor_table.remove(&(&entry).into()) {
-                    Some(_) => Ok(()),
+                    Some(_) => Ok(NetlinkNeighborMessage::optionally_from(entry)
+                        .map(NetlinkNeighborMessage::into_rtnl_del_neighbor)),
                     None => Err(HandleWatchEventError::UnknownNeighborRemoved(entry)),
                 }
             }
@@ -645,19 +661,25 @@ impl NeighborsWorker {
                         existing,
                         new: entry,
                     }),
-                    None => Ok(()),
+                    None => Ok(NetlinkNeighborMessage::optionally_from(entry)
+                        .map(|n| n.into_rtnl_new_neighbor(UNSPECIFIED_SEQUENCE_NUMBER, false))),
                 }
             }
             fnet_neighbor_ext::Event::Changed(entry) => {
                 match self.neighbor_table.insert((&entry).into(), entry.clone()) {
-                    Some(_) => Ok(()),
+                    Some(_) => Ok(NetlinkNeighborMessage::optionally_from(entry)
+                        .map(|n| n.into_rtnl_new_neighbor(UNSPECIFIED_SEQUENCE_NUMBER, false))),
                     None => Err(HandleWatchEventError::UnknownNeighborChanged(entry)),
                 }
             }
             e @ fnet_neighbor_ext::Event::Existing(_) | e @ fnet_neighbor_ext::Event::Idle => {
                 Err(HandleWatchEventError::UnexpectedEventReceived(e))
             }
+        }?;
+        if let Some(message) = message_for_group {
+            clients.send_message_to_group(message, ModernGroup(rtnetlink_groups_RTNLGRP_NEIGH));
         }
+        Ok(())
     }
 
     pub(crate) async fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
@@ -844,9 +866,9 @@ impl NeighborsWorker {
 #[cfg(test)]
 mod tests {
     use crate::client::ClientTable;
-    use crate::client::testutil::{CLIENT_ID_1, new_fake_client};
+    use crate::client::testutil::{CLIENT_ID_1, CLIENT_ID_2, new_fake_client};
     use crate::interfaces::testutil::FakeInterfacesHandler;
-    use crate::messaging::testutil::FakeSender;
+    use crate::messaging::testutil::{FakeSender, SentMessage};
     use crate::route_eventloop::{
         EventLoopComponent, EventLoopInputs, EventLoopSpec, EventLoopState, IncludedWorkers,
         Optional, Required, UnifiedRequest,
@@ -1249,12 +1271,14 @@ mod tests {
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
+        let client_table = ClientTable::<NetlinkRoute, FakeSender<_>>::default();
+
         let remaining_events: Vec<_> = event_stream.collect().await;
         assert_eq!(remaining_events.len(), 2);
         match &remaining_events[0] {
             Ok(event) => {
                 assert_matches!(
-                    worker.handle_neighbor_watcher_event(event.clone()),
+                    worker.handle_neighbor_watcher_event(event.clone(), &client_table),
                     Err(error) if error_matcher(&error)
                 );
             }
@@ -1289,13 +1313,18 @@ mod tests {
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
+        let client_table = ClientTable::<NetlinkRoute, FakeSender<_>>::default();
+
         let remaining_events: Vec<_> = event_stream.collect().await;
         assert_eq!(remaining_events.len(), 2);
         match &remaining_events[0] {
             Ok(e @ fnet_neighbor_ext::Event::Added(entry)) => {
                 let key = NeighborKey::from(entry);
                 assert_eq!(worker.neighbor_table.get(&key), None);
-                assert_matches!(worker.handle_neighbor_watcher_event(e.clone()), Ok(_));
+                assert_matches!(
+                    worker.handle_neighbor_watcher_event(e.clone(), &client_table),
+                    Ok(_)
+                );
                 assert_eq!(worker.neighbor_table.get(&key), Some(entry));
             }
             _ => panic!("expected Added event in stream"),
@@ -1329,13 +1358,18 @@ mod tests {
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
+        let client_table = ClientTable::<NetlinkRoute, FakeSender<_>>::default();
+
         let remaining_events: Vec<_> = event_stream.collect().await;
         assert_eq!(remaining_events.len(), 2);
         match &remaining_events[0] {
             Ok(e @ fnet_neighbor_ext::Event::Removed(entry)) => {
                 let key = NeighborKey::from(entry);
                 assert_eq!(worker.neighbor_table.get(&key), Some(entry));
-                assert_matches!(worker.handle_neighbor_watcher_event(e.clone()), Ok(_));
+                assert_matches!(
+                    worker.handle_neighbor_watcher_event(e.clone(), &client_table),
+                    Ok(_)
+                );
                 assert_eq!(worker.neighbor_table.get(&key), None);
             }
             _ => panic!("expected Removed event in stream"),
@@ -1382,6 +1416,8 @@ mod tests {
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
+        let client_table = ClientTable::<NetlinkRoute, FakeSender<_>>::default();
+
         let remaining_events: Vec<_> = event_stream.collect().await;
         assert_eq!(remaining_events.len(), 2);
         match &remaining_events[0] {
@@ -1391,7 +1427,10 @@ mod tests {
                     worker.neighbor_table.get(&key),
                     Some(fnet_neighbor_ext::Entry { updated_at: 1234, .. })
                 );
-                assert_matches!(worker.handle_neighbor_watcher_event(e.clone()), Ok(_));
+                assert_matches!(
+                    worker.handle_neighbor_watcher_event(e.clone(), &client_table),
+                    Ok(_)
+                );
                 assert_matches!(
                     worker.neighbor_table.get(&key),
                     Some(fnet_neighbor_ext::Entry { updated_at: 5678, .. })
@@ -3269,5 +3308,95 @@ mod tests {
         interface_event_sink.close_channel();
         drop(neighbor_client);
         scope.join().await;
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_sends_multicast_updates() {
+        let (mut sender_sink_member, client_member, _async_work_drain_task_1) =
+            new_fake_client::<NetlinkRoute>(
+                CLIENT_ID_1,
+                [ModernGroup(rtnetlink_groups_RTNLGRP_NEIGH)],
+            );
+        let (mut sender_sink_non_member, client_non_member, _async_work_drain_task_2) =
+            new_fake_client::<NetlinkRoute>(CLIENT_ID_2, []);
+
+        let client_table = ClientTable::default();
+        client_table.add_client(client_member);
+        client_table.add_client(client_non_member);
+
+        let (neighbors_controller, _server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let mut worker = NeighborsWorker { neighbor_table: HashMap::new(), neighbors_controller };
+
+        let entry = valid_neighbor_entry();
+
+        // Verify that an `Added` event results in an `RTM_NEWNEIGH` multicast
+        // message.
+
+        worker
+            .handle_neighbor_watcher_event(
+                fnet_neighbor_ext::Event::Added(entry.clone()),
+                &client_table,
+            )
+            .expect("handle added");
+
+        let messages = sender_sink_member.take_messages();
+        assert_eq!(messages.len(), 1);
+        let SentMessage { message, group } = &messages[0];
+        assert_eq!(group, &Some(ModernGroup(rtnetlink_groups_RTNLGRP_NEIGH)));
+        assert_matches!(
+            &message.payload,
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewNeighbour(msg)) => {
+                assert_eq!(msg.header.ifindex as u64, entry.interface.get());
+            }
+        );
+        assert_eq!(message.header.sequence_number, UNSPECIFIED_SEQUENCE_NUMBER);
+        assert_eq!(sender_sink_non_member.take_messages().len(), 0);
+
+        // Verify that a `Changed` event results in an `RTM_NEWNEIGH` multicast
+        // message.
+
+        let mut new_entry = entry.clone();
+        new_entry.state = fnet_neighbor::EntryState::Stale;
+        worker
+            .handle_neighbor_watcher_event(
+                fnet_neighbor_ext::Event::Changed(new_entry.clone()),
+                &client_table,
+            )
+            .expect("handle changed");
+
+        let messages = sender_sink_member.take_messages();
+        assert_eq!(messages.len(), 1);
+        let SentMessage { message, group } = &messages[0];
+        assert_eq!(group, &Some(ModernGroup(rtnetlink_groups_RTNLGRP_NEIGH)));
+        assert_matches!(
+            &message.payload,
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewNeighbour(msg)) => {
+                assert_eq!(msg.header.state, NeighbourState::Stale);
+            }
+        );
+        assert_eq!(sender_sink_non_member.take_messages().len(), 0);
+
+        // Verify that a `Removed` event results in a `RTM_DELNEIGH` multicast
+        // message.
+
+        worker
+            .handle_neighbor_watcher_event(
+                fnet_neighbor_ext::Event::Removed(new_entry.clone()),
+                &client_table,
+            )
+            .expect("handle removed");
+
+        let messages = sender_sink_member.take_messages();
+        assert_eq!(messages.len(), 1);
+        let SentMessage { message, group } = &messages[0];
+        assert_eq!(group, &Some(ModernGroup(rtnetlink_groups_RTNLGRP_NEIGH)));
+        assert_matches!(
+            &message.payload,
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelNeighbour(msg)) => {
+                assert_eq!(msg.header.ifindex as u64, entry.interface.get());
+            }
+        );
+        assert_eq!(sender_sink_non_member.take_messages().len(), 0);
     }
 }

@@ -176,7 +176,8 @@ pub mod route {
                 | rtnetlink_groups_RTNLGRP_IPV6_IFADDR
                 | rtnetlink_groups_RTNLGRP_IPV6_ROUTE
                 | rtnetlink_groups_RTNLGRP_LINK
-                | rtnetlink_groups_RTNLGRP_ND_USEROPT => Ok(GroupSupport::Supported),
+                | rtnetlink_groups_RTNLGRP_ND_USEROPT
+                | rtnetlink_groups_RTNLGRP_NEIGH => Ok(GroupSupport::Supported),
                 rtnetlink_groups_RTNLGRP_DCB
                 | rtnetlink_groups_RTNLGRP_DECnet_IFADDR
                 | rtnetlink_groups_RTNLGRP_DECnet_ROUTE
@@ -194,7 +195,6 @@ pub mod route {
                 | rtnetlink_groups_RTNLGRP_MDB
                 | rtnetlink_groups_RTNLGRP_MPLS_NETCONF
                 | rtnetlink_groups_RTNLGRP_MPLS_ROUTE
-                | rtnetlink_groups_RTNLGRP_NEIGH
                 | rtnetlink_groups_RTNLGRP_NONE
                 | rtnetlink_groups_RTNLGRP_NOP2
                 | rtnetlink_groups_RTNLGRP_NOP4
