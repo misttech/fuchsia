@@ -152,6 +152,12 @@ class OverlayFsTest : public ::testing::Test {
     ASSERT_NO_FATAL_FAILURE(InitUpperDirs());
   }
 
+  void TearDown() override {
+    if (!::testing::Test::IsSkipped()) {
+      ASSERT_THAT(umount(overlay_.c_str()), SyscallSucceeds());
+    }
+  }
+
   void InitUpperDirs() {
     upper_ = upper_base_ + "/upper";
     ASSERT_THAT(mkdir(upper_.c_str(), 0700), SyscallSucceeds());
