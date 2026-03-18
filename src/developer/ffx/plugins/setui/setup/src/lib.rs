@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_settings::{ConfigurationInterfaces, SetupProxy, SetupSettings};
 use ffx_setui_setup_args::Setup;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_settings::{ConfigurationInterfaces, SetupProxy, SetupSettings};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -62,15 +62,16 @@ async fn command(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_settings::SetupRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_settings::SetupRequest;
+    use target_holders::fdomain::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_run_command() {
         const INTERFACE: ConfigurationInterfaces = ConfigurationInterfaces::ETHERNET;
 
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             SetupRequest::Set { settings, responder, .. } => {
                 if let Some(val) = settings.enabled_configuration_interfaces {
                     assert_eq!(val, INTERFACE);
@@ -99,7 +100,8 @@ mod test {
     )]
     #[fuchsia::test]
     async fn validate_setup_output(expected_interface: ConfigurationInterfaces) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             SetupRequest::Set { settings, responder, .. } => {
                 if let Some(val) = settings.enabled_configuration_interfaces {
                     assert_eq!(val, expected_interface);
@@ -133,7 +135,8 @@ mod test {
     async fn validate_setup_watch_output(
         expected_interface: Option<ConfigurationInterfaces>,
     ) -> Result<()> {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             SetupRequest::Set { .. } => {
                 panic!("Unexpected call to set");
             }

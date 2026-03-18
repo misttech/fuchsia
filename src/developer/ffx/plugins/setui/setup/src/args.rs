@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_settings::ConfigurationInterfaces;
 use ffx_core::ffx_command;
-use fidl_fuchsia_settings::ConfigurationInterfaces;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
