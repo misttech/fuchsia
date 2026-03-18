@@ -1523,21 +1523,19 @@ async fn run_address_state_provider(
 
                 let add_route_result = match subnet {
                     net_types::ip::SubnetEither::V4(subnet) => {
-                        let entry = netstack3_core::routes::AddableEntry {
+                        let entry = netstack3_core::routes::AddableEntry::without_gateway(
                             subnet,
-                            device: core_id,
-                            metric: netstack3_core::routes::AddableMetric::MetricTracksInterface,
-                            gateway: None,
-                        };
+                            core_id,
+                            netstack3_core::routes::AddableMetric::MetricTracksInterface,
+                        );
                         route_set_v4.apply_route_op(routes::RouteOp::Add(entry)).await
                     }
                     net_types::ip::SubnetEither::V6(subnet) => {
-                        let entry = netstack3_core::routes::AddableEntry {
+                        let entry = netstack3_core::routes::AddableEntry::without_gateway(
                             subnet,
-                            device: core_id,
-                            metric: netstack3_core::routes::AddableMetric::MetricTracksInterface,
-                            gateway: None,
-                        };
+                            core_id,
+                            netstack3_core::routes::AddableMetric::MetricTracksInterface,
+                        );
                         route_set_v6.apply_route_op(routes::RouteOp::Add(entry)).await
                     }
                 };

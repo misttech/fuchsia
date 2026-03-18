@@ -15,8 +15,11 @@ use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, InstantBindingsTypes,
     LocalTimerHeap, TimerBindingsTypes, TimerContext, WeakDeviceIdentifier,
 };
-use netstack3_hashmap::HashSet;
+use netstack3_hashmap::HashMap;
+use netstack3_hashmap::hash_map::Entry;
 use packet_formats::icmp::ndp::NonZeroNdpLifetime;
+
+use crate::internal::types::RoutePreference;
 
 /// Route discovery state on a device.
 #[derive(Debug)]
@@ -25,7 +28,7 @@ pub struct Ipv6RouteDiscoveryState<BT: Ipv6RouteDiscoveryBindingsTypes> {
     //
     // Routes with a finite lifetime must have a timer set; routes with an
     // infinite lifetime must not.
-    routes: HashSet<Ipv6DiscoveredRoute>,
+    routes: HashMap<Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties>,
     timers: LocalTimerHeap<Ipv6DiscoveredRoute, (), BT>,
 }
 
@@ -63,6 +66,13 @@ pub struct Ipv6DiscoveredRoute {
     ///
     /// `None` indicates that the subnet is on-link/directly-connected.
     pub gateway: Option<LinkLocalUnicastAddr<Ipv6Addr>>,
+}
+
+/// A discovered route's properties.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct Ipv6DiscoveredRouteProperties {
+    /// The preference of the route.
+    pub route_preference: RoutePreference,
 }
 
 /// A timer ID for IPv6 route discovery.
@@ -119,6 +129,7 @@ pub trait Ipv6DiscoveredRoutesContext<BC>: DeviceIdContext<AnyDevice> {
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
     );
 
     /// Deletes a previously discovered (now invalidated) IPv6 route from the
@@ -176,6 +187,7 @@ pub trait RouteDiscoveryHandler<BC>: DeviceIdContext<AnyDevice> {
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
         lifetime: Option<NonZeroNdpLifetime>,
         config: &RouteDiscoveryConfiguration,
     );
@@ -192,6 +204,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
         bindings_ctx: &mut BC,
         device_id: &CC::DeviceId,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
         lifetime: Option<NonZeroNdpLifetime>,
         config: &RouteDiscoveryConfiguration,
     ) {
@@ -202,10 +215,32 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
                     if !config.allow_default_route && route.subnet.prefix() == 0 {
                         return;
                     }
-                    let newly_added = routes.insert(route.clone());
-                    if newly_added {
-                        core_ctx.add_discovered_ipv6_route(bindings_ctx, device_id, route);
-                    }
+                    let newly_added = match routes.entry(route) {
+                        Entry::Occupied(mut entry) => {
+                            let old_properties = entry.get_mut();
+                            if old_properties.route_preference != properties.route_preference {
+                                core_ctx.del_discovered_ipv6_route(bindings_ctx, device_id, route);
+                                core_ctx.add_discovered_ipv6_route(
+                                    bindings_ctx,
+                                    device_id,
+                                    route,
+                                    properties,
+                                );
+                                *old_properties = properties;
+                            }
+                            false
+                        }
+                        Entry::Vacant(entry) => {
+                            core_ctx.add_discovered_ipv6_route(
+                                bindings_ctx,
+                                device_id,
+                                route,
+                                properties,
+                            );
+                            let _: &mut _ = entry.insert(properties);
+                            true
+                        }
+                    };
 
                     let prev_timer_fires_at = match lifetime {
                         NonZeroNdpLifetime::Finite(lifetime) => {
@@ -226,7 +261,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
                     }
                 }
                 None => {
-                    if routes.remove(&route) {
+                    if routes.remove(&route).is_some() {
                         invalidate_route(core_ctx, bindings_ctx, device_id, state, route);
                     }
                 }
@@ -236,7 +271,7 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
 
     fn invalidate_routes(&mut self, bindings_ctx: &mut BC, device_id: &CC::DeviceId) {
         self.with_discovered_routes_mut(device_id, |state, core_ctx| {
-            for route in core::mem::take(&mut state.routes).into_iter() {
+            for (route, _properties) in core::mem::take(&mut state.routes).into_iter() {
                 invalidate_route(core_ctx, bindings_ctx, device_id, state, route);
             }
         })
@@ -257,7 +292,8 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
                 let Some((route, ())) = timers.pop(bindings_ctx) else {
                     return;
                 };
-                assert!(routes.remove(&route), "invalidated route should be discovered");
+                let _properties =
+                    routes.remove(&route).expect("invalidated route should be discovered");
                 core_ctx.del_discovered_ipv6_route(bindings_ctx, &device_id, route);
             },
         )
@@ -290,7 +326,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeWithDiscoveredRoutesMutCtx {
-        route_table: HashSet<Ipv6DiscoveredRoute>,
+        route_table: HashMap<Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties>,
     }
 
     impl DeviceIdContext<AnyDevice> for FakeWithDiscoveredRoutesMutCtx {
@@ -304,9 +340,10 @@ mod tests {
             _bindings_ctx: &mut C,
             FakeDeviceId: &Self::DeviceId,
             route: Ipv6DiscoveredRoute,
+            properties: Ipv6DiscoveredRouteProperties,
         ) {
             let Self { route_table } = self;
-            let _newly_inserted = route_table.insert(route);
+            let _: Option<Ipv6DiscoveredRouteProperties> = route_table.insert(route, properties);
         }
 
         fn del_discovered_ipv6_route(
@@ -316,7 +353,7 @@ mod tests {
             route: Ipv6DiscoveredRoute,
         ) {
             let Self { route_table } = self;
-            let _: bool = route_table.remove(&route);
+            let _: Option<Ipv6DiscoveredRouteProperties> = route_table.remove(&route);
         }
     }
 
@@ -351,12 +388,16 @@ mod tests {
 
     const ROUTE1: Ipv6DiscoveredRoute =
         Ipv6DiscoveredRoute { subnet: IPV6_DEFAULT_SUBNET, gateway: None };
+    const PROP1: Ipv6DiscoveredRouteProperties =
+        Ipv6DiscoveredRouteProperties { route_preference: RoutePreference::Medium };
     const ROUTE2: Ipv6DiscoveredRoute = Ipv6DiscoveredRoute {
         subnet: unsafe {
             Subnet::new_unchecked(Ipv6Addr::new([0x2620, 0x1012, 0x1000, 0x5000, 0, 0, 0, 0]), 64)
         },
         gateway: None,
     };
+    const PROP2: Ipv6DiscoveredRouteProperties =
+        Ipv6DiscoveredRouteProperties { route_preference: RoutePreference::Medium };
 
     const ONE_SECOND: NonZeroDuration = NonZeroDuration::from_secs(1).unwrap();
     const TWO_SECONDS: NonZeroDuration = NonZeroDuration::from_secs(2).unwrap();
@@ -382,6 +423,7 @@ mod tests {
             &mut bindings_ctx,
             &FakeDeviceId,
             ROUTE1,
+            PROP1,
             None,
             &Default::default(),
         );
@@ -392,6 +434,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl,
         bindings_ctx: &mut FakeBindingsCtxImpl,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
         duration: NonZeroNdpLifetime,
     ) {
         RouteDiscoveryHandler::update_route(
@@ -399,12 +442,13 @@ mod tests {
             bindings_ctx,
             &FakeDeviceId,
             route,
+            properties,
             Some(duration),
             &Default::default(),
         );
 
         let route_table = &core_ctx.state.route_table.route_table;
-        assert!(route_table.contains(&route), "route_table={route_table:?}");
+        assert_eq!(route_table.get(&route), Some(&properties), "route_table={route_table:?}");
 
         let expect = match duration {
             NonZeroNdpLifetime::Finite(duration) => Some((FakeInstant::from(duration.get()), &())),
@@ -431,7 +475,7 @@ mod tests {
         route: Ipv6DiscoveredRoute,
     ) {
         let route_table = &core_ctx.state.route_table.route_table;
-        assert!(!route_table.contains(&route), "route_table={route_table:?}");
+        assert!(!route_table.contains_key(&route), "route_table={route_table:?}");
         bindings_ctx.timers.assert_no_timers_installed();
     }
 
@@ -448,21 +492,33 @@ mod tests {
     fn invalidated_route_not_found() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
 
-        discover_new_route(&mut core_ctx, &mut bindings_ctx, ROUTE1, NonZeroNdpLifetime::Infinite);
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ROUTE1,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
 
         // Fake the route already being removed from underneath the route
         // discovery table.
-        assert!(core_ctx.state.route_table.route_table.remove(&ROUTE1));
+        assert!(core_ctx.state.route_table.route_table.remove(&ROUTE1).is_some());
         // Invalidating the route should ignore the fact that the route is not
         // in the route table.
-        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1);
+        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1, PROP1);
     }
 
     #[test]
     fn new_route_with_infinite_lifetime() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
 
-        discover_new_route(&mut core_ctx, &mut bindings_ctx, ROUTE1, NonZeroNdpLifetime::Infinite);
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ROUTE1,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
         bindings_ctx.timers.assert_no_timers_installed();
     }
 
@@ -470,7 +526,13 @@ mod tests {
     fn update_route_from_infinite_to_finite_lifetime() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
 
-        discover_new_route(&mut core_ctx, &mut bindings_ctx, ROUTE1, NonZeroNdpLifetime::Infinite);
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ROUTE1,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
         bindings_ctx.timers.assert_no_timers_installed();
 
         RouteDiscoveryHandler::update_route(
@@ -478,6 +540,7 @@ mod tests {
             &mut bindings_ctx,
             &FakeDeviceId,
             ROUTE1,
+            PROP1,
             Some(NonZeroNdpLifetime::Finite(ONE_SECOND)),
             &Default::default(),
         );
@@ -492,12 +555,14 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl,
         bindings_ctx: &mut FakeBindingsCtxImpl,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
     ) {
         RouteDiscoveryHandler::update_route(
             core_ctx,
             bindings_ctx,
             &FakeDeviceId,
-            ROUTE1,
+            route,
+            properties,
             None,
             &Default::default(),
         );
@@ -508,10 +573,16 @@ mod tests {
     fn invalidate_route_with_infinite_lifetime() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context();
 
-        discover_new_route(&mut core_ctx, &mut bindings_ctx, ROUTE1, NonZeroNdpLifetime::Infinite);
+        discover_new_route(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            ROUTE1,
+            PROP1,
+            NonZeroNdpLifetime::Infinite,
+        );
         bindings_ctx.timers.assert_no_timers_installed();
 
-        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1);
+        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1, PROP1);
     }
     #[test]
     fn new_route_with_finite_lifetime() {
@@ -521,6 +592,7 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE1,
+            PROP1,
             NonZeroNdpLifetime::Finite(ONE_SECOND),
         );
         assert_single_invalidation_timer(&mut core_ctx, &mut bindings_ctx, ROUTE1);
@@ -534,6 +606,7 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE1,
+            PROP1,
             NonZeroNdpLifetime::Finite(ONE_SECOND),
         );
 
@@ -542,6 +615,7 @@ mod tests {
             &mut bindings_ctx,
             &FakeDeviceId,
             ROUTE1,
+            PROP1,
             Some(NonZeroNdpLifetime::Infinite),
             &Default::default(),
         );
@@ -556,6 +630,7 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE1,
+            PROP1,
             NonZeroNdpLifetime::Finite(ONE_SECOND),
         );
 
@@ -564,6 +639,7 @@ mod tests {
             &mut bindings_ctx,
             &FakeDeviceId,
             ROUTE1,
+            PROP1,
             Some(NonZeroNdpLifetime::Finite(TWO_SECONDS)),
             &Default::default(),
         );
@@ -582,10 +658,11 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE1,
+            PROP1,
             NonZeroNdpLifetime::Finite(ONE_SECOND),
         );
 
-        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1);
+        update_to_invalidate_check_invalidation(&mut core_ctx, &mut bindings_ctx, ROUTE1, PROP1);
     }
 
     #[test]
@@ -595,12 +672,14 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE1,
+            PROP1,
             NonZeroNdpLifetime::Finite(ONE_SECOND),
         );
         discover_new_route(
             &mut core_ctx,
             &mut bindings_ctx,
             ROUTE2,
+            PROP2,
             NonZeroNdpLifetime::Finite(TWO_SECONDS),
         );
 

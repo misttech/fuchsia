@@ -12,6 +12,38 @@ use net_types::ip::{GenericOverIp, Ip, IpAddress, Ipv4Addr, Ipv6Addr, Subnet, Su
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{BroadcastIpExt, IpDeviceAddr};
 
+/// Route preferences learned from network, default Medium.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub enum RoutePreference {
+    /// Low preference.
+    Low,
+    /// Medium preference.
+    #[default]
+    Medium,
+    /// High preference.
+    High,
+}
+
+impl From<packet_formats::icmp::ndp::RoutePreference> for RoutePreference {
+    fn from(p: packet_formats::icmp::ndp::RoutePreference) -> Self {
+        match p {
+            packet_formats::icmp::ndp::RoutePreference::Low => RoutePreference::Low,
+            packet_formats::icmp::ndp::RoutePreference::Medium => RoutePreference::Medium,
+            packet_formats::icmp::ndp::RoutePreference::High => RoutePreference::High,
+        }
+    }
+}
+
+impl From<RoutePreference> for packet_formats::icmp::ndp::RoutePreference {
+    fn from(p: RoutePreference) -> Self {
+        match p {
+            RoutePreference::Low => packet_formats::icmp::ndp::RoutePreference::Low,
+            RoutePreference::Medium => packet_formats::icmp::ndp::RoutePreference::Medium,
+            RoutePreference::High => packet_formats::icmp::ndp::RoutePreference::High,
+        }
+    }
+}
+
 /// The priority of a forwarding entry. Lower metrics are preferred.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct RawMetric(pub u32);
@@ -79,6 +111,9 @@ pub struct AddableEntry<A: IpAddress, D> {
     pub gateway: Option<SpecifiedAddr<A>>,
     /// Route metric.
     pub metric: AddableMetric,
+    /// The preference of the route learned from network. Unlike the metric, it
+    /// is not specified by the user.
+    pub route_preference: RoutePreference,
 }
 
 impl<D, A: IpAddress> AddableEntry<A, D> {
@@ -89,28 +124,34 @@ impl<D, A: IpAddress> AddableEntry<A, D> {
         gateway: SpecifiedAddr<A>,
         metric: AddableMetric,
     ) -> Self {
-        Self { subnet, device, gateway: Some(gateway), metric }
+        Self {
+            subnet,
+            device,
+            gateway: Some(gateway),
+            metric,
+            route_preference: Default::default(),
+        }
     }
 
     /// Creates a new [`AddableEntry`] with a specified device.
     pub fn without_gateway(subnet: Subnet<A>, device: D, metric: AddableMetric) -> Self {
-        Self { subnet, device, gateway: None, metric }
+        Self { subnet, device, gateway: None, metric, route_preference: Default::default() }
     }
 
     /// Converts the `AddableEntry` to an `Entry`.
     pub fn resolve_metric(self, device_metric: RawMetric) -> Entry<A, D> {
-        let Self { subnet, device, gateway, metric } = self;
+        let Self { subnet, device, gateway, metric, route_preference } = self;
         let metric = match metric {
             AddableMetric::MetricTracksInterface => Metric::MetricTracksInterface(device_metric),
             AddableMetric::ExplicitMetric(metric) => Metric::ExplicitMetric(metric),
         };
-        Entry { subnet, device, gateway, metric }
+        Entry { subnet, device, gateway, metric, route_preference }
     }
 
     /// Maps the device ID held by this `AddableEntry`.
     pub fn map_device_id<D2>(self, f: impl FnOnce(D) -> D2) -> AddableEntry<A, D2> {
-        let Self { subnet, device, gateway, metric } = self;
-        AddableEntry { subnet, device: f(device), gateway, metric }
+        let Self { subnet, device, gateway, metric, route_preference } = self;
+        AddableEntry { subnet, device: f(device), gateway, metric, route_preference }
     }
 
     /// Fallibly maps the device ID held by this `AddableEntry`.
@@ -118,8 +159,8 @@ impl<D, A: IpAddress> AddableEntry<A, D> {
         self,
         f: impl FnOnce(D) -> Result<D2, E>,
     ) -> Result<AddableEntry<A, D2>, E> {
-        let Self { subnet, device, gateway, metric } = self;
-        Ok(AddableEntry { subnet, device: f(device)?, gateway, metric })
+        let Self { subnet, device, gateway, metric, route_preference } = self;
+        Ok(AddableEntry { subnet, device: f(device)?, gateway, metric, route_preference })
     }
 
     /// Sets the generation on an entry.
@@ -169,8 +210,14 @@ pub struct AddableEntryAndGeneration<A: IpAddress, D> {
 }
 
 impl<A: IpAddress, D> From<Entry<A, D>> for AddableEntry<A, D> {
-    fn from(Entry { subnet, device, gateway, metric }: Entry<A, D>) -> Self {
-        Self { subnet: subnet, device: device, gateway: gateway, metric: metric.into() }
+    fn from(Entry { subnet, device, gateway, metric, route_preference }: Entry<A, D>) -> Self {
+        Self {
+            subnet: subnet,
+            device: device,
+            gateway: gateway,
+            metric: metric.into(),
+            route_preference,
+        }
     }
 }
 
@@ -209,6 +256,8 @@ pub struct Entry<A: IpAddress, D> {
     pub gateway: Option<SpecifiedAddr<A>>,
     /// The metric of the entry.
     pub metric: Metric,
+    /// The preference of the route.
+    pub route_preference: RoutePreference,
 }
 
 /// A forwarding entry with the generation it was created in.
@@ -252,8 +301,8 @@ impl Generation {
 impl<A: IpAddress, D> Entry<A, D> {
     /// Maps the device ID held by this `Entry`.
     pub fn map_device_id<D2>(self, f: impl FnOnce(D) -> D2) -> Entry<A, D2> {
-        let Self { subnet, device, gateway, metric } = self;
-        Entry { subnet, device: f(device), gateway, metric }
+        let Self { subnet, device, gateway, metric, route_preference } = self;
+        Entry { subnet, device: f(device), gateway, metric, route_preference }
     }
 
     /// Sets the generation on an entry.
@@ -264,12 +313,27 @@ impl<A: IpAddress, D> Entry<A, D> {
 
 impl<A: IpAddress, D: Debug> Display for Entry<A, D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-        let Entry { subnet, device, gateway, metric } = self;
+        let Entry { subnet, device, gateway, metric, route_preference } = self;
         match gateway {
             Some(gateway) => {
-                write!(f, "{:?} (via {}) -> {} metric {}", device, gateway, subnet, metric.value())
+                write!(
+                    f,
+                    "{:?} (via {}) -> {} metric {} pref {:?}",
+                    device,
+                    gateway,
+                    subnet,
+                    metric.value(),
+                    route_preference
+                )
             }
-            None => write!(f, "{:?} -> {} metric {}", device, subnet, metric.value()),
+            None => write!(
+                f,
+                "{:?} -> {} metric {} pref {:?}",
+                device,
+                subnet,
+                metric.value(),
+                route_preference
+            ),
         }
     }
 }
@@ -317,6 +381,8 @@ pub(crate) struct OrderedEntry<'a, A: IpAddress, D> {
     locality: OrderedLocality,
     // Order lower metrics before larger metrics.
     metric: u32,
+    // Order higher preference routes before lower preference ones.
+    route_preference: core::cmp::Reverse<RoutePreference>,
     // Earlier-added routes should come before later ones.
     generation: Generation,
     // To provide a consistent ordering, tiebreak using the remaining fields
@@ -333,12 +399,15 @@ pub(crate) struct OrderedEntry<'a, A: IpAddress, D> {
 
 impl<'a, A: IpAddress, D> From<&'a EntryAndGeneration<A, D>> for OrderedEntry<'a, A, D> {
     fn from(entry: &'a EntryAndGeneration<A, D>) -> OrderedEntry<'a, A, D> {
-        let EntryAndGeneration { entry: Entry { subnet, device, gateway, metric }, generation } =
-            entry;
+        let EntryAndGeneration {
+            entry: Entry { subnet, device, gateway, metric, route_preference },
+            generation,
+        } = entry;
         OrderedEntry {
             prefix_len: core::cmp::Reverse(subnet.prefix()),
-            metric: metric.value().into(),
             locality: gateway.map_or(OrderedLocality::OnLink, |_gateway| OrderedLocality::OffLink),
+            route_preference: core::cmp::Reverse(*route_preference),
+            metric: metric.value().into(),
             generation: *generation,
             subnet_addr: subnet.network(),
             device: &device,

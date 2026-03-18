@@ -75,7 +75,7 @@ impl StackFidlWorker {
             ctx: &mut Ctx,
             entry: AddableEntry<I::Addr, Option<DeviceId>>,
         ) -> Option<AddableEntry<I::Addr, DeviceId>> {
-            let AddableEntry { subnet, device, gateway, metric } = entry;
+            let AddableEntry { subnet, device, gateway, metric, route_preference } = entry;
             let (device, gateway) = match (device, gateway) {
                 (Some(device), gateway) => (device, gateway),
                 (None, gateway) => {
@@ -85,7 +85,7 @@ impl StackFidlWorker {
                     (device, Some(gateway))
                 }
             };
-            Some(AddableEntry { subnet, device, gateway, metric })
+            Some(AddableEntry { subnet, device, gateway, metric, route_preference })
         }
 
         let entry = match entry {

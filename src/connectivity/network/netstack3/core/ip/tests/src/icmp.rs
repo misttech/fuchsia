@@ -523,6 +523,7 @@ fn icmp_reply_follows_request_interface<I: TestIpExt + IpExt>() {
                 device: extra_device,
                 gateway: None,
                 metric: AddableMetric::ExplicitMetric(RawMetric::HIGHEST_PREFERENCE),
+                route_preference: Default::default(),
             }
             .into(),
         )

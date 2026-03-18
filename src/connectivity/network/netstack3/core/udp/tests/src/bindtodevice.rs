@@ -35,6 +35,7 @@ fn bindtodevice_send_to_loopback_addrs<I: IpExt + TestIpExt>() {
                 device: device_id.clone(),
                 gateway: None,
                 metric: AddableMetric::MetricTracksInterface,
+                route_preference: Default::default(),
             }
             .into(),
         )

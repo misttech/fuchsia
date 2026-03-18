@@ -53,7 +53,8 @@ use crate::internal::device::dad::{
 };
 use crate::internal::device::nud::NudIpHandler;
 use crate::internal::device::route_discovery::{
-    Ipv6DiscoveredRoute, Ipv6DiscoveredRouteTimerId, RouteDiscoveryHandler,
+    Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties, Ipv6DiscoveredRouteTimerId,
+    RouteDiscoveryHandler,
 };
 use crate::internal::device::router_solicitation::{RsHandler, RsTimerId};
 use crate::internal::device::slaac::{SlaacHandler, SlaacTimerId};
@@ -1055,6 +1056,7 @@ pub trait Ipv6DeviceHandler<BC>: IpDeviceHandler<Ipv6, BC> {
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
         lifetime: Option<NonZeroNdpLifetime>,
     );
 
@@ -1113,6 +1115,7 @@ impl<
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         route: Ipv6DiscoveredRoute,
+        properties: Ipv6DiscoveredRouteProperties,
         lifetime: Option<NonZeroNdpLifetime>,
     ) {
         self.with_ipv6_device_configuration(device_id, |config, mut core_ctx| {
@@ -1121,6 +1124,7 @@ impl<
                 bindings_ctx,
                 device_id,
                 route,
+                properties,
                 lifetime,
                 &config.route_discovery_config,
             )

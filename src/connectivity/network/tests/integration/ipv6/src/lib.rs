@@ -37,7 +37,8 @@ use netemul::InterfaceConfig;
 use netstack_testing_common::constants::{eth as eth_consts, ipv6 as ipv6_consts};
 use netstack_testing_common::ndp::{
     self, DadState, assert_dad_failed, assert_dad_success, expect_dad_neighbor_solicitation,
-    fail_dad_with_na, fail_dad_with_ns, send_ra_with_router_lifetime, wait_for_router_solicitation,
+    fail_dad_with_na, fail_dad_with_ns, send_ra, send_ra_with_router_lifetime,
+    wait_for_router_solicitation,
 };
 use netstack_testing_common::realms::{
     KnownServiceProvider, Netstack, Netstack3, NetstackVersion, TestSandboxExt as _, constants,
@@ -53,7 +54,9 @@ use packet_formats::icmp::mld::{MldPacket, Mldv2MulticastRecordType};
 use packet_formats::icmp::ndp::options::{
     NdpOption, NdpOptionBuilder, PrefixInformation, RouteInformation,
 };
-use packet_formats::icmp::ndp::{NeighborSolicitation, RoutePreference, RouterSolicitation};
+use packet_formats::icmp::ndp::{
+    NeighborSolicitation, RoutePreference, RouterAdvertisement, RouterSolicitation,
+};
 use packet_formats::icmp::{IcmpParseArgs, Icmpv6Packet};
 use packet_formats::ip::Ipv6Proto;
 use packet_formats::testutil::{parse_icmp_packet_in_ip_packet_in_ethernet_frame, parse_ip_packet};
@@ -1110,6 +1113,158 @@ async fn route_discovery_no_default_route(name: &str) {
     })
     .await
     .expect("wait for the routes to be removed");
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn route_discovery_preference_resolve<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    const METRIC: u32 = 100;
+    let (_network, realm, iface1, fake_ep1) =
+        setup_network::<N>(&sandbox, name, Some(METRIC)).await.expect("failed to setup network");
+
+    let network2 = sandbox.create_network(format!("{}_2", name)).await.expect("create network");
+    let fake_ep2 = network2.create_fake_endpoint().expect("create fake endpoint 2");
+    let iface2 = realm
+        .join_network_with_if_config(
+            &network2,
+            "eth2",
+            netemul::InterfaceConfig { metric: Some(METRIC), ..Default::default() },
+        )
+        .await
+        .expect("failed to join network");
+
+    pub const ROUTER_1: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("fe80::1");
+    pub const ROUTER_2: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("fe80::2");
+    pub const TARGET_SUBNET: net_types_ip::Subnet<net_types_ip::Ipv6Addr> =
+        net_declare::net_subnet_v6!("2001:db8::/64");
+    const IN_TARGET_SUBNET: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("2001:db8::1234");
+    const OUT_OF_TARGET_SUBNET: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("2002::1");
+
+    // Router 1 advertises the default route with High preference,
+    // and TARGET_SUBNET with Low preference.
+    send_ra(
+        &fake_ep1,
+        RouterAdvertisement::with_prf(
+            0,     /* current_hop_limit */
+            false, /* managed_flag */
+            false, /* other_config_flag */
+            RoutePreference::High,
+            1234, /* router_lifetime */
+            0,    /* reachable_time */
+            0,    /* retransmit_timer */
+        ),
+        &[
+            NdpOptionBuilder::SourceLinkLayerAddress(&[0, 0, 0, 0, 0, 1]),
+            NdpOptionBuilder::RouteInformation(RouteInformation::new(
+                TARGET_SUBNET,
+                1337,
+                RoutePreference::Low,
+            )),
+        ],
+        ROUTER_1,
+    )
+    .await
+    .expect("failed to send router advertisement 1");
+
+    // Router 2 advertises the default route with Low preference,
+    // and TARGET_SUBNET with High preference.
+    send_ra(
+        &fake_ep2,
+        RouterAdvertisement::with_prf(
+            0,     /* current_hop_limit */
+            false, /* managed_flag */
+            false, /* other_config_flag */
+            RoutePreference::Low,
+            1234, /* router_lifetime */
+            0,    /* reachable_time */
+            0,    /* retransmit_timer */
+        ),
+        &[
+            NdpOptionBuilder::SourceLinkLayerAddress(&[0, 0, 0, 0, 0, 2]),
+            NdpOptionBuilder::RouteInformation(RouteInformation::new(
+                TARGET_SUBNET,
+                1338,
+                RoutePreference::High,
+            )),
+        ],
+        ROUTER_2,
+    )
+    .await
+    .expect("failed to send router advertisement 2");
+
+    let nicid1 = iface1.id();
+    let nicid2 = iface2.id();
+
+    let ipv6_route_stream = {
+        let state_v6 =
+            realm.connect_to_protocol::<fnet_routes::StateV6Marker>().expect("connect to protocol");
+        fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
+            .expect("failed to connect to watcher")
+    };
+    let ipv6_route_stream = pin!(ipv6_route_stream);
+    let mut routes = HashSet::new();
+    fnet_routes_ext::wait_for_routes(ipv6_route_stream, &mut routes, |accumulated_routes| {
+        let target_subnet_routes = accumulated_routes
+            .iter()
+            .filter(|route| route.route.destination == TARGET_SUBNET)
+            .count();
+        let default_routes = accumulated_routes
+            .iter()
+            .filter(|route| route.route.destination == net_declare::net_subnet_v6!("::/0"))
+            .count();
+        target_subnet_routes == 2 && default_routes == 2
+    })
+    .on_timeout(fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT), || {
+        panic!("timed out waiting for 4 routes to be installed");
+    })
+    .await
+    .expect("error waiting for routes");
+
+    let interface_state = realm
+        .connect_to_protocol::<fnet_interfaces::StateMarker>()
+        .expect("failed to connect to fuchsia.net.interfaces/State service");
+    for nicid in [nicid1, nicid2] {
+        let mut state_iface = fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(nicid.into());
+        let _ = fnet_interfaces_ext::wait_interface_with_id(
+            fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+                &interface_state,
+                fnet_interfaces_ext::WatchOptions {
+                    included_addresses: fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                    ..Default::default()
+                },
+            )
+            .expect("creating interface event stream"),
+            &mut state_iface,
+            |iface| (!iface.properties.addresses.is_empty()).then_some(()),
+        )
+        .await
+        .expect("wait for address to become assigned");
+    }
+
+    // Query the route resolution to ensure the High preference one was selected!
+    let state =
+        realm.connect_to_protocol::<fnet_routes::StateMarker>().expect("connect to protocol");
+
+    for (target, expected_router, expected_nicid) in
+        [(IN_TARGET_SUBNET, ROUTER_2, nicid2), (OUT_OF_TARGET_SUBNET, ROUTER_1, nicid1)]
+    {
+        let response = state
+            .resolve(&fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr: target.ipv6_bytes() }))
+            .await
+            .expect("resolve fidl error")
+            .expect("resolve failed");
+
+        let expected_gateway_addr =
+            fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr: expected_router.ipv6_bytes() });
+
+        assert_matches!(
+            response,
+            fnet_routes::Resolved::Gateway(dst)
+                if dst.address == Some(expected_gateway_addr)
+                   && dst.interface_id == Some(expected_nicid)
+        );
+    }
 }
 
 #[netstack_test]

@@ -95,7 +95,13 @@ struct DeviceRemovedError;
 impl<A: IpAddress> RouteOp<A> {
     fn get_interface_local_table(&self) -> Result<Option<TableId<A::Version>>, DeviceRemovedError> {
         let device = match self {
-            RouteOp::Add(AddableEntry { subnet: _, device, gateway: _, metric: _ }) => device,
+            RouteOp::Add(AddableEntry {
+                subnet: _,
+                device,
+                gateway: _,
+                metric: _,
+                route_preference: _,
+            }) => device,
             RouteOp::RemoveMatching { subnet: _, device, gateway: _, metric: _ } => device,
         };
         let strong = device.upgrade().ok_or(DeviceRemovedError)?;
@@ -1418,6 +1424,7 @@ mod tests {
                         device: weak_device,
                         gateway: None,
                         metric: AddableMetric::ExplicitMetric(RawMetric(0)),
+                        route_preference: Default::default(),
                     }),
                     SetMembership::User(weak_route_set),
                 ),
@@ -1443,7 +1450,8 @@ mod tests {
                 subnet,
                 device,
                 gateway: None,
-                metric: Metric::ExplicitMetric(RawMetric(0))
+                metric: Metric::ExplicitMetric(RawMetric(0)),
+                route_preference: Default::default(),
             }]
         );
 

@@ -59,9 +59,9 @@ pub mod device {
     };
     pub use crate::internal::device::opaque_iid::{IidSecret, OpaqueIid, OpaqueIidNonce};
     pub use crate::internal::device::route_discovery::{
-        Ipv6DiscoveredRoute, Ipv6DiscoveredRoutesContext, Ipv6RouteDiscoveryBindingsContext,
-        Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState, RouteDiscoveryConfiguration,
-        RouteDiscoveryConfigurationUpdate,
+        Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties, Ipv6DiscoveredRoutesContext,
+        Ipv6RouteDiscoveryBindingsContext, Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState,
+        RouteDiscoveryConfiguration, RouteDiscoveryConfigurationUpdate,
     };
     pub use crate::internal::device::router_solicitation::{
         MAX_RTR_SOLICITATION_DELAY, RTR_SOLICITATION_INTERVAL, RsContext, RsHandler, RsState,
@@ -268,7 +268,7 @@ pub use internal::routing::{
 pub use internal::sas::IpSasHandler;
 pub use internal::types::{
     AddableEntry, AddableEntryEither, AddableMetric, Destination, Entry, EntryEither, Generation,
-    InternalForwarding, Metric, NextHop, RawMetric, ResolvedRoute, RoutableIpAddr,
+    InternalForwarding, Metric, NextHop, RawMetric, ResolvedRoute, RoutableIpAddr, RoutePreference,
 };
 
 /// IP layer test utilities.

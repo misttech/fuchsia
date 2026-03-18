@@ -298,7 +298,9 @@ where
             for table_id in tables.keys() {
                 core_ctx.with_ip_routing_table(table_id, |_core_ctx, table| {
                     inspector.record_display_child(N::display_route_table(table_id), |inspector| {
-                        for Entry { subnet, device, gateway, metric } in table.iter_table() {
+                        for Entry { subnet, device, gateway, metric, route_preference } in
+                            table.iter_table()
+                        {
                             inspector.record_unnamed_child(|inspector| {
                                 inspector.record_display("Destination", subnet);
                                 N::record_device(inspector, "InterfaceId", device);
@@ -316,6 +318,7 @@ where
                                 };
                                 inspector.record_uint("Metric", *metric);
                                 inspector.record_bool("MetricTracksInterface", tracks_interface);
+                                inspector.record_debug("RoutePreference", route_preference);
                             });
                         }
                     })

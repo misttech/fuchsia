@@ -701,7 +701,7 @@ pub(crate) trait RouteSet<I: FidlRouteAdminIpExt>: Send + Sync {
         route: fnet_routes_ext::Route<I>,
         ctx: &Ctx,
     ) -> Result<bool, ModifyTableError> {
-        let AddableEntry { subnet, device, gateway, metric } =
+        let AddableEntry { subnet, device, gateway, metric, route_preference: _ } =
             try_to_addable_entry::<I>(ctx.bindings_ctx(), route)
                 .map_err(ModifyTableError::RouteSetError)?
                 .map_device_id(|d| d.downgrade());

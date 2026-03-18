@@ -136,6 +136,7 @@ rustc_library_with_features("netstack3-ip") {
         "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
         "//src/lib/test_util",
         "//third_party/rust_crates:itertools",
+        "//third_party/rust_crates:proptest",
         "//third_party/rust_crates:static_assertions",
         "//third_party/rust_crates:test-case",
       ]

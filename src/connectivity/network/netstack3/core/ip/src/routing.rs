@@ -98,9 +98,7 @@ pub struct RoutingTable<I: Ip, D> {
     /// destination.
     ///
     /// Entries in the table are sorted from most-preferred to least preferred.
-    /// Preference is determined first by longest prefix, then by lowest metric,
-    /// then by locality (prefer on-link routes over off-link routes), and
-    /// finally by the entry's tenure in the table.
+    /// See [`OrderedEntry`] for the ordering rules.
     pub(super) table: Vec<EntryAndGeneration<I::Addr, D>>,
 }
 
@@ -222,7 +220,7 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
 
         let viable_table_entries = table.iter().filter_map(move |entry| {
             let EntryAndGeneration {
-                entry: Entry { subnet, device, gateway, metric: _ },
+                entry: Entry { subnet, device, gateway, metric: _, route_preference: _ },
                 generation: _,
             } = entry;
             if !subnet.contains(&address) {
@@ -330,7 +328,7 @@ pub(crate) mod testutil {
 
     use crate::internal::base::{IpRouteTablesContext, IpStateContext};
     use crate::internal::routing::rules::Rule;
-    use crate::internal::types::{AddableMetric, Generation, Metric};
+    use crate::internal::types::{AddableMetric, Generation, Metric, RoutePreference};
 
     use super::*;
 
@@ -368,11 +366,11 @@ pub(crate) mod testutil {
     where
         CC::DeviceId: PartialOrd,
     {
-        let AddableEntry { subnet, device, gateway, metric } = entry;
+        let AddableEntry { subnet, device, gateway, metric, route_preference } = entry;
         core_ctx.with_main_ip_routing_table_mut(|core_ctx, table| {
             let metric = observe_metric(core_ctx, &device, metric);
             let _entry = table.add_entry(EntryAndGeneration {
-                entry: Entry { subnet, device, gateway, metric },
+                entry: Entry { subnet, device, gateway, metric, route_preference },
                 generation: Generation::initial(),
             })?;
             Ok(())
@@ -410,10 +408,11 @@ pub(crate) mod testutil {
         del_subnet: Subnet<I::Addr>,
     ) -> Result<(), NotFoundError> {
         core_ctx.with_main_ip_routing_table_mut(|_core_ctx, table| {
-            let removed =
-                table.del_entries(|Entry { subnet, device: _, gateway: _, metric: _ }| {
+            let removed = table.del_entries(
+                |Entry { subnet, device: _, gateway: _, metric: _, route_preference: _ }| {
                     subnet == &del_subnet
-                });
+                },
+            );
             if removed.is_empty() {
                 return Err(NotFoundError);
             } else {
@@ -434,9 +433,11 @@ pub(crate) mod testutil {
         debug!("deleting routes on device: {del_device:?}");
 
         let _: Vec<_> = core_ctx.with_main_ip_routing_table_mut(|_core_ctx, table| {
-            table.del_entries(|Entry { subnet: _, device, gateway: _, metric: _ }| {
-                device == del_device
-            })
+            table.del_entries(
+                |Entry { subnet: _, device, gateway: _, metric: _, route_preference: _ }| {
+                    device == del_device
+                },
+            )
         });
     }
 
@@ -449,8 +450,13 @@ pub(crate) mod testutil {
         A::Version: BroadcastIpExt,
     {
         let subnet = Subnet::new(*ip, A::BYTES * 8).unwrap();
-        let entry =
-            Entry { subnet, device, gateway: None, metric: Metric::ExplicitMetric(RawMetric(0)) };
+        let entry = Entry {
+            subnet,
+            device,
+            gateway: None,
+            metric: Metric::ExplicitMetric(RawMetric(0)),
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(add_entry(table, entry.clone()), Ok(&entry));
     }
 
@@ -506,7 +512,7 @@ mod tests {
 
     use super::*;
     use crate::internal::routing::testutil::FakeIpRoutingCtx;
-    use crate::internal::types::Metric;
+    use crate::internal::types::{Metric, RoutePreference};
 
     type FakeCtx = FakeIpRoutingCtx<MultipleDevicesId>;
 
@@ -584,7 +590,13 @@ mod tests {
         let metric = Metric::ExplicitMetric(RawMetric(9999));
 
         // Should add the route successfully.
-        let entry = Entry { subnet, device: device.clone(), gateway: None, metric };
+        let entry = Entry {
+            subnet,
+            device: device.clone(),
+            gateway: None,
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(&entry));
         assert_eq!(table.iter_table().collect::<Vec<_>>(), &[&entry]);
 
@@ -593,11 +605,21 @@ mod tests {
         assert_eq!(table.iter_table().collect::<Vec<_>>(), &[&entry]);
 
         // Add the route but as a next hop route.
-        let entry2 =
-            Entry { subnet: next_hop_subnet, device: device.clone(), gateway: None, metric };
+        let entry2 = Entry {
+            subnet: next_hop_subnet,
+            device: device.clone(),
+            gateway: None,
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry2.clone()), Ok(&entry2));
-        let entry3 =
-            Entry { subnet: subnet, device: device.clone(), gateway: Some(next_hop), metric };
+        let entry3 = Entry {
+            subnet: subnet,
+            device: device.clone(),
+            gateway: Some(next_hop),
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry3.clone()), Ok(&entry3));
         assert_eq!(
             table.iter_table().collect::<HashSet<_>>(),
@@ -625,25 +647,40 @@ mod tests {
         // Delete all routes to subnet.
         assert_eq!(
             table
-                .del_entries(|Entry { subnet, device: _, gateway: _, metric: _ }| {
-                    subnet == &config.subnet
-                })
+                .del_entries(
+                    |Entry { subnet, device: _, gateway: _, metric: _, route_preference: _ }| {
+                        subnet == &config.subnet
+                    }
+                )
                 .into_iter()
                 .collect::<HashSet<_>>(),
             HashSet::from([
-                Entry { subnet: config.subnet, device: device.clone(), gateway: None, metric },
+                Entry {
+                    subnet: config.subnet,
+                    device: device.clone(),
+                    gateway: None,
+                    metric,
+                    route_preference: RoutePreference::Medium
+                },
                 Entry {
                     subnet: config.subnet,
                     device: device.clone(),
                     gateway: Some(next_hop),
                     metric,
+                    route_preference: RoutePreference::Medium,
                 }
             ])
         );
 
         assert_eq!(
             table.iter_table().collect::<Vec<_>>(),
-            &[&Entry { subnet: next_hop_subnet, device: device.clone(), gateway: None, metric }]
+            &[&Entry {
+                subnet: next_hop_subnet,
+                device: device.clone(),
+                gateway: None,
+                metric,
+                route_preference: RoutePreference::Medium
+            }]
         );
     }
 
@@ -676,6 +713,7 @@ mod tests {
             device: device.clone(),
             gateway: None,
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, default_route_entry.clone()),
@@ -704,9 +742,11 @@ mod tests {
         // Remove the default route.
         assert_eq!(
             table
-                .del_entries(|Entry { subnet, device: _, gateway: _, metric: _ }| {
-                    subnet.prefix() == 0
-                })
+                .del_entries(
+                    |Entry { subnet, device: _, gateway: _, metric: _, route_preference: _ }| {
+                        subnet.prefix() == 0
+                    }
+                )
                 .into_iter()
                 .collect::<Vec<_>>(),
             alloc::vec![default_route_entry.clone()]
@@ -716,18 +756,27 @@ mod tests {
         // to destinations in the subnet.
         assert_eq!(
             table
-                .del_entries(|Entry { subnet, device: _, gateway: _, metric: _ }| {
-                    subnet == &config.subnet
-                })
+                .del_entries(
+                    |Entry { subnet, device: _, gateway: _, metric: _, route_preference: _ }| {
+                        subnet == &config.subnet
+                    }
+                )
                 .into_iter()
                 .collect::<HashSet<_>>(),
             HashSet::from([
-                Entry { subnet: config.subnet, device: device.clone(), gateway: None, metric },
+                Entry {
+                    subnet: config.subnet,
+                    device: device.clone(),
+                    gateway: None,
+                    metric,
+                    route_preference: RoutePreference::Medium
+                },
                 Entry {
                     subnet: config.subnet,
                     device: device.clone(),
                     gateway: Some(next_hop),
                     metric,
+                    route_preference: RoutePreference::Medium,
                 }
             ])
         );
@@ -757,6 +806,7 @@ mod tests {
             device: device.clone(),
             gateway: Some(next_hop),
             metric: Metric::ExplicitMetric(RawMetric(0)),
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, gateway_entry.clone()),
@@ -781,6 +831,7 @@ mod tests {
             device: device.clone(),
             gateway: Some(next_hop),
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, default_route_entry.clone()),
@@ -868,6 +919,7 @@ mod tests {
                     }
                 },
                 metric: Metric::ExplicitMetric(RawMetric(0)),
+                route_preference: RoutePreference::Medium,
             };
             assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(&entry));
         }
@@ -943,6 +995,7 @@ mod tests {
                     BroadcastCaseNextHop::Gateway => Some(gateway),
                 },
                 metric: Metric::ExplicitMetric(RawMetric(0)),
+                route_preference: RoutePreference::Medium,
             };
             assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(&entry));
         }
@@ -956,6 +1009,7 @@ mod tests {
                     BroadcastCaseNextHop::Gateway => Some(gateway),
                 },
                 metric: Metric::ExplicitMetric(RawMetric(0)),
+                route_preference: RoutePreference::Medium,
             };
             assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(&entry));
         }
@@ -990,7 +1044,13 @@ mod tests {
         // Our expected routing table should look like:
         //  sub1 -> device0
 
-        let entry = Entry { subnet: sub1, device: device0.clone(), gateway: None, metric };
+        let entry = Entry {
+            subnet: sub1,
+            device: device0.clone(),
+            gateway: None,
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(&entry));
         table.print_table();
         assert_eq!(
@@ -1006,8 +1066,13 @@ mod tests {
         //  default -> addr1 w/ device0
 
         let default_sub = Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap();
-        let default_entry =
-            Entry { subnet: default_sub, device: device0.clone(), gateway: Some(addr1), metric };
+        let default_entry = Entry {
+            subnet: default_sub,
+            device: device0.clone(),
+            gateway: Some(addr1),
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
 
         assert_eq!(
             super::testutil::add_entry(&mut table, default_entry.clone()),
@@ -1052,6 +1117,7 @@ mod tests {
             device: LESS_SPECIFIC_SUB_DEVICE.clone(),
             gateway: None,
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, less_specific_entry.clone()),
@@ -1084,6 +1150,7 @@ mod tests {
             device: MORE_SPECIFIC_SUB_DEVICE.clone(),
             gateway: None,
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, more_specific_entry.clone()),
@@ -1137,6 +1204,7 @@ mod tests {
                 device: MultipleDevicesId::A,
                 gateway: None,
                 metric,
+                route_preference: RoutePreference::Medium,
             };
             let _: &_ =
                 super::testutil::add_entry(&mut table, more_specific_entry).expect("was added");
@@ -1148,6 +1216,7 @@ mod tests {
                 device,
                 gateway: None,
                 metric: Metric::ExplicitMetric(RawMetric(metric)),
+                route_preference: RoutePreference::Medium,
             };
             let _: &_ =
                 super::testutil::add_entry(&mut table, less_specific_entry).expect("was added");
@@ -1219,9 +1288,21 @@ mod tests {
         let (remote, sub) = I::next_hop_addr_sub(1, 2);
         let metric = Metric::ExplicitMetric(RawMetric(0));
 
-        let entry1 = Entry { subnet: sub, device: DEVICE1.clone(), gateway: None, metric };
+        let entry1 = Entry {
+            subnet: sub,
+            device: DEVICE1.clone(),
+            gateway: None,
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry1.clone()), Ok(&entry1));
-        let entry2 = Entry { subnet: sub, device: DEVICE2.clone(), gateway: None, metric };
+        let entry2 = Entry {
+            subnet: sub,
+            device: DEVICE2.clone(),
+            gateway: None,
+            metric,
+            route_preference: RoutePreference::Medium,
+        };
         assert_eq!(super::testutil::add_entry(&mut table, entry2.clone()), Ok(&entry2));
         let lookup = table.lookup(&mut core_ctx, None, *remote);
         assert!(
@@ -1273,6 +1354,7 @@ mod tests {
             device: LESS_SPECIFIC_SUB_DEVICE.clone(),
             gateway: None,
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, less_specific_entry.clone()),
@@ -1303,6 +1385,7 @@ mod tests {
             device: MORE_SPECIFIC_SUB_DEVICE.clone(),
             gateway: None,
             metric,
+            route_preference: RoutePreference::Medium,
         };
         assert_eq!(
             super::testutil::add_entry(&mut table, more_specific_entry.clone()),
@@ -1359,57 +1442,52 @@ mod tests {
         )))
         .unwrap();
 
-        fn entry<I: Ip, D>(
+        use RoutePreference::{High, Low, Medium};
+
+        const fn entry<I: Ip, D>(
             d: D,
             s: Subnet<I::Addr>,
             g: Option<SpecifiedAddr<I::Addr>>,
+            p: RoutePreference,
             m: Metric,
         ) -> Entry<I::Addr, D> {
-            Entry { device: d, subnet: s, metric: m, gateway: g }
+            Entry { device: d, subnet: s, metric: m, gateway: g, route_preference: p }
         }
 
-        // Expect the routing table to be sorted by longest matching prefix,
-        // followed by on/off link, followed by metric, followed by insertion
-        // order.
-        // Note that the test adds entries for `DEVICE_B` after `DEVICE_A`.
-        let expected_table = [
-            entry::<I, _>(DEVICE_A, more_specific_sub, on_link, lower_metric),
-            entry::<I, _>(DEVICE_B, more_specific_sub, on_link, lower_metric),
-            entry::<I, _>(DEVICE_A, more_specific_sub, on_link, higher_metric),
-            entry::<I, _>(DEVICE_B, more_specific_sub, on_link, higher_metric),
-            entry::<I, _>(DEVICE_A, more_specific_sub, off_link, lower_metric),
-            entry::<I, _>(DEVICE_B, more_specific_sub, off_link, lower_metric),
-            entry::<I, _>(DEVICE_A, more_specific_sub, off_link, higher_metric),
-            entry::<I, _>(DEVICE_B, more_specific_sub, off_link, higher_metric),
-            entry::<I, _>(DEVICE_A, less_specific_sub, on_link, lower_metric),
-            entry::<I, _>(DEVICE_B, less_specific_sub, on_link, lower_metric),
-            entry::<I, _>(DEVICE_A, less_specific_sub, on_link, higher_metric),
-            entry::<I, _>(DEVICE_B, less_specific_sub, on_link, higher_metric),
-            entry::<I, _>(DEVICE_A, less_specific_sub, off_link, lower_metric),
-            entry::<I, _>(DEVICE_B, less_specific_sub, off_link, lower_metric),
-            entry::<I, _>(DEVICE_A, less_specific_sub, off_link, higher_metric),
-            entry::<I, _>(DEVICE_B, less_specific_sub, off_link, higher_metric),
-        ];
-        let device_a_routes = expected_table
-            .iter()
-            .cloned()
-            .filter(|entry| entry.device == DEVICE_A)
-            .collect::<Vec<_>>();
-        let device_b_routes = expected_table
-            .iter()
-            .cloned()
-            .filter(|entry| entry.device == DEVICE_B)
-            .collect::<Vec<_>>();
-
-        // Add routes to the table in all possible permutations, asserting that
-        // they always yield the expected order. Add `DEVICE_B` routes after
-        // `DEVICE_A` routes.
-        for insertion_order in device_a_routes.iter().permutations(device_a_routes.len()) {
-            let mut table = RoutingTable::<I, MultipleDevicesId>::default();
-            for entry in insertion_order.into_iter().chain(device_b_routes.iter()) {
-                assert_eq!(super::testutil::add_entry(&mut table, entry.clone()), Ok(entry));
+        // Expected sorted order: prefix, then locality (on-link > off-link),
+        // then metric, then preference (High > Medium > Low), then insertion.
+        let mut expected_table = alloc::vec![];
+        for subnet in [more_specific_sub, less_specific_sub] {
+            for locality in [on_link, off_link] {
+                for metric in [lower_metric, higher_metric] {
+                    for preference in [High, Medium, Low] {
+                        for device in [DEVICE_A, DEVICE_B] {
+                            expected_table
+                                .push(entry::<I, _>(device, subnet, locality, preference, metric));
+                        }
+                    }
+                }
             }
-            assert_eq!(table.iter_table().cloned().collect::<Vec<_>>(), expected_table);
         }
+
+        let len = expected_table.len();
+
+        proptest::proptest!(
+            move |(shuffle in proptest::sample::subsequence(expected_table.clone(), len))| {
+                // the proptest macros want this.
+                use alloc::format;
+                let mut table = RoutingTable::<I, _>::default();
+                for entry in shuffle.iter() {
+                    proptest::prop_assert_eq!(
+                        super::testutil::add_entry(&mut table, entry.clone()),
+                        Ok(entry)
+                    );
+                }
+                proptest::prop_assert_eq!(
+                    table.iter_table().cloned().collect::<Vec<_>>(),
+                    &expected_table[..]
+                );
+            }
+        );
     }
 }

@@ -967,6 +967,7 @@ fn icmp_error_on_address_resolution_failure_tcp_forwarding<I: TestIpExt + IpExt>
                     device: device.into(),
                     gateway: gateway,
                     metric: AddableMetric::MetricTracksInterface,
+                    route_preference: Default::default(),
                 },
             )
             .expect("add default route");

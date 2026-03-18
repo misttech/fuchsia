@@ -16,7 +16,7 @@ use packet_formats::ip::IpProto;
 
 use crate::internal::routing::rules::RuleMatcher;
 use crate::internal::routing::testutil;
-use crate::{Destination, Entry, Metric, NextHop, RawMetric};
+use crate::{Destination, Entry, Metric, NextHop, RawMetric, RoutePreference};
 
 use super::*;
 
@@ -353,6 +353,7 @@ fn test_walk_rules<I: IpLayerIpExt + TestIpExt>() {
             device: MultipleDevicesId::A,
             gateway: None,
             metric: Metric::ExplicitMetric(RawMetric(0)),
+            route_preference: RoutePreference::Medium,
         },
     )
     .expect("failed to install route entry");
@@ -365,6 +366,7 @@ fn test_walk_rules<I: IpLayerIpExt + TestIpExt>() {
             device: MultipleDevicesId::B,
             gateway: None,
             metric: Metric::ExplicitMetric(RawMetric(0)),
+            route_preference: RoutePreference::Medium,
         },
     )
     .expect("failed to install route entry");

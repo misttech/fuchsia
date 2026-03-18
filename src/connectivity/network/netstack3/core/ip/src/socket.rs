@@ -1585,6 +1585,7 @@ pub(crate) mod testutil {
     use alloc::vec::Vec;
     use core::num::NonZeroUsize;
 
+    use crate::internal::types::RoutePreference;
     use derivative::Derivative;
     use net_types::ip::{GenericOverIp, IpAddr, IpAddress, Ipv4, Ipv4Addr, Ipv6, Subnet};
     use net_types::{MulticastAddr, Witness as _};
@@ -1850,6 +1851,7 @@ pub(crate) mod testutil {
                 device,
                 gateway: None,
                 metric: Metric::ExplicitMetric(RawMetric(0)),
+                route_preference: RoutePreference::Medium,
             };
             A::Version::map_ip::<_, ()>(
                 entry,

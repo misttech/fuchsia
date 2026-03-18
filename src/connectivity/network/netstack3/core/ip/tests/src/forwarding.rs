@@ -22,7 +22,8 @@ use netstack3_core::testutil::{
 };
 use netstack3_ip::{
     AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, Entry, InternalForwarding,
-    Metric, RawMetric, ResolvedRoute, RouteResolveOptions, Rule, RuleAction, RuleMatcher,
+    Metric, RawMetric, ResolvedRoute, RoutePreference, RouteResolveOptions, Rule, RuleAction,
+    RuleMatcher,
 };
 
 #[ip_test(I)]
@@ -206,7 +207,8 @@ fn test_route_tracks_interface_metric<I: TestIpExt>() {
             subnet: I::TEST_ADDRS.subnet,
             device: device_id.clone().into(),
             gateway: None,
-            metric: Metric::MetricTracksInterface(metric)
+            metric: Metric::MetricTracksInterface(metric),
+            route_preference: RoutePreference::Medium
         }
         .into()]
     );
@@ -257,6 +259,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
                 device: device_id_1.clone(),
                 gateway: None,
                 metric: Metric::MetricTracksInterface(device_metric_1),
+                route_preference: Default::default(),
             }
             .with_generation(netstack3_ip::Generation::initial())
         ],
@@ -278,6 +281,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
                 device: device_id_1.clone(),
                 gateway: Some(gateway),
                 metric: Metric::MetricTracksInterface(device_metric_1),
+                route_preference: Default::default(),
             }
             .with_generation(netstack3_ip::Generation::initial()),
             // Otherwise device 2.
@@ -286,6 +290,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
                 device: device_id_2,
                 gateway: None,
                 metric: Metric::MetricTracksInterface(device_metric_2),
+                route_preference: Default::default(),
             }
             .with_generation(netstack3_ip::Generation::initial())
         ],
@@ -400,6 +405,7 @@ fn route_resolution_with_marks<I: TestIpExt + netstack3_core::IpExt>() {
                     device: device_id.clone(),
                     gateway: None,
                     metric: Metric::MetricTracksInterface(device_metric),
+                    route_preference: Default::default(),
                 }
                 .with_generation(netstack3_ip::Generation::initial())
             ],

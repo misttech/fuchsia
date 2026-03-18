@@ -1198,6 +1198,7 @@ async fn inspect_routes(name: &str) {
                             Gateway: "[NONE]",
                             Metric: 1000u64,
                             MetricTracksInterface: true,
+                            RoutePreference: "Medium",
                         },
                         "1": {
                             Destination: "224.0.0.0/4",
@@ -1205,6 +1206,7 @@ async fn inspect_routes(name: &str) {
                             Gateway: "[NONE]",
                             Metric: 1000u64,
                             MetricTracksInterface: true,
+                            RoutePreference: "Medium",
                         },
                     },
                 }
@@ -1226,6 +1228,7 @@ async fn inspect_routes(name: &str) {
                             Gateway: "[NONE]",
                             Metric: 1000u64,
                             MetricTracksInterface: true,
+                            RoutePreference: "Medium",
                         },
                         "1": {
                             Destination: "ff00::/8",
@@ -1233,6 +1236,7 @@ async fn inspect_routes(name: &str) {
                             Gateway: "[NONE]",
                             Metric: 1000u64,
                             MetricTracksInterface: true,
+                            RoutePreference: "Medium",
                         },
                     },
                 }

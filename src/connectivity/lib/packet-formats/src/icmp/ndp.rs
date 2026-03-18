@@ -343,6 +343,16 @@ impl RouterAdvertisement {
         // of milliseconds
         NonZeroDuration::new(Duration::from_millis(self.retransmit_timer.get().into()))
     }
+
+    /// Returns the default router preference.
+    pub fn preference(&self) -> RoutePreference {
+        let preference = (self.configuration_mo & Self::DEFAULT_ROUTER_PREFERENCE_MASK)
+            >> Self::DEFAULT_ROUTER_PREFERENCE_SHIFT;
+        // Per RFC 4191:
+        //  If the Reserved (10) value is received, the receiver MUST treat the
+        //  value as if it were (00).
+        RoutePreference::try_from(preference).unwrap_or_default()
+    }
 }
 
 /// An NDP Neighbor Solicitation.

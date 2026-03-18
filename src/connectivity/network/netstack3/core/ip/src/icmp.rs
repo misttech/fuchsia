@@ -58,7 +58,9 @@ use crate::internal::base::{
     NdpBindingsContext, RouterAdvertisementEvent, SendIpPacketMeta,
 };
 use crate::internal::device::nud::{ConfirmationFlags, NudIpHandler};
-use crate::internal::device::route_discovery::Ipv6DiscoveredRoute;
+use crate::internal::device::route_discovery::{
+    Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties,
+};
 use crate::internal::device::{
     IpAddressState, IpDeviceHandler, Ipv6DeviceHandler, Ipv6LinkLayerAddr,
 };
@@ -69,6 +71,7 @@ use crate::internal::socket::{
     DelegatedRouteResolutionOptions, DelegatedSendOptions, IpSocketArgs, IpSocketHandler,
     OptionDelegationMarker, RouteResolutionOptions, SendOptions,
 };
+use crate::internal::types::RoutePreference;
 
 /// The IP packet hop limit for all NDP packets.
 ///
@@ -1778,12 +1781,12 @@ fn receive_ndp_packet<
                 IpDeviceHandler::set_default_hop_limit(core_ctx, &device_id, hop_limit);
             }
 
-            // TODO(https://fxbug.dev/42077316): Support default router preference.
             Ipv6DeviceHandler::update_discovered_ipv6_route(
                 core_ctx,
                 bindings_ctx,
                 &device_id,
                 Ipv6DiscoveredRoute { subnet: IPV6_DEFAULT_SUBNET, gateway: Some(src_ip) },
+                Ipv6DiscoveredRouteProperties { route_preference: p.message().preference().into() },
                 p.message().router_lifetime().map(NonZeroNdpLifetime::Finite),
             );
 
@@ -1869,12 +1872,14 @@ fn receive_ndp_packet<
                         let valid_lifetime = prefix_info.valid_lifetime();
 
                         if prefix_info.on_link_flag() {
-                            // TODO(https://fxbug.dev/42077316): Support route preference.
                             Ipv6DeviceHandler::update_discovered_ipv6_route(
                                 core_ctx,
                                 bindings_ctx,
                                 &device_id,
                                 Ipv6DiscoveredRoute { subnet, gateway: None },
+                                Ipv6DiscoveredRouteProperties {
+                                    route_preference: RoutePreference::Medium,
+                                },
                                 valid_lifetime,
                             )
                         }
@@ -1892,7 +1897,6 @@ fn receive_ndp_packet<
                     }
                     NdpOption::RouteInformation(rio) => {
                         debug!("processing Route Information option in RA: {:?}", rio);
-                        // TODO(https://fxbug.dev/42077316): Support route preference.
                         Ipv6DeviceHandler::update_discovered_ipv6_route(
                             core_ctx,
                             bindings_ctx,
@@ -1900,6 +1904,9 @@ fn receive_ndp_packet<
                             Ipv6DiscoveredRoute {
                                 subnet: rio.prefix().clone(),
                                 gateway: Some(src_ip),
+                            },
+                            Ipv6DiscoveredRouteProperties {
+                                route_preference: rio.preference().into(),
                             },
                             rio.route_lifetime(),
                         )
@@ -3172,6 +3179,7 @@ mod tests {
             _bindings_ctx: &mut FakeIcmpBindingsCtx<Ipv6>,
             _device_id: &Self::DeviceId,
             _route: Ipv6DiscoveredRoute,
+            _properties: Ipv6DiscoveredRouteProperties,
             _lifetime: Option<NonZeroNdpLifetime>,
         ) {
             unimplemented!()

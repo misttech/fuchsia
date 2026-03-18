@@ -1046,7 +1046,13 @@ impl<I: Ip> TryFromFidlWithContext<fnet_routes_ext::Route<I>>
             }
         };
 
-        Ok(AddableEntry { subnet: destination, device, gateway: next_hop, metric })
+        Ok(AddableEntry {
+            subnet: destination,
+            device,
+            gateway: next_hop,
+            metric,
+            route_preference: Default::default(),
+        })
     }
 }
 
@@ -1065,10 +1071,10 @@ impl TryIntoFidlWithContext<fidl_net_stack::ForwardingEntry>
             Option<IpAddr<SpecifiedAddr<Ipv4Addr>, SpecifiedAddr<Ipv6Addr>>>,
             _,
         ) = match self {
-            EntryEither::V4(Entry { subnet, device, gateway, metric }) => {
+            EntryEither::V4(Entry { subnet, device, gateway, metric, route_preference: _ }) => {
                 (subnet.into(), device, gateway.map(|gateway| gateway.into()), metric)
             }
-            EntryEither::V6(Entry { subnet, device, gateway, metric }) => {
+            EntryEither::V6(Entry { subnet, device, gateway, metric, route_preference: _ }) => {
                 (subnet.into(), device, gateway.map(|gateway| gateway.into()), metric)
             }
         };
@@ -1096,7 +1102,7 @@ impl<I: Ip> TryIntoFidlWithContext<fnet_routes_ext::Route<I>>
         self,
         ctx: &C,
     ) -> Result<fnet_routes_ext::Route<I>, Never> {
-        let Entry { subnet, device, gateway, metric } = self;
+        let Entry { subnet, device, gateway, metric, route_preference: _ } = self;
 
         let device_id: BindingId = device.try_into_fidl_with_ctx(ctx)?;
 
@@ -1128,7 +1134,10 @@ impl<I: Ip> TryIntoFidlWithContext<fnet_routes_ext::InstalledRoute<I>> for Entry
         self,
         ctx: &C,
     ) -> Result<fnet_routes_ext::InstalledRoute<I>, Never> {
-        let EntryAndTableId { entry: Entry { subnet, device, gateway, metric }, table_id } = self;
+        let EntryAndTableId {
+            entry: Entry { subnet, device, gateway, metric, route_preference: _ },
+            table_id,
+        } = self;
         let device: BindingId = device.try_into_fidl_with_ctx(ctx)?;
         let specified_metric = match metric {
             Metric::ExplicitMetric(value) => {

@@ -30,13 +30,14 @@ use netstack3_ip::device::{
     IpDeviceIpExt, IpDeviceMulticastGroups, IpDeviceStateBindingsTypes, IpDeviceStateContext,
     IpDeviceStateIpExt, IpDeviceTimerId, Ipv4DadSendData, Ipv4DeviceConfiguration,
     Ipv4DeviceTimerId, Ipv6AddrConfig, Ipv6AddrSlaacConfig, Ipv6DadAddressContext, Ipv6DadSendData,
-    Ipv6DeviceConfiguration, Ipv6DeviceTimerId, Ipv6DiscoveredRoute, Ipv6DiscoveredRoutesContext,
-    Ipv6NetworkLearnedParameters, Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState, RsContext,
-    RsState, RsTimerId, SlaacAddressEntry, SlaacAddressEntryMut, SlaacAddresses,
-    SlaacConfigAndState, SlaacContext, SlaacCounters, SlaacState, WeakAddressId,
-    add_ip_addr_subnet_with_config, del_ip_addr_inner, get_ipv6_hop_limit, is_ip_device_enabled,
-    is_ip_multicast_forwarding_enabled, is_ip_unicast_forwarding_enabled,
-    join_ip_multicast_with_config, leave_ip_multicast_with_config,
+    Ipv6DeviceConfiguration, Ipv6DeviceTimerId, Ipv6DiscoveredRoute, Ipv6DiscoveredRouteProperties,
+    Ipv6DiscoveredRoutesContext, Ipv6NetworkLearnedParameters, Ipv6RouteDiscoveryContext,
+    Ipv6RouteDiscoveryState, RsContext, RsState, RsTimerId, SlaacAddressEntry,
+    SlaacAddressEntryMut, SlaacAddresses, SlaacConfigAndState, SlaacContext, SlaacCounters,
+    SlaacState, WeakAddressId, add_ip_addr_subnet_with_config, del_ip_addr_inner,
+    get_ipv6_hop_limit, is_ip_device_enabled, is_ip_multicast_forwarding_enabled,
+    is_ip_unicast_forwarding_enabled, join_ip_multicast_with_config,
+    leave_ip_multicast_with_config,
 };
 use netstack3_ip::gmp::{
     GmpGroupState, GmpState, GmpStateRef, IgmpContext, IgmpContextMarker, IgmpSendContext,
@@ -1091,6 +1092,7 @@ impl<BC: BindingsContext> Ipv6DiscoveredRoutesContext<BC>
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         Ipv6DiscoveredRoute { subnet, gateway }: Ipv6DiscoveredRoute,
+        Ipv6DiscoveredRouteProperties { route_preference }: Ipv6DiscoveredRouteProperties,
     ) {
         let device_id = device_id.clone();
         let entry = ip::AddableEntry {
@@ -1098,6 +1100,7 @@ impl<BC: BindingsContext> Ipv6DiscoveredRoutesContext<BC>
             device: device_id,
             gateway: gateway.map(|g| (*g).into_specified()),
             metric: AddableMetric::MetricTracksInterface,
+            route_preference,
         };
 
         ip::request_context_add_route::<Ipv6, _, _>(bindings_ctx, entry);

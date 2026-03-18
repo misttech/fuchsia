@@ -114,7 +114,7 @@ impl NeighborType {
         dev: &D1,
         route: &Entry<I::Addr, D2>,
     ) {
-        let Entry { device, subnet, gateway, metric: _ } = route;
+        let Entry { device, subnet, gateway, metric: _, route_preference: _ } = route;
         // NB: Ignore routes on different devices.
         if device != dev {
             return;
@@ -666,7 +666,7 @@ mod tests {
     use net_declare::{net_ip_v4, net_subnet_v4};
     use net_types::SpecifiedAddr;
     use net_types::ip::{Ipv4Addr, Subnet};
-    use netstack3_core::routes::{Metric, RawMetric};
+    use netstack3_core::routes::{Metric, RawMetric, RoutePreference};
     use test_case::test_case;
 
     use super::*;
@@ -685,18 +685,21 @@ mod tests {
         device: RIGHT_DEV,
         gateway: None,
         metric: Metric::ExplicitMetric(RawMetric(0)),
+        route_preference: RoutePreference::Medium,
     };
     const GATEWAY_ENTRY: Entry<Ipv4Addr, u8> = Entry {
         subnet: net_subnet_v4!("192.168.0.0/16"),
         device: RIGHT_DEV,
         gateway: Some(RIGHT_ADDR),
         metric: Metric::ExplicitMetric(RawMetric(0)),
+        route_preference: RoutePreference::Medium,
     };
     const INTERNET_GATEWAY_ENTRY: Entry<Ipv4Addr, u8> = Entry {
         subnet: net_subnet_v4!("0.0.0.0/0"),
         device: RIGHT_DEV,
         gateway: Some(RIGHT_ADDR),
         metric: Metric::ExplicitMetric(RawMetric(0)),
+        route_preference: RoutePreference::Medium,
     };
 
     #[test_case(RIGHT_ADDR, WRONG_DEV, ONLINK_ENTRY, NeighborType::Unknown

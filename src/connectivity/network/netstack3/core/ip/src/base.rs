@@ -1052,14 +1052,19 @@ impl<DeviceId, I: IpLayerIpExt> IpLayerEvent<DeviceId, I> {
     /// Changes the device id type with `map`.
     pub fn map_device<N, F: Fn(DeviceId) -> N>(self, map: F) -> IpLayerEvent<N, I> {
         match self {
-            IpLayerEvent::AddRoute(types::AddableEntry { subnet, device, gateway, metric }) => {
-                IpLayerEvent::AddRoute(types::AddableEntry {
-                    subnet,
-                    device: map(device),
-                    gateway,
-                    metric,
-                })
-            }
+            IpLayerEvent::AddRoute(types::AddableEntry {
+                subnet,
+                device,
+                gateway,
+                metric,
+                route_preference,
+            }) => IpLayerEvent::AddRoute(types::AddableEntry {
+                subnet,
+                device: map(device),
+                gateway,
+                metric,
+                route_preference,
+            }),
             IpLayerEvent::RemoveRoutes { subnet, device, gateway } => {
                 IpLayerEvent::RemoveRoutes { subnet, device: map(device), gateway }
             }

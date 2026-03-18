@@ -11,7 +11,7 @@ use net_types::ip::{Ipv6, Ipv6Addr, Subnet};
 use net_types::{LinkLocalUnicastAddr, Witness as _};
 use packet::{BufferMut, InnerPacketBuilder as _, Serializer as _};
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation, RouteInformation};
-use packet_formats::icmp::ndp::{OptionSequenceBuilder, RoutePreference, RouterAdvertisement};
+use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterAdvertisement};
 use packet_formats::icmp::{IcmpPacketBuilder, IcmpZeroCode};
 use packet_formats::ip::Ipv6Proto;
 use packet_formats::ipv6::Ipv6PacketBuilder;
@@ -30,7 +30,7 @@ use netstack3_hashmap::HashMap;
 use netstack3_ip::device::{
     IpDeviceBindingsContext, IpDeviceConfigurationUpdate, IpDeviceEvent,
     Ipv6DeviceConfigurationContext, Ipv6DeviceConfigurationUpdate, Ipv6DiscoveredRoute,
-    Ipv6RouteDiscoveryBindingsContext, Ipv6RouteDiscoveryContext,
+    Ipv6DiscoveredRouteProperties, Ipv6RouteDiscoveryBindingsContext, Ipv6RouteDiscoveryContext,
 };
 use netstack3_ip::{
     self as ip, AddableEntry, AddableEntryEither, AddableMetric, Entry, IPV6_DEFAULT_SUBNET,
@@ -95,13 +95,17 @@ fn add_link_local_route(ctx: &mut FakeCtx, device: &DeviceId<FakeBindingsCtx>) {
 
 fn discovered_route_to_entry(
     device: &DeviceId<FakeBindingsCtx>,
-    Ipv6DiscoveredRoute { subnet, gateway }: Ipv6DiscoveredRoute,
+    route: Ipv6DiscoveredRoute,
+    properties: Ipv6DiscoveredRouteProperties,
 ) -> Entry<Ipv6Addr, DeviceId<FakeBindingsCtx>> {
+    let Ipv6DiscoveredRoute { subnet, gateway } = route;
+    let Ipv6DiscoveredRouteProperties { route_preference } = properties;
     Entry {
         subnet,
         device: device.clone(),
         gateway: gateway.map(|g| (*g).into_specified()),
         metric: Metric::MetricTracksInterface(DEFAULT_INTERFACE_METRIC),
+        route_preference,
     }
 }
 
@@ -129,11 +133,7 @@ fn router_advertisement_buf(
         on_link_prefix.network(),
     );
     let more_specific_route_opt = more_specific_route.map(|(subnet, secs)| {
-        NdpOptionBuilder::RouteInformation(RouteInformation::new(
-            subnet,
-            secs,
-            RoutePreference::default(),
-        ))
+        NdpOptionBuilder::RouteInformation(RouteInformation::new(subnet, secs, Default::default()))
     });
     let options = [NdpOptionBuilder::PrefixInformation(p)];
     let options = options.into_iter().chain(more_specific_route_opt).collect::<Vec<_>>();
@@ -180,7 +180,7 @@ where
     BC: IpDeviceBindingsContext<Ipv6, CC::DeviceId> + Ipv6RouteDiscoveryBindingsContext,
     I: IntoIterator<Item = (Ipv6DiscoveredRoute, BC::Instant)>,
 {
-    let want = timers.into_iter().collect::<HashMap<_, _>>();
+    let want = timers.into_iter().map(|(r, t)| (r, t)).collect::<HashMap<_, _>>();
     let got = core_ctx.with_ipv6_device_configuration(device_id, |_, mut core_ctx| {
         core_ctx.with_discovered_routes_mut(device_id, |state, _| {
             state.timers().iter().map(|(k, (), t)| (*k, *t)).collect::<HashMap<_, _>>()
@@ -247,13 +247,14 @@ fn discovery_integration() {
         source: **src_ip,
     };
     let gateway_route = Ipv6DiscoveredRoute { subnet: IPV6_DEFAULT_SUBNET, gateway: Some(src_ip) };
+    let gateway_prop = Ipv6DiscoveredRouteProperties::default();
     assert_timers_integration(
         &mut ctx.core_ctx(),
         &device_id,
         [(gateway_route, FakeInstant::from(ONE_SECOND.get()))],
     );
 
-    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route);
+    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route, gateway_prop);
     assert_eq!(
         ctx.bindings_ctx.take_events(),
         [
@@ -279,7 +280,8 @@ fn discovery_integration() {
         ra_buf,
     );
     let on_link_route = Ipv6DiscoveredRoute { subnet, gateway: None };
-    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route);
+    let on_link_prop = Ipv6DiscoveredRouteProperties::default();
+    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route, on_link_prop);
 
     assert_timers_integration(
         &mut ctx.core_ctx(),
@@ -313,7 +315,9 @@ fn discovery_integration() {
         ra_buf,
     );
     let more_specific_route = Ipv6DiscoveredRoute { subnet, gateway: Some(src_ip) };
-    let more_specific_route_entry = discovered_route_to_entry(&device_id, more_specific_route);
+    let more_specific_prop = Ipv6DiscoveredRouteProperties::default();
+    let more_specific_route_entry =
+        discovered_route_to_entry(&device_id, more_specific_route, more_specific_prop);
     assert_timers_integration(
         &mut ctx.core_ctx(),
         &device_id,
@@ -353,9 +357,9 @@ fn discovery_integration() {
         [(on_link_route, FakeInstant::from(TWO_SECONDS.get()))],
     );
     {
-        let ip::Entry { subnet, device, gateway, metric: _ } = gateway_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = gateway_route_entry;
         let event1 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
-        let ip::Entry { subnet, device, gateway, metric: _ } = more_specific_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = more_specific_route_entry;
         let event2 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
         let events = ctx.bindings_ctx.take_events();
         assert_eq!(events.len(), 3);
@@ -398,7 +402,7 @@ fn discovery_integration() {
     );
     assert_timers_integration(&mut ctx.core_ctx(), &device_id, []);
     {
-        let ip::Entry { subnet, device, gateway, metric: _ } = on_link_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = on_link_route_entry;
         assert_eq!(
             ctx.bindings_ctx.take_events(),
             [
@@ -437,9 +441,11 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
     };
 
     let gateway_route = Ipv6DiscoveredRoute { subnet: IPV6_DEFAULT_SUBNET, gateway: Some(src_ip) };
-    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route);
+    let gateway_prop = Ipv6DiscoveredRouteProperties::default();
+    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route, gateway_prop);
     let on_link_route = Ipv6DiscoveredRoute { subnet, gateway: None };
-    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route);
+    let on_link_prop = Ipv6DiscoveredRouteProperties::default();
+    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route, on_link_prop);
 
     // Clear events so we can assert on route-added events later.
     let _: Vec<DispatchedEvent> = ctx.bindings_ctx.take_events();
@@ -541,9 +547,9 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
     assert_timers_integration(&mut ctx.core_ctx(), &device_id, []);
 
     {
-        let ip::Entry { subnet, device, gateway, metric: _ } = gateway_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = gateway_route_entry;
         let event1 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
-        let ip::Entry { subnet, device, gateway, metric: _ } = on_link_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = on_link_route_entry;
         let event2 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
         assert_eq!(
             ctx.bindings_ctx.take_events(),
@@ -568,9 +574,11 @@ fn flush_routes_on_interface_disabled_integration() {
 
     let src_ip = remote_mac.to_ipv6_link_local().addr();
     let gateway_route = Ipv6DiscoveredRoute { subnet: IPV6_DEFAULT_SUBNET, gateway: Some(src_ip) };
-    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route);
+    let gateway_prop = Ipv6DiscoveredRouteProperties::default();
+    let gateway_route_entry = discovered_route_to_entry(&device_id, gateway_route, gateway_prop);
     let on_link_route = Ipv6DiscoveredRoute { subnet, gateway: None };
-    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route);
+    let on_link_prop = Ipv6DiscoveredRouteProperties::default();
+    let on_link_route_entry = discovered_route_to_entry(&device_id, on_link_route, on_link_prop);
 
     // Clear events so we can assert on route-added events later.
     let _: Vec<DispatchedEvent> = ctx.bindings_ctx.take_events();
@@ -634,9 +642,9 @@ fn flush_routes_on_interface_disabled_integration() {
     assert_timers_integration(&mut ctx.core_ctx(), &device_id, []);
 
     {
-        let ip::Entry { subnet, device, gateway, metric: _ } = gateway_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = gateway_route_entry;
         let event1 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
-        let ip::Entry { subnet, device, gateway, metric: _ } = on_link_route_entry;
+        let ip::Entry { subnet, device, gateway, .. } = on_link_route_entry;
         let event2 = IpLayerEvent::RemoveRoutes { subnet, device: device.downgrade(), gateway };
         let events = ctx.bindings_ctx.take_events();
 
