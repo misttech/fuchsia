@@ -73,16 +73,7 @@ actions:
   - action: run
     description: Optional injection of specific kernel image
     chroot: true
-    script: |
-      # Download the specific signed image
-      wget -O /tmp/sideloaded-kernel.deb {{ $kernel }}
-
-      # Install it using dpkg (this places vmlinuz in /boot and modules in /lib/modules)
-      # We use --force-depends if there are minor version mismatches in secondary tools
-      dpkg -i --force-depends /tmp/sideloaded-kernel.deb
-
-      # Clean up the deb file to keep the image small
-      rm /tmp/sideloaded-kernel.deb
+    script: sideload_kernel.sh {{ $kernel }}
   {{ end }}
 
   # Run customization actions inside the image.
