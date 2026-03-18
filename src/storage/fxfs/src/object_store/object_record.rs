@@ -80,7 +80,10 @@ pub enum ObjectKeyDataV43 {
     Project { project_id: u64, property: ProjectPropertyV32 },
     /// An extended attribute associated with an object. It stores the name used for the extended
     /// attribute, which has a maximum size of 255 bytes enforced by fuchsia.io.
-    ExtendedAttribute { name: Vec<u8> },
+    ExtendedAttribute {
+        #[serde(with = "crate::zerocopy_serialization")]
+        name: Vec<u8>,
+    },
     /// A graveyard entry for an attribute.
     GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
     /// A child of an encrypted directory.  We store the filename in its encrypted form.  hash_code
@@ -101,6 +104,7 @@ pub enum ObjectKeyDataV43 {
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct EncryptedCasefoldChild {
     pub hash_code: u32,
+    #[serde(with = "crate::zerocopy_serialization")]
     pub name: Vec<u8>,
 }
 
@@ -108,7 +112,7 @@ pub struct EncryptedCasefoldChild {
     Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct EncryptedChild(pub Vec<u8>);
+pub struct EncryptedChild(#[serde(with = "crate::zerocopy_serialization")] pub Vec<u8>);
 
 pub type AttributeKey = AttributeKeyV32;
 
@@ -513,6 +517,7 @@ pub enum ObjectKindV49 {
         refs: u64,
         /// `link` is the target of the link and has no meaning within Fxfs; clients are free to
         /// interpret it however they like.
+        #[serde(with = "crate::zerocopy_serialization")]
         link: Box<[u8]>,
     },
     EncryptedSymlink {
@@ -522,6 +527,7 @@ pub enum ObjectKindV49 {
         /// interpret it however they like.
         /// `link` is stored here in encrypted form, encrypted with the symlink's key using the
         /// same encryption scheme as the one used to encrypt filenames.
+        #[serde(with = "crate::zerocopy_serialization")]
         link: Box<[u8]>,
     },
 }
@@ -574,7 +580,7 @@ pub type ExtendedAttributeValue = ExtendedAttributeValueV32;
 pub enum ExtendedAttributeValueV32 {
     /// The extended attribute value is stored directly in this object. If the value is above a
     /// certain size, it should be stored as an attribute with extents instead.
-    Inline(Vec<u8>),
+    Inline(#[serde(with = "crate::zerocopy_serialization")] Vec<u8>),
     /// The extended attribute value is stored as an attribute with extents. The attribute id
     /// should be chosen to be within the range of 64-512.
     AttributeId(u64),
@@ -600,7 +606,7 @@ pub type RootDigest = RootDigestV33;
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum RootDigestV33 {
     Sha256([u8; 32]),
-    Sha512(Vec<u8>),
+    Sha512(#[serde(with = "crate::zerocopy_serialization")] Vec<u8>),
 }
 
 pub type FsverityMetadata = FsverityMetadataV50;
@@ -609,7 +615,7 @@ pub type FsverityMetadata = FsverityMetadataV50;
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum FsverityMetadataV50 {
     /// The root hash and salt.
-    Internal(RootDigestV33, Vec<u8>),
+    Internal(RootDigestV33, #[serde(with = "crate::zerocopy_serialization")] Vec<u8>),
     /// The root hash and salt are in a descriptor inside the merkle attribute.
     F2fs(std::ops::Range<u64>),
 }

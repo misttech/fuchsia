@@ -37,6 +37,7 @@ pub type Checksums = ChecksumsV38;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ChecksumsV38 {
+    #[serde(with = "crate::zerocopy_serialization")]
     sums: Vec<u8>,
 }
 

@@ -335,6 +335,7 @@ pub struct EncryptedMutationsV49 {
     transactions: Vec<(JournalCheckpointV32, u64)>,
 
     // The encrypted mutations.
+    #[serde(with = "crate::zerocopy_serialization")]
     data: Vec<u8>,
 
     // If the mutations key was rolled, this holds the offset in `data` where the new key should

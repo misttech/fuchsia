@@ -37,3 +37,4 @@ mod stable_hash;
 #[cfg(test)]
 mod testing;
 pub mod virtual_device;
+pub mod zerocopy_serialization;

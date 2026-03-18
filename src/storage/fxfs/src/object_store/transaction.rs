@@ -85,7 +85,7 @@ pub type Mutation = MutationV50;
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum MutationV50 {
     ObjectStore(ObjectStoreMutationV50),
-    EncryptedObjectStore(Box<[u8]>),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
     Allocator(AllocatorMutationV32),
     // Indicates the beginning of a flush.  This would typically involve sealing a tree.
     BeginFlush,

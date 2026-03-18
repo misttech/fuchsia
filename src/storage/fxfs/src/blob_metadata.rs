@@ -180,7 +180,7 @@ impl BlobMetadata {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, TypeFingerprint)]
 pub struct BlobMetadataV53 {
-    #[serde(with = "merkle_serialization")]
+    #[serde(with = "crate::zerocopy_serialization")]
     pub merkle_leaves: MerkleLeaves,
     pub format: BlobFormatV53,
 }
@@ -214,49 +214,6 @@ pub enum BlobFormatV53 {
     Uncompressed,
     ChunkedZstd { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
     ChunkedLz4 { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
-}
-
-/// Custom serialization and deserialization for the merkle leaves which treats them as one large
-/// slice of bytes.
-mod merkle_serialization {
-    use super::MerkleLeaves;
-    use serde::{Deserializer, Serializer};
-    use zerocopy::{FromBytes, IntoBytes};
-
-    pub fn serialize<S>(value: &MerkleLeaves, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let bytes = value.as_slice().as_bytes();
-        serializer.serialize_bytes(bytes)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<MerkleLeaves, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = MerkleLeaves;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a byte array with a length that it is a multiple of 32")
-            }
-
-            fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                if bytes.len() % 32 != 0 {
-                    return Err(E::invalid_length(bytes.len(), &"a multiple of 32"));
-                }
-                let slice_of_arrays = <[[u8; 32]]>::ref_from_bytes(bytes)
-                    .map_err(|_| E::custom("failed to cast bytes to &[[u8; 32]]"))?;
-                Ok(slice_of_arrays.to_vec())
-            }
-        }
-        deserializer.deserialize_bytes(Visitor)
-    }
 }
 
 #[derive(Default)]
