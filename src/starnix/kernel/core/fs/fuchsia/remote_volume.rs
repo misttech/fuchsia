@@ -14,11 +14,12 @@ use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_hardware_inlineencryption::DeviceMarker as InlineEncryptionDeviceMarker;
 use fidl_fuchsia_io as fio;
 use starnix_crypt::CryptService;
-use starnix_logging::{log_error, log_info};
+use starnix_logging::{Level, log, log_error};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio, statfs};
 use std::sync::Arc;
+use thiserror::Error;
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
 // `KEY_FILE_PATH` determines where the volume-wide keys for the Starnix volume will live in the
@@ -119,6 +120,18 @@ struct VolumeKeys {
     data: [u8; 32],
 }
 
+#[derive(Error, Debug, Eq, PartialEq)]
+enum KeyFileError {
+    #[error("key file not found")]
+    NotFound,
+    #[error("failed to read key file")]
+    ReadError(#[from] zx::Status),
+    #[error("unsupported key file version")]
+    UnsupportedVersion,
+    #[error("unexpected content")]
+    UnexpectedContent,
+}
+
 impl VolumeKeys {
     // `KEYS_SIZE` is the size of the two keys (the metadata key, and the data key) stored in the
     // key file.
@@ -134,35 +147,50 @@ impl VolumeKeys {
         data: &fio::DirectorySynchronousProxy,
         key_path: &str,
     ) -> Result<(Self, bool), Errno> {
-        if let Some(keys) = Self::get(data, key_path)? {
-            Ok((keys, false))
-        } else {
-            log_info!("Creating key file at {key_path}");
-            Ok((Self::create(data, key_path)?, true))
+        match Self::get(data, key_path) {
+            Ok(keys) => Ok((keys, false)),
+            Err(KeyFileError::ReadError(status)) => {
+                // If there's a read error, we just return the error rather than try and create a
+                // key file.  Chances are that if we are unable to read the file, we'll be unable to
+                // create the file too.  A missing key file is handled differently.
+                Err(from_status_like_fdio!(status))
+            }
+            Err(e) => {
+                log!(
+                    if e == KeyFileError::NotFound { Level::Info } else { Level::Warn },
+                    "Creating key file at {key_path} (reason={e:?}) which will \
+                     cause existing data to be *wiped* if it exists."
+                );
+                Ok((Self::create(data, key_path)?, true))
+            }
         }
     }
 
     /// Returns None rather than an error if the key file does not exist or is corrupt,
     /// but returns all other errors (e.g. if the connection to `data` is closed).
-    fn get(data: &fio::DirectorySynchronousProxy, key_path: &str) -> Result<Option<Self>, Errno> {
+    fn get(data: &fio::DirectorySynchronousProxy, key_path: &str) -> Result<Self, KeyFileError> {
         match syncio::directory_read_file(data, key_path, zx::MonotonicInstant::INFINITE) {
             Ok(bytes) => {
                 if bytes.len() == Self::FILE_SIZE {
                     if u16::from_le_bytes(bytes[0..2].try_into().unwrap()) != Self::LATEST_VERSION {
-                        return Ok(None);
+                        Err(KeyFileError::UnsupportedVersion)
+                    } else {
+                        Ok(Self {
+                            metadata: bytes[2..34].try_into().unwrap(),
+                            data: bytes[34..66].try_into().unwrap(),
+                        })
                     }
-                    Ok(Some(Self {
-                        metadata: bytes[2..34].try_into().unwrap(),
-                        data: bytes[34..66].try_into().unwrap(),
-                    }))
                 } else {
-                    Ok(None)
+                    Err(KeyFileError::UnexpectedContent)
                 }
             }
-            Err(zx::Status::NOT_FOUND) => Ok(None),
+            Err(zx::Status::NOT_FOUND) => {
+                // This is expected after an FDR or clean install.
+                Err(KeyFileError::NotFound)
+            }
             Err(status) => {
-                log_error!("Failed to read key file: {status:?}");
-                Err(from_status_like_fdio!(status))
+                log_error!(status:?; "Failed to read key file");
+                Err(status.into())
             }
         }
     }
