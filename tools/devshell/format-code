@@ -131,6 +131,8 @@ function format-file() {
       format-cc-file "$1" ;;
     *.config) format-full-file "${JSON_FMT_CMD}" "$1" ;;
     *.json) format-full-file "${JSON_FMT_CMD}" "$1" ;;
+    *.golden.dts) ;; # Do not format golden files.
+    *.dts | *.dts.S | *.dtsi | *.dtsi.S) format-full-file "${DTSFMT_CMD}" "$1" ;;
   esac
 }
 
@@ -262,6 +264,7 @@ fi
 readonly PY_TOOL="${FUCHSIA_DIR}/scripts/fuchsia-vendored-python"
 readonly CLANG_CMD="${PREBUILT_CLANG_DIR}/bin/clang-format -style=file -fallback-style=Google -sort-includes -i"
 readonly JSON_FMT_CMD="${PY_TOOL} ${FUCHSIA_DIR}/scripts/style/json-fmt.py --no-sort-keys --ignore-errors --quiet"
+readonly DTSFMT_CMD="fx-command-run dtsfmt"
 readonly FIX_HEADER_GUARDS_CMD="${PY_TOOL} ${FUCHSIA_DIR}/scripts/style/check-header-guards.py --fix"
 
 # Mapping from tool name to a list of extensions for files to which the tool
