@@ -23,7 +23,7 @@ use super::symbols::{
     Category, CategoryIndex, Class, ClassIndex, Classes, CommonSymbol, CommonSymbols,
     ConditionalBoolean, MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
 };
-use super::view::{HashedArrayView, U24};
+use super::view::HashedArrayView;
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
@@ -100,7 +100,7 @@ pub struct ParsedPolicy {
     generic_fs_contexts: SimpleArray<GenericFsContexts>,
     range_transitions: SimpleArray<RangeTransitions>,
     /// Extensible bitmaps that encode associations between types and attributes.
-    attribute_maps: Vec<U24>,
+    attribute_maps: Vec<ExtensibleBitmap>,
 }
 
 impl ParsedPolicy {
@@ -163,10 +163,10 @@ impl ParsedPolicy {
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
-        let source_attribute_bitmap =
-            self.reparse_attribute_map(self.attribute_maps[(source_type.0.get() - 1) as usize]);
-        let target_attribute_bitmap =
-            self.reparse_attribute_map(self.attribute_maps[(target_type.0.get() - 1) as usize]);
+        let source_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(source_type.0.get() - 1) as usize];
+        let target_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(target_type.0.get() - 1) as usize];
 
         for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
             source_attribute_bitmap.indices_of_set_bits(),
@@ -291,12 +291,10 @@ impl ParsedPolicy {
                 },
             };
 
-        let source_attribute_bitmap = self.reparse_attribute_map(
-            self.attribute_maps[(source_context.type_().0.get() - 1) as usize],
-        );
-        let target_attribute_bitmap = self.reparse_attribute_map(
-            self.attribute_maps[(target_context.type_().0.get() - 1) as usize],
-        );
+        let source_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(source_context.type_().0.get() - 1) as usize];
+        let target_attribute_bitmap: &ExtensibleBitmap =
+            &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
 
         for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
             source_attribute_bitmap.indices_of_set_bits(),
@@ -557,13 +555,6 @@ impl ParsedPolicy {
         }
         Ok(())
     }
-
-    fn reparse_attribute_map(&self, offset: U24) -> ExtensibleBitmap {
-        let (attribute_map, _) =
-            ExtensibleBitmap::parse(PolicyCursor::new_at(&self.data, u32::from(offset)))
-                .expect("This parsed earlier; why not now?");
-        attribute_map
-    }
 }
 
 impl ParsedPolicy {
@@ -725,14 +716,16 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
     let primary_names_count = types.primary_names_count();
     let mut attribute_maps = Vec::with_capacity(primary_names_count as usize);
     let mut tail = tail;
+
     for i in 0..primary_names_count {
-        let offset = U24::try_from(tail.offset()).expect("Policy offsets ought fit in U24!");
-        let (_, next_tail) = ExtensibleBitmap::parse(tail)
+        let (item, next_tail) = ExtensibleBitmap::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .with_context(|| format!("parsing {}th attribute map", i))?;
-        attribute_maps.push(offset);
+        attribute_maps.push(item);
         tail = next_tail;
     }
+    let tail = tail;
+    let attribute_maps = attribute_maps;
 
     let excess_bytes = data.len() - tail.offset() as usize;
 
@@ -904,12 +897,10 @@ impl ParsedPolicy {
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating range_transitions")?;
-        for attribute_map_offset in &self.attribute_maps {
-            self.reparse_attribute_map(*attribute_map_offset)
-                .validate(&context)
-                .map_err(anyhow::Error::from)
-                .context("validating attribute_maps")?;
-        }
+        self.attribute_maps
+            .validate(&context)
+            .map_err(Into::<anyhow::Error>::into)
+            .context("validating attribute_maps")?;
 
         // Collate the sets of user, role, type, sensitivity and category Ids.
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
