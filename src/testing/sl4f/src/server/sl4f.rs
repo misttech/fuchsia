@@ -125,6 +125,12 @@ use crate::weave::facade::WeaveFacade;
 // Webdriver related includes
 use crate::webdriver::facade::WebdriverFacade;
 
+// Wlan related includes
+use crate::wlan::facade::WlanFacade;
+
+// Wlan Policy related includes
+use crate::wlan_policy::facade::WlanPolicyFacade;
+
 // Wpan related includes
 use crate::wpan::facade::WpanFacade;
 
@@ -203,6 +209,8 @@ impl Sl4f {
                 "virtual_camera_facade" => VirtualCameraFacade::new(),
                 "weave_facade" => WeaveFacade::new(),
                 "webdriver_facade" => WebdriverFacade::new(),
+                "wlan" => WlanFacade::new()?,
+                "wlan_policy" => WlanPolicyFacade::new()?,
                 "wpan_facade" => WpanFacade::new(),
             )
         );
