@@ -13,6 +13,12 @@ use anyhow::{Context, Error, anyhow};
 use argh::FromArgs;
 use fidl::endpoints;
 use fidl::endpoints::ControlHandle;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_inspect as finspect;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fidl_fuchsia_update as fupdate;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
@@ -27,11 +33,6 @@ use serde::{Deserialize, Serialize};
 use std::pin::pin;
 use std::sync::{Arc, LazyLock};
 use zx::{BootInstant, HandleBased};
-use {
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_diagnostics as fdiagnostics,
-    fidl_fuchsia_inspect as finspect, fidl_fuchsia_process_lifecycle as flifecycle,
-    fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
-};
 
 /// The name of the subcommand and the logs-tag.
 pub const PROGRAM_NAME: &str = "persistence";
@@ -105,6 +106,17 @@ struct PersistedState {
     update_stage: Mutex<UpdateCheckStage>,
 }
 
+enum InspectState {
+    /// Inspect data is actively being served by this component instance.
+    Active(inspect_runtime::PublishedInspectController),
+    /// Inspect data is escrowed with the Component Framework.
+    ///
+    /// Archivist monitors this handle for OBJECT_PEER_CLOSED. If the handle is dropped, the
+    /// Archivist removes the escrowed Inspect data. By preserving it here, we ensure data
+    /// availability even when we restart but skip active republication.
+    Escrowed(zx::NullableHandle),
+}
+
 /// All component-specific state.
 #[derive(Clone)]
 struct ComponentState {
@@ -112,8 +124,8 @@ struct ComponentState {
     persisted: Arc<PersistedState>,
     /// Listener for Sample
     scheduler: Scheduler,
-    /// Controller to republish escrowed Inspect data, if available.
-    inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
+    /// Shared state for Inspect data.
+    inspect: Arc<Mutex<Option<InspectState>>>,
 }
 
 impl ComponentState {
@@ -202,7 +214,7 @@ impl ComponentState {
         Ok(Self {
             persisted,
             scheduler,
-            inspect_controller: Arc::new(Mutex::new(Some(inspect_controller))),
+            inspect: Arc::new(Mutex::new(Some(InspectState::Active(inspect_controller)))),
         })
     }
 
@@ -227,25 +239,26 @@ impl ComponentState {
             .context("Failed to deserialize InstanceState")?;
         let update_stage = persisted.update_stage.lock().clone();
 
-        let inspect_controller = match update_stage {
+        let escrow_token = dict
+            .get::<sandbox::Handle<'a>>(FROZEN_INSPECT_VMO_KEY)
+            .await
+            .context("Failed to get frozen Inspect VMO")?
+            .export::<zx::NullableHandle>()
+            .await
+            .context("Failed to export handle")?;
+
+        let inspect = match update_stage {
             UpdateCheckStage::Waiting | UpdateCheckStage::Error => {
                 // Create a new, writable Inspect tree. The previous instance of
                 // Persistence did not receive the signal to persist data from
                 // the last boot, but this instance might.
-                let escrow_token = dict
-                    .get::<sandbox::Handle<'a>>(FROZEN_INSPECT_VMO_KEY)
-                    .await
-                    .context("Failed to get frozen Inspect VMO")?
-                    .export::<zx::NullableHandle>()
-                    .await
-                    .context("Failed to export handle")?
-                    .into();
+                let escrow_token =
+                    finspect::EscrowToken { token: zx::EventPair::from(escrow_token) };
 
                 // Swap escrowed Inspect data with a new Tree server.
-                let token = finspect::EscrowToken { token: escrow_token };
                 let inspect_runtime::FetchEscrowResult { vmo: _, server } =
                     inspect_runtime::fetch_escrow(
-                        token,
+                        escrow_token,
                         inspect_runtime::FetchEscrowOptions::new().replace_with_tree(),
                     )
                     .await
@@ -258,7 +271,7 @@ impl ComponentState {
                 let inspect_controller = inspect_runtime::publish(component::inspector(), opts)
                     .context("Failed to publish Inspect data")?;
 
-                Some(inspect_controller)
+                InspectState::Active(inspect_controller)
             }
             UpdateCheckStage::Done | UpdateCheckStage::Skipped => {
                 // Persistence has already published persisted data from last
@@ -267,7 +280,7 @@ impl ComponentState {
                 //
                 // Persistence needs to continue running to record data to
                 // persist for the next boot.
-                None
+                InspectState::Escrowed(escrow_token)
             }
         };
 
@@ -281,14 +294,14 @@ impl ComponentState {
         Ok(Self {
             scheduler: Scheduler::new(&persisted.config),
             persisted: Arc::new(persisted),
-            inspect_controller: Arc::new(Mutex::new(inspect_controller)),
+            inspect: Arc::new(Mutex::new(Some(inspect))),
         })
     }
 
     async fn as_escrowed_dict(
         store: &sandbox::CapabilityStore,
         persisted: impl AsRef<PersistedState>,
-        inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
+        inspect: Arc<Mutex<Option<InspectState>>>,
     ) -> Result<fsandbox::DictionaryRef, Error> {
         let dict = store.create_dictionary().await?;
 
@@ -300,19 +313,28 @@ impl ComponentState {
         dict.insert(INSTANCE_STATE_KEY, data).await?;
 
         // Save frozen Inspect VMO.
-        let inspect_controller = inspect_controller.lock().take();
-        if let Some(inspect_controller) = inspect_controller {
-            match inspect_controller.escrow_frozen(inspect_runtime::EscrowOptions::default()).await
-            {
-                Ok(escrow_token) => {
-                    let handle = escrow_token.token.into_handle();
-                    let data = store.import(handle).await?;
-                    dict.insert(FROZEN_INSPECT_VMO_KEY, data).await?;
-                }
-                Err(e) => {
-                    error!("Failed to escrow frozen Inspect VMO: {e:?}");
+        let inspect = inspect.lock().take();
+        match inspect {
+            Some(InspectState::Active(inspect_controller)) => {
+                match inspect_controller
+                    .escrow_frozen(inspect_runtime::EscrowOptions::default())
+                    .await
+                {
+                    Ok(escrow_token) => {
+                        let handle = escrow_token.token.into_handle();
+                        let data = store.import(handle).await?;
+                        dict.insert(FROZEN_INSPECT_VMO_KEY, data).await?;
+                    }
+                    Err(e) => {
+                        error!("Failed to escrow frozen Inspect VMO: {e:?}");
+                    }
                 }
             }
+            Some(InspectState::Escrowed(handle)) => {
+                let data = store.import(handle).await?;
+                dict.insert(FROZEN_INSPECT_VMO_KEY, data).await?;
+            }
+            None => {}
         }
 
         dict.export().await.context("Failed to export escrowed dictionary")
@@ -447,7 +469,7 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
                         let escrowed_dictionary = match ComponentState::as_escrowed_dict(
                             &store,
                             state.persisted,
-                            state.inspect_controller
+                            state.inspect,
                         ).await {
                             Ok(dict) => Some(dict),
                             Err(e) => {
