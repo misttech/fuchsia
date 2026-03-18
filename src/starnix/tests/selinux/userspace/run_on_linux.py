@@ -240,6 +240,7 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         json=False,
         update_audit_expectations=False,
         rebuild_tests=False,
+        skip_audit=False,
     )
     new_audit_expectations: list[dict[str, Any]] = []
 
@@ -289,6 +290,8 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         append_args = f"console=ttyS0 security=selinux debug=all audit=1 audit_backlog_limit=0 panic=-1 -- data/tests/{test_name}"
         if self.args.json or self.args.update_audit_expectations:
             append_args += " --json"
+        if self.args.skip_audit:
+            append_args += " --skip-audit"
 
         result = subprocess.run(
             [
@@ -410,6 +413,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--update-audit-expectations",
         help="Update the audit expectation JSON file with the results from this run.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--skip-audit",
+        help="Skip audit log checks in the test.",
         action="store_true",
     )
 

@@ -26,6 +26,7 @@ namespace {
 
 struct CommandLineOptions {
   bool generate_json = false;
+  bool skip_audit = false;
 };
 
 void LoadPolicy(const std::string& name) {
@@ -103,6 +104,8 @@ fit::result<std::string, CommandLineOptions> parse_args(int argc, char** argv) {
   CommandLineOptions options;
   parser.AddSwitch("json", 'j', "--json\tGenerate audit log JSON objects for expectations.",
                    &CommandLineOptions::generate_json);
+  parser.AddSwitch("skip-audit", 0, "--skip-audit\tSkip audit log checking.",
+                   &CommandLineOptions::skip_audit);
   std::vector<std::string> params;
   if (auto status = parser.Parse(argc, const_cast<const char**>(argv), &options, &params);
       status.has_error()) {
@@ -131,7 +134,7 @@ int main(int argc, char** argv) {
   // generate audit log JSON objects.
   if (parse_res.value().generate_json) {
     listeners.Append(AuditChecker::with_json_generation());
-  } else {
+  } else if (!parse_res.value().skip_audit) {
     listeners.Append(new AuditChecker);
   }
 
