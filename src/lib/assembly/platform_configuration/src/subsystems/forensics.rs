@@ -118,6 +118,9 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 enable_hourly_snapshots: build_type_config.enable_hourly_snapshots,
                 enable_limit_inspect_data: build_type_config.enable_limit_inspect_data,
                 remote_device_id_provider: config.feedback.remote_device_id_provider,
+                supports_user_initiated_poweroffs: config
+                    .feedback
+                    .supports_user_initiated_poweroffs,
             };
 
             config_dir.entry_from_contents(
@@ -254,6 +257,8 @@ struct FeedbackInternalConfig {
     pub snapshot_persistence_max_tmp_size_mib: i64,
 
     pub spontaneous_reboot_reason: SpontaneousRebootReason,
+
+    pub supports_user_initiated_poweroffs: bool,
 
     pub crash_report_upload_policy: CrashReportUploadPolicy,
     pub daily_per_product_crash_report_quota: i64,

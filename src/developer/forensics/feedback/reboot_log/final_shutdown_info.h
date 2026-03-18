@@ -64,7 +64,8 @@ class FinalShutdownInfo {
  public:
   static std::unique_ptr<FinalShutdownInfo> MakeFinalShutdownInfo(
       const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
-      std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr);
+      std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr,
+      bool supports_user_initiated_poweroffs);
 
   // For testing purposes.
   FinalShutdownInfo(FinalShutdownReason reason);

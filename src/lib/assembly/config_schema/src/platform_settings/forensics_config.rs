@@ -54,6 +54,10 @@ pub struct FeedbackConfig {
     /// reboot reason.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub spontaneous_reboot_reason: SpontaneousRebootReason,
+
+    /// Whether the device on which this product runs supports user-initiated poweroffs.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub supports_user_initiated_poweroffs: bool,
 }
 
 /// Configuration options for excluding items from snapshots.

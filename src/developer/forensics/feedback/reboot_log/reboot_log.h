@@ -22,7 +22,8 @@ class RebootLog {
   static RebootLog ParseRebootLog(const std::string& zircon_reboot_log_path,
                                   const std::string& graceful_shutdown_info_path,
                                   const std::string& legacy_graceful_reboot_log_path,
-                                  const std::string& previous_system_time_path, bool not_a_fdr);
+                                  const std::string& previous_system_time_path, bool not_a_fdr,
+                                  bool supports_user_initiated_poweroffs);
 
   const std::string& RebootLogStr() const { return reboot_log_str_; }
   const std::optional<std::string>& Dlog() const { return dlog_; }

@@ -304,7 +304,8 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
                                     const std::string& graceful_shutdown_info_path,
                                     const std::string& legacy_graceful_reboot_log_path,
                                     const std::string& previous_system_time_path,
-                                    const bool not_a_fdr) {
+                                    const bool not_a_fdr,
+                                    const bool supports_user_initiated_poweroffs) {
   std::optional<std::string> zircon_reboot_log;
   std::optional<zx::duration> last_boot_uptime;
   std::optional<zx::duration> last_boot_runtime;
@@ -330,8 +331,8 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      FinalShutdownInfo::MakeFinalShutdownInfo(hw_reason, zircon_reason, graceful_info, not_a_fdr);
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      hw_reason, zircon_reason, graceful_info, not_a_fdr, supports_user_initiated_poweroffs);
   const auto reboot_log =
       MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString());
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);

@@ -62,6 +62,7 @@ struct FeedbackConfig {
   std::optional<StorageSize> snapshot_persistence_max_tmp_size;
   SpontaneousRebootReason spontaneous_reboot_reason;
   bool remote_device_id_provider;
+  bool supports_user_initiated_poweroffs;
   BuildTypeConfig build_type_config;
 };
 

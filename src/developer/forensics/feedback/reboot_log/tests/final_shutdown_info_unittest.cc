@@ -262,7 +262,7 @@ TEST_P(FinalShutdownInfoGracefulNoReportTest, CheckProperties) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kNotParseable, params.reasons},
-      /*not_a_fdr=*/true);
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
@@ -390,7 +390,7 @@ TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kReboot, params.reasons},
-      /*not_a_fdr=*/true);
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
@@ -409,7 +409,7 @@ TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       /*graceful_shutdown_info=*/std::nullopt,
-      /*not_a_fdr=*/false);
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
@@ -422,7 +422,7 @@ TEST(FinalShutdownInfoTest, InferredFdr_Cold) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
       /*graceful_shutdown_info=*/std::nullopt,
-      /*not_a_fdr=*/false);
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
