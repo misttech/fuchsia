@@ -9,21 +9,21 @@ use std::pin::pin;
 
 use component_events::events::{EventStream, ExitStatus, Stopped, StoppedPayload};
 use component_events::matcher::EventMatcher;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fcomponent_decl;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_filter_ext::{
-    Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook, MarkAction,
-    Matchers, Namespace, NamespaceId, NatHook, RejectType, Resource, ResourceId, Routine,
-    RoutineId, RoutineType, Rule, RuleId,
+    self as fnet_filter_ext, Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine,
+    IpHook, MarkAction, Matchers, Namespace, NamespaceId, NatHook, RejectType, Resource,
+    ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fidl_fuchsia_net_matchers_ext::TransportProtocol;
+use fidl_fuchsia_process as fprocess;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use log::info;
 use test_case::test_case;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fcomponent_decl,
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_process as fprocess,
-};
 
 const IPTABLES_RESTORE: &'static str = "iptables_restore";
 const IP6TABLES_RESTORE: &'static str = "ip6tables_restore";
@@ -97,6 +97,13 @@ impl TestRealm {
         info!("Running {name}");
 
         let (stdin_recv, stdin_send) = zx::Socket::create_stream();
+
+        for line in input_lines {
+            info!("{name}: {line}");
+            let bytes = format!("{line}\n").into_bytes();
+            assert_eq!(stdin_send.write(&bytes).expect("write to stdin"), bytes.len());
+        }
+
         self.realm_proxy
             .create_child(
                 &fcomponent_decl::CollectionRef { name: "test-programs".to_string() },
@@ -118,12 +125,6 @@ impl TestRealm {
             .await
             .expect("fidl call to fuchsia.component.Realm/CreateChild")
             .expect("CreateChild successfully creates child component in collection");
-
-        for line in input_lines {
-            info!("{name}: {line}");
-            let bytes = format!("{line}\n").into_bytes();
-            assert_eq!(stdin_send.write(&bytes).expect("write to stdin"), bytes.len());
-        }
 
         drop(stdin_send);
 
