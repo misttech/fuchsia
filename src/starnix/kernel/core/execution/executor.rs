@@ -7,19 +7,13 @@ use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
 use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{LockBefore, Locked, Mutex, TaskRelease, Unlocked};
+use starnix_sync::{LockBefore, Locked, TaskRelease, Unlocked};
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
-use thread_create_vmars::ThreadCreateVmars;
-
-/// Wrapper for `ThreadCreateVmars` to be stored in the kernel expando.
-///
-/// This is a module-private singleton used to manage VMARs for thread creation.
-struct ExecutorVmarManager(Mutex<ThreadCreateVmars>);
 
 pub fn execute_task_with_prerun_result<L, F, R, G>(
     locked: &mut Locked<L>,
@@ -72,33 +66,14 @@ where
     // Set the process handle to the new task's process, so the new thread is spawned in that
     // process.
     let process_handle = task_builder.task.thread_group().process.raw_handle();
-
-    let kernel = task_builder.task.kernel();
-    let create_vmars =
-        kernel.expando.get_or_init(|| ExecutorVmarManager(Mutex::new(ThreadCreateVmars::new())));
-    let mut create_vmars = create_vmars.0.lock();
-
-    // SAFETY: thread_set_zx_create_handles only manipulates the handles for the current thread and
-    // so there is no possibility of races. The process_handle is only used for diagnostic
-    // purposes. The remaining handles are defined by ThreadCreateVmars to not be valid and not
-    // destroyed until ThreadCreateVmars is destroyed. As ThreadCreateVmars has a lifetime of the
-    // kernel, it will not be destroyed until all threads are terminated, at which point all usages
-    // and references to these handles will have ended.
-    let old_handles = unsafe {
-        thrd_set_zx_create_handles(thrd_zx_create_handles {
-            process: process_handle,
-            machine_stack_vmar: create_vmars.machine_stack.probe()?.raw_handle(),
-            security_stack_vmar: create_vmars.security_stack.probe()?.raw_handle(),
-            thread_block_vmar: create_vmars.thread_block.probe()?.raw_handle(),
-        })
-    };
+    // SAFETY: thrd_set_zx_process is a safe function that only sets the process handle for the
+    // current thread. Which handle is used here is only for diagnostics.
+    let old_process_handle = unsafe { thrd_set_zx_process(process_handle) };
     scopeguard::defer! {
-        // SAFETY: thrd_set_zx_create_handles only manipulates handles for the current thread and
-        // so there is no possibility of races. This is resetting to the old values that were
-        // present before our previous call to thrd_set_zx_create_handles, which must have been safe
-        // to have been set.
+        // SAFETY: thrd_set_zx_process is a safe function that only sets the process handle for the
+        // current thread. Which handle is used here is only for diagnostics.
         unsafe {
-            thrd_set_zx_create_handles(old_handles);
+            thrd_set_zx_process(old_process_handle);
         };
     };
 
@@ -209,16 +184,9 @@ where
     Ok(())
 }
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct thrd_zx_create_handles {
-    pub process: zx::sys::zx_handle_t,
-    pub machine_stack_vmar: zx::sys::zx_handle_t,
-    pub security_stack_vmar: zx::sys::zx_handle_t,
-    pub thread_block_vmar: zx::sys::zx_handle_t,
-}
 unsafe extern "C" {
-    fn thrd_set_zx_create_handles(handles: thrd_zx_create_handles) -> thrd_zx_create_handles;
+    /// Sets the process handle used to create new threads, for the current thread.
+    fn thrd_set_zx_process(handle: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
 
     // Gets the thread handle underlying a specific thread.
     // In C the 'thread' parameter is thrd_t which on Fuchsia is the same as pthread_t.
