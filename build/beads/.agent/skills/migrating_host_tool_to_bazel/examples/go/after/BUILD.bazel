@@ -28,7 +28,7 @@ go_library(
     ],
 
     # This field is Bazel-only, you need to set it to the import path of the library.
-    importpath = "go.fuchsia.dev/fuchsia/build/beads/.agent/skills/host_tool_bazel_migration/examples/go/after",
+    importpath = "go.fuchsia.dev/fuchsia/build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after",
 
     # This field is necessary for host-only targets. It is the equivalent of `if (is_host)` in GN.
     target_compatible_with = HOST_CONSTRAINTS,

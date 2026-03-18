@@ -5,7 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
-    ".agent/skills/host_tool_bazel_migration/examples:tests",
+    ".agent/skills/migrating_host_tool_to_bazel/examples:tests",
     "scripts:tests",
   ]
 }

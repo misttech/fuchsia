@@ -1,5 +1,5 @@
 ---
-name: host_tool_bazel_migration
+name: migrating-host-tool-to-bazel
 description: Migrate host tools from GN to Bazel
 ---
 
@@ -16,13 +16,13 @@ migrating build targets between GN and Bazel.
 
 ## Prerequisites
 
-* Confirm the provided GN target is a host tool target with:
+- Confirm the provided GN target is a host tool target with:
 
   ```bash
   fx build --host //path/to/dir:tool
   ```
 
-* Ensure that all dependencies of the host tool target are buildable from
+- Ensure that all dependencies of the host tool target are buildable from
   Bazel with the following command. If not, migrate the missing dependencies
   first.
 
@@ -43,11 +43,11 @@ exist. Define the equivalent Bazel targets.
 Based on the source language the GN target is written in, reference the
 corresponding language-specific migration guide for more information:
 
-* [Go](references/go_migration.md)
+- [Go](references/go_migration.md)
 
 And the language-specific migration examples:
 
-* [Go examples](examples/go)
+- [Go examples](examples/go)
 
 **NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or
 `HOST_OS_CONSTRAINTS` for host tools included in the IDK) for the Bazel
@@ -81,9 +81,9 @@ Follow the following steps for migrated library targets (e.g. `go_library`,
    targets back to GN following instructions from
    [bazel2gn.md](references/bazel2gn.md):
 
-  ```bash
-  fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
-  ```
+```bash
+fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
+```
 
 ### 5. Final Verification
 
