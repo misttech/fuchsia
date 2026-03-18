@@ -5,11 +5,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_bail;
+use fdomain_fuchsia_power_metrics::{self as fmetrics, Metric, NetworkActivity};
 use ffx_network_activity_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_power_metrics::{self as fmetrics, Metric, NetworkActivity};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct NetworkActivityTool {
@@ -98,16 +98,17 @@ pub async fn stop(network_logger: fmetrics::RecorderProxy) -> Result<()> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_power_metrics::{self as fmetrics};
+    use fdomain_fuchsia_power_metrics::{self as fmetrics};
+    use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error
     macro_rules! make_proxy {
-        ($request_type:tt, $error_type:tt) => {
-            target_holders::fake_proxy(move |req| match req {
+        ($client:expr, $request_type:tt, $error_type:tt) => {
+            target_holders::fdomain::fake_proxy($client, move |req| match req {
                 fmetrics::RecorderRequest::$request_type { responder, .. } => {
                     responder.send(Err(fmetrics::RecorderError::$error_type)).unwrap();
                 }
@@ -130,7 +131,8 @@ mod tests {
             output_to_syslog: false,
         };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLogging {
                 client_id,
                 metrics,
@@ -154,7 +156,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLogging; got {:?}", req),
         });
         start(proxy, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the start logging forever request is dispatched to FIDL requests as expected.
@@ -164,7 +166,8 @@ mod tests {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StartLoggingForever {
                 client_id,
                 metrics,
@@ -187,7 +190,7 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StartLoggingForever; got {:?}", req),
         });
         start(proxy, args).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     /// Confirms that the stop logging request is dispatched to FIDL requests as expected.
@@ -195,7 +198,8 @@ mod tests {
     async fn test_request_dispatch_stop_logging() {
         // Stop logging
         let (mut sender, mut receiver) = mpsc::channel(1);
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { client_id, responder } => {
                 assert_eq!(String::from("ffx_network"), client_id);
                 responder.send(true).unwrap();
@@ -204,12 +208,13 @@ mod tests {
             _ => panic!("Expected RecorderRequest::StopLogging; got {:?}", req),
         });
         stop(proxy).await.unwrap();
-        assert_matches!(receiver.try_next().unwrap(), Some(()));
+        assert_matches!(receiver.next().await, Some(()));
     }
 
     #[fuchsia::test]
     async fn test_stop_logging_error() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             fmetrics::RecorderRequest::StopLogging { responder, .. } => {
                 responder.send(false).unwrap();
             }
@@ -226,7 +231,8 @@ mod tests {
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, InvalidSamplingInterval);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -235,7 +241,8 @@ mod tests {
     async fn test_start_logging_forever_interval_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, InvalidSamplingInterval);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, InvalidSamplingInterval);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("invalid sampling interval"));
     }
@@ -247,7 +254,8 @@ mod tests {
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, AlreadyLogging);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -256,7 +264,8 @@ mod tests {
     async fn test_start_logging_forever_already_active_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, AlreadyLogging);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, AlreadyLogging);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("already active"));
     }
@@ -268,7 +277,8 @@ mod tests {
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, TooManyActiveClients);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -277,7 +287,8 @@ mod tests {
     async fn test_start_logging_forever_too_many_clients_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, TooManyActiveClients);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, TooManyActiveClients);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("too many clients"));
     }
@@ -289,7 +300,8 @@ mod tests {
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, NoDrivers);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, NoDrivers);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("no compatible network driver"));
     }
@@ -298,7 +310,8 @@ mod tests {
     async fn test_start_logging_forever_no_driver_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, NoDrivers);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, NoDrivers);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("no compatible network driver"));
     }
@@ -310,7 +323,8 @@ mod tests {
             duration: Some(2 * ONE_SEC),
             output_to_syslog: false,
         };
-        let proxy = make_proxy!(StartLogging, Internal);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLogging, Internal);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
@@ -319,7 +333,8 @@ mod tests {
     async fn test_start_logging_forever_internal_error() {
         let args =
             args_mod::StartCommand { interval: ONE_SEC, duration: None, output_to_syslog: false };
-        let proxy = make_proxy!(StartLoggingForever, Internal);
+        let client = fdomain_local::local_client_empty();
+        let proxy = make_proxy!(client, StartLoggingForever, Internal);
         let error = start(proxy, args).await.unwrap_err();
         assert!(error.to_string().contains("an internal error"));
     }
