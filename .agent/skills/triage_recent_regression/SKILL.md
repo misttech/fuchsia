@@ -34,11 +34,21 @@ Follow these steps exactly to triage the regression:
 
 ### 1. Identify suspicious commits in `integration/`
 
+Run `git fetch origin main` in the repositories you need to look through to
+ensure references to the latest commits are present, as the local tree may be
+checked out at an older hash. You must never modify the checkout state.
+
+Run `git fetch --tags` to ensure you have references to the latest tags.
+
+Consult `.jiri_root/update_history` if the user provides the time range in
+relation to their last checkout, which contains timestamped files of each
+checkout update, and the git revision of each sub-repository.
+
 Look through the git history in the `integration/` directory for commits
-within the provided time range. You can use the `git log` command with the
-`--since` and `--until` arguments. If the user provided tags or commit hashes,
-use those as the start and end points for the log. You can use `git fetch
---tags` to ensure you have the latest tags.
+within the provided time range. Use the `git log` command on `FETCH_HEAD`
+(e.g. `git log FETCH_HEAD`) with the `--since` and `--until` arguments to take
+the newly fetched commits into consideration. If the user provided tags or commit
+hashes, use those as the start and end points for the log.
 
 Review the titles of these commits to identify a few likely candidates that
 could be related to the user's issue description. The goal is to find a short
