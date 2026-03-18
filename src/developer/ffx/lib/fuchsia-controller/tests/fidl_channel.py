@@ -1,8 +1,6 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-# mypy: ignore-errors
-
 import unittest
 
 from fuchsia_controller_py import (
@@ -19,7 +17,7 @@ from fidl import AsyncChannel
 class ChannelTests(unittest.IsolatedAsyncioTestCase):
     """Channel tests."""
 
-    def test_event_access_denied(self):
+    def test_event_access_denied(self) -> None:
         ctx = Context()
         e = ctx.event_create()
         with self.assertRaises(FcTransportStatus):
@@ -30,7 +28,7 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(e.code(), FcTransportStatus.FC_ERR_FDOMAIN)
                 raise e
 
-    def test_eventpair_peer_closed(self):
+    def test_eventpair_peer_closed(self) -> None:
         ctx = Context()
         e1, e2 = ctx.event_create_pair()
         del e2
@@ -42,12 +40,12 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(e.code(), FcTransportStatus.FC_ERR_FDOMAIN)
                 raise e
 
-    def test_as_int(self):
+    def test_as_int(self) -> None:
         self.assertEqual(Handle(1).as_int(), 1)
         self.assertEqual(Channel(2).as_int(), 2)
         self.assertEqual(Socket(3).as_int(), 3)
 
-    async def test_channel_write_then_read(self):
+    async def test_channel_write_then_read(self) -> None:
         ctx = Context()
         (a, b) = ctx.channel_create()
         a.write((bytearray([1, 2, 3]), []))
@@ -55,7 +53,7 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
         buf, hdls = await async_b.read()
         self.assertEqual(buf, bytearray([1, 2, 3]))
 
-    def test_channel_write_fails_when_closed(self):
+    def test_channel_write_fails_when_closed(self) -> None:
         ctx = Context()
         (a, b) = ctx.channel_create()
         del b
@@ -68,7 +66,7 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
                 )
                 raise e
 
-    async def test_channel_passing(self):
+    async def test_channel_passing(self) -> None:
         ctx = Context()
         (a, b) = ctx.channel_create()
         (c, d) = ctx.channel_create()
