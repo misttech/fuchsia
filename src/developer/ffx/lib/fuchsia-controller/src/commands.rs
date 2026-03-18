@@ -588,8 +588,10 @@ impl LibraryCommand {
                 }
             }
             Self::HandleClose { lib, handle, responder } => {
-                let closed = lib.fdomain_state().await.close_handle(handle);
-                if !closed {
+                let res = lib.fdomain_state().await.take_handle(handle);
+                if let Ok(handle) = res {
+                    let _ = handle.close().await;
+                } else {
                     log::trace!("Attempted to close {handle} but no handle found");
                 }
                 responder.send(()).unwrap();

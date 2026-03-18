@@ -80,18 +80,6 @@ impl FDomainState {
         }
     }
 
-    pub(crate) fn close_handle(&mut self, id: u32) -> bool {
-        // Closes the handle by attempting to drop it. Errors around this channel being unable to
-        // close will not be accessible until the client closes the parent for the handle.
-        match self.handle_map.remove(&id) {
-            Some(_) => {
-                self.free_handles.push_back(id);
-                true
-            }
-            None => false,
-        }
-    }
-
     pub(crate) fn take_handle(&mut self, id: u32) -> Result<fdomain_client::Handle, FDomainError> {
         let res = self.handle_map.remove(&id).ok_or(FDomainError::NoSuchHandle(id))?;
         self.free_handles.push_back(id);

@@ -407,6 +407,9 @@ struct ClientInner {
 impl ClientInner {
     /// Serialize and enqueue a new transaction, including header and transaction ID.
     fn request<S: fidl_message::Body>(&mut self, ordinal: u64, request: S, responder: Responder) {
+        if ordinal != ordinals::CLOSE {
+            self.process_waiting_to_close();
+        }
         let tx_id = self.next_tx_id;
 
         let header = TransactionHeader::new(tx_id, ordinal, fidl_message::DynamicFlags::FLEXIBLE);
@@ -419,12 +422,7 @@ impl ClientInner {
         self.transport.push_msg(msg.into());
     }
 
-    /// Polls the underlying transport to ensure any incoming or outgoing
-    /// messages are processed as far as possible. Errors if the transport has failed.
-    fn try_poll_transport(
-        &mut self,
-        ctx: &mut Context<'_>,
-    ) -> Poll<Result<Infallible, InnerError>> {
+    fn process_waiting_to_close(&mut self) {
         if !self.waiting_to_close.is_empty() {
             let handles = std::mem::replace(&mut self.waiting_to_close, Vec::new());
             // We've dropped the handle object. Nobody is going to wait to read
@@ -439,6 +437,15 @@ impl ClientInner {
                 Responder::Ignore,
             );
         }
+    }
+
+    /// Polls the underlying transport to ensure any incoming or outgoing
+    /// messages are processed as far as possible. Errors if the transport has failed.
+    fn try_poll_transport(
+        &mut self,
+        ctx: &mut Context<'_>,
+    ) -> Poll<Result<Infallible, InnerError>> {
+        self.process_waiting_to_close();
 
         self.waiting_to_close_waker = ctx.waker().clone();
 
