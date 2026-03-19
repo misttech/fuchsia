@@ -51,7 +51,9 @@ pub fn sys_reboot(
     }
     security::check_task_capable(current_task, CAP_SYS_BOOT)?;
 
-    let arg_bytes = if matches!(cmd, LINUX_REBOOT_CMD_RESTART2) {
+    let arg_bytes = if matches!(cmd, LINUX_REBOOT_CMD_RESTART2)
+        || (matches!(cmd, LINUX_REBOOT_CMD_POWER_OFF) && !arg.is_null())
+    {
         // This is an arbitrary limit that should be large enough.
         const MAX_REBOOT_ARG_LEN: usize = 256;
         current_task
@@ -80,9 +82,11 @@ pub fn sys_reboot(
 
         LINUX_REBOOT_CMD_HALT | LINUX_REBOOT_CMD_POWER_OFF => {
             log_info!("Powering off");
+            let reboot_args: Vec<_> = arg_bytes.split_str(b",").collect();
+            let shutdown_reason = parse_shutdown_reason(&reboot_args, &arg_bytes);
             let options = fpower::ShutdownOptions {
                 action: Some(fpower::ShutdownAction::Poweroff),
-                reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
+                reasons: Some(vec![shutdown_reason]),
                 ..Default::default()
             };
 
@@ -121,42 +125,7 @@ pub fn sys_reboot(
                 };
                 proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
             } else {
-                // TODO(https://391585107): Loop through all the arguments and
-                // generate a list of shutdown reasons.
-
-                let shutdown_reason =
-                    if let Some(arg) = reboot_args.iter().find(|arg| arg.ends_with(b"-failed")) {
-                        let process_name =
-                            String::from_utf8_lossy(arg.strip_suffix(b"-failed").unwrap());
-                        // This log message is load-bearing server-side as it's used to
-                        // extract the critical process responsible for the reboot.
-                        // Please notify //src/developer/forensics/OWNERS upon changing.
-                        log_info!("Android critical process '{}' failed, rebooting", process_name);
-                        fpower::ShutdownReason::AndroidCriticalProcessFailure
-                    } else if reboot_args.contains(&&b"ota_update"[..])
-                        || reboot_args.contains(&&b"System update during setup"[..])
-                    {
-                        fpower::ShutdownReason::SystemUpdate
-                    } else if reboot_args.contains(&&b"shell"[..]) {
-                        fpower::ShutdownReason::DeveloperRequest
-                    } else if reboot_args.contains(&&b"RescueParty"[..])
-                        || reboot_args.contains(&&b"rescueparty"[..])
-                    {
-                        fpower::ShutdownReason::AndroidRescueParty
-                    } else if reboot_args.contains(&&b"userrequested"[..]) {
-                        fpower::ShutdownReason::UserRequest
-                    } else if reboot_args == [b""]
-                    // args empty? splitting "" returns [""], not []
-                    {
-                        fpower::ShutdownReason::StarnixContainerNoReason
-                    } else {
-                        log_warn!("Unknown reboot args: {arg_bytes:?}");
-                        track_stub!(
-                            TODO("https://fxbug.dev/322874610"),
-                            "unknown reboot args, see logs for strings"
-                        );
-                        fpower::ShutdownReason::AndroidUnexpectedReason
-                    };
+                let shutdown_reason = parse_shutdown_reason(&reboot_args, &arg_bytes);
 
                 log_info!("Rebooting... reason: {:?}", shutdown_reason);
                 proxy.shutdown(
@@ -194,6 +163,42 @@ pub fn sys_reboot(
         }
 
         _ => error!(EINVAL),
+    }
+}
+
+fn parse_shutdown_reason(reboot_args: &[&[u8]], arg_bytes: &FsString) -> fpower::ShutdownReason {
+    // TODO(https://fxbug.dev/391585107): Loop through all the arguments and
+    // generate a list of shutdown reasons.
+    if let Some(arg) = reboot_args.iter().find(|arg| arg.ends_with(b"-failed")) {
+        let process_name = String::from_utf8_lossy(arg.strip_suffix(b"-failed").unwrap());
+        // This log message is load-bearing server-side as it's used to
+        // extract the critical process responsible for the reboot.
+        // Please notify //src/developer/forensics/OWNERS upon changing.
+        log_info!("Android critical process '{}' failed, rebooting", process_name);
+        fpower::ShutdownReason::AndroidCriticalProcessFailure
+    } else if reboot_args.contains(&&b"ota_update"[..])
+        || reboot_args.contains(&&b"System update during setup"[..])
+    {
+        fpower::ShutdownReason::SystemUpdate
+    } else if reboot_args.contains(&&b"shell"[..]) {
+        fpower::ShutdownReason::DeveloperRequest
+    } else if reboot_args.contains(&&b"RescueParty"[..])
+        || reboot_args.contains(&&b"rescueparty"[..])
+    {
+        fpower::ShutdownReason::AndroidRescueParty
+    } else if reboot_args.contains(&&b"userrequested"[..]) {
+        fpower::ShutdownReason::UserRequest
+    } else if reboot_args == [b""]
+    // args empty? splitting "" returns [""], not []
+    {
+        fpower::ShutdownReason::StarnixContainerNoReason
+    } else {
+        log_warn!("Unknown reboot args: {arg_bytes:?}");
+        track_stub!(
+            TODO("https://fxbug.dev/322874610"),
+            "unknown reboot args, see logs for strings"
+        );
+        fpower::ShutdownReason::AndroidUnexpectedReason
     }
 }
 
