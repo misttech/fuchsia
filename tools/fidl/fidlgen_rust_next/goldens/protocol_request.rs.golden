@@ -845,7 +845,10 @@ impl ::fidl_next::HasTransport for Parent {
 
 pub mod parent {
     pub mod prelude {
-        pub use crate::{Parent, ParentClientHandler, ParentServerHandler, parent};
+        pub use crate::{
+            Parent, ParentClientHandler, ParentLocalClientHandler, ParentLocalServerHandler,
+            ParentServerHandler, parent,
+        };
 
         pub use crate::natural::ParentGetChildRequestResponse;
 
@@ -1044,6 +1047,153 @@ pub mod parent {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ParentClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the Parent protocol.
+///
+/// See [`Parent`] for more details.
+pub trait ParentLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for Parent
+where
+    ___H: ParentLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ParentServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the Parent protocol.
+///
+/// See [`Parent`] for more details.
+pub trait ParentLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn get_child(
+        &mut self,
+
+        responder: ::fidl_next::Responder<parent::GetChild, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn get_child_request(
+        &mut self,
+
+        responder: ::fidl_next::Responder<parent::GetChildRequest, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn take_child(
+        &mut self,
+
+        request: ::fidl_next::Request<parent::TakeChild, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn take_child_request(
+        &mut self,
+
+        request: ::fidl_next::Request<parent::TakeChildRequest, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for Parent
+where
+    ___H: ParentLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::ParentTakeChildRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ParentTakeChildRequestRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            4470101341872267920 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.take_child(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 4470101341872267920,
+                    error,
+                }),
+            },
+
+            2333981071306416007 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.take_child_request(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2333981071306416007,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            881818649151440699 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.get_child(responder).await;
+                Ok(())
+            }
+
+            1096855814967598201 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.get_child_request(responder).await;
+                Ok(())
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the Parent protocol.
 ///
 /// See [`Parent`] for more details.
@@ -1053,9 +1203,6 @@ pub trait ParentClientHandler<
 >
 {
 }
-
-impl<___T> ParentClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
-{}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Parent
 where
@@ -1183,6 +1330,46 @@ where
 
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> ParentClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
+{}
+
+impl<___H, ___T> ParentLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ParentClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> ParentLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ParentServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn get_child(&mut self, responder: ::fidl_next::Responder<parent::GetChild, ___T>) {
+        ___H::get_child(&mut self.0, responder).await
+    }
+
+    async fn get_child_request(
+        &mut self,
+
+        responder: ::fidl_next::Responder<parent::GetChildRequest, ___T>,
+    ) {
+        ___H::get_child_request(&mut self.0, responder).await
+    }
+
+    async fn take_child(&mut self, request: ::fidl_next::Request<parent::TakeChild, ___T>) {
+        ___H::take_child(&mut self.0, request).await
+    }
+
+    async fn take_child_request(
+        &mut self,
+
+        request: ::fidl_next::Request<parent::TakeChildRequest, ___T>,
+    ) {
+        ___H::take_child_request(&mut self.0, request).await
     }
 }
 

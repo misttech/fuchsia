@@ -8767,7 +8767,10 @@ impl ::fidl_next::HasTransport for Allowed {
 
 pub mod allowed {
     pub mod prelude {
-        pub use crate::{Allowed, AllowedClientHandler, AllowedServerHandler, allowed};
+        pub use crate::{
+            Allowed, AllowedClientHandler, AllowedLocalClientHandler, AllowedLocalServerHandler,
+            AllowedServerHandler, allowed,
+        };
 
         pub use crate::natural::AllowedDeniedResponse;
     }
@@ -8849,6 +8852,98 @@ pub mod allowed {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local AllowedClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the Allowed protocol.
+///
+/// See [`Allowed`] for more details.
+pub trait AllowedLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for Allowed
+where
+    ___H: AllowedLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local AllowedServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the Allowed protocol.
+///
+/// See [`Allowed`] for more details.
+pub trait AllowedLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn denied(
+        &mut self,
+
+        responder: ::fidl_next::Responder<allowed::Denied, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for Allowed
+where
+    ___H: AllowedLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            3826178105137551123 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.denied(responder).await;
+                Ok(())
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the Allowed protocol.
 ///
 /// See [`Allowed`] for more details.
@@ -8856,11 +8951,6 @@ pub trait AllowedClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> AllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -8938,6 +9028,28 @@ where
     }
 }
 
+impl<___T> AllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> AllowedLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: AllowedClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> AllowedLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: AllowedServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn denied(&mut self, responder: ::fidl_next::Responder<allowed::Denied, ___T>) {
+        ___H::denied(&mut self.0, responder).await
+    }
+}
+
 /// The type corresponding to the ContainsAllowed protocol.
 #[derive(PartialEq, Debug)]
 pub struct ContainsAllowed;
@@ -8950,8 +9062,8 @@ impl ::fidl_next::HasTransport for ContainsAllowed {
 pub mod contains_allowed {
     pub mod prelude {
         pub use crate::{
-            ContainsAllowed, ContainsAllowedClientHandler, ContainsAllowedServerHandler,
-            contains_allowed,
+            ContainsAllowed, ContainsAllowedClientHandler, ContainsAllowedLocalClientHandler,
+            ContainsAllowedLocalServerHandler, ContainsAllowedServerHandler, contains_allowed,
         };
     }
 
@@ -8983,6 +9095,86 @@ pub mod contains_allowed {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ContainsAllowedClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the ContainsAllowed protocol.
+///
+/// See [`ContainsAllowed`] for more details.
+pub trait ContainsAllowedLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for ContainsAllowed
+where
+    ___H: ContainsAllowedLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ContainsAllowedServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the ContainsAllowed protocol.
+///
+/// See [`ContainsAllowed`] for more details.
+pub trait ContainsAllowedLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for ContainsAllowed
+where
+    ___H: ContainsAllowedLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the ContainsAllowed protocol.
 ///
 /// See [`ContainsAllowed`] for more details.
@@ -8990,11 +9182,6 @@ pub trait ContainsAllowedClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> ContainsAllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -9060,6 +9247,25 @@ where
     }
 }
 
+impl<___T> ContainsAllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> ContainsAllowedLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ContainsAllowedClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> ContainsAllowedLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ContainsAllowedServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
 /// The type corresponding to the Denied protocol.
 #[derive(PartialEq, Debug)]
 pub struct Denied;
@@ -9071,7 +9277,10 @@ impl ::fidl_next::HasTransport for Denied {
 
 pub mod denied {
     pub mod prelude {
-        pub use crate::{Denied, DeniedClientHandler, DeniedServerHandler, denied};
+        pub use crate::{
+            Denied, DeniedClientHandler, DeniedLocalClientHandler, DeniedLocalServerHandler,
+            DeniedServerHandler, denied,
+        };
 
         pub use crate::natural::DeniedShouldNeverAppearInAnyBindingRequest;
     }
@@ -9170,6 +9379,110 @@ pub mod denied {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DeniedClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the Denied protocol.
+///
+/// See [`Denied`] for more details.
+pub trait DeniedLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for Denied
+where
+    ___H: DeniedLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DeniedServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the Denied protocol.
+///
+/// See [`Denied`] for more details.
+pub trait DeniedLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn should_never_appear_in_any_binding(
+        &mut self,
+
+        request: ::fidl_next::Request<denied::ShouldNeverAppearInAnyBinding, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for Denied
+where
+    ___H: DeniedLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'de>: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            5338181991150205725 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler
+                        .should_never_appear_in_any_binding(::fidl_next::Request::from_decoded(
+                            decoded,
+                        ))
+                        .await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 5338181991150205725,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the Denied protocol.
 ///
 /// See [`Denied`] for more details.
@@ -9179,9 +9492,6 @@ pub trait DeniedClientHandler<
 >
 {
 }
-
-impl<___T> DeniedClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
-{}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Denied
 where
@@ -9269,6 +9579,30 @@ where
     }
 }
 
+impl<___T> DeniedClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
+{}
+
+impl<___H, ___T> DeniedLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DeniedClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> DeniedLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DeniedServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn should_never_appear_in_any_binding(
+        &mut self,
+
+        request: ::fidl_next::Request<denied::ShouldNeverAppearInAnyBinding, ___T>,
+    ) {
+        ___H::should_never_appear_in_any_binding(&mut self.0, request).await
+    }
+}
+
 /// The type corresponding to the DenyEachBinding protocol.
 #[derive(PartialEq, Debug)]
 pub struct DenyEachBinding;
@@ -9281,8 +9615,8 @@ impl ::fidl_next::HasTransport for DenyEachBinding {
 pub mod deny_each_binding {
     pub mod prelude {
         pub use crate::{
-            DenyEachBinding, DenyEachBindingClientHandler, DenyEachBindingServerHandler,
-            deny_each_binding,
+            DenyEachBinding, DenyEachBindingClientHandler, DenyEachBindingLocalClientHandler,
+            DenyEachBindingLocalServerHandler, DenyEachBindingServerHandler, deny_each_binding,
         };
 
         pub use crate::natural::DenyEachBindingOnlyDenyCppRequest;
@@ -9765,6 +10099,265 @@ pub mod deny_each_binding {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DenyEachBindingClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the DenyEachBinding protocol.
+///
+/// See [`DenyEachBinding`] for more details.
+pub trait DenyEachBindingLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for DenyEachBinding
+where
+    ___H: DenyEachBindingLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DenyEachBindingServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the DenyEachBinding protocol.
+///
+/// See [`DenyEachBinding`] for more details.
+pub trait DenyEachBindingLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn only_deny_cpp(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyCpp, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyCpp, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn only_deny_dart(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyDart, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn only_deny_go(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn only_deny_python(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyPython, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyPython, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn only_deny_rust(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyRust, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyRust, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn only_deny_syzkaller(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenySyzkaller, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenySyzkaller, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for DenyEachBinding
+where
+    ___H: DenyEachBindingLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::DenyEachBindingOnlyDenyCppRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::DenyEachBindingOnlyDenyDartRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::DenyEachBindingOnlyDenyGoRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::DenyEachBindingOnlyDenyPythonRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::DenyEachBindingOnlyDenyRustRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::DenyEachBindingOnlyDenySyzkallerRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            2957648440141224850 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_cpp(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 2957648440141224850,
+                        error,
+                    }),
+                }
+            }
+
+            8446571910689294295 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_dart(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 8446571910689294295,
+                        error,
+                    }),
+                }
+            }
+
+            7311125300308839833 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_go(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 7311125300308839833,
+                        error,
+                    }),
+                }
+            }
+
+            3010747198252652930 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_python(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3010747198252652930,
+                        error,
+                    }),
+                }
+            }
+
+            3719805222870932662 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_rust(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3719805222870932662,
+                        error,
+                    }),
+                }
+            }
+
+            2319043834522757514 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .only_deny_syzkaller(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 2319043834522757514,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the DenyEachBinding protocol.
 ///
 /// See [`DenyEachBinding`] for more details.
@@ -9772,11 +10365,6 @@ pub trait DenyEachBindingClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> DenyEachBindingClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -10021,6 +10609,84 @@ where
     }
 }
 
+impl<___T> DenyEachBindingClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> DenyEachBindingLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DenyEachBindingClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> DenyEachBindingLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DenyEachBindingServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn only_deny_cpp(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyCpp, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyCpp, ___T>,
+    ) {
+        ___H::only_deny_cpp(&mut self.0, request, responder).await
+    }
+
+    async fn only_deny_dart(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyDart, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
+    ) {
+        ___H::only_deny_dart(&mut self.0, request, responder).await
+    }
+
+    async fn only_deny_go(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
+    ) {
+        ___H::only_deny_go(&mut self.0, request, responder).await
+    }
+
+    async fn only_deny_python(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyPython, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyPython, ___T>,
+    ) {
+        ___H::only_deny_python(&mut self.0, request, responder).await
+    }
+
+    async fn only_deny_rust(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenyRust, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyRust, ___T>,
+    ) {
+        ___H::only_deny_rust(&mut self.0, request, responder).await
+    }
+
+    async fn only_deny_syzkaller(
+        &mut self,
+
+        request: ::fidl_next::Request<deny_each_binding::OnlyDenySyzkaller, ___T>,
+
+        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenySyzkaller, ___T>,
+    ) {
+        ___H::only_deny_syzkaller(&mut self.0, request, responder).await
+    }
+}
+
 /// The type corresponding to the OnlyCppAndDeps protocol.
 #[derive(PartialEq, Debug)]
 pub struct OnlyCppAndDeps;
@@ -10033,8 +10699,8 @@ impl ::fidl_next::HasTransport for OnlyCppAndDeps {
 pub mod only_cpp_and_deps {
     pub mod prelude {
         pub use crate::{
-            OnlyCppAndDeps, OnlyCppAndDepsClientHandler, OnlyCppAndDepsServerHandler,
-            only_cpp_and_deps,
+            OnlyCppAndDeps, OnlyCppAndDepsClientHandler, OnlyCppAndDepsLocalClientHandler,
+            OnlyCppAndDepsLocalServerHandler, OnlyCppAndDepsServerHandler, only_cpp_and_deps,
         };
     }
 
@@ -10066,6 +10732,86 @@ pub mod only_cpp_and_deps {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local OnlyCppAndDepsClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the OnlyCppAndDeps protocol.
+///
+/// See [`OnlyCppAndDeps`] for more details.
+pub trait OnlyCppAndDepsLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for OnlyCppAndDeps
+where
+    ___H: OnlyCppAndDepsLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local OnlyCppAndDepsServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the OnlyCppAndDeps protocol.
+///
+/// See [`OnlyCppAndDeps`] for more details.
+pub trait OnlyCppAndDepsLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for OnlyCppAndDeps
+where
+    ___H: OnlyCppAndDepsLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the OnlyCppAndDeps protocol.
 ///
 /// See [`OnlyCppAndDeps`] for more details.
@@ -10073,11 +10819,6 @@ pub trait OnlyCppAndDepsClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> OnlyCppAndDepsClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -10141,4 +10882,23 @@ where
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
+}
+
+impl<___T> OnlyCppAndDepsClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> OnlyCppAndDepsLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: OnlyCppAndDepsClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> OnlyCppAndDepsLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: OnlyCppAndDepsServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
 }

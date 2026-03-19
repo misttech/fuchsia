@@ -523,7 +523,10 @@ impl ::fidl_next::HasTransport for OneWay {
 
 pub mod one_way {
     pub mod prelude {
-        pub use crate::{OneWay, OneWayClientHandler, OneWayServerHandler, one_way};
+        pub use crate::{
+            OneWay, OneWayClientHandler, OneWayLocalClientHandler, OneWayLocalServerHandler,
+            OneWayServerHandler, one_way,
+        };
 
         pub use crate::natural::OneWaySendRequest;
     }
@@ -600,6 +603,106 @@ pub mod one_way {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local OneWayClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the OneWay protocol.
+///
+/// See [`OneWay`] for more details.
+pub trait OneWayLocalClientHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for OneWay
+where
+    ___H: OneWayLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local OneWayServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the OneWay protocol.
+///
+/// See [`OneWay`] for more details.
+pub trait OneWayLocalServerHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn send(
+        &mut self,
+
+        request: ::fidl_next::Request<one_way::Send, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for OneWay
+where
+    ___H: OneWayLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::OneWaySendRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            7942965975761529343 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.send(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 7942965975761529343,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the OneWay protocol.
 ///
 /// See [`OneWay`] for more details.
@@ -609,9 +712,6 @@ pub trait OneWayClientHandler<
 >
 {
 }
-
-impl<___T> OneWayClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
-{}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OneWay
 where
@@ -692,5 +792,25 @@ where
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> OneWayClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
+{}
+
+impl<___H, ___T> OneWayLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: OneWayClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> OneWayLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: OneWayServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn send(&mut self, request: ::fidl_next::Request<one_way::Send, ___T>) {
+        ___H::send(&mut self.0, request).await
     }
 }

@@ -196,20 +196,55 @@ impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
     }
 }
 
+/// A type which handles incoming events for a local client.
+///
+/// This is a variant of [`ClientHandler`] that does not require implementing
+/// `Send` and only supports local-thread executors.
+pub trait LocalClientHandler<T: Transport> {
+    /// Handles a received client event.
+    ///
+    /// See [`ClientHandler::on_event`] for more information.
+    fn on_event(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+}
+
 /// A type which handles incoming events for a client.
-pub trait ClientHandler<T: Transport> {
-    /// Handles a received client event, returning the appropriate flow control
-    /// to perform.
+pub trait ClientHandler<T: Transport>: Send {
+    /// Handles a received client event.
     ///
     /// The client cannot handle more messages until `on_event` completes. If
-    /// `on_event` should handle requests in parallel, it should spawn a new
-    /// async task and return.
+    /// `on_event` may block, or would perform asynchronous work that takes a
+    /// long time, it should offload work to an async task and return.
     fn on_event(
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
         body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
+}
+
+/// An adapter for a [`ClientHandler`] which implements [`LocalClientHandler`].
+#[repr(transparent)]
+pub struct ClientHandlerToLocalAdapter<H>(H);
+
+impl<T, H> LocalClientHandler<T> for ClientHandlerToLocalAdapter<H>
+where
+    T: Transport,
+    H: ClientHandler<T>,
+{
+    #[inline]
+    fn on_event(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> {
+        self.0.on_event(ordinal, flexibility, body)
+    }
 }
 
 /// A dispatcher for a client endpoint.
@@ -263,9 +298,19 @@ impl<T: Transport> ClientDispatcher<T> {
     }
 
     /// Runs the client with the provided handler.
-    pub async fn run<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
+    pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         H: ClientHandler<T>,
+    {
+        // The bounds on `H` prove that the future returned by `run_local` is
+        // `Send`.
+        self.run_local(ClientHandlerToLocalAdapter(handler)).await.map(|adapter| adapter.0)
+    }
+
+    /// Runs the client with the provided handler.
+    pub async fn run_local<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
+    where
+        H: LocalClientHandler<T>,
     {
         // We may assume that the connection has not been terminated because
         // connections are only terminated by `run` and `drop`. Neither of those
@@ -301,7 +346,7 @@ impl<T: Transport> ClientDispatcher<T> {
     /// The connection must not be terminated.
     async unsafe fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
     where
-        H: ClientHandler<T>,
+        H: LocalClientHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };

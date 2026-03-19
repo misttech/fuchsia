@@ -8,7 +8,8 @@ use core::ops::Deref;
 
 use fidl_next_codec::{Encode, Wire};
 use fidl_next_protocol::{
-    self as protocol, Body, Flexibility, ProtocolError, ServerHandler, Transport,
+    self as protocol, Body, Flexibility, LocalServerHandler, ProtocolError, ServerHandler,
+    Transport,
 };
 
 use crate::{
@@ -63,6 +64,29 @@ impl<P: HasConnectionHandles<T>, T: Transport> Deref for Server<P, T> {
     }
 }
 
+/// A protocol which dispatches incoming server messages to a local handler.
+///
+/// This is a variant of [`DispatchServerMessage`] that does not require
+/// implementing `Send` and only supports local-thread executors.
+pub trait DispatchLocalServerMessage<H, T: Transport>: Sized + 'static {
+    /// Handles a received server one-way message with the given handler.
+    fn on_one_way(
+        handler: &mut H,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+
+    /// Handles a received server two-way message with the given handler.
+    fn on_two_way(
+        handler: &mut H,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+        responder: protocol::Responder<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+}
+
 /// A protocol which dispatches incoming server messages to a handler.
 pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received server one-way message with the given handler.
@@ -84,23 +108,49 @@ pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
 }
 
 /// An adapter for a server protocol handler.
-pub struct ServerHandlerAdapter<P, H> {
+pub struct ServerHandlerToProtocolAdapter<P, H> {
     handler: H,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, H> Send for ServerHandlerAdapter<P, H> where H: Send {}
+unsafe impl<P, H> Send for ServerHandlerToProtocolAdapter<P, H> where H: Send {}
 
-impl<P, H> ServerHandlerAdapter<P, H> {
+impl<P, H> ServerHandlerToProtocolAdapter<P, H> {
     /// Creates a new protocol server handler from a supported handler.
     pub fn from_untyped(handler: H) -> Self {
         Self { handler, _protocol: PhantomData }
     }
 }
 
-impl<P, H, T> ServerHandler<T> for ServerHandlerAdapter<P, H>
+impl<P, H, T> LocalServerHandler<T> for ServerHandlerToProtocolAdapter<P, H>
+where
+    P: DispatchLocalServerMessage<H, T>,
+    T: Transport,
+{
+    fn on_one_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
+        P::on_one_way(&mut self.handler, ordinal, flexibility, body)
+    }
+
+    fn on_two_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+        responder: fidl_next_protocol::Responder<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
+        P::on_two_way(&mut self.handler, ordinal, flexibility, body, responder)
+    }
+}
+
+impl<P, H, T> ServerHandler<T> for ServerHandlerToProtocolAdapter<P, H>
 where
     P: DispatchServerMessage<H, T>,
+    H: Send,
     T: Transport,
 {
     fn on_one_way(
@@ -159,9 +209,21 @@ impl<P, T: Transport> ServerDispatcher<P, T> {
     pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchServerMessage<H, T>,
+        H: Send,
     {
         self.dispatcher
-            .run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> })
+            .run(ServerHandlerToProtocolAdapter { handler, _protocol: PhantomData::<P> })
+            .await
+            .map(|adapter| adapter.handler)
+    }
+
+    /// Runs the server locally with the provided handler.
+    pub async fn run_local<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
+    where
+        P: DispatchLocalServerMessage<H, T>,
+    {
+        self.dispatcher
+            .run_local(ServerHandlerToProtocolAdapter { handler, _protocol: PhantomData::<P> })
             .await
             .map(|adapter| adapter.handler)
     }

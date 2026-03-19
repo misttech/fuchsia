@@ -25,10 +25,12 @@ pub struct ProtocolTemplate<'a> {
     module_name: String,
 
     client_name: String,
-    client_handler_name: String,
+    local_client_handler_name: String,
+    send_client_handler_name: String,
 
     server_name: String,
-    server_handler_name: String,
+    local_server_handler_name: String,
+    send_server_handler_name: String,
 
     transport: Option<Transport<'a>>,
 }
@@ -60,10 +62,12 @@ impl<'a> ProtocolTemplate<'a> {
             module_name: protocol.name.decl_name().snake(),
 
             client_name: format!("{base_name}Client"),
-            client_handler_name: format!("{base_name}ClientHandler"),
+            local_client_handler_name: format!("{base_name}LocalClientHandler"),
+            send_client_handler_name: format!("{base_name}ClientHandler"),
 
             server_name: format!("{base_name}Server"),
-            server_handler_name: format!("{base_name}ServerHandler"),
+            local_server_handler_name: format!("{base_name}LocalServerHandler"),
+            send_server_handler_name: format!("{base_name}ServerHandler"),
 
             transport,
         }

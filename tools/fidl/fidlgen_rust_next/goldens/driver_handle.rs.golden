@@ -866,7 +866,8 @@ impl ::fidl_next::HasTransport for HandlesInProtocol {
 pub mod handles_in_protocol {
     pub mod prelude {
         pub use crate::{
-            HandlesInProtocol, HandlesInProtocolClientHandler, HandlesInProtocolServerHandler,
+            HandlesInProtocol, HandlesInProtocolClientHandler, HandlesInProtocolLocalClientHandler,
+            HandlesInProtocolLocalServerHandler, HandlesInProtocolServerHandler,
             handles_in_protocol,
         };
 
@@ -950,6 +951,106 @@ pub mod handles_in_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local HandlesInProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the HandlesInProtocol protocol.
+///
+/// See [`HandlesInProtocol`] for more details.
+pub trait HandlesInProtocolLocalClientHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for HandlesInProtocol
+where
+    ___H: HandlesInProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local HandlesInProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the HandlesInProtocol protocol.
+///
+/// See [`HandlesInProtocol`] for more details.
+pub trait HandlesInProtocolLocalServerHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn send_handles(
+        &mut self,
+
+        request: ::fidl_next::Request<handles_in_protocol::SendHandles, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for HandlesInProtocol
+where
+    ___H: HandlesInProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::HandlesInProtocolSendHandlesRequest<'de>: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            8904504160365833729 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.send_handles(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 8904504160365833729,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the HandlesInProtocol protocol.
 ///
 /// See [`HandlesInProtocol`] for more details.
@@ -957,11 +1058,6 @@ pub trait HandlesInProtocolClientHandler<
     #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
     #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> HandlesInProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -1044,6 +1140,32 @@ where
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> HandlesInProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> HandlesInProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: HandlesInProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> HandlesInProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: HandlesInProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn send_handles(
+        &mut self,
+
+        request: ::fidl_next::Request<handles_in_protocol::SendHandles, ___T>,
+    ) {
+        ___H::send_handles(&mut self.0, request).await
     }
 }
 

@@ -7,7 +7,8 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use fidl_next_protocol::{
-    self as protocol, Body, ClientHandler, Flexibility, ProtocolError, Transport,
+    self as protocol, Body, ClientHandler, Flexibility, LocalClientHandler, ProtocolError,
+    Transport,
 };
 
 use crate::{ClientEnd, HasConnectionHandles, HasTransport};
@@ -54,8 +55,22 @@ impl<P: HasConnectionHandles<T>, T: Transport> Deref for Client<P, T> {
     }
 }
 
+/// A protocol which dispatches incoming client messages to a local handler.
+///
+/// This is a variant of [`DispatchClientMessage`] that does not require
+/// implementing `Send` and only supports local-thread executors.
+pub trait DispatchLocalClientMessage<H, T: Transport>: Sized + 'static {
+    /// Handles a received client event with the given handler.
+    fn on_event(
+        handler: &mut H,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+}
+
 /// A protocol which dispatches incoming client messages to a handler.
-pub trait DispatchClientMessage<H, T: Transport>: Sized + 'static {
+pub trait DispatchClientMessage<H: Send, T: Transport>: Sized + 'static {
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
@@ -66,23 +81,39 @@ pub trait DispatchClientMessage<H, T: Transport>: Sized + 'static {
 }
 
 /// An adapter for a client protocol handler.
-pub struct ClientHandlerAdapter<P, H> {
+pub struct ClientHandlerToProtocolAdapter<P, H> {
     handler: H,
     _protocol: PhantomData<P>,
 }
 
-unsafe impl<P, H> Send for ClientHandlerAdapter<P, H> where H: Send {}
+unsafe impl<P, H> Send for ClientHandlerToProtocolAdapter<P, H> where H: Send {}
 
-impl<P, H> ClientHandlerAdapter<P, H> {
+impl<P, H> ClientHandlerToProtocolAdapter<P, H> {
     /// Creates a new protocol client handler from a supported handler.
     pub fn from_untyped(handler: H) -> Self {
         Self { handler, _protocol: PhantomData }
     }
 }
 
-impl<P, H, T> ClientHandler<T> for ClientHandlerAdapter<P, H>
+impl<P, H, T> LocalClientHandler<T> for ClientHandlerToProtocolAdapter<P, H>
+where
+    P: DispatchLocalClientMessage<H, T>,
+    T: Transport,
+{
+    fn on_event(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> {
+        P::on_event(&mut self.handler, ordinal, flexibility, body)
+    }
+}
+
+impl<P, H, T> ClientHandler<T> for ClientHandlerToProtocolAdapter<P, H>
 where
     P: DispatchClientMessage<H, T>,
+    H: Send,
     T: Transport,
 {
     fn on_event(
@@ -131,9 +162,21 @@ impl<P, T: Transport> ClientDispatcher<P, T> {
     pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchClientMessage<H, T>,
+        H: Send,
     {
         self.dispatcher
-            .run(ClientHandlerAdapter { handler, _protocol: PhantomData::<P> })
+            .run(ClientHandlerToProtocolAdapter { handler, _protocol: PhantomData::<P> })
+            .await
+            .map(|adapter| adapter.handler)
+    }
+
+    /// Runs the client locally with the provided handler.
+    pub async fn run_local<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
+    where
+        P: DispatchLocalClientMessage<H, T>,
+    {
+        self.dispatcher
+            .run_local(ClientHandlerToProtocolAdapter { handler, _protocol: PhantomData::<P> })
             .await
             .map(|adapter| adapter.handler)
     }

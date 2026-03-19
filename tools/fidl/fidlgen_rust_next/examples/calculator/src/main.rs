@@ -204,11 +204,99 @@ mod tests {
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_local() {
+    async fn test_send_handlers_run_locally() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
-            client_end.spawn_local_handler_full_with(MyCalculatorClient::with_client);
-        let server_task = server_end.spawn_local(MyCalculatorServer::new());
+            client_end.spawn_as_local_handler_full_with(MyCalculatorClient::with_client);
+        let server_task = server_end.spawn_as_local(MyCalculatorServer::new());
+
+        add(&client).await;
+
+        client.close();
+
+        assert_eq!(client_task.await.unwrap().unwrap().error, None);
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(42));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_local_handlers_run_locally() {
+        use std::rc::Rc;
+
+        struct MyLocalClient<T: Transport> {
+            client: Client<Calculator, T>,
+            error: Option<u32>,
+            _not_send: Rc<()>,
+        }
+
+        impl<T: Transport> MyLocalClient<T> {
+            fn with_client(client: Client<Calculator, T>) -> Self {
+                Self { client, error: None, _not_send: Rc::new(()) }
+            }
+        }
+
+        impl<T: Transport> CalculatorLocalClientHandler<T> for MyLocalClient<T> {
+            async fn on_error(&mut self, request: Request<calculator::OnError, T>) {
+                self.error = Some(request.payload().status_code);
+                self.client.close();
+            }
+        }
+
+        struct MyLocalServer {
+            last_result: Option<i32>,
+            _not_send: Rc<()>,
+        }
+
+        impl MyLocalServer {
+            fn new() -> Self {
+                Self { last_result: None, _not_send: Rc::new(()) }
+            }
+        }
+
+        impl<T: Transport> CalculatorLocalServerHandler<T> for MyLocalServer {
+            async fn add(
+                &mut self,
+                request: Request<calculator::Add, T>,
+                responder: Responder<calculator::Add, T>,
+            ) {
+                let payload = request.payload();
+
+                let sum = payload.a + payload.b;
+                self.last_result = Some(sum);
+
+                let _ = responder.respond(sum).await;
+            }
+
+            async fn divide(
+                &mut self,
+                request: Request<calculator::Divide, T>,
+                responder: Responder<calculator::Divide, T>,
+            ) {
+                let payload = request.payload();
+
+                let response = if payload.divisor != 0 {
+                    let quotient = payload.dividend / payload.divisor;
+                    self.last_result = Some(quotient);
+
+                    FlexibleResult::Ok(CalculatorDivideResponse {
+                        quotient: payload.dividend / payload.divisor,
+                        remainder: payload.dividend % payload.divisor,
+                    })
+                } else {
+                    FlexibleResult::Err(DivisionError::DivideByZero)
+                };
+
+                let _ = responder.respond_with(response).await;
+            }
+
+            async fn clear(&mut self) {
+                self.last_result = None;
+            }
+        }
+
+        let (client_end, server_end) = create_endpoints();
+        let (client, client_task) =
+            client_end.spawn_local_handler_full_with(MyLocalClient::with_client);
+        let server_task = server_end.spawn_local(MyLocalServer::new());
 
         add(&client).await;
 

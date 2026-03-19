@@ -1106,7 +1106,8 @@ impl ::fidl_next::HasTransport for EmptyProtocol {
 pub mod empty_protocol {
     pub mod prelude {
         pub use crate::{
-            EmptyProtocol, EmptyProtocolClientHandler, EmptyProtocolServerHandler, empty_protocol,
+            EmptyProtocol, EmptyProtocolClientHandler, EmptyProtocolLocalClientHandler,
+            EmptyProtocolLocalServerHandler, EmptyProtocolServerHandler, empty_protocol,
         };
 
         pub use crate::natural::EmptyProtocolReceiveRequest;
@@ -1290,6 +1291,158 @@ pub mod empty_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local EmptyProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the EmptyProtocol protocol.
+///
+/// See [`EmptyProtocol`] for more details.
+pub trait EmptyProtocolLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn receive(
+        &mut self,
+
+        request: ::fidl_next::Request<empty_protocol::Receive, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for EmptyProtocol
+where
+    ___H: EmptyProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::EmptyProtocolReceiveRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            2301564782476583487 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.receive(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2301564782476583487,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local EmptyProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the EmptyProtocol protocol.
+///
+/// See [`EmptyProtocol`] for more details.
+pub trait EmptyProtocolLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn send(
+        &mut self,
+
+        request: ::fidl_next::Request<empty_protocol::Send, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn send_and_receive(
+        &mut self,
+
+        request: ::fidl_next::Request<empty_protocol::SendAndReceive, ___T>,
+
+        responder: ::fidl_next::Responder<empty_protocol::SendAndReceive, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for EmptyProtocol
+where
+    ___H: EmptyProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::EmptyProtocolSendRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::EmptyProtocolSendAndReceiveRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            1378773277029173000 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.send(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 1378773277029173000,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            534401212734647530 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .send_and_receive(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 534401212734647530,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the EmptyProtocol protocol.
 ///
 /// See [`EmptyProtocol`] for more details.
@@ -1303,13 +1456,6 @@ pub trait EmptyProtocolClientHandler<
 
         request: ::fidl_next::Request<empty_protocol::Receive, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
-}
-
-impl<___T> EmptyProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
-where
-    ___T: ::fidl_next::Transport,
-{
-    async fn receive(&mut self, _: ::fidl_next::Request<empty_protocol::Receive, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for EmptyProtocol
@@ -1438,5 +1584,42 @@ where
 
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> EmptyProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn receive(&mut self, _: ::fidl_next::Request<empty_protocol::Receive, ___T>) {}
+}
+
+impl<___H, ___T> EmptyProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: EmptyProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn receive(&mut self, request: ::fidl_next::Request<empty_protocol::Receive, ___T>) {
+        ___H::receive(&mut self.0, request).await
+    }
+}
+
+impl<___H, ___T> EmptyProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: EmptyProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn send(&mut self, request: ::fidl_next::Request<empty_protocol::Send, ___T>) {
+        ___H::send(&mut self.0, request).await
+    }
+
+    async fn send_and_receive(
+        &mut self,
+
+        request: ::fidl_next::Request<empty_protocol::SendAndReceive, ___T>,
+
+        responder: ::fidl_next::Responder<empty_protocol::SendAndReceive, ___T>,
+    ) {
+        ___H::send_and_receive(&mut self.0, request, responder).await
     }
 }

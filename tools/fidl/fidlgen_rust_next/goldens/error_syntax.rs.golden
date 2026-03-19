@@ -37,6 +37,7 @@ pub mod example_use_of_error_syntax {
     pub mod prelude {
         pub use crate::{
             ExampleUseOfErrorSyntax, ExampleUseOfErrorSyntaxClientHandler,
+            ExampleUseOfErrorSyntaxLocalClientHandler, ExampleUseOfErrorSyntaxLocalServerHandler,
             ExampleUseOfErrorSyntaxServerHandler, example_use_of_error_syntax,
         };
 
@@ -259,6 +260,154 @@ pub mod example_use_of_error_syntax {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ExampleUseOfErrorSyntaxClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the ExampleUseOfErrorSyntax protocol.
+///
+/// See [`ExampleUseOfErrorSyntax`] for more details.
+pub trait ExampleUseOfErrorSyntaxLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for ExampleUseOfErrorSyntax
+where
+    ___H: ExampleUseOfErrorSyntaxLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ExampleUseOfErrorSyntaxServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the ExampleUseOfErrorSyntax protocol.
+///
+/// See [`ExampleUseOfErrorSyntax`] for more details.
+pub trait ExampleUseOfErrorSyntaxLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn composed_call_which_may_fail(
+        &mut self,
+
+        request: ::fidl_next::Request<example_use_of_error_syntax::ComposedCallWhichMayFail, ___T>,
+
+        responder: ::fidl_next::Responder<
+            example_use_of_error_syntax::ComposedCallWhichMayFail,
+            ___T,
+        >,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn call_which_may_fail(
+        &mut self,
+
+        request: ::fidl_next::Request<example_use_of_error_syntax::CallWhichMayFail, ___T>,
+
+        responder: ::fidl_next::Responder<example_use_of_error_syntax::CallWhichMayFail, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for ExampleUseOfErrorSyntax
+where
+    ___H: ExampleUseOfErrorSyntaxLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest<
+        'de,
+    >: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            3565108794310607393 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .composed_call_which_may_fail(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3565108794310607393,
+                        error,
+                    }),
+                }
+            }
+
+            3757408930698888354 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .call_which_may_fail(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3757408930698888354,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the ExampleUseOfErrorSyntax protocol.
 ///
 /// See [`ExampleUseOfErrorSyntax`] for more details.
@@ -266,11 +415,6 @@ pub trait ExampleUseOfErrorSyntaxClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> ExampleUseOfErrorSyntaxClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -401,6 +545,47 @@ where
 
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> ExampleUseOfErrorSyntaxClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> ExampleUseOfErrorSyntaxLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ExampleUseOfErrorSyntaxClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> ExampleUseOfErrorSyntaxLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ExampleUseOfErrorSyntaxServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn composed_call_which_may_fail(
+        &mut self,
+
+        request: ::fidl_next::Request<example_use_of_error_syntax::ComposedCallWhichMayFail, ___T>,
+
+        responder: ::fidl_next::Responder<
+            example_use_of_error_syntax::ComposedCallWhichMayFail,
+            ___T,
+        >,
+    ) {
+        ___H::composed_call_which_may_fail(&mut self.0, request, responder).await
+    }
+
+    async fn call_which_may_fail(
+        &mut self,
+
+        request: ::fidl_next::Request<example_use_of_error_syntax::CallWhichMayFail, ___T>,
+
+        responder: ::fidl_next::Responder<example_use_of_error_syntax::CallWhichMayFail, ___T>,
+    ) {
+        ___H::call_which_may_fail(&mut self.0, request, responder).await
     }
 }
 

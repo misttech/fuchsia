@@ -24,8 +24,8 @@ impl ::fidl_next::HasTransport for DriverProtocol {
 pub mod driver_protocol {
     pub mod prelude {
         pub use crate::{
-            DriverProtocol, DriverProtocolClientHandler, DriverProtocolServerHandler,
-            driver_protocol,
+            DriverProtocol, DriverProtocolClientHandler, DriverProtocolLocalClientHandler,
+            DriverProtocolLocalServerHandler, DriverProtocolServerHandler, driver_protocol,
         };
     }
 
@@ -57,6 +57,86 @@ pub mod driver_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DriverProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the DriverProtocol protocol.
+///
+/// See [`DriverProtocol`] for more details.
+pub trait DriverProtocolLocalClientHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for DriverProtocol
+where
+    ___H: DriverProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local DriverProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the DriverProtocol protocol.
+///
+/// See [`DriverProtocol`] for more details.
+pub trait DriverProtocolLocalServerHandler<
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for DriverProtocol
+where
+    ___H: DriverProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the DriverProtocol protocol.
 ///
 /// See [`DriverProtocol`] for more details.
@@ -64,11 +144,6 @@ pub trait DriverProtocolClientHandler<
     #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
     #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> DriverProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -134,6 +209,25 @@ where
     }
 }
 
+impl<___T> DriverProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> DriverProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DriverProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> DriverProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: DriverProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
 /// The type corresponding to the SomeProtocol protocol.
 #[derive(PartialEq, Debug)]
 pub struct SomeProtocol;
@@ -146,7 +240,8 @@ impl ::fidl_next::HasTransport for SomeProtocol {
 pub mod some_protocol {
     pub mod prelude {
         pub use crate::{
-            SomeProtocol, SomeProtocolClientHandler, SomeProtocolServerHandler, some_protocol,
+            SomeProtocol, SomeProtocolClientHandler, SomeProtocolLocalClientHandler,
+            SomeProtocolLocalServerHandler, SomeProtocolServerHandler, some_protocol,
         };
     }
 
@@ -178,6 +273,86 @@ pub mod some_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local SomeProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the SomeProtocol protocol.
+///
+/// See [`SomeProtocol`] for more details.
+pub trait SomeProtocolLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for SomeProtocol
+where
+    ___H: SomeProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local SomeProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the SomeProtocol protocol.
+///
+/// See [`SomeProtocol`] for more details.
+pub trait SomeProtocolLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for SomeProtocol
+where
+    ___H: SomeProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the SomeProtocol protocol.
 ///
 /// See [`SomeProtocol`] for more details.
@@ -185,11 +360,6 @@ pub trait SomeProtocolClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> SomeProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -253,4 +423,23 @@ where
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
+}
+
+impl<___T> SomeProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> SomeProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: SomeProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> SomeProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: SomeProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
 }

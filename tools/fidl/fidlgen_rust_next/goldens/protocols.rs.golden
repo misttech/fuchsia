@@ -3482,8 +3482,8 @@ impl ::fidl_next::HasTransport for ChannelProtocol {
 pub mod channel_protocol {
     pub mod prelude {
         pub use crate::{
-            ChannelProtocol, ChannelProtocolClientHandler, ChannelProtocolServerHandler,
-            channel_protocol,
+            ChannelProtocol, ChannelProtocolClientHandler, ChannelProtocolLocalClientHandler,
+            ChannelProtocolLocalServerHandler, ChannelProtocolServerHandler, channel_protocol,
         };
 
         pub use crate::natural::ChannelProtocolEventARequest;
@@ -3802,6 +3802,213 @@ pub mod channel_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ChannelProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the ChannelProtocol protocol.
+///
+/// See [`ChannelProtocol`] for more details.
+pub trait ChannelProtocolLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn event_a(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::EventA, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for ChannelProtocol
+where
+    ___H: ChannelProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::ChannelProtocolEventARequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            2220452875311597006 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.event_a(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2220452875311597006,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local ChannelProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the ChannelProtocol protocol.
+///
+/// See [`ChannelProtocol`] for more details.
+pub trait ChannelProtocolLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn method_a(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::MethodA, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn method_b(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::MethodB, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::MethodB, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn take_handle(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::TakeHandle, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::TakeHandle, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn mutate_socket(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::MutateSocket, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::MutateSocket, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for ChannelProtocol
+where
+    ___H: ChannelProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::ChannelProtocolMethodARequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ChannelProtocolMethodBRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ChannelProtocolTakeHandleRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ChannelProtocolMutateSocketRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            3155008840945527714 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.method_a(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 3155008840945527714,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            8903004957800778182 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .method_b(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 8903004957800778182,
+                        error,
+                    }),
+                }
+            }
+
+            591935489944717925 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .take_handle(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 591935489944717925,
+                        error,
+                    }),
+                }
+            }
+
+            7411742788430590287 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .mutate_socket(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 7411742788430590287,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the ChannelProtocol protocol.
 ///
 /// See [`ChannelProtocol`] for more details.
@@ -3815,13 +4022,6 @@ pub trait ChannelProtocolClientHandler<
 
         request: ::fidl_next::Request<channel_protocol::EventA, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
-}
-
-impl<___T> ChannelProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
-where
-    ___T: ::fidl_next::Transport,
-{
-    async fn event_a(&mut self, _: ::fidl_next::Request<channel_protocol::EventA, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ChannelProtocol
@@ -4008,6 +4208,63 @@ where
     }
 }
 
+impl<___T> ChannelProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn event_a(&mut self, _: ::fidl_next::Request<channel_protocol::EventA, ___T>) {}
+}
+
+impl<___H, ___T> ChannelProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ChannelProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn event_a(&mut self, request: ::fidl_next::Request<channel_protocol::EventA, ___T>) {
+        ___H::event_a(&mut self.0, request).await
+    }
+}
+
+impl<___H, ___T> ChannelProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: ChannelProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn method_a(&mut self, request: ::fidl_next::Request<channel_protocol::MethodA, ___T>) {
+        ___H::method_a(&mut self.0, request).await
+    }
+
+    async fn method_b(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::MethodB, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::MethodB, ___T>,
+    ) {
+        ___H::method_b(&mut self.0, request, responder).await
+    }
+
+    async fn take_handle(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::TakeHandle, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::TakeHandle, ___T>,
+    ) {
+        ___H::take_handle(&mut self.0, request, responder).await
+    }
+
+    async fn mutate_socket(
+        &mut self,
+
+        request: ::fidl_next::Request<channel_protocol::MutateSocket, ___T>,
+
+        responder: ::fidl_next::Responder<channel_protocol::MutateSocket, ___T>,
+    ) {
+        ___H::mutate_socket(&mut self.0, request, responder).await
+    }
+}
+
 /// The type corresponding to the HandleRightsProtocol protocol.
 #[derive(PartialEq, Debug)]
 pub struct HandleRightsProtocol;
@@ -4021,6 +4278,7 @@ pub mod handle_rights_protocol {
     pub mod prelude {
         pub use crate::{
             HandleRightsProtocol, HandleRightsProtocolClientHandler,
+            HandleRightsProtocolLocalClientHandler, HandleRightsProtocolLocalServerHandler,
             HandleRightsProtocolServerHandler, handle_rights_protocol,
         };
 
@@ -4215,6 +4473,155 @@ pub mod handle_rights_protocol {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local HandleRightsProtocolClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the HandleRightsProtocol protocol.
+///
+/// See [`HandleRightsProtocol`] for more details.
+pub trait HandleRightsProtocolLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn an_event(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for HandleRightsProtocol
+where
+    ___H: HandleRightsProtocolLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::HandleRightsProtocolAnEventRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            476727631355490611 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.an_event(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 476727631355490611,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local HandleRightsProtocolServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the HandleRightsProtocol protocol.
+///
+/// See [`HandleRightsProtocol`] for more details.
+pub trait HandleRightsProtocolLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn no_response_method(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::NoResponseMethod, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn response_method(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::ResponseMethod, ___T>,
+
+        responder: ::fidl_next::Responder<handle_rights_protocol::ResponseMethod, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for HandleRightsProtocol
+where
+    ___H: HandleRightsProtocolLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::HandleRightsProtocolNoResponseMethodRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::HandleRightsProtocolResponseMethodRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            1155044649514904573 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                Ok(decoded) => {
+                    handler.no_response_method(::fidl_next::Request::from_decoded(decoded)).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 1155044649514904573,
+                    error,
+                }),
+            },
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            5956276128041940295 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .response_method(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 5956276128041940295,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the HandleRightsProtocol protocol.
 ///
 /// See [`HandleRightsProtocol`] for more details.
@@ -4228,13 +4635,6 @@ pub trait HandleRightsProtocolClientHandler<
 
         request: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
-}
-
-impl<___T> HandleRightsProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
-where
-    ___T: ::fidl_next::Transport,
-{
-    async fn an_event(&mut self, _: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandleRightsProtocol
@@ -4363,6 +4763,51 @@ where
     }
 }
 
+impl<___T> HandleRightsProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn an_event(&mut self, _: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>) {}
+}
+
+impl<___H, ___T> HandleRightsProtocolLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: HandleRightsProtocolClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn an_event(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::AnEvent, ___T>,
+    ) {
+        ___H::an_event(&mut self.0, request).await
+    }
+}
+
+impl<___H, ___T> HandleRightsProtocolLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: HandleRightsProtocolServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn no_response_method(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::NoResponseMethod, ___T>,
+    ) {
+        ___H::no_response_method(&mut self.0, request).await
+    }
+
+    async fn response_method(
+        &mut self,
+
+        request: ::fidl_next::Request<handle_rights_protocol::ResponseMethod, ___T>,
+
+        responder: ::fidl_next::Responder<handle_rights_protocol::ResponseMethod, ___T>,
+    ) {
+        ___H::response_method(&mut self.0, request, responder).await
+    }
+}
+
 /// The type corresponding to the WithErrorSyntax protocol.
 #[derive(PartialEq, Debug)]
 pub struct WithErrorSyntax;
@@ -4375,8 +4820,8 @@ impl ::fidl_next::HasTransport for WithErrorSyntax {
 pub mod with_error_syntax {
     pub mod prelude {
         pub use crate::{
-            WithErrorSyntax, WithErrorSyntaxClientHandler, WithErrorSyntaxServerHandler,
-            with_error_syntax,
+            WithErrorSyntax, WithErrorSyntaxClientHandler, WithErrorSyntaxLocalClientHandler,
+            WithErrorSyntaxLocalServerHandler, WithErrorSyntaxServerHandler, with_error_syntax,
         };
 
         pub use crate::natural::ErrorEnum;
@@ -4616,6 +5061,137 @@ pub mod with_error_syntax {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local WithErrorSyntaxClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the WithErrorSyntax protocol.
+///
+/// See [`WithErrorSyntax`] for more details.
+pub trait WithErrorSyntaxLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for WithErrorSyntax
+where
+    ___H: WithErrorSyntaxLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local WithErrorSyntaxServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the WithErrorSyntax protocol.
+///
+/// See [`WithErrorSyntax`] for more details.
+pub trait WithErrorSyntaxLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn response_as_struct(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ResponseAsStruct, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn error_as_primitive(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ErrorAsPrimitive, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn error_as_enum(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ErrorAsEnum, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn handle_in_result(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::HandleInResult, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for WithErrorSyntax
+where
+    ___H: WithErrorSyntaxLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            268248568430741139 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.response_as_struct(responder).await;
+                Ok(())
+            }
+
+            6930994461233198567 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.error_as_primitive(responder).await;
+                Ok(())
+            }
+
+            5491891352371277635 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.error_as_enum(responder).await;
+                Ok(())
+            }
+
+            1371676333068455103 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                handler.handle_in_result(responder).await;
+                Ok(())
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the WithErrorSyntax protocol.
 ///
 /// See [`WithErrorSyntax`] for more details.
@@ -4623,11 +5199,6 @@ pub trait WithErrorSyntaxClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> WithErrorSyntaxClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -4744,6 +5315,56 @@ where
     }
 }
 
+impl<___T> WithErrorSyntaxClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> WithErrorSyntaxLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: WithErrorSyntaxClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> WithErrorSyntaxLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: WithErrorSyntaxServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn response_as_struct(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ResponseAsStruct, ___T>,
+    ) {
+        ___H::response_as_struct(&mut self.0, responder).await
+    }
+
+    async fn error_as_primitive(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ErrorAsPrimitive, ___T>,
+    ) {
+        ___H::error_as_primitive(&mut self.0, responder).await
+    }
+
+    async fn error_as_enum(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::ErrorAsEnum, ___T>,
+    ) {
+        ___H::error_as_enum(&mut self.0, responder).await
+    }
+
+    async fn handle_in_result(
+        &mut self,
+
+        responder: ::fidl_next::Responder<with_error_syntax::HandleInResult, ___T>,
+    ) {
+        ___H::handle_in_result(&mut self.0, responder).await
+    }
+}
+
 /// The type corresponding to the WithProtocolEnds protocol.
 #[derive(PartialEq, Debug)]
 pub struct WithProtocolEnds;
@@ -4756,8 +5377,8 @@ impl ::fidl_next::HasTransport for WithProtocolEnds {
 pub mod with_protocol_ends {
     pub mod prelude {
         pub use crate::{
-            WithProtocolEnds, WithProtocolEndsClientHandler, WithProtocolEndsServerHandler,
-            with_protocol_ends,
+            WithProtocolEnds, WithProtocolEndsClientHandler, WithProtocolEndsLocalClientHandler,
+            WithProtocolEndsLocalServerHandler, WithProtocolEndsServerHandler, with_protocol_ends,
         };
 
         pub use crate::natural::WithProtocolEndsClientEndsRequest;
@@ -4983,6 +5604,175 @@ pub mod with_protocol_ends {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local WithProtocolEndsClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the WithProtocolEnds protocol.
+///
+/// See [`WithProtocolEnds`] for more details.
+pub trait WithProtocolEndsLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for WithProtocolEnds
+where
+    ___H: WithProtocolEndsLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local WithProtocolEndsServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the WithProtocolEnds protocol.
+///
+/// See [`WithProtocolEnds`] for more details.
+pub trait WithProtocolEndsLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    fn client_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::ClientEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::ClientEnds, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn server_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::ServerEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::ServerEnds, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+
+    fn struct_containing_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::StructContainingEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::StructContainingEnds, ___T>,
+    ) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for WithProtocolEnds
+where
+    ___H: WithProtocolEndsLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+    for<'de> crate::wire::WithProtocolEndsClientEndsRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::WithProtocolEndsServerEndsRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::WithProtocolEndsStructContainingEndsRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            5870448041025163330 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .client_ends(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 5870448041025163330,
+                        error,
+                    }),
+                }
+            }
+
+            8115535094437022259 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .server_ends(::fidl_next::Request::from_decoded(decoded), responder)
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 8115535094437022259,
+                        error,
+                    }),
+                }
+            }
+
+            4076866772260025813 => {
+                let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                    Ok(decoded) => {
+                        handler
+                            .struct_containing_ends(
+                                ::fidl_next::Request::from_decoded(decoded),
+                                responder,
+                            )
+                            .await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 4076866772260025813,
+                        error,
+                    }),
+                }
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the WithProtocolEnds protocol.
 ///
 /// See [`WithProtocolEnds`] for more details.
@@ -4990,11 +5780,6 @@ pub trait WithProtocolEndsClientHandler<
     #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
     #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
-{
-}
-
-impl<___T> WithProtocolEndsClientHandler<___T> for ::fidl_next::IgnoreEvents where
-    ___T: ::fidl_next::Transport
 {
 }
 
@@ -5146,6 +5931,54 @@ where
 
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> WithProtocolEndsClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
+impl<___H, ___T> WithProtocolEndsLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: WithProtocolEndsClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+}
+
+impl<___H, ___T> WithProtocolEndsLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: WithProtocolEndsServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn client_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::ClientEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::ClientEnds, ___T>,
+    ) {
+        ___H::client_ends(&mut self.0, request, responder).await
+    }
+
+    async fn server_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::ServerEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::ServerEnds, ___T>,
+    ) {
+        ___H::server_ends(&mut self.0, request, responder).await
+    }
+
+    async fn struct_containing_ends(
+        &mut self,
+
+        request: ::fidl_next::Request<with_protocol_ends::StructContainingEnds, ___T>,
+
+        responder: ::fidl_next::Responder<with_protocol_ends::StructContainingEnds, ___T>,
+    ) {
+        ___H::struct_containing_ends(&mut self.0, request, responder).await
     }
 }
 

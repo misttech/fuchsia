@@ -1810,7 +1810,10 @@ impl ::fidl_next::HasTransport for Interface {
 
 pub mod interface {
     pub mod prelude {
-        pub use crate::{Interface, InterfaceClientHandler, InterfaceServerHandler, interface};
+        pub use crate::{
+            Interface, InterfaceClientHandler, InterfaceLocalClientHandler,
+            InterfaceLocalServerHandler, InterfaceServerHandler, interface,
+        };
     }
 
     pub struct Method;
@@ -1893,6 +1896,100 @@ pub mod interface {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local InterfaceClientHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A client handler for the Interface protocol.
+///
+/// See [`Interface`] for more details.
+pub trait InterfaceLocalClientHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    #[doc = " event comment #1\n\n event comment #3\n"]
+    fn on_event(&mut self) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalClientMessage<___H, ___T> for Interface
+where
+    ___H: InterfaceLocalClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            28780186509098736 => {
+                handler.on_event().await;
+                Ok(())
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    note = "If {Self} implements the non-local InterfaceServerHandler trait, use `spawn_as_local` or the `Local` adapter type"
+)]
+
+/// A server handler for the Interface protocol.
+///
+/// See [`Interface`] for more details.
+pub trait InterfaceLocalServerHandler<
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
+>
+{
+    #[doc = " method comment #1\n\n method comment #3\n"]
+    fn method(&mut self) -> impl ::core::future::Future<Output = ()>;
+}
+
+impl<___H, ___T> ::fidl_next::DispatchLocalServerMessage<___H, ___T> for Interface
+where
+    ___H: InterfaceLocalServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            5017051197196532121 => {
+                handler.method().await;
+                Ok(())
+            }
+
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
+        body: ::fidl_next::Body<___T>,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+        }
+    }
+}
+
 /// A client handler for the Interface protocol.
 ///
 /// See [`Interface`] for more details.
@@ -1903,13 +2000,6 @@ pub trait InterfaceClientHandler<
 {
     #[doc = " event comment #1\n\n event comment #3\n"]
     fn on_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
-}
-
-impl<___T> InterfaceClientHandler<___T> for ::fidl_next::IgnoreEvents
-where
-    ___T: ::fidl_next::Transport,
-{
-    async fn on_event(&mut self) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Interface
@@ -1983,5 +2073,32 @@ where
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
+    }
+}
+
+impl<___T> InterfaceClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(&mut self) {}
+}
+
+impl<___H, ___T> InterfaceLocalClientHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: InterfaceClientHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(&mut self) {
+        ___H::on_event(&mut self.0).await
+    }
+}
+
+impl<___H, ___T> InterfaceLocalServerHandler<___T> for ::fidl_next::Local<___H>
+where
+    ___H: InterfaceServerHandler<___T>,
+    ___T: ::fidl_next::Transport,
+{
+    async fn method(&mut self) {
+        ___H::method(&mut self.0).await
     }
 }

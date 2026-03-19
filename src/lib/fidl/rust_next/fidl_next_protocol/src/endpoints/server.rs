@@ -91,12 +91,12 @@ impl<T: Transport> Clone for Server<T> {
 /// The futures returned by `on_one_way` and `on_two_way` are required to be `Send`. See
 /// `LocalServerHandler` for a version of this trait which does not require the returned futures to
 /// be `Send`.
-pub trait ServerHandler<T: Transport> {
+pub trait ServerHandler<T: Transport>: Send {
     /// Handles a received one-way server message.
     ///
-    /// The server cannot handle more messages until `on_one_way` completes. If `on_one_way` may
-    /// block, perform asynchronous work, or take a long time to process a message, it should
-    /// offload work to an async task.
+    /// The client cannot handle more messages until `on_one_way` completes. If
+    /// `on_one_way` may block, or would perform asynchronous work that takes a
+    /// long time, it should offload work to an async task and return.
     fn on_one_way(
         &mut self,
         ordinal: u64,
@@ -106,9 +106,9 @@ pub trait ServerHandler<T: Transport> {
 
     /// Handles a received two-way server message.
     ///
-    /// The server cannot handle more messages until `on_two_way` completes. If `on_two_way` may
-    /// block, perform asynchronous work, or take a long time to process a message, it should
-    /// offload work to an async task.
+    /// The client cannot handle more messages until `on_two_way` completes. If
+    /// `on_two_way` may block, or would perform asynchronous work that takes a
+    /// long time, it should offload work to an async task and return.
     fn on_two_way(
         &mut self,
         ordinal: u64,
@@ -116,6 +116,64 @@ pub trait ServerHandler<T: Transport> {
         body: Body<T>,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
+}
+
+/// A type which handles incoming events for a local server.
+///
+/// This is a variant of [`ServerHandler`] that does not require implementing
+/// `Send` and only supports local-thread executors.
+pub trait LocalServerHandler<T: Transport> {
+    /// Handles a received one-way server message.
+    ///
+    /// See [`ServerHandler::on_one_way`] for more information.
+    fn on_one_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+
+    /// Handles a received two-way server message.
+    ///
+    /// See [`ServerHandler::on_two_way`] for more information.
+    fn on_two_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+        responder: Responder<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
+}
+
+/// An adapter for a [`ServerHandler`] which implements [`LocalServerHandler`].
+#[repr(transparent)]
+pub struct ServerHandlerToLocalAdapter<H>(H);
+
+impl<T, H> LocalServerHandler<T> for ServerHandlerToLocalAdapter<H>
+where
+    T: Transport,
+    H: ServerHandler<T>,
+{
+    #[inline]
+    fn on_one_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
+        self.0.on_one_way(ordinal, flexibility, body)
+    }
+
+    #[inline]
+    fn on_two_way(
+        &mut self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        body: Body<T>,
+        responder: Responder<T>,
+    ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
+        self.0.on_two_way(ordinal, flexibility, body, responder)
+    }
 }
 
 /// A dispatcher for a server endpoint.
@@ -155,9 +213,19 @@ impl<T: Transport> ServerDispatcher<T> {
     }
 
     /// Runs the server with the provided handler.
-    pub async fn run<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
+    pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         H: ServerHandler<T>,
+    {
+        // The bounds on `H` prove that the future returned by `run_local` is
+        // `Send`.
+        self.run_local(ServerHandlerToLocalAdapter(handler)).await.map(|adapter| adapter.0)
+    }
+
+    /// Runs the server with the provided local handler.
+    pub async fn run_local<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
+    where
+        H: LocalServerHandler<T>,
     {
         // We may assume that the connection has not been terminated because
         // connections are only terminated by `run` and `drop`. Neither of those
@@ -205,7 +273,7 @@ impl<T: Transport> ServerDispatcher<T> {
     /// The connection must not be terminated.
     async unsafe fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
     where
-        H: ServerHandler<T>,
+        H: LocalServerHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
