@@ -820,10 +820,9 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
   for (auto& a : aspaces_list_) {
     if (a.is_user() && a.size() > 0) {
       // Forbid PT reclamation and accessed bit harvesting on high priority aspaces.
-      const NonTerminalAction apply_non_terminal_action =
-          a.IsHighMemoryPriority() ? NonTerminalAction::Retain : non_terminal_action;
-      const TerminalAction apply_terminal_action =
-          a.IsHighMemoryPriority() ? TerminalAction::UpdateAge : terminal_action;
+      if (a.IsHighMemoryPriority()) {
+        continue;
+      }
       // The arch_aspace is only destroyed in the VmAspace destructor *after* the aspace is removed
       // from the aspaces list. As we presently hold the AspaceListLock::Get() we know that this
       // destructor has not completed, and so the arch_aspace has not been destroyed. Even if the
@@ -833,11 +832,11 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
       // to do a harvest) in order to clear the state from it.
       bool harvest = true;
       if (a.arch_aspace().AccessedSinceLastCheck(
-              apply_terminal_action == TerminalAction::UpdateAgeAndHarvest ? true : false)) {
+              terminal_action == TerminalAction::UpdateAgeAndHarvest ? true : false)) {
         // The aspace has been accessed since some kind of harvest last happened, so we must do a
         // new one. Reset our counter of how many pt reclamations we've done based on what kind scan
         // this is.
-        if (apply_non_terminal_action == NonTerminalAction::FreeUnaccessed) {
+        if (non_terminal_action == NonTerminalAction::FreeUnaccessed) {
           // This is set to one since we haven't yet performed the harvest, and so if next time the
           // call to ActiveSinceLastCheck() returns false, then it will be true that one harvest has
           // been done since last active. Alternative if next time ActiveSinceLastCheck() returns
@@ -846,7 +845,7 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
         } else {
           a.pt_harvest_since_active_ = 0;
         }
-      } else if (apply_non_terminal_action == NonTerminalAction::FreeUnaccessed &&
+      } else if (non_terminal_action == NonTerminalAction::FreeUnaccessed &&
                  a.pt_harvest_since_active_ < 2) {
         // The aspace hasn't been active, but we haven't yet performed two successive pt
         // reclamations. Since the first pt reclamation only removes accessed information, the
@@ -860,7 +859,7 @@ void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
       }
       if (harvest) {
         [[maybe_unused]] zx_status_t result = a.arch_aspace().HarvestAccessed(
-            a.base(), a.size() / kPageSize, apply_non_terminal_action, apply_terminal_action);
+            a.base(), a.size() / kPageSize, non_terminal_action, terminal_action);
         DEBUG_ASSERT(result == ZX_OK);
         vm_aspace_accessed_harvests_performed.Add(1);
       } else {
