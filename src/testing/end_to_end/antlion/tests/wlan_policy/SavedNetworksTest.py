@@ -8,7 +8,9 @@ import logging
 
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyControllerError,
@@ -25,6 +27,14 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import asserts, signals, test_runner
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 PSK_LEN = 64
 CREDENTIAL_TYPE_PSK = "Psk"
@@ -47,6 +57,11 @@ class SavedNetworksTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
         self.log = logging.getLogger()
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
         # Keep track of whether we have started an access point in a test
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
@@ -57,12 +72,14 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
             fd.honeydew_fd.wlan_policy.wait_for_no_connections()
-        self.access_points[0].stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
 
     def teardown_class(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-        self.access_points[0].stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
 
     def _has_saved_network(
         self, fd: FuchsiaDevice, network: NetworkConfig
@@ -87,7 +104,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
     def _start_ap(
         self,
         ssid: str,
-        security_type: SecurityMode,
+        security: Security,
         password: str | None = None,
     ) -> None:
         """Starts an access point.
@@ -102,16 +119,27 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             EnvironmentError if it fails to set up AP for test.
         """
         # Put together the security configuration of the network to be broadcasted.
-        security = Security(security_mode=security_type, password=password)
-
-        if len(self.access_points) > 0:
+        if hasattr(self, "openwrt_ap"):
+            config = AccessPointConfig.generate(
+                security=security,
+                band=Band.BAND_5G,
+                ssid=ssid,
+                password=(password if security != Security.NONE else None),
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
+        elif hasattr(self, "access_point"):
             # Create an AP with default values other than the specified values.
+            hostapd_security = ConfigMapper.to_hostapd_security(security)
             setup_ap(
-                self.access_points[0],
+                self.access_point,
                 "whirlwind",
                 hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid,
-                security=security,
+                security=HostapdSecurity(
+                    hostapd_security,
+                    password,
+                ),
             )
         else:
             self.log.error(
@@ -334,7 +362,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, SecurityMode.WPA2, test_network.credential_value
+            test_network.ssid, Security.WPA2, test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:
@@ -379,7 +407,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, SecurityMode.OPEN, test_network.credential_value
+            test_network.ssid, Security.NONE, test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:
@@ -417,7 +445,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, SecurityMode.WPA3, test_network.credential_value
+            test_network.ssid, Security.WPA3, test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:
