@@ -501,6 +501,16 @@ impl SecurityServer {
     ) -> Result<SecurityId, anyhow::Error> {
         self.backend.compute_create_sid(source_sid, target_sid, target_class)
     }
+
+    /// Returns the raw `AccessDecision` for a specified source, target and class.
+    pub fn compute_access_decision(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        target_class: ClassId,
+    ) -> AccessDecision {
+        self.backend.compute_access_decision(source_sid, target_sid, target_class.into())
+    }
 }
 
 impl SecurityServerBackend {

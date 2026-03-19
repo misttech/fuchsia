@@ -750,8 +750,7 @@ impl SeLinuxApiOps for AccessApi {
         // This API does not appear to treat trailing arguments as invalid.
 
         // Perform the access decision calculation.
-        let permission_check = self.security_server.as_permission_check();
-        let mut decision = permission_check.compute_access_decision(scontext, tcontext, tclass);
+        let mut decision = self.security_server.compute_access_decision(scontext, tcontext, tclass);
 
         // `compute_access_decision()` returns an `AccessDecision` with results calculated for all
         // permissions defined by policy, so by default the "access" API reports all permissions as
