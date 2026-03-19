@@ -186,8 +186,11 @@ impl File for ExtFile {
     }
 
     async fn truncate(&self, length: u64) -> Result<(), Status> {
-        if let Some(processor) = &self.processor {
-            processor.truncate(length).map_err(|e| {
+        // We only support truncating to 0.
+        if let Some(processor) = &self.processor
+            && length == 0
+        {
+            processor.truncate_to_zero(self.inode as u32).map_err(|e| {
                 log::warn!("Error truncating: {:?}", e);
                 Status::INTERNAL
             })
@@ -213,7 +216,12 @@ impl File for ExtFile {
     }
 
     async fn get_size(&self) -> Result<u64, Status> {
-        self.vmo.get_content_size()
+        let size = if let Some(processor) = &self.processor {
+            processor.file_size(self.inode as u32).map_err(|_| Status::INTERNAL)?
+        } else {
+            self.vmo.get_content_size()?
+        };
+        Ok(size)
     }
 
     async fn update_attributes(
@@ -239,17 +247,20 @@ impl FileIo for ExtFile {
     async fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
         // TODO(https://fxbug.dev/479943428): When full write support is implemented, ensure read_at
         // handles potential race conditions with concurrent writes.
-        let vmo_size = self.vmo.get_content_size()?;
-        if offset >= vmo_size {
+        let file_size = self.get_size().await?;
+        if let Some(processor) = &self.processor {
+            processor.record_read_metrics();
+        }
+
+        if offset >= file_size {
             return Ok(0);
         }
 
-        let readable_bytes = std::cmp::min(buffer.len() as u64, vmo_size - offset);
+        let readable_bytes = std::cmp::min(buffer.len() as u64, file_size - offset);
         if readable_bytes == 0 {
             return Ok(0);
         }
         self.vmo.read(&mut buffer[..readable_bytes as usize], offset)?;
-        self.processor.as_ref().unwrap().record_read_metrics();
         Ok(readable_bytes)
     }
 
@@ -322,12 +333,11 @@ mod tests {
 
     use super::*;
     use ext4_lib::readers::BlockDeviceReader;
-    use fidl_fuchsia_storage_block as fblock;
-    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
     use test_case::test_case;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
+    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn test_read() {

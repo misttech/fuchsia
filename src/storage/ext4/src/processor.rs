@@ -7,6 +7,7 @@ use crate::readers::ReaderWriter;
 use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
 use fuchsia_sync::Mutex;
 use futures::future::FutureExt;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -21,11 +22,13 @@ pub struct Ext4FileMetrics {
 }
 
 /// A processor that wraps an ext4 parser and adds write functionality if not in read-only mode.
+/// Note that syncing of metadata to the persistent storage is *NOT* supported.
 pub struct Ext4Processor {
     fs: Parser,
     reader_writer: Arc<dyn ReaderWriter>,
     read_only: bool,
     file_metrics: Arc<Mutex<Ext4FileMetrics>>,
+    file_size: Mutex<HashMap<u32, u64>>,
 }
 
 impl std::ops::Deref for Ext4Processor {
@@ -43,6 +46,7 @@ impl Ext4Processor {
             reader_writer,
             read_only,
             file_metrics: Arc::new(Mutex::new(Ext4FileMetrics::default())),
+            file_size: Mutex::new(HashMap::new()),
         }
     }
 
@@ -115,11 +119,24 @@ impl Ext4Processor {
         Ok(())
     }
 
-    pub fn truncate(&self, _length: u64) -> Result<(), ParsingError> {
+    pub fn file_size(&self, inode_num: u32) -> Result<u64, ParsingError> {
+        let file_size = self.file_size.lock();
+        if let Some(&size) = file_size.get(&inode_num) {
+            Ok(size)
+        } else {
+            Ok(self.inode(inode_num)?.size())
+        }
+    }
+
+    pub fn truncate_to_zero(&self, inode_num: u32) -> Result<(), ParsingError> {
+        if self.read_only {
+            return Err(ParsingError::Incompatible("Cannot write to read-only Ext4".to_string()));
+        }
         let mut file_metrics = self.file_metrics.lock();
         file_metrics.num_truncate_requests += 1;
-        // TODO(https://fxbug.dev/479943428): Add support
-        return Err(ParsingError::NotSupported("truncate".to_string()));
+
+        self.file_size.lock().insert(inode_num, 0);
+        Ok(())
     }
 
     /// Overwrites existing contents of a file with new data. This does not require any allocations.
@@ -137,10 +154,13 @@ impl Ext4Processor {
         file_metrics.num_write_requests += 1;
 
         let inode = self.inode(inode_num)?;
-        // We don't support allocation and also writing past EOF.
-        if offset + data.as_ref().len() as u64 > inode.size() {
+        let persisted_size = inode.size();
+        // Must overwrite the entire file.
+        if offset + data.as_ref().len() as u64 != persisted_size {
             file_metrics.num_writes_past_eof_attempts += 1;
-            return Err(ParsingError::NotSupported("writing past EOF".to_string()));
+            return Err(ParsingError::NotSupported(
+                "writing past EOF / partial writes".to_string(),
+            ));
         }
         if data.as_ref().len() == 0 {
             file_metrics.num_successful_overwrites += 1;
@@ -201,7 +221,9 @@ impl Ext4Processor {
             Ok(())
         })?;
 
-        // TODO(https://fxbug.dev/479943428): Update mtime, ctime, metadata checksum
+        // Update size: size may be be 0 if `truncate_to_zero` was called before this. Removing it
+        // means the next call to `file_size` will return the persisted size from the inode.
+        self.file_size.lock().remove(&inode_num);
 
         file_metrics.num_successful_overwrites += 1;
         Ok(())
@@ -218,12 +240,11 @@ mod tests {
     use super::*;
     use crate::readers::{BlockDeviceReader, VecReader};
     use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
-    use fidl_fuchsia_storage_block as fblock;
-    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::Vmo;
+    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn test_processor_read_only_blocks_write() {
@@ -322,10 +343,11 @@ mod tests {
         let original_size = rw_processor.inode(file_ino).expect("failed to read inode").size();
         assert_eq!(original_size, expected.len() as u64);
 
+        expected[original_size as usize - 2] = 1;
+        expected[original_size as usize - 1] = 1;
         rw_processor
-            .overwrite_file_contents(file_ino, &[1u8; 1], 1)
+            .overwrite_file_contents(file_ino, &[1u8; 2], original_size - 2)
             .expect("failed to overwrite extents");
-        expected[1] = 1;
 
         let new_data = rw_processor.read_data(file_ino).expect("failed to read data");
         assert_eq!(new_data, expected);

@@ -122,15 +122,13 @@ mod tests {
     use super::{FsSourceType, construct_fs, construct_fs_internal};
 
     use ext4_lib::structs::MIN_EXT4_SIZE;
-    use fidl_fuchsia_io as fio;
-    use fidl_fuchsia_storage_block as fblock;
-    use fuchsia_async as fasync;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
     use fuchsia_fs::file::{WriteError, read_to_string, write};
     use std::fs;
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::{HandleBased, Status, Vmo};
+    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     fn image_too_small() {
@@ -287,8 +285,8 @@ mod tests {
             .expect("failed to open file");
         let original_contents = "file1 contents.\n";
         assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
-        let new_contents = "NEW";
-        let offset = 5;
+        let new_contents = "CONTENTS!\n";
+        let offset = 6;
         file.seek(fio::SeekOrigin::Start, offset)
             .await
             .expect("failed FIDL seek")
@@ -480,7 +478,7 @@ mod tests {
         let mut old_vmo_contents = vec![0u8; data.len()];
         vmo_clone.read(&mut old_vmo_contents, 0).expect("failed to read from vmo clone");
 
-        let new_contents = "FILE1 CONTENTS!";
+        let new_contents = "FILE1 CONTENTS!\n";
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed FIDL seek")
@@ -554,17 +552,19 @@ mod tests {
         .expect("failed to parse the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
 
-        let _status = open_file(
+        let file1 = open_file(
             &root,
             "file1",
             fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FILE_TRUNCATE,
         )
         .await
-        .expect_err("open with truncate should fail as it is currently not supported");
+        .expect("open with truncate should succeed");
+        let contents = read_to_string(&file1).await.expect("failed to read file");
+        assert_eq!(contents, "");
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             file_metrics: {
                 num_open_requests: 1u64,
-                num_read_requests: 0u64,
+                num_read_requests: 1u64,
                 num_truncate_requests: 1u64,
                 num_write_requests: 0u64,
                 num_writes_past_eof_attempts: 0u64,
@@ -572,30 +572,46 @@ mod tests {
                 num_blocks_overwritten: 0u64,
             }
         });
-
-        // Perform opens, reads, and writes. Should see them reflected in the inspector metrics.
-        let file1 = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
-            .await
-            .expect("failed to open file1");
-        let _ = read_to_string(&file1).await.expect("failed to read file1");
-
-        let file2 = open_file(&root, "inner/file2", fio::PERM_READABLE | fio::PERM_WRITABLE)
-            .await
-            .expect("failed to open inner/file2");
-        let _ = read_to_string(&file2).await.expect("failed to read file2");
-
         file1
             .seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed to seek")
             .map_err(zx::Status::from_raw)
             .expect("seek error");
-        let _ = write(&file1, "new content").await.expect("failed to write to file1");
+        write(&file1, "FILE1 CONTENTS!\n").await.expect("failed to write to file");
+        file1
+            .seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("failed to seek")
+            .map_err(zx::Status::from_raw)
+            .expect("seek error");
+        // `read_to_string` loops read until no bytes are read back. So for non-empty strings, we
+        // expect to see two more read requests.
+        let new_contents = read_to_string(&file1).await.expect("failed to read file");
+        assert_eq!(new_contents, "FILE1 CONTENTS!\n");
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
+            file_metrics: {
+                num_open_requests: 1u64,
+                num_read_requests: 3u64,
+                num_truncate_requests: 1u64,
+                num_write_requests: 1u64,
+                num_writes_past_eof_attempts: 0u64,
+                num_successful_overwrites: 1u64,
+                num_blocks_overwritten: 1u64,
+            }
+        });
+
+        // Perform opens and reads on another file. Should see them reflected in the inspector
+        // metrics.
+        let file2 = open_file(&root, "inner/file2", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open inner/file2");
+        let _contents = read_to_string(&file2).await.expect("failed to read file2");
 
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             file_metrics: {
-                num_open_requests: 3u64,
-                num_read_requests: 2u64,
+                num_open_requests: 2u64,
+                num_read_requests: 5u64,
                 num_truncate_requests: 1u64,
                 num_write_requests: 1u64,
                 num_writes_past_eof_attempts: 0u64,
@@ -609,5 +625,95 @@ mod tests {
             .expect("failed FIDL dir close")
             .map_err(zx::Status::from_raw)
             .expect("failed to close root");
+    }
+
+    #[fuchsia::test]
+    async fn test_truncate_and_write() {
+        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end, block_server_end) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end),
+            /* read_only= */ false,
+            &inspector,
+        )
+        .expect("failed to parse the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+
+        // Check original contents
+        let file = open_file(&root, "file1", fio::PERM_READABLE).await.expect("open failed");
+        let original_contents = read_to_string(&file).await.expect("read failed");
+        assert_eq!(original_contents, "file1 contents.\n");
+        file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+
+        // Open with TRUNCATE, reading from this should return empty string.
+        let file = open_file(
+            &root,
+            "file1",
+            fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FILE_TRUNCATE,
+        )
+        .await
+        .expect("open with truncate failed");
+        assert_eq!(read_to_string(&file).await.expect("read failed"), "");
+
+        // Write to the file and verify we see new contents.
+        let new_content = "FILE1 CONTENTS.\n";
+        write(&file, new_content).await.expect("write failed");
+        file.seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("seek failed")
+            .map_err(zx::Status::from_raw)
+            .expect("seek error");
+        assert_eq!(read_to_string(&file).await.expect("read failed"), new_content);
+
+        // Check that writing past original file size fails.
+        let huge_content = vec![1u8; 50];
+        let error =
+            write(&file, &huge_content).await.expect_err("write past allocated size should fail");
+        match error {
+            WriteError::WriteError(status) => assert_eq!(status, zx::Status::NOT_SUPPORTED),
+            _ => panic!("Unexpected error: {:?}", error),
+        }
+
+        // Check that overwriting the file partially is not supported.
+        let partial_content = vec![1u8; 2];
+        let error = write(&file, &partial_content)
+            .await
+            .expect_err("write past allocated size should fail");
+        match error {
+            WriteError::WriteError(status) => assert_eq!(status, zx::Status::NOT_SUPPORTED),
+            _ => panic!("Unexpected error: {:?}", error),
+        }
+
+        // We see the content written previously.
+        file.seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("seek failed")
+            .map_err(zx::Status::from_raw)
+            .expect("seek error");
+        assert_eq!(read_to_string(&file).await.expect("read failed"), new_content);
+
+        file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
     }
 }
