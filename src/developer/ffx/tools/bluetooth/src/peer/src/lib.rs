@@ -57,7 +57,7 @@ impl FfxMain for PeerTool {
                 };
 
                 self.connect_peer(peer_id).await?;
-                writer.line(format!("Successfully connected to peer {peer_id}"))?;
+                writer.line(format!("Successfully sent connection request to peer {peer_id}"))?;
             }
             // ffx bluetooth peer disconnect
             PeerSubCommand::Disconnect(ref cmd) => {
@@ -301,10 +301,9 @@ fn to_identifier(peers: &Vec<Peer>, key: &PeerIdOrAddr) -> Option<PeerId> {
 mod tests {
     use super::*;
     use ffx_bluetooth_common::{BdAddr, PeerIdOrAddr};
-    use fidl_fuchsia_bluetooth as fbt;
-    use fidl_fuchsia_bluetooth_sys as fsys;
     use fuchsia_bluetooth::types::Address;
     use regex::Regex;
+    use {fidl_fuchsia_bluetooth as fbt, fidl_fuchsia_bluetooth_sys as fsys};
 
     fn named_peer(id: PeerId, address: Address, name: Option<String>) -> Peer {
         Peer {

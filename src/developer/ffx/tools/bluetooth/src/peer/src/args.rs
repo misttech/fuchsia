@@ -64,7 +64,7 @@ pub struct ShowCommand {
 #[argh(
     subcommand,
     name = "connect",
-    description = "Connect to a peer.",
+    description = "Send a connection request to a peer.",
     example = "ffx bluetooth peer connect <id|addr>"
 )]
 pub struct ConnectCommand {
