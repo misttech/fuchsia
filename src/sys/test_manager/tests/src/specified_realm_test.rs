@@ -10,8 +10,8 @@ use futures::prelude::*;
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 use test_manager_test_lib::{
-    collect_string_from_socket_helper, collect_suite_events, default_run_option, AttributedLog,
-    GroupRunEventByTestCase, RunEvent, TestBuilder, TestRunEventPayload,
+    AttributedLog, GroupRunEventByTestCase, RunEvent, TestBuilder, TestRunEventPayload,
+    collect_string_from_socket_helper, collect_suite_events, default_run_option,
 };
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -42,11 +42,20 @@ fn connect_realm() -> Result<ClientEnd<fcomponent::RealmMarker>, Error> {
     Ok(client_end)
 }
 
-fn default_event_offers() -> Vec<fdecl::Offer> {
-    vec![fdecl::Offer::EventStream(fdecl::OfferEventStream {
-        target_name: Some("capability_requested".to_string()),
-        ..Default::default()
-    })]
+fn default_offers() -> Vec<fdecl::Offer> {
+    vec![
+        fdecl::Offer::Storage(fdecl::OfferStorage {
+            source_name: Some("data".to_string()),
+            source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+            target: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+            target_name: Some("data".to_string()),
+            ..Default::default()
+        }),
+        fdecl::Offer::EventStream(fdecl::OfferEventStream {
+            target_name: Some("capability_requested".to_string()),
+            ..Default::default()
+        }),
+    ]
 }
 
 async fn run_test_in_echo_test_realm(
@@ -54,7 +63,7 @@ async fn run_test_in_echo_test_realm(
     run_options: RunOptions,
 ) -> Result<(Vec<RunEvent>, Vec<AttributedLog>), Error> {
     let realm = connect_realm().unwrap();
-    let mut offers = default_event_offers();
+    let mut offers = default_offers();
     offers.push(fdecl::Offer::Protocol(fdecl::OfferProtocol {
         source_name: Some("fidl.examples.routing.echo.Echo".into()),
         target_name: Some("fidl.examples.routing.echo.Echo".into()),
@@ -71,7 +80,7 @@ async fn run_test_in_hermetic_test_realm(
     run_options: RunOptions,
 ) -> Result<(Vec<RunEvent>, Vec<AttributedLog>), Error> {
     let realm = connect_realm().unwrap();
-    let offers = default_event_offers();
+    let offers = default_offers();
     run_single_test(realm, &offers, HERMETIC_TEST_COL, test_url, run_options).await
 }
 
@@ -116,7 +125,7 @@ async fn launch_and_test_echo_test() {
 async fn enumerate_echo_test() {
     let proxy = connect_query_server!().unwrap();
     let realm = connect_realm().unwrap();
-    let mut offers = default_event_offers();
+    let mut offers = default_offers();
     offers.push(fdecl::Offer::Protocol(fdecl::OfferProtocol {
         source_name: Some("fidl.examples.routing.echo.Echo".into()),
         target_name: Some("fidl.examples.routing.echo.Echo".into()),
@@ -245,7 +254,7 @@ async fn update_log_severity_for_all_components() {
     let options = RunOptions {
         log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         log_interest: Some(vec![
-            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap()
+            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap(),
         ]),
         ..default_run_option()
     };
@@ -274,7 +283,7 @@ async fn debug_data_test(compressed: bool) {
     let suite_instance = builder
         .add_suite_in_realm(
             realm,
-            &default_event_offers(),
+            &default_offers(),
             HERMETIC_TEST_COL,
             test_url,
             default_run_option(),
@@ -328,7 +337,7 @@ async fn debug_data_accumulate_test() {
         let suite_instance = builder
             .add_suite_in_realm(
                 realm,
-                &default_event_offers(),
+                &default_offers(),
                 HERMETIC_TEST_COL,
                 test_url,
                 default_run_option(),
@@ -368,7 +377,7 @@ async fn debug_data_isolated_test(compressed: bool) {
         let suite_instance = builder
             .add_suite_in_realm(
                 realm,
-                &default_event_offers(),
+                &default_offers(),
                 HERMETIC_TEST_COL,
                 test_url,
                 default_run_option(),

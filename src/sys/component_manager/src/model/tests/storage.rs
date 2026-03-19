@@ -4,7 +4,6 @@
 
 use crate::model::actions::{ActionsManager, DestroyAction, ShutdownType};
 use crate::model::component::StartReason;
-use crate::model::routing::route_and_open_capability;
 use crate::model::start::Start;
 use crate::model::testing::routing_test_helpers::*;
 use ::routing_test_helpers::RoutingTestModel;
@@ -18,15 +17,12 @@ use component_id_index::InstanceId;
 use errors::{ActionErrorKind, CreateNamespaceError, ModelError, StartActionError};
 use fidl::endpoints::ServerEnd;
 use fuchsia_async::TestExecutor;
-use futures::channel::mpsc;
-use futures::{StreamExt, pin_mut};
+use futures::pin_mut;
 use moniker::Moniker;
-use router_error::{DowncastErrorForTest, RouterError};
-use routing::RouteRequest;
-use routing::error::RoutingError;
 use std::path::Path;
+use std::sync::mpsc;
 use vfs::ToObjectRequest;
-use vfs::directory::entry::OpenRequest;
+use vfs::directory::entry_container::Directory;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path as VfsPath;
 use {
@@ -519,132 +515,6 @@ async fn use_restricted_storage_start_failure() {
 ///   provider (provides storage capability, restricted to component ID index)
 ///    |
 ///   parent_consumer (in component ID index)
-///    |
-///   child_consumer (not in component ID index)
-///
-/// Test that a component cannot open a restricted storage capability if the component isn't in
-/// the component index.
-#[fuchsia::test]
-async fn use_restricted_storage_open_failure() {
-    let parent_consumer_instance_id = InstanceId::new_random(&mut rand::rng());
-    let index = {
-        let mut index = component_id_index::Index::default();
-        index
-            .insert(
-                Moniker::parse_str("/parent_consumer/child_consumer").unwrap(),
-                parent_consumer_instance_id.clone(),
-            )
-            .unwrap();
-        index
-    };
-    let component_id_index_path = make_index_file(index).unwrap();
-    let components = vec![
-        (
-            "provider",
-            ComponentDeclBuilder::new()
-                .capability(
-                    CapabilityBuilder::directory()
-                        .name("data")
-                        .path("/data")
-                        .rights(fio::RW_STAR_DIR),
-                )
-                .capability(
-                    CapabilityBuilder::storage()
-                        .name("cache")
-                        .backing_dir("data")
-                        .source(StorageDirectorySource::Self_),
-                )
-                .offer(
-                    OfferBuilder::storage()
-                        .name("cache")
-                        .source(OfferSource::Self_)
-                        .target_static_child("parent_consumer"),
-                )
-                .child_default("parent_consumer")
-                .build(),
-        ),
-        (
-            "parent_consumer",
-            ComponentDeclBuilder::new()
-                .use_(UseBuilder::storage().name("cache").path("/storage"))
-                .build(),
-        ),
-    ];
-    let test = RoutingTestBuilder::new("provider", components)
-        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
-        .build()
-        .await;
-
-    let parent_consumer_moniker = Moniker::parse_str("/parent_consumer").unwrap();
-    let (parent_consumer_instance, _) = test
-        .start_and_get_instance(&parent_consumer_moniker, StartReason::Eager, false)
-        .await
-        .expect("could not resolve state");
-
-    // `parent_consumer` should be able to open its storage because its not restricted
-    let (_client_end, server_end) = zx::Channel::create();
-    let scope = ExecutionScope::new();
-    let flags = fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
-    let mut object_request = flags.to_object_request(server_end);
-    route_and_open_capability(
-        &RouteRequest::UseStorage(UseStorageDecl {
-            source_name: "cache".parse().unwrap(),
-            target_path: "/storage".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
-        }),
-        &parent_consumer_instance,
-        OpenRequest::new(scope.clone(), flags, VfsPath::dot(), &mut object_request),
-    )
-    .await
-    .expect("Unable to route.  oh no!!");
-
-    // now modify StorageDecl so that it restricts storage
-    let (provider_instance, _) = test
-        .start_and_get_instance(&Moniker::root(), StartReason::Eager, false)
-        .await
-        .expect("could not resolve state");
-    {
-        let mut resolved_state = provider_instance.lock_resolved_state().await.unwrap();
-        for cap in resolved_state.decl_as_mut().capabilities.iter_mut() {
-            match cap {
-                CapabilityDecl::Storage(storage_decl) => {
-                    storage_decl.storage_id = fdecl::StorageId::StaticInstanceId;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // `parent_consumer` should NOT be able to open its storage because its IS restricted
-    let (_client_end, server_end) = zx::Channel::create();
-    let scope = ExecutionScope::new();
-    let flags = fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
-    let mut object_request = flags.to_object_request(server_end);
-    let result = route_and_open_capability(
-        &RouteRequest::UseStorage(UseStorageDecl {
-            source_name: "cache".parse().unwrap(),
-            target_path: "/storage".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
-        }),
-        &parent_consumer_instance,
-        OpenRequest::new(scope.clone(), flags, VfsPath::dot(), &mut object_request),
-    )
-    .await;
-    assert_matches!(
-        result,
-        Err(RouterError::NotFound(err))
-        if matches!(
-            err.downcast_for_test::<RoutingError>(),
-            RoutingError::ComponentNotInIdIndex { .. }
-        )
-    );
-}
-
-///   component manager's namespace
-///    |
-///   provider (provides storage capability, restricted to component ID index)
-///    |
-///   parent_consumer (in component ID index)
 ///
 /// Test that a component can open a subdirectory of a storage successfully
 #[fuchsia::test]
@@ -704,23 +574,16 @@ async fn open_storage_subdirectory() {
         .await
         .expect("could not resolve state");
 
-    // `consumer` should be able to open its storage at the root dir
+    // `consumer` should be able to open its storage dir
     let (root_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     let server_end = server_end.into_channel();
     let scope = ExecutionScope::new();
     let flags = fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
     let mut object_request = flags.to_object_request(server_end);
-    route_and_open_capability(
-        &RouteRequest::UseStorage(UseStorageDecl {
-            source_name: "cache".parse().unwrap(),
-            target_path: "/storage".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
-        }),
-        &consumer_instance,
-        OpenRequest::new(scope.clone(), flags, VfsPath::dot(), &mut object_request),
-    )
-    .await
-    .expect("Unable to route.  oh no!!");
+    let consumer_instance_state = consumer_instance.lock_resolved_state().await.unwrap();
+    let consumer_namespace = consumer_instance_state.namespace_dir().await.unwrap();
+    let path = VfsPath::validate_and_split("/storage").unwrap();
+    consumer_namespace.clone().open(scope.clone(), path, flags, &mut object_request).unwrap();
 
     // Create the subdirectories we will open later
     let bar_dir = fuchsia_fs::directory::create_directory_recursive(
@@ -738,17 +601,9 @@ async fn open_storage_subdirectory() {
     let scope = ExecutionScope::new();
     let flags = fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
     let mut object_request = flags.to_object_request(server_end);
-    route_and_open_capability(
-        &RouteRequest::UseStorage(UseStorageDecl {
-            source_name: "cache".parse().unwrap(),
-            target_path: "/storage".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
-        }),
-        &consumer_instance,
-        OpenRequest::new(scope.clone(), flags, "foo/bar".try_into().unwrap(), &mut object_request),
-    )
-    .await
-    .expect("Unable to route.  oh no!!");
+    consumer_namespace
+        .open(scope.clone(), "/storage/foo/bar".try_into().unwrap(), flags, &mut object_request)
+        .unwrap();
 
     let entries = fuchsia_fs::directory::readdir(&bar_dir).await.unwrap();
     assert!(entries.is_empty());
@@ -1529,7 +1384,7 @@ fn storage_does_not_block_shutdown_when_backing_dir_hangs() {
 
     let mut test_body = Box::pin(async {
         // Setup a backing_dir that hangs.
-        let (out_dir_tx, mut out_dir_rx) = mpsc::channel(1);
+        let (out_dir_tx, out_dir_rx) = mpsc::sync_channel(1);
         let out_dir_tx = fsync::Mutex::new(out_dir_tx);
         let url = "test:///a";
         test.mock_runner.add_host_fn(
@@ -1551,7 +1406,7 @@ fn storage_does_not_block_shutdown_when_backing_dir_hangs() {
                     storage_relation: None,
                     from_cm_namespace: false,
                     storage_subdir: None,
-                    expected_res: ExpectedResult::Err(zx::Status::INTERNAL),
+                    expected_res: ExpectedResult::Err(zx::Status::NOT_FOUND),
                 },
             )
             .await;
@@ -1562,7 +1417,7 @@ fn storage_does_not_block_shutdown_when_backing_dir_hangs() {
             .expect_pending("Storage connection should hang");
 
         // We should receive the open request though.
-        let out_dir = out_dir_rx.next().await.unwrap();
+        let out_dir = out_dir_rx.recv().unwrap();
 
         // Shutdown the component. This should not hang despite an in-progress storage
         // provisioning operation.

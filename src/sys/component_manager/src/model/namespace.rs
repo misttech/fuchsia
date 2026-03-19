@@ -4,16 +4,18 @@
 
 use crate::model::component::{ComponentInstance, Package, WeakComponentInstance};
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::mapper::NoopRouteMapper;
-use ::routing::{route_to_storage_decl, verify_instance_in_component_id_index};
-use cm_rust::ComponentDecl;
+use cm_rust::{Availability, ComponentDecl};
 use cm_types::{NamespacePath, Path};
 use errors::CreateNamespaceError;
 use fidl::prelude::*;
 use fidl_fuchsia_io as fio;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
-use sandbox::{Capability, Dict};
+use router_error::RouterError;
+use routing::DictExt;
+use routing::bedrock::request_metadata::storage_metadata;
+use routing::error::RoutingError;
+use sandbox::{Capability, Dict, Request};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -47,23 +49,46 @@ pub async fn create_namespace(
 
     let mut dont_flatten_past = HashSet::new();
     for use_ in &decl.uses {
-        if let cm_rust::UseDecl::Storage(decl) = use_ {
-            if let Ok(source) =
-                route_to_storage_decl(decl.clone(), component, &mut NoopRouteMapper).await
-            {
-                verify_instance_in_component_id_index(&source, component)
-                    .await
-                    .map_err(CreateNamespaceError::InstanceNotInInstanceIdIndex)?;
+        match use_ {
+            // In order to maintain the legacy error reporting contract for
+            // storage capabilities, we need to verify that the target component
+            // is in the ID index with debug routing, and if not, return an
+            // error.
+            decl @ cm_rust::UseDecl::Storage(_use_decl) => {
+                if let Some(Capability::DirConnectorRouter(router)) = program_input_dict
+                    .get_capability(use_.path().ok_or(
+                        CreateNamespaceError::UseDeclWithoutPath {
+                            moniker: component.moniker.clone(),
+                            decl: decl.clone(),
+                        },
+                    )?)
+                {
+                    if let Err(RouterError::NotFound(e)) = router
+                        .route(
+                            Some(Request { metadata: storage_metadata(Availability::Required) }),
+                            true,
+                            component.as_weak().into(),
+                        )
+                        .await
+                    {
+                        if let Some(e @ RoutingError::ComponentNotInIdIndex { .. }) =
+                            e.as_any().downcast_ref::<RoutingError>()
+                        {
+                            return Err(CreateNamespaceError::from(e.clone()));
+                        }
+                    }
+                }
             }
-        }
-        if let cm_rust::UseDecl::Service(decl) = use_ {
-            // Services should behave like protocols, and exist within a component manager hosted
-            // directory instead of being directly placed in the namespace.
-            //
-            // Without this, using a service and a protocol both in /svc will cause a namespace
-            // path conflict because the protocol would cause a directory to go at /svc and the
-            // service would cause a directory to go at /svc/{service_name}.
-            dont_flatten_past.insert(decl.target_path.parent());
+            cm_rust::UseDecl::Service(decl) => {
+                // Services should behave like protocols, and exist within a component manager hosted
+                // directory instead of being directly placed in the namespace.
+                //
+                // Without this, using a service and a protocol both in /svc will cause a namespace
+                // path conflict because the protocol would cause a directory to go at /svc and the
+                // service would cause a directory to go at /svc/{service_name}.
+                dont_flatten_past.insert(decl.target_path.parent());
+            }
+            _ => (),
         }
     }
 

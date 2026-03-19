@@ -46,6 +46,14 @@
             to: "#hermetic_test_coll",
             scope: "#hermetic_test_coll",
         },
+        {
+            storage: "data",
+            from: "parent",
+            to: [
+                "#echo_test_coll",
+                "#hermetic_test_coll",
+            ],
+        },
     ],
     expose: [
         {

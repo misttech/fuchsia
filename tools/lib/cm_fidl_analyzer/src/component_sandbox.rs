@@ -439,6 +439,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         }
         let rights = match capability {
             cm_rust::CapabilityDecl::Directory(dir_decl) => dir_decl.rights,
+            cm_rust::CapabilityDecl::Storage(_) => fio::RW_STAR_DIR,
             cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("incompatible porcelain type using DirConnector"),
         };

@@ -413,17 +413,19 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 first_use,
                 error_reporter.clone(),
             ),
-            cm_rust::UseDecl::Directory(_) => extend_dict_with_use::<DirConnector, C>(
-                component,
-                &child_component_output_dictionary_routers,
-                &component_input,
-                &program_input,
-                &program_output_dict,
-                &framework_router,
-                &capability_sourced_capabilities_dict,
-                first_use,
-                error_reporter.clone(),
-            ),
+            cm_rust::UseDecl::Directory(_) | cm_rust::UseDecl::Storage(_) => {
+                extend_dict_with_use::<DirConnector, C>(
+                    component,
+                    &child_component_output_dictionary_routers,
+                    &component_input,
+                    &program_input,
+                    &program_output_dict,
+                    &framework_router,
+                    &capability_sourced_capabilities_dict,
+                    first_use,
+                    error_reporter.clone(),
+                )
+            }
             cm_rust::UseDecl::Protocol(_) | cm_rust::UseDecl::Runner(_) => {
                 extend_dict_with_use::<Connector, _>(
                     component,
@@ -457,7 +459,6 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
             cm_rust::UseDecl::Dictionary(_) => {
                 dictionary_use_bundles.push(use_bundle);
             }
-            _ => (),
         }
     }
 
@@ -592,17 +593,19 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &(get_target_dict)(),
                 error_reporter.clone(),
             ),
-            cm_rust::OfferDecl::Directory(_) => extend_dict_with_offer::<DirConnector, _>(
-                component,
-                &child_component_output_dictionary_routers,
-                &component_input,
-                &program_output_dict,
-                &framework_router,
-                &capability_sourced_capabilities_dict,
-                first_offer,
-                &(get_target_dict)(),
-                error_reporter.clone(),
-            ),
+            cm_rust::OfferDecl::Directory(_) | cm_rust::OfferDecl::Storage(_) => {
+                extend_dict_with_offer::<DirConnector, _>(
+                    component,
+                    &child_component_output_dictionary_routers,
+                    &component_input,
+                    &program_output_dict,
+                    &framework_router,
+                    &capability_sourced_capabilities_dict,
+                    first_offer,
+                    &(get_target_dict)(),
+                    error_reporter.clone(),
+                )
+            }
             cm_rust::OfferDecl::Dictionary(_) | cm_rust::OfferDecl::EventStream(_) => {
                 extend_dict_with_offer::<Dict, _>(
                     component,
@@ -629,7 +632,6 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &(get_target_dict)(),
                 error_reporter.clone(),
             ),
-            _ => {}
         }
     }
 
@@ -1133,17 +1135,19 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
                 &target_input.capabilities(),
                 error_reporter.clone(),
             ),
-            cm_rust::OfferDecl::Directory(_) => extend_dict_with_offer::<DirConnector, _>(
-                component,
-                &child_component_output_dictionary_routers,
-                component_input,
-                program_output_dict,
-                framework_router,
-                capability_sourced_capabilities_dict,
-                first_offer,
-                &target_input.capabilities(),
-                error_reporter.clone(),
-            ),
+            cm_rust::OfferDecl::Directory(_) | cm_rust::OfferDecl::Storage(_) => {
+                extend_dict_with_offer::<DirConnector, _>(
+                    component,
+                    &child_component_output_dictionary_routers,
+                    component_input,
+                    program_output_dict,
+                    framework_router,
+                    capability_sourced_capabilities_dict,
+                    first_offer,
+                    &target_input.capabilities(),
+                    error_reporter.clone(),
+                )
+            }
             cm_rust::OfferDecl::Protocol(_)
             | cm_rust::OfferDecl::Runner(_)
             | cm_rust::OfferDecl::Resolver(_) => extend_dict_with_offer::<Connector, _>(
@@ -1172,6 +1176,7 @@ pub fn is_supported_use(use_: &cm_rust::UseDecl) -> bool {
             | cm_rust::UseDecl::Directory(_)
             | cm_rust::UseDecl::EventStream(_)
             | cm_rust::UseDecl::Dictionary(_)
+            | cm_rust::UseDecl::Storage(_)
     )
 }
 
@@ -1428,6 +1433,12 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
     if let cm_rust::UseDecl::Service(_) = use_ {
         router_builder = router_builder.rights(Some(fio::R_STAR_DIR.into())).inherit_rights(false);
     }
+    if let cm_rust::UseDecl::Storage(_) = use_ {
+        router_builder = router_builder
+            .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
+            .subdir(cm_types::RelativePath::dot().into())
+            .inherit_rights(false);
+    }
     let router = router_builder.build();
 
     match use_ {
@@ -1543,6 +1554,7 @@ fn is_supported_offer(offer: &cm_rust::OfferDecl) -> bool {
             | cm_rust::OfferDecl::Resolver(_)
             | cm_rust::OfferDecl::Service(_)
             | cm_rust::OfferDecl::EventStream(_)
+            | cm_rust::OfferDecl::Storage(_)
     )
 }
 
@@ -1658,6 +1670,12 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
             .rights(decl.rights.clone().map(Into::into))
             .subdir(decl.subdir.clone().into())
             .inherit_rights(true);
+    }
+    if let cm_rust::OfferDecl::Storage(_) = offer {
+        router_builder = router_builder
+            .rights(Some(fio::RW_STAR_DIR.into()))
+            .inherit_rights(false)
+            .subdir(cm_types::RelativePath::dot().into());
     }
     if let cm_rust::OfferDecl::Service(_) = offer {
         router_builder = router_builder.rights(Some(fio::R_STAR_DIR.into())).inherit_rights(true);

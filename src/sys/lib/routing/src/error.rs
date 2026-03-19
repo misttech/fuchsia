@@ -55,6 +55,8 @@ pub enum ComponentInstanceError {
         err_msg: String,
         err_as_zx: zx::Status,
     },
+    #[error("failed to create storage for `{moniker}`:\n\t{err_msg}")]
+    FailedToCreateStorage { moniker: Moniker, err_msg: String },
 }
 
 impl ComponentInstanceError {
@@ -64,7 +66,8 @@ impl ComponentInstanceError {
             | ComponentInstanceError::InstanceNotFound { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnavailable {}
             | ComponentInstanceError::InstanceNotExecutable { .. }
-            | ComponentInstanceError::NoAbsoluteUrl { .. } => zx::Status::NOT_FOUND,
+            | ComponentInstanceError::NoAbsoluteUrl { .. }
+            | ComponentInstanceError::FailedToCreateStorage { .. } => zx::Status::NOT_FOUND,
             ComponentInstanceError::StartFailed { err_as_zx, .. } => *err_as_zx,
             ComponentInstanceError::MalformedUrl { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnexpected { .. } => {
@@ -100,7 +103,8 @@ impl From<ComponentInstanceError> for ExtendedMoniker {
             | ComponentInstanceError::NoAbsoluteUrl { moniker, .. }
             | ComponentInstanceError::InstanceNotExecutable { moniker }
             | ComponentInstanceError::ResolveFailed { moniker, .. }
-            | ComponentInstanceError::StartFailed { moniker, .. } => {
+            | ComponentInstanceError::StartFailed { moniker, .. }
+            | ComponentInstanceError::FailedToCreateStorage { moniker, .. } => {
                 ExtendedMoniker::ComponentInstance(moniker)
             }
             ComponentInstanceError::ComponentManagerInstanceUnavailable {}

@@ -232,8 +232,30 @@ impl RootInputBuilder {
                             return Err(RouterError::Internal);
                         }
                     };
-                    let dir_connector =
-                        DirConnector::from_proxy(dir_proxy, RelativePath::dot(), flags);
+                    let dir_connector = match request.metadata.get_metadata() {
+                        Some(::routing::bedrock::request_metadata::IsolatedStoragePath(
+                            isolated_storage_path,
+                        )) => {
+                            let isolated_storage_path = vfs::path::Path::validate_and_split(
+                                isolated_storage_path.to_string_lossy().into_owned(),
+                            )
+                            .unwrap();
+                            let isolated_storage_proxy =
+                                fuchsia_fs::directory::create_directory_recursive(
+                                    &dir_proxy,
+                                    isolated_storage_path.as_str(),
+                                    fio::Flags::from_bits(fio::RW_STAR_DIR.bits()).unwrap(),
+                                )
+                                .await
+                                .unwrap();
+                            DirConnector::from_proxy(
+                                isolated_storage_proxy,
+                                RelativePath::dot(),
+                                flags,
+                            )
+                        }
+                        None => DirConnector::from_proxy(dir_proxy, RelativePath::dot(), flags),
+                    };
                     Ok(RouterResponse::Capability(dir_connector))
                 }
                 .boxed()
