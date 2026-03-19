@@ -48,7 +48,7 @@ impl SerializableProductInfo {
         let locale_list = match &product.locale_list {
             Some(list) => {
                 let mut locale_id_list = Vec::new();
-                for locale in list.into_iter() {
+                for locale in list.iter() {
                     locale_id_list.push(locale.id.to_string());
                 }
                 Some(locale_id_list)

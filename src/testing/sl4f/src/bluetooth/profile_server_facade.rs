@@ -17,7 +17,7 @@ use fuchsia_bluetooth::types::{PeerId, Uuid};
 use fuchsia_sync::RwLock;
 use futures::channel::oneshot;
 use futures::stream::StreamExt;
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use log::*;
 use serde_json::value::Value;
 use std::collections::HashMap;
@@ -231,7 +231,7 @@ impl ProfileServerFacade {
     ) -> Result<Vec<ProfileDescriptor>, Error> {
         let tag = "ProfileServerFacade::generate_profile_descriptors";
         let mut profile_descriptor_list = Vec::new();
-        for raw_profile_descriptor in profile_descriptors.into_iter() {
+        for raw_profile_descriptor in profile_descriptors.iter() {
             let profile_id = if let Some(r) = raw_profile_descriptor.get("profile_id") {
                 match self.get_service_class_profile_identifier_from_id(r) {
                     Ok(id) => id,
@@ -534,21 +534,22 @@ impl ProfileServerFacade {
             fx_err_and_bail!(&with_line!(tag), log_err)
         };
 
-        let raw_additional_protocol_descriptors =
-            if let Some(v) = record_description.get("additional_protocol_descriptors") {
-                if let Some(arr) = v.as_array() {
-                    Some(self.generate_protocol_descriptors(arr)?)
-                } else if v.is_null() {
-                    None
-                } else {
-                    let log_err =
-                    "Invalid type for 'additional_protocol_descriptors'. Expected null or array.";
-                    fx_err_and_bail!(&with_line!(tag), log_err)
-                }
+        let raw_additional_protocol_descriptors = if let Some(v) =
+            record_description.get("additional_protocol_descriptors")
+        {
+            if let Some(arr) = v.as_array() {
+                Some(self.generate_protocol_descriptors(arr)?)
+            } else if v.is_null() {
+                None
             } else {
-                let log_err = "Invalid SDP record input. Missing 'additional_protocol_descriptors'";
+                let log_err =
+                    "Invalid type for 'additional_protocol_descriptors'. Expected null or array.";
                 fx_err_and_bail!(&with_line!(tag), log_err)
-            };
+            }
+        } else {
+            let log_err = "Invalid SDP record input. Missing 'additional_protocol_descriptors'";
+            fx_err_and_bail!(&with_line!(tag), log_err)
+        };
 
         let information = if let Some(v) = record_description.get("information") {
             if let Some(r) = v.as_array() {

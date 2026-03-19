@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::prelude::*;
 use fidl_fuchsia_bluetooth_gatt2::{
     self as gatt, AttributePermissions, Characteristic, CharacteristicPropertyBits, Descriptor,
@@ -122,9 +122,7 @@ impl GattServerFacade {
                 Some(num) => vec![num as u8],
                 None => vec![],
             },
-            Value::Array(obj) => {
-                obj.into_iter().filter_map(|v| v.as_u64()).map(|v| v as u8).collect()
-            }
+            Value::Array(obj) => obj.iter().filter_map(|v| v.as_u64()).map(|v| v as u8).collect(),
             _ => vec![],
         }
     }
@@ -443,7 +441,7 @@ impl GattServerFacade {
 
         let mut ext_property_bits = CharacteristicPropertyBits::empty();
 
-        for descriptor in descriptor_list.into_iter() {
+        for descriptor in descriptor_list.iter() {
             let descriptor_uuid: Uuid = match descriptor["uuid"].as_str() {
                 Some(uuid_str) => Uuid::from_str(uuid_str)
                     .map_err(|_| format_err!("Descriptor uuid is invalid"))?,
@@ -476,7 +474,7 @@ impl GattServerFacade {
             let raw_descriptor_permissions = match descriptor["permissions"].as_u64() {
                 Some(permissions) => permissions as u32,
                 None => {
-                    return Err(format_err!("Descriptor permissions was unable to cast to u64."))
+                    return Err(format_err!("Descriptor permissions was unable to cast to u64."));
                 }
             };
 
@@ -512,11 +510,11 @@ impl GattServerFacade {
         let characteristic_list = match characteristic_list_json.as_array() {
             Some(c) => c,
             None => {
-                return Err(format_err!("Attribute 'characteristics' is not a parseable list."))
+                return Err(format_err!("Attribute 'characteristics' is not a parseable list."));
             }
         };
 
-        for characteristic in characteristic_list.into_iter() {
+        for characteristic in characteristic_list.iter() {
             let characteristic_uuid = match characteristic["uuid"].as_str() {
                 Some(uuid_str) => Uuid::from_str(uuid_str)
                     .map_err(|_| format_err!("Invalid characteristic uuid: {}", uuid_str))?,
@@ -526,7 +524,9 @@ impl GattServerFacade {
             let characteristic_properties = match characteristic["properties"].as_u64() {
                 Some(properties) => properties as u32,
                 None => {
-                    return Err(format_err!("Characteristic properties was unable to cast to u64."))
+                    return Err(format_err!(
+                        "Characteristic properties was unable to cast to u64."
+                    ));
                 }
             };
 
@@ -535,7 +535,7 @@ impl GattServerFacade {
                 None => {
                     return Err(format_err!(
                         "Characteristic permissions was unable to cast to u64."
-                    ))
+                    ));
                 }
             };
 
@@ -744,7 +744,7 @@ impl GattServerFacade {
             None => return Err(format_err!("Attribute 'service' is not a parseable list.")),
         };
 
-        for service in service_list.into_iter() {
+        for service in service_list.iter() {
             self.inner.write().attribute_value_mapping.clear();
             let service_info = self.generate_service(service)?;
             let service_uuid = &service["uuid"];

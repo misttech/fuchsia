@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth::{Appearance, Uuid as FidlUuid};
 use fidl_fuchsia_bluetooth_avdtp_test::PeerControllerProxy;
 use fidl_fuchsia_bluetooth_avrcp::{
@@ -520,7 +520,7 @@ impl CustomPlayerApplicationSettingsAttributeIds {
     pub fn to_vec(&self) -> Vec<PlayerApplicationSettingAttributeId> {
         match &self.attribute_ids {
             Some(vec) => vec
-                .into_iter()
+                .iter()
                 .map(|u8| match u8 {
                     1 => PlayerApplicationSettingAttributeId::Equalizer,
                     2 => PlayerApplicationSettingAttributeId::RepeatStatusMode,

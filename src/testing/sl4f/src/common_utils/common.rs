@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component::client::connect_to_protocol;
 use once_cell::sync::OnceCell;
@@ -89,7 +89,7 @@ pub fn parse_psm(args_raw: Value) -> Result<u64, Error> {
 pub fn parse_write_value(args_raw: Value) -> Result<Vec<u8>, Error> {
     let arr = parse_arg!(args_raw, as_array, "write_value")?;
     let mut vector: Vec<u8> = Vec::new();
-    for value in arr.into_iter() {
+    for value in arr.iter() {
         match value.as_u64() {
             Some(num) => vector.push(num as u8),
             None => {}
