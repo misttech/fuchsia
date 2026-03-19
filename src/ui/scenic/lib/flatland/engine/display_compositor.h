@@ -97,7 +97,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Only called from the main thread.
   bool ImportBufferCollection(allocation::GlobalBufferCollectionId collection_id,
                               fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-                              fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
+                              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
                               BufferCollectionUsage usage,
                               std::optional<fuchsia::math::SizeU> size) override
       FXL_LOCKS_EXCLUDED(lock_);

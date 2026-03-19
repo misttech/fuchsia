@@ -180,14 +180,13 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
 
  protected:
   std::optional<fuchsia::sysmem2::BufferCollectionInfo> SetConstraintsAndAllocateBuffer(
-      fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
       fuchsia::sysmem2::BufferCollectionConstraints constraints) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token.Unbind().TakeChannel()))
+            .token(std::move(token))
             .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
                 buffer_collection.NewRequest().TakeChannel()))
             .Build());
@@ -237,14 +236,15 @@ INSTANTIATE_TEST_SUITE_P(YuvPixelFormats, ParameterizedYUVPixelTest,
                                         fuchsia::images2::PixelFormat::I420));
 
 TEST_P(ParameterizedYUVPixelTest, YUVTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuc::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuc::Allocator_RegisterBufferCollection_Result result;
   ASSERT_OK(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result));
   ASSERT_FALSE(result.is_err());
@@ -334,14 +334,15 @@ INSTANTIATE_TEST_SUITE_P(ExoticRgbPixelFormats, ParameterizedSRGBPixelTest,
                                         fuchsia::images2::PixelFormat::R5G6B5));
 
 TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuc::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuc::Allocator_RegisterBufferCollection_Result result;
   flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());
@@ -634,14 +635,15 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuc::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuc::Allocator_RegisterBufferCollection_Result result;
   flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());
@@ -752,14 +754,15 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   constexpr auto kByterPerPixel = 4;
   const uint64_t image_vmo_bytes = num_pixels * kByterPerPixel;
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuc::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuc::Allocator_RegisterBufferCollection_Result result;
   flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());

@@ -181,12 +181,11 @@ struct GlobalIdPair {
   if (expect_success) {                                                                          \
     EXPECT_CALL(*mock_buffer_collection_importer_,                                               \
                 ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), _, _, _, _)) \
-        .WillOnce(                                                                               \
-            testing::Invoke([](allocation::GlobalBufferCollectionId,                             \
-                               fidl::WireClient<fuchsia_sysmem2::Allocator>&,                    \
-                               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,   \
-                               allocation::BufferCollectionUsage,                                \
-                               std::optional<fuchsia::math::SizeU>) { return true; }));          \
+        .WillOnce(testing::Invoke([](allocation::GlobalBufferCollectionId,                       \
+                                     fidl::WireClient<fuchsia_sysmem2::Allocator>&,              \
+                                     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,    \
+                                     allocation::BufferCollectionUsage,                          \
+                                     std::optional<fuchsia::math::SizeU>) { return true; }));    \
   }                                                                                              \
   bool processed_callback = false;                                                               \
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;                                     \

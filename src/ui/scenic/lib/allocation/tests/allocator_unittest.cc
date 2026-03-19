@@ -22,7 +22,6 @@ using ::testing::Return;
 
 using allocation::BufferCollectionUsage;
 using fuchsia_ui_composition::BufferCollectionExportToken;
-using fuchsia_ui_composition::BufferCollectionImportToken;
 using fuchsia_ui_composition::RegisterBufferCollectionArgs;
 using fuchsia_ui_composition::RegisterBufferCollectionUsage;
 using fuchsia_ui_composition::RegisterBufferCollectionUsages;
@@ -36,8 +35,8 @@ namespace test {
                 ImportBufferCollection(fsl::GetKoid(export_token.value().get()), _, _, _, _))  \
         .WillOnce(testing::Invoke(                                                             \
             [](GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,        \
-               fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>,                 \
-               BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) { return true; })); \
+               fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>, BufferCollectionUsage, \
+               std::optional<fuchsia::math::SizeU>) { return true; }));                        \
   }                                                                                            \
   bool processed_callback = false;                                                             \
   allocator->RegisterBufferCollection(CreateArgs(std::move(export_token), token, usage),       \

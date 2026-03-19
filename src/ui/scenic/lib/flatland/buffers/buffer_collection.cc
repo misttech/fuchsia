@@ -34,7 +34,7 @@ BufferCollectionInfo::BufferCollectionInfo(BufferCollectionInfo&& other) noexcep
 
 fit::result<fit::failed, BufferCollectionInfo> BufferCollectionInfo::New(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    BufferCollectionHandle buffer_collection_token,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
     std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_format_constraints,
     fuchsia::sysmem2::BufferUsage buffer_usage,
     allocation::BufferCollectionUsage buffer_collection_usage) {
@@ -49,8 +49,7 @@ fit::result<fit::failed, BufferCollectionInfo> BufferCollectionInfo::New(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
           // Bind the buffer collection token to get the local token. Valid tokens can
           // always be bound, so we do not do any error checking at this stage.
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              buffer_collection_token.TakeChannel()))
+          .token(std::move(buffer_collection_token))
           // Use local token to create a BufferCollection and then sync. We can trust
           // |buffer_collection->Sync()| to tell us if we have a bad or malicious channel.
           // So if this call passes, then we know we have a valid BufferCollection.

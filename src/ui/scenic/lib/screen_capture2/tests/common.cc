@@ -12,7 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "src/ui/scenic/lib/allocation/allocator.h"
-#include "src/ui/scenic/lib/flatland/engine/engine.h"
+#include "src/ui/scenic/lib/flatland/buffers/util.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
@@ -42,20 +42,18 @@ void CreateBufferCollectionInfoWithConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fit::function<void(fit::function<bool()>)> run_loop_until) {
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
+  auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
 
   fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args;
   rbc_args.export_token(fidl::HLCPPToNatural(std::move(export_token)));
-  rbc_args.buffer_collection_token2(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-      std::move(dup_token).Unbind().TakeChannel()));
+  rbc_args.buffer_collection_token2(std::move(dup_token));
   rbc_args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 
   fuchsia::sysmem2::BufferCollectionPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.Unbind().TakeChannel()))
+          .token(std::move(local_token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());

@@ -12,15 +12,10 @@
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/predicates/status.h"
-#include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
-#include "src/ui/lib/escher/renderer/batch_gpu_downloader.h"
-#include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
-#include "src/ui/lib/escher/util/image_utils.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
-#include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 #include "src/ui/scenic/lib/flatland/engine/tests/common.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
@@ -28,24 +23,9 @@
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
-using ::testing::_;
-using ::testing::Return;
-
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
-using flatland::LinkSystem;
-using flatland::Renderer;
-using flatland::TransformGraph;
 using flatland::TransformHandle;
-using flatland::UberStruct;
-using flatland::UberStructSystem;
-using fuchsia::ui::composition::ChildViewStatus;
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::LayoutInfo;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::composition::ViewportProperties;
-using fuchsia::ui::views::ViewCreationToken;
-using fuchsia::ui::views::ViewportCreationToken;
 
 namespace flatland {
 namespace test {
@@ -147,17 +127,17 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
       fuchsia::images2::PixelFormat pixel_type, uint32_t width, uint32_t height, uint32_t num_vmos,
       fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
-    auto texture_tokens = SysmemTokens::Create(sysmem_allocator_);
+    auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
 
     auto result = display_compositor->ImportBufferCollection(
-        collection_id, sysmem_allocator_, std::move(texture_tokens.dup_token),
-        BufferCollectionUsage::kClientImage, std::nullopt);
+        collection_id, sysmem_allocator_, std::move(dup_token), BufferCollectionUsage::kClientImage,
+        std::nullopt);
     EXPECT_TRUE(result);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
         CreateBufferCollectionSyncPtrAndSetConstraints(
-            sysmem_allocator_, std::move(texture_tokens.local_token), num_vmos, width, height,
+            sysmem_allocator_, std::move(local_token), num_vmos, width, height,
             fidl::Clone(buffer_usage), pixel_type, fidl::Clone(memory_constraints),
             std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 

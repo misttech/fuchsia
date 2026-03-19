@@ -48,8 +48,8 @@ class BufferCollectionTest : public gtest::RealLoopFixture {
 // Test the creation of a buffer collection that doesn't have any additional vulkan
 // constraints to show that it doesn't need vulkan to be valid.
 TEST_F(BufferCollectionTest, CreateCollectionTest) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator_);
-  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token));
+  auto [_, dup_token] = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(dup_token));
   EXPECT_TRUE(result.is_ok());
 }
 
@@ -63,9 +63,9 @@ TEST_F(BufferCollectionTest, CreateCollectionTest) {
 TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
   fuchsia::sysmem2::BufferUsage buffer_usage;
   buffer_usage.set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
-  auto tokens = SysmemTokens::Create(sysmem_allocator_);
-  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token),
-                                          std::nullopt, std::move(buffer_usage));
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(dup_token), std::nullopt,
+                                          std::move(buffer_usage));
   EXPECT_TRUE(result.is_ok());
 
   auto collection = std::move(result.value());
@@ -81,8 +81,7 @@ TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                tokens.local_token.Unbind().TakeChannel()))
+            .token(std::move(local_token))
             .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
                 buffer_collection.NewRequest().TakeChannel()))
             .Build());
@@ -131,7 +130,7 @@ TEST_F(BufferCollectionTest, AllocationWithoutExtraConstraints) {
 // an invalid BufferCollectionHandle is provided by the user.
 TEST_F(BufferCollectionTest, NullTokenTest) {
   auto result = BufferCollectionInfo::New(sysmem_allocator_,
-                                          /*token*/ nullptr);
+                                          /*token*/ {});
   EXPECT_TRUE(result.is_error());
 }
 
@@ -145,7 +144,7 @@ TEST_F(BufferCollectionTest, WrongTokenTypeTest) {
   // Here we inject a generic channel into a BufferCollectionHandle before passing the
   // handle into |CreateCollectionAndSetConstraints|. So the channel is valid,
   // but it is just not a BufferCollectionToken.
-  BufferCollectionHandle handle{std::move(remote_endpoint)};
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> handle{std::move(remote_endpoint)};
 
   // Make sure the handle is valid before passing it in.
   ASSERT_TRUE(handle.is_valid());
@@ -160,8 +159,8 @@ TEST_F(BufferCollectionTest, WrongTokenTypeTest) {
 // with the constraints set on the server-side by the renderer, then waiting on
 // the buffers to be allocated should fail.
 TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator_);
-  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(tokens.dup_token));
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
+  auto result = BufferCollectionInfo::New(sysmem_allocator_, std::move(dup_token));
   EXPECT_TRUE(result.is_ok());
 
   auto collection = std::move(result.value());
@@ -175,8 +174,7 @@ TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                tokens.local_token.Unbind().TakeChannel()))
+            .token(std::move(local_token))
             .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
                 client_collection.NewRequest().TakeChannel()))
             .Build());

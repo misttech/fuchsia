@@ -116,18 +116,18 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
     allocation::GlobalBufferCollectionId collection_id =
         allocation::GenerateUniqueBufferCollectionId()) {
   // First create the pair of sysmem tokens, one for the client, one for the renderer.
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator);
-  EXPECT_TRUE(tokens.dup_token.is_bound());
-  EXPECT_TRUE(tokens.local_token.is_bound());
+  auto [dup_token, local_token] = flatland::SysmemTokens::Create(sysmem_allocator);
+  EXPECT_TRUE(dup_token.is_valid());
+  EXPECT_TRUE(local_token.is_valid());
 
   auto result = renderer->ImportBufferCollection(collection_id, sysmem_allocator,
-                                                 std::move(tokens.dup_token), usage, std::nullopt);
+                                                 std::move(dup_token), usage, std::nullopt);
   EXPECT_TRUE(result);
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
   collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator, std::move(tokens.local_token),
+      sysmem_allocator, std::move(local_token),
       /*image_count*/ num_buffers,
       /*width*/ image_width,
       /*height*/ image_height, std::move(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
@@ -185,12 +185,12 @@ std::vector<EngineLayerImage> MakeImages(const std::vector<ImageMetadata>& image
 // Make sure a valid token can be used to import a buffer collection.
 void ImportCollectionTest(Renderer* renderer,
                           fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator);
+  auto [_, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   // First id should be valid.
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
   auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.local_token),
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
 }
@@ -205,28 +205,32 @@ void ImportCollectionTest(Renderer* renderer,
 void SameTokenTwiceTest(Renderer* renderer,
                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   // Create a client token to represent a single client.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr client_token;
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
-  dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
-  dup_request.set_token_request(client_token.NewRequest());
-  auto status = tokens.local_token->Duplicate(std::move(dup_request));
-  EXPECT_EQ(status, ZX_OK);
+  fidl::Arena arena;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  fidl::OneWayStatus result =
+      fidl::WireCall(local_token)
+          ->Duplicate(fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateRequest::Builder(arena)
+                          .rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS)
+                          .token_request(std::move(server_end))
+                          .Build());
+  EXPECT_TRUE(result.ok());
 
   // First id should be valid.
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.local_token),
+  auto import_success =
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(import_success);
 
   // Second id should be valid.
   auto bcid2 = allocation::GenerateUniqueBufferCollectionId();
-  result = renderer->ImportBufferCollection(bcid2, sysmem_allocator, std::move(tokens.dup_token),
-                                            BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  import_success =
+      renderer->ImportBufferCollection(bcid2, sysmem_allocator, std::move(dup_token),
+                                       BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(import_success);
 
   // Set the client constraints.
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
@@ -234,7 +238,7 @@ void SameTokenTwiceTest(Renderer* renderer,
     additional_format_modifiers.push_back(
         fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
   }
-  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(client_token),
+  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(client_end),
                                           /* image_count */ 1, /* width */ 64, /* height */ 32,
                                           use_vulkan ? get_none_usage() : get_cpu_usage_read(),
                                           additional_format_modifiers);
@@ -260,11 +264,11 @@ void BadImageInputTest(Renderer* renderer,
                        fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                        bool use_vulkan) {
   const uint32_t kNumImages = 1;
-  auto tokens = SysmemTokens::Create(sysmem_allocator);
+  auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
   auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.dup_token),
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
 
@@ -273,7 +277,7 @@ void BadImageInputTest(Renderer* renderer,
     additional_format_modifiers.push_back(
         fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
   }
-  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(tokens.local_token),
+  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(local_token),
                                           /* image_count */ kNumImages, /* width */ 64,
                                           /* height */ 32,
                                           use_vulkan ? get_none_usage() : get_cpu_usage_read(),
@@ -311,11 +315,11 @@ void BadImageInputTest(Renderer* renderer,
 void ImportImageTest(Renderer* renderer,
                      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                      bool use_vulkan) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator);
+  auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
   auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.dup_token),
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
 
@@ -330,7 +334,7 @@ void ImportImageTest(Renderer* renderer,
     additional_format_modifiers.push_back(
         fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
   }
-  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(tokens.local_token),
+  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(local_token),
                                           /* image_count */ 1, /* width */ 64, /* height */ 32,
                                           use_vulkan ? get_none_usage() : get_cpu_usage_read(),
                                           additional_format_modifiers);
@@ -348,11 +352,11 @@ void ImportImageTest(Renderer* renderer,
 void DeregistrationTest(Renderer* renderer,
                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
-  auto tokens = SysmemTokens::Create(sysmem_allocator);
+  auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
   auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.dup_token),
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(result);
 
@@ -367,7 +371,7 @@ void DeregistrationTest(Renderer* renderer,
     additional_format_modifiers.push_back(
         fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
   }
-  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(tokens.local_token),
+  SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(local_token),
                                           /* image_count */ 1, /* width */ 64, /* height */ 32,
                                           use_vulkan ? get_none_usage() : get_cpu_usage_read(),
                                           additional_format_modifiers);
@@ -537,11 +541,11 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
         utils::CreateSysmemAllocatorClient(loop.dispatcher(), "MultithreadingTest");
 
-    auto tokens = SysmemTokens::Create(sysmem_allocator);
+    auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
     auto bcid = allocation::GenerateUniqueBufferCollectionId();
     auto image_id = allocation::GenerateUniqueImageId();
     bool result =
-        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(tokens.local_token),
+        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
     EXPECT_TRUE(result);
 
@@ -550,9 +554,11 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
       additional_format_modifiers.push_back(
           fuchsia::images2::PixelFormatModifier::GOOGLE_GOLDFISH_OPTIMAL);
     }
-    SetClientConstraintsAndWaitForAllocated(
-        sysmem_allocator, std::move(tokens.local_token), 1, 64, 32,
-        use_vulkan ? get_none_usage() : get_cpu_usage_read(), additional_format_modifiers);
+    SetClientConstraintsAndWaitForAllocated(sysmem_allocator, std::move(local_token),
+                                            /* image_count */ 1, /* width */ 64,
+                                            /* height */ 32,
+                                            use_vulkan ? get_none_usage() : get_cpu_usage_read(),
+                                            additional_format_modifiers);
 
     // Add the bcid to the global vector in a thread-safe manner.
     {
@@ -690,8 +696,7 @@ TEST_F(NullRendererTest, RenderImageAfterBufferCollectionReleasedTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  RenderImageAfterBufferCollectionReleasedTest(&renderer, sysmem_allocator,
-                                               /*use_vulkan*/ false);
+  RenderImageAfterBufferCollectionReleasedTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, RenderAfterImageReleasedTest) {
@@ -2327,7 +2332,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Create a pair of tokens for the Image allocation.
-  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto image_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -2375,7 +2380,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -2490,7 +2495,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
 
   // Create a pair of tokens for the Image allocation.
-  auto image_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto image_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -2551,7 +2556,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -2613,17 +2618,16 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
 
   // Setup the render target collection.
   allocation::GlobalBufferCollectionId target_id = allocation::GenerateUniqueBufferCollectionId();
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
   bool success =
-      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(tokens.dup_token),
+      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
   ASSERT_TRUE(success);
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              tokens.local_token.Unbind().TakeChannel()))
+          .token(std::move(local_token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               target_ptr.NewRequest().TakeChannel()))
           .Build());
@@ -2721,7 +2725,7 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   VkRenderer renderer(unique_escher->GetWeakPtr());
 
   // Create a pair of tokens for the render target allocation.
-  auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
@@ -2729,8 +2733,8 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   const uint32_t kTargetHeight = 600;
   const allocation::BufferCollectionUsage usage = GetParam();
   bool success = renderer.ImportBufferCollection(
-      render_target_collection_id, sysmem_allocator, std::move(render_target_tokens.dup_token),
-      usage, std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
+      render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
+      std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
   EXPECT_TRUE(success);
 
   // Create a client-side handle to the render target's buffer collection and set the client
@@ -2739,8 +2743,7 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              render_target_tokens.local_token.Unbind().TakeChannel()))
+          .token(std::move(local_token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               render_target_collection.NewRequest().TakeChannel()))
           .Build());

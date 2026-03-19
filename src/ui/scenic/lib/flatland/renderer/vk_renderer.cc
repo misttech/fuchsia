@@ -217,29 +217,28 @@ vk::ImageUsageFlags GetImageUsageFlags(const BufferCollectionUsage usage) {
 }
 
 // Creates a duplicate of |token|. Returns a std::nullopt if it fails.
-std::optional<fuchsia::sysmem2::BufferCollectionTokenSyncPtr> Duplicate(
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token) {
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateSyncRequest dup_sync_request;
-  dup_sync_request.set_rights_attenuation_masks({ZX_RIGHT_SAME_RIGHTS});
-  fuchsia::sysmem2::BufferCollectionToken_DuplicateSync_Result dup_sync_result;
-  const auto status = token->DuplicateSync(std::move(dup_sync_request), &dup_sync_result);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not duplicate token: " << zx_status_get_string(status);
-    return std::nullopt;
+fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> Duplicate(
+    fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token) {
+  fidl::Arena arena;
+  zx_rights_t rights_attenuation_masks = ZX_RIGHT_SAME_RIGHTS;
+  auto result = fidl::WireCall(token)->DuplicateSync(
+      fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
+          .rights_attenuation_masks(
+              fidl::VectorView<zx_rights_t>::FromExternal(&rights_attenuation_masks, 1))
+          .Build());
+  if (!result.ok() || !result->has_tokens()) {
+    FX_LOGS(ERROR) << "Could not duplicate token: " << result.status_string();
+    return {};
   }
-  if (dup_sync_result.is_framework_err()) {
-    FX_LOGS(ERROR) << "Could not duplicate token (framework): "
-                   << fidl::ToUnderlying(dup_sync_result.framework_err());
-    return std::nullopt;
-  }
-  FX_DCHECK(dup_sync_result.response().tokens().size() == 1);
-  return dup_sync_result.response().mutable_tokens()->front().BindSync();
+
+  FX_DCHECK(result->tokens().size() == 1);
+  return std::move(result->tokens()[0]);
 }
 
 fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>
 CreateBufferCollectionPtrWithEmptyConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
   if (endpoints.is_error()) {
     FX_LOGS(ERROR) << "Could not create end-points: " << endpoints.status_string();
@@ -249,8 +248,7 @@ CreateBufferCollectionPtrWithEmptyConstraints(
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(
-              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .token(std::move(token))
           .buffer_collection_request(std::move(endpoints->server))
           .Build());
   if (!result.ok()) {
@@ -347,14 +345,14 @@ VkRenderer::~VkRenderer() {
 
 std::optional<vk::BufferCollectionFUCHSIA>
 VkRenderer::SetConstraintsAndCreateVulkanBufferCollection(
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, const BufferCollectionUsage usage,
-    const std::optional<fuchsia::math::SizeU> size) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
+    const BufferCollectionUsage usage, const std::optional<fuchsia::math::SizeU> size) {
   auto vk_device = escher_->vk_device();
   auto vk_loader = escher_->device()->dispatch_loader();
   FX_DCHECK(vk_device);
 
   vk::BufferCollectionCreateInfoFUCHSIA bc_create_info;
-  bc_create_info.collectionToken = token.Unbind().TakeChannel().release();
+  bc_create_info.collectionToken = token.TakeChannel().release();
   const vk::BufferCollectionFUCHSIA vk_collection = escher::ESCHER_CHECKED_VK_RESULT(
       vk_device.createBufferCollectionFUCHSIA(bc_create_info, nullptr, vk_loader));
 
@@ -417,24 +415,21 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
 bool VkRenderer::ImportBufferCollection(
     GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
-    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
+    std::optional<fuchsia::math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection");
   FX_DCHECK(collection_id != allocation::kInvalidId);
   FX_DCHECK(token.is_valid());
 
   // TODO(https://fxbug.dev/42128380): See if this can become asynchronous.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token = token.BindSync();
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr vulkan_token;
-  if (auto dup_token = Duplicate(local_token)) {
-    vulkan_token = std::move(*dup_token);
-  } else {
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> vulkan_token = Duplicate(token);
+  if (!vulkan_token.is_valid()) {
     return false;
   }
 
   fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection =
-      CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(local_token));
+      CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(token));
   if (!buffer_collection) {
     return false;
   }

@@ -99,18 +99,18 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
     RegisterBufferCollectionUsages usage) {
   RegisterBufferCollectionArgs rbc_args = {};
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
+  auto [local_token, dup_token] = utils::SysmemTokens::Create(sysmem_allocator);
 
   rbc_args.set_export_token(std::move(export_token));
-  rbc_args.set_buffer_collection_token2(std::move(dup_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(dup_token.TakeChannel()));
   rbc_args.set_usages(usage);
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.Unbind().TakeChannel()))
+          .token(std::move(local_token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());

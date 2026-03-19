@@ -28,17 +28,44 @@
 
 namespace utils {
 
-using SysmemTokensHlcpp = struct {
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
-};
-
-using SysmemTokens = struct {
-  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> local_token;
-  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> dup_token;
-};
-
 constexpr std::array<float, 2> kDefaultPixelScale = {1.f, 1.f};
+
+struct SysmemTokens {
+  // Token for setting client side constraints.
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> local_token;
+
+  // Token for setting server side constraints.
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token;
+
+  static SysmemTokens Create(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
+    auto [local_token_client, local_token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(std::move(local_token_server))
+            .Build());
+    FX_DCHECK(result.ok());
+
+    auto [dup_token_client, dup_token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    result =
+        fidl::WireCall(local_token_client)
+            ->Duplicate(fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateRequest::Builder(arena)
+                            .rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS)
+                            .token_request(std::move(dup_token_server))
+                            .Build());
+    FX_DCHECK(result.ok());
+
+    auto sync_result = fidl::WireCall(local_token_client)->Sync();
+    FX_DCHECK(sync_result.ok());
+
+    return {
+        .local_token = std::move(local_token_client),
+        .dup_token = std::move(dup_token_client),
+    };
+  }
+};
 
 // Helper for extracting the koid from a ViewRef.
 zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref);
@@ -103,11 +130,6 @@ fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClient(
 fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
     sys::ServiceDirectory* svc, async_dispatcher_t* dispatcher,
     const std::string& debug_name_suffix = std::string());
-
-// Create local and dup tokens for sysmem.
-SysmemTokensHlcpp CreateSysmemTokensHlcpp(
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
-SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
 
 // Creates default constraints for |buffer_collection|
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(

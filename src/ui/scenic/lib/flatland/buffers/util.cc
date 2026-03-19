@@ -33,16 +33,15 @@ GetUsageAndMemoryConstraintsForCpuWriteOften() {
 
 void SetClientConstraintsAndWaitForAllocated(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count, uint32_t width,
-    uint32_t height, fuchsia::sysmem2::BufferUsage usage,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count,
+    uint32_t width, uint32_t height, fuchsia::sysmem2::BufferUsage usage,
     const std::vector<fuchsia::images2::PixelFormatModifier>& additional_format_modifiers,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints) {
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(
-              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .token(std::move(token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());
@@ -93,16 +92,16 @@ void SetClientConstraintsAndWaitForAllocated(
 
 fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count, uint32_t width,
-    uint32_t height, fuchsia::sysmem2::BufferUsage usage, fuchsia::images2::PixelFormat format,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count,
+    uint32_t width, uint32_t height, fuchsia::sysmem2::BufferUsage usage,
+    fuchsia::images2::PixelFormat format,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints,
     std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier) {
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(
-              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .token(std::move(token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());

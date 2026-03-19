@@ -21,66 +21,72 @@ namespace {
 using allocation::BufferCollectionUsage;
 // Image formats supported by Scenic in a priority order.
 const vk::Format kSupportedImageFormats[] = {vk::Format::eR8G8B8A8Srgb, vk::Format::eB8G8R8A8Srgb};
-}  // anonymous namespace
 
 // Creates a new BufferCollectionTokenGroup from |token|. Then creates |num_tokens| number of
 // children from |token_group|, calls AllChildrenPresent() and closes |token_group|.
-std::optional<std::vector<fuchsia::sysmem2::BufferCollectionTokenHandle>> CreateChildTokens(
-    const fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token, uint32_t num_tokens) {
-  fuchsia::sysmem2::BufferCollectionTokenGroupSyncPtr token_group;
-
-  fuchsia::sysmem2::BufferCollectionTokenCreateBufferCollectionTokenGroupRequest
-      create_group_request;
-  create_group_request.set_group_request(token_group.NewRequest());
-  zx_status_t status = token->CreateBufferCollectionTokenGroup(std::move(create_group_request));
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << "Cannot create buffer collection token group: "
-                     << zx_status_get_string(status);
-    return std::nullopt;
+std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>> CreateChildTokens(
+    fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t num_tokens) {
+  fidl::Arena arena;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionTokenGroup>::Create();
+  fidl::OneWayStatus result = fidl::WireCall(token)->CreateBufferCollectionTokenGroup(
+      fuchsia_sysmem2::wire::BufferCollectionTokenCreateBufferCollectionTokenGroupRequest::Builder(
+          arena)
+          .group_request(std::move(server_end))
+          .Build());
+  if (!result.ok()) {
+    FX_LOGS(WARNING) << "Cannot create buffer collection token group: " << result.status_string();
+    return {};
   }
 
-  fuchsia::sysmem2::Node_Sync_Result sync_result;
-  status = token_group->Sync(&sync_result);
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << "Cannot sync token group: " << zx_status_get_string(status);
-    return std::nullopt;
+  fidl::WireClient<fuchsia_sysmem2::BufferCollectionTokenGroup> token_group{
+      std::move(client_end), async_get_default_dispatcher()};
+  auto sync_result = token_group.sync()->Sync();
+  if (!sync_result.ok()) {
+    FX_LOGS(WARNING) << "Cannot sync token group: " << sync_result.status_string();
+    return {};
   }
 
-  std::vector<zx_rights_t> children_request_rights(num_tokens, ZX_RIGHT_SAME_RIGHTS);
-  fuchsia::sysmem2::BufferCollectionTokenGroupCreateChildrenSyncRequest create_children_request;
-  create_children_request.set_rights_attenuation_masks(std::move(children_request_rights));
-  fuchsia::sysmem2::BufferCollectionTokenGroup_CreateChildrenSync_Result create_children_result;
-  status =
-      token_group->CreateChildrenSync(std::move(create_children_request), &create_children_result);
-  if (status != ZX_OK || create_children_result.is_framework_err()) {
+  std::vector<zx_rights_t> rights_attenuation_masks(num_tokens, ZX_RIGHT_SAME_RIGHTS);
+  auto create_children_result = token_group.sync()->CreateChildrenSync(
+      fuchsia_sysmem2::wire::BufferCollectionTokenGroupCreateChildrenSyncRequest::Builder(arena)
+          .rights_attenuation_masks(
+              fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
+          .Build());
+  if (!create_children_result.ok()) {
     FX_LOGS(WARNING) << "Cannot create buffer collection token group children: "
-                     << zx_status_get_string(status)
-                     << " is_framework_err: " << create_children_result.is_framework_err();
-    return std::nullopt;
+                     << create_children_result.status_string();
+    return {};
   }
-  auto out_tokens = std::move(*create_children_result.response().mutable_tokens());
 
-  status = token_group->AllChildrenPresent();
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << "Could not call AllChildrenPresent: " << zx_status_get_string(status);
-    return std::nullopt;
+  result = token_group.sync()->AllChildrenPresent();
+  if (!result.ok()) {
+    FX_LOGS(WARNING) << "Cannot call AllChildrenPresent: " << result.status_string();
+    return {};
   }
-  token_group->Release();
 
-  return std::move(out_tokens);
+  result = token_group.sync()->Release();
+  if (!result.ok()) {
+    FX_LOGS(WARNING) << "Cannot call Release: " << result.status_string();
+    return {};
+  }
+
+  std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>> tokens;
+  tokens.reserve(create_children_result->tokens().size());
+  std::ranges::move(create_children_result->tokens(), std::back_inserter(tokens));
+  return tokens;
 }
 
 // Consumes |token| to create a BufferCollectionSyncPtr and sets empty constraints on it.
 std::optional<fuchsia::sysmem2::BufferCollectionSyncPtr>
 CreateBufferCollectionSyncPtrAndSetEmptyConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token) {
   fuchsia::sysmem2::BufferCollectionSyncPtr local_buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(
-              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token.Unbind().TakeChannel()))
+          .token(std::move(token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               local_buffer_collection.NewRequest().TakeChannel()))
           .Build());
@@ -107,6 +113,8 @@ CreateBufferCollectionSyncPtrAndSetEmptyConstraints(
   return std::move(local_buffer_collection);
 }
 
+}  // anonymous namespace
+
 namespace screen_capture {
 
 ScreenCaptureBufferCollectionImporter::ScreenCaptureBufferCollectionImporter(
@@ -124,8 +132,8 @@ ScreenCaptureBufferCollectionImporter::~ScreenCaptureBufferCollectionImporter() 
 bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
-    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
+    allocation::BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
   TRACE_DURATION("gfx", "ScreenCaptureBufferCollectionImporter::ImportBufferCollection");
   // Expect only RenderTarget usage.
   FX_DCHECK(usage == BufferCollectionUsage::kRenderTarget);
@@ -145,33 +153,31 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
   // requirements. Buffer that satisfy render target and client requirements gives us a zero copy
   // path for screen capture, so it is preferred. If not, we fall back to readback requirements,
   // which is as minimal. To express this, we create a token group hierarchy defined below and
-  // skip setting constraints on |local_token|.
-  // * local_token / local_buffer_collection
+  // skip setting constraints on |token|.
+  // * token / local_buffer_collection
   // . * token_group
   // . . * out_tokens[0] / render_target_token
   // . . * out_tokens[1] / readback_token
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token = token.BindSync();
-  auto child_tokens = CreateChildTokens(local_token, 2);
-  if (!child_tokens.has_value()) {
+  auto child_tokens = CreateChildTokens(token, 2);
+  if (child_tokens.size() != 2) {
     return false;
   }
 
   auto local_buffer_collection =
-      CreateBufferCollectionSyncPtrAndSetEmptyConstraints(sysmem_allocator, std::move(local_token));
+      CreateBufferCollectionSyncPtrAndSetEmptyConstraints(sysmem_allocator, std::move(token));
   if (!local_buffer_collection.has_value()) {
     return false;
   }
 
-  auto render_target_token = std::move(child_tokens.value()[0]);
   if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
-                                         std::move(render_target_token),
+                                         std::move(child_tokens[0]),
                                          BufferCollectionUsage::kRenderTarget, std::nullopt)) {
     FX_LOGS(WARNING) << "Could not register render target token with VkRenderer";
     return false;
   }
 
-  auto readback_token = std::move(child_tokens.value()[1]);
-  if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(readback_token),
+  if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
+                                         std::move(child_tokens[1]),
                                          BufferCollectionUsage::kReadback, std::nullopt)) {
     renderer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
     FX_LOGS(WARNING) << "Could not register readback token with VkRenderer";
@@ -405,10 +411,11 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
     return false;
   }
 
-  if (!renderer_->ImportBufferCollection(
-          metadata.collection_id, sysmem_allocator_, std::move(fallback_render_target_token),
-          BufferCollectionUsage::kRenderTarget,
-          std::optional<fuchsia::math::SizeU>({metadata.width, metadata.height}))) {
+  if (!renderer_->ImportBufferCollection(metadata.collection_id, sysmem_allocator_,
+                                         fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>{
+                                             fallback_render_target_token.TakeChannel()},
+                                         BufferCollectionUsage::kRenderTarget,
+                                         {{metadata.width, metadata.height}})) {
     FX_LOGS(WARNING) << "Could not register fallback render target with VkRenderer";
     return false;
   }

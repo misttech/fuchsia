@@ -16,31 +16,38 @@ fuchsia::sysmem2::BufferUsage get_none_usage();
 
 struct SysmemTokens {
   // Token for setting client side constraints.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> local_token;
 
   // Token for setting server side constraints.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token;
 
   static SysmemTokens Create(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
+    auto [local_token_client, local_token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
         fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                local_token.NewRequest().TakeChannel()))
+            .token_request(std::move(local_token_server))
             .Build());
     FX_DCHECK(result.ok());
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
-    fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
-    dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
-    dup_request.set_token_request(dup_token.NewRequest());
-    zx_status_t status = local_token->Duplicate(std::move(dup_request));
-    FX_DCHECK(status == ZX_OK);
-    fuchsia::sysmem2::Node_Sync_Result sync_result;
-    status = local_token->Sync(&sync_result);
-    FX_DCHECK(status == ZX_OK);
-    FX_DCHECK(sync_result.is_response());
-    return {std::move(local_token), std::move(dup_token)};
+
+    auto [dup_token_client, dup_token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    result =
+        fidl::WireCall(local_token_client)
+            ->Duplicate(fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateRequest::Builder(arena)
+                            .rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS)
+                            .token_request(std::move(dup_token_server))
+                            .Build());
+    FX_DCHECK(result.ok());
+
+    auto sync_result = fidl::WireCall(local_token_client)->Sync();
+    FX_DCHECK(sync_result.ok());
+
+    return {
+        .local_token = std::move(local_token_client),
+        .dup_token = std::move(dup_token_client),
+    };
   }
 };
 
@@ -57,7 +64,7 @@ GetUsageAndMemoryConstraintsForCpuWriteOften();
 // is a blocking function that will wait until the constraints have been fully set.
 void SetClientConstraintsAndWaitForAllocated(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count = 1,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
     fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
     const std::vector<fuchsia::images2::PixelFormatModifier>& additional_format_modifiers = {},
@@ -68,7 +75,7 @@ void SetClientConstraintsAndWaitForAllocated(
 // to wait until constraints are set.
 fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token, uint32_t image_count = 1,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
     fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
     fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8,

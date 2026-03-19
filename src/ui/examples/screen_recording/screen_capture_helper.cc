@@ -6,8 +6,6 @@
 
 #include "fuchsia/sysmem2/cpp/fidl.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
-#include "src/ui/scenic/lib/utils/helpers.h"
-#include "zircon/system/ulib/fbl/include/fbl/algorithm.h"
 
 namespace screen_recording_example {
 
@@ -24,23 +22,14 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
   FX_DCHECK(flatland_allocator);
   FX_DCHECK(sysmem_allocator);
 
-  RegisterBufferCollectionArgs rbc_args = {};
-
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator);
-
-  rbc_args.set_export_token(std::move(export_token));
-  // BufferCollectionToken zircon handles are interchangeable between fuchsia::sysmem2
-  // and fuchsia::sysmem(1).
-  rbc_args.set_buffer_collection_token2(std::move(dup_token));
-  rbc_args.set_usages(usage);
+  auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.Unbind().TakeChannel()))
+          .token(std::move(local_token))
           .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());
@@ -51,6 +40,13 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
   zx_status_t status = buffer_collection->SetConstraints(std::move(constraints_request));
   FX_DCHECK(status == ZX_OK);
 
+  RegisterBufferCollectionArgs rbc_args = {};
+  rbc_args.set_export_token(std::move(export_token));
+  // BufferCollectionToken zircon handles are interchangeable between fuchsia::sysmem2
+  // and fuchsia::sysmem(1).
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<::fuchsia::sysmem2::BufferCollectionToken>(dup_token.TakeChannel()));
+  rbc_args.set_usages(usage);
   fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result register_result;
   flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &register_result);
   FX_DCHECK(!register_result.is_err());

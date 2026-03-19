@@ -73,7 +73,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
       EXPECT_CALL(*mock_renderer_.get(), ImportBufferCollection(_, _, _, _, _))
           .WillRepeatedly([](allocation::GlobalBufferCollectionId collection_id,
                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-                             fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
+                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
                              allocation::BufferCollectionUsage,
                              std::optional<fuchsia::math::SizeU> size) {
             auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));
@@ -236,7 +236,7 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
   EXPECT_CALL(*mock_renderer_.get(), ImportBufferCollection(_, _, _, _, _))
       .WillRepeatedly([](allocation::GlobalBufferCollectionId collection_id,
                          fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-                         fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
+                         fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
                          allocation::BufferCollectionUsage,
                          std::optional<fuchsia::math::SizeU> size) {
         auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));

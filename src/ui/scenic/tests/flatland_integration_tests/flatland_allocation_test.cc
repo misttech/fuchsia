@@ -89,14 +89,13 @@ class AllocationTest : public ScenicCtfHlcppTest {
  protected:
   fuchsia::sysmem2::BufferCollectionInfo SetConstraintsAndAllocateBuffer(
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-      fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
       fuchsia::sysmem2::BufferCollectionConstraints constraints) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token.Unbind().TakeChannel()))
+            .token(std::move(token))
             .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
                 buffer_collection.NewRequest().TakeChannel()))
             .Build());
@@ -130,14 +129,15 @@ class AllocationTest : public ScenicCtfHlcppTest {
 TEST_F(AllocationTest, CreateAndReleaseImage) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   Allocator_RegisterBufferCollection_Result result;
   flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());
@@ -166,14 +166,15 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
   auto flatland_allocator = ConnectSyncIntoRealm<Allocator>();
 
   for (uint64_t i = 1; i <= kImageCount; ++i) {
-    auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+    auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
     // Send one token to root_flatland_ Allocator.
     allocation::BufferCollectionImportExportTokens bc_tokens =
         allocation::BufferCollectionImportExportTokens::New();
     RegisterBufferCollectionArgs rbc_args = {};
     rbc_args.set_export_token(std::move(bc_tokens.export_token));
-    rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+    rbc_args.set_buffer_collection_token2(
+        fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
     Allocator_RegisterBufferCollection_Result result;
     flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &result);
     ASSERT_FALSE(result.is_err());
@@ -241,14 +242,16 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
       fidl::WireClient<fuchsia_sysmem2::Allocator> thread_sysmem_allocator;
       thread_sysmem_allocator.Bind(std::move(client_end), loop->dispatcher());
 
-      auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(thread_sysmem_allocator);
+      auto [local_token, scenic_token] = utils::SysmemTokens::Create(thread_sysmem_allocator);
 
       // Send one token to Flatland Allocator.
       allocation::BufferCollectionImportExportTokens bc_tokens =
           allocation::BufferCollectionImportExportTokens::New();
       RegisterBufferCollectionArgs rbc_args = {};
       rbc_args.set_export_token(std::move(bc_tokens.export_token));
-      rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+      rbc_args.set_buffer_collection_token2(
+          fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(
+              scenic_token.TakeChannel()));
       Allocator_RegisterBufferCollection_Result result;
       flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &result);
       ASSERT_FALSE(result.is_err());

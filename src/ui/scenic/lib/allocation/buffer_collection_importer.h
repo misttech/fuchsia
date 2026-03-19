@@ -39,8 +39,8 @@ class BufferCollectionImporter {
   virtual bool ImportBufferCollection(
       GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token,
-      BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) = 0;
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
+      std::optional<fuchsia::math::SizeU> size) = 0;
 
   // Releases the buffer collection from the service. It may be called while there are associated
   // Images alive.

@@ -22,10 +22,8 @@ namespace integration_tests {
 namespace fuc {
 
 using fuchsia_ui_composition::Allocator;
-using fuchsia_ui_composition::ChildViewWatcher;
 using fuchsia_ui_composition::ContentId;
 using fuchsia_ui_composition::Flatland;
-using fuchsia_ui_composition::FlatlandDisplay;
 using fuchsia_ui_composition::ParentViewportWatcher;
 using fuchsia_ui_composition::Screenshot;
 using fuchsia_ui_composition::TransformId;
@@ -40,12 +38,10 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
     ScenicCtfTest::SetUp();
 
     // Set up `sysmem_allocator_`.
-    {
-      auto [client_end, server_end] = fidl::CreateEndpoints<fuchsia_sysmem2::Allocator>().value();
-      sysmem_allocator_ = fidl::SyncClient(std::move(client_end));
-      const std::string& service_name = fuchsia_sysmem2::Allocator::kDiscoverableName;
-      ASSERT_EQ(ZX_OK, LocalServiceDirectory()->Connect(service_name, server_end.TakeChannel()));
-    }
+    auto [client_end, server_end] = fidl::CreateEndpoints<fuchsia_sysmem2::Allocator>().value();
+    sysmem_allocator_.Bind(std::move(client_end), dispatcher());
+    ASSERT_EQ(ZX_OK, LocalServiceDirectory()->Connect(fuchsia_sysmem2::Allocator::kDiscoverableName,
+                                                      server_end.TakeChannel()));
 
     flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
     root_flatland_ = std::make_unique<FlatlandClientWithEventHandler>(
@@ -92,12 +88,14 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
     fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection(
         std::move(buffer_collection_client_end));
 
-    ASSERT_TRUE(sysmem_allocator_
-                    ->BindSharedCollection({{
-                        .token = std::move(token),
-                        .buffer_collection_request = std::move(buffer_collection_server_end),
-                    }})
-                    .is_ok());
+    fidl::Arena arena;
+    ASSERT_TRUE(sysmem_allocator_.sync()
+                    ->BindSharedCollection(
+                        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+                            .token(std::move(token))
+                            .buffer_collection_request(std::move(buffer_collection_server_end))
+                            .Build())
+                    .ok());
 
     // Used to set constraint, and also as test expectation value.
     constexpr uint32_t kMinBufferCount = 1;
@@ -132,27 +130,27 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
 
-  fidl::SyncClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
+  fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   fidl::SyncClient<fuc::Allocator> flatland_allocator_;
   std::unique_ptr<FlatlandClientWithEventHandler> root_flatland_;
   fidl::SyncClient<fuc::Screenshot> screenshotter_;
 };
 
 TEST_F(NullRendererIntegrationTest, RendersContent) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::cpp::BufferCollectionImportExportTokens bc_tokens =
       allocation::cpp::BufferCollectionImportExportTokens::New();
   fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.export_token() = std::move(bc_tokens.export_token);
-  rbc_args.buffer_collection_token2() = scenic_token.TakeClientEnd();
+  rbc_args.buffer_collection_token2() = std::move(scenic_token);
 
   ASSERT_TRUE(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args)).is_ok());
 
   // Use the local token to allocate a protected buffer. NullRenderer sets constraint to complete
   // the allocation.
-  SetConstraintsAndAllocateBuffer(local_token.TakeClientEnd());
+  SetConstraintsAndAllocateBuffer(std::move(local_token));
 
   // Create the image in the Flatland instance.
   fuchsia_ui_composition::ImageProperties image_properties = {};
@@ -185,19 +183,19 @@ TEST_F(NullRendererIntegrationTest, RendersContent) {
 }
 
 TEST_F(NullRendererIntegrationTest, ScreenshotIsAllZeroes) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokens(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::cpp::BufferCollectionImportExportTokens bc_tokens =
       allocation::cpp::BufferCollectionImportExportTokens::New();
   fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.export_token() = std::move(bc_tokens.export_token);
-  rbc_args.buffer_collection_token2() = scenic_token.TakeClientEnd();
+  rbc_args.buffer_collection_token2() = std::move(scenic_token);
 
   ASSERT_TRUE(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args)).is_ok());
 
   // Use the local token to allocate a protected buffer.
-  SetConstraintsAndAllocateBuffer(local_token.TakeClientEnd());
+  SetConstraintsAndAllocateBuffer(std::move(local_token));
 
   // Create the image in the Flatland instance.
   fuchsia_ui_composition::ImageProperties image_properties = {};

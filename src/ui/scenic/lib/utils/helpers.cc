@@ -143,59 +143,6 @@ fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
   return allocator;
 }
 
-SysmemTokensHlcpp CreateSysmemTokensHlcpp(
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
-  FX_DCHECK(sysmem_allocator);
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
-  fidl::Arena arena;
-  fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
-      fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-          .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.NewRequest().TakeChannel()))
-          .Build());
-  FX_DCHECK(result.ok());
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
-  dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
-  dup_request.set_token_request(dup_token.NewRequest());
-  zx_status_t status = local_token->Duplicate(std::move(dup_request));
-  FX_DCHECK(status == ZX_OK);
-  fuchsia::sysmem2::Node_Sync_Result sync_result;
-  status = local_token->Sync(&sync_result);
-  FX_DCHECK(status == ZX_OK);
-  FX_DCHECK(sync_result.is_response());
-
-  return {.local_token = std::move(local_token), .dup_token = std::move(dup_token)};
-}
-
-SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
-  auto [local_token_client_end, local_token_server_end] =
-      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>().value();
-  auto [dup_token_client_end, dup_token_server_end] =
-      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>().value();
-
-  // Hook up the client ends.
-  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> local_token(
-      std::move(local_token_client_end));
-  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> dup_token(
-      std::move(dup_token_client_end));
-
-  // Hook up one server end to a newly allocated collection.
-  auto result = sysmem_allocator->AllocateSharedCollection(
-      {{.token_request = std::move(local_token_server_end)}});
-  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
-
-  // Hook up the other server end to a duplicate of the collection that was just allocated.
-  result = local_token->Duplicate({{.rights_attenuation_mask = ZX_RIGHT_SAME_RIGHTS,
-                                    .token_request = std::move(dup_token_server_end)}});
-  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
-
-  result = local_token->Sync();
-  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
-
-  return {.local_token = std::move(local_token), .dup_token = std::move(dup_token)};
-}
-
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
     uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia::images2::PixelFormat format,
     bool set_min_max_size) {

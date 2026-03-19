@@ -34,33 +34,6 @@ RegisterBufferCollectionUsages UsageToUsages(
   }
 }
 
-// Creates a vector of |num_tokens| duplicates of BufferCollectionTokenSyncPtr.
-// Returns an empty vector if creation failed.
-std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr> CreateVectorOfTokens(
-    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token, const size_t num_tokens) {
-  FX_DCHECK(num_tokens > 0);
-  std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr> tokens;
-  tokens.emplace_back(token.BindSync());
-
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateSyncRequest dup_sync_request;
-  dup_sync_request.set_rights_attenuation_masks(
-      std::vector<zx_rights_t>(num_tokens - 1, ZX_RIGHT_SAME_RIGHTS));
-  fuchsia::sysmem2::BufferCollectionToken_DuplicateSync_Result dup_sync_result;
-  if (tokens.front()->DuplicateSync(std::move(dup_sync_request), &dup_sync_result) == ZX_OK &&
-      dup_sync_result.is_response()) {
-    // if is_response(), sysmem always fills out tokens vector (can be 0 length if we passed
-    // 0-length rights_attenuation_masks above)
-    FX_DCHECK(dup_sync_result.response().has_tokens());
-    for (auto& token : *dup_sync_result.response().mutable_tokens()) {
-      tokens.emplace_back(token.BindSync());
-    }
-  } else {
-    tokens.clear();
-  }
-
-  return tokens;
-}
-
 }  // namespace
 
 Allocator::Allocator(sys::ComponentContext* app_context,
@@ -170,8 +143,7 @@ std::optional<Allocator::ParsedArgs> Allocator::ParseArgs(
       .koid = koid,
       .buffer_collection_usages = buffer_collection_usages,
       .export_token = std::move(args.export_token().value()),
-      .buffer_collection_token =
-          fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(token.TakeChannel()),
+      .buffer_collection_token = std::move(token),
   };
 }
 
@@ -223,7 +195,8 @@ void Allocator::RegisterBufferCollection(
           completer(fit::error(RegisterBufferCollectionError::kBadOperation));
           return;
         }
-        RegisterValidatedBufferCollection(std::move(parsed_args), std::move(completer));
+        // Create a token for each of the buffer collection importers.
+        DuplicateBufferCollectionToken(std::move(parsed_args), std::move(completer));
       });
 }
 
@@ -243,24 +216,50 @@ Allocator::Importers Allocator::GetImporters(const RegisterBufferCollectionUsage
   return importers;
 }
 
-void Allocator::RegisterValidatedBufferCollection(
+void Allocator::DuplicateBufferCollectionToken(
     ParsedArgs parsed_args,
+    fit::function<void(fit::result<RegisterBufferCollectionError>)> completer) {
+  auto& [koid, buffer_collection_usages, export_token, buffer_collection_token] = parsed_args;
+  auto importers = GetImporters(buffer_collection_usages);
+  FX_DCHECK(importers.size() > 0);
+
+  fidl::WireClient<fuchsia_sysmem2::BufferCollectionToken> token{std::move(buffer_collection_token),
+                                                                 async_get_default_dispatcher()};
+  fidl::Arena arena;
+  std::vector<zx_rights_t> rights_attenuation_masks(importers.size() - 1, ZX_RIGHT_SAME_RIGHTS);
+  auto thenable = token->DuplicateSync(
+      fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
+          .rights_attenuation_masks(
+              fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
+          .Build());
+  std::move(thenable).ThenExactlyOnce(
+      [this, token = std::move(token), parsed_args = std::move(parsed_args),
+       importers = std::move(importers), completer = std::move(completer)](auto& result) mutable {
+        if (!result.ok()) {
+          FX_LOGS(ERROR) << "RegisterBufferCollection called with a buffer collection token where "
+                            "Duplicate() failed";
+          IncrementFailedBufferCollections();
+          completer(fit::error(RegisterBufferCollectionError::kBadOperation));
+          return;
+        }
+        // Sysmem always fills out tokens vector (can be 0 length if we passed 0-length
+        // rights_attenuation_masks above)
+        FX_DCHECK(result->has_tokens());
+        BufferCollectionTokens tokens;
+        tokens.reserve(importers.size());
+        tokens.push_back(*token.UnbindMaybeGetEndpoint());
+        std::ranges::move(result->tokens(), std::back_inserter(tokens));
+        RegisterValidatedBufferCollection(std::move(parsed_args), std::move(importers),
+                                          std::move(tokens), std::move(completer));
+      });
+}
+
+void Allocator::RegisterValidatedBufferCollection(
+    ParsedArgs parsed_args, Importers importers, BufferCollectionTokens tokens,
     fit::function<void(fit::result<RegisterBufferCollectionError>)> completer) {
   auto trace_end = fit::defer(
       [] { TRACE_DURATION_END("gfx", "allocation::Allocator::RegisterBufferCollection"); });
-  const auto importers = GetImporters(parsed_args.buffer_collection_usages);
-  auto& [koid, buffer_collection_usages, export_token, buffer_collection_token] = parsed_args;
-
-  // Create a token for each of the buffer collection importers.
-  auto tokens = CreateVectorOfTokens(std::move(buffer_collection_token), importers.size());
-
-  if (tokens.empty()) {
-    FX_LOGS(ERROR) << "RegisterBufferCollection called with a buffer collection token where "
-                      "Duplicate() failed";
-    IncrementFailedBufferCollections();
-    completer(fit::error(RegisterBufferCollectionError::kBadOperation));
-    return;
-  }
+  auto& [koid, buffer_collection_usages, export_token, _] = parsed_args;
 
   // Loop over each of the importers and provide each of them with a token from the vector we
   // created above.

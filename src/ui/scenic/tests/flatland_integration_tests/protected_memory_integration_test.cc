@@ -18,7 +18,6 @@
 
 namespace integration_tests {
 
-using fuchsia::ui::composition::ChildViewWatcher;
 using fuchsia::ui::composition::ContentId;
 using fuchsia::ui::composition::FlatlandPtr;
 using fuchsia::ui::composition::ParentViewportWatcher;
@@ -61,14 +60,13 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
   }
 
  protected:
-  zx_status_t SetConstraintsAndAllocateBuffer(fuchsia::sysmem2::BufferCollectionTokenSyncPtr token,
-                                              bool use_protected_memory) {
+  zx_status_t SetConstraintsAndAllocateBuffer(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, bool use_protected_memory) {
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token.Unbind().TakeChannel()))
+            .token(std::move(token))
             .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
                 buffer_collection.NewRequest().TakeChannel()))
             .Build());
@@ -132,14 +130,15 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
 };
 
 TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuchsia::ui::composition::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result result;
   flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());
@@ -172,14 +171,15 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
 }
 
 TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
-  auto [local_token, scenic_token] = utils::CreateSysmemTokensHlcpp(sysmem_allocator_);
+  auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
   allocation::BufferCollectionImportExportTokens bc_tokens =
       allocation::BufferCollectionImportExportTokens::New();
   fuchsia::ui::composition::RegisterBufferCollectionArgs rbc_args = {};
   rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(std::move(scenic_token));
+  rbc_args.set_buffer_collection_token2(
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
   fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result result;
   flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
   ASSERT_FALSE(result.is_err());

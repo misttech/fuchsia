@@ -14,21 +14,16 @@
 #include <lib/fit/defer.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 
-#include <thread>
-
 #include "src/graphics/display/lib/coordinator-getter/client.h"
-#include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/common/gtest_vulkan.h"
-#include "src/ui/lib/escher/vk/vulkan_device_queues.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
-#include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
@@ -164,24 +159,27 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   flatland::VkRenderer renderer(unique_escher->GetWeakPtr());
 
   // First create the pair of sysmem tokens, one for the client, one for the renderer.
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_);
+  auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator_);
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
 
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
-  dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
-  dup_request.set_token_request(display_token.NewRequest());
-  zx_status_t status = tokens.local_token->Duplicate(std::move(dup_request));
-  FX_DCHECK(status == ZX_OK);
+  fidl::Arena arena;
+  auto result =
+      fidl::WireCall(local_token)
+          ->Duplicate(fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateRequest::Builder(arena)
+                          .rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS)
+                          .token_request(std::move(server_end))
+                          .Build());
+  FX_DCHECK(result.ok());
 
   // Register the collection with the renderer, which sets the vk constraints.
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   auto image_id = allocation::GenerateUniqueImageId();
-  auto result = renderer.ImportBufferCollection(
-      collection_id, sysmem_allocator_, std::move(tokens.dup_token),
+  auto import_result = renderer.ImportBufferCollection(
+      collection_id, sysmem_allocator_, std::move(dup_token),
       allocation::BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(import_result);
 
   allocation::ImageMetadata metadata = {.collection_id = collection_id,
                                         .identifier = image_id,
@@ -190,18 +188,16 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
                                         .height = kHeight};
 
   // Importing an image should fail at this point because we've only set the renderer constraints.
-  auto import_result =
+  import_result =
       renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
   EXPECT_FALSE(import_result);
 
   // Set the display constraints on the display coordinator.
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> natural_token(
-      std::move(display_token).Unbind().TakeChannel());
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
       .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
   };
   bool res = display::ImportBufferCollection(collection_id, display_coordinator,
-                                             std::move(natural_token), image_buffer_usage);
+                                             std::move(client_end), image_buffer_usage);
   ASSERT_TRUE(res);
   auto release_buffer_collection = fit::defer([&display_coordinator, display_collection_id] {
     // Release the buffer collection.
@@ -219,7 +215,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto client_collection = flatland::CreateBufferCollectionSyncPtrAndSetConstraints(
-      sysmem_allocator_, std::move(tokens.local_token),
+      sysmem_allocator_, std::move(local_token),
       /*image_count*/ 1,
       /*width*/ kWidth,
       /*height*/ kHeight,
@@ -288,7 +284,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   const uint32_t kNumVmos = 2;
 
   // First create the pair of sysmem tokens, one for the client, one for the display.
-  auto tokens = flatland::SysmemTokens::Create(sysmem_allocator_);
+  auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator_);
 
   // Set the display constraints on the display coordinator.
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
@@ -299,14 +295,12 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(global_collection_id);
 
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
-      std::move(tokens.dup_token).Unbind().TakeChannel());
   bool res = display::ImportBufferCollection(global_collection_id, display_coordinator,
                                              std::move(dup_token), image_buffer_usage);
   ASSERT_TRUE(res);
 
-  flatland::SetClientConstraintsAndWaitForAllocated(
-      sysmem_allocator_, std::move(tokens.local_token), kNumVmos, kWidth, kHeight);
+  flatland::SetClientConstraintsAndWaitForAllocated(sysmem_allocator_, std::move(local_token),
+                                                    kNumVmos, kWidth, kHeight);
 
   // Import the images to the display.
   display::WireImageMetadata image_metadata{

@@ -6,15 +6,13 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_BUFFER_COLLECTION_H_
 
 #include <fuchsia/images/cpp/fidl.h>
+#include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "fuchsia/sysmem/cpp/fidl.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 
 namespace flatland {
-
-using BufferCollectionHandle = fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>;
 
 // |BufferCollectionInfo| stores the information regarding a BufferCollection.
 // Instantiated via calls to |New| below.
@@ -28,7 +26,7 @@ class BufferCollectionInfo {
   // unsafe.
   static fit::result<fit::failed, BufferCollectionInfo> New(
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-      BufferCollectionHandle buffer_collection_token,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
       std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_format_constraints =
           std::nullopt,
       fuchsia::sysmem2::BufferUsage buffer_usage =
