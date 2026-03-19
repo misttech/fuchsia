@@ -126,13 +126,10 @@ group("tests_for_general_cq_no_shield_box") {
 
 group("tests_for_wlan_cq") {
   testonly = true
-  public_deps = []
+  public_deps = [ ":apf_test" ]
 }
 
 group("tests_for_fyi") {
   testonly = true
-  public_deps = [
-    ":apf_test",
-    ":create_client_iface_benchmark_test",
-  ]
+  public_deps = [ ":create_client_iface_benchmark_test" ]
 }
