@@ -9,7 +9,6 @@ import time
 from typing import AsyncIterator
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-import fuchsia_async_extension
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -66,8 +65,8 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             access_points[0] if access_points else None
         )
 
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.wait_for_interface(self.device.netstack, PortClass.WLAN_CLIENT)
+        await self.wait_for_interface(
+            self.device.netstack, PortClass.WLAN_CLIENT
         )
 
     async def setup_test(self) -> None:
