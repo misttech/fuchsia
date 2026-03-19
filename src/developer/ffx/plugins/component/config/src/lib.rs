@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use component_debug::cli::{config_list_cmd, config_set_cmd, config_unset_cmd};
+use component_debug_fdomain::cli::{config_list_cmd, config_set_cmd, config_unset_cmd};
 use errors::FfxError;
 use ffx_component::rcs::{
-    connect_to_config_override, connect_to_lifecycle_controller, connect_to_realm_query,
+    connect_to_config_override_f, connect_to_lifecycle_controller_f, connect_to_realm_query_f,
 };
 use ffx_component_config_args::{
     ConfigComponentCommand, ListArgs, SetArgs, SubCommandEnum, UnsetArgs,
 };
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct ConfigTool {
@@ -28,9 +28,9 @@ fho::embedded_plugin!(ConfigTool);
 impl FfxMain for ConfigTool {
     type Writer = SimpleWriter;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        let lifecycle_controller = connect_to_lifecycle_controller(&self.rcs).await?;
-        let realm_query = connect_to_realm_query(&self.rcs).await?;
-        let config_override = connect_to_config_override(&self.rcs).await?;
+        let lifecycle_controller = connect_to_lifecycle_controller_f(&self.rcs).await?;
+        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
+        let config_override = connect_to_config_override_f(&self.rcs).await?;
         let ConfigComponentCommand { subcommand } = self.cmd;
         match subcommand {
             SubCommandEnum::Set(SetArgs { query, key_values, reload }) => config_set_cmd(
