@@ -8,9 +8,21 @@
     },
     {
         name: "Graphics",
-        process: "driver-host-#display|driver-host-#gpu|aml-gpu\\.cm.*",
+        process: "driver-host-#display|driver-host-#gpu|aml-gpu\\.cm.*|vulkan_loader\\.cm",
         vmo: "",
         event_code: 2,
+    },
+    {
+        name: "ProtectedPoolUnallocated",
+        process: "sysmem\\.cm",
+        vmo: "SysmemProtectedPool",
+        event_code: 27,
+    },
+    {
+        name: "ContiguousPoolUnallocated",
+        process: "sysmem\\.cm",
+        vmo: "SysmemContiguousPool",
+        event_code: 26,
     },
     {
         name: "Storage",
@@ -50,7 +62,7 @@
     },
     {
         name: "Audio",
-        process: "audio_core\\.cm|audio_device_registry\\.cm|soundplayer\\.cm|driver-host-#audio-and-haptics",
+        process: "audio_core\\.cm|audio_device_registry\\.cm|soundplayer\\.cm|driver-host-#audio-and-haptics|virtual-audio(-legacy)?-driver\\.cm",
         vmo: "",
         event_code: 24,
     },
