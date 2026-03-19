@@ -171,14 +171,14 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(
     return zx::error(status);
   }
 
-  fidl::WireClient<fuchsia_logger::LogSink> log_sink(std::move(*ns_result), dispatcher);
-  auto sink_result = log_sink->ConnectStructured(std::move(server_end));
+  fidl::WireClient<fuchsia_logger::LogSink> log_sink_client(std::move(*ns_result), dispatcher);
+  auto sink_result = log_sink_client->ConnectStructured(std::move(server_end));
   if (!sink_result.ok()) {
     return zx::error(sink_result.status());
   }
 
-  auto logger =
-      std::make_unique<Logger>(name, min_severity, std::move(client_end), std::move(log_sink));
+  auto logger = std::make_unique<Logger>(name, min_severity, std::move(client_end),
+                                         std::move(log_sink_client));
 
   if (wait_for_initial_interest) {
     auto interest_result = logger->log_sink_.sync()->WaitForInterestChange();
