@@ -10,9 +10,12 @@ fidl("fuchsia.audio.device") {
   sources = [
     "control.fidl",
     "device.fidl",
+    "format.fidl",
     "overview.fidl",
+    "packet_stream.fidl",
     "provider.fidl",
     "registry.fidl",
+    "ring_buffer.fidl",
   ]
 
   public_deps = [

@@ -80,6 +80,8 @@ class ControlServer
   void Reset(ResetCompleter::Sync& completer) final;
   void CodecStart(CodecStartCompleter::Sync& completer) final;
   void CodecStop(CodecStopCompleter::Sync& completer) final;
+  void CreatePacketStream(CreatePacketStreamRequest& request,
+                          CreatePacketStreamCompleter::Sync& completer) final;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_audio_device::Control> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) final;
 

@@ -853,6 +853,12 @@ void ControlServer::MaybeCompleteWatchElementState(ElementId element_id) {
   }
 }
 
+void ControlServer::CreatePacketStream(CreatePacketStreamRequest& request,
+                                       CreatePacketStreamCompleter::Sync& completer) {
+  ADR_WARN_METHOD() << "not yet supported by AudioDeviceRegistry";
+  completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidElementId));
+}
+
 // We complain but don't close the connection, to accommodate older and newer clients.
 void ControlServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_audio_device::Control> metadata,

@@ -117,6 +117,18 @@ type Info = table {
     /// Required for Composite; optional for Codec.
     13: signal_processing_topologies
             vector<fuchsia.hardware.audio.signalprocessing.Topology>:fuchsia.hardware.audio.signalprocessing.MAX_COUNT_TOPOLOGIES;
+
+    /// The union of all PacketStream formats the device can support, across all combinations
+    /// of device configuration settings.
+    /// If the device exposes one or more PacketStream elements, this field must be present
+    /// and its vector must contain one entry for each relevant PacketStream element.
+    /// If the device exposes NO PacketStream elements, this field must be omitted
+    /// (entirely absent, rather than populated with an empty vector).
+    /// If present, must contain at least one element.
+    ///
+    /// Optional for Composite; absent for Codec.
+    @available(added=HEAD)
+    14: packet_stream_format_sets vector<ElementPacketStreamFormatSet>:MAX_PROCESSING_ELEMENT_COUNT;
 };
 
 /// The device's hot-plug capabilities.

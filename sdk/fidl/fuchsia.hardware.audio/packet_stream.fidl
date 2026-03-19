@@ -52,6 +52,8 @@ type BufferType = flexible bits : uint64 {
     DRIVER_OWNED = 0x2;
 
     /// Data is sent inline within the FIDL message.
+    /// This can be used exclusively (standalone) without allocating or registering VMOs,
+    /// or mixed in-stream with packets of other buffer types.
     INLINE = 0x4;
 };
 
