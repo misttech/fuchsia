@@ -55,15 +55,15 @@ if (is_linux) {
   host_test_data("main_zbi") {
     path =
         get_label_info(":cprng-draw-zbi($default_toolchain)", "target_out_dir")
-    sources = [
-      "$path/cprng-draw-zbi.zbi",
-      "$root_build_dir/fuchsia.zbi",
-    ]
+    sources = [ "$path/cprng-draw-zbi.zbi" ]
     deps = [ ":cprng-draw-zbi($default_toolchain)" ]
   }
 
   go_test("kernel_cprng_tests") {
     embed = [ ":lib" ]
-    non_go_deps = [ ":main_zbi" ]
+    non_go_deps = [
+      ":main_zbi",
+      "//build/images/fuchsia:fuchsia_zbi_for_host_tests",
+    ]
   }
 }

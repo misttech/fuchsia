@@ -35,6 +35,15 @@ template("host_test_data") {
       !is_fuchsia,
       "host_test_data should only be used on host, to fix this, wrap you target with `if (is_host) { ... }`")
 
+  foreach(source, invoker.sources) {
+    if (source == "$root_build_dir/fuchsia.zbi") {
+      assert(
+          get_label_info(":$target_name", "label_no_toolchain") ==
+              "//build/images/fuchsia:fuchsia_zbi_for_host_tests",
+          "Only the '//build/images/fuchsia:fuchsia_zbi_for_host_tests' is allowed to provide fuchsia.zbi for host tests.")
+    }
+  }
+
   _testonly = true
   if (defined(invoker.testonly)) {
     _testonly = invoker.testonly
