@@ -18,8 +18,8 @@ ffx_plugin("ffx_debug_connect") {
   sources = [ "src/lib.rs" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
-    "//src/developer/debug/ffx_zxdb",
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust_fdomain",
+    "//src/developer/debug/ffx_zxdb:ffx_zxdb_fdomain",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",

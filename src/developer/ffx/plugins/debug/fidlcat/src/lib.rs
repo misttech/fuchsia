@@ -4,15 +4,15 @@
 
 use anyhow::Result;
 use errors::ffx_error;
+use fdomain_fuchsia_debugger::LauncherProxy;
 use ffx_config::EnvironmentContext;
 use ffx_debug_connect::{DebugAgentSocket, DebuggerProxy};
 use ffx_writer::SimpleWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_debugger::LauncherProxy;
 use fuchsia_async::unblock;
 use sdk::SdkVersion;
 use std::process::Command;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 struct ProcessArguments {
     arguments: Vec<String>,

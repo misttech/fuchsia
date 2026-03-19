@@ -5,21 +5,21 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use fdomain_fuchsia_debugger as fdebugger;
 use ffx_config::EnvironmentContext;
 use ffx_debug_connect_args::ConnectCommand;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb::util::{self, Agent};
-use ffx_zxdb::{Debugger, forward_to_agent};
+use ffx_zxdb_fdomain::util::{self, Agent};
+use ffx_zxdb_fdomain::{Debugger, forward_to_agent};
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_debugger as fdebugger;
 use signal_hook::consts::signal::SIGINT;
 use std::io::{BufRead, Write};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
-pub use ffx_zxdb::debug_agent::{DebugAgentSocket, DebuggerProxy};
+pub use ffx_zxdb_fdomain::debug_agent::{DebugAgentSocket, DebuggerProxy};
 
 #[derive(FfxTool)]
 pub struct ConnectTool {
