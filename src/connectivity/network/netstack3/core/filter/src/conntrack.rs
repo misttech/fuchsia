@@ -270,13 +270,18 @@ where
             }
         }
 
-        // The expected case here is that there isn't a conflict.
+        // Ensure there aren't conflicts before inserting to avoid avoid heap
+        // allocation if there's a conflict in the reply tuple[1]. Normally,
+        // you'd want to use the entry API for this to avoid the redundant
+        // lookups, but here that would require holding two mutable borrows of
+        // the table. This is a little wasteful in the expected case where there
+        // aren't conflicts, but it minimizes the worst case, which was deemed
+        // to be the more important factor.
         //
-        // Normally, we'd want to use the entry API to reduce the number of map
-        // lookups, but this setup allows us to completely avoid any heap
-        // allocations until we're sure that the insertion will succeed. This
-        // wastes a little CPU in the common case to avoid pathological behavior
-        // in degenerate cases.
+        // [1]: For context, the ConnectionExclusive associated with a tentative
+        // connection is stored on the stack throughout packet processing so
+        // there are no conntrack-related heap allocations if the packet is
+        // dropped.
         if guard.table.contains_key(&exclusive.inner.original_tuple)
             || guard.table.contains_key(&exclusive.inner.reply_tuple)
         {
