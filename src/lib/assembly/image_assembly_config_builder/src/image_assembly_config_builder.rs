@@ -543,7 +543,7 @@ impl ImageAssemblyConfigBuilder {
         Ok(())
     }
 
-    fn add_package_from_path(
+    pub fn add_package_from_path(
         &mut self,
         path: impl AsRef<Utf8Path>,
         origin: PackageOrigin,
@@ -1344,10 +1344,9 @@ impl PackageEntry {
     }
 }
 
-/// The origin of a package.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-enum PackageOrigin {
+pub enum PackageOrigin {
     /// The package is from a platform AIB
     AIB,
 

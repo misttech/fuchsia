@@ -7,6 +7,7 @@
 use crate::v2::{Canonicalizer, ProductBundleV2, Type};
 
 use anyhow::{Context, Result, anyhow, bail};
+use assembled_system::Image;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_repo::repository::FileSystemRepository;
 use sdk_metadata::{VirtualDevice, VirtualDeviceManifest, VirtualDeviceV1};
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufRead;
 use std::ops::Deref;
+use std::process::Command;
 use zip::read::ZipArchive;
 
 fn try_load_product_bundle(r: impl BufRead) -> Result<ProductBundle> {
@@ -296,6 +298,57 @@ impl ProductBundle {
             None => bail!("No default virtual device is available, please specify one by name."),
         }
     }
+
+    /// Extract blobs from a system's fxfs image targeting the specified slot.
+    pub fn extract_blobs(
+        &self,
+        slot: assembly_partitions_config::Slot,
+        out_dir: impl AsRef<Utf8Path>,
+    ) -> Result<()> {
+        let ProductBundle::V2(pb) = self;
+
+        let (system, platform_tools) = match slot {
+            assembly_partitions_config::Slot::A => (&pb.system_a, &pb.platform_tools_a),
+            assembly_partitions_config::Slot::B => (&pb.system_b, &pb.platform_tools_b),
+            assembly_partitions_config::Slot::R => (&pb.system_r, &pb.platform_tools_r),
+        };
+
+        let system = system
+            .as_ref()
+            .ok_or_else(|| anyhow!("System does not exist for the specified slot"))?;
+        let image_path = system
+            .iter()
+            .find_map(|image| match image {
+                Image::Fxfs(path) | Image::FxfsSparse { path, .. } => Some(path),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow!("System does not contain an fxfs image"))?;
+
+        let tool = platform_tools
+            .iter()
+            .find(|p| p.file_name() == Some("fxfs_pbtool"))
+            .ok_or_else(|| anyhow!("fxfs_pbtool not found in platform_tools"))?;
+
+        let output = Command::new(tool)
+            .arg("extract")
+            .arg("--image")
+            .arg(image_path)
+            .arg("--out")
+            .arg(out_dir.as_ref())
+            .output()
+            .context("Failed to run extraction tool")?;
+
+        if !output.status.success() {
+            bail!(
+                "Extraction tool failed with status {}.\nstdout: {}\nstderr: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(())
+    }
 }
 
 /// Construct a Vec<FileSystemRepository> from product bundle.
@@ -328,6 +381,11 @@ pub fn get_repositories(product_bundle_dir: Utf8PathBuf) -> Result<Vec<FileSyste
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assembled_system::AssembledSystem;
+    use assembly_cli_args::{AssemblyMode, ValidationMode};
+    use assembly_container::AssemblyContainer;
+    use assembly_tool::PlatformToolProvider;
+    use image_assembly_config_builder::ImageAssemblyConfigBuilder;
     use serde_json::json;
     use std::fs;
     use std::io::Write;
@@ -758,5 +816,180 @@ mod tests {
         let pb_json = include_str!("../test_data/31.20260301.0.1/product_bundle.json");
         let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
         assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[fuchsia::test]
+    async fn test_extract_blobs_with_image() {
+        let tmp = TempDir::new().unwrap();
+        let out_dir = tmp.path().join("out");
+        fs::create_dir(&out_dir).unwrap();
+
+        let artifacts_dir = Utf8PathBuf::from(env!("PLATFORM_ARTIFACTS_DIR"));
+        let tools = PlatformToolProvider::new(artifacts_dir.clone());
+
+        // Create temporary directories for generated artifacts.
+        let package_dir = tmp.path().join("package");
+        fs::create_dir(&package_dir).unwrap();
+        let partitions_dir = Utf8PathBuf::from_path_buf(tmp.path().join("partitions")).unwrap();
+        fs::create_dir(&partitions_dir).unwrap();
+        let image_assembly_config_dir = tmp.path().join("image_assembly_config");
+        let image_assembly_config_dir_utf8 =
+            Utf8PathBuf::from_path_buf(image_assembly_config_dir.clone()).unwrap();
+        fs::create_dir(&image_assembly_config_dir).unwrap();
+        let assembled_system_dir = tmp.path().join("assembled_system");
+        let assembled_system_dir_utf8 =
+            Utf8PathBuf::from_path_buf(assembled_system_dir.clone()).unwrap();
+        fs::create_dir(&assembled_system_dir).unwrap();
+
+        // Create a mock package manifest for a base package to trigger Fxfs generation.
+        let package_manifest_path =
+            Utf8PathBuf::from_path_buf(package_dir.join("my_pkg_manifest.json")).unwrap();
+        let meta_far_path = package_dir.join("meta.far");
+        let mut package_builder =
+            fuchsia_pkg::PackageBuilder::new_platform_internal_package("my_pkg");
+        let blob_data = b"blob contents";
+        package_builder.add_contents_as_blob("data/file", blob_data, &package_dir).unwrap();
+        package_builder.manifest_path(package_manifest_path.clone());
+        package_builder.build(&package_dir, &meta_far_path).unwrap();
+
+        // Create a partitions config.
+        let mut partitions = assembly_partitions_config::PartitionsConfig::default();
+        partitions.hardware_revision = "test".into();
+        partitions.write_to_dir(&partitions_dir, None::<Utf8PathBuf>).unwrap();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(
+            assembly_config_schema::platform_settings::BuildType::Eng,
+            assembly_config_schema::FeatureSetLevel::Standard,
+            "test".into(),
+            None,
+            assembly_images_config::FilesystemImageMode::Partition,
+            AssemblyMode::BuildEverything,
+            assembly_release_info::SystemReleaseInfo::new_for_testing(),
+        );
+        builder
+            .add_package_from_path(
+                package_manifest_path,
+                image_assembly_config_builder::PackageOrigin::Product,
+                &assembly_config_schema::PackageSet::Base,
+            )
+            .unwrap();
+        builder
+            .set_images_config(assembly_images_config::ImagesConfig {
+                images: vec![
+                    assembly_images_config::Image::Zbi(Default::default()),
+                    assembly_images_config::Image::Fxfs(Default::default()),
+                ],
+            })
+            .unwrap();
+
+        builder.add_bundle(artifacts_dir.join("zircon/assembly_config.json")).unwrap();
+        builder.add_bundle(artifacts_dir.join("emulator_support/assembly_config.json")).unwrap();
+        let (mut image_assembly_config, _) = builder
+            .build_and_validate(&image_assembly_config_dir_utf8, &tools, ValidationMode::Off)
+            .unwrap();
+        image_assembly_config.partitions_config = Some(partitions_dir);
+
+        let system = AssembledSystem::new(
+            image_assembly_config,
+            false,
+            &assembled_system_dir_utf8,
+            &tools,
+            None,
+            AssemblyMode::BuildEverything,
+        )
+        .await
+        .unwrap();
+
+        // Create a product bundle.
+        let pb = crate::ProductBundleBuilder::new("name", "version")
+            .system(system, assembly_partitions_config::Slot::A)
+            .build(Box::new(tools), Utf8Path::from_path(&out_dir).unwrap())
+            .await
+            .unwrap();
+
+        // Extract blobs and verify that the blob from the base package is present.
+        let extracted_dir = Utf8PathBuf::from_path_buf(tmp.path().join("extracted")).unwrap();
+        pb.extract_blobs(assembly_partitions_config::Slot::A, &extracted_dir)
+            .expect("extract_blobs failed");
+        let reader = fs::read_dir(&extracted_dir).unwrap();
+        let mut found = false;
+        for entry in reader {
+            let entry = entry.unwrap();
+            let contents = fs::read(entry.path()).unwrap();
+            if contents == blob_data {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "Did not find extracted blob with matching content");
+    }
+
+    #[test]
+    fn test_extract_blobs_without_fxfs_image() {
+        let tmp = TempDir::new().unwrap();
+        let product_bundle_dir = tmp.path().join("out");
+
+        let image_path = Utf8PathBuf::from_path_buf(tmp.path().join("zbi")).unwrap();
+        let tool_path = tmp.path().join("fxfs_pbtool");
+
+        let mut config = assembly_partitions_config::PartitionsConfig::default();
+        config.hardware_revision = "test".into();
+        let pb = ProductBundle::V2(ProductBundleV2 {
+            product_name: "test".into(),
+            product_version: "test".into(),
+            partitions: config,
+            sdk_version: "test".into(),
+            system_a: Some(vec![Image::ZBI { path: image_path, signed: false }]),
+            platform_tools_a: vec![Utf8PathBuf::from_path_buf(tool_path).unwrap()],
+            system_b: None,
+            platform_tools_b: vec![],
+            system_r: None,
+            platform_tools_r: vec![],
+            repositories: vec![],
+            update_package_hash: None,
+            virtual_devices_path: None,
+            release_info: None,
+        });
+
+        let result = pb.extract_blobs(
+            assembly_partitions_config::Slot::A,
+            Utf8Path::from_path(&product_bundle_dir).unwrap(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "System does not contain an fxfs image");
+    }
+
+    #[test]
+    fn test_extract_blobs_without_system() {
+        let tmp = TempDir::new().unwrap();
+        let product_bundle_dir = tmp.path().join("out");
+
+        let mut config = assembly_partitions_config::PartitionsConfig::default();
+        config.hardware_revision = "test".into();
+        let pb = ProductBundle::V2(ProductBundleV2 {
+            product_name: "test".into(),
+            product_version: "test".into(),
+            partitions: config,
+            sdk_version: "test".into(),
+            system_a: None,
+            platform_tools_a: vec![],
+            system_b: None,
+            platform_tools_b: vec![],
+            system_r: None,
+            platform_tools_r: vec![],
+            repositories: vec![],
+            update_package_hash: None,
+            virtual_devices_path: None,
+            release_info: None,
+        });
+
+        let result = pb.extract_blobs(
+            assembly_partitions_config::Slot::A,
+            Utf8Path::from_path(&product_bundle_dir).unwrap(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "System does not exist for the specified slot");
     }
 }

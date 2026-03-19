@@ -43,21 +43,29 @@ pub enum Image {
 }
 
 /// Parameters describing how to generate the ZBI.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
 pub struct Zbi {
     /// The name to give the image file.
-    #[serde(default = "default_zbi_name")]
     pub name: String,
 
     /// The compression format for the ZBI.
-    #[serde(default)]
     pub compression: ZbiCompression,
 
     /// An optional script to post-process the ZBI.
     /// This is often used to prepare the ZBI for flashing/updating.
-    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub postprocessing_script: Option<PostProcessingScript>,
+}
+
+impl Default for Zbi {
+    fn default() -> Self {
+        Self {
+            name: default_zbi_name(),
+            compression: ZbiCompression::default(),
+            postprocessing_script: None,
+        }
+    }
 }
 
 fn default_zbi_name() -> String {

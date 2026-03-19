@@ -6,5 +6,6 @@ mod compiled_package;
 mod image_assembly_config_builder;
 mod product_assembly;
 
+pub use crate::image_assembly_config_builder::{ImageAssemblyConfigBuilder, PackageOrigin};
 pub use assembly_cli_args::ValidationMode;
 pub use product_assembly::ProductAssembly;
