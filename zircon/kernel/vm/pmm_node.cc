@@ -384,7 +384,8 @@ zx::result<vm_page_t*> PmmNode::AllocPage(uint alloc_flags) {
     page = list_remove_head_type(&free_list_, vm_page, queue_node);
     if (!page) {
       // Allocation failures from the regular free list are likely to become user-visible.
-      ReportAllocFailureLocked(AllocFailure{.type = AllocFailure::Type::Pmm, .size = 1});
+      ReportAllocFailureLocked(
+          AllocFailure{.type = AllocFailure::Type::Pmm, .size = 1, .free_count = 0});
       return zx::error(ZX_ERR_NO_MEMORY);
     }
 
@@ -438,7 +439,8 @@ zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, list_node* list)
         return ZX_ERR_SHOULD_WAIT;
       }
       // Allocation failures from the regular free list are likely to become user-visible.
-      ReportAllocFailureLocked(AllocFailure{.type = AllocFailure::Type::Pmm, .size = count});
+      ReportAllocFailureLocked(
+          AllocFailure{.type = AllocFailure::Type::Pmm, .size = count, .free_count = free_count});
       return ZX_ERR_NO_MEMORY;
     }
 
@@ -1176,7 +1178,12 @@ void PmmNode::ReportAllocFailureLocked(AllocFailure failure) {
   const bool first_time = !alloc_failed_no_mem.exchange(true, ktl::memory_order_relaxed);
   if (first_time) {
     first_alloc_failure_ = failure;
-    first_alloc_failure_.free_count = free_count_;
+    // Record the free_count_ only for non-Pmm types. For PMM alloc failures, we know exactly what
+    // the free count was at the time, because we use that to determine whether the allocation
+    // should fail.
+    if (failure.type != AllocFailure::Type::Pmm) {
+      first_alloc_failure_.free_count = free_count_;
+    }
   }
   if (first_time && mem_signal_) {
     SignalFreeMemoryChangeLocked();
