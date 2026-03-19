@@ -249,6 +249,7 @@ syscall_tests_migrated_to_machina = [
   "fs_test",
   "fsverity_test",
   "fuchsia_network_monitor_fs_test",
+  "fuse_test",
   "futex_test",
   "getrandom_test",
   "io_uring_test",
