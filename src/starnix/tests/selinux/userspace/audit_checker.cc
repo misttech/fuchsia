@@ -7,8 +7,8 @@
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <fstream>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -22,10 +22,146 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include "src/lib/fxl/strings/join_strings.h"
+#include "src/lib/fxl/strings/split_string.h"
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/json_parser/json_parser.h"
-#include "src/starnix/tests/selinux/userspace/audit_checker.h"
 #include "src/starnix/tests/selinux/userspace/audit_utils.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
+
+namespace {
+
+constexpr int kTabSize = 4;
+
+// Buffer size for reading from the netlink socket.
+constexpr int kNetlinkBufSize = 4096;
+
+constexpr char kSuccessKey[] = "audit_success";
+constexpr char kExpectedFailureKey[] = "audit_failure";
+constexpr char kSkipKey[] = "audit_skip";
+constexpr char kTestNameKey[] = "name";
+constexpr char kTestAuditExpectationsKey[] = "audit_expectations";
+constexpr char kExpectationsFile[] = "data/audit_expectations/audit_expectations.json";
+
+const std::regex kAuditLogRegex = std::regex(
+    R"(avc:\s+(denied|granted)\s+\{\s*([^}]+)\s*\}.*scontext=([^ ]+)\s+tcontext=([^ ]+)\s+tclass=([^ ]+).*)");
+
+void EscapeAuditLog(std::string& audit_log) {
+  size_t i = 0;
+  while (i < audit_log.size()) {
+    if (audit_log.at(i) == '"') {
+      audit_log.insert(i, 1, '\\');
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+}
+
+void PrintWithTab(int multiplier, const char* format, ...) {
+  printf("%*s", multiplier * kTabSize, "");
+  va_list args;
+  va_start(args, format);
+  vprintf(format, args);
+  va_end(args);
+}
+
+void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name) {
+  if (!logs.size()) {
+    return;
+  }
+
+  printf("\n{\n");
+  PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
+  PrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
+  for (int i = 0; i < (int)logs.size(); i++) {
+    EscapeAuditLog(logs[i]);
+    PrintWithTab(2, "\"%s\"", logs[i].c_str());
+    if (i != (int)logs.size() - 1) {
+      printf(",");
+    }
+    printf("\n");
+  }
+  PrintWithTab(1, "]\n");
+  printf("}\n");
+}
+
+void SendStartSentinel() {
+  auto fork_helper = test_helper::ForkHelper();
+  pid_t child_pid = fork_helper.RunInForkedProcess([&] {
+    fbl::unique_fd fd = OpenNetlinkAuditSocket();
+    if (!fd.is_valid()) {
+      exit(2);
+    }
+    auto send_res = SendUserAuditMessage(fd.get(), 1, "SENTINEL_START");
+    if (send_res.is_error()) {
+      fprintf(stderr, "Start sentinel send error %s\n", strerror(send_res.error_value()));
+      exit(3);
+    }
+    exit(0);
+  });
+  if (child_pid < 0 || !fork_helper.WaitForChildren()) {
+    fprintf(stderr, "Start sentinel child error\n");
+  }
+}
+
+void SendEndSentinel() {
+  auto fork_helper = test_helper::ForkHelper();
+  pid_t child_pid = fork_helper.RunInForkedProcess([&] {
+    fbl::unique_fd fd = OpenNetlinkAuditSocket();
+    if (!fd.is_valid()) {
+      exit(2);
+    }
+    auto send_res = SendUserAuditMessage(fd.get(), 1, "SENTINEL_END");
+    if (send_res.is_error()) {
+      fprintf(stderr, "End sentinel send error %s\n", strerror(send_res.error_value()));
+      exit(3);
+    }
+    exit(0);
+  });
+  if (child_pid < 0 || !fork_helper.WaitForChildren()) {
+    fprintf(stderr, "End sentinel end child error\n");
+  }
+}
+
+void DrainAuditLog() {
+  SendEndSentinel();
+  fbl::unique_fd fd = OpenNetlinkAuditSocket();
+  if (!fd.is_valid() || RegisterAsAuditDaemon(fd.get(), getpid()).is_error()) {
+    return;
+  }
+
+  char buf[kNetlinkBufSize];
+  // Drain the audit backlog until there is no other message.
+  while (true) {
+    auto recv_res = ReceiveNetlinkMessage(fd.get(), buf, sizeof(buf));
+    if (recv_res.is_error() && recv_res.error_value() == EINTR) {
+      continue;
+    }
+    if (recv_res.value() < NLMSG_LENGTH(0)) {
+      fprintf(stderr, "audit_drainer: message too short\n");
+      continue;
+    }
+    struct nlmsghdr* header = reinterpret_cast<struct nlmsghdr*>(buf);
+    if (header->nlmsg_type != AUDIT_USER_AVC) {
+      continue;
+    }
+    std::string message((char*)NLMSG_DATA(header),
+                        (char*)NLMSG_DATA(header) + (recv_res.value() - sizeof(*header)));
+    if (header->nlmsg_type == AUDIT_USER_AVC) {
+      if (!strstr(message.c_str(), "SENTINEL_END")) {
+        continue;
+      }
+      break;
+    }
+  }
+  if (UnregisterAuditDaemon(fd.get()).is_error()) {
+    printf("Failed to unregister\n");
+    return;
+  }
+}
+
+}  // namespace
 
 AuditChecker::AuditChecker() {
   // Use `ADD_FAILURE` here to trigger an environment setup failure.
@@ -44,14 +180,18 @@ fit::result<std::string, AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLo
     const std::string& line) {
   std::smatch matches;
   if (std::regex_search(line, matches, kAuditLogRegex) && matches.size() == 6) {
-    return fit::ok(AuditChecker::AuditLogEntry{.denied = matches[1].str() == "denied",
-                                               .permission = matches[2].str(),
-                                               .scontext = matches[3].str(),
-                                               .tcontext = matches[4].str(),
-                                               .tclass = matches[5].str()});
-  } else {
-    return fit::error("Failed to parse audit log string: " + line);
+    auto perms =
+        fxl::SplitStringCopy(matches[2].str(), " ", fxl::WhiteSpaceHandling::kTrimWhitespace,
+                             fxl::SplitResult::kSplitWantNonEmpty);
+    bool permissive = strstr(line.c_str(), "permissive=1") != 0;
+    return fit::ok(AuditLogEntry{.denied = matches[1].str() == "denied",
+                                 .permission = std::set<std::string>{perms.begin(), perms.end()},
+                                 .scontext = matches[3].str(),
+                                 .tcontext = matches[4].str(),
+                                 .tclass = matches[5].str(),
+                                 .permissive = permissive});
   }
+  return fit::error("Failed to parse audit log string: " + line);
 }
 
 bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
@@ -100,10 +240,6 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
         return false;
       }
       std::string log_str = log_str_val.GetString();
-      // TODO: https://fxbug.dev/449714364 - Remove after denials are generated in permissive mode.
-      if (test_helper::IsStarnix() && strstr(log_str.c_str(), "permissive=1")) {
-        continue;
-      }
       auto parse_result = ParseAuditLogString(log_str);
       if (parse_result.is_ok()) {
         expected_logs.push_back(parse_result.value());
@@ -116,26 +252,36 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
   return true;
 }
 
-bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& other) const {
-  // If the permission can not be found in the other structure or the other structure's
-  // permission can not be found in permission, return false because of total difference.
-  if (!strstr(other.permission.c_str(), permission.c_str()) &&
-      !strstr(permission.c_str(), other.permission.c_str())) {
+bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& other) const =
+    default;
+
+bool AuditChecker::AuditLogEntry::contains(const AuditLogEntry& other) const {
+  // TODO: https://fxbug.dev/449714364 - Remove after denials are generated in permissive mode.
+  bool granted = !denied || permissive;
+  bool other_granted = !other.denied || other.permissive;
+
+  if (other_granted != granted || other.scontext != scontext || other.tcontext != tcontext ||
+      other.tclass != tclass) {
     return false;
   }
-  // If the permission field contains multiple permissions (on Linux), just print the
-  // difference.
-  if (permission != other.permission) {
-    printf("Notice: 'permission' field differs: '%s' vs '%s'\n", permission.c_str(),
-           other.permission.c_str());
+  if (other.permission == permission) {
+    return true;
   }
-  return scontext == other.scontext && tcontext == other.tcontext && tclass == other.tclass;
+  return std::ranges::includes(permission, other.permission);
+}
+
+std::string AuditChecker::AuditLogEntry::ToString() const {
+  auto perms_str = fxl::JoinStrings(permission, " ");
+  auto permissive_str = permissive ? "1" : "0";
+  return fxl::StringPrintf("avc: %s { %s } scontext=%s tcontext=%s tclass=%s permissive=%s",
+                           denied ? "denied" : "granted", perms_str.c_str(), scontext.c_str(),
+                           tcontext.c_str(), tclass.c_str(), permissive_str);
 }
 
 fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker::ReadAuditLogs(
     const std::string& test_name) {
   std::vector<std::string> raw_logs;
-  std::vector<AuditChecker::AuditLogEntry> parsed_logs;
+  std::vector<AuditLogEntry> parsed_logs;
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
   if (!fd.is_valid()) {
     return fit::error("Failed to open NETLINK_AUDIT socket");
@@ -178,10 +324,8 @@ fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker:
     // Parse the audit string
     auto parse_result = ParseAuditLogString(message);
     if (parse_result.is_ok()) {
-      auto entry = parse_result.value();
-      if (!entry.denied) {
-        continue;
-      }
+      const auto& entry = parse_result.value();
+
       // If there is a AUDIT_AVC log before the start sentinel, it means
       // there is a policy violation outside of the current test.
       // The message should be checked, it can be from another test that
@@ -208,59 +352,14 @@ fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker:
     fprintf(stderr, "Did not find start sentinel\n");
   }
   if (generate_json_) {
-    current_test_suite_raw_logs_.push_back(std::make_tuple(raw_logs, std::string(test_name)));
+    current_test_suite_raw_logs_.emplace_back(raw_logs, std::string(test_name));
   }
   return fit::ok(parsed_logs);
 }
 
-void AuditChecker::SendStartSentinel() {
-  auto fork_helper = test_helper::ForkHelper();
-  pid_t child_pid = fork_helper.RunInForkedProcess([&] {
-    fbl::unique_fd fd = OpenNetlinkAuditSocket();
-    if (!fd.is_valid()) {
-      exit(2);
-    }
-    auto send_res = SendUserAuditMessage(fd.get(), 1, "SENTINEL_START");
-    if (send_res.is_error()) {
-      fprintf(stderr, "Start sentinel send error %s\n", strerror(send_res.error_value()));
-      exit(3);
-    }
-    exit(0);
-  });
-  if (child_pid < 0 || !fork_helper.WaitForChildren()) {
-    fprintf(stderr, "Start sentinel child error\n");
-  }
-}
-
-void AuditChecker::SendEndSentinel() {
-  auto fork_helper = test_helper::ForkHelper();
-  pid_t child_pid = fork_helper.RunInForkedProcess([&] {
-    fbl::unique_fd fd = OpenNetlinkAuditSocket();
-    if (!fd.is_valid()) {
-      exit(2);
-    }
-    auto send_res = SendUserAuditMessage(fd.get(), 1, "SENTINEL_END");
-    if (send_res.is_error()) {
-      fprintf(stderr, "End sentinel send error %s\n", strerror(send_res.error_value()));
-      exit(3);
-    }
-    exit(0);
-  });
-  if (child_pid < 0 || !fork_helper.WaitForChildren()) {
-    fprintf(stderr, "End sentinel end child error\n");
-  }
-}
-
-bool AuditChecker::HasAuditExpectations(const std::string& test_name) {
-  return expectations_map_.count(test_name) > 0;
-}
-
 bool AuditChecker::ShouldOnlyDrainAudits(const std::string& test_name) {
-  auto found = std::find(skipped_tests_.begin(), skipped_tests_.end(), test_name);
-  if (found != skipped_tests_.end()) {
-    return true;
-  }
-  return false;
+  auto found = std::ranges::find(skipped_tests_, test_name);
+  return found != skipped_tests_.end();
 }
 
 bool AuditChecker::IsExpectedToFail(const std::string& test_name) {
@@ -268,52 +367,8 @@ bool AuditChecker::IsExpectedToFail(const std::string& test_name) {
     return false;
   }
 
-  auto found = std::find(expected_failure_tests_.begin(), expected_failure_tests_.end(), test_name);
-  if (found != expected_failure_tests_.end()) {
-    return true;
-  }
-  return false;
-}
-
-void AuditChecker::DrainAuditLog() {
-  SendEndSentinel();
-  fbl::unique_fd fd = OpenNetlinkAuditSocket();
-  if (!fd.is_valid() || RegisterAsAuditDaemon(fd.get(), getpid()).is_error()) {
-    return;
-  }
-
-  char buf[kNetlinkBufSize];
-  // Drain the audit backlog until there is no other message.
-  while (true) {
-    auto recv_res = ReceiveNetlinkMessage(fd.get(), buf, sizeof(buf));
-    if (recv_res.is_error() && recv_res.error_value() == EINTR) {
-      continue;
-    }
-    if (recv_res.value() < NLMSG_LENGTH(0)) {
-      fprintf(stderr, "audit_drainer: message too short\n");
-      continue;
-    }
-    struct nlmsghdr* header = (struct nlmsghdr*)buf;
-    if (header->nlmsg_type != AUDIT_USER_AVC) {
-      continue;
-    }
-    std::string message((char*)NLMSG_DATA(header),
-                        (char*)NLMSG_DATA(header) + (recv_res.value() - sizeof(*header)));
-    if (header->nlmsg_type == AUDIT_USER_AVC) {
-      if (!strstr(message.c_str(), "SENTINEL_END")) {
-        continue;
-      }
-      break;
-    }
-  }
-  if (UnregisterAuditDaemon(fd.get()).is_error()) {
-    printf("Failed to unregister\n");
-    return;
-  }
-}
-
-void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
-  current_test_suite_name_ = std::string(test_suite.name());
+  auto found = std::ranges::find(expected_failure_tests_, test_name);
+  return found != expected_failure_tests_.end();
 }
 
 void AuditChecker::OnTestSuiteEnd(const testing::TestSuite& test_suite) {
@@ -329,7 +384,7 @@ void AuditChecker::OnTestSuiteEnd(const testing::TestSuite& test_suite) {
 }
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
-  std::string test_name(current_test_suite_name_ + "." + test_info.name());
+  auto test_name = fxl::StringPrintf("%s.%s", test_info.test_suite_name(), test_info.name());
   if (ShouldOnlyDrainAudits(test_name)) {
     return;
   }
@@ -337,7 +392,7 @@ void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
 }
 
 void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
-  std::string test_name(current_test_suite_name_ + "." + test_info.name());
+  auto test_name = fxl::StringPrintf("%s.%s", test_info.test_suite_name(), test_info.name());
   // If the audit log checking should be skipped, drain the audit logs.
   // This can be used for tests that fail on Starnix or do not produce any
   // useful logs.
@@ -349,105 +404,109 @@ void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
   CheckAuditExpectations(test_name);
 }
 
-void AuditChecker::EscapeAuditLog(std::string& audit_log) {
-  size_t i = 0;
-  while (i < audit_log.size()) {
-    if (audit_log.at(i) == '"') {
-      audit_log.insert(i, 1, '\\');
-      i += 2;
-      continue;
-    }
-    i += 1;
-  }
-}
-
-void AuditChecker::PrintWithTab(int multiplier, const char* format, ...) {
-  printf("%*s", multiplier * kTabSize, "");
-  va_list args;
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-}
-
-void AuditChecker::ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name) {
-  if (!logs.size()) {
-    return;
-  }
-
-  printf("\n{\n");
-  PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
-  PrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
-  for (int i = 0; i < (int)logs.size(); i++) {
-    EscapeAuditLog(logs[i]);
-    PrintWithTab(2, "\"%s\"", logs[i].c_str());
-    if (i != (int)logs.size() - 1) {
-      printf(",");
-    }
-    printf("\n");
-  }
-  PrintWithTab(1, "]\n");
-  printf("}\n");
-}
-
-void AuditChecker::AddAuditFailure(const std::string& failure, bool expected) {
-  if (expected) {
-    fprintf(stderr, "%s\n", failure.c_str());
-    return;
-  }
-  ADD_FAILURE() << failure;
-}
-
-std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry) {
-  return "permission: " + entry.permission + " | " + "scontext: " + entry.scontext + " | " +
-         "tcontext: " + entry.tcontext + " | " + "tclass: " + entry.tclass;
-}
-
 void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   auto read_result = ReadAuditLogs(test_name);
-  bool expect_fail = IsExpectedToFail(test_name);
   if (read_result.is_error()) {
     ADD_FAILURE() << read_result.error_value();
     return;
   }
-  std::vector<AuditChecker::AuditLogEntry> actual_logs = read_result.value();
+
   if (generate_json_) {
     return;
   }
 
-  if (!HasAuditExpectations(test_name)) {
-    for (auto audit_log : actual_logs) {
-      std::string failure_string("Unexpected audit log: " + StringifyAudit(audit_log));
-      AddAuditFailure(failure_string, expect_fail);
-    }
+  // Fetch the current expectations, if any, for `test_name`.
+  auto it = expectations_map_.find(test_name);
+  auto expected_logs = it != expectations_map_.end() ? it->second : std::vector<AuditLogEntry>();
+  auto actual_logs = read_result.value();
+
+  // Compare the two sets of logs to determine failure.
+  bool matched_expected = actual_logs == expected_logs;
+  bool expect_fail = IsExpectedToFail(test_name);
+
+  if (matched_expected != expect_fail) {
+    // Whether this case matched expectations, or was expected not to match, this case is done.
     return;
   }
 
-  std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name.data());
-  if (expected_logs.size() != actual_logs.size()) {
-    std::string failure_string(
-        "Audit log count mismatch. Expected: " + std::to_string(expected_logs.size()) +
-        ", Actual: " + std::to_string(actual_logs.size()));
-    AddAuditFailure(failure_string, expect_fail);
+  // Linux sometimes coalesces same-source/target/class checks for multiple permissions into a
+  // single check, which is not yet the case in Starnix, so even though the actual and expected logs
+  // are not identical, they may still be equivalent.
+  // TODO: Remove this work-around and clean up the loop below.
+  matched_expected = true;
+
+  if (test_helper::IsStarnix()) {
+    // TODO: Introduce an explicit ignore-audit-logs scope so that permissive logs can be compared.
+    std::erase_if(expected_logs, [](auto& x) { return x.permissive; });
+    std::erase_if(actual_logs, [](auto& x) { return !x.denied || x.permissive; });
   }
 
-  bool found_mismatch = false;
-  size_t min_size = std::min(expected_logs.size(), actual_logs.size());
-  // Check each audit log against the expectation
-  for (size_t i = 0; i < min_size; ++i) {
-    const auto actual = actual_logs[i];
-    const auto expected = expected_logs[i];
-    if (actual != expected) {
-      if (expect_fail) {
-        found_mismatch = true;
+  // Expectations are generally expected to match in-order, so iterate over the two lists to
+  // emit each line with a prefix indicating the difference between the
+  // observed and expected lists.
+  std::string audit_diff;
+  auto actual_it = actual_logs.begin();
+  auto expected_it = expected_logs.begin();
+
+  while (actual_it != actual_logs.end() && expected_it != expected_logs.end()) {
+    if (expected_it->contains(*actual_it)) {
+      // Observed audit log matches at least one permission in the next expectation, so emit it
+      // with no prefix.
+      if (expected_it->permission == actual_it->permission) {
+        // Move to next expectation in case of exact match.
+        expected_it++;
+      } else if (actual_it->denied) {
+        // Move to next expectation, if any, in case of partial match denied access, since the
+        // first denial will prevent the subsequent checks being made.
+        expected_it++;
+      } else {
+        // If the expectation is granted (whether permissive or denied) then we expect the other
+        // permissions to also be checked, so just remove the matched permission.
+        std::string found_perm = *actual_it->permission.begin();
+        ASSERT_EQ(expected_it->permission.erase(found_perm), 1u);
       }
-      std::string failure_string("Audit log mismatch at index " + std::to_string(i) +
-                                 ":\nExpected: " + StringifyAudit(expected) +
-                                 "\nActual: " + StringifyAudit(actual));
-      AddAuditFailure(failure_string, expect_fail);
+      audit_diff += "\n " + actual_it->ToString();
+      actual_it++;
+      continue;
+    }
+
+    matched_expected = false;
+
+    if (auto it = std::find_if(
+            expected_it, expected_logs.end(),
+            [actual_it](const AuditLogEntry& expected) { return expected.contains(*actual_it); });
+        it != expected_logs.end()) {
+      // Items don't match, but the observed audit log matches an expectation that appears later.
+      // Emit all the intervening expected logs with a prefix indicating they're missing.
+      for (; !expected_it->contains(*actual_it); expected_it++) {
+        audit_diff += "\n+" + expected_it->ToString();
+      }
+    } else {
+      // Item doesn't appear in the expected audit logs at all.
+      audit_diff += "\n-" + actual_it->ToString();
+      actual_it++;
     }
   }
-  if (expect_fail && expected_logs.size() == actual_logs.size() && !found_mismatch) {
-    std::string failure_string("Expected failure in test. All audit logs match.");
-    AddAuditFailure(failure_string, false);
+
+  for (; expected_it != expected_logs.end(); expected_it++) {
+    audit_diff += "\n+" + expected_it->ToString();
+    matched_expected = false;
   }
+  for (; actual_it != actual_logs.end(); actual_it++) {
+    audit_diff += "\n-" + actual_it->ToString();
+    matched_expected = false;
+  }
+
+  if (matched_expected != expect_fail) {
+    return;
+  }
+
+  if (expect_fail) {
+    // Audit logs matched expectations, despite us expecting them to mismatch.
+    ADD_FAILURE() << "Got matching audit logs, expected mismatch, for test: " << test_name;
+    return;
+  }
+
+  ADD_FAILURE() << "Audit logs mismatch. Expected " << expected_logs.size() << ", got "
+                << actual_logs.size() << ". Diff: " << audit_diff;
 }

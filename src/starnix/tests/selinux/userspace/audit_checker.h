@@ -7,9 +7,7 @@
 
 #include <lib/fit/result.h>
 
-#include <memory>
-#include <optional>
-#include <regex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,37 +21,30 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
   // Creates an `AuditChecker` with debug prints enabled.
   static AuditChecker* for_debug();
+
   // Creates an `AuditChecker` with audit log JSON generation.
   static AuditChecker* with_json_generation();
 
-  void OnTestSuiteStart(const testing::TestSuite& test_suite) override;
   void OnTestSuiteEnd(const testing::TestSuite& test_suite) override;
   void OnTestStart(const testing::TestInfo& test_info) override;
   void OnTestEnd(const testing::TestInfo& test_info) override;
 
  private:
-  // Buffer size for reading from the netlink socket.
-  static constexpr int kNetlinkBufSize = 4096;
-  static constexpr int kTabSize = 4;
-
-  static constexpr char kSuccessKey[] = "audit_success";
-  static constexpr char kExpectedFailureKey[] = "audit_failure";
-  static constexpr char kSkipKey[] = "audit_skip";
-  static constexpr char kTestNameKey[] = "name";
-  static constexpr char kTestAuditExpectationsKey[] = "audit_expectations";
-  static constexpr char kExpectationsFile[] = "data/audit_expectations/audit_expectations.json";
-
-  const std::regex kAuditLogRegex = std::regex(
-      R"(avc:\s+(denied|granted)\s+\{\s*([^}]+)\s*\}.*scontext=([^ ]+)\s+tcontext=([^ ]+)\s+tclass=([^ ]+).*)");
-
   struct AuditLogEntry {
     bool denied;
-    std::string permission;
+    std::set<std::string> permission;
     std::string scontext;
     std::string tcontext;
     std::string tclass;
+    bool permissive;
 
     bool operator==(const AuditLogEntry& other) const;
+
+    // Returns true if `other` matches scontext/tcontext/tclass, and the permission is one of those
+    // described by this entry.
+    bool contains(const AuditLogEntry& other) const;
+
+    std::string ToString() const;
   };
 
   // Parses the JSON expectations file.
@@ -67,40 +58,22 @@ class AuditChecker : public testing::EmptyTestEventListener {
   fit::result<std::string, AuditChecker::AuditLogEntry> ParseAuditLogString(
       const std::string& line);
 
-  // Creates a string representation of an AuditLogEntry for logging.
-  std::string StringifyAudit(const AuditChecker::AuditLogEntry entry);
-
-  // Checks if a given test has audit expectations.
-  bool HasAuditExpectations(const std::string& test_name);
   // Checks if a given test should be skipped based on its name.
   bool ShouldOnlyDrainAudits(const std::string& test_name);
+
   // Checks if a give test is in the expected failures.
   bool IsExpectedToFail(const std::string& test_name);
-  // Drains all audit logs without any checks.
-  void DrainAuditLog();
-
-  // Sends USER_AVC sentinel messages to mark the beginning and end of a test section
-  // in the audit log. If the test reads the audit logs before finishing the test,
-  // it must be skipped, because it will consume the start sentinel.
-  void SendStartSentinel();
-  void SendEndSentinel();
 
   // The main method to perform the audit check against the expectations file
   // provided in the constructor.
   void CheckAuditExpectations(const std::string& test_name);
 
-  // Escapes the quotes in an audit log.
-  void EscapeAuditLog(std::string& audit_log);
-  // Printing functions to format audit expectations.
-  void PrintWithTab(int multiplier, const char* format, ...);
-  void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name);
-  void AddAuditFailure(const std::string& failure, bool expected);
-
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
   std::vector<std::string> skipped_tests_;
   std::vector<std::string> expected_failure_tests_;
-  std::string current_test_suite_name_;
+
   std::vector<std::tuple<std::vector<std::string>, std::string>> current_test_suite_raw_logs_;
+
   // Set to true to generate audit log JSON objects without audit checks.
   bool generate_json_ = false;
 };
