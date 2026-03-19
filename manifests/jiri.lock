@@ -896,8 +896,8 @@
     },
     {
         "package": "infra/rbe/client/linux-amd64",
-        "version": "re_client_version:0.185.0.db415f21-gomaip",
-        "instance_id": "ADvz6sQzvQcUUOl6LmYz9_kwRoKMi-QopcOTjGPdF2QC"
+        "version": "re_client_version:0.186.0.305f6525-gomaip",
+        "instance_id": "OX0cYZjPNeReP2zz5JquuZ-ryOARxgxaxGYqe06-x4oC"
     },
     {
         "package": "infra/tools/bb/linux-amd64",
