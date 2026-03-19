@@ -15,6 +15,9 @@
                 // TODO(): Make these tests reliably pass in Starnix then re-enable.
                 "FcntlLockTest.*",
 
+                // TODO(https://fxbug.dev/493672905): Bug in Starnix invalidation handling.
+                "FuseServerTest.InvalidateMountDir",
+
                 // TODO(https://fxbug.dev/342416456): Rework the test to take
                 // into account logs from the system.
                 "SyslogTest.ProcKmsgPoll",

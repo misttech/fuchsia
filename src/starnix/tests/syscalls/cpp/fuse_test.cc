@@ -316,9 +316,71 @@ class FileSystem {
 class FuseServer {
  public:
   FuseServer() : FuseServer(0) {}
-  FuseServer(uint32_t want_init_flags) : want_init_flags_(want_init_flags) {}
+  FuseServer(uint32_t want_init_flags) : want_init_flags_(want_init_flags) {
+    int pipefds[2];
+    EXPECT_EQ(pipe(pipefds), 0);
+    interrupt_pipe_read_.reset(pipefds[0]);
+    interrupt_pipe_write_.reset(pipefds[1]);
+  }
 
-  virtual ~FuseServer() {}
+  virtual ~FuseServer() = default;
+
+  // Core IO function, which reads incoming FUSE messages and processes them, returning true if
+  // FUSE data was processed (and therefore this function should be called again), or false if
+  // there was either an exception during processing or the interrupt_pipe_ signaled that we should
+  // no longer service requests.
+  bool ServeOnce() {
+    std::vector<std::byte> buffer;
+
+    // Poll both the FUSE node and the interrupt pipe. The latter will be written to during Stop()
+    // in order to signal that we should flush the FUSE node and exit from the serving IO process.
+    struct pollfd fds[2];
+    fds[0].fd = fuse_fd_.get();
+    fds[0].events = POLLIN;
+    fds[1].fd = interrupt_pipe_read_.get();
+    fds[1].events = POLLIN;
+    HANDLE_EINTR(poll(fds, 2, -1));
+
+    bool continue_server_processing = true;
+    if (fds[0].revents & POLLIN) {
+      // When the poll event came from the fuse_fd_, process it normally.
+      continue_server_processing = true;
+      EXPECT_TRUE(ReadRequest(&buffer));
+      EXPECT_TRUE(HandleFuseMessage(buffer));
+    } else if (fds[0].revents & POLLERR) {
+      // POLLERR on the fuse_fd_ is semi-expected when the file descriptor has been closed, for
+      // instance when the kernel unmounts the backing directory. This is exercised specifically
+      // in the InvalidateMountDir test case, which implicitly unmounts the backing dir.
+      continue_server_processing = false;
+    } else if (fds[1].revents & POLLIN) {
+      // If the poll event came from interrupt_pipe_, then it's a signal to flush any remaining
+      // requests from the FUSE node and complete the server loop;
+      continue_server_processing = false;
+      while (poll(&fds[0], 1, 0) > 0) {
+        if (!ReadRequest(&buffer))
+          break;
+        EXPECT_TRUE(HandleFuseMessage(buffer));
+      }
+    } else {
+      // For unexpected events, add a failure and log. This could mean, for example, that the
+      // fuse_fd_ received an unexpected event which may indicate a change in behavior. It could
+      // also mean that the interrupt_pipe_ closed unexpectedly, indicating a FuseServer teardown
+      // that we didn't anticipate (e.g. the test didn't gracefully Stop()).
+      continue_server_processing = false;
+      ADD_FAILURE() << "Unexpected poll() signal. fuse_fd_ events: " << fds[0].revents
+                    << ", interrupt_pipe_ events: " << fds[1].revents;
+    }
+
+    return continue_server_processing;
+  }
+
+  void Stop() {
+    // Write data to the interrupt pipe. The actual data is arbitrary, and only used as a
+    // signaling mechanism in the ServeOnce() polling of incoming data.
+    char c = 'Q';
+    ssize_t actual = HANDLE_EINTR(write(interrupt_pipe_write_.get(), &c, 1));
+    EXPECT_EQ(1, actual) << "Graceful stop of the FuseServer has failed!";
+  }
 
   FileSystem& fs() { return fs_; }
   const fbl::unique_fd& fuse_fd() { return fuse_fd_; }
@@ -338,17 +400,6 @@ class FuseServer {
       return testing::AssertionFailure() << "Failed to mount fuse device: " << strerror(errno);
     }
     return testing::AssertionSuccess();
-  }
-
-  bool ServeOnce() {
-    std::vector<std::byte> buffer;
-    bool unmounted = false;
-    EXPECT_TRUE(ReadRequest(&buffer, &unmounted));
-    if (unmounted) {
-      return false;
-    }
-    EXPECT_TRUE(HandleFuseMessage(buffer));
-    return true;
   }
 
   template <typename R = void>
@@ -697,23 +748,16 @@ class FuseServer {
   }
 
  private:
-  testing::AssertionResult ReadRequest(std::vector<std::byte>* request, bool* unmounted) {
+  testing::AssertionResult ReadRequest(std::vector<std::byte>* request) {
     // There doesn't seem to be a good value to use for the max request size. We just pick
     // something large that works for our cases.
     const size_t kMaxRequestSize = 64ul * FUSE_MIN_READ_BUFFER;
     request->resize(kMaxRequestSize);
     ssize_t actual = HANDLE_EINTR(read(fuse_fd_.get(), request->data(), request->size()));
     if (actual == -1) {
-      if (errno == ENODEV) {
-        request->clear();
-        *unmounted = true;
-        return testing::AssertionSuccess();
-        ;
-      }
       return testing::AssertionFailure() << "Failed to read FUSE request: " << strerror(errno);
     }
     request->resize(actual);
-    *unmounted = false;
     return testing::AssertionSuccess();
   }
 
@@ -727,6 +771,9 @@ class FuseServer {
 
   fbl::unique_fd fuse_fd_;
   uint64_t next_fh_ = 1;
+
+  fbl::unique_fd interrupt_pipe_read_;
+  fbl::unique_fd interrupt_pipe_write_;
 
   std::mutex init_mtx_;
   std::condition_variable init_cv_;
@@ -747,13 +794,20 @@ class FuseServerTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    if (mount_dir_) {
-      if (umount2(mount_dir_->c_str(), MNT_DETACH) != 0) {
-        FAIL() << "Unable to umount: " << strerror(errno);
-      }
-      mount_dir_.reset();
-      server_thread_.join();
+    // If we never mounted, then there's no cleanup to be done.
+    if (!mount_dir_) {
+      return;
     }
+
+    // Tear down and join the server thread, which will flush any pending requests and responses.
+    server_->Stop();
+    server_thread_.join();
+
+    // Finally, we can gracefully unmount the FUSE server.
+    if (umount2(mount_dir_->c_str(), MNT_DETACH) != 0) {
+      FAIL() << "Unable to umount: " << strerror(errno);
+    }
+    mount_dir_.reset();
   }
 
  protected:
@@ -2016,8 +2070,9 @@ TEST_F(FuseServerTest, InvalidateMountDir) {
     }
   });
   auto cleanup_child_mount = fit::defer([&]() {
-    umount2(child_mount_dir.c_str(), MNT_DETACH);
+    child_server->Stop();
     child_mount_thread.join();
+    umount2(child_mount_dir.c_str(), MNT_DETACH);
   });
   const std::string node_path = child_mount_dir + "/node";
   ASSERT_NO_FATAL_FAILURE(TestOpenWithFlags(node_path, O_RDONLY));
