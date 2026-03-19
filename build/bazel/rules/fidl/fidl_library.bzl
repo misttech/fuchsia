@@ -13,10 +13,10 @@ load(
     "get_idk_deps",
     "json_encode_dict_values",
 )
-load("//build/json:validate_json.bzl", "validate_json")
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 load(":fidl_cc_library.bzl", "fidl_cpp_family")
 load(":fidl_ir.bzl", "fidl_ir")
+load(":fidl_summary.bzl", "fidl_summary")
 
 # LINT.IfChange(determine_fidlc_versioned_arg)
 def _get_fidlc_versioned_arg(
@@ -267,10 +267,12 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/454397833): Support category markers or similar.
 
     fidl_gen_dir = "gen/%s" % name
-    fidl_ir_json = "%s.fidl.json" % name
     json_summary = "%s.api_summary.json" % name
 
-    compilation_target_name = "%s_compile" % name
+    # IMPORTANT: The name of this target must be the the same as the name that
+    # will be used in the `deps` of other FIDL libraries for reasons described
+    # in `fidl_ir()`.
+    fidl_ir_target_name = name  # "%s_compile" % name
 
     fidlc_versioned_arg, requires_compatibility_tests = _get_fidlc_versioned_arg(
         library_name = library_name,
@@ -281,30 +283,26 @@ def _fidl_library_impl(
     )
 
     fidl_ir(
-        name = compilation_target_name,
+        name = fidl_ir_target_name,
         library_name = library_name,
         fidl_library_target_name = name,
         srcs = srcs,
         deps = deps,
-        json_representation = fidl_ir_json,
-        out_json_summary = json_summary,
         available = available,
         versioned = fidlc_versioned_arg,
         experimental_flags = experimental_flags,
         testonly = testonly,
-        visibility = ["//visibility:private"],
+        # Other FIDL libraries depend on the IR target.
+        visibility = visibility,
     )
 
-    validate_json_target_name = "%s_validate_json" % name
-    validate_json(
-        name = validate_json_target_name,
-        data = fidl_ir_json,
-        schema = "//tools/fidl/fidlc:schema.json",
+    fidl_summary(
+        name = "%s_summary_json" % name,
+        input = fidl_ir_target_name,
+        output = json_summary,
         testonly = testonly,
         visibility = ["//visibility:private"],
     )
-
-    # TODO(https://fxbug.dev/428285014): Implement linting.
 
     # TODO(https://fxbug.dev/417306131): Implement PlaSA support.
 
@@ -316,7 +314,7 @@ def _fidl_library_impl(
         fidl_cpp_family(
             name = name,
             fidl_library_name = library_name,
-            fidl_ir_json = fidl_ir_json,
+            fidl_ir_json = fidl_ir_target_name,
             deps = deps,
             contains_drivers = contains_drivers,
             enable_cpp = enable_cpp,
@@ -348,7 +346,7 @@ def _fidl_library_impl(
             library_name = library_name,
             srcs = srcs,
             fidl_gen_dir = fidl_gen_dir + "/zither",
-            fidl_ir_json = fidl_ir_json,
+            fidl_ir_json = fidl_ir_target_name,
             testonly = testonly,
             visibility = visibility,
 
@@ -403,8 +401,8 @@ def _fidl_library_impl(
             api_contents_map = api_contents_map,
             files_map = idk_files_map,
             idk_deps = get_idk_deps(deps),
-            # TODO(https://fxbug.dev/428285014): Add validation, etc. targets.
-            atom_build_deps = [name],
+            # TODO(https://fxbug.dev/428285014): Add additional targets if necessary.
+            atom_build_deps = [fidl_ir_target_name],
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
             allowlist = allowlist,
             testonly = testonly,
@@ -412,22 +410,6 @@ def _fidl_library_impl(
         )
 
         # TODO(https://fxbug.dev/428285014): Implmenent sdk_fidl_json_data.
-
-    # TODO(https://fxbug.dev/428285014): This target may not be needed since
-    # dependencies should always be on the bindings or IDK targets. It may still
-    # be useful to have something like it to group together dependencies on
-    # other targets for the bindings and IDK atom target to depend on to ensure
-    # linting, etc. are always performed (avoiding https://fxbug.dev/381123422).
-    native.filegroup(
-        name = name,
-        srcs = [compilation_target_name, validate_json_target_name] + deps,
-        # For libraries in a category, add a deps on the allowlist to catch
-        # cases where the macro is used but there is no dependency on the atom
-        # target.
-        data = [allowlist],
-        testonly = testonly,
-        visibility = visibility,
-    )
 
 _fidl_library = macro(
     doc = """Declares a FIDL library.

@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Rules for generating FIDL IR."""
+"""Rules for generating and validating FIDL IR."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
-load(":fidl_summary.bzl", "fidl_summary")
+load("//build/json:validate_json.bzl", "validate_json")
 load(":providers.bzl", "FidlLibraryInfo")
 
 visibility("private")
@@ -83,13 +83,12 @@ def _fidlc_impl(ctx):
     return [
         FidlLibraryInfo(
             name = library_name,
-            ir = ctx.outputs.json_representation,
             srcs_depset = srcs_depset,
             libraries_file = libraries_file,
         ),
     ]
 
-fidlc = rule(
+_fidlc = rule(
     doc = "Runs the FIDL compiler to generate the FIDL IR.",
     implementation = _fidlc_impl,
     attrs = {
@@ -143,45 +142,84 @@ fidlc = rule(
     },
 )
 
-def fidl_ir(name, deps, json_representation, out_json_summary, testonly, visibility, **kwargs):
-    """Defines a FIDL library that will be compiled to IR.
+def _validated_ir_file_impl(ctx):
+    return [
+        # Allow the target to be used as the IR file.
+        ctx.attr.unvalidated_file[DefaultInfo],
+        # Pass through the `FidlLibraryInfo` provider so this target can be used
+        # as a `deps` by `_fidlc()`.
+        ctx.attr.unvalidated_file[FidlLibraryInfo],
+        # Ensure the `validation_targets` are built.
+        OutputGroupInfo(_validation = depset(ctx.files.validation_targets)),
+    ]
+
+_validated_ir_file = rule(
+    doc = "Ensures `validation_targets` are built and returns.",
+    implementation = _validated_ir_file_impl,
+    attrs = {
+        "unvalidated_file": attr.label(
+            mandatory = True,
+            providers = [FidlLibraryInfo],
+        ),
+        "validation_targets": attr.label_list(
+            doc = "The build dependencies",
+            mandatory = True,
+            allow_files = False,
+        ),
+    },
+)
+
+def fidl_ir(name, deps, testonly, visibility, **kwargs):
+    """Compiles a FIDL library to IR and returns the validated IR file.
 
     Args:
       name: Standard meaning.
       deps: List of labels of other FIDL libraries on which this library depends.
-      json_representation: Where to generate the FIDL IR.
-      out_json_summary: If set, a JSON API summary file will be generated at the given path.
       testonly: Standard meaning.
       visibility: Standard meaning.
 
       **kwargs: Arguments to pass to the underlying `fidlc` rule.
     """
     fidlc_target_name = "%s_fidlc" % name
-    main_target_deps = [fidlc_target_name]
 
-    fidlc(
+    _fidlc(
         name = fidlc_target_name,
-        deps = ["//{}:{}_compile_fidlc".format(dep.package, dep.name) for dep in deps],
-        json_representation = json_representation,
+        # IMPORTANT: The deps must be a label list that was passed to the
+        # top-most symbolic macro in order for visibility to be checked
+        # correctly. The reason for this is that label strings defined within
+        # a symbolic macro will have their visibility checked against the
+        # package containing the symbolic macro rather than the package
+        # containing the BUILD.bazel file. Since targets defined within a
+        # symbolic macro are visible to the package containing that macro, any
+        # string labels added here that reference a target defined within the
+        # symbolic macro (specifically, `name` below) would be visible to this
+        # target regardless of the `visibility` passed to `fidl_library()`.
+        # See https://fxbug.dev/446911800.
+        deps = deps,
+        json_representation = "%s.fidl.json" % name,
         testonly = testonly,
         visibility = ["//visibility:private"],
         **kwargs
     )
 
-    if out_json_summary:
-        fidl_summary_json_target_name = "%s_summary_json" % name
-        fidl_summary(
-            name = fidl_summary_json_target_name,
-            input = json_representation,
-            output = out_json_summary,
-            testonly = testonly,
-            visibility = ["//visibility:private"],
-        )
-        main_target_deps.append(fidl_summary_json_target_name)
+    validate_json_target_name = "%s_validate_json" % name
+    validate_json(
+        name = validate_json_target_name,
+        data = fidlc_target_name,
+        schema = "//tools/fidl/fidlc:schema.json",
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
 
-    native.filegroup(
+    # TODO(https://fxbug.dev/428285014): Implement linting of `srcs`.
+
+    # IMPORTANT: The name of this target must be the the same as the name that
+    # will be used in the `deps` of other FIDL libraries so that `deps` can be
+    # used unmodified as explained above.
+    _validated_ir_file(
         name = name,
-        srcs = main_target_deps,
+        unvalidated_file = fidlc_target_name,
+        validation_targets = [validate_json_target_name],
         testonly = testonly,
         visibility = visibility,
     )
