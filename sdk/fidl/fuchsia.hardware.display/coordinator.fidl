@@ -287,6 +287,9 @@ closed protocol Coordinator {
         // from its current display, via a call to
         // [`Coordinator.SetDisplayLayers`] that does not include the layer's
         // ID.
+        //
+        // The number of elements in `layer_ids` must not exceed the
+        // `max_layer_count` reported for the display in its [`Info`] struct.
         layer_ids vector<LayerId>:MAX;
     });
 
