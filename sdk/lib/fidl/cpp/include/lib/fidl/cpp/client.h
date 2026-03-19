@@ -218,6 +218,17 @@ class Client {
     return internal::Arrow<internal::WireWeakAsyncClientImpl<Protocol>>{&controller_.get()};
   }
 
+  // Returns the interface for making outgoing Synchronous FIDL calls using wire
+  // objects.
+  // The client must be initialized first.
+  //
+  // Persisting this pointer to a local variable is discouraged, since that
+  // results in unsafe borrows. Always prefer making calls directly via the
+  // |Client| reference-counting type.
+  auto wire_sync() const {
+    return internal::Arrow<internal::WireWeakSyncClientImpl<Protocol>>{&controller_.get()};
+  }
+
   // Attempts to disassociate the client object from its endpoint and stop
   // monitoring it for messages. After this call, subsequent operations will
   // fail with an unbound error.
@@ -506,6 +517,17 @@ class SharedClient final {
   // |Client| reference-counting type.
   auto wire() const {
     return internal::Arrow<internal::WireWeakAsyncClientImpl<Protocol>>{&controller_.get()};
+  }
+
+  // Returns the interface for making outgoing Synchronous FIDL calls using wire
+  // objects.
+  // The client must be initialized first.
+  //
+  // Persisting this pointer to a local variable is discouraged, since that
+  // results in unsafe borrows. Always prefer making calls directly via the
+  // |Client| reference-counting type.
+  auto wire_sync() const {
+    return internal::Arrow<internal::WireWeakSyncClientImpl<Protocol>>{&controller_.get()};
   }
 
  private:
