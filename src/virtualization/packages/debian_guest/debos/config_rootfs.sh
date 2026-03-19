@@ -84,6 +84,11 @@ crc32_pclmul
 virtio_pci
 crc32c_intel
 overlay
+uinput
+input-core
+loop
+tun
+tap
 EOF
 
 # Explicitly disable resume from swap. This is to ensure we never try to to
