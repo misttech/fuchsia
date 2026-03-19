@@ -256,6 +256,7 @@ syscall_tests_migrated_to_machina = [
   "loop_test",
   "membarrier_test",
   "memfd_test",
+  "overlayfs_test",
   "pidfd_test",
   "pipe_test",
   "poll_test",
