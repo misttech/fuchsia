@@ -139,6 +139,30 @@
         event_code: 69,
     },
     {
+        name: "PlatformDrivers",
+        process: "driver-host-#battery|driver-host-#cpu-and-suspend|driver-host-#gpio|driver-host-#pmic|driver-host-#power-and-clocks|driver-host-#qcom-shared|driver-host-#root|driver-host-#smmu|driver-host-#temperature-sensor|driver-host-#usb",
+        vmo: "",
+        event_code: 82,
+    },
+    {
+        name: "MCU",
+        process: "driver-host-#mcu",
+        vmo: "",
+        event_code: 83,
+    },
+    {
+        name: "ConnectivityDrivers",
+        process: "driver-host-#modem|driver-host-#nfc|driver-host-#uwb",
+        vmo: "",
+        event_code: 84,
+    },
+    {
+        name: "SecurityDrivers",
+        process: "driver-host-#tee",
+        vmo: "",
+        event_code: 85,
+    },
+    {
         // OtherDrivers should be after all the other driver buckets, to be able to catch all the
         // remaining drivers.
         name: "OtherDrivers",
