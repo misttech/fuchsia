@@ -1109,7 +1109,7 @@ mod tests {
 
         let decoded_fut = pin!(decoded_stream.next());
 
-        let mut chunks = sbc_data.as_slice().chunks(SBC_FRAME_SIZE);
+        let mut chunks = sbc_data.as_slice().chunks(SBC_FRAME_SIZE).cycle();
         let next_frame = chunks.next().unwrap();
 
         // Write an initial frame to the encoder.
@@ -1151,7 +1151,7 @@ mod tests {
         assert_eq!(512, decoded_frame.unwrap().unwrap().len(), "Decoded frame size wrong");
 
         // Fill the input buffer again so the input waker is registered.
-        let chunks = sbc_data.as_slice().chunks(SBC_FRAME_SIZE);
+        let chunks = sbc_data.as_slice().chunks(SBC_FRAME_SIZE).cycle();
         for frame in chunks {
             wake_count_before_stall = write_fut_wake_count.get();
             let mut written_fut = decoder.write(&frame);
