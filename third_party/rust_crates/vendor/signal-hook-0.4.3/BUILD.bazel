@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "signal-hook",
     package_url = "https://github.com/vorner/signal-hook",
-    package_version = "0.3.18",
+    package_version = "0.4.3",
 )
 
 license(
@@ -78,10 +78,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.18",
+    version = "0.4.3",
     deps = [
         "//third_party/rust_crates/vendor/libc-0.2.183:libc",
-        "//third_party/rust_crates/vendor/signal-hook-0.3.18:build_script_build",
+        "//third_party/rust_crates/vendor/signal-hook-0.4.3:build_script_build",
         "//third_party/rust_crates/vendor/signal-hook-registry-1.4.1:signal_hook_registry",
     ],
 )
@@ -136,7 +136,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "0.3.18",
+    version = "0.4.3",
     visibility = ["//visibility:private"],
 )
 

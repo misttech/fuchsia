@@ -21,6 +21,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::Error;
 use std::mem::MaybeUninit;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::io::AsRawFd;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,9 +40,9 @@ trait SelfPipeWrite: Debug + Send + Sync {
     fn wake_readers(&self);
 }
 
-impl<W: AsRawFd + Debug + Send + Sync> SelfPipeWrite for W {
+impl<W: AsFd + Debug + Send + Sync> SelfPipeWrite for W {
     fn wake_readers(&self) {
-        pipe::wake(self.as_raw_fd(), WakeMethod::Send);
+        pipe::wake(self.as_fd(), WakeMethod::Send);
     }
 }
 
@@ -147,8 +148,7 @@ impl<E: Exfiltrator> AddSignal for PendingSignals<E> {
     }
 }
 
-/// A struct to control an instance of an associated type
-/// (like for example [`Signals`][super::Signals]).
+/// A struct to control an instance of signal delivery.
 ///
 /// It allows to register more signal handlers and to shutdown the signal
 /// delivery. You can [`clone`][Handle::clone] this type which isn't a
@@ -264,11 +264,11 @@ where
     where
         I: IntoIterator<Item = S>,
         S: Borrow<c_int>,
-        W: 'static + AsRawFd + Debug + Send + Sync,
+        W: 'static + Into<OwnedFd> + Debug + Send + Sync,
     {
         let pending = Arc::new(PendingSignals::new(exfiltrator));
         let pending_add_signal = Arc::clone(&pending);
-        let handle = Handle::new(write, pending_add_signal);
+        let handle = Handle::new(write.into(), pending_add_signal);
         let me = Self {
             read,
             handle,

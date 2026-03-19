@@ -1013,7 +1013,7 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("signal-hook") {
-    public_deps = [ ":signal-hook-v0_3_18" ]
+    public_deps = [ ":signal-hook-v0_4_3" ]
   }
 }
 
@@ -17343,18 +17343,18 @@ rustc_library("signal-hook-v0_1_17") {
   applicable_licenses = [ ":signal-hook-v0_1_17.license" ]
 }
 
-license("signal-hook-v0_3_18.license") {
+license("signal-hook-v0_4_3.license") {
   public_package_name = "signal_hook"
   license_files = [
-    "//third_party/rust_crates/vendor/signal-hook-0.3.18/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/signal-hook-0.3.18/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("signal-hook-v0_3_18") {
+rustc_library("signal-hook-v0_4_3") {
   crate_name = "signal_hook"
-  source_root = "//third_party/rust_crates/vendor/signal-hook-0.3.18/src/lib.rs"
-  output_name = "signal_hook-6380e47f175f4a42"
+  source_root = "//third_party/rust_crates/vendor/signal-hook-0.4.3/src/lib.rs"
+  output_name = "signal_hook-5c6caee7b96c1e29"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17368,8 +17368,8 @@ rustc_library("signal-hook-v0_3_18") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6380e47f175f4a42",
-    "-Cextra-filename=-6380e47f175f4a42",
+    "-Cmetadata=5c6caee7b96c1e29",
+    "-Cextra-filename=-5c6caee7b96c1e29",
     "--cfg=feature=\"channel\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"iterator\"",
@@ -17377,7 +17377,7 @@ rustc_library("signal-hook-v0_3_18") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":signal-hook-v0_3_18.license" ]
+  applicable_licenses = [ ":signal-hook-v0_4_3.license" ]
 }
 
 license("signal-hook-registry-v1_4_1.license") {
