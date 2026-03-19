@@ -10,9 +10,11 @@
 
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/zxdb/client/async_task_provider.h"
 #include "src/developer/debug/zxdb/client/memory_dump.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
+#include "src/developer/debug/zxdb/expr/expr_language.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -71,6 +73,8 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   void LoadInfoHandleTable(
       fit::callback<void(ErrOr<std::vector<debug_ipc::InfoHandle>> handles)> callback) override;
   std::optional<debug_ipc::AddressRegion> GetSharedAddressSpace() const override;
+  std::vector<AsyncTaskProvider*> GetAsyncTaskProvidersForLanguage(
+      ExprLanguage language) const override;
 
   // Notifications from the agent that a thread has started or exited.
   void OnThreadStarting(const debug_ipc::ThreadRecord& record);
@@ -150,6 +154,11 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
 
   // Lazily-populated.
   mutable fxl::RefPtr<ProcessSymbolDataProvider> symbol_data_provider_;
+
+  // A map of language to asynchronous task provider implementations. The value of the map is a
+  // vector to support more than one asynchronous executor per language, e.g. to support both
+  // fuchsia-async and Tokio for Rust or async::Loop and asio in C++.
+  std::map<ExprLanguage, std::vector<std::unique_ptr<AsyncTaskProvider>>> async_task_providers_;
 
   // Memory cached from |FetchMemoryRanges|.
   std::vector<MemoryDump> cached_memory_;

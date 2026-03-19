@@ -25,6 +25,7 @@
 
 namespace zxdb {
 
+class AsyncTaskTree;
 class Err;
 class Frame;
 class Process;
@@ -161,6 +162,10 @@ class Thread : public ClientObject {
   // Returns the stack object associated with this thread.
   virtual const Stack& GetStack() const = 0;
   virtual Stack& GetStack() = 0;
+
+  // Returns the async task tree associated with this thread.
+  virtual const AsyncTaskTree& GetAsyncTaskTree() const = 0;
+  virtual AsyncTaskTree& GetAsyncTaskTree() = 0;
 
   // Provides the setting schema for this object.
   static fxl::RefPtr<SettingSchema> GetSchema();

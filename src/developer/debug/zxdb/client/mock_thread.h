@@ -8,17 +8,18 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/zxdb/client/async_task_tree.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/client/thread_controller.h"
 
 namespace zxdb {
 
-class MockThread : public Thread, public Stack::Delegate {
+class MockThread : public Thread, public Stack::Delegate, public AsyncTaskTree::Delegate {
  public:
   // The process and frame pointers must outlive this class.
   explicit MockThread(Process* process)
-      : Thread(process->session()), process_(process), stack_(this) {}
+      : Thread(process->session()), process_(process), stack_(this), async_task_tree_(this) {}
 
   // Thread implementation:
   Process* GetProcess() const override { return process_; }
@@ -44,6 +45,8 @@ class MockThread : public Thread, public Stack::Delegate {
   void StepInstructions(uint64_t count) override {}
   const Stack& GetStack() const override { return stack_; }
   Stack& GetStack() override { return stack_; }
+  const AsyncTaskTree& GetAsyncTaskTree() const override { return async_task_tree_; }
+  AsyncTaskTree& GetAsyncTaskTree() override { return async_task_tree_; }
 
   void SetState(std::optional<debug_ipc::ThreadRecord::State> state,
                 debug_ipc::ThreadRecord::BlockedReason blocked_reason =
@@ -72,6 +75,13 @@ class MockThread : public Thread, public Stack::Delegate {
   }
   void DidUpdateStackFrames() override {}
 
+  // AsyncTaskTree::Delegate implementation.
+  void SyncAsyncTasks(AsyncTaskTree* tree,
+                      fit::callback<void(const Err&, const Frame* const frame)> callback) override {
+    debug::MessageLoop::Current()->PostTask(
+        FROM_HERE, [callback = std::move(callback)]() mutable { callback(Err(), nullptr); });
+  }
+
   std::string thread_name_ = "test thread";
   Process* process_;
 
@@ -80,6 +90,7 @@ class MockThread : public Thread, public Stack::Delegate {
       debug_ipc::ThreadRecord::BlockedReason::kNotBlocked;
 
   Stack stack_;
+  AsyncTaskTree async_task_tree_;
 };
 
 }  // namespace zxdb

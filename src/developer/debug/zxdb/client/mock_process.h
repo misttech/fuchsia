@@ -61,6 +61,10 @@ class MockProcess : public Process {
   void LoadInfoHandleTable(
       fit::callback<void(ErrOr<std::vector<debug_ipc::InfoHandle>> handles)> callback) override;
   std::optional<debug_ipc::AddressRegion> GetSharedAddressSpace() const override;
+  std::vector<AsyncTaskProvider*> GetAsyncTaskProvidersForLanguage(
+      ExprLanguage language) const override {
+    return {};
+  }
 
   // unwinder::AsyncMemory::Delegate implementation.
   void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,

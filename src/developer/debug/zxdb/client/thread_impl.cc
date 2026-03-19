@@ -51,6 +51,7 @@ ThreadImpl::ThreadImpl(ProcessImpl* process, const debug_ipc::ThreadRecord& reco
       process_(process),
       koid_(record.id.thread),
       stack_(this),
+      async_task_tree_(this),
       weak_factory_(this) {
   SetMetadata(record);
   settings_.set_fallback(&process_->target()->settings());
@@ -272,6 +273,10 @@ void ThreadImpl::StepInstructions(uint64_t count) {
 const Stack& ThreadImpl::GetStack() const { return stack_; }
 
 Stack& ThreadImpl::GetStack() { return stack_; }
+
+const AsyncTaskTree& ThreadImpl::GetAsyncTaskTree() const { return async_task_tree_; }
+
+AsyncTaskTree& ThreadImpl::GetAsyncTaskTree() { return async_task_tree_; }
 
 void ThreadImpl::SetMetadata(const debug_ipc::ThreadRecord& record, bool skip_frames) {
   FX_DCHECK(koid_ == record.id.thread);
@@ -699,11 +704,51 @@ void ThreadImpl::DidUpdateStackFrames() {
   }
 }
 
+void ThreadImpl::SyncAsyncTasks(AsyncTaskTree* tree,
+                                fit::callback<void(const Err&, const Frame* frame)> callback) {
+  if (stack_.empty()) {
+    return callback(Err("No stack frames available to fetch async task tree."), nullptr);
+  }
+
+  // Look for a frame that can handle the async task tree.
+  for (size_t i = 0; i < stack_.size(); ++i) {
+    auto frame = stack_[i];
+    auto providers =
+        process()->GetAsyncTaskProvidersForLanguage(frame->GetEvalContext()->GetLanguage());
+    for (auto* provider : providers) {
+      if (provider->CanHandle(frame)) {
+        provider->GetTasks(
+            frame, [tree_ptr = tree->GetWeakPtr(), weak_frame = frame->GetWeakPtr(),
+                    cb = std::move(callback)](
+                       const Err& err, std::vector<std::unique_ptr<AsyncTask>> tasks) mutable {
+              if (err.has_error()) {
+                cb(err, nullptr);
+                return;
+              } else if (!tree_ptr) {
+                cb(Err("AsyncTaskTree destroyed while fetching tasks."), nullptr);
+                return;
+              } else if (!weak_frame) {
+                cb(Err("Frame destroyed while fetching tasks."), nullptr);
+                return;
+              }
+
+              tree_ptr->SetTasks(std::move(tasks));
+              cb(Err(), weak_frame.get());
+            });
+        return;
+      }
+    }
+  }
+
+  callback(Err("No async task provider found for any frame in the current stack."), nullptr);
+}
+
 void ThreadImpl::ClearState() {
   current_stop_info_ = std::nullopt;
   state_ = std::nullopt;
   blocked_reason_ = debug_ipc::ThreadRecord::BlockedReason::kNotBlocked;
   stack_.ClearFrames();
+  async_task_tree_.ClearTasks();
 }
 
 void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_stop,
@@ -734,6 +779,7 @@ void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_s
     if (should_stop) {
       current_stop_info_ = info;
       // Stay stopped and notify the observers.
+      bool debug_stepping = settings().GetBool(ClientSettings::Thread::kDebugStepping);
       if (debug_stepping)
         printf(" → Dispatching stop notification.\r\n");
       if (allow_notifications_) {

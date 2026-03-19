@@ -12,9 +12,11 @@
 
 #include "lib/fit/function.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/zxdb/client/async_task_provider.h"
 #include "src/developer/debug/zxdb/client/client_object.h"
 #include "src/developer/debug/zxdb/client/process_observer.h"
 #include "src/developer/debug/zxdb/common/err_or.h"
+#include "src/developer/debug/zxdb/expr/expr_language.h"
 #include "src/developer/debug/zxdb/symbols/symbol_data_provider.h"
 #include "src/lib/containers/cpp/circular_deque.h"
 #include "src/lib/fxl/macros.h"
@@ -223,6 +225,9 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
       fit::callback<void(ErrOr<std::vector<debug_ipc::InfoHandle>> handles)> callback) = 0;
 
   virtual std::optional<debug_ipc::AddressRegion> GetSharedAddressSpace() const = 0;
+
+  virtual std::vector<AsyncTaskProvider*> GetAsyncTaskProvidersForLanguage(
+      ExprLanguage language) const = 0;
 
   StartType start_type() const { return start_type_; }
   Kind kind() const { return kind_; }

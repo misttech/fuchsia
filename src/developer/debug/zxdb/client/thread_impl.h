@@ -9,6 +9,7 @@
 #include <list>
 
 #include "gtest/gtest_prod.h"
+#include "src/developer/debug/zxdb/client/async_task_tree.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -25,7 +26,7 @@ class Breakpoint;
 class FrameImpl;
 class ProcessImpl;
 
-class ThreadImpl final : public Thread, public Stack::Delegate {
+class ThreadImpl final : public Thread, public Stack::Delegate, public AsyncTaskTree::Delegate {
  public:
   ThreadImpl(ProcessImpl* process, const debug_ipc::ThreadRecord& record);
   ~ThreadImpl() override;
@@ -51,6 +52,8 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   void StepInstructions(uint64_t count) override;
   const Stack& GetStack() const override;
   Stack& GetStack() override;
+  const AsyncTaskTree& GetAsyncTaskTree() const override;
+  AsyncTaskTree& GetAsyncTaskTree() override;
 
   // Updates the thread metadata with new state from the agent. Does not issue any notifications.
   // When an exception is hit for example, everything needs to be updated first to a consistent
@@ -80,6 +83,10 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   Location GetSymbolizedLocationForAddress(uint64_t address) override;
   void DidUpdateStackFrames() override;
 
+  // AsyncTaskTree::Delegate implementation.
+  void SyncAsyncTasks(AsyncTaskTree* tree,
+                      fit::callback<void(const Err&, const Frame* const frame)> callback) override;
+
   // Helper for when local unwinding using CFI fails (the local unwinder will only try to use CFI).
   // This function is called to perform the unwinding on the target which will have synchronous
   // access to the process's memory, making the unwinding logic much simpler.
@@ -107,6 +114,17 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   uint64_t koid_;
 
   Stack stack_;
+
+  // TODO(https://fxbug.dev/490431008): Store this somewhere else, maybe the process?
+  //
+  // Single threaded executors make sense to store with the thread object they are bound to, but
+  // multithreaded executors are more complicated. Those should probably be stored on the process
+  // object with a mapping that tells us which threads are related to the executor and which are
+  // not.
+  //
+  // For now this is significantly simpler, but has some overhead if we synchronize the task tree
+  // from multiple threads.
+  AsyncTaskTree async_task_tree_;
 
   std::string name_;
   std::optional<debug_ipc::ThreadRecord::State> state_;

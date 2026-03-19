@@ -8,12 +8,14 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <algorithm>
+#include <iterator>
 #include <set>
 
 #include "lib/fit/defer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/zxdb/client/fuchsia_async_rust_task_provider.h"
 #include "src/developer/debug/zxdb/client/memory_dump.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/process_symbol_data_provider.h"
@@ -23,6 +25,7 @@
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
+#include "src/developer/debug/zxdb/expr/expr_language.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
 #include "src/developer/debug/zxdb/symbols/input_location.h"
 #include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
@@ -42,7 +45,17 @@ ProcessImpl::ProcessImpl(TargetImpl* target, uint64_t koid, const std::string& n
       component_info_(std::move(component_info)),
       shared_aspace_(std::move(shared_aspace)),
       symbols_(this, target->symbols()),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+  std::vector<std::unique_ptr<AsyncTaskProvider>> rust_providers;
+  rust_providers.emplace_back(std::make_unique<FuchsiaAsyncRustTaskProvider>());
+
+  async_task_providers_.emplace(ExprLanguage::kRust, std::move(rust_providers));
+
+  // We don't have any C or C++ providers yet, but make the language available to query the empty
+  // vector.
+  async_task_providers_.emplace(ExprLanguage::kC,
+                                std::vector<std::unique_ptr<AsyncTaskProvider>>{});
+}
 
 ProcessImpl::~ProcessImpl() {
   // Send notifications for all destroyed threads.
@@ -295,6 +308,21 @@ void ProcessImpl::LoadInfoHandleTable(
 
 std::optional<debug_ipc::AddressRegion> ProcessImpl::GetSharedAddressSpace() const {
   return shared_aspace_;
+}
+
+std::vector<AsyncTaskProvider*> ProcessImpl::GetAsyncTaskProvidersForLanguage(
+    ExprLanguage language) const {
+  FX_DCHECK(async_task_providers_.contains(language));
+
+  const auto& providers = async_task_providers_.find(language);
+  FX_DCHECK(providers != async_task_providers_.end());
+
+  std::vector<AsyncTaskProvider*> ret;
+  ret.reserve(providers->second.size());
+
+  std::ranges::transform(providers->second, std::back_inserter(ret),
+                         [](const auto& provider) { return provider.get(); });
+  return ret;
 }
 
 void ProcessImpl::OnThreadStarting(const debug_ipc::ThreadRecord& record) {
