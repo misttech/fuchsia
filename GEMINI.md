@@ -16,6 +16,9 @@ trigger a full Fuchsia build, it is slow and you should avoid using it.  Always
 ask the user before running `fx clean` or `fx clean-build` and avoid running it
 as much as possible.
 
+Do not specify individual targets after the `fx build` command. Doing so prevents
+certain Bazel targets from building correctly.
+
 To run a test, run `fx test <name of test>`. You can list
 available tests with `fx test --dry`. You can get JSON output by adding the
 arguments `--logpath -`. Run `fx test --help` for more information.
