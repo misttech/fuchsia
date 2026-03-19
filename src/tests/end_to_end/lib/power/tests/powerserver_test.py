@@ -152,6 +152,29 @@ class PowerSamplerTest(unittest.TestCase):
                     self.default_config, fallback_to_stub=False
                 )
 
+    @mock.patch("power.powerserver.resources.path")
+    @mock.patch("os.stat")
+    @mock.patch("os.chmod")
+    def test_with_hermetic_monsoon_power_sampler(
+        self,
+        mock_chmod: mock.MagicMock,
+        mock_stat: mock.MagicMock,
+        mock_path: mock.MagicMock,
+    ) -> None:
+        """Verifies the sampler correctly loads bundled resources."""
+        # Mock the context manager returned by resources.path
+        mock_path.return_value.__enter__.return_value = Path("/fake/path.pyz")
+        with powerserver.with_hermetic_monsoon_power_sampler(
+            str(self.output_dir_path), _METRIC_NAME, "12345"
+        ) as s:
+            assert isinstance(s, powerserver._RealPowerSampler)
+            # Check that the serial number was passed through
+            self.assertEqual(s._monsoon_serial, "12345")
+            # Verify the path was correctly rebased/stringified
+            self.assertEqual(s._config.measurepower_path, "/fake/path.pyz")
+            # Verify the hermetic flag is set
+            self.assertTrue(s._config.use_hermetic_measurepower)
+
     def test_create_power_sampler_with_measurepower_env_var(self) -> None:
         with mock.patch("os.environ.get", return_value="path/to/power"):
             power_sampler = powerserver.create_power_sampler(

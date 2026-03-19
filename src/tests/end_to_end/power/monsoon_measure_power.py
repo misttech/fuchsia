@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env fuchsia-vendored-python
 #
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -8,13 +8,6 @@ import argparse
 import inspect
 import os
 import sys
-
-# Check our environment variables.  We may need to extend our path in order to
-# find all of the libraries we will need for our imports.
-extra_paths = os.environ.get("MONSOON_PYTHON_LIBS", None)
-if extra_paths is not None:
-    path_list = [os.path.expanduser(x) for x in extra_paths.split(";")]
-    sys.path.extend(path_list)
 
 
 # Now parse our args.  Users may extend the path using arguments as well.
@@ -518,6 +511,20 @@ class Sampler:
 
 def main():
     try:
+        # TODO(https://fxbug.dev/485380087): Need a way to find libusb-1.0.so.o on the system.
+        # Prime (cache) libusb1's location based on expected default. This is needed
+        # because the default location is not being found.
+        import usb.backend.libusb1 as libusb1
+
+        backend = libusb1.get_backend(
+            find_library=lambda x: "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0"
+        )
+
+        if backend is None:
+            raise RuntimeError(
+                "No backend found using /usr/lib/x86_64-linux-gnu/libusb-1.0.so.0"
+            )
+
         # Open and close the monitor in case teardown failed to complete previously.
         HVMON = HVPM.Monsoon()
         HVMON.setup_usb(ARGS.serialno, pmapi.USB_protocol())
@@ -528,6 +535,13 @@ def main():
         HVMON = HVPM.Monsoon()
         HVMON.setup_usb(ARGS.serialno, pmapi.USB_protocol())
         HVMON.fillStatusPacket()
+
+        # Set USB passthrough mode to "Auto", which disables USB while taking
+        # measurements.
+        # NOTE(hjfreyer): This is an experiment to get the On-Wrist-Idle test
+        # case working. We should probably be enabling/disabling USB via a
+        # proper DMS API.
+        HVMON.setUSBPassthroughMode(2)
 
         # Create our sampler and tell it to go, outputting to the user specified
         # file as we do.

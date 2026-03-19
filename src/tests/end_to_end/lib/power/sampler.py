@@ -25,6 +25,8 @@ class PowerSamplerConfig:
     disabled: bool = False
     # Path of the measurepower tool (Optional)
     measurepower_path: str | None = None
+    # Use hermetic measurepower tool (Optional)
+    use_hermetic_measurepower: bool = False
 
 
 class _PowerSamplerState(enum.Enum):
