@@ -6,6 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fake-archive-accessor") {
+  testonly = true
   version = "0.1.0"
   edition = "2024"
 
