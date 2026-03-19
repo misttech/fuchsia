@@ -352,21 +352,21 @@ impl CurveMapper {
     }
 
     /// Calculates the UI level using the discharging splicing curve.
-    fn splice_for_discharging(real_level: f32, mid_point: CurvePoint) -> f32 {
-        debug!("mid point for discharging: {:?}", mid_point);
+    fn splice_for_discharging(real_level: f32, end_point: CurvePoint) -> f32 {
+        debug!("end point for discharging: {:?}", end_point);
         Self::splice_for_level(
             real_level,
             CurvePoint { real: Self::LEVEL_TRUE, ui: Self::LEVEL_TRUE },
-            mid_point,
+            end_point,
         )
     }
 
     /// Calculates the UI level using the charging splicing curve.
-    fn splice_for_charging(real_level: f32, mid_point: CurvePoint) -> f32 {
-        debug!("mid point for charging: {:?}", mid_point);
+    fn splice_for_charging(real_level: f32, end_point: CurvePoint) -> f32 {
+        debug!("end point for charging: {:?}", end_point);
         Self::splice_for_level(
             real_level,
-            mid_point,
+            end_point,
             CurvePoint { real: Self::LEVEL_FULL, ui: Self::LEVEL_FULL },
         )
     }
@@ -376,7 +376,7 @@ impl CurveMapper {
     //    Only leaves Unmodified state and reach Spoofing when level is Full;
     // 2. From Spoofing, can only arrive at Splicing when level drops below 95%;
     // 3. From Splicing, can reach Unmodified at 15%, or Spoofing at Full;
-    //    Within Splicing, if charging direction changes, record the mid point.
+    //    Within Splicing, if charging direction changes, record the end point.
     fn determine_new_state(&mut self, level: f32, charge_status: Option<fpower::ChargeStatus>) {
         let new_curve_state = match self.curve_state {
             CurveState::Unmodified => {
@@ -396,7 +396,7 @@ impl CurveMapper {
                     self.curve_state
                 }
             }
-            CurveState::Splicing(_mid_point_ref) => {
+            CurveState::Splicing(_end_point_ref) => {
                 if level < Self::LEVEL_TRUE {
                     CurveState::Unmodified
                 } else if charge_status == Some(fpower::ChargeStatus::Full)
@@ -420,17 +420,17 @@ impl CurveMapper {
     fn adjust_level(&mut self, level: f32, info: &mut fpower::BatteryInfo) {
         let new_level = match self.curve_state {
             CurveState::Spoofing => Self::LEVEL_FULL,
-            CurveState::Splicing(mid_point) => {
+            CurveState::Splicing(end_point) => {
                 if info.charge_status == Some(fpower::ChargeStatus::Charging) {
-                    Self::splice_for_charging(level, mid_point)
+                    Self::splice_for_charging(level, end_point)
                 } else {
-                    Self::splice_for_discharging(level, mid_point)
+                    Self::splice_for_discharging(level, end_point)
                 }
             }
             _ => level,
         };
 
-        self.prev_ui_level = level;
+        self.prev_ui_level = new_level;
         self.prev_charge_status = info.charge_status;
 
         info.level_percent = Some(new_level);
@@ -1388,7 +1388,7 @@ mod tests {
     #[fuchsia::test]
     fn test_polish_info() {
         let mut polisher = Polisher::new();
-        info!(" original mid point: {:?}", polisher.curve_mapper.curve_state);
+        info!(" original end point: {:?}", polisher.curve_mapper.curve_state);
 
         // Test when level_percent = shutdown offset
         let mut info = fpower::BatteryInfo {
@@ -1480,5 +1480,56 @@ mod tests {
             .into_seconds();
 
         assert_eq!(duration_fallback, 92);
+    }
+
+    #[fuchsia::test]
+    fn test_curve_mapper_direction_change_smoothness() {
+        let mut polisher = Polisher::new();
+
+        // Initial State: Full (triggers Spoofing)
+        let mut info = fpower::BatteryInfo {
+            level_percent: Some(100.0),
+            charge_status: Some(fpower::ChargeStatus::Full),
+            ..Default::default()
+        };
+        polisher.process_curve_state(&mut info);
+
+        // Discharge down to 95% (Spoofing phase)
+        for level in (95..100).rev() {
+            let lvl = level as f32;
+            info = fpower::BatteryInfo {
+                level_percent: Some(lvl),
+                charge_status: Some(fpower::ChargeStatus::Discharging),
+                ..Default::default()
+            };
+            polisher.process_curve_state(&mut info);
+            assert_eq!(info.level_percent.unwrap(), 100.0);
+        }
+
+        // Drop to 94% (Triggers Splicing)
+        info = fpower::BatteryInfo {
+            level_percent: Some(94.0),
+            charge_status: Some(fpower::ChargeStatus::Discharging),
+            ..Default::default()
+        };
+        polisher.process_curve_state(&mut info);
+
+        // UI level should be higher than raw level during discharge from full
+        let ui_level_discharging = info.level_percent.unwrap();
+        assert!(ui_level_discharging > 98.0, "UI level was {}", ui_level_discharging);
+
+        // Switch back to Charging at 94%
+        let mut info_charging = fpower::BatteryInfo {
+            level_percent: Some(94.0),
+            charge_status: Some(fpower::ChargeStatus::Charging),
+            ..Default::default()
+        };
+        polisher.process_curve_state(&mut info_charging);
+
+        let ui_level_charging = info_charging.level_percent.unwrap();
+
+        // It should match smoothly with the discharging level
+        assert_eq!(ui_level_charging, ui_level_discharging);
+        info!("UI level charging: {}, discharging: {}", ui_level_charging, ui_level_discharging);
     }
 }
