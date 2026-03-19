@@ -20,7 +20,6 @@
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy-regs.h"
 
 namespace aml_usb_phy {
-
 namespace {
 
 [[maybe_unused]] void dump_power_regs(const fdf::MmioBuffer& mmio) {
@@ -100,6 +99,10 @@ zx_status_t
 }
 
 }  // namespace
+
+AmlUsbPhyDevice::AmlUsbPhyDevice(fdf::DriverStartArgs start_args,
+                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+    : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 zx::result<> AmlUsbPhyDevice::Start() {
   // Get Reset Register.

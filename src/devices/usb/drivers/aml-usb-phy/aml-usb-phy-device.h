@@ -42,8 +42,8 @@ class AmlUsbPhyDevice : public fdf::DriverBase {
   static constexpr std::string_view kDeviceName = "aml_usb_phy";
 
   AmlUsbPhyDevice(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
+                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+
   zx::result<> Start() override;
   void Stop() override;
 
