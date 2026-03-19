@@ -174,7 +174,13 @@ impl std::ops::Div for [< $t:upper Range>] {
         if rhs.max == 0 {
             return Self::new(0, 0);
         }
-        let min = self.min / rhs.max;
+
+        let min = if rhs.min == 0 {
+            0
+        } else {
+            self.min / rhs.max
+        };
+
         let max = self.max / std::cmp::max(1, rhs.min);
         Self { min, max }
     }
