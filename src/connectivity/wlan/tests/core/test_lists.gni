@@ -10,8 +10,6 @@
 
 core_tests_for_general_cq = [
   "//src/connectivity/wlan/tests/core:connect_to_ap_test",
-  "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
-  "//src/connectivity/wlan/tests/core:sar_setting_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
 ]
 
@@ -27,6 +25,8 @@ core_tests_for_general_cq_no_shield_box = [
 core_tests_for_wlan_cq = [
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
+  "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
+  "//src/connectivity/wlan/tests/core:sar_setting_test",
 ]
 
 core_tests_for_fyi =

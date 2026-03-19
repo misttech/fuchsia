@@ -10,8 +10,6 @@
 
 wlancfg_tests_for_general_cq = [
   "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
-  "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
-  "//src/connectivity/wlan/tests/wlancfg:suggest_ap_mac_address_test",
 ]
 
 # Only tests which do not interact with an AP or SoftAP can be run
@@ -19,6 +17,9 @@ wlancfg_tests_for_general_cq = [
 # CQ, where capacity is lower.
 wlancfg_tests_for_general_cq_no_shield_box = []
 
-wlancfg_tests_for_wlan_cq = []
+wlancfg_tests_for_wlan_cq = [
+  "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
+  "//src/connectivity/wlan/tests/wlancfg:suggest_ap_mac_address_test",
+]
 
 wlancfg_tests_for_fyi = []
