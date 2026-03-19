@@ -115,7 +115,8 @@ bool RingBufferFormatIsSupported(
     ElementId element_id,
     const std::vector<fad::ElementRingBufferFormatSet>& element_ring_buffer_format_sets,
     const fha::Format2& format) {
-  if (!ValidateRingBufferFormat(format)) {
+  if (format.Which() != fha::Format2::Tag::kPcmFormat ||
+      !ValidatePcmFormat(format.pcm_format().value())) {
     return false;
   }
   std::optional<std::vector<fad::PcmFormatSet>> ring_buffer_format_sets;

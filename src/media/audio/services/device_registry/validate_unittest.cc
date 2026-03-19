@@ -302,31 +302,31 @@ TEST(ValidateTest, ValidateRingBufferFormatSets) {
 
 // TODO(https://fxbug.dev/42069012): Unittest TranslateRingBufferFormatSets
 
-TEST(ValidateTest, ValidateRingBufferFormat) {
+TEST(ValidateTest, ValidatePcmFormat) {
   for (auto chans : kChannels) {
     for (auto [bytes, sample_format] : kFormats) {
       for (auto rate : kFrameRates) {
-        EXPECT_TRUE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+        EXPECT_TRUE(ValidatePcmFormat(fha::PcmFormat{{
             .number_of_channels = chans,
             .sample_format = sample_format,
             .bytes_per_sample = bytes,
             .valid_bits_per_sample = 1,
             .frame_rate = rate,
-        }})));
-        EXPECT_TRUE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+        }}));
+        EXPECT_TRUE(ValidatePcmFormat(fha::PcmFormat{{
             .number_of_channels = chans,
             .sample_format = sample_format,
             .bytes_per_sample = bytes,
             .valid_bits_per_sample = static_cast<uint8_t>(bytes * 8 - 4),
             .frame_rate = rate,
-        }})));
-        EXPECT_TRUE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+        }}));
+        EXPECT_TRUE(ValidatePcmFormat(fha::PcmFormat{{
             .number_of_channels = chans,
             .sample_format = sample_format,
             .bytes_per_sample = bytes,
             .valid_bits_per_sample = static_cast<uint8_t>(bytes * 8),
             .frame_rate = rate,
-        }})));
+        }}));
       }
     }
   }
@@ -371,6 +371,50 @@ TEST(ValidateTest, ValidateDelayInfo) {
   EXPECT_TRUE(ValidateDelayInfo(fha::DelayInfo{{
       .internal_delay = 0,
       .external_delay = 125,
+  }}));
+}
+
+TEST(ValidateTest, ValidatePacketStreamProperties) {
+  EXPECT_TRUE(ValidatePacketStreamProperties(fha::PacketStreamProperties{{
+      .needs_cache_flush_or_invalidate = true,
+      .supported_buffer_types = fha::BufferType::kClientOwned,
+  }}));
+  EXPECT_TRUE(ValidatePacketStreamProperties(fha::PacketStreamProperties{{
+      .needs_cache_flush_or_invalidate = false,
+      .supported_buffer_types = fha::BufferType::kDriverOwned | fha::BufferType::kInline,
+  }}));
+}
+
+TEST(ValidateTest, ValidatePacketStreamFormatSets) {
+  EXPECT_TRUE(ValidatePacketStreamFormatSets({{
+      fha::SupportedFormats2::WithPcmSupportedFormats(fha::PcmSupportedFormats{{
+          .channel_sets = {{fha::ChannelSet{{.attributes = {{fha::ChannelAttributes{}}}}}}},
+          .sample_formats = {{fha::SampleFormat::kPcmSigned}},
+          .bytes_per_sample = {{2}},
+          .valid_bits_per_sample = {{16}},
+          .frame_rates = {{48000}},
+      }}),
+      fha::SupportedFormats2::WithSupportedEncodings(fha::SupportedEncodings{{
+          .decoded_channel_sets = {{fha::ChannelSet{{.attributes = {{fha::ChannelAttributes{}}}}}}},
+          .decoded_frame_rates = {{44100}},
+          .encoding_types = {{fha::EncodingType::kAac}},
+      }}),
+  }}));
+}
+
+TEST(ValidateTest, ValidateEncoding) {
+  EXPECT_TRUE(ValidateEncoding(fha::Encoding{{
+      .decoded_channel_count = 1,
+      .decoded_frame_rate = 16000,
+      .average_encoding_bitrate = 16000,
+      .encoding_type = fha::EncodingType::kSbc,
+  }}));
+
+  EXPECT_TRUE(ValidateEncoding(fha::Encoding{{
+      .decoded_channel_count = 1,
+      .average_encoding_bitrate = 128000,
+      .encoding_type = fha::EncodingType::kAac,
+      // decoded_frame_rate is optional, testing that absence is okay.
   }}));
 }
 
@@ -470,6 +514,7 @@ TEST(ValidateTest, ValidateTopology) {
   EXPECT_TRUE(ValidateTopology(kTopologyDaiAgcDynRb, MapElements(kElements)));
   EXPECT_TRUE(ValidateTopology(kTopologyDaiRb, MapElements(kElements)));
   EXPECT_TRUE(ValidateTopology(kTopologyRbDai, MapElements(kElements)));
+  EXPECT_TRUE(ValidateTopology(kTopologyPsDai, MapElements(kElements)));
   EXPECT_TRUE(ValidateTopology(kTopologyDaiAgcDynRbAndLoop, MapElements(kElementsWithLoopDai)));
 }
 
@@ -477,6 +522,7 @@ TEST(ValidateTest, ValidateElements) { EXPECT_TRUE(ValidateElements(kElements));
 
 TEST(ValidateTest, ValidateElement) {
   EXPECT_TRUE(ValidateElement(kAgcElement));
+  EXPECT_TRUE(ValidateElement(kPacketStreamElement));
   EXPECT_TRUE(ValidateElement(kRingBufferElement));
 }
 

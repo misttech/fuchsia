@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 #include "src/media/audio/services/device_registry/logging.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite_packet_stream.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite_ring_buffer.h"
-
 namespace media_audio {
 
 namespace fha = fuchsia_hardware_audio;
@@ -72,12 +72,72 @@ bool ElementStateMatchesSettableElementState(
 }
 
 bool FormatIsSupported(const fha::Format2& format,
-                       const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
-  if (format.Which() != fha::Format2::Tag::kPcmFormat) {
+                       const std::vector<fha::SupportedFormats2>& format_sets) {
+  if (format.Which() != fha::Format2::Tag::kPcmFormat &&
+      format.Which() != fha::Format2::Tag::kEncoding) {
     return false;
   }
 
-  for (const auto& format_set : ring_buffer_format_sets) {
+  if (format.Which() == fha::Format2::Tag::kEncoding) {
+    if (!format.encoding()->encoding_type().has_value() ||
+        !format.encoding()->decoded_channel_count().has_value() ||
+        !format.encoding()->average_encoding_bitrate().has_value()) {
+      return false;
+    }
+    for (const auto& format_set : format_sets) {
+      if (format_set.Which() != fha::SupportedFormats2::Tag::kSupportedEncodings) {
+        continue;
+      }
+      const auto& supported_encodings = format_set.supported_encodings().value();
+      if (!supported_encodings.encoding_types().has_value()) {
+        continue;
+      }
+      bool type_match = false;
+      for (const auto& encoding_type : supported_encodings.encoding_types().value()) {
+        if (encoding_type == format.encoding()->encoding_type().value()) {
+          type_match = true;
+          break;
+        }
+      }
+      if (!type_match) {
+        continue;
+      }
+
+      if (supported_encodings.decoded_channel_sets().has_value()) {
+        bool channel_match = false;
+        for (const auto& channel_set : supported_encodings.decoded_channel_sets().value()) {
+          if (channel_set.attributes()->size() ==
+              format.encoding()->decoded_channel_count().value()) {
+            channel_match = true;
+            break;
+          }
+        }
+        if (!channel_match) {
+          continue;
+        }
+      }
+
+      if (supported_encodings.decoded_frame_rates().has_value() &&
+          format.encoding()->decoded_frame_rate().has_value()) {
+        bool rate_match = false;
+        for (const auto& frame_rate : supported_encodings.decoded_frame_rates().value()) {
+          if (frame_rate == format.encoding()->decoded_frame_rate().value()) {
+            rate_match = true;
+            break;
+          }
+        }
+        if (!rate_match) {
+          continue;
+        }
+      }
+
+      return true;
+    }
+    return false;
+  }
+
+  // PCM format sets
+  for (const auto& format_set : format_sets) {
     if (format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
       continue;
     }
@@ -161,6 +221,8 @@ FakeComposite::FakeComposite(zx::channel server_end, zx::channel client_end,
   SetupElementsMap();
 }
 
+FakeComposite::~FakeComposite() { ADR_LOG_METHOD(kLogFakeComposite || kLogObjectLifetimes); }
+
 // From the device side, drop the Composite protocol connection as if the device has been removed.
 void FakeComposite::DropComposite() {
   FX_CHECK(binding_.has_value()) << "Should not call DropComposite() twice";
@@ -176,6 +238,8 @@ void FakeComposite::DropChildren() {
   get_properties_completers_.clear();
   get_ring_buffer_formats_completers_.clear();
   create_ring_buffer_completers_.clear();
+  get_packet_stream_formats_completers_.clear();
+  create_packet_stream_completers_.clear();
   get_dai_formats_completers_.clear();
   reset_completers_.clear();
   set_dai_format_completers_.clear();
@@ -190,6 +254,7 @@ void FakeComposite::DropChildren() {
   unknown_method_completers_.clear();
 
   DropRingBuffers();
+  DropPacketStreams();
 
   for (auto& element_entry_pair : elements_) {
     if (element_entry_pair.second.watch_completer.has_value()) {
@@ -202,11 +267,20 @@ void FakeComposite::DropChildren() {
   }
 }
 
-// From the driver side, drop the RingBuffer protocol connection for this element_id.
+// From the driver side, drop all RingBuffer protocol connections for this device.
 void FakeComposite::DropRingBuffers() {
   ADR_LOG_METHOD(kLogFakeComposite);
 
   for (auto& binding : ring_buffer_bindings_) {
+    binding.second.Unbind();
+  }
+}
+
+// From the driver side, drop all PacketStream protocol connection for this device.
+void FakeComposite::DropPacketStreams() {
+  ADR_LOG_METHOD(kLogFakeComposite);
+
+  for (auto& binding : packet_stream_bindings_) {
     binding.second.Unbind();
   }
 }
@@ -224,12 +298,32 @@ void FakeComposite::DropRingBuffer(ElementId element_id) {
   ADR_WARN_METHOD() << "No ring_buffer binding found for element_id " << element_id;
 }
 
+// From the driver side, drop the PacketStream protocol connection for this element_id.
+void FakeComposite::DropPacketStream(ElementId element_id) {
+  ADR_LOG_METHOD(kLogFakeComposite) << "element_id " << element_id;
+
+  for (auto& binding : packet_stream_bindings_) {
+    if (binding.first == element_id) {
+      binding.second.Unbind();
+      return;
+    }
+  }
+  ADR_WARN_METHOD() << "No packet_stream binding found for element_id " << element_id;
+}
+
 // static
 void FakeComposite::on_rb_unbind(FakeCompositeRingBuffer* fake_ring_buffer, fidl::UnbindInfo info,
                                  fidl::ServerEnd<fha::RingBuffer>) {
   ADR_LOG(kLogFakeComposite) << "for FakeCompositeRingBuffer";
 
   fake_ring_buffer->parent()->RingBufferWasDropped(fake_ring_buffer->element_id());
+}
+
+void FakeComposite::on_ps_unbind(FakeCompositePacketStream* fake_packet_stream,
+                                 fidl::UnbindInfo info, fidl::ServerEnd<fha::PacketStreamControl>) {
+  ADR_LOG(kLogFakeComposite) << "for FakeCompositePacketStream";
+
+  fake_packet_stream->parent()->PacketStreamWasDropped(fake_packet_stream->element_id());
 }
 
 // The RingBuffer FIDL connection has already been dropped, so there's nothing else for the parent
@@ -239,6 +333,15 @@ void FakeComposite::RingBufferWasDropped(ElementId element_id) {
 
   ring_buffer_bindings_.erase((element_id));
   ring_buffers_.erase(element_id);
+}
+
+// The PacketStream FIDL connection has already been dropped, so there's nothing else for the parent
+// driver to do, except clean up our accounting.
+void FakeComposite::PacketStreamWasDropped(ElementId element_id) {
+  ADR_LOG_METHOD(kLogFakeComposite) << "element_id " << element_id;
+
+  packet_stream_bindings_.erase((element_id));
+  packet_streams_.erase(element_id);
 }
 
 fidl::ClientEnd<fha::Composite> FakeComposite::Enable() {
@@ -261,21 +364,29 @@ void FakeComposite::SetupElementsMap() {
                                                          .state = kDestDaiElementInitState}});
   elements_.insert({kDestRbElementId, FakeElementRecord{.element = kDestRbElement,
                                                         .state = kDestRbElementInitState}});
+  elements_.insert({kDestPsElementId, FakeElementRecord{.element = kDestPsElement,
+                                                        .state = kDestPsElementInitState}});
   elements_.insert({kSourceRbElementId, FakeElementRecord{.element = kSourceRbElement,
                                                           .state = kSourceRbElementInitState}});
+  elements_.insert({kSourcePsElementId, FakeElementRecord{.element = kSourcePsElement,
+                                                          .state = kSourcePsElementInitState}});
   elements_.insert(
       {kMuteElementId, FakeElementRecord{.element = kMuteElement, .state = kMuteElementInitState}});
 
   ASSERT_TRUE(elements_.at(kSourceDaiElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kDestDaiElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kDestRbElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kDestPsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourceRbElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kSourcePsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kMuteElementId).state_has_changed);
 
   ASSERT_FALSE(elements_.at(kSourceDaiElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kDestDaiElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kDestRbElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kDestPsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourceRbElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kSourcePsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kMuteElementId).watch_completer.has_value());
 }
 
@@ -322,6 +433,9 @@ void FakeComposite::Reset(ResetCompleter::Sync& completer) {
 
   // Reset any RingBuffers (start, format)
   DropRingBuffers();
+
+  // Reset any PacketStreams (start, format)
+  DropPacketStreams();
 
   // Reset any DAIs (start, format)
 
@@ -390,6 +504,39 @@ void FakeComposite::GetRingBufferFormats(GetRingBufferFormatsRequest& request,
   }
 
   completer.Reply(fit::success(ring_buffer_format_sets->second));
+}
+
+void FakeComposite::GetPacketStreamFormats(GetPacketStreamFormatsRequest& request,
+                                           GetPacketStreamFormatsCompleter::Sync& completer) {
+  auto element_id = request.processing_element_id();
+  ADR_LOG_METHOD(kLogFakeComposite) << "(" << element_id << ")";
+
+  // If we've been instructed to be unresponsive, pend the completer - indefinitely.
+  if (!responsive()) {
+    get_packet_stream_formats_completers_.emplace_back(completer.ToAsync());
+    return;
+  }
+
+  auto element_pair_iter = elements_.find(element_id);
+  if (element_pair_iter == elements_.end()) {
+    ADR_WARN_METHOD() << "unrecognized element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kInvalidArgs));
+    return;
+  }
+  if (*element_pair_iter->second.element.type() != fhasp::ElementType::kPacketStream) {
+    ADR_WARN_METHOD() << "wrong type for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kWrongType));
+    return;
+  }
+
+  auto packet_stream_format_sets = kDefaultPsFormatsMap.find(element_id);
+  if (packet_stream_format_sets == kDefaultPsFormatsMap.end()) {
+    ADR_WARN_METHOD() << "no packet_stream_format_sets specified for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kInvalidArgs));
+    return;
+  }
+
+  completer.Reply(fit::success(packet_stream_format_sets->second));
 }
 
 void FakeComposite::ReserveRingBufferSize(ElementId element_id, size_t size) {
@@ -503,6 +650,68 @@ void FakeComposite::CreateRingBuffer(CreateRingBufferRequest& request,
       element_id,
       fidl::BindServer(dispatcher_, std::move(request.ring_buffer()),
                        ring_buffers_.at(element_id).get(), &FakeComposite::on_rb_unbind));
+
+  completer.Reply(fit::ok());
+}
+
+void FakeComposite::CreatePacketStream(CreatePacketStreamRequest& request,
+                                       CreatePacketStreamCompleter::Sync& completer) {
+  auto element_id = request.processing_element_id();
+  ADR_LOG_METHOD(kLogFakeComposite) << "(" << element_id << ")";
+
+  // If we've been instructed to be unresponsive, pend the completer - indefinitely.
+  if (!responsive()) {
+    create_packet_stream_completers_.emplace_back(completer.ToAsync());
+    return;
+  }
+
+  auto element_pair_iter = elements_.find(element_id);
+  if (element_pair_iter == elements_.end()) {
+    ADR_WARN_METHOD() << "unrecognized element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kInvalidArgs));
+    return;
+  }
+  if (*element_pair_iter->second.element.type() != fhasp::ElementType::kPacketStream) {
+    ADR_WARN_METHOD() << "wrong type for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kWrongType));
+    return;
+  }
+
+  auto packet_stream_format_sets_iter = kDefaultPsFormatsMap.find(element_id);
+  if (packet_stream_format_sets_iter == kDefaultPsFormatsMap.end()) {
+    ADR_WARN_METHOD() << "no packet_stream_format_sets specified for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kInvalidArgs));
+    return;
+  }
+  const auto& packet_stream_format_sets = packet_stream_format_sets_iter->second;
+
+  if (!FormatIsSupported(request.format(), packet_stream_format_sets)) {
+    ADR_WARN_METHOD() << "packet_stream_format not supported for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kNotSupported));
+    return;
+  }
+
+  if (!request.packet_stream_control().is_valid()) {
+    ADR_WARN_METHOD() << "packet_stream_control server_end is invalid";
+    completer.Reply(fit::error(fha::DriverError::kInvalidArgs));
+    return;
+  }
+
+  auto buffer_types = fha::BufferType::kClientOwned | fha::BufferType::kDriverOwned;
+  if (auto match = inject_packet_stream_buffer_types_.find(element_id);
+      match != inject_packet_stream_buffer_types_.end()) {
+    buffer_types = match->second;
+  }
+
+  auto packet_stream_impl =
+      std::make_unique<FakeCompositePacketStream>(this, element_id, request.format(), buffer_types);
+
+  packet_streams_.erase(element_id);
+  packet_streams_.insert({element_id, std::move(packet_stream_impl)});
+  packet_stream_bindings_.insert_or_assign(
+      element_id,
+      fidl::BindServer(dispatcher_, std::move(request.packet_stream_control()),
+                       packet_streams_.at(element_id).get(), &FakeComposite::on_ps_unbind));
 
   completer.Reply(fit::ok());
 }
@@ -893,6 +1102,33 @@ void FakeComposite::MaybeCompleteWatchTopology() {
   } else {
     ADR_LOG_STATIC(kLogFakeComposite) << "Not completing WatchTopology";
   }
+}
+
+uint64_t FakeComposite::RingBufferActiveChannelsBitmask(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
+  return ring_buffers_.find(element_id)->second->active_channels_bitmask();
+}
+
+zx::time FakeComposite::RingBufferSetActiveChannelsCompletedAt(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
+  return ring_buffers_.find(element_id)->second->set_active_channels_completed_at();
+}
+
+bool FakeComposite::RingBufferStarted(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
+  return ring_buffers_.find(element_id)->second->started();
+}
+
+zx::time FakeComposite::RingBufferMonoStartTime(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
+  return ring_buffers_.find(element_id)->second->mono_start_time();
+}
+
+void FakeComposite::RingBufferInjectDelayUpdate(ElementId element_id,
+                                                std::optional<zx::duration> internal_delay,
+                                                std::optional<zx::duration> external_delay) {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
+  ring_buffers_.find(element_id)->second->InjectDelayUpdate(internal_delay, external_delay);
 }
 
 }  // namespace media_audio

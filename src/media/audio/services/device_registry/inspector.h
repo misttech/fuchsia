@@ -5,7 +5,7 @@
 #ifndef SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_INSPECTOR_H_
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_INSPECTOR_H_
 
-#include <fidl/fuchsia.audio.device/cpp/common_types.h>
+#include <fidl/fuchsia.audio.device/cpp/natural_types.h>
 #include <lib/async/dispatcher.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -42,6 +42,7 @@ static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
 
 static constexpr std::string_view kDaiElements = "DAI_elements";
 static constexpr std::string_view kRingBufferElements = "RingBuffer_elements";
+static constexpr std::string_view kPacketStreamElements = "PacketStream_elements";
 static constexpr std::string_view kDescription = "description";
 static constexpr std::string_view kElementId = "element_id";
 
@@ -54,6 +55,9 @@ static constexpr std::string_view kChannelCount = "channel_count";
 static constexpr std::string_view kFramesPerSecond = "frames_per_second";
 static constexpr std::string_view kFrameFormat = "frame_format";
 static constexpr std::string_view kSampleFormat = "sample_format";
+static constexpr std::string_view kEncodingType = "encoding_type";
+static constexpr std::string_view kMinBitrate = "min_bitrate";
+static constexpr std::string_view kMaxBitrate = "max_bitrate";
 static constexpr std::string_view kMinFrequency = "min_frequency";
 static constexpr std::string_view kMaxFrequency = "max_frequency";
 
@@ -151,6 +155,32 @@ class RingBufferInspectInstance {
   inspect::Node format_node_;
 };
 
+// This represents an active instance of the audio driver PacketStream protocol.
+class PacketStreamInspectInstance {
+ public:
+  PacketStreamInspectInstance(inspect::Node packet_stream_instance_node,
+                              const zx::time& created_at);
+  ~PacketStreamInspectInstance();
+
+  void RecordDestructionTime(const zx::time& destroyed_at);
+
+  void RecordStartTime(const zx::time& started_at);
+  void RecordStopTime(const zx::time& stopped_at);
+
+  inspect::Node& inspect_node() { return packet_stream_instance_node_; }
+
+ private:
+  static constexpr std::string_view kClassName = "PacketStreamInspectInstance";
+
+  inspect::Node packet_stream_instance_node_;
+
+  inspect::Node running_intervals_root_node_;
+  std::vector<std::shared_ptr<RunningIntervalInspectInstance>> running_intervals_;
+
+  inspect::Node buffer_node_;
+  inspect::Node format_node_;
+};
+
 //           rb_format_set_0
 //             channel_count
 //               [0]
@@ -162,13 +192,31 @@ struct ChannelSetRecord {
   std::vector<inspect::Node> channel_nodes;
 };
 
-struct RingBufferFormatSetRecord {
-  inspect::Node ring_buffer_format_set_node;
-  inspect::Node ring_buffer_format_channel_sets_node;
-  std::vector<ChannelSetRecord> ring_buffer_format_channel_sets;
-  inspect::UintArray ring_buffer_format_set_frame_rates;
-  inspect::StringArray ring_buffer_format_set_sample_formats;
+struct SupportedPcmFormatsRecord {
+  inspect::Node pcm_format_set_node;
+  inspect::Node channel_sets_node;
+  std::vector<ChannelSetRecord> channel_sets;
+  inspect::UintArray frame_rates;
+  inspect::StringArray sample_formats;
 };
+struct SupportedEncodingsRecord {
+  inspect::Node encodings_node;
+  inspect::Node decoded_channel_sets_node;
+  std::vector<ChannelSetRecord> decoded_channel_sets;
+  inspect::UintArray decoded_frame_rates;
+  inspect::UintProperty min_encoding_bitrate;
+  inspect::UintProperty max_encoding_bitrate;
+  inspect::StringArray encoding_types;
+};
+
+void RecordSupportedPcmFormatSets(
+    inspect::Node& header_node, std::vector<SupportedPcmFormatsRecord>& records,
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets, std::string_view prefix);
+
+void RecordSupportedEncodingSets(
+    inspect::Node& header_node, std::vector<SupportedEncodingsRecord>& records,
+    const std::vector<fuchsia_hardware_audio::SupportedEncodings>& encodings,
+    std::string_view prefix);
 
 // This represents a ring buffer element expressed in the hardware topology. Over time, it may have
 // RingBufferInspectInstance children, if a client connects to the RingBuffer API.
@@ -191,10 +239,36 @@ class RingBufferElement {
 
   inspect::Node ring_buffer_element_node_;
   inspect::Node ring_buffer_format_sets_header_node_;
-  std::vector<RingBufferFormatSetRecord> ring_buffer_format_sets_;
+  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
   ElementId element_id_;
 
   std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
+};
+
+// This represents a packet stream element expressed in the hardware topology. Over time, it may
+// have PacketStreamInspectInstance children, if a client connects to the PacketStream API.
+class PacketStreamElement {
+ public:
+  PacketStreamElement(inspect::Node packet_stream_element_node, ElementId element_id,
+                      const std::optional<std::string>& element_name);
+  ~PacketStreamElement();
+
+  inspect::Node& inspect_node() { return packet_stream_element_node_; }
+  std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
+      const zx::time& created_at);
+
+  ElementId element_id() const { return element_id_; }
+
+ private:
+  static constexpr std::string_view kClassName = "PacketStreamElement";
+
+  inspect::Node packet_stream_element_node_;
+  inspect::Node packet_stream_format_sets_header_node_;
+  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
+  std::vector<SupportedEncodingsRecord> supported_encodings_;
+  ElementId element_id_;
+
+  std::vector<std::shared_ptr<PacketStreamInspectInstance>> packet_stream_instances_;
 };
 
 struct DaiFormatSetRecord {
@@ -261,6 +335,11 @@ class DeviceInspectInstance {
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(ElementId element_id,
                                                                       const zx::time& created_at);
 
+  std::shared_ptr<PacketStreamElement> RecordPacketStreamElement(
+      ElementId element_id, const std::optional<std::string>& element_name);
+  std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
+      ElementId element_id, const zx::time& created_at);
+
   void RecordCommandTimeout(const std::string& cmd_tag, const zx::duration& expected,
                             std::optional<zx::duration> actual);
   void RecordError(const zx::time& failed_at);
@@ -274,6 +353,7 @@ class DeviceInspectInstance {
 
   inspect::Node dai_elements_root_node_;
   inspect::Node ring_buffer_elements_root_node_;
+  inspect::Node packet_stream_elements_root_node_;
 
   inspect::BoolProperty healthy_;
   inspect::UintProperty count_timeout_;
@@ -281,10 +361,11 @@ class DeviceInspectInstance {
 
   std::vector<std::shared_ptr<DaiElement>> dai_elements_;
   std::vector<std::shared_ptr<RingBufferElement>> ring_buffer_elements_;
+  std::vector<std::shared_ptr<PacketStreamElement>> packet_stream_elements_;
 };
 
-// This represents a client connection to one of the six ADR FIDL protocols:
-// Registry, Observer, ControlCreator, Control, RingBuffer or Provider.
+// This represents a client connection to one of the seven ADR FIDL protocols:
+// Registry, Observer, ControlCreator, Control, RingBuffer, PacketStream or Provider.
 class FidlServerInspectInstance {
  public:
   FidlServerInspectInstance(inspect::Node instance_node, const zx::time& created_at);
@@ -355,6 +436,7 @@ class Inspector {
       const zx::time& created_at);
   std::shared_ptr<FidlServerInspectInstance> RecordControlInstance(const zx::time& created_at);
   std::shared_ptr<FidlServerInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
+
   std::shared_ptr<ProviderInspectInstance> RecordProviderInspectInstance(
       const zx::time& created_at);
 
@@ -385,6 +467,7 @@ class Inspector {
   inspect::Node control_creator_servers_root_;
   inspect::Node control_servers_root_;
   inspect::Node ring_buffer_servers_root_;
+
   inspect::Node provider_servers_root_;
 
   // Each entry in these vectors represents a client instance of one of the ADR protocols and
@@ -395,6 +478,7 @@ class Inspector {
   std::vector<std::shared_ptr<FidlServerInspectInstance>> control_creator_server_instances_;
   std::vector<std::shared_ptr<FidlServerInspectInstance>> control_server_instances_;
   std::vector<std::shared_ptr<FidlServerInspectInstance>> ring_buffer_server_instances_;
+
   std::vector<std::shared_ptr<ProviderInspectInstance>> provider_server_instances_;
 };
 

@@ -21,11 +21,9 @@
 #include <string_view>
 
 #include "src/media/audio/services/device_registry/basic_types.h"
-#include "src/media/audio/services/device_registry/logging.h"
+#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
 
 namespace media_audio {
-
-inline constexpr bool kLogFakeCodec = false;
 
 // This driver implements the audio driver interface and is configurable to simulate audio hardware.
 class FakeCodec final

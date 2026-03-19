@@ -121,7 +121,8 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsMissingChannelBitm
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
 
   ring_buffer_client
@@ -140,7 +141,8 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsMissingChannelBitm
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   // This should be entirely unchanged.
-  EXPECT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  EXPECT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
 }
 
 TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsBadChannelBitmask) {
@@ -175,7 +177,8 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsBadChannelBitmask)
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
 
   ring_buffer_client
@@ -193,7 +196,8 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsBadChannelBitmask)
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  EXPECT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
 }
 
 // Test calling SetActiveChannels, before the previous SetActiveChannels has completed.
@@ -229,7 +233,8 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsWhilePending) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   bool received_callback_1 = false, received_callback_2 = false;
 
   ring_buffer_client->SetActiveChannels({{1}}).Then(
@@ -249,7 +254,7 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsWhilePending) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback_1 && received_callback_2);
-  EXPECT_EQ(fake_driver->active_channels_bitmask(element_id), 0x1u);
+  EXPECT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id), 0x1u);
   EXPECT_EQ(RingBufferServer::count(), 1u);
 }
 
@@ -286,13 +291,14 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhilePending) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   bool received_callback_1 = false, received_callback_2 = false;
 
   ring_buffer_client->Start({}).Then([&received_callback_1, &fake_driver,
                                       element_id](fidl::Result<fad::RingBuffer::Start>& result) {
     ASSERT_TRUE(result.is_ok()) << result.error_value();
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback_1 = true;
   });
   ring_buffer_client->Start({}).Then([&received_callback_2, &fake_driver,
@@ -301,13 +307,13 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhilePending) {
     ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
     EXPECT_EQ(result.error_value().domain_error(), fad::RingBufferStartError::kAlreadyPending)
         << result.error_value();
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback_2 = true;
   });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback_1 && received_callback_2);
-  EXPECT_TRUE(fake_driver->started(element_id));
+  EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
   EXPECT_EQ(RingBufferServer::count(), 1u);
 }
 
@@ -344,7 +350,8 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhileStarted) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
   auto before_start = zx::clock::get_monotonic();
 
@@ -352,9 +359,9 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhileStarted) {
                                       element_id](fidl::Result<fad::RingBuffer::Start>& result) {
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_TRUE(result->start_time());
-    EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+    EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
     EXPECT_GT(*result->start_time(), before_start.get());
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback = true;
   });
 
@@ -408,7 +415,8 @@ TEST_F(RingBufferServerCompositeWarningTest, StopBeforeStarted) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
 
   ring_buffer_client->Stop({}).Then(
@@ -457,7 +465,8 @@ TEST_F(RingBufferServerCompositeWarningTest, StopWhilePending) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
   auto before_start = zx::clock::get_monotonic();
 
@@ -465,22 +474,23 @@ TEST_F(RingBufferServerCompositeWarningTest, StopWhilePending) {
                                       element_id](fidl::Result<fad::RingBuffer::Start>& result) {
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_TRUE(result->start_time());
-    EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+    EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
     EXPECT_GT(*result->start_time(), before_start.get());
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback = true;
   });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   bool received_callback_1 = false, received_callback_2 = false;
 
   ring_buffer_client->Stop({}).Then([&received_callback_1, &fake_driver,
                                      element_id](fidl::Result<fad::RingBuffer::Stop>& result) {
     EXPECT_TRUE(result.is_ok()) << result.error_value();
-    EXPECT_FALSE(fake_driver->started(element_id));
+    EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
     received_callback_1 = true;
   });
   ring_buffer_client->Stop({}).Then(
@@ -530,7 +540,8 @@ TEST_F(RingBufferServerCompositeWarningTest, StopAfterStopped) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
   auto before_start = zx::clock::get_monotonic();
 
@@ -538,22 +549,23 @@ TEST_F(RingBufferServerCompositeWarningTest, StopAfterStopped) {
                                       element_id](fidl::Result<fad::RingBuffer::Start>& result) {
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_TRUE(result->start_time());
-    EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+    EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
     EXPECT_GT(*result->start_time(), before_start.get());
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback = true;
   });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
 
   ring_buffer_client->Stop({}).Then(
       [&received_callback, &fake_driver, element_id](fidl::Result<fad::RingBuffer::Stop>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
-        EXPECT_FALSE(fake_driver->started(element_id));
+        EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
         received_callback = true;
       });
 
@@ -607,7 +619,8 @@ TEST_F(RingBufferServerCompositeWarningTest, WatchDelayInfoWhilePending) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  ASSERT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << *format.channel_count()) - 1u);
+  ASSERT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id),
+            (1u << *format.channel_count()) - 1u);
   received_callback = false;
 
   ring_buffer_client->WatchDelayInfo().Then(

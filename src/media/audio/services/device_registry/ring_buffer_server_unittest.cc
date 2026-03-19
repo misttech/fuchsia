@@ -292,8 +292,9 @@ TEST_F(RingBufferServerCompositeTest, DriverSupportsSetActiveChannels) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_EQ(fake_driver->active_channels_bitmask(element_id), 0x0u);
-  EXPECT_GT(fake_driver->set_active_channels_completed_at(element_id), before_set_active_channels);
+  EXPECT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id), 0x0u);
+  EXPECT_GT(fake_driver->RingBufferSetActiveChannelsCompletedAt(element_id),
+            before_set_active_channels);
   EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
 }
@@ -346,7 +347,7 @@ TEST_F(RingBufferServerCompositeTest, DriverDoesNotSupportSetActiveChannels) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_EQ(fake_driver->active_channels_bitmask(element_id), (1u << channel_count) - 1u);
+  EXPECT_EQ(fake_driver->RingBufferActiveChannelsBitmask(element_id), (1u << channel_count) - 1u);
   EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
 }
@@ -383,7 +384,7 @@ TEST_F(RingBufferServerCompositeTest, StartAndStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver->started(element_id));
+  EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
   received_callback = false;
   auto before_start = zx::clock::get_monotonic();
 
@@ -391,9 +392,9 @@ TEST_F(RingBufferServerCompositeTest, StartAndStop) {
                                       element_id](fidl::Result<fad::RingBuffer::Start>& result) {
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_TRUE(result->start_time());
-    EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+    EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
     EXPECT_GT(*result->start_time(), before_start.get());
-    EXPECT_TRUE(fake_driver->started(element_id));
+    EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
     received_callback = true;
   });
 
@@ -424,7 +425,7 @@ TEST_F(RingBufferServerCompositeTest, StartAndStop) {
   ring_buffer_client->Stop({}).Then(
       [&received_callback, &fake_driver, element_id](fidl::Result<fad::RingBuffer::Stop>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
-        EXPECT_FALSE(fake_driver->started(element_id));
+        EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
         received_callback = true;
       });
 
@@ -472,7 +473,7 @@ TEST_F(RingBufferServerCompositeTest, WatchDelayInfoInitialValues) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver->started(element_id));
+  EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
   received_callback = false;
 
   ring_buffer_client->WatchDelayInfo().Then(
@@ -523,7 +524,7 @@ TEST_F(RingBufferServerCompositeTest, WatchDelayInfoDynamicUpdates) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver->started(element_id));
+  EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
   received_callback = false;
 
   ring_buffer_client->WatchDelayInfo().Then(
@@ -554,7 +555,8 @@ TEST_F(RingBufferServerCompositeTest, WatchDelayInfoDynamicUpdates) {
 
   RunLoopUntilIdle();
   EXPECT_FALSE(received_callback);
-  fake_driver->InjectDelayUpdate(element_id, zx::nsec(987'654'321), zx::nsec(123'456'789));
+  fake_driver->RingBufferInjectDelayUpdate(element_id, zx::nsec(987'654'321),
+                                           zx::nsec(123'456'789));
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
@@ -681,7 +683,7 @@ TEST_F(RingBufferServerCompositeTest, SecondRingBufferAfterDrop) {
 
     RunLoopUntilIdle();
     ASSERT_TRUE(received_callback);
-    ASSERT_FALSE(fake_driver->started(element_id));
+    ASSERT_FALSE(fake_driver->RingBufferStarted(element_id));
     received_callback = false;
     auto before_start = zx::clock::get_monotonic();
 
@@ -689,9 +691,9 @@ TEST_F(RingBufferServerCompositeTest, SecondRingBufferAfterDrop) {
                                         element_id](fidl::Result<fad::RingBuffer::Start>& result) {
       ASSERT_TRUE(result.is_ok()) << result.error_value();
       ASSERT_TRUE(result->start_time());
-      EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+      EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
       EXPECT_GT(*result->start_time(), before_start.get());
-      EXPECT_TRUE(fake_driver->started(element_id));
+      EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
       received_callback = true;
     });
 
@@ -726,7 +728,7 @@ TEST_F(RingBufferServerCompositeTest, SecondRingBufferAfterDrop) {
 
     RunLoopUntilIdle();
     EXPECT_TRUE(received_callback);
-    EXPECT_FALSE(fake_driver->started(element_id));
+    EXPECT_FALSE(fake_driver->RingBufferStarted(element_id));
     received_callback = false;
     auto before_start = zx::clock::get_monotonic();
 
@@ -734,9 +736,9 @@ TEST_F(RingBufferServerCompositeTest, SecondRingBufferAfterDrop) {
                                         element_id](fidl::Result<fad::RingBuffer::Start>& result) {
       ASSERT_TRUE(result.is_ok()) << result.error_value();
       ASSERT_TRUE(result->start_time());
-      EXPECT_EQ(*result->start_time(), fake_driver->mono_start_time(element_id).get());
+      EXPECT_EQ(*result->start_time(), fake_driver->RingBufferMonoStartTime(element_id).get());
       EXPECT_GT(*result->start_time(), before_start.get());
-      EXPECT_TRUE(fake_driver->started(element_id));
+      EXPECT_TRUE(fake_driver->RingBufferStarted(element_id));
       received_callback = true;
     });
 

@@ -25,7 +25,9 @@ constexpr uint8_t kMaxSupportedDaiFormatBitsPerSlot = 64;
 // We define these here only temporarily, as we do not publish frame-rate limits for audio devices.
 // TODO(https://fxbug.dev/42068183): official frame-rate limits/expectations for audio devices.
 const uint32_t kMinSupportedRingBufferFrameRate = 1000;
+const uint32_t kMinSupportedPacketStreamFrameRate = 1000;
 const uint32_t kMaxSupportedRingBufferFrameRate = 192000;
+const uint32_t kMaxSupportedPacketStreamFrameRate = 192000;
 
 constexpr zx_rights_t kRequiredIncomingVmoRights = ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_MAP;
 constexpr zx_rights_t kRequiredOutgoingVmoRights = kRequiredIncomingVmoRights | ZX_RIGHT_WRITE;
@@ -104,9 +106,16 @@ bool ValidateSettableVendorSpecificElementState(
 
 bool ValidateRingBufferFormatSets(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& ring_buffer_format_sets);
-bool ValidateRingBufferFormat(const fuchsia_hardware_audio::Format2& ring_buffer_format);
 bool ValidateSampleFormatCompatibility(uint8_t bytes_per_sample,
                                        fuchsia_hardware_audio::SampleFormat sample_format);
+
+bool ValidatePcmFormat(const fuchsia_hardware_audio::PcmFormat& pcm_format);
+bool ValidateEncoding(const fuchsia_hardware_audio::Encoding& encoding);
+
+bool ValidatePcmSupportedFormats(const fuchsia_hardware_audio::PcmSupportedFormats& pcm_format_set,
+                                 bool is_packet_stream);
+bool ValidateSupportedEncodings(
+    const fuchsia_hardware_audio::SupportedEncodings& encoding_format_set);
 
 bool ValidateDaiFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& dai_format_sets);
@@ -116,6 +125,16 @@ bool ValidateRingBufferProperties(const fuchsia_hardware_audio::RingBufferProper
 bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
                            const fuchsia_hardware_audio::Format2& format,
                            zx_rights_t required_rights);
+
+bool ValidatePacketStreamProperties(
+    const fuchsia_hardware_audio::PacketStreamProperties& packet_stream_properties);
+bool ValidatePacketStreamFormat(const fuchsia_hardware_audio::Format2& format);
+bool ValidatePacketStreamFormatSets(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& packet_stream_format_sets);
+bool ValidatePacketStreamVmo(const fuchsia_hardware_audio::VmoInfo& vmo_info,
+                             zx_rights_t required_rights,
+                             std::optional<uint64_t> min_size = std::nullopt);
+
 bool ValidateDelayInfo(const fuchsia_hardware_audio::DelayInfo& delay_info);
 
 }  // namespace media_audio

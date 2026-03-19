@@ -89,6 +89,32 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     return (HasRingBuffer(device, element_id) &&
             match->second.ring_buffer_state == Device::RingBufferState::Started);
   }
+  static bool HasPacketStream(const std::shared_ptr<Device>& device, ElementId element_id) {
+    return device->packet_stream_map_.contains(element_id);
+  }
+  static bool PacketStreamIsStopped(const std::shared_ptr<Device>& device, ElementId element_id) {
+    auto match = device->packet_stream_map_.find(element_id);
+
+    return (HasPacketStream(device, element_id) &&
+            match->second.packet_stream_state == Device::PacketStreamState::Stopped);
+  }
+  static bool PacketStreamIsStarted(const std::shared_ptr<Device>& device, ElementId element_id) {
+    auto match = device->packet_stream_map_.find(element_id);
+
+    return (HasPacketStream(device, element_id) &&
+            match->second.packet_stream_state == Device::PacketStreamState::Started);
+  }
+  static bool PacketStreamIsReady(const std::shared_ptr<Device>& device, ElementId element_id) {
+    auto match = device->packet_stream_map_.find(element_id);
+    return (HasPacketStream(device, element_id) &&
+            match->second.packet_stream_state != Device::PacketStreamState::NotCreated &&
+            match->second.packet_stream_state != Device::PacketStreamState::Creating);
+  }
+  void WaitForPacketStreamReady(const std::shared_ptr<Device>& device, ElementId element_id) {
+    while (!PacketStreamIsReady(device, element_id)) {
+      RunLoopUntilIdle();
+    }
+  }
   static void GetDaiFormatSets(
       const std::shared_ptr<Device>& device, ElementId element_id,
       fit::callback<void(ElementId,
@@ -104,6 +130,16 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   static const std::optional<fuchsia_hardware_audio::DelayInfo>& DeviceDelayInfo(
       const std::shared_ptr<Device>& device, ElementId element_id) {
     return device->ring_buffer_map_.find(element_id)->second.delay_info;
+  }
+
+  static void ConnectPacketStreamFidl(const std::shared_ptr<Device>& device, ElementId element_id,
+                                      fuchsia_hardware_audio::Format2 driver_format,
+                                      fit::callback<void(zx_status_t status)> callback) {
+    device->ConnectPacketStreamFidl(element_id, std::move(driver_format), std::move(callback));
+  }
+  static void RetrievePacketStreamProperties(const std::shared_ptr<Device>& device,
+                                             ElementId element_id) {
+    device->RetrievePacketStreamProperties(element_id);
   }
 
   class NotifyStub : public std::enable_shared_from_this<NotifyStub>, public ControlNotify {
@@ -142,6 +178,9 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     // ControlNotify
     //
     void DeviceDroppedRingBuffer(ElementId element_id) final {
+      ADR_LOG_OBJECT(kLogDeviceTestNotifyResponses) << "(element_id " << element_id << ")";
+    }
+    void DeviceDroppedPacketStream(ElementId element_id) final {
       ADR_LOG_OBJECT(kLogDeviceTestNotifyResponses) << "(element_id " << element_id << ")";
     }
     void DelayInfoIsChanged(ElementId element_id,
@@ -318,12 +357,12 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     stream << "Expected format match: [" << sample_type << " " << channel_count << "-channel "
            << rate << " hz]";
     SCOPED_TRACE(stream.str());
-    const auto& match =
-        device->SupportedDriverFormatForClientFormat(element_id, {{
-                                                                     .sample_type = sample_type,
-                                                                     .channel_count = channel_count,
-                                                                     .frames_per_second = rate,
-                                                                 }});
+    const auto& match = device->SupportedRingBufferDriverFormatForClientFormat(
+        element_id, {{
+                        .sample_type = sample_type,
+                        .channel_count = channel_count,
+                        .frames_per_second = rate,
+                    }});
     EXPECT_TRUE(match);
     return match->pcm_format()->valid_bits_per_sample();
   }
@@ -335,12 +374,12 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     stream << "Unexpected format match: [" << sample_type << " " << channel_count << "-channel "
            << rate << " hz]";
     SCOPED_TRACE(stream.str());
-    const auto& match =
-        device->SupportedDriverFormatForClientFormat(element_id, {{
-                                                                     .sample_type = sample_type,
-                                                                     .channel_count = channel_count,
-                                                                     .frames_per_second = rate,
-                                                                 }});
+    const auto& match = device->SupportedRingBufferDriverFormatForClientFormat(
+        element_id, {{
+                        .sample_type = sample_type,
+                        .channel_count = channel_count,
+                        .frames_per_second = rate,
+                    }});
     EXPECT_FALSE(match);
   }
 
@@ -360,14 +399,12 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     return *device->plug_state_->plugged();
   }
 
-  static ElementId ring_buffer_id() { return kRingBufferElementId; }
   static ElementId dai_id() { return kDaiElementId; }
 
   static zx::duration ShortCmdTimeout() { return Device::kDefaultShortCmdTimeout; }
   static zx::duration LongCmdTimeout() { return Device::kDefaultLongCmdTimeout; }
 
  private:
-  static constexpr ElementId kRingBufferElementId = 0;
   static constexpr ElementId kDaiElementId = fuchsia_audio_device::kDefaultDaiInterconnectElementId;
 
   static constexpr zx::duration kCommandTimeout = zx::sec(0);
@@ -418,6 +455,12 @@ class CompositeTest : public DeviceTestBase {
     return device->element_driver_ring_buffer_format_sets_;
   }
 
+  static const std::vector<
+      std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
+  ElementDriverPacketStreamFormatSets(const std::shared_ptr<Device>& device) {
+    return device->element_driver_packet_stream_format_sets_;
+  }
+
   static const std::unordered_map<ElementId, ElementRecord>& signal_processing_elements(
       const std::shared_ptr<Device>& device) {
     return device->sig_proc_element_map_;
@@ -452,6 +495,10 @@ class CompositeTest : public DeviceTestBase {
 
   void TestCreateRingBuffer(const std::shared_ptr<Device>& device, ElementId element_id,
                             const fuchsia_hardware_audio::Format2& safe_format);
+  void TestCreatePacketStream(const std::shared_ptr<Device>& device, ElementId element_id,
+                              const fuchsia_hardware_audio::Format2& safe_format);
+  void TestAllocatePacketStreamBuffers(const std::shared_ptr<Device>& device, ElementId element_id);
+  void TestRegisterPacketStreamBuffers(const std::shared_ptr<Device>& device, ElementId element_id);
 
   bool ExpectDaiFormatMatches(ElementId dai_id,
                               const fuchsia_hardware_audio::DaiFormat& dai_format) {

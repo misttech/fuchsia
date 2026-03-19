@@ -22,13 +22,25 @@ using ::inspect::StringPropertyValue;
 using ::inspect::UintPropertyValue;
 
 namespace fad = fuchsia_audio_device;
+namespace fha = fuchsia_hardware_audio;
 
 namespace media_audio {
 
-TEST_F(InspectorTest, DefaultValues) {
-  auto before_get_hierarchy = zx::clock::get_monotonic();
+namespace {
+const inspect::Hierarchy* GetChild(const inspect::Hierarchy* parent, std::string_view name) {
+  if (!parent) {
+    return nullptr;
+  }
+  auto it = std::find_if(parent->children().begin(), parent->children().end(),
+                         [name](const inspect::Hierarchy& h) { return h.name() == name; });
+  return (it == parent->children().end()) ? nullptr : &(*it);
+}
+}  // namespace
 
+TEST_F(InspectorTest, DefaultValues) {
   auto hierarchy = GetHierarchy();
+
+  auto after_get_hierarchy = zx::clock::get_monotonic();
   ASSERT_EQ(hierarchy.name(), "root");
   EXPECT_EQ(hierarchy.node().properties().size(), 3u);
   // Expect metrics with default values in the root node.
@@ -56,71 +68,55 @@ TEST_F(InspectorTest, DefaultValues) {
   ASSERT_TRUE(devices_node->node().properties().empty());
   ASSERT_TRUE(devices_node->children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
   ASSERT_TRUE(fidl_servers_node->node().properties().empty());
   ASSERT_EQ(fidl_servers_node->children().size(), 6u);
 
-  auto registry_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kRegistryServerInstances; });
-  EXPECT_NE(registry_servers_node, fidl_servers_node->children().end());
+  auto registry_servers_node = GetChild(fidl_servers_node, kRegistryServerInstances);
+  ASSERT_NE(registry_servers_node, nullptr);
   EXPECT_TRUE(registry_servers_node->node().properties().empty());
   EXPECT_TRUE(registry_servers_node->children().empty());
 
-  auto observer_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kObserverServerInstances; });
-  EXPECT_NE(observer_servers_node, fidl_servers_node->children().end());
+  auto observer_servers_node = GetChild(fidl_servers_node, kObserverServerInstances);
+  ASSERT_NE(observer_servers_node, nullptr);
   EXPECT_TRUE(observer_servers_node->node().properties().empty());
   EXPECT_TRUE(observer_servers_node->children().empty());
 
-  auto control_creator_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kControlCreatorServerInstances; });
-  EXPECT_NE(control_creator_servers_node, fidl_servers_node->children().end());
+  auto control_creator_servers_node = GetChild(fidl_servers_node, kControlCreatorServerInstances);
+  ASSERT_NE(control_creator_servers_node, nullptr);
   EXPECT_TRUE(control_creator_servers_node->node().properties().empty());
   EXPECT_TRUE(control_creator_servers_node->children().empty());
 
-  auto control_servers_node =
-      std::find_if(fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kControlServerInstances; });
-  EXPECT_NE(control_servers_node, fidl_servers_node->children().end());
+  auto control_servers_node = GetChild(fidl_servers_node, kControlServerInstances);
+  ASSERT_NE(control_servers_node, nullptr);
   EXPECT_TRUE(control_servers_node->node().properties().empty());
   EXPECT_TRUE(control_servers_node->children().empty());
 
-  auto ring_buffer_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kRingBufferServerInstances; });
-  EXPECT_NE(ring_buffer_servers_node, fidl_servers_node->children().end());
+  auto ring_buffer_servers_node = GetChild(fidl_servers_node, kRingBufferServerInstances);
+  ASSERT_NE(ring_buffer_servers_node, nullptr);
   EXPECT_TRUE(ring_buffer_servers_node->node().properties().empty());
   EXPECT_TRUE(ring_buffer_servers_node->children().empty());
 
-  auto provider_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kProviderServerInstances; });
-  EXPECT_NE(provider_servers_node, fidl_servers_node->children().end());
+  auto provider_servers_node = GetChild(fidl_servers_node, kProviderServerInstances);
+  ASSERT_NE(provider_servers_node, nullptr);
   EXPECT_TRUE(provider_servers_node->node().properties().empty());
   EXPECT_TRUE(provider_servers_node->children().empty());
 
-  auto health_node = std::find_if(
-      hierarchy.children().begin(), hierarchy.children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == inspect::kHealthNodeName; });
-  ASSERT_NE(health_node, hierarchy.children().end());
+  auto health_node = GetChild(&hierarchy, inspect::kHealthNodeName);
+  ASSERT_NE(health_node, nullptr);
   EXPECT_EQ(health_node->node().properties().size(), 2u);
   EXPECT_EQ(health_node->node().get_property<StringPropertyValue>("status")->value(),
             inspect::kHealthStartingUp);
   EXPECT_LT(health_node->node().get_property<IntPropertyValue>(inspect::kStartTimestamp)->value(),
-            before_get_hierarchy.get());
+            after_get_hierarchy.get());
   EXPECT_TRUE(health_node->children().empty());
 }
 
 // Relevant fields: `start_timestamp_nanos`, `status` -- found at root/fuchsia.inspect.Health/
 TEST_F(InspectorTest, ComponentHealthy) {
-  auto before_health_ok = zx::clock::get_monotonic();
   Inspector::Singleton()->RecordHealthOk();
+  auto after_health_ok = zx::clock::get_monotonic();
 
   auto hierarchy = GetHierarchy();
   auto health_node = std::find_if(
@@ -131,7 +127,7 @@ TEST_F(InspectorTest, ComponentHealthy) {
   EXPECT_EQ(health_node->node().get_property<StringPropertyValue>("status")->value(),
             inspect::kHealthOk);
   EXPECT_LT(health_node->node().get_property<IntPropertyValue>(inspect::kStartTimestamp)->value(),
-            before_health_ok.get());
+            after_health_ok.get());
   EXPECT_TRUE(health_node->children().empty());
 }
 
@@ -139,8 +135,8 @@ TEST_F(InspectorTest, ComponentHealthy) {
 TEST_F(InspectorTest, ComponentUnhealthy) {
   constexpr std::string kUnhealthyMessasge{"Unhealthy message"};
 
-  auto before_unhealthy = zx::clock::get_monotonic();
   Inspector::Singleton()->RecordUnhealthy(kUnhealthyMessasge);
+  auto after_unhealthy = zx::clock::get_monotonic();
 
   auto hierarchy = GetHierarchy();
   auto health_node = std::find_if(
@@ -151,7 +147,7 @@ TEST_F(InspectorTest, ComponentUnhealthy) {
   EXPECT_EQ(health_node->node().get_property<StringPropertyValue>("status")->value(),
             inspect::kHealthUnhealthy);
   EXPECT_LT(health_node->node().get_property<IntPropertyValue>(inspect::kStartTimestamp)->value(),
-            before_unhealthy.get());
+            after_unhealthy.get());
   EXPECT_EQ(health_node->node().get_property<StringPropertyValue>("message")->value(),
             kUnhealthyMessasge);
   EXPECT_TRUE(health_node->children().empty());
@@ -177,14 +173,12 @@ TEST_F(InspectorTest, DetectedDevice) {
                 ->value(),
             0u);
 
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_TRUE(devices_node->node().properties().empty());
   ASSERT_EQ(devices_node->children().size(), 1u);
 
-  auto device_node = devices_node->children().cbegin();
+  auto device_node = &devices_node->children().front();
   EXPECT_GE(device_node->node().properties().size(), 8u);
   EXPECT_GT(device_node->node().get_property<IntPropertyValue>(std::string(kAddedAt))->value(),
             before_add.get());
@@ -205,12 +199,10 @@ TEST_F(InspectorTest, DetectedDevice) {
       "COMPOSITE");
   EXPECT_EQ(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId))->value(),
             UidToString(FakeComposite::kDefaultUniqueInstanceId));
-  ASSERT_EQ(device_node->children().size(), 2u);
+  ASSERT_EQ(device_node->children().size(), 3u);
 
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   EXPECT_TRUE(ring_buffer_elements_node->node().properties().empty());
   ASSERT_EQ(ring_buffer_elements_node->children().size(), 2u);
 
@@ -228,6 +220,44 @@ TEST_F(InspectorTest, DetectedDevice) {
                last_rb_element_id == FakeComposite::kDestRbElementId) ||
               (first_rb_element_id == FakeComposite::kDestRbElementId &&
                last_rb_element_id == FakeComposite::kSourceRbElementId));
+
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  EXPECT_TRUE(ps_elements_node->node().properties().empty());
+  ASSERT_EQ(ps_elements_node->children().size(), 2u);
+
+  auto first_ps_element = &ps_elements_node->children().front();
+  auto last_ps_element = &ps_elements_node->children().back();
+
+  auto first_ps_id =
+      first_ps_element->node().get_property<UintPropertyValue>(std::string(kElementId))->value();
+  auto last_ps_id =
+      last_ps_element->node().get_property<UintPropertyValue>(std::string(kElementId))->value();
+
+  EXPECT_TRUE((first_ps_id == FakeComposite::kSourcePsElementId &&
+               last_ps_id == FakeComposite::kDestPsElementId) ||
+              (first_ps_id == FakeComposite::kDestPsElementId &&
+               last_ps_id == FakeComposite::kSourcePsElementId));
+
+  if (first_ps_id == FakeComposite::kSourcePsElementId) {
+    EXPECT_EQ(first_ps_element->node()
+                  .get_property<StringPropertyValue>(std::string(kDescription))
+                  ->value(),
+              FakeComposite::kSourcePsElementDescription);
+    EXPECT_EQ(last_ps_element->node()
+                  .get_property<StringPropertyValue>(std::string(kDescription))
+                  ->value(),
+              FakeComposite::kDestPsElementDescription);
+  } else {
+    EXPECT_EQ(first_ps_element->node()
+                  .get_property<StringPropertyValue>(std::string(kDescription))
+                  ->value(),
+              FakeComposite::kDestPsElementDescription);
+    EXPECT_EQ(last_ps_element->node()
+                  .get_property<StringPropertyValue>(std::string(kDescription))
+                  ->value(),
+              FakeComposite::kSourcePsElementDescription);
+  }
 }
 
 // Relevant field: `removed_at` -- found at // root/Devices/[device name]/
@@ -267,7 +297,7 @@ TEST_F(InspectorTest, RemovedDevice) {
             before_add.get());
   EXPECT_GT(device_node->node().get_property<IntPropertyValue>(std::string(kRemovedAt))->value(),
             before_drop.get());
-  EXPECT_EQ(device_node->children().size(), 2u);
+  EXPECT_EQ(device_node->children().size(), 3u);
 }
 
 // Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/RegistryServer_instances/0/
@@ -280,21 +310,14 @@ TEST_F(InspectorTest, CreateRegistryServer) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
-  ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_FALSE(fidl_servers_node->children().empty());
-
-  auto registry_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kRegistryServerInstances; });
-  ASSERT_NE(registry_servers_node, fidl_servers_node->children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
+  auto registry_servers_node = GetChild(fidl_servers_node, kRegistryServerInstances);
+  ASSERT_NE(registry_servers_node, nullptr);
   ASSERT_TRUE(registry_servers_node->node().properties().empty());
   ASSERT_FALSE(registry_servers_node->children().empty());
 
-  auto registry_server_node = registry_servers_node->children().cbegin();
+  auto registry_server_node = &registry_servers_node->children().front();
   EXPECT_EQ(registry_server_node->name(), "0");
   EXPECT_EQ(registry_server_node->node().properties().size(), 1u);
   EXPECT_GT(
@@ -319,21 +342,14 @@ TEST_F(InspectorTest, CreateObserverServer) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
-  ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_FALSE(fidl_servers_node->children().empty());
-
-  auto observer_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kObserverServerInstances; });
-  ASSERT_NE(observer_servers_node, fidl_servers_node->children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
+  auto observer_servers_node = GetChild(fidl_servers_node, kObserverServerInstances);
+  ASSERT_NE(observer_servers_node, nullptr);
   ASSERT_TRUE(observer_servers_node->node().properties().empty());
   ASSERT_FALSE(observer_servers_node->children().empty());
 
-  auto observer_server_node = observer_servers_node->children().cbegin();
+  auto observer_server_node = &observer_servers_node->children().front();
   EXPECT_EQ(observer_server_node->name(), "0");
   EXPECT_EQ(observer_server_node->node().properties().size(), 1u);
   EXPECT_GT(
@@ -467,28 +483,21 @@ TEST_F(InspectorTest, CreateProviderServer) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
-  ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_FALSE(fidl_servers_node->children().empty());
-
-  auto provider_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kProviderServerInstances; });
-  ASSERT_NE(provider_servers_node, fidl_servers_node->children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
+  auto provider_servers_node = GetChild(fidl_servers_node, kProviderServerInstances);
+  ASSERT_NE(provider_servers_node, nullptr);
   ASSERT_TRUE(provider_servers_node->node().properties().empty());
   ASSERT_FALSE(provider_servers_node->children().empty());
 
-  auto provider_node = provider_servers_node->children().cbegin();
+  auto provider_node = &provider_servers_node->children().front();
   ASSERT_EQ(provider_node->name(), "0");
   ASSERT_EQ(provider_node->node().properties().size(), 1u);
   ASSERT_GT(provider_node->node().get_property<IntPropertyValue>(std::string(kCreatedAt))->value(),
             before_create.get());
   ASSERT_EQ(provider_node->children().size(), 1u);
 
-  auto added_devices_node = provider_node->children().cbegin();
+  auto added_devices_node = &provider_node->children().front();
   EXPECT_EQ(added_devices_node->name(), std::string(kAddedDevices));
   EXPECT_TRUE(added_devices_node->node().properties().empty());
   EXPECT_TRUE(added_devices_node->children().empty());
@@ -506,21 +515,14 @@ TEST_F(InspectorTest, CreateMultipleServerInstances) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
-  ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_FALSE(fidl_servers_node->children().empty());
-
-  auto registry_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kRegistryServerInstances; });
-  ASSERT_NE(registry_servers_node, fidl_servers_node->children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
+  auto registry_servers_node = GetChild(fidl_servers_node, kRegistryServerInstances);
+  ASSERT_NE(registry_servers_node, nullptr);
   ASSERT_TRUE(registry_servers_node->node().properties().empty());
   ASSERT_FALSE(registry_servers_node->children().empty());
 
-  auto registry_server0_node = registry_servers_node->children().cbegin();
+  auto registry_server0_node = &registry_servers_node->children().front();
   ASSERT_EQ(registry_server0_node->name(), "0");
   ASSERT_EQ(registry_server0_node->node().properties().size(), 1u);
   ASSERT_LT(registry_server0_node->node()
@@ -529,7 +531,7 @@ TEST_F(InspectorTest, CreateMultipleServerInstances) {
             after_create0.get());
   ASSERT_TRUE(registry_server0_node->children().empty());
 
-  auto registry_server1_node = registry_servers_node->children().crbegin();
+  auto registry_server1_node = &registry_servers_node->children().back();
   ASSERT_EQ(registry_server1_node->name(), "1");
   ASSERT_EQ(registry_server1_node->node().properties().size(), 1u);
   ASSERT_GT(registry_server1_node->node()
@@ -584,21 +586,14 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto fidl_servers_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
-  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
-  ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_FALSE(fidl_servers_node->children().empty());
-
-  auto provider_servers_node = std::find_if(
-      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kProviderServerInstances; });
-  ASSERT_NE(provider_servers_node, fidl_servers_node->children().end());
+  auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
+  ASSERT_NE(fidl_servers_node, nullptr);
+  auto provider_servers_node = GetChild(fidl_servers_node, kProviderServerInstances);
+  ASSERT_NE(provider_servers_node, nullptr);
   ASSERT_TRUE(provider_servers_node->node().properties().empty());
   ASSERT_FALSE(provider_servers_node->children().empty());
 
-  auto provider_server_node = provider_servers_node->children().begin();
+  auto provider_server_node = &provider_servers_node->children().front();
   ASSERT_EQ(provider_server_node->name(), "0");
   ASSERT_EQ(provider_server_node->node().properties().size(), 1u);
   ASSERT_GT(
@@ -606,14 +601,12 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
       before_create.get());
   ASSERT_FALSE(provider_server_node->children().empty());
 
-  auto added_devices_node =
-      std::find_if(provider_server_node->children().begin(), provider_server_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kAddedDevices; });
-  ASSERT_NE(added_devices_node, provider_server_node->children().end());
+  auto added_devices_node = GetChild(provider_server_node, kAddedDevices);
+  ASSERT_NE(added_devices_node, nullptr);
   ASSERT_TRUE(added_devices_node->node().properties().empty());
   ASSERT_FALSE(added_devices_node->children().empty());
 
-  auto first_device = added_devices_node->children().cbegin();
+  auto first_device = &added_devices_node->children().front();
   EXPECT_EQ(first_device->name(), "Test codec");
   EXPECT_EQ(first_device->node().properties().size(), 5u);
   EXPECT_GT(first_device->node().get_property<IntPropertyValue>(std::string(kAddedAt))->value(),
@@ -623,7 +616,7 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
       "CODEC");
   EXPECT_TRUE(first_device->children().empty());
 
-  auto last_device = added_devices_node->children().crbegin();
+  auto last_device = &added_devices_node->children().back();
   EXPECT_EQ(last_device->name(), "Test composite");
   EXPECT_EQ(last_device->node().properties().size(), 5u);
   EXPECT_EQ(
@@ -664,18 +657,14 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
   ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxDeviceCount);
 
-  auto device_node = devices_node->children().begin();
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto device_node = &devices_node->children().front();
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   ASSERT_FALSE(ring_buffer_elements_node->children().empty());
 
   // Check each different RingBuffer element.
@@ -694,17 +683,15 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
     const bool kFirstRbElement = (rb_element_id == FakeComposite::kMinRingBufferElementId);
     ASSERT_FALSE(ring_buffer_element_node.children().empty());
 
-    auto ring_buffer_format_sets_node = std::find_if(
-        ring_buffer_element_node.children().begin(), ring_buffer_element_node.children().end(),
-        [](const inspect::Hierarchy& h) { return h.name() == kSupportedFormats; });
-    ASSERT_NE(ring_buffer_format_sets_node, ring_buffer_element_node.children().end());
+    auto ring_buffer_format_sets_node = GetChild(&ring_buffer_element_node, kSupportedFormats);
+    ASSERT_NE(ring_buffer_format_sets_node, nullptr);
     ASSERT_EQ(ring_buffer_format_sets_node->name(), kSupportedFormats);
     ASSERT_FALSE(ring_buffer_format_sets_node->children().empty());
     ASSERT_LE(ring_buffer_format_sets_node->children().size(),
               fuchsia_audio_device::kMaxFormatCount);
     EXPECT_TRUE(ring_buffer_format_sets_node->node().properties().empty());
 
-    auto ring_buffer_format_set_node = ring_buffer_format_sets_node->children().begin();
+    auto ring_buffer_format_set_node = &ring_buffer_format_sets_node->children().front();
     ASSERT_EQ(ring_buffer_format_set_node->name(), "rb_format_set_0");
     EXPECT_EQ(ring_buffer_format_set_node->node().properties().size(), 2u);
     EXPECT_EQ(ring_buffer_format_set_node->children().size(), 1u);
@@ -714,7 +701,7 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
                             ->value();
     EXPECT_EQ(rates.size(), 1u);
     for (auto& rate : rates) {
-      EXPECT_EQ(rate, kFirstRbElement ? FakeComposite::kDefaultRbFrameRate
+      EXPECT_EQ(rate, kFirstRbElement ? FakeComposite::kDefaultRbFrameRate1
                                       : FakeComposite::kDefaultRbFrameRate2);
     }
 
@@ -727,22 +714,19 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
       EXPECT_EQ(sample_format, kFirstRbElement ? "INT_16" : "INT_32");
     }
 
-    auto channel_counts_node =
-        std::find_if(ring_buffer_format_set_node->children().begin(),
-                     ring_buffer_format_set_node->children().end(),
-                     [](const inspect::Hierarchy& h) { return h.name() == kChannelCount; });
-    ASSERT_NE(channel_counts_node, ring_buffer_format_set_node->children().end());
+    auto channel_counts_node = GetChild(ring_buffer_format_set_node, kChannelCount);
+    ASSERT_NE(channel_counts_node, nullptr);
     ASSERT_EQ(channel_counts_node->name(), kChannelCount);
     EXPECT_TRUE(channel_counts_node->node().properties().empty());
     ASSERT_FALSE(channel_counts_node->children().empty());
     EXPECT_LE(channel_counts_node->children().size(), fuchsia_audio_device::kMaxChannelSetCount);
 
-    auto channel_count_node = channel_counts_node->children().begin();
+    auto channel_count_node = &channel_counts_node->children().front();
     EXPECT_EQ(channel_count_node->name(), "channel_set_0");
     EXPECT_TRUE(channel_count_node->node().properties().empty());
-    EXPECT_EQ(channel_count_node->children().size(), FakeComposite::kDefaultRbNumberOfChannels2);
+    EXPECT_EQ(channel_count_node->children().size(), FakeComposite::kDefaultNumberOfChannels2);
 
-    auto channel_node = channel_count_node->children().begin();
+    auto channel_node = &channel_count_node->children().front();
     EXPECT_EQ(channel_node->name(), "channel_0");
     EXPECT_TRUE(channel_node->children().empty());
     ASSERT_FALSE(channel_node->node().properties().empty());
@@ -752,18 +736,18 @@ TEST_F(InspectorTest, SupportedRingBufferFormats) {
       ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency)));
       EXPECT_EQ(
           channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency))->value(),
-          FakeComposite::kDefaultRbChannelAttributes1MinFrequency);
+          FakeComposite::kDefaultChannelAttributes1MinFrequency);
       ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency)));
       EXPECT_EQ(
           channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency))->value(),
-          FakeComposite::kDefaultRbChannelAttributes1MaxFrequency);
+          FakeComposite::kDefaultChannelAttributes1MaxFrequency);
     } else {
       EXPECT_EQ(channel_node->node().properties().size(), 1u);
       ASSERT_TRUE(channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency)));
       EXPECT_EQ(
           channel_node->node().get_property<UintPropertyValue>(std::string(kMinFrequency))->value(),
-          FakeComposite::kDefaultRbChannelAttributes2MinFrequency);
-      // FakeComposite::kDefaultRbChannelAttributes2MaxFrequency is not defined.
+          FakeComposite::kDefaultChannelAttributes2MinFrequency);
+      // FakeComposite::kDefaultChannelAttributes2MaxFrequency is not defined.
       EXPECT_FALSE(
           channel_node->node().get_property<UintPropertyValue>(std::string(kMaxFrequency)));
     }
@@ -792,35 +776,29 @@ TEST_F(InspectorTest, SupportedDaiFormats) {
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
 
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
   ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxDeviceCount);
 
-  auto device_node = devices_node->children().begin();
+  auto device_node = &devices_node->children().front();
 
-  auto dai_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDaiElements; });
-  ASSERT_NE(dai_elements_node, device_node->children().end());
+  auto dai_elements_node = GetChild(device_node, kDaiElements);
+  ASSERT_NE(dai_elements_node, nullptr);
   ASSERT_FALSE(dai_elements_node->children().empty());
   ASSERT_LE(dai_elements_node->children().size(), fuchsia_audio_device::kMaxProcessingElementCount);
 
-  auto dai_element_node = dai_elements_node->children().begin();
+  auto dai_element_node = &dai_elements_node->children().front();
   ASSERT_EQ(dai_element_node->name(), "0");
   ASSERT_FALSE(dai_element_node->children().empty());
 
-  auto dai_format_sets_node =
-      std::find_if(dai_element_node->children().begin(), dai_element_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kSupportedFormats; });
-  ASSERT_NE(dai_format_sets_node, dai_element_node->children().end());
+  auto dai_format_sets_node = GetChild(dai_element_node, kSupportedFormats);
+  ASSERT_NE(dai_format_sets_node, nullptr);
   ASSERT_EQ(dai_format_sets_node->name(), kSupportedFormats);
   ASSERT_FALSE(dai_format_sets_node->children().empty());
   EXPECT_LE(dai_format_sets_node->children().size(), fuchsia_audio_device::kMaxDaiFormatCount);
 
-  auto dai_format_set_node = dai_format_sets_node->children().begin();
+  auto dai_format_set_node = &dai_format_sets_node->children().front();
   ASSERT_EQ(dai_format_set_node->name(), "dai_format_set_0");
   EXPECT_TRUE(dai_format_set_node->children().empty());
   EXPECT_EQ(dai_format_set_node->node().properties().size(), 6u);
@@ -905,8 +883,8 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_TRUE(fake_driver()->started(element_id()));
-  EXPECT_EQ(start_time0, fake_driver()->mono_start_time(element_id()));
+  EXPECT_TRUE(fake_driver()->RingBufferStarted(element_id()));
+  EXPECT_EQ(start_time0, fake_driver()->RingBufferMonoStartTime(element_id()));
   EXPECT_GT(start_time0.get(), before_start0.get());
 
   auto before_stop0 = zx::clock::get_monotonic();
@@ -919,7 +897,7 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver()->started(element_id()));
+  EXPECT_FALSE(fake_driver()->RingBufferStarted(element_id()));
   auto after_stop0 = zx::clock::get_monotonic();
 
   // Now we do another start/stop, to validate multiple running intervals.
@@ -936,8 +914,8 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_TRUE(fake_driver()->started(element_id()));
-  EXPECT_EQ(start_time1, fake_driver()->mono_start_time(element_id()));
+  EXPECT_TRUE(fake_driver()->RingBufferStarted(element_id()));
+  EXPECT_EQ(start_time1, fake_driver()->RingBufferMonoStartTime(element_id()));
   EXPECT_GT(start_time1.get(), before_start1.get());
 
   auto before_stop1 = zx::clock::get_monotonic();
@@ -950,26 +928,20 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver()->started(element_id()));
+  EXPECT_FALSE(fake_driver()->RingBufferStarted(element_id()));
   auto after_stop1 = zx::clock::get_monotonic();
 
   auto hierarchy = GetHierarchy();
-  ASSERT_FALSE(hierarchy.children().empty());
-
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
 
-  auto device_node = devices_node->children().begin();
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto device_node = &devices_node->children().front();
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   ASSERT_FALSE(ring_buffer_elements_node->children().empty());
 
-  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  auto ring_buffer_element_node = &ring_buffer_elements_node->children().front();
   ASSERT_EQ(ring_buffer_element_node->name(), "0");
   ASSERT_EQ(ring_buffer_element_node->node()
                 .get_property<UintPropertyValue>(std::string(kElementId))
@@ -977,14 +949,12 @@ TEST_F(InspectorTest, StartStop) {
             element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
-  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  auto ring_buffer_instance_node = &ring_buffer_element_node->children().front();
   ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
-  auto running_intervals = std::find_if(
-      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kRunningIntervals; });
-  ASSERT_NE(running_intervals, ring_buffer_instance_node->children().end());
+  auto running_intervals = GetChild(ring_buffer_instance_node, kRunningIntervals);
+  ASSERT_NE(running_intervals, nullptr);
   EXPECT_TRUE(running_intervals->node().properties().empty());
   ASSERT_EQ(running_intervals->children().size(), 2u);
 
@@ -1061,20 +1031,16 @@ TEST_F(InspectorTest, SetActiveChannels) {
   EXPECT_GT(set_active_channels_completed_at1.get(), before_set_active_channels1.get());
 
   auto hierarchy = GetHierarchy();
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
 
-  auto device_node = devices_node->children().begin();
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto device_node = &devices_node->children().front();
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   ASSERT_FALSE(ring_buffer_elements_node->children().empty());
 
-  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  auto ring_buffer_element_node = &ring_buffer_elements_node->children().front();
   ASSERT_EQ(ring_buffer_element_node->name(), "0");
   ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
   ASSERT_EQ(ring_buffer_element_node->node()
@@ -1083,20 +1049,19 @@ TEST_F(InspectorTest, SetActiveChannels) {
             element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
-  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  auto ring_buffer_instance_node = &ring_buffer_element_node->children().front();
   ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
-  auto set_active_channels_calls_node = std::find_if(
-      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kSetActiveChannelsCalls; });
-  ASSERT_NE(set_active_channels_calls_node, ring_buffer_instance_node->children().end());
+  auto set_active_channels_calls_node =
+      GetChild(ring_buffer_instance_node, kSetActiveChannelsCalls);
+  ASSERT_NE(set_active_channels_calls_node, nullptr);
   EXPECT_TRUE(set_active_channels_calls_node->node().properties().empty());
   ASSERT_FALSE(set_active_channels_calls_node->children().empty());
   ASSERT_EQ(set_active_channels_calls_node->children().size(), 2u);
 
-  auto& first_set_call = set_active_channels_calls_node->children().cbegin()->node();
-  auto& last_set_call = set_active_channels_calls_node->children().crbegin()->node();
+  auto& first_set_call = set_active_channels_calls_node->children().front().node();
+  auto& last_set_call = set_active_channels_calls_node->children().back().node();
 
   EXPECT_EQ(first_set_call.name(), "0");
   EXPECT_EQ(first_set_call.properties().size(), 3u);
@@ -1106,7 +1071,7 @@ TEST_F(InspectorTest, SetActiveChannels) {
             set_active_channels_completed_at0.get());
   EXPECT_EQ(first_set_call.get_property<UintPropertyValue>(std::string(kChannelBitmask))->value(),
             0ull);
-  EXPECT_TRUE(set_active_channels_calls_node->children().cbegin()->children().empty());
+  EXPECT_TRUE(set_active_channels_calls_node->children().front().children().empty());
 
   EXPECT_EQ(last_set_call.name(), "1");
   EXPECT_EQ(last_set_call.properties().size(), 3u);
@@ -1116,7 +1081,7 @@ TEST_F(InspectorTest, SetActiveChannels) {
             set_active_channels_completed_at1.get());
   EXPECT_EQ(last_set_call.get_property<UintPropertyValue>(std::string(kChannelBitmask))->value(),
             1ull);
-  EXPECT_TRUE(set_active_channels_calls_node->children().crbegin()->children().empty());
+  EXPECT_TRUE(set_active_channels_calls_node->children().back().children().empty());
 }
 
 // Relevant fields: `requested_bytes`, `client_frames`, `driver_frames`, `vmo_bytes` -- found at
@@ -1125,20 +1090,16 @@ TEST_F(InspectorTest, BufferProperties) {
   AddDeviceAndCreateRingBuffer();
 
   auto hierarchy = GetHierarchy();
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
 
-  auto device_node = devices_node->children().begin();
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto device_node = &devices_node->children().front();
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   ASSERT_FALSE(ring_buffer_elements_node->children().empty());
 
-  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  auto ring_buffer_element_node = &ring_buffer_elements_node->children().front();
   ASSERT_EQ(ring_buffer_element_node->name(), "0");
   ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
   ASSERT_EQ(ring_buffer_element_node->node()
@@ -1147,15 +1108,13 @@ TEST_F(InspectorTest, BufferProperties) {
             element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
-  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  auto ring_buffer_instance_node = &ring_buffer_element_node->children().front();
   ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
-  auto buffer_node = std::find_if(
-      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kBufferProps; });
+  auto buffer_node = GetChild(ring_buffer_instance_node, kBufferProps);
+  ASSERT_NE(buffer_node, nullptr);
   ASSERT_EQ(buffer_node->node().name(), kBufferProps);
-  ASSERT_NE(buffer_node, ring_buffer_instance_node->children().end());
   ASSERT_TRUE(buffer_node->children().empty());
 
   EXPECT_FALSE(buffer_node->node().properties().empty());
@@ -1180,20 +1139,16 @@ TEST_F(InspectorTest, RingBufferFormat) {
   AddDeviceAndCreateRingBuffer();
 
   auto hierarchy = GetHierarchy();
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
 
-  auto device_node = devices_node->children().begin();
-  auto ring_buffer_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
-  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  auto device_node = &devices_node->children().front();
+  auto ring_buffer_elements_node = GetChild(device_node, kRingBufferElements);
+  ASSERT_NE(ring_buffer_elements_node, nullptr);
   ASSERT_FALSE(ring_buffer_elements_node->children().empty());
 
-  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  auto ring_buffer_element_node = &ring_buffer_elements_node->children().front();
   ASSERT_EQ(ring_buffer_element_node->name(), "0");
   ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
   ASSERT_EQ(ring_buffer_element_node->node()
@@ -1202,14 +1157,12 @@ TEST_F(InspectorTest, RingBufferFormat) {
             element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
-  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  auto ring_buffer_instance_node = &ring_buffer_element_node->children().front();
   ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
-  auto format_node = std::find_if(
-      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
-      [](const inspect::Hierarchy& h) { return h.name() == kFormatProps; });
-  ASSERT_NE(format_node, ring_buffer_instance_node->children().end());
+  auto format_node = GetChild(ring_buffer_instance_node, kFormatProps);
+  ASSERT_NE(format_node, nullptr);
 
   EXPECT_EQ(format_node->node().name(), kFormatProps);
   EXPECT_TRUE(format_node->children().empty());
@@ -1226,6 +1179,211 @@ TEST_F(InspectorTest, RingBufferFormat) {
   EXPECT_EQ(
       format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
       "INT_32");
+}
+
+TEST_F(InspectorTest, RecordSupportedPcmFormatSets) {
+  inspect::Inspector inspector;
+  auto root = inspector.GetRoot().CreateChild("test_root");
+  std::vector<SupportedPcmFormatsRecord> records;
+
+  fad::ChannelAttributes attr0;
+  attr0.min_frequency(20);
+  attr0.max_frequency(20000);
+
+  fad::ChannelAttributes attr1;
+  attr1.min_frequency(100);
+  attr1.max_frequency(15000);
+
+  fad::ChannelSet channel_set0;
+  std::vector<fad::ChannelAttributes> attrs0;
+  attrs0.push_back(std::move(attr0));
+  channel_set0.attributes(std::move(attrs0));
+
+  fad::ChannelSet channel_set1;
+  std::vector<fad::ChannelAttributes> attrs1;
+  attrs1.push_back(std::move(attr1));
+  channel_set1.attributes(std::move(attrs1));
+
+  fad::PcmFormatSet pcm_format_set;
+  std::vector<fuchsia_audio::SampleType> sample_types;
+  sample_types.push_back(fuchsia_audio::SampleType::kInt16);
+  sample_types.push_back(fuchsia_audio::SampleType::kInt32);
+  pcm_format_set.sample_types(std::move(sample_types));
+
+  std::vector<uint32_t> frame_rates;
+  frame_rates.push_back(44100);
+  frame_rates.push_back(48000);
+  pcm_format_set.frame_rates(std::move(frame_rates));
+
+  std::vector<fad::ChannelSet> channel_sets;
+  channel_sets.push_back(std::move(channel_set0));
+  channel_sets.push_back(std::move(channel_set1));
+  pcm_format_set.channel_sets(std::move(channel_sets));
+
+  std::vector<fad::PcmFormatSet> format_sets;
+  format_sets.push_back(std::move(pcm_format_set));
+
+  RecordSupportedPcmFormatSets(root, records, format_sets, "prefix_");
+
+  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
+  auto* test_root = GetChild(&hierarchy, "test_root");
+  ASSERT_NE(test_root, nullptr);
+  ASSERT_EQ(test_root->children().size(), 1u);
+
+  auto* format_set_0 = GetChild(test_root, "prefix_0");
+  ASSERT_NE(format_set_0, nullptr);
+  EXPECT_EQ(format_set_0->node()
+                .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
+                ->value(),
+            std::vector<std::string>({"INT_16", "INT_32"}));
+  EXPECT_EQ(format_set_0->node()
+                .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                ->value(),
+            std::vector<uint64_t>({44100, 48000}));
+
+  auto* channel_count_node = GetChild(format_set_0, std::string(kChannelCount));
+  ASSERT_NE(channel_count_node, nullptr);
+  ASSERT_EQ(channel_count_node->children().size(), 2u);
+
+  auto* channel_set_0_node = GetChild(channel_count_node, "channel_set_0");
+  ASSERT_NE(channel_set_0_node, nullptr);
+  ASSERT_EQ(channel_set_0_node->children().size(), 1u);
+  auto* channel_0_node = GetChild(channel_set_0_node, "channel_0");
+  ASSERT_NE(channel_0_node, nullptr);
+  EXPECT_EQ(channel_0_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kMinFrequency))
+                ->value(),
+            20u);
+  EXPECT_EQ(channel_0_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kMaxFrequency))
+                ->value(),
+            20000u);
+}
+
+TEST_F(InspectorTest, RecordSupportedEncodingsSets) {
+  inspect::Inspector inspector;
+  auto root = inspector.GetRoot().CreateChild("test_root");
+  std::vector<SupportedEncodingsRecord> records;
+
+  fha::ChannelAttributes attr0;
+  attr0.min_frequency(30);
+  attr0.max_frequency(18000);
+
+  fha::ChannelSet channel_set0;
+  std::vector<fha::ChannelAttributes> attrs0;
+  attrs0.push_back(std::move(attr0));
+  channel_set0.attributes(std::move(attrs0));
+
+  fha::SupportedEncodings supported_encodings;
+  std::vector<fha::EncodingType> encoding_types;
+  encoding_types.push_back(fha::EncodingType::kAac);
+  supported_encodings.encoding_types(std::move(encoding_types));
+
+  std::vector<uint32_t> frame_rates;
+  frame_rates.push_back(48000);
+  supported_encodings.decoded_frame_rates(std::move(frame_rates));
+
+  supported_encodings.min_encoding_bitrate(64000);
+  supported_encodings.max_encoding_bitrate(128000);
+
+  std::vector<fha::ChannelSet> channel_sets;
+  channel_sets.push_back(std::move(channel_set0));
+  supported_encodings.decoded_channel_sets(std::move(channel_sets));
+
+  std::vector<fha::SupportedEncodings> encodings;
+  encodings.push_back(std::move(supported_encodings));
+
+  RecordSupportedEncodingSets(root, records, encodings, "enc_prefix_");
+
+  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
+  auto* test_root = GetChild(&hierarchy, "test_root");
+  ASSERT_NE(test_root, nullptr);
+  ASSERT_EQ(test_root->children().size(), 1u);
+
+  auto* enc_set_0 = GetChild(test_root, "enc_prefix_0");
+  ASSERT_NE(enc_set_0, nullptr);
+  EXPECT_EQ(enc_set_0->node()
+                .get_property<inspect::StringArrayValue>(std::string(kEncodingType))
+                ->value(),
+            std::vector<std::string>({"AAC"}));
+  EXPECT_EQ(enc_set_0->node()
+                .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                ->value(),
+            std::vector<uint64_t>({48000}));
+  EXPECT_EQ(
+      enc_set_0->node().get_property<inspect::UintPropertyValue>(std::string(kMinBitrate))->value(),
+      64000u);
+  EXPECT_EQ(
+      enc_set_0->node().get_property<inspect::UintPropertyValue>(std::string(kMaxBitrate))->value(),
+      128000u);
+
+  auto* channel_count_node = GetChild(enc_set_0, std::string(kChannelCount));
+  ASSERT_NE(channel_count_node, nullptr);
+  ASSERT_EQ(channel_count_node->children().size(), 1u);
+
+  auto* channel_set_0_node = GetChild(channel_count_node, "channel_set_0");
+  ASSERT_NE(channel_set_0_node, nullptr);
+  ASSERT_EQ(channel_set_0_node->children().size(), 1u);
+  auto* channel_0_node = GetChild(channel_set_0_node, "channel_0");
+  ASSERT_NE(channel_0_node, nullptr);
+  EXPECT_EQ(channel_0_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kMinFrequency))
+                ->value(),
+            30u);
+  EXPECT_EQ(channel_0_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kMaxFrequency))
+                ->value(),
+            18000u);
+}
+
+TEST_F(InspectorTest, PacketStreamElementInstance) {
+  auto before_instance = zx::clock::get_monotonic();
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_EQ(devices_node->children().size(), 1u);
+
+  auto* device_node = devices_node->children().data();
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  ASSERT_EQ(ps_elements_node->children().size(), 2u);
+
+  auto* ps_element_node = ps_elements_node->children().data();
+  ASSERT_EQ(ps_element_node->children().size(), 0u);
+
+  // Now record an instance.
+  auto presence = adr_service()->FindDeviceByTokenId(0);
+  ASSERT_EQ(presence.first, AudioDeviceRegistry::DevicePresence::Active);
+  auto device = presence.second;
+
+  auto ps_element_id = FakeComposite::kSourcePsElementId;
+  auto ps_instance = device->inspect()->RecordPacketStreamInstance(ps_element_id, before_instance);
+  ASSERT_NE(ps_instance, nullptr);
+
+  hierarchy = GetHierarchy();
+  devices_node = GetChild(&hierarchy, kDevices);
+  device_node = devices_node->children().data();
+  ps_elements_node = GetChild(device_node, kPacketStreamElements);
+
+  // Find the node with the correct element_id.
+  const inspect::Hierarchy* target_ps_element_node = nullptr;
+  for (const auto& child : ps_elements_node->children()) {
+    if (child.node().get_property<inspect::UintPropertyValue>(std::string(kElementId))->value() ==
+        ps_element_id) {
+      target_ps_element_node = &child;
+      break;
+    }
+  }
+  ASSERT_NE(target_ps_element_node, nullptr);
+  ASSERT_EQ(target_ps_element_node->children().size(), 1u);
+  auto* instance_node = target_ps_element_node->children().data();
+  EXPECT_EQ(instance_node->name(), "instance_0");
+  EXPECT_EQ(instance_node->node()
+                .get_property<inspect::IntPropertyValue>(std::string(kCreatedAt))
+                ->value(),
+            before_instance.get());
 }
 
 // Relevant fields: `channel_count`, `channels_to_use_bitmask`, `sample_format`, `frame_format`,
@@ -1254,20 +1412,16 @@ TEST_F(InspectorTest, SetDaiFormat) {
   EXPECT_TRUE(control()->client().is_valid());
 
   auto hierarchy = GetHierarchy();
-  auto devices_node =
-      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
-  ASSERT_NE(devices_node, hierarchy.children().end());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
 
-  auto device_node = devices_node->children().begin();
-  auto dai_elements_node =
-      std::find_if(device_node->children().begin(), device_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kDaiElements; });
-  ASSERT_NE(dai_elements_node, device_node->children().end()) << "No DAI elements node found";
+  auto device_node = &devices_node->children().front();
+  auto dai_elements_node = GetChild(device_node, kDaiElements);
+  ASSERT_NE(dai_elements_node, nullptr) << "No DAI elements node found";
   ASSERT_FALSE(dai_elements_node->children().empty()) << "No DAI element children";
 
-  auto dai_element_node = dai_elements_node->children().begin();
+  auto dai_element_node = &dai_elements_node->children().front();
   ASSERT_EQ(dai_element_node->name(), "0");
   ASSERT_EQ(dai_element_node->node().properties().size(), 2u);
   ASSERT_EQ(
@@ -1275,10 +1429,8 @@ TEST_F(InspectorTest, SetDaiFormat) {
       element_id);
   ASSERT_FALSE(dai_element_node->children().empty());
 
-  auto format_node =
-      std::find_if(dai_element_node->children().begin(), dai_element_node->children().end(),
-                   [](const inspect::Hierarchy& h) { return h.name() == kFormatProps; });
-  ASSERT_NE(format_node, dai_element_node->children().end());
+  auto format_node = GetChild(dai_element_node, kFormatProps);
+  ASSERT_NE(format_node, nullptr);
 
   EXPECT_EQ(format_node->node().name(), kFormatProps);
   EXPECT_TRUE(format_node->children().empty());

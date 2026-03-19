@@ -61,6 +61,55 @@ class CompositeWarningTest : public CompositeTest {
     return callback_received;
   }
 
+  bool CreatePacketStreamForTest(const std::shared_ptr<Device>& device, ElementId element_id) {
+    if (!device->is_operational()) {
+      return false;
+    }
+    if (!IsControlled(device) && !SetControl(device)) {
+      return false;
+    }
+
+    auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+    if (packet_stream_format_sets_by_element.empty()) {
+      return false;
+    }
+
+    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+        element_id, packet_stream_format_sets_by_element);
+
+    bool callback_received = false;
+    DeviceTestBase::ConnectPacketStreamFidl(
+        device, element_id, safe_format,
+        [&callback_received, &device, element_id](zx_status_t status) {
+          EXPECT_EQ(status, ZX_OK);
+          DeviceTestBase::RetrievePacketStreamProperties(device, element_id);
+          callback_received = true;
+        });
+
+    RunLoopUntilIdle();
+    if (!callback_received) {
+      return false;
+    }
+
+    WaitForPacketStreamReady(device, element_id);
+    return callback_received;
+  }
+
+  // Creating a PacketStream should fail with `expected_status`.
+  void ExpectCreatePacketStreamError(const std::shared_ptr<Device>& device, ElementId element_id,
+                                     zx_status_t expected_status, const fha::Format2& format) {
+    auto response_received = false;
+
+    DeviceTestBase::ConnectPacketStreamFidl(
+        device, element_id, format, [&response_received, expected_status](zx_status_t status) {
+          EXPECT_EQ(status, expected_status);
+          response_received = true;
+        });
+
+    RunLoopUntilIdle();
+    ASSERT_TRUE(response_received);
+  }
+
   // Creating a RingBuffer should fail with `expected_error`.
   void ExpectCreateRingBufferError(const std::shared_ptr<Device>& device, ElementId element_id,
                                    fad::ControlCreateRingBufferError expected_error,
@@ -672,6 +721,42 @@ TEST_F(CompositeWarningTest, UnresponsiveCreateRingBufferBecomesError) {
   EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
 }
 
+TEST_F(CompositeWarningTest, UnresponsiveCreatePacketStreamBecomesError) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
+  ASSERT_EQ(device->packet_stream_ids().size(), packet_stream_format_sets_by_element.size());
+
+  auto element_id = *device->packet_stream_ids().begin();
+  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+      element_id, packet_stream_format_sets_by_element);
+
+  fake_driver->set_unresponsive();
+  bool callback_received = false;
+  DeviceTestBase::ConnectPacketStreamFidl(
+      device, element_id, safe_format, [&callback_received](zx_status_t status) {
+        FAIL() << "Unexpected ConnectPacketStreamFidl callback when unresponsive";
+        callback_received = true;
+      });
+
+  RunLoopFor(LongCmdTimeout());
+  RunLoopUntilIdle();
+
+  // This FIDL call, after the previous one timed out, triggers the device to be marked "in error".
+  RetrieveHealthState(device);
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(device_presence_watcher()->ready_devices().size(), 0u);
+  EXPECT_EQ(device_presence_watcher()->error_devices().size(), 1u);
+
+  EXPECT_EQ(device_presence_watcher()->on_error_count(), 1u);
+  EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
+}
+
 TEST_F(CompositeWarningTest, UnresponsiveSetElementStateBecomesError) {
   auto fake_driver = MakeFakeComposite();
   auto device = InitializeDeviceForFakeComposite(fake_driver);
@@ -768,7 +853,7 @@ TEST_F(CompositeWarningTest, UnresponsiveSetActiveChannelsBecomesError) {
   EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
 }
 
-TEST_F(CompositeWarningTest, UnresponsiveStartBecomesError) {
+TEST_F(CompositeWarningTest, UnresponsiveStartRingBufferBecomesError) {
   auto fake_driver = MakeFakeComposite();
   auto device = InitializeDeviceForFakeComposite(fake_driver);
   auto rb_element_id = *device->ring_buffer_ids().begin();
@@ -796,7 +881,7 @@ TEST_F(CompositeWarningTest, UnresponsiveStartBecomesError) {
   EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
 }
 
-TEST_F(CompositeWarningTest, UnresponsiveStopBecomesError) {
+TEST_F(CompositeWarningTest, UnresponsiveStopRingBufferBecomesError) {
   auto fake_driver = MakeFakeComposite();
   auto device = InitializeDeviceForFakeComposite(fake_driver);
   auto rb_element_id = *device->ring_buffer_ids().begin();
@@ -808,6 +893,69 @@ TEST_F(CompositeWarningTest, UnresponsiveStopBecomesError) {
   bool callback_received = false;
   fake_driver->set_unresponsive();
   device->StopRingBuffer(rb_element_id, [&callback_received](zx_status_t status) {
+    callback_received = true;
+    EXPECT_NE(status, ZX_OK);
+  });
+
+  RunLoopFor(ShortCmdTimeout());
+  RunLoopUntilIdle();
+
+  // This FIDL call, after the previous one timed out, triggers the device to be marked "in error".
+  RetrieveHealthState(device);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(callback_received);
+  EXPECT_EQ(device_presence_watcher()->ready_devices().size(), 0u);
+  EXPECT_EQ(device_presence_watcher()->error_devices().size(), 1u);
+
+  EXPECT_EQ(device_presence_watcher()->on_error_count(), 1u);
+  EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
+}
+
+TEST_F(CompositeWarningTest, UnresponsiveStartPacketStreamBecomesError) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  auto ps_element_id = *device->packet_stream_ids().begin();
+  fake_driver->InjectPacketStreamBufferTypes(
+      ps_element_id, fuchsia_hardware_audio::BufferType::kClientOwned |
+                         fuchsia_hardware_audio::BufferType::kDriverOwned |
+                         fuchsia_hardware_audio::BufferType::kInline);
+  ASSERT_TRUE(CreatePacketStreamForTest(device, ps_element_id));
+
+  bool callback_received = false;
+  fake_driver->set_unresponsive();
+  device->StartPacketStream(ps_element_id, [&callback_received](zx::result<> result) {
+    callback_received = true;
+    EXPECT_TRUE(result.is_error());
+  });
+
+  RunLoopFor(ShortCmdTimeout());
+  RunLoopUntilIdle();
+
+  // This FIDL call, after the previous one timed out, triggers the device to be marked "in error".
+  RetrieveHealthState(device);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(callback_received);
+  EXPECT_EQ(device_presence_watcher()->ready_devices().size(), 0u);
+  EXPECT_EQ(device_presence_watcher()->error_devices().size(), 1u);
+
+  EXPECT_EQ(device_presence_watcher()->on_error_count(), 1u);
+  EXPECT_EQ(device_presence_watcher()->on_removal_count(), 0u);
+}
+
+TEST_F(CompositeWarningTest, UnresponsiveStopPacketStreamBecomesError) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  auto ps_element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, ps_element_id));
+
+  ASSERT_EQ(device_presence_watcher()->ready_devices().size(), 1u);
+  ASSERT_EQ(device_presence_watcher()->error_devices().size(), 0u);
+
+  bool callback_received = false;
+  fake_driver->set_unresponsive();
+  device->StopPacketStream(ps_element_id, [&callback_received](zx_status_t status) {
     callback_received = true;
     EXPECT_NE(status, ZX_OK);
   });
@@ -1041,6 +1189,345 @@ TEST_F(CompositeWarningTest, CreateRingBufferUnsupportedFormat) {
 
 // Negative WatchClockRecoveryPositionInfo cases?
 // Device with error
+
+TEST_F(CompositeWarningTest, CreatePacketStreamInvalidElementId) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
+  auto element_id = *device->packet_stream_ids().begin();
+  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+      element_id, packet_stream_format_sets_by_element);
+
+  ExpectCreatePacketStreamError(device, -1, ZX_ERR_INVALID_ARGS, safe_format);
+}
+
+TEST_F(CompositeWarningTest, CreatePacketStreamWrongElementType) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
+  auto element_id = *device->packet_stream_ids().begin();
+  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+      element_id, packet_stream_format_sets_by_element);
+
+  for (auto rb_id : device->ring_buffer_ids()) {
+    ExpectCreatePacketStreamError(device, rb_id, ZX_ERR_WRONG_TYPE, safe_format);
+  }
+  for (auto dai_id : device->dai_ids()) {
+    ExpectCreatePacketStreamError(device, dai_id, ZX_ERR_WRONG_TYPE, safe_format);
+  }
+}
+
+TEST_F(CompositeWarningTest, CreatePacketStreamInvalidFormat) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
+
+  for (auto element_id : device->packet_stream_ids()) {
+    auto invalid_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+        element_id, packet_stream_format_sets_by_element);
+    if (invalid_format.pcm_format()) {
+      invalid_format.pcm_format()->number_of_channels(0);
+    } else {
+      invalid_format.encoding()->decoded_channel_count(0);
+    }
+
+    ExpectCreatePacketStreamError(device, element_id, ZX_ERR_INVALID_ARGS, invalid_format);
+  }
+}
+
+TEST_F(CompositeWarningTest, CreatePacketStreamUnsupportedFormat) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
+
+  for (auto element_id : device->packet_stream_ids()) {
+    auto unsupported_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+        element_id, packet_stream_format_sets_by_element);
+    if (unsupported_format.pcm_format()) {
+      unsupported_format.pcm_format()->frame_rate(unsupported_format.pcm_format()->frame_rate() -
+                                                  1);
+    } else {
+      unsupported_format.encoding()->decoded_frame_rate(
+          *unsupported_format.encoding()->decoded_frame_rate() - 1);
+    }
+
+    ExpectCreatePacketStreamError(device, element_id, ZX_ERR_NOT_SUPPORTED, unsupported_format);
+  }
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersUnsupportedBufferType) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto element_id = *device->packet_stream_ids().begin();
+  fake_driver->InjectPacketStreamBufferTypes(element_id, fha::BufferType::kDriverOwned);
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  std::vector<fha::VmoInfo> vmo_infos_vec;
+  fha::RegisterVmosConfig register_vmos_config{{
+      .vmo_infos = std::move(vmo_infos_vec),
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(register_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_NOT_SUPPORTED);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersUnsupportedInlineOnly) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto element_id = *device->packet_stream_ids().begin();
+  // Set the supported buffer type to inline only.
+  fake_driver->InjectPacketStreamBufferTypes(element_id, fha::BufferType::kInline);
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  fha::AllocateVmosConfig allocate_vmos_config{{
+      .min_vmo_size = 8192,
+      .vmo_count = 1,
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(allocate_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_NOT_SUPPORTED);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, StartPacketStreamUnconfigured) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto element_id = *device->packet_stream_ids().begin();
+  // Ensure INLINE is not supported so that buffer configuration is required.
+  fake_driver->InjectPacketStreamBufferTypes(element_id, fha::BufferType::kDriverOwned);
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  bool callback_received = false;
+  device->StartPacketStream(element_id, [&callback_received](zx::result<> result) {
+    callback_received = true;
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
+  });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInvalidVmoHandle) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  if (device->packet_stream_ids().empty()) {
+    GTEST_SKIP() << "No PacketStream elements to test";
+  }
+  auto element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  std::vector<fha::VmoInfo> vmo_infos_vec;
+  vmo_infos_vec.emplace_back(fha::VmoInfo{{.id = 0, .vmo = zx::vmo()}});
+  fha::RegisterVmosConfig register_vmos_config{{
+      .vmo_infos = std::move(vmo_infos_vec),
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(register_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInsufficientRights) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  if (device->packet_stream_ids().empty()) {
+    GTEST_SKIP() << "No PacketStream elements to test";
+  }
+  auto element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  zx::vmo vmo, insufficient_rights_vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.replace(ZX_RIGHT_READ | ZX_RIGHT_MAP, &insufficient_rights_vmo), ZX_OK);
+
+  std::vector<fha::VmoInfo> vmo_infos;
+  vmo_infos.push_back(fha::VmoInfo{{.id = 0, .vmo = std::move(insufficient_rights_vmo)}});
+
+  fha::RegisterVmosConfig register_vmos_config{{
+      .vmo_infos = std::move(vmo_infos),
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(register_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersAllocateVmosMissingFields) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  fha::AllocateVmosConfig allocate_vmos_config;
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(allocate_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosMissingFields) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  auto element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  fha::RegisterVmosConfig register_vmos_config;
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(register_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersAllocateVmosDriverError) {
+  auto fake_driver = MakeFakeComposite();
+  auto element_id = FakeComposite::kSourcePsElementId;
+  fake_driver->InjectPacketStreamBufferTypes(element_id, fha::BufferType::kDriverOwned);
+  fake_driver->InjectPacketStreamAllocateVmosError(element_id, ZX_ERR_INTERNAL);
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  fha::AllocateVmosConfig allocate_vmos_config{{
+      .min_vmo_size = 8192,
+      .vmo_count = 1,
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(allocate_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INTERNAL);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+  EXPECT_FALSE(device->is_operational());
+}
+
+TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosDriverError) {
+  auto fake_driver = MakeFakeComposite();
+  auto element_id = FakeComposite::kSourcePsElementId;
+  fake_driver->InjectPacketStreamBufferTypes(element_id, fha::BufferType::kClientOwned);
+  fake_driver->InjectPacketStreamRegisterVmosError(element_id, ZX_ERR_INTERNAL);
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_TRUE(SetControl(device));
+
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(8192, 0, &vmo), ZX_OK);
+
+  std::vector<fha::VmoInfo> vmo_infos_vec;
+  vmo_infos_vec.emplace_back(fha::VmoInfo{{.id = 0, .vmo = std::move(vmo)}});
+  fha::RegisterVmosConfig register_vmos_config{{
+      .vmo_infos = std::move(vmo_infos_vec),
+  }};
+
+  bool callback_received = false;
+  device->SetPacketStreamBuffers(
+      element_id, std::move(register_vmos_config),
+      [&callback_received](zx_status_t status,
+                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+        callback_received = true;
+        EXPECT_EQ(status, ZX_ERR_INTERNAL);
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_received);
+  EXPECT_FALSE(device->is_operational());
+}
 
 ////////////////////////////////////////////////////////
 // Signalprocessing test cases

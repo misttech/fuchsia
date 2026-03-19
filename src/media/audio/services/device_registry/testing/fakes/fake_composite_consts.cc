@@ -99,93 +99,110 @@ const fha::DaiFormat FakeComposite::kDefaultDaiFormat2{{
 
 // RingBufferFormats and format sets
 //
-const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes1{{
-    .min_frequency = kDefaultRbChannelAttributes1MinFrequency,
-    .max_frequency = kDefaultRbChannelAttributes1MaxFrequency,
+const fha::ChannelAttributes FakeComposite::kDefaultChannelAttributes1{{
+    .min_frequency = kDefaultChannelAttributes1MinFrequency,
+    .max_frequency = kDefaultChannelAttributes1MaxFrequency,
 }};
-const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes2{{
-    .min_frequency = kDefaultRbChannelAttributes2MinFrequency,
+const fha::ChannelAttributes FakeComposite::kDefaultChannelAttributes2{{
+    .min_frequency = kDefaultChannelAttributes2MinFrequency,
     // no .max_frequency is specified
 }};
-const fha::ChannelAttributes FakeComposite::kDefaultRbChannelAttributes3{{
+const fha::ChannelAttributes FakeComposite::kDefaultChannelAttributes3{{
     // no .min_frequency is specified
-    .max_frequency = kDefaultRbChannelAttributes3MaxFrequency,
+    .max_frequency = kDefaultChannelAttributes3MaxFrequency,
 }};
-const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbChannelAttributesSet1{
-    kDefaultRbChannelAttributes1,
+const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultChannelAttributesSet1{
+    kDefaultChannelAttributes1,
 };
-const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultRbChannelAttributesSet2{
-    kDefaultRbChannelAttributes2,
+const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultChannelAttributesSet2{
+    kDefaultChannelAttributes2,
 };
-const fha::ChannelSet FakeComposite::kDefaultRbChannelSet1{{
-    .attributes = kDefaultRbChannelAttributesSet1,
+const fha::ChannelSet FakeComposite::kDefaultChannelSet1{{
+    .attributes = kDefaultChannelAttributesSet1,
 }};
-const fha::ChannelSet FakeComposite::kDefaultRbChannelSet2{{
-    .attributes = kDefaultRbChannelAttributesSet2,
+const fha::ChannelSet FakeComposite::kDefaultChannelSet2{{
+    .attributes = kDefaultChannelAttributesSet2,
 }};
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelSets1{
-    kDefaultRbChannelSet1,
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets1{
+    kDefaultChannelSet1,
 };
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultRbChannelSets2{kDefaultRbChannelSet2};
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets2{kDefaultChannelSet2};
 
-const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats{kDefaultRbSampleFormat};
+const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats1{
+    kDefaultRbSampleFormat1};
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats2{
     kDefaultRbSampleFormat2};
-const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet{kDefaultRbBytesPerSample};
+const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet1{kDefaultRbBytesPerSample1};
 const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet2{kDefaultRbBytesPerSample2};
-const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet{
-    kDefaultRbValidBitsPerSample};
+const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet1{
+    kDefaultRbValidBitsPerSample1};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet2{
     kDefaultRbValidBitsPerSample2};
-const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates{kDefaultRbFrameRate};
+const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates1{kDefaultRbFrameRate1};
 const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates2{kDefaultRbFrameRate2};
+const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates1{kDefaultPsFrameRate1};
+const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates2{kDefaultPsFrameRate2};
 
-const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet{{
-    .channel_sets = kDefaultRbChannelSets1,
-    .sample_formats = kDefaultRbSampleFormats,
-    .bytes_per_sample = kDefaultRbBytesPerSampleSet,
-    .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet,
-    .frame_rates = kDefaultRbFrameRates,
+const std::vector<fuchsia_hardware_audio::EncodingType> FakeComposite::kDefaultPsEncodingTypes1{
+    kDefaultPsEncodingType1};
+const std::vector<fuchsia_hardware_audio::EncodingType> FakeComposite::kDefaultPsEncodingTypes2{
+    kDefaultPsEncodingType2};
+
+const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet1{{
+    .channel_sets = kDefaultChannelSets1,
+    .sample_formats = kDefaultRbSampleFormats1,
+    .bytes_per_sample = kDefaultRbBytesPerSampleSet1,
+    .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet1,
+    .frame_rates = kDefaultRbFrameRates1,
 }};
 const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet2{{
-    .channel_sets = kDefaultRbChannelSets2,
+    .channel_sets = kDefaultChannelSets2,
     .sample_formats = kDefaultRbSampleFormats2,
     .bytes_per_sample = kDefaultRbBytesPerSampleSet2,
     .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet2,
     .frame_rates = kDefaultRbFrameRates2,
 }};
-const fha::SupportedFormats2 FakeComposite::kDefaultRbFormatSet =
-    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet);
+const fha::SupportedEncodings FakeComposite::kDefaultEncodingSet1{{
+    .decoded_channel_sets = kDefaultChannelSets1,
+    .decoded_frame_rates = kDefaultPsFrameRates1,
+    .encoding_types = kDefaultPsEncodingTypes1,
+}};
+const fha::SupportedEncodings FakeComposite::kDefaultEncodingSet2{{
+    .decoded_channel_sets = kDefaultChannelSets2,
+    .decoded_frame_rates = kDefaultPsFrameRates2,
+    .encoding_types = kDefaultPsEncodingTypes2,
+}};
+
+const fha::SupportedFormats2 FakeComposite::kDefaultRbFormatSet1 =
+    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet1);
 const fha::SupportedFormats2 FakeComposite::kDefaultRbFormatSet2 =
     fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet2);
+const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet1 =
+    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet1);
+const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet2 =
+    fha::SupportedFormats2::WithSupportedEncodings(kDefaultEncodingSet2);
 
-// RingBuffer format sets that are returned by the driver.
-const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets{kDefaultRbFormatSet};
+// RingBuffer and PacketStream format sets that are returned by the driver.
+const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets1{
+    kDefaultRbFormatSet1};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets2{
     kDefaultRbFormatSet2};
+const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets1{
+    kDefaultPsFormatSet1};
+const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets2{
+    kDefaultPsFormatSet2};
 
 // Map of RingBuffer format sets, by element. Used internally by the driver.
 const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
     FakeComposite::kDefaultRbFormatsMap = {{
-        {kDestRbElementId, kDefaultRbFormatSets},
+        {kDestRbElementId, kDefaultRbFormatSets1},
         {kSourceRbElementId, kDefaultRbFormatSets2},
     }};
-
-// Specific RingBuffer formats
-const fha::PcmFormat FakeComposite::kDefaultRbFormat{{
-    .number_of_channels = kDefaultRbNumberOfChannels,
-    .sample_format = kDefaultRbSampleFormat,
-    .bytes_per_sample = kDefaultRbBytesPerSample,
-    .valid_bits_per_sample = kDefaultRbValidBitsPerSample,
-    .frame_rate = kDefaultRbFrameRate,
-}};
-const fha::PcmFormat FakeComposite::kDefaultRbFormat2{{
-    .number_of_channels = kDefaultRbNumberOfChannels2,
-    .sample_format = kDefaultRbSampleFormat2,
-    .bytes_per_sample = kDefaultRbBytesPerSample2,
-    .valid_bits_per_sample = kDefaultRbValidBitsPerSample2,
-    .frame_rate = kDefaultRbFrameRate2,
-}};
+const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
+    FakeComposite::kDefaultPsFormatsMap = {{
+        {kDestPsElementId, kDefaultPsFormatSets1},
+        {kSourcePsElementId, kDefaultPsFormatSets2},
+    }};
 
 // signalprocessing elements and topologies
 //
@@ -196,8 +213,12 @@ const std::string FakeComposite::kDestDaiElementDescription =
     "DaiInterconnect destination element description";
 const std::string FakeComposite::kSourceRbElementDescription =
     "RingBuffer source element description";
+const std::string FakeComposite::kSourcePsElementDescription =
+    "PacketStream source element description";
 const std::string FakeComposite::kDestRbElementDescription =
     "RingBuffer destination element description";
+const std::string FakeComposite::kDestPsElementDescription =
+    "PacketStream destination element description";
 const std::string FakeComposite::kMuteElementDescription = "Mute element description";
 
 const fhasp::Element FakeComposite::kSourceDaiElement{{
@@ -227,10 +248,24 @@ const fhasp::Element FakeComposite::kSourceRbElement{{
     .can_stop = false,
     .can_bypass = false,
 }};
+const fhasp::Element FakeComposite::kSourcePsElement{{
+    .id = kSourcePsElementId,
+    .type = fhasp::ElementType::kPacketStream,
+    .description = kSourcePsElementDescription,
+    .can_stop = false,
+    .can_bypass = false,
+}};
 const fhasp::Element FakeComposite::kDestRbElement{{
     .id = kDestRbElementId,
     .type = fhasp::ElementType::kRingBuffer,
     .description = kDestRbElementDescription,
+    .can_stop = false,
+    .can_bypass = false,
+}};
+const fhasp::Element FakeComposite::kDestPsElement{{
+    .id = kDestPsElementId,
+    .type = fhasp::ElementType::kPacketStream,
+    .description = kDestPsElementDescription,
     .can_stop = false,
     .can_bypass = false,
 }};
@@ -246,6 +281,7 @@ const fhasp::Element FakeComposite::kMuteElement{{
 const zx::duration FakeComposite::kSourceDaiElementProcessingDelay = zx::nsec(0);
 const zx::duration FakeComposite::kDestDaiElementProcessingDelay = zx::nsec(123);
 const zx::duration FakeComposite::kSourceRbElementProcessingDelay = zx::nsec(42);
+const zx::duration FakeComposite::kSourcePsElementProcessingDelay = zx::nsec(68);
 const fhasp::ElementState FakeComposite::kSourceDaiElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
         .plug_state = fhasp::PlugState{{
@@ -277,7 +313,16 @@ const fhasp::ElementState FakeComposite::kSourceRbElementInitState{{
     .bypassed = false,
     .processing_delay = kSourceRbElementProcessingDelay.get(),
 }};
+const fhasp::ElementState FakeComposite::kSourcePsElementInitState{{
+    .started = true,
+    .bypassed = false,
+    .processing_delay = kSourcePsElementProcessingDelay.get(),
+}};
 const fhasp::ElementState FakeComposite::kDestRbElementInitState{{
+    .started = true,
+    .bypassed = false,
+}};
+const fhasp::ElementState FakeComposite::kDestPsElementInitState{{
     .started = true,
     .bypassed = false,
 }};
@@ -291,7 +336,9 @@ const std::vector<fhasp::Element> FakeComposite::kElements{{
     kSourceDaiElement,
     kDestDaiElement,
     kSourceRbElement,
+    kSourcePsElement,
     kDestRbElement,
+    kDestPsElement,
     kMuteElement,
 }};
 
@@ -302,8 +349,16 @@ const fhasp::EdgePair FakeComposite::kTopologyInputEdgePair{{
     .processing_element_id_from = kSourceDaiElementId,
     .processing_element_id_to = kDestRbElementId,
 }};
+const fhasp::EdgePair FakeComposite::kTopologyPsCaptureEdgePair{{
+    .processing_element_id_from = kSourceDaiElementId,
+    .processing_element_id_to = kDestPsElementId,
+}};
 const fhasp::EdgePair FakeComposite::kTopologyOutputEdgePair{{
     .processing_element_id_from = kSourceRbElementId,
+    .processing_element_id_to = kDestDaiElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologyPsOutputEdgePair{{
+    .processing_element_id_from = kSourcePsElementId,
     .processing_element_id_to = kDestDaiElementId,
 }};
 const fhasp::EdgePair FakeComposite::kTopologyRbToMuteEdgePair{{
@@ -322,6 +377,12 @@ const fhasp::Topology FakeComposite::kInputOnlyTopology{{
         kTopologyInputEdgePair,
     }},
 }};
+const fhasp::Topology FakeComposite::kPacketStreamCaptureTopology{{
+    .id = kPacketStreamCaptureTopologyId,
+    .processing_elements_edge_pairs = {{
+        kTopologyPsCaptureEdgePair,
+    }},
+}};
 const fhasp::Topology FakeComposite::kFullDuplexTopology{{
     .id = kFullDuplexTopologyId,
     .processing_elements_edge_pairs = {{
@@ -335,6 +396,12 @@ const fhasp::Topology FakeComposite::kOutputOnlyTopology{{
         kTopologyOutputEdgePair,
     }},
 }};
+const fhasp::Topology FakeComposite::kPacketStreamOutputTopology{{
+    .id = kPacketStreamOutputTopologyId,
+    .processing_elements_edge_pairs = {{
+        kTopologyPsOutputEdgePair,
+    }},
+}};
 const fhasp::Topology FakeComposite::kOutputWithMuteTopology{{
     .id = kOutputWithMuteTopologyId,
     .processing_elements_edge_pairs = {{
@@ -346,8 +413,10 @@ const fhasp::Topology FakeComposite::kOutputWithMuteTopology{{
 // Topology set
 const std::vector<fhasp::Topology> FakeComposite::kTopologies{{
     kInputOnlyTopology,
+    kPacketStreamCaptureTopology,
     kFullDuplexTopology,
     kOutputOnlyTopology,
+    kPacketStreamOutputTopology,
     kOutputWithMuteTopology,
 }};
 

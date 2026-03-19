@@ -216,6 +216,26 @@ void Device::RingBufferFidlErrorHandler<fha::RingBuffer>::on_fidl_error(fidl::Un
   device()->ring_buffer_map_.erase(element_id_);
 }
 
+// Invoked when a PacketStream channel drops. Device state previously was Configured/Paused/Started.
+template <>
+void Device::PacketStreamFidlErrorHandler<fha::PacketStreamControl>::on_fidl_error(
+    fidl::UnbindInfo info) {
+  ADR_LOG_METHOD(kLogPacketStreamFidlResponses || kLogObjectLifetimes) << "(PacketStream)";
+  if (device()->has_error()) {
+    ADR_WARN_METHOD() << "device already has an error; no device state to unwind";
+  } else if (info.is_peer_closed() || info.is_user_initiated()) {
+    ADR_LOG_METHOD(kLogPacketStreamFidlResponses) << name() << " disconnected: " << info;
+    device()->DeviceDroppedPacketStream(element_id_);
+  } else {
+    ADR_WARN_METHOD() << name() << " disconnected: " << info;
+    device()->OnError(info.status());
+  }
+  auto& packet_stream = device()->packet_stream_map_.find(element_id_)->second;
+  packet_stream.packet_stream_client.reset();
+
+  device()->packet_stream_map_.erase(element_id_);
+}
+
 // Invoked when a SignalProcessing channel drops. This can occur during device initialization.
 template <>
 void Device::FidlErrorHandler<fhasp::SignalProcessing>::on_fidl_error(fidl::UnbindInfo info) {
@@ -434,7 +454,8 @@ bool Device::IsInitializationComplete() {
              has_plug_state();
     case fad::DeviceType::kComposite:
       return has_composite_properties() && has_health_state() && checked_for_signalprocessing() &&
-             dai_format_sets_retrieved() && ring_buffer_format_sets_retrieved();
+             dai_format_sets_retrieved() && ring_buffer_format_sets_retrieved() &&
+             packet_stream_format_sets_retrieved();
     default:
       ADR_WARN_METHOD() << "Invalid device_type_";
       return false;
@@ -463,12 +484,13 @@ void Device::OnInitializationResponse() {
       break;
     case fad::DeviceType::kComposite:
       ADR_LOG_METHOD(kLogDeviceInitializationProgress)
-          << " (RECEIVED|pending)"                                                 //
-          << "   " << (has_composite_properties() ? "PROPS" : "props")             //
-          << "   " << (has_health_state() ? "HEALTH" : "health")                   //
-          << "   " << (checked_for_signalprocessing() ? "SIGPROC" : "sigproc")     //
-          << "   " << (dai_format_sets_retrieved() ? "DAIFORMATS" : "daiformats")  //
-          << "   " << (ring_buffer_format_sets_retrieved() ? "RB_FORMATS" : "rb_formats");
+          << " (RECEIVED|pending)"                                                         //
+          << "   " << (has_composite_properties() ? "PROPS" : "props")                     //
+          << "   " << (has_health_state() ? "HEALTH" : "health")                           //
+          << "   " << (checked_for_signalprocessing() ? "SIGPROC" : "sigproc")             //
+          << "   " << (dai_format_sets_retrieved() ? "DAIFORMATS" : "daiformats")          //
+          << "   " << (ring_buffer_format_sets_retrieved() ? "RB_FORMATS" : "rb_formats")  //
+          << "   " << (packet_stream_format_sets_retrieved() ? "PS_FORMATS" : "ps_formats");
       break;
     default:
       ADR_WARN_METHOD() << "Invalid device_type_";
@@ -608,14 +630,30 @@ bool Device::AddObserver(const std::shared_ptr<ObserverNotify>& observer_to_add)
 void Device::DeviceDroppedRingBuffer(ElementId element_id) {
   ADR_LOG_METHOD(kLogDeviceState);
 
-  // This is distinct from DropRingBuffer in case we must notify our RingBuffer (via our Control).
-  // We do so if we have 1) a Control and 2) a driver_format_ (thus a client-configured RingBuffer).
+  // This is distinct from DropRingBuffer in case we must notify our RingBufferServer (via our
+  // Control). We do so if we have 1) a Control and 2) a driver_format_ (thus a client-configured
+  // RingBufferServer).
   if (auto notify = GetControlNotify(); notify) {
     if (auto rb_pair = ring_buffer_map_.find(element_id);
         rb_pair != ring_buffer_map_.end() && rb_pair->second.driver_format.has_value())
       notify->DeviceDroppedRingBuffer(element_id);
   }
   DropRingBuffer(element_id);
+}
+
+void Device::DeviceDroppedPacketStream(ElementId element_id) {
+  ADR_LOG_METHOD(kLogDeviceState);
+
+  // This is distinct from DropPacketStream in case we must notify our PacketStreamServer (via our
+  // Control). We do so if we have 1) a Control and 2) a driver_format_ (thus a client-configured
+  // PacketStreamServer).
+  if (auto notify = GetControlNotify(); notify) {
+    if (auto ps_pair = packet_stream_map_.find(element_id);
+        ps_pair != packet_stream_map_.end() && ps_pair->second.driver_format.has_value()) {
+      notify->DeviceDroppedPacketStream(element_id);
+    }
+  }
+  DropPacketStream(element_id);
 }
 
 // Whether client- or device-originated, reset any state associated with an active RingBuffer.
@@ -666,7 +704,7 @@ void Device::DropRingBuffer(ElementId element_id) {
 
   rb_record.driver_format.reset();  // ... making us re-call ConnectToRingBufferFidl ...
   rb_record.vmo_format = {};
-  rb_record.num_ring_buffer_frames.reset();  // ... and GetVmo ...
+  rb_record.num_ring_buffer_frames.reset();  // ... and GetRingBufferVmo ...
   rb_record.ring_buffer_vmo.reset();
 
   rb_record.ring_buffer_properties.reset();  // ... and GetProperties ...
@@ -683,6 +721,62 @@ void Device::DropRingBuffer(ElementId element_id) {
   // Clear our FIDL connection to the driver RingBuffer.
   (void)rb_record.ring_buffer_client->UnbindMaybeGetEndpoint();
   rb_record.ring_buffer_client.reset();
+}
+
+void Device::DropPacketStream(ElementId element_id) {
+  if (!is_composite()) {
+    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_ << ": cannot DropPacketStream";
+    return;
+  }
+
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    return;
+  }
+  FX_CHECK(is_operational());
+  ADR_LOG_METHOD(kLogDeviceState);
+
+  auto ps_pair = packet_stream_map_.find(element_id);
+  if (ps_pair == packet_stream_map_.end()) {
+    ADR_LOG_METHOD(kLogPacketStreamMethods) << "element_id " << element_id << " not found";
+    return;
+  }
+
+  // If we've already cleaned out any state with the underlying driver PacketStream, then we're
+  // done.
+  auto& ps_record = ps_pair->second;
+
+  // This can be called before the PacketStreamRecord is entirely populated, if failure occurs after
+  // the initial Connect (such as unsupported format). We can only record the 'destroyed_at'
+  // timestamp if the Inspect instance exists.
+  if (ps_record.inspect_instance) {
+    ps_record.inspect_instance->RecordDestructionTime(zx::clock::get_monotonic());
+  } else {
+    ADR_LOG_METHOD(kLogPacketStreamMethods)
+        << "cannot RecordDestructionTime: no PS inspect node (CreatePacketStream must have failed)";
+  }
+
+  if (!ps_record.packet_stream_client.has_value() || !ps_record.packet_stream_client->is_valid()) {
+    ADR_LOG_METHOD(kLogPacketStreamMethods) << "Driver PacketStream connection is already dropped";
+    return;
+  }
+
+  // Revert all configuration state related to the PacketStream.
+  //
+  ps_record.start_time.reset();  // Pause, if we are started.
+
+  ps_record.inspect_instance = nullptr;
+
+  ps_record.driver_format.reset();  // ... making us re-call ConnectToPacketStreamFidl ...
+  ps_record.configured_buffer_type = std::nullopt;
+
+  ps_record.packet_stream_properties.reset();  // ... and GetProperties ...
+
+  ps_record.requested_packet_stream_frames = 0u;
+
+  // Clear our FIDL connection to the driver PacketStream.
+  (void)ps_record.packet_stream_client->UnbindMaybeGetEndpoint();
+  ps_record.packet_stream_client.reset();
 }
 
 void Device::SetError(zx_status_t error) {
@@ -716,6 +810,22 @@ void Device::SetRingBufferState(ElementId element_id, RingBufferState ring_buffe
   rb_pair->second.ring_buffer_state = ring_buffer_state;
 }
 
+void Device::SetPacketStreamState(ElementId element_id, PacketStreamState packet_stream_state) {
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error; ignoring this";
+    return;
+  }
+
+  auto ps_pair = packet_stream_map_.find(element_id);
+  if (ps_pair == packet_stream_map_.end()) {
+    ADR_WARN_METHOD() << "couldn't find PacketStream for element_id " << element_id;
+    return;
+  }
+
+  ADR_LOG_METHOD(kLogPacketStreamState) << packet_stream_state;
+  ps_pair->second.packet_stream_state = packet_stream_state;
+}
+
 void Device::Initialize() {
   ADR_LOG_METHOD(kLogDeviceMethods);
   FX_CHECK(!has_error());
@@ -728,8 +838,8 @@ void Device::Initialize() {
     RetrievePlugState();
   } else if (is_composite()) {
     // We use kDefaultLongCmdTimeout here, as we don't clear the timeout until GetProperties,
-    // GetTopologies, GetElements, GetRingBufferFormats, GetDaiFormats and the initial GetHealthInfo
-    // call have all completed.
+    // GetTopologies, GetElements, GetRingBufferFormats, GetPacketStreamFormats, GetDaiFormats and
+    // the initial GetHealthInfo call have all completed.
     SetCommandTimeout(kDefaultLongCmdTimeout, "Device::Initialize (multi-command)");
 
     RetrieveDeviceProperties();
@@ -765,7 +875,9 @@ bool Device::SetDeviceErrorOnFidlError(const ResultT& result, const char* debug_
   return result.is_error();
 }
 
-// Use this when the Result error can only be a framework_error.
+// Use this when the Result error is allowed to be a domain error (which will be ignored),
+// but we want to take the device into an error state if it's a framework error.
+// Returns true if a framework error was found (and handled by this function).
 template <typename ResultT>
 bool Device::SetDeviceErrorOnFidlFrameworkError(const ResultT& result, const char* debug_context) {
   if (has_error()) {
@@ -773,16 +885,27 @@ bool Device::SetDeviceErrorOnFidlFrameworkError(const ResultT& result, const cha
     return true;
   }
   if (result.is_error()) {
-    if (result.error_value().is_canceled() || result.error_value().is_peer_closed()) {
-      ADR_LOG_METHOD(kLogCodecFidlResponses || kLogCompositeFidlResponses)
-          << debug_context << ": will take no action on " << result.error_value();
+    fidl::Status framework_status = fidl::Status::Ok();
+    if constexpr (requires { result.error_value().is_framework_error(); }) {
+      if (!result.error_value().is_framework_error()) {
+        return false;
+      }
+      framework_status = result.error_value().framework_error();
     } else {
-      FX_LOGS(ERROR) << debug_context << " failed: " << result.error_value().status() << " ("
-                     << result.error_value() << ")";
-      OnError(result.error_value().status());
+      framework_status = result.error_value();
     }
+
+    if (framework_status.is_canceled() || framework_status.is_peer_closed()) {
+      ADR_LOG_METHOD(kLogCodecFidlResponses || kLogCompositeFidlResponses)
+          << debug_context << ": will take no action on " << framework_status;
+    } else {
+      FX_LOGS(ERROR) << debug_context << " failed: " << framework_status.status() << " ("
+                     << framework_status << ")";
+      OnError(framework_status.status());
+    }
+    return true;
   }
-  return result.is_error();
+  return false;
 }
 
 void Device::RetrieveDeviceProperties() {
@@ -1081,9 +1204,10 @@ void Device::RetrieveSignalProcessingElements() {
         RetrieveSignalProcessingElementStates();
 
         if (is_composite()) {
-          // Now that we know our element IDs, we can query the DAI and RingBuffer elements.
+          // Now we know our element IDs, we can query DAI, RingBuffer and PacketStream elements.
           RetrieveDaiFormatSets();
           RetrieveRingBufferFormatSets();
+          RetrievePacketStreamFormatSets();
         }
       });
 }
@@ -1581,6 +1705,68 @@ void Device::AddRingBufferFormatSet(
   }
 }
 
+void Device::RetrievePacketStreamFormatSets() {
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    return;
+  }
+
+  FX_CHECK(is_composite());
+
+  ADR_LOG_METHOD(kLogCompositeFidlCalls);
+  packet_stream_ids_ = packet_streams(sig_proc_element_map_);
+
+  auto remaining_packet_stream_ids =
+      std::make_shared<std::unordered_set<ElementId>>(packet_stream_ids_);
+
+  for (auto id : packet_stream_ids_) {
+    inspect()->RecordPacketStreamElement(id, sig_proc_element_map_[id].element.description());
+
+    ADR_LOG_METHOD(kLogCompositeFidlCalls) << " GetPacketStreamFormats (element " << id << ")";
+    (*composite_client_)
+        ->GetPacketStreamFormats(id)
+        .Then([this, id, remaining_packet_stream_ids](
+                  fidl::Result<fha::Composite::GetPacketStreamFormats>& result) mutable {
+          if (SetDeviceErrorOnFidlError(result, "Composite/GetPacketStreamFormats response")) {
+            // We need not call AddPacketStreamFormatSet: this device is in the process of being
+            // unwound. The client has already received a HasError notification for this device.
+            return;
+          }
+          AddPacketStreamFormatSet(id, remaining_packet_stream_ids,
+                                   result->packet_stream_formats());
+        });
+  }
+  if (remaining_packet_stream_ids->empty()) {
+    packet_stream_format_sets_retrieved_ = true;
+    OnInitializationResponse();
+  }
+}
+
+void Device::AddPacketStreamFormatSet(
+    ElementId id, std::shared_ptr<std::unordered_set<ElementId>>& remaining_packet_stream_ids,
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& format_set) {
+  std::string context{"GetPacketStreamFormats (element "};
+  context.append(std::to_string(id)).append(") response");
+  if (has_error()) {
+    ADR_WARN_OBJECT() << "device already has error during " << context;
+    return;
+  }
+  if (!ValidatePacketStreamFormatSets(format_set)) {
+    OnError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  ADR_LOG_METHOD(kLogCompositeFidlResponses) << context;
+
+  element_driver_packet_stream_format_sets_.emplace_back(id, format_set);
+  remaining_packet_stream_ids->erase(id);
+  if (remaining_packet_stream_ids->empty()) {
+    ADR_LOG_OBJECT(kLogCompositeFidlResponses) << context << ": success";
+    packet_stream_format_sets_retrieved_ = true;
+    OnInitializationResponse();
+  }
+}
+
 void Device::RetrievePlugState() {
   if (has_error()) {
     ADR_WARN_METHOD() << "device already has an error";
@@ -1730,7 +1916,7 @@ zx::result<zx::clock> Device::GetReadOnlyClock() const {
 
 // Determine the full fuchsia_hardware_audio::Format needed for ConnectRingBufferFidl.
 // This method expects that the required fields are present.
-std::optional<fha::Format2> Device::SupportedDriverFormatForClientFormat(
+std::optional<fha::Format2> Device::SupportedRingBufferDriverFormatForClientFormat(
     ElementId element_id, const fuchsia_audio::Format& client_format) {
   fha::SampleFormat driver_sample_format;
   uint8_t bytes_per_sample, max_valid_bits;
@@ -1773,6 +1959,7 @@ std::optional<fha::Format2> Device::SupportedDriverFormatForClientFormat(
   for (const auto& element_entry_pair : element_driver_ring_buffer_format_sets_) {
     if (element_entry_pair.first == element_id) {
       driver_ring_buffer_format_sets = element_entry_pair.second;
+      break;
     }
   }
   if (driver_ring_buffer_format_sets.empty()) {
@@ -2274,7 +2461,17 @@ bool Device::CreateRingBuffer(
   }
 
   // Here, we detect all the error cases that we can, before calling into the driver.
-  if (!ValidateRingBufferFormat(format)) {
+  if (format.Which() == fha::Format2::Tag::kEncoding) {
+    ADR_WARN_METHOD() << "RingBuffers do not support Encoding-based formats";
+    create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
+    return false;
+  }
+  if (format.Which() != fha::Format2::Tag::kPcmFormat) {
+    ADR_WARN_METHOD() << "Unknown Format2 union variant";
+    create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
+    return false;
+  }
+  if (!ValidatePcmFormat(format.pcm_format().value())) {
     create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
     return false;
   }
@@ -2309,7 +2506,7 @@ bool Device::CreateRingBuffer(
         ring_buffer.create_ring_buffer_callback = std::move(cb);
 
         RetrieveRingBufferProperties(element_id);
-        RetrieveDelayInfo(element_id);
+        RetrieveRingBufferDelayInfo(element_id);
       });
 
   return true;
@@ -2321,7 +2518,7 @@ void Device::ConnectRingBufferFidl(
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
 
   // We use kDefaultLongCmdTimeout here, as we don't clear the timeout until CreateRingBuffer,
-  // GetProperties, GetVmo and the initial WatchDelayInfo call have all completed.
+  // GetProperties, GetRingBufferVmo and the initial WatchDelayInfo call have all completed.
   SetCommandTimeout(kDefaultLongCmdTimeout, "CreateRingBuffer (multi-command)");
 
   auto [client_end, server_end] = fidl::Endpoints<fha::RingBuffer>::Create();
@@ -2428,6 +2625,93 @@ void Device::ConnectRingBufferFidl(
       });
 }
 
+void Device::ConnectPacketStreamFidl(ElementId element_id, fha::Format2 driver_format,
+                                     fit::callback<void(zx_status_t status)> callback) {
+  ADR_LOG_METHOD(kLogPacketStreamMethods || kLogPacketStreamFidlCalls);
+
+  if (!ValidatePacketStreamFormat(driver_format)) {
+    callback(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  // We use kDefaultLongCmdTimeout here, as we don't clear the timeout until CreatePacketStream,
+  // GetProperties and GetPacketStreamSink (for outgoing streams) calls have all completed.
+  SetCommandTimeout(kDefaultLongCmdTimeout, "CreatePacketStream (multi-command)");
+
+  auto [client_end, server_end] = fidl::Endpoints<fha::PacketStreamControl>::Create();
+
+  fha::Format2 format2 = driver_format;
+  (*composite_client_)
+      ->CreatePacketStream({element_id, std::move(format2), std::move(server_end)})
+      .Then([this, element_id, driver_format, client_end = std::move(client_end),
+             callback = std::move(callback)](
+                fidl::Result<fha::Composite::CreatePacketStream>& result) mutable {
+        std::string context{"Composite/CreatePacketStream response"};
+        if (result.is_error()) {
+          ClearCommandTimeout();
+
+          zx_status_t status = ZX_OK;
+          bool is_device_error = false;
+
+          // The `fuchsia.hardware.audio.DriverError` is mapped to
+          // `zx_status_t` here.
+          // TODO(puneetha): Map to fuchsia.audio.device specific errors when API is updated.
+          if (result.error_value().is_domain_error()) {
+            switch (result.error_value().domain_error()) {
+              case fha::DriverError::kInvalidArgs:
+                status = ZX_ERR_INVALID_ARGS;
+                break;
+              case fha::DriverError::kNotSupported:
+                status = ZX_ERR_NOT_SUPPORTED;
+                break;
+              case fha::DriverError::kWrongType:
+                status = ZX_ERR_WRONG_TYPE;
+                break;
+              case fha::DriverError::kFatalError:
+                is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
+                FX_CHECK(is_device_error)
+                    << "Invalid error interpretation. Fatal error should be considered a device error.";
+                status = ZX_ERR_INTERNAL;
+                break;
+              case fha::DriverError::kShouldWait:
+                status = ZX_ERR_SHOULD_WAIT;
+                break;
+              case fha::DriverError::kInternalError:
+                [[fallthrough]];
+              default:
+                status = ZX_ERR_INTERNAL;
+                break;
+            }
+          } else {
+            // For a framework error, let the generic handler deal with it.
+            is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
+            status = ZX_ERR_INTERNAL;
+          }
+
+          ADR_WARN_OBJECT() << "Failed to create packet stream: " << result.error_value();
+          callback(status);
+          return;
+        }
+
+        // Success path
+        PacketStreamRecord packet_stream_record{
+            .packet_stream_state = PacketStreamState::NotCreated,
+            .packet_stream_handler =
+                std::make_unique<PacketStreamFidlErrorHandler<fha::PacketStreamControl>>(
+                    this, element_id, "PacketStream"),
+            .driver_format = driver_format,
+        };
+
+        packet_stream_record.packet_stream_client = fidl::Client<fha::PacketStreamControl>(
+            std::move(client_end), dispatcher_, packet_stream_record.packet_stream_handler.get());
+
+        packet_stream_map_.insert_or_assign(element_id, std::move(packet_stream_record));
+        SetPacketStreamState(element_id, PacketStreamState::Creating);
+
+        callback(ZX_OK);
+      });
+}
+
 void Device::RetrieveRingBufferProperties(ElementId element_id) {
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
 
@@ -2454,7 +2738,61 @@ void Device::RetrieveRingBufferProperties(ElementId element_id) {
       });
 }
 
-void Device::RetrieveDelayInfo(ElementId element_id) {
+void Device::RetrievePacketStreamProperties(ElementId element_id) {
+  ADR_LOG_METHOD(kLogPacketStreamMethods || kLogPacketStreamFidlCalls);
+
+  auto& packet_stream = packet_stream_map_.find(element_id)->second;
+  FX_CHECK(packet_stream.packet_stream_client.has_value() &&
+           packet_stream.packet_stream_client->is_valid());
+
+  (*packet_stream.packet_stream_client)
+      ->GetProperties()
+      .Then([this, &packet_stream,
+             element_id](fidl::Result<fha::PacketStreamControl::GetProperties>& result) {
+        if (SetDeviceErrorOnFidlFrameworkError(result, "PacketStream/GetProperties response")) {
+          return;
+        }
+
+        ADR_LOG_OBJECT(kLogPacketStreamFidlResponses) << "PacketStream/GetProperties: success";
+        if (!ValidatePacketStreamProperties(result->properties())) {
+          FX_LOGS(ERROR) << "PacketStream/GetProperties properties validation failed";
+          OnError(ZX_ERR_INVALID_ARGS);
+          return;
+        }
+
+        packet_stream.packet_stream_properties = result->properties();
+        CheckForPacketStreamReady(element_id);
+      });
+
+  FX_CHECK(current_topology_id_.has_value());
+  bool expects_data_sink =
+      ElementHasOutgoingEdges(sig_proc_topology_map_.at(*current_topology_id_), element_id);
+
+  if (expects_data_sink) {
+    (*packet_stream.packet_stream_client)
+        ->GetPacketStreamSink()
+        .Then([this, &packet_stream,
+               element_id](fidl::Result<fha::PacketStreamControl::GetPacketStreamSink>& result) {
+          if (SetDeviceErrorOnFidlFrameworkError(result,
+                                                 "PacketStream/GetPacketStreamSink response")) {
+            return;
+          }
+
+          ADR_LOG_OBJECT(kLogPacketStreamFidlResponses)
+              << "PacketStream/GetPacketStreamSink: success";
+          if (!result->stream()) {
+            FX_LOGS(ERROR) << "PacketStream/GetPacketStreamSink: missing 'stream'";
+            OnError(ZX_ERR_INVALID_ARGS);
+            return;
+          }
+
+          packet_stream.data_sink = std::move(result->stream().value());
+          CheckForPacketStreamReady(element_id);
+        });
+  }
+}
+
+void Device::RetrieveRingBufferDelayInfo(ElementId element_id) {
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
 
   auto& ring_buffer = ring_buffer_map_.find(element_id)->second;
@@ -2478,16 +2816,17 @@ void Device::RetrieveDelayInfo(ElementId element_id) {
             ring_buffer.delay_info = result->delay_info();
             // If requested_ring_buffer_bytes_ is already set, but num_ring_buffer_frames_ isn't,
             // then we're getting delay info as part of creating a ring buffer. Otherwise,
-            // requested_ring_buffer_bytes_ must be set separately before calling GetVmo.
+            // requested_ring_buffer_bytes_ must be set separately before calling GetRingBufferVmo.
             if (ring_buffer.requested_ring_buffer_bytes && !ring_buffer.num_ring_buffer_frames) {
-              // Needed, to set requested_ring_buffer_frames_ before calling GetVmo.
+              // Needed, to set requested_ring_buffer_frames_ before calling GetRingBufferVmo.
               CalculateRequiredRingBufferSizes(element_id);
 
               FX_CHECK(device_info_->clock_domain().has_value());
               const auto clock_position_notifications_per_ring =
                   *device_info_->clock_domain() == fha::kClockDomainMonotonic ? 0 : 2;
-              GetVmo(element_id, static_cast<uint32_t>(ring_buffer.requested_ring_buffer_frames),
-                     clock_position_notifications_per_ring);
+              GetRingBufferVmo(element_id,
+                               static_cast<uint32_t>(ring_buffer.requested_ring_buffer_frames),
+                               clock_position_notifications_per_ring);
             }
 
             // Notify our controlling entity, if we have one.
@@ -2498,12 +2837,12 @@ void Device::RetrieveDelayInfo(ElementId element_id) {
                                   .external_delay = ring_buffer.delay_info->external_delay(),
                               }});
             }
-            RetrieveDelayInfo(element_id);
+            RetrieveRingBufferDelayInfo(element_id);
           });
 }
 
-void Device::GetVmo(ElementId element_id, uint32_t min_frames,
-                    uint32_t position_notifications_per_ring) {
+void Device::GetRingBufferVmo(ElementId element_id, uint32_t min_frames,
+                              uint32_t position_notifications_per_ring) {
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
 
   auto& ring_buffer = ring_buffer_map_.find(element_id)->second;
@@ -2599,7 +2938,7 @@ void Device::CheckForRingBufferReady(ElementId element_id) {
 
   FX_CHECK(ring_buffer.create_ring_buffer_callback);
   // This clears the "meta-command" timeout set earlier in ConnectRingBufferFidl, covering the
-  // CreateRingBuffer, GetProperties, GetVmo and initial WatchDelayInfo calls.
+  // CreateRingBuffer, GetProperties, GetRingBufferVmo and initial WatchDelayInfo calls.
   ClearCommandTimeout();
 
   auto now = zx::clock::get_monotonic();
@@ -2637,6 +2976,40 @@ void Device::CheckForRingBufferReady(ElementId element_id) {
       ring_buffer.ring_buffer_producer_bytes / ring_buffer.bytes_per_frame,
       ring_buffer.ring_buffer_consumer_bytes / ring_buffer.bytes_per_frame,
       *ring_buffer.num_ring_buffer_frames * ring_buffer.bytes_per_frame);
+}
+
+void Device::CheckForPacketStreamReady(ElementId element_id) {
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    return;
+  }
+  ADR_LOG_METHOD(kLogPacketStreamState);
+
+  auto& packet_stream = packet_stream_map_.find(element_id)->second;
+  // Check whether we are tearing down, or conversely have already set up the packet stream.
+  if (packet_stream.packet_stream_state != PacketStreamState::Creating) {
+    return;
+  }
+
+  FX_CHECK(current_topology_id_.has_value());
+  bool expects_data_sink =
+      ElementHasOutgoingEdges(sig_proc_topology_map_.at(*current_topology_id_), element_id);
+
+  // We're creating the packet stream but don't have all our prerequisites yet.
+  if (!packet_stream.packet_stream_properties.has_value() ||
+      (expects_data_sink && !packet_stream.data_sink.has_value())) {
+    return;
+  }
+
+  SetPacketStreamState(element_id, PacketStreamState::Stopped);
+
+  // This clears the "meta-command" timeout set earlier in ConnectPacketStreamFidl, covering the
+  // CreatePacketStream, GetProperties and (if applicable) GetPacketStreamSink calls.
+  ClearCommandTimeout();
+
+  auto now = zx::clock::get_monotonic();
+  FX_LOGS(INFO) << "PacketStream created successfully.";
+  packet_stream.inspect_instance = inspect()->RecordPacketStreamInstance(element_id, now);
 }
 
 // Returns TRUE if it actually calls out to the driver. We avoid doing so if we already know
@@ -2844,6 +3217,346 @@ void Device::StopRingBuffer(ElementId element_id, fit::callback<void(zx_status_t
       });
 }
 
+void Device::StartPacketStream(ElementId element_id,
+                               fit::callback<void(zx::result<>)> start_callback) {
+  if (!GetControlNotify()) {
+    ADR_WARN_METHOD() << "Device is not yet controlled: cannot StartPacketStream";
+    start_callback(zx::error(ZX_ERR_INTERNAL));
+    return;
+  }
+
+  if (!is_composite()) {
+    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_ << ": cannot StartPacketStream";
+    start_callback(zx::error(ZX_ERR_INTERNAL));
+    return;
+  }
+
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    // We need not invoke start_callback: this device is in the process of being unwound. The
+    // client has already received a HasError notification for this device.
+    return;
+  }
+  FX_CHECK(is_operational());
+  ADR_LOG_METHOD(kLogPacketStreamFidlCalls);
+
+  auto& packet_stream = packet_stream_map_.find(element_id)->second;
+  FX_CHECK(packet_stream.packet_stream_client.has_value() &&
+           packet_stream.packet_stream_client->is_valid());
+
+  if (!packet_stream.configured_buffer_type.has_value()) {
+    if (!packet_stream.packet_stream_properties.has_value() ||
+        !packet_stream.packet_stream_properties->supported_buffer_types().has_value() ||
+        !(*packet_stream.packet_stream_properties->supported_buffer_types() &
+          fha::BufferType::kInline)) {
+      ADR_WARN_METHOD() << "PacketStream " << element_id
+                        << " is not configured and does not support INLINE buffers.";
+      start_callback(zx::error(ZX_ERR_BAD_STATE));
+      return;
+    }
+  }
+
+  SetCommandTimeout(kDefaultShortCmdTimeout, "PacketStream::Start");
+  (*packet_stream.packet_stream_client)
+      ->Start()
+      .Then([this, &packet_stream, element_id, callback = std::move(start_callback)](
+                fidl::Result<fha::PacketStreamControl::Start>& result) mutable {
+        ClearCommandTimeout();
+
+        if (SetDeviceErrorOnFidlFrameworkError(result, "PacketStream/Start response")) {
+          // We need not invoke start_callback: this device is in the process of being unwound.
+          return;
+        }
+
+        if (result.is_error()) {
+          // Domain error is zx_status_t
+          ADR_WARN_OBJECT() << "PacketStreamControl/Start failed: " << result.error_value();
+          if (result.error_value().is_domain_error()) {
+            callback(zx::error(result.error_value().domain_error()));
+          } else {
+            callback(zx::error(ZX_ERR_INTERNAL));
+          }
+          return;
+        }
+
+        ADR_LOG_OBJECT(kLogPacketStreamFidlResponses) << "PacketStreamControl/Start: success";
+
+        packet_stream.start_time = zx::clock::get_monotonic();
+        // TODO(https://fxbug.dev/470157894): use a more accurate start time (e.g. from server)
+        callback(zx::ok());
+        SetPacketStreamState(element_id, PacketStreamState::Started);
+
+        // This completion can theoretically execute while the device is in the midst of error or
+        // removal, so we only capture the 'started_at' timestamp if inspect_instance exists.
+        if (packet_stream.inspect_instance) {
+          packet_stream.inspect_instance->RecordStartTime(*packet_stream.start_time);
+        } else {
+          ADR_WARN_OBJECT() << "cannot RecordStartTime";
+        }
+      });
+}
+
+void Device::StopPacketStream(ElementId element_id,
+                              fit::callback<void(zx_status_t)> stop_callback) {
+  if (!GetControlNotify()) {
+    ADR_WARN_METHOD() << "Device is not yet controlled: cannot StopPacketStream";
+    stop_callback(ZX_ERR_INTERNAL);
+    return;
+  }
+
+  if (!is_composite()) {
+    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_ << ": cannot StopPacketStream";
+    stop_callback(ZX_ERR_INTERNAL);
+    return;
+  }
+
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    // We need not invoke stop_callback: this device is in the process of being unwound. The
+    // client has already received a HasError notification for this device.
+    return;
+  }
+  FX_CHECK(is_operational());
+  ADR_LOG_METHOD(kLogPacketStreamFidlCalls);
+
+  auto& packet_stream = packet_stream_map_.find(element_id)->second;
+  FX_CHECK(packet_stream.packet_stream_client.has_value() &&
+           packet_stream.packet_stream_client->is_valid());
+
+  SetCommandTimeout(kDefaultShortCmdTimeout, "PacketStream::Stop");
+  // TODO(https://fxbug.dev/470157894): update start_time or related metrics as needed.
+  (*packet_stream.packet_stream_client)
+      ->Stop()
+      .Then([this, &packet_stream, element_id, callback = std::move(stop_callback)](
+                fidl::Result<fha::PacketStreamControl::Stop>& result) mutable {
+        ClearCommandTimeout();
+
+        if (SetDeviceErrorOnFidlFrameworkError(result, "PacketStreamControl/Stop response")) {
+          // We need not invoke the callback: this device is in the process of being unwound.
+          return;
+        }
+
+        if (result.is_error()) {
+          ADR_WARN_OBJECT() << "PacketStreamControl/Stop failed: " << result.error_value();
+          if (result.error_value().is_domain_error()) {
+            callback(result.error_value().domain_error());
+          } else {
+            callback(ZX_ERR_INTERNAL);
+          }
+          return;
+        }
+
+        ADR_LOG_OBJECT(kLogPacketStreamFidlResponses) << "PacketStreamControl/Stop: success";
+
+        auto now = zx::clock::get_monotonic();
+        if (packet_stream.start_time) {
+          packet_stream.start_time.reset();
+        } else {
+          ADR_WARN_OBJECT() << "PacketStream Stop received but not started";
+        }
+
+        callback(ZX_OK);
+        SetPacketStreamState(element_id, PacketStreamState::Stopped);
+
+        if (packet_stream.inspect_instance) {
+          packet_stream.inspect_instance->RecordStopTime(now);
+        } else {
+          ADR_WARN_OBJECT() << "cannot RecordStopTime";
+        }
+      });
+}
+
+void Device::SetPacketStreamBuffers(
+    ElementId element_id,
+    std::variant<fuchsia_hardware_audio::AllocateVmosConfig,
+                 fuchsia_hardware_audio::RegisterVmosConfig>
+        setup_strategy,
+    fit::callback<void(zx_status_t, std::optional<std::vector<fuchsia_hardware_audio::VmoInfo>>)>
+        set_buffers_callback) {
+  ADR_LOG_METHOD(kLogPacketStreamFidlCalls);
+
+  fha::BufferType buffer_type;
+  std::optional<fha::AllocateVmosConfig> allocate_info;
+  std::optional<fha::RegisterVmosConfig> register_info;
+
+  if (std::holds_alternative<fha::AllocateVmosConfig>(setup_strategy)) {
+    // fha INLINE mode can be either in-stream mixed with packets of other buffer types
+    // or just used standalone (both are not differentiated for now).
+    buffer_type = fha::BufferType::kDriverOwned;
+    allocate_info = std::get<fha::AllocateVmosConfig>(std::move(setup_strategy));
+  } else if (std::holds_alternative<fha::RegisterVmosConfig>(setup_strategy)) {
+    // fha INLINE mode can be either in-stream mixed with packets of other buffer types
+    // or just used standalone (both are not differentiated for now).
+    buffer_type = fha::BufferType::kClientOwned;
+    register_info = std::get<fha::RegisterVmosConfig>(std::move(setup_strategy));
+  }
+
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device has an error";
+    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
+    return;
+  }
+  if (!is_composite()) {
+    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_
+                      << ": cannot SetPacketStreamBuffers";
+    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
+    return;
+  }
+
+  auto ps_iter = packet_stream_map_.find(element_id);
+  if (ps_iter == packet_stream_map_.end()) {
+    ADR_WARN_METHOD() << "PacketStream " << element_id << " not found";
+    set_buffers_callback(ZX_ERR_NOT_FOUND, std::nullopt);
+    return;
+  }
+  auto& ps_record = ps_iter->second;
+
+  if (ps_record.packet_stream_state == PacketStreamState::Started) {
+    ADR_WARN_METHOD() << "PacketStream " << element_id << " is already started";
+    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
+    return;
+  }
+  if (ps_record.configured_buffer_type.has_value()) {
+    ADR_WARN_METHOD() << "PacketStream " << element_id << " already configured";
+    set_buffers_callback(ZX_ERR_ALREADY_EXISTS, std::nullopt);
+    return;
+  }
+
+  // Check supported buffer type.
+  if (!ps_record.packet_stream_properties.has_value() ||
+      !ps_record.packet_stream_properties->supported_buffer_types().has_value() ||
+      !(*ps_record.packet_stream_properties->supported_buffer_types() & buffer_type)) {
+    ADR_WARN_METHOD() << "Buffer type 0x" << std::hex << static_cast<uint64_t>(buffer_type)
+                      << std::dec << " not supported (supported_buffer_types: 0x" << std::hex
+                      << static_cast<uint64_t>(
+                             *ps_record.packet_stream_properties->supported_buffer_types())
+                      << std::dec << ")";
+    set_buffers_callback(ZX_ERR_NOT_SUPPORTED, std::nullopt);
+    return;
+  }
+
+  // Determine whether the PacketStream element is "outgoing" or "incoming" to assess the correct
+  // VMO rights.
+  FX_CHECK(current_topology_id_.has_value());
+  bool vmo_is_incoming =
+      ElementHasIncomingEdges(sig_proc_topology_map_.at(*current_topology_id_), element_id);
+  zx_rights_t required_rights =
+      vmo_is_incoming ? kRequiredIncomingVmoRights : kRequiredOutgoingVmoRights;
+
+  if (allocate_info.has_value()) {
+    if (!allocate_info->vmo_count().has_value() || !allocate_info->min_vmo_size().has_value()) {
+      ADR_WARN_METHOD() << "AllocateVmos Config missing required fields:"
+                        << (!allocate_info->vmo_count().has_value() ? " vmo_count" : "")
+                        << (!allocate_info->min_vmo_size().has_value() ? " min_vmo_size" : "");
+      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+      return;
+    }
+    uint32_t expected_vmo_count = *allocate_info->vmo_count();
+    uint64_t min_vmo_size = *allocate_info->min_vmo_size();
+    SetCommandTimeout(kDefaultShortCmdTimeout, "AllocateVmos");
+    (*ps_record.packet_stream_client)
+        ->AllocateVmos(std::move(*allocate_info))
+        .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type, required_rights,
+               expected_vmo_count,
+               min_vmo_size](fidl::Result<fha::PacketStreamControl::AllocateVmos>& result) mutable {
+          ClearCommandTimeout();
+
+          if (has_error()) {
+            return;
+          }
+          if (SetDeviceErrorOnFidlFrameworkError(result, "AllocateVmos response")) {
+            cb(ZX_ERR_INTERNAL, std::nullopt);
+            return;
+          }
+
+          if (result.is_error()) {
+            auto domain_error = result.error_value().domain_error();
+            ADR_WARN_OBJECT() << "AllocateVmos domain error: "
+                              << static_cast<uint32_t>(domain_error);
+            if (domain_error != ZX_ERR_INVALID_ARGS && domain_error != ZX_ERR_BAD_STATE) {
+              OnError(domain_error);
+            }
+            cb(domain_error, std::nullopt);
+            return;
+          }
+          // Success
+          if (result.value().vmos().size() != expected_vmo_count) {
+            ADR_WARN_OBJECT() << "AllocateVmos returned " << result.value().vmos().size()
+                              << " VMOs, expected " << expected_vmo_count;
+            OnError(ZX_ERR_INTERNAL);
+            cb(ZX_ERR_INTERNAL, std::nullopt);
+            return;
+          }
+
+          for (uint32_t i = 0; i < result.value().vmos().size(); ++i) {
+            if (!ValidatePacketStreamVmo(result.value().vmos()[i], required_rights, min_vmo_size)) {
+              ADR_WARN_OBJECT() << "AllocateVmos returned invalid VMO at index " << i;
+              OnError(ZX_ERR_INTERNAL);
+              cb(ZX_ERR_INTERNAL, std::nullopt);
+              return;
+            }
+          }
+
+          auto& ps = packet_stream_map_[element_id];
+          ps.configured_buffer_type = buffer_type;
+
+          cb(ZX_OK, std::move(result.value().vmos()));
+        });
+  } else if (register_info.has_value()) {
+    if (!register_info->vmo_infos().has_value()) {
+      ADR_WARN_METHOD() << "RegisterVmos Config missing vmo_infos";
+      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+      return;
+    }
+    if (register_info->vmo_infos()->empty()) {
+      ADR_WARN_METHOD() << "RegisterVmos Config empty vmo_infos";
+      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+      return;
+    }
+    for (uint32_t i = 0; i < register_info->vmo_infos()->size(); ++i) {
+      if (!ValidatePacketStreamVmo((*register_info->vmo_infos())[i], required_rights)) {
+        ADR_WARN_METHOD() << "RegisterVmos Config contains invalid VMO at index " << i;
+        set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+        return;
+      }
+    }
+    SetCommandTimeout(kDefaultShortCmdTimeout, "RegisterVmos");
+    (*ps_record.packet_stream_client)
+        ->RegisterVmos(std::move(*register_info))
+        .Then([this, element_id, cb = std::move(set_buffers_callback),
+               buffer_type](fidl::Result<fha::PacketStreamControl::RegisterVmos>& result) mutable {
+          ClearCommandTimeout();
+
+          if (has_error()) {
+            return;
+          }
+          if (SetDeviceErrorOnFidlFrameworkError(result, "RegisterVmos response")) {
+            cb(ZX_ERR_INTERNAL, std::nullopt);
+            return;
+          }
+
+          if (result.is_error()) {
+            auto domain_error = result.error_value().domain_error();
+            ADR_WARN_OBJECT() << "RegisterVmos domain error: "
+                              << static_cast<uint32_t>(domain_error);
+            if (domain_error != ZX_ERR_INVALID_ARGS && domain_error != ZX_ERR_BAD_STATE) {
+              OnError(domain_error);
+            }
+            cb(domain_error, std::nullopt);
+            return;
+          }
+          // Success
+          auto& ps = packet_stream_map_[element_id];
+          ps.configured_buffer_type = buffer_type;
+
+          cb(ZX_OK, std::nullopt);
+        });
+  } else {
+    ADR_WARN_METHOD() << "allocate_info or register_info missing but required";
+    set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+  }
+}
+
 // Uses the VMO format and ring buffer properties, to set bytes_per_frame,
 // requested_ring_buffer_frames, ring_buffer_consumer_bytes and ring_buffer_producer_bytes.
 void Device::CalculateRequiredRingBufferSizes(ElementId element_id) {
@@ -2889,15 +3602,8 @@ void Device::CalculateRequiredRingBufferSizes(ElementId element_id) {
   FX_CHECK(current_topology_id_.has_value());
   auto topology_match = sig_proc_topology_map_.find(*current_topology_id_);
   FX_CHECK(topology_match != sig_proc_topology_map_.end());
-  auto& topology = sig_proc_topology_map_.find(*current_topology_id_)->second;
-  for (auto& edge : topology) {
-    if (edge.processing_element_id_from() == element_id) {
-      element_is_outgoing = true;
-    }
-    if (edge.processing_element_id_to() == element_id) {
-      element_is_incoming = true;
-    }
-  }
+  element_is_outgoing = ElementHasOutgoingEdges(topology_match->second, element_id);
+  element_is_incoming = ElementHasIncomingEdges(topology_match->second, element_id);
   FX_CHECK(element_is_outgoing != element_is_incoming);
 
   // We don't include driver transfer size in our VMO size request (requested_ring_buffer_frames_)

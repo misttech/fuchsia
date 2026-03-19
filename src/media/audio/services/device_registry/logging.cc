@@ -103,6 +103,35 @@ void LogGainDbInternal(const std::optional<float>& gain_db, const std::string& i
   }
 }
 
+template <typename T>
+void LogChannelSetsInternal(const std::optional<std::vector<T>>& channel_sets,
+                            const std::string& indent) {
+  if (!channel_sets.has_value()) {
+    FX_LOGS(INFO) << indent << "channel_sets <none> (non-compliant)";
+    return;
+  }
+  FX_LOGS(INFO) << indent << "channel_sets [" << channel_sets->size() << "]";
+  for (auto i = 0u; i < channel_sets->size(); ++i) {
+    if (!channel_sets->at(i).attributes().has_value()) {
+      FX_LOGS(INFO) << indent << "  [" << i << "] <none> (non-compliant)";
+      continue;
+    }
+    const auto& attribs = *channel_sets->at(i).attributes();
+    FX_LOGS(INFO) << indent << "  [" << i << "] attributes [" << attribs.size() << "]";
+    for (auto j = 0u; j < attribs.size(); ++j) {
+      FX_LOGS(INFO) << indent << "      [" << j << "]";
+      FX_LOGS(INFO) << indent << "         min_frequency   "
+                    << (attribs[j].min_frequency().has_value()
+                            ? std::to_string(*attribs[j].min_frequency())
+                            : "<none>");
+      FX_LOGS(INFO) << indent << "         max_frequency   "
+                    << (attribs[j].max_frequency().has_value()
+                            ? std::to_string(*attribs[j].max_frequency())
+                            : "<none>");
+    }
+  }
+}
+
 void LogElementStateInternal(const std::optional<fhasp::ElementState>& element_state,
                              const std::string& indent) {
   if (!element_state.has_value()) {
@@ -510,6 +539,33 @@ void LogTopologyInternal(const fhasp::Topology& topology, std::string indent,
     FX_LOGS(INFO) << indent << "processing_elements_edge_pairs <none> (non-compliant)";
   }
 }
+
+void LogVmoInternal(const zx::vmo& vmo, const std::string& indent) {
+  zx_info_handle_basic_t info;
+  auto status = vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  if (status != ZX_OK) {
+    FX_PLOGS(WARNING, status) << "vmo.get_info returned error";
+    return;
+  }
+  uint64_t size;
+  status = vmo.get_size(&size);
+  if (status != ZX_OK) {
+    FX_PLOGS(WARNING, status) << "vmo.get_size returned size " << size;
+    return;
+  }
+  FX_LOGS(INFO) << indent << "koid                 0x" << std::hex << info.koid;
+  FX_LOGS(INFO) << indent << "rights               0x" << std::hex << info.rights << " ("
+                << ((info.rights & ZX_RIGHT_DUPLICATE) ? " DUPLICATE" : "")
+                << ((info.rights & ZX_RIGHT_TRANSFER) ? " TRANSFER" : "")
+                << ((info.rights & ZX_RIGHT_READ) ? " READ" : "")
+                << ((info.rights & ZX_RIGHT_WRITE) ? " WRITE" : "")
+                << ((info.rights & ZX_RIGHT_MAP) ? " MAP" : "")
+                << ((info.rights & ZX_RIGHT_GET_PROPERTY) ? " GET_PROPERTY" : "")
+                << ((info.rights & ZX_RIGHT_SET_PROPERTY) ? " SET_PROPERTY" : "") << " )";
+  FX_LOGS(INFO) << indent << "size                 0x" << std::hex << size << std::dec << " ("
+                << size << ")";
+}
+
 }  // namespace
 
 std::string UidToString(std::optional<UniqueId> unique_instance_id) {
@@ -584,31 +640,7 @@ void LogTranslatedRingBufferFormatSet(const fad::PcmFormatSet& translated_ring_b
     return;
   }
 
-  if (translated_ring_buffer_format_set.channel_sets().has_value()) {
-    const auto& channel_sets = *translated_ring_buffer_format_set.channel_sets();
-    FX_LOGS(INFO) << "            channel_sets  [" << channel_sets.size() << "]";
-    for (auto idx = 0u; idx < channel_sets.size(); ++idx) {
-      if (!channel_sets[idx].attributes().has_value()) {
-        FX_LOGS(INFO) << "              [" << idx << "] <none> (non-compliant)";
-        continue;
-      }
-      const auto& attribs = *channel_sets[idx].attributes();
-      FX_LOGS(INFO) << "              [" << idx << "] attributes[" << attribs.size() << "]";
-      for (auto idx = 0u; idx < attribs.size(); ++idx) {
-        FX_LOGS(INFO) << "                  [" << idx << "]";
-        FX_LOGS(INFO) << "                     min_frequency   "
-                      << (attribs[idx].min_frequency().has_value()
-                              ? std::to_string(*attribs[idx].min_frequency())
-                              : "<none>");
-        FX_LOGS(INFO) << "                     max_frequency   "
-                      << (attribs[idx].max_frequency().has_value()
-                              ? std::to_string(*attribs[idx].max_frequency())
-                              : "<none>");
-      }
-    }
-  } else {
-    FX_LOGS(INFO) << "            channel_sets  <none> (non-compliant)";
-  }
+  LogChannelSetsInternal(translated_ring_buffer_format_set.channel_sets(), "            ");
 
   if (translated_ring_buffer_format_set.sample_types().has_value()) {
     const auto& sample_types = *translated_ring_buffer_format_set.sample_types();
@@ -631,6 +663,81 @@ void LogTranslatedRingBufferFormatSet(const fad::PcmFormatSet& translated_ring_b
   }
 }
 
+void LogSupportedPcmFormat(const fha::PcmSupportedFormats& pcm_format_set) {
+  if constexpr (!kLogCompositeFidlResponseValues) {
+    return;
+  }
+
+  LogChannelSetsInternal(pcm_format_set.channel_sets(), "            ");
+
+  if (pcm_format_set.sample_formats().has_value()) {
+    const auto& sample_formats = *pcm_format_set.sample_formats();
+    FX_LOGS(INFO) << "            sample_formats [" << sample_formats.size() << "]";
+    for (auto idx = 0u; idx < sample_formats.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    " << sample_formats[idx];
+    }
+  } else {
+    FX_LOGS(INFO) << "            sample_formats <none> (non-compliant)";
+  }
+  if (pcm_format_set.bytes_per_sample().has_value()) {
+    const auto& bytes_per_sample = *pcm_format_set.bytes_per_sample();
+    FX_LOGS(INFO) << "            bytes_per_sample [" << bytes_per_sample.size() << "]";
+    for (auto idx = 0u; idx < bytes_per_sample.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    "
+                    << static_cast<int16_t>(bytes_per_sample[idx]);
+    }
+  } else {
+    FX_LOGS(INFO) << "            bytes_per_sample <none> (non-compliant)";
+  }
+  if (pcm_format_set.valid_bits_per_sample().has_value()) {
+    const auto& valid_bits_per_sample = *pcm_format_set.valid_bits_per_sample();
+    FX_LOGS(INFO) << "            valid_bits_per_sample [" << valid_bits_per_sample.size() << "]";
+    for (auto idx = 0u; idx < valid_bits_per_sample.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    "
+                    << static_cast<int16_t>(valid_bits_per_sample[idx]);
+    }
+  } else {
+    FX_LOGS(INFO) << "            valid_bits_per_sample <none> (non-compliant)";
+  }
+  if (pcm_format_set.frame_rates().has_value()) {
+    const auto& frame_rates = *pcm_format_set.frame_rates();
+    FX_LOGS(INFO) << "            frame_rates [" << frame_rates.size() << "]";
+    for (auto idx = 0u; idx < frame_rates.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    " << frame_rates[idx];
+    }
+  } else {
+    FX_LOGS(INFO) << "            frame_rates <none> (non-compliant)";
+  }
+}
+
+void LogSupportedEncoding(const fha::SupportedEncodings& encoding_set) {
+  if constexpr (!kLogCompositeFidlResponseValues) {
+    return;
+  }
+
+  LogChannelSetsInternal(encoding_set.decoded_channel_sets(), "            ");
+
+  if (encoding_set.decoded_frame_rates().has_value()) {
+    const auto& frame_rates = *encoding_set.decoded_frame_rates();
+    FX_LOGS(INFO) << "            decoded_frame_rates [" << frame_rates.size() << "]";
+    for (auto idx = 0u; idx < frame_rates.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    " << frame_rates[idx];
+    }
+  } else {
+    FX_LOGS(INFO) << "            decoded_frame_rates <none> (non-compliant)";
+  }
+
+  if (encoding_set.encoding_types().has_value()) {
+    const auto& encoding_types = *encoding_set.encoding_types();
+    FX_LOGS(INFO) << "            encoding_types [" << encoding_types.size() << "]";
+    for (auto idx = 0u; idx < encoding_types.size(); ++idx) {
+      FX_LOGS(INFO) << "              [" << idx << "]    " << encoding_types[idx];
+    }
+  } else {
+    FX_LOGS(INFO) << "            encoding_types <none> (non-compliant)";
+  }
+}
+
 void LogRingBufferFormatSets(const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
   if constexpr (!kLogCompositeFidlResponseValues) {
     return;
@@ -639,76 +746,33 @@ void LogRingBufferFormatSets(const std::vector<fha::SupportedFormats2>& ring_buf
   FX_LOGS(INFO) << "fuchsia_hardware_audio/SupportedFormats2";
   FX_LOGS(INFO) << "    ring_buffer_format_sets [" << ring_buffer_format_sets.size() << "]";
   for (auto idx = 0u; idx < ring_buffer_format_sets.size(); ++idx) {
-    const auto& ring_buffer_format_set = ring_buffer_format_sets[idx];
-    if (!ring_buffer_format_set.pcm_supported_formats().has_value()) {
+    if (ring_buffer_format_sets[idx].pcm_supported_formats().has_value()) {
+      FX_LOGS(INFO) << "      [" << idx << "] pcm_supported_formats";
+      LogSupportedPcmFormat(ring_buffer_format_sets[idx].pcm_supported_formats().value());
+    } else {
       FX_LOGS(INFO) << "      [" << idx << "] <none> (non-compliant)";
-      continue;
     }
-    FX_LOGS(INFO) << "      [" << idx << "] pcm_supported_formats";
-    auto pcm_format_set = ring_buffer_format_set.pcm_supported_formats().value();
-    if (pcm_format_set.channel_sets().has_value()) {
-      const auto& channel_sets = *pcm_format_set.channel_sets();
-      FX_LOGS(INFO) << "            channel_sets [" << channel_sets.size() << "]";
-      for (auto idx = 0u; idx < channel_sets.size(); ++idx) {
-        if (!channel_sets[idx].attributes().has_value()) {
-          FX_LOGS(INFO) << "              [" << idx << "] <none> (non-compliant)";
-          continue;
-        }
-        const auto& attribs = *channel_sets[idx].attributes();
-        FX_LOGS(INFO) << "              [" << idx << "] attributes [" << attribs.size() << "]";
-        for (auto idx = 0u; idx < attribs.size(); ++idx) {
-          FX_LOGS(INFO) << "                   [" << idx << "]";
-          FX_LOGS(INFO) << "                     min_frequency   "
-                        << (attribs[idx].min_frequency().has_value()
-                                ? std::to_string(*attribs[idx].min_frequency())
-                                : "<none>");
-          FX_LOGS(INFO) << "                     max_frequency   "
-                        << (attribs[idx].max_frequency().has_value()
-                                ? std::to_string(*attribs[idx].max_frequency())
-                                : "<none>");
-        }
-      }
-    } else {
-      FX_LOGS(INFO) << "            <none> (non-compliant)";
-    }
+  }
+}
 
-    if (pcm_format_set.sample_formats().has_value()) {
-      const auto& sample_formats = *pcm_format_set.sample_formats();
-      FX_LOGS(INFO) << "            sample_formats [" << sample_formats.size() << "]";
-      for (auto idx = 0u; idx < sample_formats.size(); ++idx) {
-        FX_LOGS(INFO) << "              [" << idx << "]    " << sample_formats[idx];
-      }
+void LogPacketStreamFormatSets(
+    const std::vector<fha::SupportedFormats2>& packet_stream_format_sets) {
+  if constexpr (!kLogCompositeFidlResponseValues) {
+    return;
+  }
+
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/SupportedFormats2";
+  FX_LOGS(INFO) << "    packet_stream_format_sets [" << packet_stream_format_sets.size() << "]";
+  for (auto idx = 0u; idx < packet_stream_format_sets.size(); ++idx) {
+    if (packet_stream_format_sets[idx].supported_encodings().has_value()) {
+      FX_LOGS(INFO) << "      [" << idx << "] supported_encodings";
+      LogSupportedEncoding(packet_stream_format_sets[idx].supported_encodings().value());
+    } else if (packet_stream_format_sets[idx].pcm_supported_formats().has_value()) {
+      FX_LOGS(INFO) << "      [" << idx << "] pcm_supported_formats";
+      LogSupportedPcmFormat(packet_stream_format_sets[idx].pcm_supported_formats().value());
     } else {
-      FX_LOGS(INFO) << "            <none> (non-compliant)";
-    }
-    if (pcm_format_set.bytes_per_sample().has_value()) {
-      const auto& bytes_per_sample = *pcm_format_set.bytes_per_sample();
-      FX_LOGS(INFO) << "            bytes_per_sample [" << bytes_per_sample.size() << "]";
-      for (auto idx = 0u; idx < bytes_per_sample.size(); ++idx) {
-        FX_LOGS(INFO) << "              [" << idx << "]    "
-                      << static_cast<int16_t>(bytes_per_sample[idx]);
-      }
-    } else {
-      FX_LOGS(INFO) << "            <none> (non-compliant)";
-    }
-    if (pcm_format_set.valid_bits_per_sample().has_value()) {
-      const auto& valid_bits_per_sample = *pcm_format_set.valid_bits_per_sample();
-      FX_LOGS(INFO) << "            valid_bits_per_sample [" << valid_bits_per_sample.size() << "]";
-      for (auto idx = 0u; idx < valid_bits_per_sample.size(); ++idx) {
-        FX_LOGS(INFO) << "              [" << idx << "]    "
-                      << static_cast<int16_t>(valid_bits_per_sample[idx]);
-      }
-    } else {
-      FX_LOGS(INFO) << "            <none> (non-compliant)";
-    }
-    if (pcm_format_set.frame_rates().has_value()) {
-      const auto& frame_rates = *pcm_format_set.frame_rates();
-      FX_LOGS(INFO) << "            frame_rates [" << frame_rates.size() << "]";
-      for (auto idx = 0u; idx < frame_rates.size(); ++idx) {
-        FX_LOGS(INFO) << "              [" << idx << "]    " << frame_rates[idx];
-      }
-    } else {
-      FX_LOGS(INFO) << "            <none> (non-compliant)";
+      FX_LOGS(INFO) << "      [" << idx
+                    << "] unknown variant (neither pcm_supported_formats nor supported_encodings)";
     }
   }
 }
@@ -1288,6 +1352,65 @@ void LogRingBufferProperties(const fha::RingBufferProperties& rb_props) {
   }
 }
 
+void LogPacketStreamProperties(const fha::PacketStreamProperties& props) {
+  if constexpr (!kLogPacketStreamFidlResponseValues) {
+    return;
+  }
+
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/PacketStreamProperties";
+  FX_LOGS(INFO) << "    needs_cache_flush       "
+                << to_string(props.needs_cache_flush_or_invalidate(), "TRUE", "FALSE",
+                             "<none> (non-compliant)");
+
+  if (props.supported_buffer_types().has_value()) {
+    FX_LOGS(INFO) << "    supported_buffer_types  " << *props.supported_buffer_types();
+  } else {
+    FX_LOGS(INFO) << "    supported_buffer_types  <none> (non-compliant)";
+  }
+}
+
+void LogPcmFormat(const fha::PcmFormat& pcm_format) {
+  if constexpr (!kLogRingBufferFidlResponseValues && !kLogPacketStreamFidlResponseValues) {
+    return;
+  }
+
+  FX_LOGS(INFO) << "        number_of_channels    "
+                << static_cast<uint16_t>(pcm_format.number_of_channels());
+  FX_LOGS(INFO) << "        sample_format         " << pcm_format.sample_format();
+  FX_LOGS(INFO) << "        bytes_per_sample      "
+                << static_cast<uint16_t>(pcm_format.bytes_per_sample());
+  FX_LOGS(INFO) << "        valid_bits_per_sample "
+                << static_cast<uint16_t>(pcm_format.valid_bits_per_sample());
+  FX_LOGS(INFO) << "        frame_rate            " << pcm_format.frame_rate();
+}
+
+void LogEncoding(const fha::Encoding& encoding) {
+  if constexpr (!kLogPacketStreamFidlResponseValues) {
+    return;
+  }
+
+  if (encoding.decoded_channel_count().has_value()) {
+    FX_LOGS(INFO) << "        decoded_channel_count     " << *encoding.decoded_channel_count();
+  } else {
+    FX_LOGS(INFO) << "        decoded_channel_count     <none> (non-compliant)";
+  }
+  if (encoding.decoded_frame_rate().has_value()) {
+    FX_LOGS(INFO) << "        decoded_frame_rate        " << *encoding.decoded_frame_rate();
+  } else {
+    FX_LOGS(INFO) << "        decoded_frame_rate        <none> (non-compliant)";
+  }
+  if (encoding.average_encoding_bitrate().has_value()) {
+    FX_LOGS(INFO) << "        average_encoding_bitrate  " << *encoding.average_encoding_bitrate();
+  } else {
+    FX_LOGS(INFO) << "        average_encoding_bitrate  <none> (non-compliant)";
+  }
+  if (encoding.encoding_type().has_value()) {
+    FX_LOGS(INFO) << "        encoding_type             " << *encoding.encoding_type();
+  } else {
+    FX_LOGS(INFO) << "        encoding_type             <none> (non-compliant)";
+  }
+}
+
 void LogRingBufferFormat(const fha::Format2& ring_buffer_format) {
   if constexpr (!kLogRingBufferFidlResponseValues) {
     return;
@@ -1300,16 +1423,24 @@ void LogRingBufferFormat(const fha::Format2& ring_buffer_format) {
   }
 
   FX_LOGS(INFO) << "    pcm_format";
-  FX_LOGS(INFO) << "        number_of_channels    "
-                << static_cast<uint16_t>(ring_buffer_format.pcm_format()->number_of_channels());
-  FX_LOGS(INFO) << "        sample_format         "
-                << ring_buffer_format.pcm_format()->sample_format();
-  FX_LOGS(INFO) << "        bytes_per_sample      "
-                << static_cast<uint16_t>(ring_buffer_format.pcm_format()->bytes_per_sample());
-  FX_LOGS(INFO) << "        valid_bits_per_sample "
-                << static_cast<uint16_t>(ring_buffer_format.pcm_format()->valid_bits_per_sample());
-  FX_LOGS(INFO) << "        frame_rate            "
-                << ring_buffer_format.pcm_format()->frame_rate();
+  LogPcmFormat(ring_buffer_format.pcm_format().value());
+}
+
+void LogPacketStreamFormat(const fha::Format2& packet_stream_format) {
+  if constexpr (!kLogPacketStreamFidlResponseValues) {
+    return;
+  }
+
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/Format2";
+  if (packet_stream_format.pcm_format().has_value()) {
+    FX_LOGS(INFO) << "    pcm_format";
+    LogPcmFormat(packet_stream_format.pcm_format().value());
+  } else if (packet_stream_format.encoding().has_value()) {
+    FX_LOGS(INFO) << "    encoding";
+    LogEncoding(packet_stream_format.encoding().value());
+  } else {
+    FX_LOGS(INFO) << "    unknown variant (neither pcm_format nor encoding)";
+  }
 }
 
 void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, fha::Format2 rb_format) {
@@ -1317,47 +1448,37 @@ void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, fha::Format2 rb_f
     return;
   }
 
-  zx_info_handle_basic_t info;
-  auto status = vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
-  if (status != ZX_OK) {
-    FX_PLOGS(WARNING, status) << "vmo.get_info returned error";
-    return;
-  }
-  uint64_t size;
-  status = vmo.get_size(&size);
-  if (status != ZX_OK) {
-    FX_PLOGS(WARNING, status) << "vmo.get_size returned size " << size;
-    return;
-  }
   FX_LOGS(INFO) << "fuchsia_hardware_audio/GetVmo -> zx::Vmo";
-  FX_LOGS(INFO) << "    koid                 0x" << std::hex << info.koid;
-  FX_LOGS(INFO) << "    rights               0x" << std::hex << info.rights << " ("
-                << ((info.rights & ZX_RIGHT_DUPLICATE) ? " DUPLICATE" : "")
-                << ((info.rights & ZX_RIGHT_TRANSFER) ? " TRANSFER" : "")
-                << ((info.rights & ZX_RIGHT_READ) ? " READ" : "")
-                << ((info.rights & ZX_RIGHT_WRITE) ? " WRITE" : "")
-                << ((info.rights & ZX_RIGHT_MAP) ? " MAP" : "")
-                << ((info.rights & ZX_RIGHT_GET_PROPERTY) ? " GET_PROPERTY" : "")
-                << ((info.rights & ZX_RIGHT_SET_PROPERTY) ? " SET_PROPERTY" : "")
-                << ((info.rights & ZX_RIGHT_RESIZE) ? " RESIZE" : "") << " )";
-  FX_LOGS(INFO) << "    size                 " << size << " bytes";
+  LogVmoInternal(vmo, "    ");
 
-  uint64_t calculated_size = 0;
   if (rb_format.pcm_format().has_value()) {
-    calculated_size = num_frames * rb_format.pcm_format()->number_of_channels() *
-                      rb_format.pcm_format()->bytes_per_sample();
-  }
-  FX_LOGS(INFO) << "    calculated_size      " << calculated_size;
-  FX_LOGS(INFO) << "        num_frames           " << num_frames;
-  if (rb_format.pcm_format().has_value()) {
+    uint64_t calculated_size = static_cast<uint64_t>(num_frames) *
+                               rb_format.pcm_format()->number_of_channels() *
+                               rb_format.pcm_format()->bytes_per_sample();
+    FX_LOGS(INFO) << "    calculated_size      " << calculated_size;
+    FX_LOGS(INFO) << "        num_frames           " << num_frames;
     FX_LOGS(INFO) << "        num_channels         "
                   << static_cast<uint16_t>(rb_format.pcm_format()->number_of_channels());
     FX_LOGS(INFO) << "        bytes_per_sample     "
                   << static_cast<uint16_t>(rb_format.pcm_format()->bytes_per_sample());
   } else {
+    FX_LOGS(INFO) << "    calculated_size      <unknown>";
+    FX_LOGS(INFO) << "        num_frames           " << num_frames;
     FX_LOGS(INFO) << "        num_channels         <unknown>";
     FX_LOGS(INFO) << "        bytes_per_sample     <unknown>";
   }
+}
+
+void LogPacketStreamVmo(const fha::VmoInfo& vmo_info) {
+  if constexpr (!kLogPacketStreamFidlResponseValues) {
+    return;
+  }
+  if (!vmo_info.vmo().has_value() || !vmo_info.vmo()->is_valid()) {
+    FX_LOGS(WARNING) << "VmoInfo.vmo is missing or invalid";
+    return;
+  }
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/PacketStreamVmo -> id " << vmo_info.id().value_or(0);
+  LogVmoInternal(*vmo_info.vmo(), "    ");
 }
 
 void LogActiveChannels(uint64_t channel_bitmask, zx::time set_time) {

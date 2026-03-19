@@ -11,6 +11,8 @@ source_set("fakes") {
     "fake_composite.cc",
     "fake_composite.h",
     "fake_composite_consts.cc",
+    "fake_composite_packet_stream.cc",
+    "fake_composite_packet_stream.h",
     "fake_composite_ring_buffer.cc",
     "fake_composite_ring_buffer.h",
     "fake_device_presence_watcher.h",

@@ -6,6 +6,7 @@
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_LOGGING_H_
 
 #include <fidl/fuchsia.audio.device/cpp/common_types.h>
+#include <fidl/fuchsia.audio/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
@@ -55,10 +56,12 @@ inline constexpr bool kLogObjectCounts = false;
 inline constexpr bool kLogDeviceState = false;
 inline constexpr bool kLogSignalProcessingState = false;
 inline constexpr bool kLogRingBufferState = false;
+inline constexpr bool kLogPacketStreamState = false;
 
 inline constexpr bool kLogDeviceMethods = false;
 inline constexpr bool kLogNotifyMethods = false;
 inline constexpr bool kLogRingBufferMethods = false;
+inline constexpr bool kLogPacketStreamMethods = false;
 
 // Device methods that directly interact with driver FIDL
 inline constexpr bool kLogCodecFidlCalls = false;
@@ -76,6 +79,10 @@ inline constexpr bool kLogSignalProcessingFidlResponseValues = false;
 inline constexpr bool kLogRingBufferFidlCalls = false;
 inline constexpr bool kLogRingBufferFidlResponses = false;
 inline constexpr bool kLogRingBufferFidlResponseValues = false;
+
+inline constexpr bool kLogPacketStreamFidlCalls = false;
+inline constexpr bool kLogPacketStreamFidlResponses = false;
+inline constexpr bool kLogPacketStreamFidlResponseValues = false;
 
 // FIDL server methods
 inline constexpr bool kLogControlCreatorServerMethods = false;
@@ -131,9 +138,17 @@ void LogTranslatedRingBufferFormatSets(
     const std::vector<fuchsia_audio_device::PcmFormatSet>& translated_ring_buffer_format_sets);
 void LogTranslatedRingBufferFormatSet(
     const fuchsia_audio_device::PcmFormatSet& translated_ring_buffer_format_set);
+void LogSupportedPcmFormat(const fuchsia_hardware_audio::PcmSupportedFormats& pcm_format_set);
+void LogSupportedEncoding(const fuchsia_hardware_audio::SupportedEncodings& encoding_set);
 void LogRingBufferFormatSets(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& ring_buffer_format_sets);
+void LogPacketStreamFormatSets(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& packet_stream_format_sets);
+
+void LogPcmFormat(const fuchsia_hardware_audio::PcmFormat& pcm_format);
+void LogEncoding(const fuchsia_hardware_audio::Encoding& encoding);
 void LogRingBufferFormat(const fuchsia_hardware_audio::Format2& ring_buffer_format);
+void LogPacketStreamFormat(const fuchsia_hardware_audio::Format2& packet_stream_format);
 
 void LogElementDaiFormatSets(
     const std::vector<fuchsia_audio_device::ElementDaiFormatSet>& element_dai_format_sets);
@@ -143,9 +158,11 @@ void LogDaiFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& dai_format_sets);
 void LogDaiFormat(std::optional<fuchsia_hardware_audio::DaiFormat> dai_format);
 
+void LogPacketStreamProperties(const fuchsia_hardware_audio::PacketStreamProperties& props);
 void LogRingBufferProperties(const fuchsia_hardware_audio::RingBufferProperties& rb_props);
 void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
                       fuchsia_hardware_audio::Format2 rb_format);
+void LogPacketStreamVmo(const fuchsia_hardware_audio::VmoInfo& vmo_info);
 void LogDelayInfo(const fuchsia_hardware_audio::DelayInfo& info);
 void LogActiveChannels(uint64_t channel_bitmask, zx::time set_time);
 
@@ -167,12 +184,47 @@ inline std::ostream& operator<<(std::ostream& out,
   }
 }
 inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_hardware_audio::EncodingType& encoding_type) {
+  switch (encoding_type) {
+    case fuchsia_hardware_audio::EncodingType::kAac:
+      return (out << "AAC");
+    case fuchsia_hardware_audio::EncodingType::kSbc:
+      return (out << "SBC");
+    default:
+      return (out << "OTHER (unknown enum)");
+  }
+}
+inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::PcmFormat& pcm_format) {
   return (out << "[" << static_cast<uint16_t>(pcm_format.number_of_channels()) << "-channel, "
               << pcm_format.sample_format() << ", "
               << static_cast<uint16_t>(pcm_format.bytes_per_sample()) << " bytes/sample, "
               << static_cast<uint16_t>(pcm_format.valid_bits_per_sample())
               << " valid bits per sample, " << pcm_format.frame_rate() << " Hz]");
+}
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_hardware_audio::Encoding& encoding) {
+  if (encoding.encoding_type().has_value()) {
+    out << "[" << encoding.encoding_type().value() << ": ";
+  } else {
+    out << "[Unknown encoding: ";
+  }
+  if (encoding.average_encoding_bitrate()) {
+    out << encoding.average_encoding_bitrate().value() << " bps, ";
+  } else {
+    out << "unknown bitrate, ";
+  }
+  if (encoding.decoded_channel_count()) {
+    out << encoding.decoded_channel_count().value() << "-channel, ";
+  } else {
+    out << "unknown channel-config, ";
+  }
+  if (encoding.decoded_frame_rate()) {
+    out << encoding.decoded_frame_rate().value() << " Hz]";
+  } else {
+    out << "unknown frame rate]";
+  }
+  return out;
 }
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::PlugDetectCapabilities& plug_caps) {
@@ -182,6 +234,30 @@ inline std::ostream& operator<<(std::ostream& out,
     case fuchsia_hardware_audio::PlugDetectCapabilities::kCanAsyncNotify:
       return (out << "CAN_ASYNC_NOTIFY");
   }
+}
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_hardware_audio::BufferType& buffer_type) {
+  bool first = true;
+  out << "{";
+  if (buffer_type & fuchsia_hardware_audio::BufferType::kClientOwned) {
+    out << "CLIENT_OWNED";
+    first = false;
+  }
+  if (buffer_type & fuchsia_hardware_audio::BufferType::kDriverOwned) {
+    if (!first) {
+      out << "|";
+    }
+    out << "DRIVER_OWNED";
+    first = false;
+  }
+  if (buffer_type & fuchsia_hardware_audio::BufferType::kInline) {
+    if (!first) {
+      out << "|";
+    }
+    out << "INLINE";
+  }
+  out << "}";
+  return out;
 }
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::DaiSampleFormat& dai_sample_format) {
@@ -272,6 +348,8 @@ inline std::ostream& operator<<(
         return (out << "RING_BUFFER");
       case fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect:
         return (out << "DAI_INTERCONNECT");
+      case fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream:
+        return (out << "PACKET_STREAM");
       default:
         return (out << "OTHER (unknown enum)");
     }

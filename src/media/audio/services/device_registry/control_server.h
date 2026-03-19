@@ -53,6 +53,7 @@ class ControlServer
   // ControlNotify
   //
   void DeviceDroppedRingBuffer(ElementId element_id) final;
+  void DeviceDroppedPacketStream(ElementId element_id) final;
   void DelayInfoIsChanged(ElementId element_id, const fuchsia_audio_device::DelayInfo&) final;
   // If `dai_format` contains no value, no DaiFormat is set. The Device might be newly-initialized,
   // or `Reset` may have been called. `SetDaiFormat` must be called.

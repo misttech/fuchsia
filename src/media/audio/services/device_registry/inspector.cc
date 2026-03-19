@@ -120,6 +120,7 @@ RingBufferInspectInstance::RecordSetActiveChannelsCall(uint64_t channel_bitmask,
 
 void RingBufferInspectInstance::RecordBuffer(uint64_t requested_bytes, uint64_t producer_frames,
                                              uint64_t consumer_frames, uint64_t vmo_size) {
+  ADR_LOG_METHOD(kTraceInspector);
   buffer_node_ = ring_buffer_instance_node_.CreateChild(kBufferProps);
   buffer_node_.RecordUint(kRequestedBytes, requested_bytes);
   buffer_node_.RecordUint(kProducerFrames, producer_frames);
@@ -129,6 +130,7 @@ void RingBufferInspectInstance::RecordBuffer(uint64_t requested_bytes, uint64_t 
 
 void RingBufferInspectInstance::RecordFormat(uint32_t channel_count, uint32_t frames_per_second,
                                              fuchsia_audio::SampleType sample_type) {
+  ADR_LOG_METHOD(kTraceInspector);
   format_node_ = ring_buffer_instance_node_.CreateChild(kFormatProps);
   format_node_.RecordUint(kChannelCount, channel_count);
   format_node_.RecordUint(kFramesPerSecond, frames_per_second);
@@ -155,6 +157,163 @@ void RingBufferInspectInstance::RecordFormat(uint32_t channel_count, uint32_t fr
   }
 }
 
+void RecordSupportedPcmFormatSets(
+    inspect::Node& header_node, std::vector<SupportedPcmFormatsRecord>& records,
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets, std::string_view prefix) {
+  for (auto i = 0u; i < format_sets.size(); ++i) {
+    records.emplace_back(SupportedPcmFormatsRecord{});
+    auto& pcm_format_set = records[i];
+    pcm_format_set.pcm_format_set_node =
+        header_node.CreateChild(std::string(prefix) + std::to_string(i));
+    auto& parent_node = pcm_format_set.pcm_format_set_node;
+
+    const auto& sample_types = *format_sets[i].sample_types();
+    pcm_format_set.sample_formats =
+        parent_node.CreateStringArray(kSampleFormat, sample_types.size());
+    auto& sample_format_arr = pcm_format_set.sample_formats;
+    for (auto j = 0u; j < sample_types.size(); ++j) {
+      std::stringstream ss;
+      ss << sample_types[j];
+      sample_format_arr.Set(j, ss.str());
+    }
+
+    const auto& frame_rates = *format_sets[i].frame_rates();
+    pcm_format_set.frame_rates = parent_node.CreateUintArray(kFramesPerSecond, frame_rates.size());
+    auto& frame_rate_arr = pcm_format_set.frame_rates;
+    for (auto j = 0u; j < frame_rates.size(); ++j) {
+      frame_rate_arr.Set(j, frame_rates[j]);
+    }
+
+    const auto& channel_sets = *format_sets[i].channel_sets();
+    pcm_format_set.channel_sets_node = parent_node.CreateChild(kChannelCount);
+    auto& channel_sets_node = pcm_format_set.channel_sets_node;
+    for (auto j = 0u; j < channel_sets.size(); ++j) {
+      const auto& channel_set = channel_sets[j];
+      pcm_format_set.channel_sets.emplace_back(ChannelSetRecord{});
+      auto& channel_set_record = pcm_format_set.channel_sets[j];
+      channel_set_record.channel_set_node =
+          channel_sets_node.CreateChild("channel_set_" + std::to_string(j));
+      auto& channel_set_node = channel_set_record.channel_set_node;
+
+      for (auto k = 0u; k < channel_set.attributes()->size(); ++k) {
+        const auto& channel_attributes = channel_set.attributes()->at(k);
+        channel_set_record.channel_nodes.emplace_back(
+            channel_set_node.CreateChild("channel_" + std::to_string(k)));
+        auto& channel_node = channel_set_record.channel_nodes[k];
+        if (channel_attributes.min_frequency().has_value()) {
+          channel_node.RecordUint(kMinFrequency, *channel_attributes.min_frequency());
+        }
+        if (channel_attributes.max_frequency().has_value()) {
+          channel_node.RecordUint(kMaxFrequency, *channel_attributes.max_frequency());
+        }
+      }
+    }
+  }
+}
+
+void RecordSupportedEncodingSets(
+    inspect::Node& header_node, std::vector<SupportedEncodingsRecord>& records,
+    const std::vector<fuchsia_hardware_audio::SupportedEncodings>& encodings,
+    std::string_view prefix) {
+  ADR_LOG(kTraceInspector) << encodings.size() << " encoding sets";
+  for (auto i = 0u; i < encodings.size(); ++i) {
+    records.emplace_back(SupportedEncodingsRecord{});
+    auto& encoding_set = records[i];
+    encoding_set.encodings_node = header_node.CreateChild(std::string(prefix) + std::to_string(i));
+    auto& parent_node = encoding_set.encodings_node;
+
+    if (encodings[i].encoding_types().has_value()) {
+      const auto& types = *encodings[i].encoding_types();
+      encoding_set.encoding_types = parent_node.CreateStringArray(kEncodingType, types.size());
+      for (auto j = 0u; j < types.size(); ++j) {
+        std::stringstream ss;
+        ss << types[j];
+        encoding_set.encoding_types.Set(j, ss.str());
+      }
+    }
+
+    if (encodings[i].decoded_frame_rates().has_value()) {
+      const auto& frame_rates = *encodings[i].decoded_frame_rates();
+      encoding_set.decoded_frame_rates =
+          parent_node.CreateUintArray(kFramesPerSecond, frame_rates.size());
+      for (auto j = 0u; j < frame_rates.size(); ++j) {
+        encoding_set.decoded_frame_rates.Set(j, frame_rates[j]);
+      }
+    }
+
+    if (encodings[i].min_encoding_bitrate().has_value()) {
+      encoding_set.min_encoding_bitrate =
+          parent_node.CreateUint(kMinBitrate, *encodings[i].min_encoding_bitrate());
+    }
+    if (encodings[i].max_encoding_bitrate().has_value()) {
+      encoding_set.max_encoding_bitrate =
+          parent_node.CreateUint(kMaxBitrate, *encodings[i].max_encoding_bitrate());
+    }
+
+    if (encodings[i].decoded_channel_sets().has_value()) {
+      const auto& channel_sets = *encodings[i].decoded_channel_sets();
+      encoding_set.decoded_channel_sets_node = parent_node.CreateChild(kChannelCount);
+      auto& channel_sets_node = encoding_set.decoded_channel_sets_node;
+      for (auto j = 0u; j < channel_sets.size(); ++j) {
+        const auto& channel_set = channel_sets[j];
+        encoding_set.decoded_channel_sets.emplace_back(ChannelSetRecord{});
+        auto& channel_set_record = encoding_set.decoded_channel_sets[j];
+        channel_set_record.channel_set_node =
+            channel_sets_node.CreateChild("channel_set_" + std::to_string(j));
+        auto& channel_set_node = channel_set_record.channel_set_node;
+
+        for (auto k = 0u; k < channel_set.attributes()->size(); ++k) {
+          const auto& channel_attributes = channel_set.attributes()->at(k);
+          channel_set_record.channel_nodes.emplace_back(
+              channel_set_node.CreateChild("channel_" + std::to_string(k)));
+          auto& channel_node = channel_set_record.channel_nodes[k];
+          if (channel_attributes.min_frequency().has_value()) {
+            channel_node.RecordUint(kMinFrequency, *channel_attributes.min_frequency());
+          }
+          if (channel_attributes.max_frequency().has_value()) {
+            channel_node.RecordUint(kMaxFrequency, *channel_attributes.max_frequency());
+          }
+        }
+      }
+    }
+  }
+}
+
+///////////////////////////////////////
+// PacketStreamInspectInstance methods
+PacketStreamInspectInstance::PacketStreamInspectInstance(inspect::Node packet_stream_instance_node,
+                                                         const zx::time& created_at)
+    : packet_stream_instance_node_(std::move(packet_stream_instance_node)) {
+  ADR_LOG_METHOD(kTraceInspector);
+  packet_stream_instance_node_.RecordInt(kCreatedAt, created_at.get());
+}
+
+PacketStreamInspectInstance::~PacketStreamInspectInstance() { ADR_LOG_METHOD(kTraceInspector); }
+
+void PacketStreamInspectInstance::RecordDestructionTime(const zx::time& destroyed_at) {
+  ADR_LOG_METHOD(kTraceInspector) << kDestroyedAt << destroyed_at.get();
+  packet_stream_instance_node_.RecordInt(kDestroyedAt, destroyed_at.get());
+}
+
+void PacketStreamInspectInstance::RecordStartTime(const zx::time& started_at) {
+  ADR_LOG_METHOD(kTraceInspector);
+  if (running_intervals_.empty()) {
+    running_intervals_root_node_ = packet_stream_instance_node_.CreateChild(kRunningIntervals);
+  }
+  auto running_interval_node =
+      running_intervals_root_node_.CreateChild(std::to_string(running_intervals_.size()));
+  auto running_interval = std::make_shared<RunningIntervalInspectInstance>(
+      std::move(running_interval_node), started_at);
+  running_intervals_.push_back(running_interval);
+}
+
+void PacketStreamInspectInstance::RecordStopTime(const zx::time& stopped_at) {
+  ADR_LOG_METHOD(kTraceInspector) << kStoppedAt << stopped_at.get();
+  if (!running_intervals_.empty()) {
+    (*running_intervals_.rbegin())->RecordStopTime(stopped_at);
+  }
+}
+
 ///////////////////////////////////////
 // RingBufferElement methods
 RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
@@ -178,56 +337,8 @@ void RingBufferElement::RecordSupportedFormatSets(
   ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
 
   ring_buffer_format_sets_header_node_ = ring_buffer_element_node_.CreateChild(kSupportedFormats);
-  for (auto i = 0u; i < format_sets.size(); ++i) {
-    ring_buffer_format_sets_.emplace_back(RingBufferFormatSetRecord{});
-    auto& rb_format_set = ring_buffer_format_sets_[i];
-    rb_format_set.ring_buffer_format_set_node =
-        ring_buffer_format_sets_header_node_.CreateChild("rb_format_set_" + std::to_string(i));
-    auto& parent_node = rb_format_set.ring_buffer_format_set_node;
-
-    const auto& sample_types = *format_sets[i].sample_types();
-    rb_format_set.ring_buffer_format_set_sample_formats =
-        parent_node.CreateStringArray(kSampleFormat, sample_types.size());
-    auto& sample_format_arr = rb_format_set.ring_buffer_format_set_sample_formats;
-    for (auto j = 0u; j < sample_types.size(); ++j) {
-      std::stringstream ss;
-      ss << sample_types[j];
-      sample_format_arr.Set(j, ss.str());
-    }
-
-    const auto& frame_rates = *format_sets[i].frame_rates();
-    rb_format_set.ring_buffer_format_set_frame_rates =
-        parent_node.CreateUintArray(kFramesPerSecond, frame_rates.size());
-    auto& frame_rate_arr = rb_format_set.ring_buffer_format_set_frame_rates;
-    for (auto j = 0u; j < frame_rates.size(); ++j) {
-      frame_rate_arr.Set(j, frame_rates[j]);
-    }
-
-    const auto& channel_sets = *format_sets[i].channel_sets();
-    rb_format_set.ring_buffer_format_channel_sets_node = parent_node.CreateChild(kChannelCount);
-    auto& channel_sets_node = rb_format_set.ring_buffer_format_channel_sets_node;
-    for (auto j = 0u; j < channel_sets.size(); ++j) {
-      const auto& channel_set = channel_sets[j];
-      rb_format_set.ring_buffer_format_channel_sets.emplace_back(ChannelSetRecord{});
-      auto& channel_set_record = rb_format_set.ring_buffer_format_channel_sets[j];
-      channel_set_record.channel_set_node =
-          channel_sets_node.CreateChild("channel_set_" + std::to_string(j));
-      auto& channel_set_node = channel_set_record.channel_set_node;
-
-      for (auto k = 0u; k < channel_set.attributes()->size(); ++k) {
-        const auto& channel_attributes = channel_set.attributes()->at(k);
-        channel_set_record.channel_nodes.emplace_back(
-            channel_set_node.CreateChild("channel_" + std::to_string(k)));
-        auto& channel_node = channel_set_record.channel_nodes[k];
-        if (channel_attributes.min_frequency().has_value()) {
-          channel_node.RecordUint(kMinFrequency, *channel_attributes.min_frequency());
-        }
-        if (channel_attributes.max_frequency().has_value()) {
-          channel_node.RecordUint(kMaxFrequency, *channel_attributes.max_frequency());
-        }
-      }
-    }
-  }
+  RecordSupportedPcmFormatSets(ring_buffer_format_sets_header_node_, supported_pcm_formats_sets_,
+                               format_sets, "rb_format_set_");
 }
 
 std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferInstance(
@@ -243,6 +354,39 @@ std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferIn
 
   ring_buffer_instances_.push_back(ring_buffer_instance);
   return ring_buffer_instance;
+}
+
+///////////////////////////////////////
+// PacketStreamElement methods
+PacketStreamElement::PacketStreamElement(inspect::Node packet_stream_element_node,
+                                         ElementId element_id,
+                                         const std::optional<std::string>& element_name)
+    : packet_stream_element_node_(std::move(packet_stream_element_node)), element_id_(element_id) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id << ", '" << element_name.value_or("")
+                                  << "'";
+  packet_stream_element_node_.RecordUint(kElementId, element_id);
+  if (element_name.has_value()) {
+    packet_stream_element_node_.RecordString(kDescription, *element_name);
+  }
+}
+
+PacketStreamElement::~PacketStreamElement() {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+}
+
+std::shared_ptr<PacketStreamInspectInstance> PacketStreamElement::RecordPacketStreamInstance(
+    const zx::time& created_at) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_ << ", instance "
+                                  << packet_stream_instances_.size();
+
+  auto packet_stream_instance_node = packet_stream_element_node_.CreateChild(
+      std::string("instance_") + std::to_string(packet_stream_instances_.size()));
+  auto packet_stream_instance = std::make_shared<PacketStreamInspectInstance>(
+      std::move(packet_stream_instance_node), created_at);
+  ADR_LOG_METHOD(kTraceInspector) << "returning " << packet_stream_instance;
+
+  packet_stream_instances_.push_back(packet_stream_instance);
+  return packet_stream_instance;
 }
 
 ///////////////////////////////////////
@@ -430,6 +574,21 @@ std::shared_ptr<RingBufferElement> DeviceInspectInstance::RecordRingBufferElemen
   return ring_buffer_element;
 }
 
+std::shared_ptr<PacketStreamElement> DeviceInspectInstance::RecordPacketStreamElement(
+    ElementId element_id, const std::optional<std::string>& element_name) {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
+  if (packet_stream_elements_.empty()) {
+    packet_stream_elements_root_node_ = device_node_.CreateChild(kPacketStreamElements);
+  }
+  auto packet_stream_element_node =
+      packet_stream_elements_root_node_.CreateChild(std::to_string(packet_stream_elements_.size()));
+  auto packet_stream_element = std::make_shared<PacketStreamElement>(
+      std::move(packet_stream_element_node), element_id, element_name);
+
+  packet_stream_elements_.push_back(packet_stream_element);
+  return packet_stream_element;
+}
+
 void DeviceInspectInstance::RecordRingBufferSupportedFormatSets(
     ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
@@ -459,6 +618,21 @@ std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBuff
     return nullptr;
   }
   return (*found)->RecordRingBufferInstance(created_at);
+}
+
+std::shared_ptr<PacketStreamInspectInstance> DeviceInspectInstance::RecordPacketStreamInstance(
+    ElementId element_id, const zx::time& created_at) {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
+  auto found = std::find_if(packet_stream_elements_.begin(), packet_stream_elements_.end(),
+                            [element_id](const std::shared_ptr<PacketStreamElement>& ps_element) {
+                              return (ps_element->element_id() == element_id);
+                            });
+  if (found == packet_stream_elements_.end()) {
+    ADR_WARN_OBJECT() << "Cannot create PS inspect instance: element_id " << element_id
+                      << " not found";
+    return nullptr;
+  }
+  return (*found)->RecordPacketStreamInstance(created_at);
 }
 
 void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,
@@ -542,6 +716,7 @@ Inspector::Inspector(async_dispatcher_t* dispatcher)
   control_creator_servers_root_ = fidl_servers_root_.CreateChild(kControlCreatorServerInstances);
   control_servers_root_ = fidl_servers_root_.CreateChild(kControlServerInstances);
   ring_buffer_servers_root_ = fidl_servers_root_.CreateChild(kRingBufferServerInstances);
+
   provider_servers_root_ = fidl_servers_root_.CreateChild(kProviderServerInstances);
 
   count_device_failed_to_connect_ = inspect_root_.CreateUint(kDetectionConnectionErrors, 0);

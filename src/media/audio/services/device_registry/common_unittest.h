@@ -72,6 +72,13 @@ fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromElementDriverRingB
     const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
         element_driver_ring_buffer_format_sets);
 
+fuchsia_hardware_audio::Format2 SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_packet_stream_format_sets);
+fuchsia_hardware_audio::Format2 SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets);
+
 }  // namespace media_audio
 
 #endif  // SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_COMMON_UNITTEST_H_

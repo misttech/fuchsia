@@ -92,9 +92,18 @@ void ControlServer::DeviceDroppedRingBuffer(ElementId element_id) {
   }
 }
 
+void ControlServer::DeviceDroppedPacketStream(ElementId element_id) {
+  ADR_LOG_METHOD(kLogControlServerMethods || kLogNotifyMethods);
+  // TODO(puneetha): Implement this once packet stream is supported.
+}
+
 void ControlServer::DeviceHasError() {
   ADR_LOG_METHOD(kLogControlServerMethods);
 
+  // Use device_has_error_ as a re-entrancy guard to ensure DeviceIsRemoved() is called only once.
+  if (device_has_error_) {
+    return;
+  }
   device_has_error_ = true;
   DeviceIsRemoved();
 }
@@ -199,8 +208,8 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
     return;
   }
 
-  auto driver_format =
-      device_->SupportedDriverFormatForClientFormat(element_id, *request.options()->format());
+  auto driver_format = device_->SupportedRingBufferDriverFormatForClientFormat(
+      element_id, *request.options()->format());
   // Fail if device cannot satisfy the requested format.
   if (!driver_format.has_value()) {
     ADR_WARN_METHOD() << "(element_id " << element_id

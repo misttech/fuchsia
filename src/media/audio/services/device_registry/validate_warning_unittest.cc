@@ -44,7 +44,7 @@ const fha::Format2 kRingBufferFormat = fha::Format2::WithPcmFormat(fha::PcmForma
 uint32_t kNumFrames = static_cast<uint32_t>(kVmoContentSize / kChannelCount / kSampleSize);
 
 // Negative-test ValidateRingBufferFormatSets
-fha::SupportedFormats2 CompliantFormatSet() {
+fha::SupportedFormats2 CompliantPcmFormatSet() {
   return fha::SupportedFormats2::WithPcmSupportedFormats(fha::PcmSupportedFormats{{
       .channel_sets = {{
           fha::ChannelSet{{
@@ -62,12 +62,30 @@ fha::SupportedFormats2 CompliantFormatSet() {
       .frame_rates = {{48000}},
   }});
 }
-TEST(ValidateWarningTest, SupportedFormatsInvalid) {
+
+fha::SupportedFormats2 CompliantEncodingSet() {
+  return fha::SupportedFormats2::WithSupportedEncodings(fha::SupportedEncodings{{
+      .decoded_channel_sets = {{
+          fha::ChannelSet{{
+              .attributes = {{
+                  fha::ChannelAttributes{{
+                      .min_frequency = 20,
+                      .max_frequency = 20000,
+                  }},
+              }},
+          }},
+      }},
+      .decoded_frame_rates = {{44100}},
+      .encoding_types = {{fha::EncodingType::kAac}},
+  }});
+}
+
+TEST(ValidateWarningTest, RingBufferSupportedFormatsInvalid) {
   std::vector<fha::SupportedFormats2> supported_formats;
 
   // Empty top-level vector
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.push_back(CompliantFormatSet());
+  supported_formats.push_back(CompliantPcmFormatSet());
   EXPECT_TRUE(ValidateRingBufferFormatSets(supported_formats));
 
   // No pcm_supported_formats (one supported_formats[] vector entry, but it is empty)
@@ -76,8 +94,8 @@ TEST(ValidateWarningTest, SupportedFormatsInvalid) {
 }
 
 // Negative-test ValidateRingBufferFormatSets for frame_rates
-TEST(ValidateWarningTest, SupportedFormatsFrameRatesInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantFormatSet()};
+TEST(ValidateWarningTest, RingBufferSupportedFormatsFrameRatesInvalid) {
+  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
 
   // Missing frame_rates
   supported_formats.at(0).pcm_supported_formats().value().frame_rates() = std::nullopt;
@@ -101,8 +119,8 @@ TEST(ValidateWarningTest, SupportedFormatsFrameRatesInvalid) {
 }
 
 // Negative-test ValidateRingBufferFormatSets for channel_sets
-TEST(ValidateWarningTest, SupportedFormatsChannelSetsInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantFormatSet()};
+TEST(ValidateWarningTest, RingBufferSupportedFormatsChannelSetsInvalid) {
+  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
 
   // Missing channel_sets
   supported_formats.at(0).pcm_supported_formats().value().channel_sets() = std::nullopt;
@@ -174,8 +192,8 @@ TEST(ValidateWarningTest, SupportedFormatsChannelSetsInvalid) {
 }
 
 // Negative-test ValidateRingBufferFormatSets for sample_formats
-TEST(ValidateWarningTest, SupportedFormatsSampleFormatsInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantFormatSet()};
+TEST(ValidateWarningTest, RingBufferSupportedFormatsSampleFormatsInvalid) {
+  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
   // Missing sample_formats
   supported_formats.at(0).pcm_supported_formats().value().sample_formats() = std::nullopt;
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
@@ -193,8 +211,8 @@ TEST(ValidateWarningTest, SupportedFormatsSampleFormatsInvalid) {
 }
 
 // Negative-test ValidateRingBufferFormatSets for bytes_per_sample
-TEST(ValidateWarningTest, SupportedFormatsBytesPerSampleInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantFormatSet()};
+TEST(ValidateWarningTest, RingBufferSupportedFormatsBytesPerSampleInvalid) {
+  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
 
   // Missing bytes_per_sample
   supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = std::nullopt;
@@ -238,8 +256,8 @@ TEST(ValidateWarningTest, SupportedFormatsBytesPerSampleInvalid) {
 }
 
 // Negative-test ValidateRingBufferFormatSets for valid_bits_per_sample
-TEST(ValidateWarningTest, SupportedFormatsValidBitsPerSampleInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantFormatSet()};
+TEST(ValidateWarningTest, RingBufferSupportedFormatsValidBitsPerSampleInvalid) {
+  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
 
   // Missing valid_bits_per_sample
   supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = std::nullopt;
@@ -343,96 +361,92 @@ TEST(ValidateWarningTest, RingBufferPropertiesInvalid) {
   //           ZX_ERR_INVALID_ARGS);
 }
 
-// Negative-test ValidateRingBufferFormat
-TEST(ValidateWarningTest, RingBufferFormatInvalid) {
-  // missing pcm_format
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat({})));
-
-  // bad value number_of_channels
+// Negative-test ValidatePcmFormat
+TEST(ValidateWarningTest, PcmFormatInvalid) {
   // Is there an upper limit on number_of_channels?
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 0,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 2,
       .valid_bits_per_sample = 16,
       .frame_rate = 48000,
-  }})));
+  }}));
 
   // bad value bytes_per_sample
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 0,
       .valid_bits_per_sample = 16,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 5,
       .valid_bits_per_sample = 16,
       .frame_rate = 48000,
-  }})));
+  }}));
 
   // bad value valid_bits_per_sample
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 2,
       .valid_bits_per_sample = 0,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmUnsigned,
       .bytes_per_sample = 1,
       .valid_bits_per_sample = 9,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 2,
       .valid_bits_per_sample = 17,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 4,
       .valid_bits_per_sample = 33,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmFloat,
       .bytes_per_sample = 4,
       .valid_bits_per_sample = 33,
       .frame_rate = 48000,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmFloat,
       .bytes_per_sample = 8,
       .valid_bits_per_sample = 65,
       .frame_rate = 48000,
-  }})));
+  }}));
 
   // bad value frame_rate
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 2,
       .valid_bits_per_sample = 16,
       .frame_rate = 999,
-  }})));
-  EXPECT_FALSE(ValidateRingBufferFormat(fha::Format2::WithPcmFormat(fha::PcmFormat{{
+  }}));
+  EXPECT_FALSE(ValidatePcmFormat(fha::PcmFormat{{
       .number_of_channels = 2,
       .sample_format = fha::SampleFormat::kPcmSigned,
       .bytes_per_sample = 2,
       .valid_bits_per_sample = 16,
       .frame_rate = 192001,
-  }})));
+  }}));
 }
 
 // Negative-test ValidateSampleFormatCompatibility
@@ -551,7 +565,138 @@ TEST(ValidateWarningTest, ExternalDelayInfoInvalid) {
   }}));
 }
 
-// Negative-test ValidateCompositeProperties
+TEST(ValidateWarningTest, PacketStreamPropertiesInvalid) {
+  // empty
+  EXPECT_FALSE(ValidatePacketStreamProperties(fha::PacketStreamProperties{}));
+
+  // missing needs_cache_flush_or_invalidate
+  EXPECT_FALSE(ValidatePacketStreamProperties(fha::PacketStreamProperties{{
+      .supported_buffer_types = fha::BufferType::kClientOwned,
+  }}));
+
+  // missing supported_buffer_types
+  EXPECT_FALSE(ValidatePacketStreamProperties(fha::PacketStreamProperties{{
+      .needs_cache_flush_or_invalidate = true,
+  }}));
+
+  // zero supported_buffer_types
+  EXPECT_FALSE(ValidatePacketStreamProperties(fha::PacketStreamProperties{{
+      .needs_cache_flush_or_invalidate = true,
+      .supported_buffer_types = static_cast<fha::BufferType>(0),
+  }}));
+}
+
+TEST(ValidateWarningTest, PacketStreamSupportedFormatsFrameRatesInvalid) {
+  std::vector<fha::SupportedFormats2> ps_format_sets;
+
+  // PCM variant: too low
+  auto pcm_set = CompliantPcmFormatSet();
+  pcm_set.pcm_supported_formats()->frame_rates() = {{999}};
+  ps_format_sets.push_back(std::move(pcm_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // PCM variant: not set
+  ps_format_sets.clear();
+  pcm_set = CompliantPcmFormatSet();
+  pcm_set.pcm_supported_formats()->frame_rates() = std::nullopt;
+  ps_format_sets.push_back(std::move(pcm_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // PCM variant: empty vector
+  ps_format_sets.clear();
+  pcm_set = CompliantPcmFormatSet();
+  pcm_set.pcm_supported_formats()->frame_rates() = {{}};
+  ps_format_sets.push_back(std::move(pcm_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: too high
+  ps_format_sets.clear();
+  auto encoding_set = CompliantEncodingSet();
+  encoding_set.supported_encodings()->decoded_frame_rates() = {{192001}};
+  ps_format_sets.push_back(std::move(encoding_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: not set
+  ps_format_sets.clear();
+  encoding_set = CompliantEncodingSet();
+  encoding_set.supported_encodings()->decoded_frame_rates() = std::nullopt;
+  ps_format_sets.push_back(std::move(encoding_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: empty vector
+  ps_format_sets.clear();
+  encoding_set = CompliantEncodingSet();
+  encoding_set.supported_encodings()->decoded_frame_rates() = {{}};
+  ps_format_sets.push_back(std::move(encoding_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+}
+
+TEST(ValidateWarningTest, PacketStreamSupportedFormatsChannelSetsInvalid) {
+  std::vector<fha::SupportedFormats2> ps_format_sets;
+
+  // PCM variant: empty vector
+  auto pcm_set = CompliantPcmFormatSet();
+  pcm_set.pcm_supported_formats()->channel_sets() = {{}};
+  ps_format_sets.push_back(std::move(pcm_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // PCM variant: not set
+  ps_format_sets.clear();
+  pcm_set = CompliantPcmFormatSet();
+  pcm_set.pcm_supported_formats()->channel_sets() = std::nullopt;
+  ps_format_sets.push_back(std::move(pcm_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: empty vector
+  ps_format_sets.clear();
+  auto ps_format_set = CompliantEncodingSet();
+  ps_format_set.supported_encodings()->decoded_channel_sets() = {{}};
+  ps_format_sets.push_back(std::move(ps_format_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: not set
+  ps_format_sets.clear();
+  ps_format_set = CompliantEncodingSet();
+  ps_format_set.supported_encodings()->decoded_channel_sets() = std::nullopt;
+  ps_format_sets.push_back(std::move(ps_format_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Variant not set (flexible union) - explicitly omit variants
+  ps_format_sets.clear();
+  ps_format_sets.emplace_back(fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+}
+
+TEST(ValidateWarningTest, PacketStreamSupportedEncodingTypesInvalid) {
+  std::vector<fha::SupportedFormats2> ps_format_sets;
+
+  // Encoding variant: empty vector
+  auto encoding_set = CompliantEncodingSet();
+  encoding_set.supported_encodings()->encoding_types() = {{}};
+  ps_format_sets.push_back(std::move(encoding_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+
+  // Encoding variant: not set
+  ps_format_sets.clear();
+  encoding_set = CompliantEncodingSet();
+  encoding_set.supported_encodings()->encoding_types() = std::nullopt;
+  ps_format_sets.push_back(std::move(encoding_set));
+  EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
+}
+
+TEST(ValidateWarningTest, PacketStreamSupportedFormatsNyquistLimitWarning) {
+  std::vector<fha::SupportedFormats2> ps_format_sets;
+  auto ps_format_set = CompliantEncodingSet();
+  // Frame rate is 44100 (from CompliantEncodingSet)
+  // Max frequency 44100 / 2 = 22050.
+  ps_format_set.supported_encodings()->decoded_channel_sets()->at(0).attributes()->at(0) = {{
+      .max_frequency = 30000,  // Above Nyquist limit
+  }};
+  ps_format_sets.push_back(std::move(ps_format_set));
+  // This should succeed but emit a warning.
+  EXPECT_TRUE(ValidatePacketStreamFormatSets(ps_format_sets));
+}
+
 TEST(ValidateWarningTest, CompositePropertiesInvalid) {
   // This should be an accepted configuration; the below cases are based on this.
   EXPECT_TRUE(ValidateCompositeProperties(

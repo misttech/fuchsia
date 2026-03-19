@@ -15,6 +15,68 @@ namespace media_audio {
 namespace fad = fuchsia_audio_device;
 namespace fha = fuchsia_hardware_audio;
 
+namespace {
+
+fha::PcmFormat SafePcmFormatFromSupportedFormats(
+    const std::vector<fha::SupportedFormats2>& format_sets) {
+  for (const auto& format_set : format_sets) {
+    if (format_set.pcm_supported_formats()) {
+      auto pcm_supported_formats = format_set.pcm_supported_formats().value();
+      fha::PcmFormat format{{
+          .number_of_channels = static_cast<uint8_t>(
+              pcm_supported_formats.channel_sets()->front().attributes()->size()),
+          .sample_format = pcm_supported_formats.sample_formats()->front(),
+          .bytes_per_sample = pcm_supported_formats.bytes_per_sample()->front(),
+          .valid_bits_per_sample = pcm_supported_formats.valid_bits_per_sample()->front(),
+          .frame_rate = pcm_supported_formats.frame_rates()->front(),
+      }};
+      if (ValidatePcmFormat(format)) {
+        return format;
+      }
+    }
+  }
+  ADD_FAILURE() << "No valid PCM format found in supported format sets";
+  return fha::PcmFormat();
+}
+
+fha::Encoding SafeEncodingFromSupportedFormats(
+    const std::vector<fha::SupportedFormats2>& format_sets) {
+  for (const auto& format_set : format_sets) {
+    if (format_set.supported_encodings()) {
+      auto supported_encodings = format_set.supported_encodings().value();
+      auto min_bitrate = supported_encodings.min_encoding_bitrate().value_or(0);
+      auto max_bitrate = supported_encodings.max_encoding_bitrate().value_or(0);
+      const auto decoded_channel_count = static_cast<uint32_t>(
+          supported_encodings.decoded_channel_sets()->front().attributes()->size());
+      const auto decoded_frame_rate = supported_encodings.decoded_frame_rates()->front();
+      // Choose a bitrate based on a reasonable compression ratio relative to standard PCM.
+      // Since uncompressed PCM bitrate is (channels * rate * bits_per_sample) bits/sec,
+      // a factor of 2 results in an 8x compression ratio for 16-bit PCM (16/2=8)
+      // or 4x for 8-bit PCM (8/2=4) or 16x for 32-bit PCM (32/2=16) and so on.
+      uint32_t bitrate = decoded_channel_count * decoded_frame_rate * 2;
+
+      if (max_bitrate > 0) {
+        bitrate = std::clamp(bitrate, min_bitrate, max_bitrate);
+      } else if (min_bitrate > 0) {
+        bitrate = std::max(bitrate, min_bitrate);
+      }
+      fha::Encoding format{{
+          .decoded_channel_count = decoded_channel_count,
+          .decoded_frame_rate = decoded_frame_rate,
+          .average_encoding_bitrate = bitrate,
+          .encoding_type = supported_encodings.encoding_types()->front(),
+      }};
+      if (ValidateEncoding(format)) {
+        return format;
+      }
+    }
+  }
+  ADD_FAILURE() << "No valid encoding format found in supported format sets";
+  return fha::Encoding();
+}
+
+}  // namespace
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // Helper functions that are useful for both low- (Device) and high-level (AdrServer) unittests.
 //
@@ -217,21 +279,8 @@ fuchsia_audio::Format SecondRingBufferFormatFromElementRingBufferFormatSets(
 // From many SupportedFormats, get a Format.
 fha::Format2 SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
     const std::vector<fha::SupportedFormats2>& driver_ring_buffer_format_sets) {
-  auto first_format_set = driver_ring_buffer_format_sets.front().pcm_supported_formats().value();
-  fha::Format2 ring_buffer_format = fha::Format2::WithPcmFormat(fha::PcmFormat{{
-      .number_of_channels =
-          static_cast<uint8_t>(first_format_set.channel_sets()->front().attributes()->size()),
-      .sample_format = first_format_set.sample_formats()->front(),
-      .bytes_per_sample = first_format_set.bytes_per_sample()->front(),
-      .valid_bits_per_sample = first_format_set.valid_bits_per_sample()->front(),
-      .frame_rate = first_format_set.frame_rates()->front(),
-  }});
-
-  if (!ValidateRingBufferFormat(ring_buffer_format)) {
-    ADD_FAILURE() << "first entries did not create a valid DaiFormat";
-    return fha::Format2::WithPcmFormat(fha::PcmFormat());
-  }
-  return ring_buffer_format;
+  return fha::Format2::WithPcmFormat(
+      SafePcmFormatFromSupportedFormats(driver_ring_buffer_format_sets));
 }
 
 // From many SupportedFormats, get a DIFFERENT Format.
@@ -295,6 +344,42 @@ fha::Format2 SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
   }
   ADD_FAILURE()
       << "SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets: No element_driver_ring_buffer_format_sets entry found with specified element_id "
+      << element_id;
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
+}
+
+///////////////////////////////
+// PacketStream-related functions
+//
+// From many SupportedFormats, get a Format.
+fha::Format2 SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(
+    const std::vector<fha::SupportedFormats2>& driver_packet_stream_format_sets) {
+  for (const auto& format_set : driver_packet_stream_format_sets) {
+    if (format_set.pcm_supported_formats()) {
+      return fha::Format2::WithPcmFormat(
+          SafePcmFormatFromSupportedFormats(driver_packet_stream_format_sets));
+    }
+    if (format_set.supported_encodings()) {
+      return fha::Format2::WithEncoding(
+          SafeEncodingFromSupportedFormats(driver_packet_stream_format_sets));
+    }
+  }
+  ADD_FAILURE() << "No valid format found in supported format sets";
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
+}
+
+// From a multi-element collection, each with many SupportedFormats, get a Format.
+fha::Format2 SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets) {
+  for (const auto& element_entry : element_driver_packet_stream_format_sets) {
+    if (element_entry.first == element_id) {
+      return SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(element_entry.second);
+    }
+  }
+  ADD_FAILURE()
+      << "SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets: No element_driver_packet_stream_format_sets entry found with specified element_id "
       << element_id;
   return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }

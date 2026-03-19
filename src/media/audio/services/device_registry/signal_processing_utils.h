@@ -19,6 +19,8 @@ std::unordered_map<ElementId, ElementRecord> MapElements(
 std::unordered_set<ElementId> dais(const std::unordered_map<ElementId, ElementRecord>& element_map);
 std::unordered_set<ElementId> ring_buffers(
     const std::unordered_map<ElementId, ElementRecord>& element_map);
+std::unordered_set<ElementId> packet_streams(
+    const std::unordered_map<ElementId, ElementRecord>& element_map);
 
 std::unordered_map<TopologyId, std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>>
 MapTopologies(const std::vector<fuchsia_hardware_audio_signalprocessing::Topology>& topologies);

@@ -22,6 +22,7 @@ namespace media_audio {
 class ControlNotify : public ObserverNotify {
  public:
   virtual void DeviceDroppedRingBuffer(ElementId element_id) = 0;
+  virtual void DeviceDroppedPacketStream(ElementId element_id) = 0;
   virtual void DelayInfoIsChanged(ElementId element_id, const fuchsia_audio_device::DelayInfo&) = 0;
 
   virtual void DaiFormatIsChanged(

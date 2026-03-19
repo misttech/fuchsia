@@ -21,6 +21,7 @@ constexpr ElementId kAgcElementId = 2;
 constexpr ElementId kDaiInterconnectElementId = 1;
 constexpr ElementId kOtherDaiInterconnectElementId = 111;
 constexpr ElementId kRingBufferElementId = 0;
+constexpr ElementId kPacketStreamElementId = 441;
 constexpr ElementId kDynamicsElementId = 42;
 constexpr ElementId kEqualizerElementId = 55;
 constexpr ElementId kGainElementId = 555;
@@ -33,11 +34,13 @@ constexpr ElementId kBadElementId = 68;
 const fhasp::Element kAgcElement{{
     .id = kAgcElementId,
     .type = fhasp::ElementType::kAutomaticGainControl,
+    // .type_specific is missing - not applicable to AGC
     .description = std::string("Test signalprocessing description for an automatic-gain-control ") +
                    std::string("element with expected functionality.  As intentionally defined, ") +
                    std::string("this description is a maximal-length 256-char string. Note that ") +
                    std::string("this string has an upper-case 'x' as the last character.  54321X"),
     .can_stop = false,
+    // .can_bypass is missing (cannot be bypassed)
 }};
 const fhasp::Element kDaiInterconnectElement{{
     .id = kDaiInterconnectElementId,
@@ -52,10 +55,18 @@ const fhasp::Element kDaiInterconnectElement{{
 const fhasp::Element kRingBufferElement{{
     .id = kRingBufferElementId,  //
     .type = fhasp::ElementType::kRingBuffer,
-    // .type_specific is missing
-    // .description is missing
-    // .can_stop is missing
-    // .can_bypass is missing
+    // .type_specific is missing - not applicable to RingBuffer
+    // .description is missing - not tested
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
+}};
+const fhasp::Element kPacketStreamElement{{
+    .id = kPacketStreamElementId,  //
+    .type = fhasp::ElementType::kPacketStream,
+    // .type_specific is missing - not applicable to PacketStream
+    // .description is missing - not tested
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
 }};
 const fhasp::Element kDynamicsElement{{
     .id = kDynamicsElementId,
@@ -134,46 +145,81 @@ const fhasp::Element kOtherDaiInterconnectElement{{
 
 // Non-compliant elements
 const fhasp::Element kElementNoId{{
+    // .id is missing - this is non-compliant
+
     .type = fhasp::ElementType::kAutomaticGainControl,
+    // .type_specific is missing - not applicable to AGC
+    // .description is missing - allowed
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
 }};
 const fhasp::Element kElementNoType{{
+    // .type is missing - this is non-compliant
+
     .id = kBadElementId,
+    // .type_specific is missing - not applicable, depending on type
+    // .description is missing - allowed
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
 }};
 const fhasp::Element kElementWithoutRequiredTypeSpecific{{
     .id = kBadElementId,
     .type = fhasp::ElementType::kDaiInterconnect,
+    // .description is missing - allowed
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
+
+    // .type_specific is missing - non-compliant (required for DAI)
 }};
 const fhasp::Element kElementWrongTypeSpecific{{
     .id = kBadElementId,
     .type = fhasp::ElementType::kDynamics,
+    // .description is missing - allowed
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
+
     .type_specific = fhasp::TypeSpecificElement::WithDaiInterconnect({{
         .plug_detect_capabilities = fhasp::PlugDetectCapabilities::kCanAsyncNotify,
-    }}),
+    }}),  // .type_specific does not match .type (Dynamics)
 }};
 const fhasp::Element kElementEmptyDescription{{
     .id = kBadElementId,
     .type = fhasp::ElementType::kAutomaticGainControl,
-    .description = "",
+    // .type_specific is missing - not applicable to AGC
+    // .can_stop is missing (always started)
+    // .can_bypass is missing (cannot be bypassed)
+
+    .description = "",  // .description cannot be empty (should instead be omitted)
 }};
 const fhasp::Element kElementCannotStop{{
     .id = kBadElementId,
     .type = fhasp::ElementType::kAutomaticGainControl,
-    .can_stop = false,
+    // .type_specific is missing - not applicable, depending on type
+    // .description is missing - allowed
+    // .can_bypass is missing (cannot be bypassed)
+
+    .can_stop = false,  // valid, but later we will try to tell the element to stop
 }};
 const fhasp::Element kElementCannotBypass{{
     .id = kBadElementId,
     .type = fhasp::ElementType::kAutomaticGainControl,
-    .can_bypass = false,
+    // .type_specific is missing - not applicable, depending on type
+    // .description is missing - allowed
+    // .can_stop is missing (always started)
+
+    .can_bypass = false,  // valid, but later we will try to tell the element to bypass
 }};
 
 // Collections of Elements
 //
 // Compliant collections of elements
 const std::vector<fhasp::Element> kElements{kDaiInterconnectElement, kAgcElement, kDynamicsElement,
-                                            kRingBufferElement};
+                                            kRingBufferElement, kPacketStreamElement};
 const std::vector<fhasp::Element> kElementsWithLoopDai{kDaiInterconnectElement, kAgcElement,
                                                        kDynamicsElement, kRingBufferElement,
                                                        kOtherDaiInterconnectElement};
+const std::vector<fhasp::Element> kElementsWithPacketStream{kDaiInterconnectElement,
+                                                            kPacketStreamElement};
 
 // Non-compliant collections of elements
 const std::vector<fhasp::Element> kEmptyElements{};
@@ -432,6 +478,7 @@ const fhasp::ElementState kElementStateEmpty{
 constexpr TopologyId kTopologyDaiAgcDynRbId = 0;
 constexpr TopologyId kTopologyDaiRbId = 10;
 constexpr TopologyId kTopologyRbDaiId = 7;
+constexpr TopologyId kTopologyPsDaiId = 68;
 constexpr TopologyId kBadTopologyId = 42;
 constexpr TopologyId kTopologyDaiAgcDynRbAndLoopId = 123;
 
@@ -447,6 +494,8 @@ const fhasp::EdgePair kEdgeDynRb{{.processing_element_id_from = kDynamicsElement
 const fhasp::EdgePair kEdgeDaiRb{{.processing_element_id_from = kDaiInterconnectElementId,
                                   .processing_element_id_to = kRingBufferElementId}};
 const fhasp::EdgePair kEdgeRbDai{{.processing_element_id_from = kRingBufferElementId,
+                                  .processing_element_id_to = kDaiInterconnectElementId}};
+const fhasp::EdgePair kEdgePsDai{{.processing_element_id_from = kPacketStreamElementId,
                                   .processing_element_id_to = kDaiInterconnectElementId}};
 const fhasp::EdgePair kEdgeToSelfAllowed{
     {.processing_element_id_from = kOtherDaiInterconnectElementId,
@@ -476,6 +525,10 @@ const fhasp::Topology kTopologyDaiRb{{
 const fhasp::Topology kTopologyRbDai{{
     .id = kTopologyRbDaiId,
     .processing_elements_edge_pairs = {{kEdgeRbDai}},
+}};
+const fhasp::Topology kTopologyPsDai{{
+    .id = kTopologyPsDaiId,
+    .processing_elements_edge_pairs = {{kEdgePsDai}},
 }};
 const fhasp::Topology kTopologyDaiAgcDynRbAndLoop{{
     .id = kTopologyDaiAgcDynRbAndLoopId,
@@ -514,8 +567,8 @@ const fhasp::Topology kTopologyTerminalNotEndpoint{{
 // Collections of topologies
 //
 // Compliant collections
-const std::vector<fhasp::Topology> kTopologies{kTopologyDaiAgcDynRb, kTopologyDaiRb,
-                                               kTopologyRbDai};
+const std::vector<fhasp::Topology> kTopologies{kTopologyDaiAgcDynRb, kTopologyDaiRb, kTopologyRbDai,
+                                               kTopologyPsDai};
 const std::vector<fhasp::Topology> kTopologiesWithLoop{kTopologyDaiAgcDynRb, kTopologyDaiRb,
                                                        kTopologyRbDai, kTopologyDaiAgcDynRbAndLoop};
 

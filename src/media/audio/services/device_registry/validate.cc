@@ -67,6 +67,238 @@ bool ClientIsValidForDeviceType(const fad::DeviceType& device_type,
   }
 }
 
+bool ValidatePcmSupportedFormats(const fha::PcmSupportedFormats& pcm_format_set,
+                                 bool is_packet_stream) {
+  const uint32_t kMinFrameRate =
+      is_packet_stream ? kMinSupportedPacketStreamFrameRate : kMinSupportedRingBufferFrameRate;
+  const uint32_t kMaxFrameRate =
+      is_packet_stream ? kMaxSupportedPacketStreamFrameRate : kMaxSupportedRingBufferFrameRate;
+
+  // Frame rates
+  if (!pcm_format_set.frame_rates().has_value() || pcm_format_set.frame_rates()->empty()) {
+    FX_LOGS(WARNING) << "frame_rates[] is " << (pcm_format_set.frame_rates() ? "empty" : "absent");
+    return false;
+  }
+  uint32_t prev_frame_rate = 0, max_supported_frame_rate = 0;
+  for (const auto& rate : *pcm_format_set.frame_rates()) {
+    if (rate < kMinFrameRate || rate > kMaxFrameRate) {
+      FX_LOGS(WARNING) << "frame_rate (" << rate << ") out of range [" << kMinFrameRate << ","
+                       << kMaxFrameRate << "] ";
+      return false;
+    }
+    if (rate <= prev_frame_rate) {
+      FX_LOGS(WARNING) << "frame_rate must be in ascending order: " << prev_frame_rate
+                       << " was listed before " << rate;
+      return false;
+    }
+    prev_frame_rate = rate;
+    max_supported_frame_rate = std::max(max_supported_frame_rate, rate);
+  }
+
+  // Channel sets
+  if (!pcm_format_set.channel_sets().has_value() || pcm_format_set.channel_sets()->empty()) {
+    FX_LOGS(WARNING) << "channel_sets[] is "
+                     << (pcm_format_set.channel_sets() ? "empty" : "absent");
+    return false;
+  }
+  auto max_allowed_frequency = max_supported_frame_rate / 2;
+  for (const fha::ChannelSet& chan_set : *pcm_format_set.channel_sets()) {
+    if (!chan_set.attributes().has_value() || chan_set.attributes()->empty()) {
+      FX_LOGS(WARNING) << "ChannelSet.attributes[] is "
+                       << (chan_set.attributes() ? "empty" : "absent");
+      return false;
+    }
+    if (CountChannelMatches(*pcm_format_set.channel_sets(), chan_set.attributes()->size()) > 1) {
+      FX_LOGS(WARNING) << "channel-count must be unique across channel_sets: "
+                       << chan_set.attributes()->size();
+      return false;
+    }
+    for (const auto& attrib : *chan_set.attributes()) {
+      if (attrib.min_frequency().has_value()) {
+        if (*attrib.min_frequency() > max_allowed_frequency) {
+          FX_LOGS(WARNING) << "ChannelAttributes.min_frequency (" << *attrib.min_frequency()
+                           << ") out of range: " << "[0, " << max_allowed_frequency << "]";
+          return false;
+        }
+        if (attrib.max_frequency().has_value() &&
+            *attrib.min_frequency() > *attrib.max_frequency()) {
+          FX_LOGS(WARNING) << "min_frequency (" << *attrib.min_frequency()
+                           << ") cannot exceed max_frequency (" << *attrib.max_frequency() << ")";
+          return false;
+        }
+      }
+      if (attrib.max_frequency().has_value() && *attrib.max_frequency() > max_allowed_frequency) {
+        FX_LOGS(WARNING) << "ChannelAttrib.max_frequency " << *attrib.max_frequency()
+                         << " will be limited to " << max_allowed_frequency;
+      }
+    }
+  }
+
+  // Sample format
+  if (!pcm_format_set.sample_formats().has_value() || pcm_format_set.sample_formats()->empty()) {
+    FX_LOGS(WARNING) << "sample_formats[] is "
+                     << (pcm_format_set.sample_formats() ? "empty" : "absent");
+    return false;
+  }
+  const auto& sample_formats = *pcm_format_set.sample_formats();
+  for (const auto& format : sample_formats) {
+    if (CountFormatMatches(sample_formats, format) > 1) {
+      FX_LOGS(WARNING) << "no duplicate SampleFormat values allowed: " << format;
+      return false;
+    }
+  }
+
+  // Bytes per sample
+  if (!pcm_format_set.bytes_per_sample() || pcm_format_set.bytes_per_sample()->empty()) {
+    FX_LOGS(WARNING) << "bytes_per_sample[] is "
+                     << (pcm_format_set.bytes_per_sample() ? "empty" : "absent");
+    return false;
+  }
+  uint8_t prev_bytes_per_sample = 0, max_bytes_per_sample = 0;
+  for (const auto& bytes : *pcm_format_set.bytes_per_sample()) {
+    if (CountFormatMatches(sample_formats, fha::SampleFormat::kPcmSigned) &&
+        (bytes != 2 && bytes != 4)) {
+      FX_LOGS(WARNING) << "bytes_per_sample (" << static_cast<uint16_t>(bytes)
+                       << ") must be 2 or 4 for PCM_SIGNED format";
+      return false;
+    }
+    if (CountFormatMatches(sample_formats, fha::SampleFormat::kPcmFloat) &&
+        (bytes != 4 && bytes != 8)) {
+      FX_LOGS(WARNING) << "bytes_per_sample (" << static_cast<uint16_t>(bytes)
+                       << ") must be 4 or 8 for PCM_FLOAT format";
+      return false;
+    }
+    if (CountFormatMatches(sample_formats, fha::SampleFormat::kPcmUnsigned) && bytes != 1) {
+      FX_LOGS(WARNING) << "bytes_per_sample (" << static_cast<uint16_t>(bytes)
+                       << ") must be 1 for PCM_UNSIGNED format";
+      return false;
+    }
+    if (bytes <= prev_bytes_per_sample) {
+      FX_LOGS(WARNING) << "bytes_per_sample must be in ascending order: "
+                       << static_cast<uint16_t>(prev_bytes_per_sample) << " was listed before "
+                       << static_cast<uint16_t>(bytes);
+      return false;
+    }
+    prev_bytes_per_sample = bytes;
+    // While testing sample-size, we determine max_bytes_per_sample for valid-bits checks.
+    max_bytes_per_sample = std::max(max_bytes_per_sample, bytes);
+  }
+
+  // Valid bits per sample
+  if (!pcm_format_set.valid_bits_per_sample().has_value() ||
+      pcm_format_set.valid_bits_per_sample()->empty()) {
+    FX_LOGS(WARNING) << "valid_bits_per_sample[] is "
+                     << (pcm_format_set.valid_bits_per_sample() ? "empty" : "absent");
+    return false;
+  }
+  uint8_t prev_valid_bits = 0;
+  for (const auto& valid_bits : *pcm_format_set.valid_bits_per_sample()) {
+    if (valid_bits == 0 || valid_bits > max_bytes_per_sample * 8) {
+      FX_LOGS(WARNING) << "valid_bits_per_sample (" << static_cast<uint16_t>(valid_bits)
+                       << ") out of range [1, " << max_bytes_per_sample * 8 << "]";
+      return false;
+    }
+    if (valid_bits <= prev_valid_bits) {
+      FX_LOGS(WARNING) << "valid_bits_per_sample must be in ascending order: "
+                       << static_cast<uint16_t>(prev_valid_bits) << " was listed before "
+                       << static_cast<uint16_t>(valid_bits);
+      return false;
+    }
+    prev_valid_bits = valid_bits;
+  }
+  return true;
+}
+
+bool ValidateSupportedEncodings(const fha::SupportedEncodings& encoding_format_set) {
+  // Frame rates
+  if (!encoding_format_set.decoded_frame_rates().has_value() ||
+      encoding_format_set.decoded_frame_rates()->empty()) {
+    FX_LOGS(WARNING) << "ValidateSupportedEncodings: decoded_frame_rates[] is "
+                     << (encoding_format_set.decoded_frame_rates() ? "empty" : "absent");
+    return false;
+  }
+  // While testing frame_rates, we can determine max_supported_frame_rate.
+  uint32_t prev_frame_rate = 0, max_supported_frame_rate = 0;
+  for (const auto& rate : *encoding_format_set.decoded_frame_rates()) {
+    if (rate < kMinSupportedPacketStreamFrameRate || rate > kMaxSupportedPacketStreamFrameRate) {
+      FX_LOGS(WARNING) << "ValidateSupportedEncodings: frame_rate (" << rate << ") out of range ["
+                       << kMinSupportedPacketStreamFrameRate << ","
+                       << kMaxSupportedPacketStreamFrameRate << "] ";
+      return false;
+    }
+    // Checking for "strictly ascending" also eliminates duplicate entries.
+    if (rate <= prev_frame_rate) {
+      FX_LOGS(WARNING) << "ValidateSupportedEncodings: frame_rate must be in ascending order: "
+                       << prev_frame_rate << " was listed before " << rate;
+      return false;
+    }
+    prev_frame_rate = rate;
+    max_supported_frame_rate = std::max(max_supported_frame_rate, rate);
+  }
+
+  // Channel sets
+  if (!encoding_format_set.decoded_channel_sets().has_value() ||
+      encoding_format_set.decoded_channel_sets()->empty()) {
+    FX_LOGS(WARNING) << "ValidateSupportedEncodings: decoded_channel_sets[] is "
+                     << (encoding_format_set.decoded_channel_sets() ? "empty" : "absent");
+    return false;
+  }
+  auto max_allowed_frequency = max_supported_frame_rate / 2;
+  for (const fha::ChannelSet& chan_set : *encoding_format_set.decoded_channel_sets()) {
+    if (!chan_set.attributes().has_value() || chan_set.attributes()->empty()) {
+      FX_LOGS(WARNING) << "ValidateSupportedEncodings: ChannelSet.attributes[] is "
+                       << (chan_set.attributes() ? "empty" : "absent");
+      return false;
+    }
+    if (CountChannelMatches(*encoding_format_set.decoded_channel_sets(),
+                            chan_set.attributes()->size()) > 1) {
+      FX_LOGS(WARNING)
+          << "ValidateSupportedEncodings: channel-count must be unique across channel_sets: "
+          << chan_set.attributes()->size();
+      return false;
+    }
+    for (const auto& attrib : *chan_set.attributes()) {
+      if (attrib.min_frequency().has_value()) {
+        if (*attrib.min_frequency() > max_allowed_frequency) {
+          FX_LOGS(WARNING) << "ValidateSupportedEncodings: ChannelAttributes.min_frequency ("
+                           << *attrib.min_frequency() << ") out of range: "
+                           << "[0, " << max_allowed_frequency << "]";
+          return false;
+        }
+        if (attrib.max_frequency().has_value() &&
+            *attrib.min_frequency() > *attrib.max_frequency()) {
+          FX_LOGS(WARNING) << "ValidateSupportedEncodings: min_frequency ("
+                           << *attrib.min_frequency() << ") cannot exceed max_frequency ("
+                           << *attrib.max_frequency() << ")";
+          return false;
+        }
+      }
+
+      if (attrib.max_frequency().has_value()) {
+        if (*attrib.max_frequency() > max_allowed_frequency) {
+          FX_LOGS(WARNING) << "ValidateSupportedEncodings: ChannelAttrib.max_frequency "
+                           << *attrib.max_frequency() << " will be limited to "
+                           << max_allowed_frequency;
+        }
+      }
+    }
+  }
+  if (!encoding_format_set.encoding_types().has_value() ||
+      encoding_format_set.encoding_types()->empty()) {
+    FX_LOGS(WARNING) << "ValidateSupportedEncodings: encoding_types[] is "
+                     << (encoding_format_set.encoding_types() ? "empty" : "absent");
+    return false;
+  }
+  const auto& encodings = *encoding_format_set.encoding_types();
+  for (const auto& encoding : encodings) {
+    if (std::count(encodings.begin(), encodings.end(), encoding) > 1) {
+      FX_LOGS(WARNING) << "ValidateSupportedEncodings: duplicate encoding_type found: " << encoding;
+      return false;
+    }
+  }
+  return true;
+}
+
 // Translate from fuchsia_hardware_audio::SupportedFormats to fuchsia_audio_device::PcmFormatSet.
 std::vector<fad::PcmFormatSet> TranslateRingBufferFormatSets(
     const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
@@ -159,170 +391,73 @@ bool ValidateRingBufferFormatSets(
   LogRingBufferFormatSets(ring_buffer_format_sets);
 
   if (ring_buffer_format_sets.empty()) {
-    FX_LOGS(WARNING) << "GetRingBufferFormatSets: ring_buffer_format_sets[] is empty";
+    FX_LOGS(WARNING) << "ValidateRingBufferFormatSets: ring_buffer_format_sets[] is empty";
     return false;
   }
 
-  for (const auto& rb_format_set : ring_buffer_format_sets) {
-    if (rb_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: pcm_supported_formats is absent (tag "
-                       << static_cast<uint32_t>(rb_format_set.Which()) << ")";
+  for (auto i = 0u; i < ring_buffer_format_sets.size(); ++i) {
+    const auto& rb_format_set = ring_buffer_format_sets[i];
+    if (rb_format_set.pcm_supported_formats()) {
+      if (!ValidatePcmSupportedFormats(rb_format_set.pcm_supported_formats().value(),
+                                       /*is_packet_stream=*/false)) {
+        FX_LOGS(WARNING) << "ValidateRingBufferFormatSets: pcm_supported_formats at index " << i
+                         << " is invalid";
+        return false;
+      }
+    } else {
+      FX_LOGS(WARNING)
+          << "ValidateRingBufferFormatSets: unknown union variant (flexible union) at index " << i
+          << " (tag " << static_cast<uint32_t>(rb_format_set.Which()) << ")";
       return false;
-    }
-    const auto& pcm_format_set = rb_format_set.pcm_supported_formats().value();
-
-    // Frame rates
-    if (!pcm_format_set.frame_rates().has_value() || pcm_format_set.frame_rates()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: frame_rates[] is "
-                       << (pcm_format_set.frame_rates() ? "empty" : "absent");
-      return false;
-    }
-    // While testing frame_rates, we can determine max_supported_frame_rate.
-    uint32_t prev_frame_rate = 0, max_supported_frame_rate = 0;
-    for (const auto& rate : *pcm_format_set.frame_rates()) {
-      if (rate < kMinSupportedRingBufferFrameRate || rate > kMaxSupportedRingBufferFrameRate) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: frame_rate (" << rate << ") out of range ["
-                         << kMinSupportedRingBufferFrameRate << ","
-                         << kMaxSupportedRingBufferFrameRate << "] ";
-        return false;
-      }
-      // Checking for "strictly ascending" also eliminates duplicate entries.
-      if (rate <= prev_frame_rate) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: frame_rate must be in ascending order: "
-                         << prev_frame_rate << " was listed before " << rate;
-        return false;
-      }
-      prev_frame_rate = rate;
-      max_supported_frame_rate = std::max(max_supported_frame_rate, rate);
-    }
-
-    // Channel sets
-    if (!pcm_format_set.channel_sets().has_value() || pcm_format_set.channel_sets()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: channel_sets[] is "
-                       << (pcm_format_set.channel_sets() ? "empty" : "absent");
-      return false;
-    }
-    auto max_allowed_frequency = max_supported_frame_rate / 2;
-    for (const fha::ChannelSet& chan_set : *pcm_format_set.channel_sets()) {
-      if (!chan_set.attributes().has_value() || chan_set.attributes()->empty()) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: ChannelSet.attributes[] is "
-                         << (chan_set.attributes() ? "empty" : "absent");
-        return false;
-      }
-      if (CountChannelMatches(*pcm_format_set.channel_sets(), chan_set.attributes()->size()) > 1) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: channel-count must be unique across channel_sets: "
-            << chan_set.attributes()->size();
-        return false;
-      }
-      for (const auto& attrib : *chan_set.attributes()) {
-        if (attrib.min_frequency().has_value()) {
-          if (*attrib.min_frequency() > max_allowed_frequency) {
-            FX_LOGS(WARNING) << "GetSupportedFormats: ChannelAttributes.min_frequency ("
-                             << *attrib.min_frequency() << ") out of range: "
-                             << "[0, " << max_allowed_frequency << "]";
-            return false;
-          }
-          if (attrib.max_frequency().has_value() &&
-              *attrib.min_frequency() > *attrib.max_frequency()) {
-            FX_LOGS(WARNING) << "GetSupportedFormats: min_frequency (" << *attrib.min_frequency()
-                             << ") cannot exceed max_frequency (" << *attrib.max_frequency() << ")";
-            return false;
-          }
-        }
-
-        if (attrib.max_frequency().has_value()) {
-          if (*attrib.max_frequency() > max_allowed_frequency) {
-            FX_LOGS(WARNING) << "GetSupportedFormats: ChannelAttrib.max_frequency "
-                             << *attrib.max_frequency() << " will be limited to "
-                             << max_allowed_frequency;
-          }
-        }
-      }
-    }
-
-    // Sample format
-    if (!pcm_format_set.sample_formats().has_value() || pcm_format_set.sample_formats()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: sample_formats[] is "
-                       << (pcm_format_set.sample_formats() ? "empty" : "absent");
-      return false;
-    }
-    const auto& rb_sample_formats = *pcm_format_set.sample_formats();
-    for (const auto& format : rb_sample_formats) {
-      if (CountFormatMatches(rb_sample_formats, format) > 1) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: no duplicate SampleFormat values allowed: "
-                         << format;
-        return false;
-      }
-    }
-
-    // Bytes per sample
-    if (!pcm_format_set.bytes_per_sample().has_value() ||
-        pcm_format_set.bytes_per_sample()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample[] is "
-                       << (pcm_format_set.bytes_per_sample() ? "empty" : "absent");
-      return false;
-    }
-    uint8_t prev_bytes_per_sample = 0, max_bytes_per_sample = 0;
-    for (const auto& bytes : *pcm_format_set.bytes_per_sample()) {
-      if (CountFormatMatches(rb_sample_formats, fha::SampleFormat::kPcmSigned) &&
-          (bytes != 2 && bytes != 4)) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
-                         << static_cast<uint16_t>(bytes)
-                         << ") must be 2 or 4 for PCM_SIGNED format";
-        return false;
-      }
-      if (CountFormatMatches(rb_sample_formats, fha::SampleFormat::kPcmFloat) &&
-          (bytes != 4 && bytes != 8)) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
-                         << static_cast<uint16_t>(bytes) << ") must be 4 or 8 for PCM_FLOAT format";
-        return false;
-      }
-      if (CountFormatMatches(rb_sample_formats, fha::SampleFormat::kPcmUnsigned) && bytes != 1) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
-                         << static_cast<uint16_t>(bytes) << ") must be 1 for PCM_UNSIGNED format";
-        return false;
-      }
-      // Checking for "strictly ascending" also eliminates duplicate entries.
-      if (bytes <= prev_bytes_per_sample) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample must be in ascending order: "
-                         << static_cast<uint16_t>(prev_bytes_per_sample) << " was listed before "
-                         << static_cast<uint16_t>(bytes);
-        return false;
-      }
-      prev_bytes_per_sample = bytes;
-
-      max_bytes_per_sample = std::max(max_bytes_per_sample, bytes);
-    }
-
-    // Valid bits per sample
-    if (!pcm_format_set.valid_bits_per_sample().has_value() ||
-        pcm_format_set.valid_bits_per_sample()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample[] is "
-                       << (pcm_format_set.valid_bits_per_sample() ? "empty" : "absent");
-      return false;
-    }
-    uint8_t prev_valid_bits = 0;
-    for (const auto& valid_bits : *pcm_format_set.valid_bits_per_sample()) {
-      if (valid_bits == 0 || valid_bits > max_bytes_per_sample * 8) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample ("
-                         << static_cast<uint16_t>(valid_bits) << ") out of range [1, "
-                         << max_bytes_per_sample * 8 << "]";
-        return false;
-      }
-      // Checking for "strictly ascending" also eliminates duplicate entries.
-      if (valid_bits <= prev_valid_bits) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: valid_bits_per_sample must be in ascending order: "
-            << static_cast<uint16_t>(prev_valid_bits) << " was listed before "
-            << static_cast<uint16_t>(valid_bits);
-        return false;
-      }
-      prev_valid_bits = valid_bits;
     }
   }
 
   return true;
+}
+
+bool ValidatePacketStreamFormatSets(const std::vector<fha::SupportedFormats2>& format_sets) {
+  LogPacketStreamFormatSets(format_sets);
+  if (format_sets.empty()) {
+    FX_LOGS(WARNING) << "ValidatePacketStreamFormatSets: format_sets[] is empty";
+    return false;
+  }
+
+  for (auto i = 0u; i < format_sets.size(); ++i) {
+    const auto& ps_format_set = format_sets[i];
+    if (ps_format_set.pcm_supported_formats()) {
+      bool valid = ValidatePcmSupportedFormats(ps_format_set.pcm_supported_formats().value(),
+                                               /*is_packet_stream=*/true);
+      if (!valid) {
+        FX_LOGS(WARNING) << "ValidatePcmSupportedFormats: pcm_supported_formats at index " << i
+                         << " is invalid";
+        return false;
+      }
+    } else if (ps_format_set.supported_encodings()) {
+      bool valid = ValidateSupportedEncodings(ps_format_set.supported_encodings().value());
+      if (!valid) {
+        FX_LOGS(WARNING) << "ValidateSupportedEncodings: supported_encodings at index " << i
+                         << " is invalid";
+        return false;
+      }
+    } else {
+      FX_LOGS(WARNING)
+          << "ValidatePacketStreamFormatSets: unknown union variant (flexible union) at index " << i
+          << " (tag " << static_cast<uint32_t>(ps_format_set.Which()) << ")";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool ValidatePacketStreamFormat(const fha::Format2& format) {
+  if (format.Which() == fha::Format2::Tag::kPcmFormat) {
+    return ValidatePcmFormat(format.pcm_format().value());
+  }
+  if (format.Which() == fha::Format2::Tag::kEncoding) {
+    return ValidateEncoding(format.encoding().value());
+  }
+  return false;
 }
 
 bool ValidateCodecProperties(const fha::CodecProperties& codec_props,
@@ -360,9 +495,10 @@ bool ValidateDaiFormatSets(const std::vector<fha::DaiSupportedFormats>& dai_form
     return false;
   }
 
-  for (const auto& dai_format_set : dai_format_sets) {
+  for (auto i = 0u; i < dai_format_sets.size(); ++i) {
+    const auto& dai_format_set = dai_format_sets[i];
     if (dai_format_set.number_of_channels().empty()) {
-      FX_LOGS(WARNING) << "Non-compliant DaiSupportedFormats: empty number_of_channels vector";
+      FX_LOGS(WARNING) << "DaiSupportedFormats[" << i << "]: empty number_of_channels vector";
       return false;
     }
     uint32_t previous_chans = 0;
@@ -655,47 +791,41 @@ bool ValidateRingBufferProperties(const fha::RingBufferProperties& rb_props) {
   return true;
 }
 
-bool ValidateRingBufferFormat(const fha::Format2& ring_buffer_format) {
-  ADR_LOG(kLogDeviceMethods);
-  LogRingBufferFormat(ring_buffer_format);
-  if (ring_buffer_format.Which() != fha::Format2::Tag::kPcmFormat) {
-    FX_LOGS(WARNING) << "ring_buffer_format must set pcm_format";
-    return false;
-  }
-  auto& pcm_format = ring_buffer_format.pcm_format().value();
+bool ValidatePcmFormat(const fha::PcmFormat& pcm_format) {
+  LogPcmFormat(pcm_format);
   if (pcm_format.number_of_channels() == 0) {
-    FX_LOGS(WARNING) << "RingBuffer number_of_channels is too low";
+    FX_LOGS(WARNING) << "PcmFormat number_of_channels is too low";
     return false;
   }
-  // Is there an upper limit on RingBuffer channels?
+  // Is there an upper limit on channels?
 
   if (pcm_format.bytes_per_sample() == 0) {
-    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too low";
+    FX_LOGS(WARNING) << "PcmFormat bytes_per_sample is too low";
     return false;
   }
   if (pcm_format.sample_format() == fha::SampleFormat::kPcmUnsigned &&
       pcm_format.bytes_per_sample() > sizeof(uint8_t)) {
-    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    FX_LOGS(WARNING) << "PcmFormat bytes_per_sample is too high";
     return false;
   }
   if (pcm_format.sample_format() == fha::SampleFormat::kPcmSigned &&
       pcm_format.bytes_per_sample() > sizeof(uint32_t)) {
-    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    FX_LOGS(WARNING) << "PcmFormat bytes_per_sample is too high";
     return false;
   }
   if (pcm_format.sample_format() == fha::SampleFormat::kPcmFloat &&
       pcm_format.bytes_per_sample() > sizeof(double)) {
-    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    FX_LOGS(WARNING) << "PcmFormat bytes_per_sample is too high";
     return false;
   }
 
   if (pcm_format.valid_bits_per_sample() == 0) {
-    FX_LOGS(WARNING) << "RingBuffer valid_bits_per_sample is too low";
+    FX_LOGS(WARNING) << "PcmFormat valid_bits_per_sample is too low";
     return false;
   }
   auto bytes_per_sample = pcm_format.bytes_per_sample();
   if (pcm_format.valid_bits_per_sample() > bytes_per_sample * 8) {
-    FX_LOGS(WARNING) << "RingBuffer valid_bits_per_sample ("
+    FX_LOGS(WARNING) << "PcmFormat valid_bits_per_sample ("
                      << static_cast<uint16_t>(pcm_format.valid_bits_per_sample())
                      << ") cannot exceed bytes_per_sample ("
                      << static_cast<uint16_t>(bytes_per_sample) << ") * 8";
@@ -704,12 +834,67 @@ bool ValidateRingBufferFormat(const fha::Format2& ring_buffer_format) {
 
   if (pcm_format.frame_rate() > kMaxSupportedRingBufferFrameRate ||
       pcm_format.frame_rate() < kMinSupportedRingBufferFrameRate) {
-    FX_LOGS(WARNING) << "RingBuffer frame rate (" << pcm_format.frame_rate()
+    FX_LOGS(WARNING) << "PcmFormat frame rate (" << pcm_format.frame_rate()
                      << ") must be within range [" << kMinSupportedRingBufferFrameRate << ", "
                      << kMaxSupportedRingBufferFrameRate << "]";
     return false;
   }
 
+  return true;
+}
+
+bool ValidateEncoding(const fha::Encoding& encoding) {
+  LogEncoding(encoding);
+  if (!encoding.decoded_channel_count().has_value() || *encoding.decoded_channel_count() == 0) {
+    FX_LOGS(WARNING) << "EncodedFormat decoded_channel_count is missing or zero";
+    return false;
+  }
+  if (encoding.decoded_frame_rate().has_value()) {
+    if (*encoding.decoded_frame_rate() > kMaxSupportedPacketStreamFrameRate ||
+        *encoding.decoded_frame_rate() < kMinSupportedPacketStreamFrameRate) {
+      FX_LOGS(WARNING) << "EncodedFormat decoded_frame_rate (" << *encoding.decoded_frame_rate()
+                       << ") is out of range";
+      return false;
+    }
+  }
+  if (!encoding.average_encoding_bitrate().has_value()) {
+    FX_LOGS(WARNING) << "EncodedFormat average_encoding_bitrate is missing";
+    return false;
+  }
+
+  // Calculate max possible bitrate based on uncompressed stream assuming worst-case of 8
+  // bytes/sample.
+  uint32_t frame_rate = encoding.decoded_frame_rate().value_or(kMaxSupportedPacketStreamFrameRate);
+  uint32_t channels = *encoding.decoded_channel_count();
+  uint32_t max_bitrate = channels * frame_rate * 8 /* bytes/sample */ * 8 /* bits/byte */;
+
+  if (*encoding.average_encoding_bitrate() == 0 ||
+      *encoding.average_encoding_bitrate() > max_bitrate) {
+    FX_LOGS(WARNING) << "EncodedFormat average_encoding_bitrate ("
+                     << *encoding.average_encoding_bitrate() << ") is out of range";
+    return false;
+  }
+  if (!encoding.encoding_type().has_value()) {
+    FX_LOGS(WARNING) << "EncodedFormat encoding_type is missing";
+    return false;
+  }
+  return true;
+}
+
+bool ValidatePacketStreamProperties(const fha::PacketStreamProperties& packet_stream_properties) {
+  ADR_LOG(kLogDeviceMethods);
+  LogPacketStreamProperties(packet_stream_properties);
+  if (!packet_stream_properties.needs_cache_flush_or_invalidate().has_value()) {
+    FX_LOGS(WARNING) << "PacketStreamProperties must set needs_cache_flush_or_invalidate";
+    return false;
+  }
+
+  if (!packet_stream_properties.supported_buffer_types().has_value() ||
+      static_cast<uint64_t>(*packet_stream_properties.supported_buffer_types()) == 0) {
+    FX_LOGS(WARNING)
+        << "PacketStreamProperties must set supported_buffer_types to a non-zero value";
+    return false;
+  }
   return true;
 }
 
@@ -734,7 +919,8 @@ bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::F
   LogRingBufferVmo(vmo, num_frames, rb_format);
 
   uint64_t size;
-  if (!ValidateRingBufferFormat(rb_format)) {
+  if (rb_format.Which() != fha::Format2::Tag::kPcmFormat ||
+      !ValidatePcmFormat(rb_format.pcm_format().value())) {
     return false;
   }
   if (!ValidateSampleFormatCompatibility(rb_format.pcm_format()->bytes_per_sample(),
@@ -767,6 +953,48 @@ bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::F
                      << " bytes_per_sample) does not match VMO size (" << size << " bytes)";
     return false;
   }
+  return true;
+}
+
+bool ValidatePacketStreamVmo(const fha::VmoInfo& vmo_info, zx_rights_t required_rights,
+                             std::optional<uint64_t> min_size) {
+  ADR_LOG(kLogDeviceMethods);
+  LogPacketStreamVmo(vmo_info);
+
+  if (!vmo_info.id().has_value()) {
+    FX_LOGS(WARNING) << "VmoInfo.id is missing";
+    return false;
+  }
+  if (!vmo_info.vmo().has_value() || !vmo_info.vmo()->is_valid()) {
+    FX_LOGS(WARNING) << "VmoInfo.vmo is missing or invalid";
+    return false;
+  }
+
+  zx_info_handle_basic_t info;
+  auto status =
+      vmo_info.vmo()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  if (status != ZX_OK) {
+    FX_PLOGS(WARNING, status) << "vmo.get_info returned error";
+    return false;
+  }
+  if ((info.rights & required_rights) != required_rights) {
+    FX_LOGS(WARNING) << "VmoInfo rights 0x" << std::hex << info.rights << " are insufficient (0x"
+                     << required_rights << " are required)";
+    return false;
+  }
+
+  uint64_t size;
+  status = vmo_info.vmo()->get_size(&size);
+  if (status != ZX_OK) {
+    FX_LOGS(WARNING) << "get_size returned size " << size << " and error " << status;
+    return false;
+  }
+  if (min_size.has_value() && size < *min_size) {
+    FX_LOGS(WARNING) << "VmoInfo.vmo size (" << size << " bytes) is less than required size ("
+                     << *min_size << " bytes)";
+    return false;
+  }
+
   return true;
 }
 
@@ -1788,26 +2016,29 @@ bool ValidateTopology(const fhasp::Topology& topology,
     bool has_incoming_edges = ElementHasIncomingEdges(edge_pairs, id);
 
     if (has_outgoing_edges && has_incoming_edges) {
-      // If an element has incoming AND outgoing edges, then it cannot be RingBuffer.
+      // If an element has incoming AND outgoing edges, it cannot be RingBuffer or PacketStream.
       // Interestingly, this IS allowed for DAI elements.
-      if (element_type == fhasp::ElementType::kRingBuffer) {
-        FX_LOGS(WARNING) << "RingBuffer element " << id
+      if (element_type == fhasp::ElementType::kRingBuffer ||
+          element_type == fhasp::ElementType::kPacketStream) {
+        FX_LOGS(WARNING) << element_type << " element " << id
                          << " has both incoming edges and outgoing edges!";
         return false;
       }
     }
     if (has_outgoing_edges && !has_incoming_edges) {
-      // If the element has no incoming edges, then it must be a DAI or RingBuffer.
+      // If the element has no incoming edges, then it must be a DAI, RingBuffer or PacketStream.
       if (element_type != fhasp::ElementType::kDaiInterconnect &&
-          element_type != fhasp::ElementType::kRingBuffer) {
+          element_type != fhasp::ElementType::kRingBuffer &&
+          element_type != fhasp::ElementType::kPacketStream) {
         FX_LOGS(WARNING) << "Element " << id << " (" << element_type << ") has no incoming edges!";
         return false;
       }
     }
     if (!has_outgoing_edges && has_incoming_edges) {
-      // If the element has no outgoing edges, then it must be a DAI or RingBuffer.
+      // If the element has no outgoing edges, then it must be a DAI, RingBuffer or PacketStream.
       if (element_type != fhasp::ElementType::kDaiInterconnect &&
-          element_type != fhasp::ElementType::kRingBuffer) {
+          element_type != fhasp::ElementType::kRingBuffer &&
+          element_type != fhasp::ElementType::kPacketStream) {
         FX_LOGS(WARNING) << "Element " << id << " (" << element_type << ") has no outgoing edges!";
         return false;
       }

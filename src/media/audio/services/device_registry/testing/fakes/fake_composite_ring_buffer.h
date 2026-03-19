@@ -15,11 +15,9 @@
 #include <optional>
 #include <string_view>
 
-#include "src/media/audio/services/device_registry/basic_types.h"
+#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
 
 namespace media_audio {
-
-static constexpr bool kLogFakeCompositeRingBuffer = false;
 
 class FakeComposite;
 
@@ -28,7 +26,7 @@ class FakeCompositeRingBuffer final
   static inline constexpr std::string_view kClassName = "FakeCompositeRingBuffer";
 
  public:
-  static constexpr bool kDefaultNeedsCacheFlushInvalidate = false;
+  static constexpr std::optional<bool> kDefaultNeedsCacheFlushInvalidate = false;
   static constexpr uint32_t kDefaultDriverTransferBytes = 32;
   static constexpr bool kDefaultSupportsActiveChannels = false;
   static constexpr std::optional<zx::duration> kDefaultTurnOnDelay = std::nullopt;

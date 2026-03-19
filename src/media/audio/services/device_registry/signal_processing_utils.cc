@@ -35,6 +35,17 @@ std::unordered_set<ElementId> ring_buffers(
   return ring_buffers;
 }
 
+std::unordered_set<ElementId> packet_streams(
+    const std::unordered_map<ElementId, ElementRecord>& element_map) {
+  std::unordered_set<ElementId> packet_streams;
+  for (const auto& element_entry_pair : element_map) {
+    if (element_entry_pair.second.element.type() == fhasp::ElementType::kPacketStream) {
+      packet_streams.insert(element_entry_pair.first);
+    }
+  }
+  return packet_streams;
+}
+
 // This maps ElementId->ElementRecord but populates only the Element portion of the ElementRecord.
 std::unordered_map<ElementId, ElementRecord> MapElements(
     const std::vector<fhasp::Element>& elements) {
@@ -73,22 +84,16 @@ std::unordered_map<TopologyId, std::vector<fhasp::EdgePair>> MapTopologies(
   return topology_map;
 }
 
-bool ElementHasOutgoingEdges(
-    const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& topology,
-    ElementId element_id) {
-  return std::any_of(topology.begin(), topology.end(),
-                     [element_id](const fuchsia_hardware_audio_signalprocessing::EdgePair& pair) {
-                       return (pair.processing_element_id_from() == element_id);
-                     });
+bool ElementHasOutgoingEdges(const std::vector<fhasp::EdgePair>& topology, ElementId element_id) {
+  return std::any_of(topology.begin(), topology.end(), [element_id](const fhasp::EdgePair& pair) {
+    return (pair.processing_element_id_from() == element_id);
+  });
 }
 
-bool ElementHasIncomingEdges(
-    const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& topology,
-    ElementId element_id) {
-  return std::any_of(topology.begin(), topology.end(),
-                     [element_id](const fuchsia_hardware_audio_signalprocessing::EdgePair& pair) {
-                       return (pair.processing_element_id_to() == element_id);
-                     });
+bool ElementHasIncomingEdges(const std::vector<fhasp::EdgePair>& topology, ElementId element_id) {
+  return std::any_of(topology.begin(), topology.end(), [element_id](const fhasp::EdgePair& pair) {
+    return (pair.processing_element_id_to() == element_id);
+  });
 }
 
 }  // namespace media_audio
