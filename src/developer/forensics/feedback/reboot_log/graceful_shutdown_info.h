@@ -39,6 +39,7 @@ enum class GracefulShutdownReason {
   kAndroidCriticalProcessFailure,
   kDeveloperRequest,
   kUserRequestDeviceStuck,
+  kBatteryDrained,
   kNotSupported,
   kNotParseable,
 };

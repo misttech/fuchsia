@@ -107,6 +107,7 @@ enum class LastRebootReason {
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::DeveloperRequest,
   kUserRequestDeviceStuck =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::UserRequestDeviceStuck,
+  kBatteryDrained = cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::BatteryDrained,
 };
 
 enum class PreviousBootEncodingVersion {

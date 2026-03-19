@@ -89,6 +89,8 @@ std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_i
       return "android critical process failure";
     case FuchsiaRebootReason::DEVELOPER_REQUEST:
       return "developer request";
+    case FuchsiaRebootReason::BATTERY_DRAINED:
+      return "battery drained";
     default:
       return generic_value;
   }

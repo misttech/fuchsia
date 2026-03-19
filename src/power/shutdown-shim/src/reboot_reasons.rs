@@ -86,6 +86,7 @@ impl ShutdownOptionsWrapper {
                 ShutdownReason::AndroidCriticalProcessFailure => {
                     RebootReason2::AndroidCriticalProcessFailure
                 }
+                ShutdownReason::BatteryDrained => RebootReason2::UserRequest,
                 ShutdownReason::__SourceBreaking { unknown_ordinal } => {
                     println!("[shutdown-shim]: error, unrecognized ShutdownReason ordinal: {unknown_ordinal}");
                     RebootReason2::unknown()

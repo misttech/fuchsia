@@ -56,6 +56,7 @@ enum class FinalShutdownReason : std::uint8_t {
   kAndroidCriticalProcessFailure,
   kDeveloperRequest,
   kUserRequestDeviceStuck,
+  kBatteryDrained,
 };
 
 // Encapsulates the final information about why a device shutdown regardless of its source, e.g.

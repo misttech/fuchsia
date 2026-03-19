@@ -660,6 +660,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.feedback/RebootReason.BATTERY_DRAINED",
+        "value": "27"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.feedback/RebootReason.BRIEF_POWER_LOSS",
         "value": "3"
     },

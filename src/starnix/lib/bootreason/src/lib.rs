@@ -92,6 +92,7 @@ pub async fn update_android_bootreason(
         Some(RebootReason::AndroidNoReason) => "reboot",
         Some(RebootReason::AndroidRescueParty) => "reboot,rescueparty",
         Some(RebootReason::AndroidCriticalProcessFailure) => "reboot,userspace_failed",
+        Some(RebootReason::BatteryDrained) => "shutdown,battery",
         Some(RebootReason::__SourceBreaking { .. }) => "reboot,normal",
         None => "reboot,unknown",
     };

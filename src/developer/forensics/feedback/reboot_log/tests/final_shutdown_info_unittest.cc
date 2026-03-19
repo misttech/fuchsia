@@ -252,6 +252,12 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulNoReportTe
                                  cobalt::LastRebootReason::kAndroidNoReason,
                                  fuchsia::feedback::RebootReason::ANDROID_NO_REASON,
                              },
+                             {
+                                 "BatteryDrained",
+                                 {GracefulShutdownReason::kBatteryDrained},
+                                 cobalt::LastRebootReason::kBatteryDrained,
+                                 fuchsia::feedback::RebootReason::BATTERY_DRAINED,
+                             },
                          })),
                          [](const testing::TestParamInfo<GracefulNoReportTestParams>& info) {
                            return info.param.test_name;

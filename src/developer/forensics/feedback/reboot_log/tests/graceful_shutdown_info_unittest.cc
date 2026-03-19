@@ -109,6 +109,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kAndroidCriticalProcessFailure,
       GracefulShutdownReason::kDeveloperRequest,
       GracefulShutdownReason::kUserRequestDeviceStuck,
+      GracefulShutdownReason::kBatteryDrained,
   };
 
   for (const auto reason : reasons) {
@@ -138,6 +139,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kAndroidCriticalProcessFailure,
       GracefulShutdownReason::kDeveloperRequest,
       GracefulShutdownReason::kUserRequestDeviceStuck,
+      GracefulShutdownReason::kBatteryDrained,
   };
 
   // Verify all reasons at once.
@@ -404,6 +406,11 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  "UserRequestDeviceStuck",
                                  GracefulShutdownReason::kUserRequestDeviceStuck,
                                  "USER REQUEST DEVICE STUCK",
+                             },
+                             {
+                                 "BatteryDrained",
+                                 GracefulShutdownReason::kBatteryDrained,
+                                 "BATTERY DRAINED",
                              },
                          })),
                          [](const testing::TestParamInfo<ReasonTestParam>& info) {

@@ -69,6 +69,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kNetstackMigration:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kBatteryDrained:
       return false;
   }
 }
@@ -104,6 +105,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kBatteryDrained:
       return true;
   }
 }
@@ -134,6 +136,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kBatteryDrained:
       return false;
     case FinalShutdownReason::kNotParseable:
       return std::nullopt;
@@ -203,6 +206,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "DEVELOPER REQUEST";
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return "USER REQUEST DEVICE STUCK";
+    case FinalShutdownReason::kBatteryDrained:
+      return "BATTERY DRAINED";
   }
 }
 
@@ -260,6 +265,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::DEVELOPER_REQUEST;
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK;
+    case FinalShutdownReason::kBatteryDrained:
+      return fuchsia::feedback::RebootReason::BATTERY_DRAINED;
   }
 }
 
@@ -319,6 +326,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kDeveloperRequest;
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return cobalt::LastRebootReason::kUserRequestDeviceStuck;
+    case FinalShutdownReason::kBatteryDrained:
+      return cobalt::LastRebootReason::kBatteryDrained;
   }
 }
 
@@ -356,6 +365,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kNetstackMigration:
     case FinalShutdownReason::kZbiSwap:
     case FinalShutdownReason::kFdr:
+    case FinalShutdownReason::kBatteryDrained:
       FX_LOGS(FATAL) << "Not expecting a program name request for reboot reason: "
                      << ToRebootReasonString();
       return "FATAL ERROR";
@@ -414,6 +424,7 @@ std::string FinalShutdownInfo::ToCrashSignature(
     case FinalShutdownReason::kNetstackMigration:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kAndroidNoReason:
+    case FinalShutdownReason::kBatteryDrained:
       FX_LOGS(FATAL) << "Not expecting a crash for reason: " << ToRebootReasonString();
       return "FATAL ERROR";
   }
@@ -467,6 +478,8 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
         return FinalShutdownReason::kDeveloperRequest;
       case GracefulShutdownReason::kUserRequestDeviceStuck:
         return FinalShutdownReason::kUserRequestDeviceStuck;
+      case GracefulShutdownReason::kBatteryDrained:
+        return FinalShutdownReason::kBatteryDrained;
       case GracefulShutdownReason::kNotSet:
         FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
         return FinalShutdownReason::kUnexpectedReasonGraceful;

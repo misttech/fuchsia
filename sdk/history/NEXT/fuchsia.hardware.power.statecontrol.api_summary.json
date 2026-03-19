@@ -132,6 +132,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.BATTERY_DRAINED",
+        "value": "17"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.CRITICAL_COMPONENT_FAILURE",
         "value": "8"
     },

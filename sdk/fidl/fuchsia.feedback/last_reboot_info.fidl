@@ -151,6 +151,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=29)
     ANDROID_CRITICAL_PROCESS_FAILURE = 24;
 
+    /// The device battery is drained.
+    @available(added=NEXT)
+    BATTERY_DRAINED = 27;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.

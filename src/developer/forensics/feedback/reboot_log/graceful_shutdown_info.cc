@@ -49,6 +49,7 @@ constexpr char kAndroidRescueParty[] = "ANDROID RESCUE PARTY";
 constexpr char kAndroidCriticalProcessFailure[] = "ANDROID CRITICAL PROCESS FAILURE";
 constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
 constexpr char kReasonUserRequestDeviceStuck[] = "USER REQUEST DEVICE STUCK";
+constexpr char kReasonBatteryDrained[] = "BATTERY DRAINED";
 
 // Used to separate multiple `GracefulShutdownReasons` when written to file.
 constexpr char kDeliminator[] = ",";
@@ -162,6 +163,8 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kDeveloperRequest;
   } else if (reason == kReasonUserRequestDeviceStuck) {
     return GracefulShutdownReason::kUserRequestDeviceStuck;
+  } else if (reason == kReasonBatteryDrained) {
+    return GracefulShutdownReason::kBatteryDrained;
   } else if (reason == kNotSupported) {
     return GracefulShutdownReason::kNotSupported;
   } else if (reason == kOutOfMemory) {
@@ -208,6 +211,8 @@ GracefulShutdownReason FromReason(
       return GracefulShutdownReason::kDeveloperRequest;
     case ShutdownReason::USER_REQUEST_DEVICE_STUCK:
       return GracefulShutdownReason::kUserRequestDeviceStuck;
+    case ShutdownReason::BATTERY_DRAINED:
+      return GracefulShutdownReason::kBatteryDrained;
     default:
       return GracefulShutdownReason::kNotSupported;
   }
@@ -274,6 +279,8 @@ std::string ToString(const GracefulShutdownReason reason) {
       return kDeveloperRequest;
     case GracefulShutdownReason::kUserRequestDeviceStuck:
       return kReasonUserRequestDeviceStuck;
+    case GracefulShutdownReason::kBatteryDrained:
+      return kReasonBatteryDrained;
     case GracefulShutdownReason::kNotSupported:
       return kNotSupported;
     case GracefulShutdownReason::kNotParseable:
@@ -321,6 +328,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kAndroidCriticalProcessFailure:
       case GracefulShutdownReason::kDeveloperRequest:
       case GracefulShutdownReason::kUserRequestDeviceStuck:
+      case GracefulShutdownReason::kBatteryDrained:
       case GracefulShutdownReason::kNotSupported:
         reason_string = ToString(reason);
         break;

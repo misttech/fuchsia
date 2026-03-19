@@ -60,4 +60,8 @@ type ShutdownReason = flexible enum {
 
     /// A critical Android process failed.
     ANDROID_CRITICAL_PROCESS_FAILURE = 14;
+
+    /// The device battery is drained.
+    @available(added=NEXT)
+    BATTERY_DRAINED = 17;
 };
