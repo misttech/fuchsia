@@ -114,6 +114,7 @@ Error=`{result.stderr}`"""
 
 def _check_for_missing_identifications(
     spdx_doc: SpdxDocument,
+    spdx_index: SpdxIndex,
     classifications: LicensesClassifications,
 ) -> LicensesClassifications:
     extra_classifications = []
@@ -121,15 +122,42 @@ def _check_for_missing_identifications(
     for l in spdx_doc.extracted_licenses:
         if l.license_id not in classifications.license_ids():
             unclassified_licenses.append(l.license_id)
+
     if unclassified_licenses:
+        error_details = []
+        for license_id in sorted(unclassified_licenses):
+            spdx_license = spdx_index.get_license_by_id(license_id)
+            text = spdx_license.extracted_text
+            if not text.strip():
+                preview = "[EMPTY OR WHITESPACE ONLY]"
+            else:
+                # Log the first 100 characters to help debugging why the classifier skipped it.
+                preview = repr(text[:100])
+                if len(text) > 100:
+                    preview += "..."
+
+            detail = (
+                f"  - ID: {license_id}\n"
+                f"    Name: {spdx_license.name}\n"
+                f"    Text: {preview}"
+            )
+            if spdx_license.debug_hint:
+                detail += f"\n    Hint: {spdx_license.debug_hint}"
+            error_details.append(detail)
+
         raise RuntimeError(
             """
 License files without any identification:
 {license_names}
+
+Details:
+{details}
 """.format(
-                license_names="\n".join(sorted(unclassified_licenses))
+                license_names="\n".join(sorted(unclassified_licenses)),
+                details="\n".join(error_details),
             )
         )
+
     return classifications.add_classifications(extra_classifications)
 
 
@@ -319,6 +347,7 @@ allowing downstream customers to provide project specific instructions.
 
     classification = _check_for_missing_identifications(
         spdx_doc,
+        spdx_index,
         classification,
     )
     classification = classification.set_is_shipped_defaults(
