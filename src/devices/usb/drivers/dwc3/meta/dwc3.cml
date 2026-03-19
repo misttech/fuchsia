@@ -20,6 +20,7 @@
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
         { service: "fuchsia.boot.metadata.SerialNumberMetadata" },
         { service: "fuchsia.hardware.usb.phy.Metadata" },
+        { service: "fuchsia.hardware.usb.policy.Service" },
     ],
     use: [
         {
@@ -59,6 +60,10 @@
         },
         {
             service: "fuchsia.hardware.usb.phy.Metadata",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.usb.policy.Service",
             from: "self",
         },
     ],

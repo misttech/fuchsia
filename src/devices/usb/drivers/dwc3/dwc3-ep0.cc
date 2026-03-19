@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
@@ -15,6 +17,7 @@
 namespace dwc3 {
 
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace fpolicy = fuchsia_hardware_usb_policy;
 
 zx_status_t Dwc3::Ep0Init() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Init");
@@ -206,12 +209,14 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 
 void Dwc3::HandleEp0Setup(size_t length) {
   TRACE_DURATION("dwc3", "Dwc3::HandleEp0Setup", "length", length);
+  // Copy the setup packet to ensure it is correctly captured in the Then closure.
+  fdescriptor::wire::UsbSetup setup = ep0_.cur_setup;
 
-  if (ep0_.cur_setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
+  if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
     // handle some special setup requests in this driver
-    switch (ep0_.cur_setup.b_request) {
+    switch (setup.b_request) {
       case USB_REQ_SET_ADDRESS:
-        SetDeviceAddress(ep0_.cur_setup.w_value);
+        SetDeviceAddress(setup.w_value);
         ep0_.state = Ep0::State::WaitHost;
         return;
       case USB_REQ_SET_CONFIGURATION:
@@ -234,16 +239,14 @@ void Dwc3::HandleEp0Setup(size_t length) {
     return;
   }
 
-  const bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
-
+  const bool is_out = (setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
   fidl::Arena arena;
   dci_intf_.buffer(arena)
-      ->Control(ep0_.cur_setup, is_out
-                                    ? fidl::VectorView<uint8_t>::FromExternal(
-                                          reinterpret_cast<uint8_t*>(ep0_.buffer->virt()), length)
-                                    : fidl::VectorView<uint8_t>::FromExternal(nullptr, 0))
+      ->Control(setup, is_out ? fidl::VectorView<uint8_t>::FromExternal(
+                                    reinterpret_cast<uint8_t*>(ep0_.buffer->virt()), length)
+                              : fidl::VectorView<uint8_t>::FromExternal(nullptr, 0))
       .Then(
-          [this, is_out, fail, length](
+          [this, is_out, fail, length, setup](
               fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>& result) {
             if (!result.ok()) {
               fdf::error("(framework) Control(): {}", result.status_string());
@@ -300,7 +303,11 @@ void Dwc3::HandleEp0Setup(size_t length) {
                                   ep0_.buffer->phys(), read_data.size_bytes());
                   ep0_.transfer_in_progress_ = true;
                 }
-                break;
+            }
+
+            if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
+                setup.b_request == USB_REQ_SET_CONFIGURATION) {
+              SetDeviceState(fpolicy::DeviceState::kConfigured);
             }
           });
 }

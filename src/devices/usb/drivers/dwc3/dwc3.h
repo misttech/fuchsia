@@ -11,6 +11,8 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -29,11 +31,10 @@
 
 #include <cstdint>
 #include <deque>
-#include <format>
 #include <memory>
-#include <mutex>
 #include <string>
 
+#include <fbl/mutex.h>
 #include <usb-endpoint/sdk/usb-endpoint-server.h>
 #include <usb/descriptors.h>
 #include <usb/sdk/request-fidl.h>
@@ -60,10 +61,12 @@ class PlatformExtension {
 // will cause the system to crash or lock up. power_on_ indicates whether or not the core is powered
 // down, and therefore whether or not it is safe to access the MMIO.
 //
-// UsbDci or Endpoint FIDL methods may be safely called at any time regardless of the power state.
-// Other methods must not be called when powered down, unless indicated by comments below.
+// UsbDci, Controller, or Endpoint FIDL methods may be safely called at any time regardless of
+// the power state. Other methods must not be called when powered down, unless indicated by comments
+// below.
 class Dwc3 : public fdf::DriverBase,
              public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
+             public fidl::Server<fuchsia_hardware_usb_policy::Controller>,
              public fdf_power::Suspendable<Dwc3> {
  public:
   using fdf::DriverBase::incoming;
@@ -105,6 +108,13 @@ class Dwc3 : public fdf::DriverBase,
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override { /* no-op */ }
+
+  // fuchsia_hardware_usb_policy::Controller protocol implementation.
+  void WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_policy::Controller> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override { /* no-op */ }
 
  private:
   const std::string_view kScheduleProfileRole = "fuchsia.devices.usb.drivers.dwc3.interrupt";
@@ -394,6 +404,7 @@ class Dwc3 : public fdf::DriverBase,
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
 
+  // OnConnectStatusChanged() is how the phy notifies the dwc3 driver of plug/unplug changes.
   void OnConnectStatusChanged(
       fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result);
 
@@ -424,7 +435,7 @@ class Dwc3 : public fdf::DriverBase,
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
   zx::eventpair connection_lease_;
 
-  fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> dci_bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
 
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
@@ -443,6 +454,17 @@ class Dwc3 : public fdf::DriverBase,
   //     driver code.
   inspect::LazyNode dwc3_root_;
   Dwc3Metrics metrics_;
+
+  // USB Policy and Health
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_policy::Controller> policy_bindings_;
+  fuchsia_hardware_usb_policy::DeviceState device_state_ =
+      fuchsia_hardware_usb_policy::DeviceState::kNotAttached;
+  uint8_t assigned_address_ = 0;
+  std::vector<WatchDeviceStateCompleter::Async> pending_completers_;
+  bool has_new_device_state_ = true;
+
+  void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
+  void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);
 
   void WaitForCmdAct(const char* caller_name, const uint8_t ep_num);
 };

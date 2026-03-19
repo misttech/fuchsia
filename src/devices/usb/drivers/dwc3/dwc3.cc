@@ -12,6 +12,8 @@
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
+#include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.vreg/cpp/fidl.h>
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
@@ -32,8 +34,10 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
+#include <fbl/auto_lock.h>
 #include <hwreg/bitfields.h>
 
+#include "lib/component/outgoing/cpp/outgoing_directory.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 
 namespace dwc3 {
@@ -45,6 +49,7 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
+namespace fpolicy = fuchsia_hardware_usb_policy;
 namespace freset = fuchsia_hardware_reset;
 namespace fvreg = fuchsia_hardware_vreg;
 
@@ -499,16 +504,29 @@ zx::result<> Dwc3::Start() {
     return zx::error(status);
   }
 
-  auto handler = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure);
+  auto dci_handler = dci_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure);
 
-  auto serve_result =
+  auto serve_dci_result =
       outgoing()->AddService<fdci::UsbDciService>(fdci::UsbDciService::InstanceHandler({
-          .device = std::move(handler),
+          .device = std::move(dci_handler),
       }));
 
-  if (serve_result.is_error()) {
-    fdf::error("Failed to add service: {}", serve_result);
-    return serve_result.take_error();
+  if (serve_dci_result.is_error()) {
+    fdf::error("Failed to add UsbDci service: {}", serve_dci_result);
+    return serve_dci_result.take_error();
+  }
+
+  auto policy_handler =
+      policy_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure);
+
+  auto serve_policy_result =
+      outgoing()->AddService<fpolicy::Service>(fpolicy::Service::InstanceHandler({
+          .controller = std::move(policy_handler),
+      }));
+
+  if (serve_policy_result.is_error()) {
+    fdf::error("Failed to add UsbPolicy service: {}", serve_policy_result);
+    return serve_policy_result.take_error();
   }
 
   auto properties = std::vector{
@@ -519,10 +537,13 @@ zx::result<> Dwc3::Start() {
   };
 
   std::vector offers = {
+      // clang-format off
       fdf::MakeOffer2<fdci::UsbDciService>(),
+      fdf::MakeOffer2<fpolicy::Service>(),
       mac_address_metadata_server_.MakeOffer(),
       serial_number_metadata_server_.MakeOffer(),
       usb_phy_metadata_server_.MakeOffer(),
+      // clang-format on
   };
 
   auto child = AddChild(name(), properties, offers);
@@ -779,7 +800,14 @@ zx_status_t Dwc3::ResetHw() {
 void Dwc3::SetDeviceAddress(uint32_t address) {
   TRACE_DURATION("dwc3", "Dwc3::SetDeviceAddress", "address", address);
   auto* mmio = get_mmio();
+
   DCFG::Get().ReadFrom(mmio).set_DEVADDR(address).WriteTo(mmio);
+
+  if (address > 0) {
+    SetDeviceState(fpolicy::DeviceState::kAddress, static_cast<uint8_t>(address));
+  } else {
+    SetDeviceState(fpolicy::DeviceState::kDefault, 0);
+  }
 }
 
 void Dwc3::StartPeripheralMode() {
@@ -860,6 +888,8 @@ void Dwc3::HandleResetEvent() {
   ResetEndpoints();
   SetDeviceAddress(0);
   Ep0Start();
+
+  SetDeviceState(fpolicy::DeviceState::kDefault);
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -1342,6 +1372,8 @@ void Dwc3::OnConnectStatusChanged(
     }
     power_on_ = true;
 
+    SetDeviceState(fpolicy::DeviceState::kPowered);
+
     if (controller_started_) {
       StartPeripheralMode();
     }
@@ -1357,6 +1389,8 @@ void Dwc3::OnConnectStatusChanged(
 
     // Cancel all pending requests.
     ResetEndpoints();
+
+    SetDeviceState(fpolicy::DeviceState::kNotAttached);
 
     if (platform_extension_) {
       if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
@@ -1382,6 +1416,46 @@ void Dwc3::OnConnectStatusChanged(
 
   if (!power_on_) {
     connection_lease_.reset();
+  }
+}
+
+void Dwc3::WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "{}", __func__);
+
+  if (has_new_device_state_) {
+    // If new state is ready, reply immediately.
+    fdf::info("{} New state is available. Replying with {}", __func__, device_state_);
+    completer.Reply(
+        zx::ok(fpolicy::DeviceStateUpdate{{.state = device_state_, .address = assigned_address_}}));
+    has_new_device_state_ = false;
+  } else {
+    // Otherwise, "hang" the get.
+    pending_completers_.push_back(completer.ToAsync());
+  }
+}
+
+void Dwc3::SetDeviceState(fpolicy::DeviceState state) { SetDeviceState(state, assigned_address_); }
+
+void Dwc3::SetDeviceState(fpolicy::DeviceState state, uint8_t address) {
+  TRACE_DURATION("dwc3", "{}", __func__);
+
+  device_state_ = state;
+  assigned_address_ = address;
+
+  fdf::info("{}({}, {})", __func__, state, address);
+
+  // Provide the state to the USB Policy Manager
+  // Check if there is a hanging client waiting
+  if (pending_completers_.size() > 0) {
+    for (auto& completer : pending_completers_) {
+      fdf::info("{} have a pending completer - sending {}", __func__, state);
+      completer.Reply(zx::ok(fpolicy::DeviceStateUpdate{{.state = state, .address = address}}));
+    }
+    pending_completers_.clear();
+    has_new_device_state_ = false;
+  } else {
+    fdf::info("{} no pending completer", __func__);
+    has_new_device_state_ = true;
   }
 }
 
