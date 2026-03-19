@@ -66,32 +66,10 @@ fn bpf_obj_pin(fd: OwnedFd, pin_path: &str) -> Result<(), std::io::Error> {
     unsafe { bpf(linux_uapi::bpf_cmd_BPF_OBJ_PIN, &attr) }.map(|_| ())
 }
 
-/// Reads a line from stdin without buffering. This allows to exec iptables command and
-/// let it read the rest of the input from stdin.
-fn read_stdin_line() -> String {
-    let mut line = String::new();
-    loop {
-        let mut buf = [0u8; 1];
-        // SAFETY: Reading one byte from stdin into a valid buffer.
-        let result =
-            unsafe { libc::read(libc::STDIN_FILENO, buf.as_mut_ptr() as *mut libc::c_void, 1) };
-
-        if result <= 0 {
-            // End of file or error.
-            break;
-        }
-
-        let ch = buf[0] as char;
-        if ch == '\n' {
-            break;
-        }
-        line.push(ch);
-    }
-    line
-}
-
 fn main() {
-    let pinned_name = read_stdin_line();
+    let mut pinned_name = String::new();
+    std::io::stdin().read_line(&mut pinned_name).expect("Failed to read stdin");
+    let pinned_name = pinned_name.trim();
 
     // Load eBPF program.
     let code = [
