@@ -7,14 +7,15 @@ use async_trait::async_trait;
 use component_debug::cli::format::format_start_error;
 use component_debug::lifecycle::start_instance;
 use component_debug::query::get_cml_moniker_from_query;
+use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
+use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_query_f};
 use ffx_component_start_args::ComponentStartCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb::Debugger;
+use ffx_zxdb_fdomain::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
-use target_holders::{RemoteControlProxyHolder, moniker};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct StartTool {
@@ -22,7 +23,7 @@ pub struct StartTool {
     cmd: ComponentStartCommand,
 
     #[with(deferred(moniker("/core/debugger")))]
-    debugger_proxy: fho::Deferred<fidl_fuchsia_debugger::LauncherProxy>,
+    debugger_proxy: fho::Deferred<fdomain_fuchsia_debugger::LauncherProxy>,
 
     rcs: RemoteControlProxyHolder,
 
@@ -42,8 +43,8 @@ impl FfxMain for StartTool {
 }
 
 async fn start_tool_impl(tool: StartTool) -> Result<()> {
-    let lifecycle_controller = connect_to_lifecycle_controller(&tool.rcs).await?;
-    let realm_query = connect_to_realm_query(&tool.rcs).await?;
+    let lifecycle_controller = connect_to_lifecycle_controller_f(&tool.rcs).await?;
+    let realm_query = connect_to_realm_query_f(&tool.rcs).await?;
     let moniker = get_cml_moniker_from_query(&tool.cmd.query, &realm_query).await?;
 
     // If the user wants to debug the component, we need to start the debugger with a breakpoint

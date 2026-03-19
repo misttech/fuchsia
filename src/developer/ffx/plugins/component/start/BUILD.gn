@@ -9,15 +9,15 @@ ffx_plugin("ffx_component_start") {
   version = "0.1.0"
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
-    "//src/developer/debug/ffx_zxdb",
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust_fdomain",
+    "//src/developer/debug/ffx_zxdb:ffx_zxdb_fdomain",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/component/common:ffx_component",
-    "//src/sys/lib/component_debug",
+    "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
