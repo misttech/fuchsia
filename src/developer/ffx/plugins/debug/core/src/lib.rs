@@ -6,17 +6,19 @@ use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use chrono::{Local, TimeZone};
 use errors::{ffx_bail, ffx_error};
-use ffx_component::rcs::connect_to_realm_query;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_io as fio;
+use fdomain_fuchsia_sys2 as fsys;
+use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_writer::SimpleWriter;
-use fho::{FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_io as fio;
+use fho::{FfxContext as _, FfxMain, FfxTool};
 use fuchsia_async::unblock;
-use fuchsia_fs::directory::{open_directory_async, open_file_async};
+use fuchsia_fs_fdomain::directory::{open_directory_async, open_file_async};
 use futures::StreamExt;
 use std::io::{BufRead, Write};
 use std::process::Command;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use tempfile::{NamedTempFile, TempPath};
 use zx_status::Status;
 
@@ -114,19 +116,22 @@ async fn choose_and_copy_remote_minidumps(rcs: &RemoteControlProxy) -> Result<Te
 
 // List all the "minidump.dmp" files in "/reports" directory with the given capability.
 async fn list_minidumps(rcs: &RemoteControlProxy, capability: &str) -> Result<Vec<File>> {
-    let (client, server) = fidl::handle::Channel::create();
+    let (client, server) = rcs.domain().create_channel();
     connect_to_realm_query(&rcs)
         .await
         .context("Error in connect_to_realm_query")?
-        .connect_to_storage_admin("./core", capability, fidl::endpoints::ServerEnd::new(server))
+        .connect_to_storage_admin(
+            "./core",
+            capability,
+            fdomain_client::fidl::ServerEnd::new(server),
+        )
         .await
         .context("FDIL error in get_storage_admin")?
         .map_err(|e| anyhow!("Error in get_storage_admin: {:?}", e))?;
 
-    let storage_admin =
-        fidl_fuchsia_sys2::StorageAdminProxy::new(fidl::AsyncChannel::from_channel(client));
+    let storage_admin = fsys::StorageAdminProxy::new(client);
 
-    let (root_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+    let (root_dir, server_end) = rcs.domain().create_proxy::<fio::DirectoryMarker>();
     storage_admin
         .open_component_storage_by_id(STORAGE_ID, server_end.into_channel().into())
         .await?
@@ -138,14 +143,14 @@ async fn list_minidumps(rcs: &RemoteControlProxy, capability: &str) -> Result<Ve
     let reports_dir_ref = &reports_dir;
 
     futures::future::try_join_all(
-        fuchsia_fs::directory::readdir_recursive(reports_dir_ref, None)
+        fuchsia_fs_fdomain::directory::readdir_recursive(reports_dir_ref, None)
             .collect::<Vec<_>>()
             .await
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter(|entry| {
-                entry.kind == fuchsia_fs::directory::DirentKind::File
+                entry.kind == fuchsia_fs_fdomain::directory::DirentKind::File
                     && entry.name.ends_with("/minidump.dmp")
             })
             .map(|entry| async move {
