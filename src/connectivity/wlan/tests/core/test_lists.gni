@@ -27,6 +27,9 @@ core_tests_for_wlan_cq = [
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
   "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
   "//src/connectivity/wlan/tests/core:sar_setting_test",
+
+  # Though this test is defined in honeydew, it exercises wlan core
+  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/functional_tests",
 ]
 
 core_tests_for_fyi =
