@@ -213,6 +213,7 @@ impl ObjectStore {
 
         // Step 3: Write out the new object tree layer but with remapped extent records.
         {
+            let start_time = std::time::Instant::now();
             let writer = DirectWriter::new(&new_layer, txn_options).await;
             // TODO(https://fxbug.dev/415300916): Our extent mapping iterator may emit more items
             // than are in the current layer set so `num_items` will likely be too small here. We
@@ -227,6 +228,11 @@ impl ObjectStore {
                 iter.advance().await?;
             }
             writer.flush().await?;
+            self.tree.report_compaction_metrics(
+                writer.bytes_written(),
+                start_time.elapsed(),
+                inner_layer_set.layers.len(),
+            );
         }
 
         // Move the old layers to the graveyard at the end.

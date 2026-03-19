@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::lsm_tree::types::{LayerIterator, MergeableKey, Value};
-use crate::lsm_tree::{LSMTree, LockedLayer, Query, Yielder};
+use crate::lsm_tree::{LSMTree, LockedLayer, Query, Yielder, compact_with_iterator};
 use crate::object_handle::WriteBytes;
 use crate::object_store::journal;
 use crate::serialized_types::LATEST_VERSION;
@@ -81,17 +81,21 @@ where
     let layers_to_keep = layer_set.layers.split_off(split_index);
 
     {
+        let start_time = std::time::Instant::now();
+        let merged_layer_count = layer_set.layers.len();
         let block_size = writer.block_size();
         let total_len = layer_set.sum_len();
         let mut merger = layer_set.merger();
         let iter = merger.query(Query::FullScan).await?;
-        if layers_to_keep.is_empty() {
+        let bytes_written = if layers_to_keep.is_empty() {
             let major_iter = LSMTree::<K, V>::major_iter(iter).await?;
-            tree.compact_with_iterator(major_iter, total_len, writer, block_size, yielder).await
+            compact_with_iterator(major_iter, total_len, writer, block_size, yielder).await
         } else {
-            tree.compact_with_iterator(iter, total_len, writer, block_size, yielder).await
+            compact_with_iterator(iter, total_len, writer, block_size, yielder).await
         }
         .context("ObjectStore::flush")?;
+
+        tree.report_compaction_metrics(bytes_written, start_time.elapsed(), merged_layer_count);
     }
 
     Ok((layers_to_keep, layer_set.layers))

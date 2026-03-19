@@ -435,6 +435,9 @@ where
 
     /// Flushes any buffered items to the backing storage.
     fn flush(&mut self) -> impl Future<Output = Result<(), Error>> + Send;
+
+    /// Returns the total bytes written to the layer.
+    fn bytes_written(&self) -> u64;
 }
 
 /// A `LayerIterator`` that filters the items of another `LayerIterator`.

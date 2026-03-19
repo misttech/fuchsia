@@ -99,7 +99,7 @@ use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, Layer, LayerIterator, LayerKey, MergeType, OrdLowerBound,
     OrdUpperBound, RangeKey, SortByU64, Value,
 };
-use crate::lsm_tree::{LSMTree, Query, layers_from_handles};
+use crate::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use crate::object_store::object_manager::ReservationUpdate;
 use crate::object_store::transaction::{
@@ -1245,6 +1245,11 @@ impl Allocator {
                         }
                     }
                     root.record(triggers);
+
+                    let allocator_ref = this.clone();
+                    root.record_child("lsm_tree", move |node| {
+                        allocator_ref.tree.record_inspect_data(node);
+                    });
                 }
                 Ok(inspector)
             }
@@ -2044,12 +2049,12 @@ impl<'a> Flusher<'a> {
         let layer_set = self.allocator.tree.immutable_layer_set();
         let total_len = layer_set.sum_len();
         {
+            let start_time = std::time::Instant::now();
+            let merged_layer_count = layer_set.layers.len();
             let mut merger = layer_set.merger();
             let iter = self.allocator.filter(merger.query(Query::FullScan).await?, true).await?;
             let iter = CoalescingIterator::new(iter).await?;
-            self.allocator
-                .tree
-                .compact_with_iterator(
+            let bytes_written = compact_with_iterator(
                     iter,
                     total_len,
                     DirectWriter::new(&layer_object_handle, txn_options).await,
@@ -2057,6 +2062,12 @@ impl<'a> Flusher<'a> {
                     Some(self.fs.journal().get_compaction_yielder()),
                 )
                 .await?;
+
+            self.allocator.tree.report_compaction_metrics(
+                bytes_written,
+                start_time.elapsed(),
+                merged_layer_count,
+            );
         }
 
         let root_store = self.fs.root_store();

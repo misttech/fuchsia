@@ -51,4 +51,8 @@ impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
         }
         Ok(())
     }
+
+    fn bytes_written(&self) -> u64 {
+        self.offset
+    }
 }

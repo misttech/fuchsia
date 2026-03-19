@@ -103,6 +103,9 @@ pub trait WriteBytes: Sized {
     /// Moves the offset forward by `amount`, which will result in zeroes in the output stream, even
     /// if no other data is appended to it.
     fn skip(&mut self, amount: u64) -> impl Future<Output = Result<(), Error>> + Send;
+
+    /// Returns the total bytes written to the writer.
+    fn bytes_written(&self) -> u64;
 }
 
 // Implements ReadObjectHandle for things like `Arc<dyn ReadObjectHandle>` and

@@ -947,6 +947,10 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
         self.write_info(data_blocks, bloom_filter_len, seek_table_len).await?;
         self.writer.complete().await
     }
+
+    fn bytes_written(&self) -> u64 {
+        self.writer.bytes_written()
+    }
 }
 
 impl<W: WriteBytes, K: Key, V: LayerValue> Drop for PersistentLayerWriter<W, K, V> {

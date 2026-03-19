@@ -205,6 +205,20 @@ impl ObjectManager {
         self.inner.read().stores.get(&store_object_id).cloned()
     }
 
+    /// Returns the total bytes written to the LSM trees in the allocator and all object stores
+    /// during compaction operations.
+    pub fn compaction_bytes_written(&self) -> u64 {
+        let inner = self.inner.read();
+        let mut total = 0;
+        if let Some(allocator) = &inner.allocator {
+            total += allocator.tree().compaction_bytes_written();
+        }
+        for store in inner.stores.values() {
+            total += store.tree().compaction_bytes_written();
+        }
+        total
+    }
+
     /// This is not thread-safe: it assumes that a store won't be forgotten whilst the loop is
     /// running.  This is to be used after replaying the journal.
     pub async fn on_replay_complete(&self) -> Result<(), Error> {

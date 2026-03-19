@@ -1929,6 +1929,11 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
         }
         Ok(())
     }
+
+    /// The number of bytes written to this writer (including unflushed bytes).
+    fn bytes_written(&self) -> u64 {
+        self.offset + self.buf_offset as u64
+    }
 }
 
 #[cfg(test)]

@@ -10,13 +10,12 @@ use crate::lsm_tree::types::{
 };
 use anyhow::Error;
 use async_trait::async_trait;
-use fuchsia_sync::Mutex;
 use futures::try_join;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Write};
 use std::ops::{Bound, Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, atomic};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ItemOp<K, V> {
@@ -263,7 +262,7 @@ pub struct Merger<'a, K, V> {
     trace: bool,
 
     // Tracks statistics related to the LSM tree.
-    counters: Arc<Mutex<lsm_tree::Counters>>,
+    counters: Arc<lsm_tree::TreeCounters>,
 }
 
 /// Query describes the goal of a search in the LSM tree.  The caller specifies this to guide the
@@ -310,7 +309,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
     pub(super) fn new<I: Iterator<Item = &'a dyn Layer<K, V>>>(
         layers: I,
         merge_fn: MergeFn<K, V>,
-        counters: Arc<Mutex<lsm_tree::Counters>>,
+        counters: Arc<lsm_tree::TreeCounters>,
     ) -> Merger<'a, K, V> {
         Merger {
             iterators: layers
@@ -351,10 +350,11 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
         };
         let layer_count = pending_iterators.len();
         {
-            let mut counters = self.counters.lock();
-            counters.num_seeks += 1;
-            counters.layer_files_total += len;
-            counters.layer_files_skipped += len - layer_count;
+            self.counters.num_seeks.fetch_add(1, atomic::Ordering::Relaxed);
+            self.counters.layer_files_total.fetch_add(len, atomic::Ordering::Relaxed);
+            self.counters
+                .layer_files_skipped
+                .fetch_add(len - layer_count, atomic::Ordering::Relaxed);
         }
         log::debug!(query:?; "Consulting {}/{} layers", layer_count, len);
         let mut merger_iter = MergerIterator {
@@ -810,7 +810,6 @@ mod tests {
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
     use fprint::TypeFingerprint;
-    use fuchsia_sync::Mutex;
     use fxfs_macros::FuzzyHash;
     use rand::Rng;
     use std::hash::Hash;
@@ -877,8 +876,8 @@ mod tests {
         layers.iter().map(|x| x.as_ref())
     }
 
-    fn counters() -> Arc<Mutex<lsm_tree::Counters>> {
-        Arc::new(Mutex::new(lsm_tree::Counters::default()))
+    fn counters() -> Arc<lsm_tree::TreeCounters> {
+        Arc::new(lsm_tree::TreeCounters::default())
     }
 
     #[fuchsia::test]

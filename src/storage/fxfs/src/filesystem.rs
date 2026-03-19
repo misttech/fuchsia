@@ -974,6 +974,7 @@ impl FxFilesystem {
         let inspector = fuchsia_inspect::Inspector::default();
         let root = inspector.root();
         root.record_child("__root", |n| self.root_store().record_data(n));
+        root.record_child("__root_parent", |n| self.root_parent_store().record_data(n));
         let object_manager = self.object_manager();
         let volume_directory = object_manager.volume_directory();
         let layer_set = volume_directory.store().tree().layer_set();

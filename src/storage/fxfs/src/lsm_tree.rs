@@ -18,11 +18,13 @@ use crate::serialized_types::{LATEST_VERSION, Version};
 use anyhow::Error;
 use cache::{ObjectCache, ObjectCacheResult};
 
-use fuchsia_sync::{Mutex, RwLock};
+use fuchsia_inspect::HistogramProperty;
+use fuchsia_sync::RwLock;
 use persistent_layer::{PersistentLayer, PersistentLayerWriter};
 use skip_list_layer::SkipListLayer;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use types::{
     Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeableKey,
     OrdLowerBound, Value,
@@ -63,14 +65,82 @@ struct Inner<K, V> {
     mutation_callback: MutationCallback<K, V>,
 }
 
-#[derive(Default)]
-pub(super) struct Counters {
-    num_seeks: usize,
-    // The following two metrics are used to compute the effectiveness of the bloom filters.
-    // `layer_files_total` tracks the number of layer files we might have looked at across all
-    // seeks, and `layer_files_skipped` tracks how many we skipped thanks to the bloom filter.
-    layer_files_total: usize,
-    layer_files_skipped: usize,
+pub const LOG2_HISTOGRAM_BUCKETS: usize = 32;
+
+/// Metrics related to LSM tree churn, layer depths, and compaction performance.
+pub struct CompactionCounters {
+    /// Total number of compaction events that merged layers together.
+    pub compactions: u64,
+    /// Total bytes written during compaction, useful for measuring write amplification.
+    pub compaction_bytes_written: u64,
+    /// Total duration spent compacting layers.
+    pub compaction_time_ns: u64,
+    /// Number of mutable layers sealed. Useful for measuring churn.
+    pub total_layers_added: u64,
+    /// The maximum depth of the LSM tree observed. An indicator of worst-case read amplification.
+    pub max_layer_count: u64,
+    /// Log2 histogram of the sizes of newly compacted layers, used to verify compaction heuristics.
+    pub layer_size_histogram: [u64; LOG2_HISTOGRAM_BUCKETS],
+}
+
+impl Default for CompactionCounters {
+    fn default() -> Self {
+        Self {
+            compactions: 0,
+            compaction_bytes_written: 0,
+            compaction_time_ns: 0,
+            total_layers_added: 0,
+            max_layer_count: 0,
+            layer_size_histogram: [0; LOG2_HISTOGRAM_BUCKETS],
+        }
+    }
+}
+
+/// Global counters and metrics for an LSM tree's lifetime.
+pub struct TreeCounters {
+    /// Number of individual key-lookup attempts (reads) through the tree.
+    pub num_seeks: AtomicUsize,
+    /// Tracks the number of layer files we might have looked at across all seeks.
+    /// Used alongside `layer_files_skipped` to compute the effectiveness of bloom filters.
+    pub layer_files_total: AtomicUsize,
+    /// Tracks how many layer files we skipped searching thanks to the bloom filter rejecting them.
+    pub layer_files_skipped: AtomicUsize,
+    /// Embedded counters for mutable metrics that require locking.
+    pub compaction: Mutex<CompactionCounters>,
+}
+
+impl Default for TreeCounters {
+    fn default() -> Self {
+        Self {
+            num_seeks: AtomicUsize::new(0),
+            layer_files_total: AtomicUsize::new(0),
+            layer_files_skipped: AtomicUsize::new(0),
+            compaction: Mutex::new(CompactionCounters::default()),
+        }
+    }
+}
+
+/// Writes the items yielded by the iterator into the supplied object.
+#[fxfs_trace::trace]
+pub async fn compact_with_iterator<K: Key, V: Value, W: WriteBytes + Send>(
+    mut iterator: impl LayerIterator<K, V>,
+    num_items: usize,
+    writer: W,
+    block_size: u64,
+    mut yielder: Option<impl Yielder>,
+) -> Result<u64, Error> {
+    let mut writer = PersistentLayerWriter::<W, K, V>::new(writer, num_items, block_size).await?;
+    while let Some(item_ref) = iterator.get() {
+        debug!(item_ref:?; "compact: writing");
+        writer.write(item_ref).await?;
+        iterator.advance().await?;
+        if let Some(y) = yielder.as_mut() {
+            y.yield_now().await;
+        }
+    }
+    writer.flush().await?;
+
+    Ok(writer.bytes_written())
 }
 
 /// LSMTree manages a tree of layers to provide a key/value store.  Each layer contains deltas on
@@ -80,13 +150,15 @@ pub struct LSMTree<K, V> {
     data: RwLock<Inner<K, V>>,
     merge_fn: merge::MergeFn<K, V>,
     cache: Box<dyn ObjectCache<K, V>>,
-    counters: Arc<Mutex<Counters>>,
+    counters: Arc<TreeCounters>,
 }
 
 #[fxfs_trace::trace]
 impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Creates a new empty tree.
     pub fn new(merge_fn: merge::MergeFn<K, V>, cache: Box<dyn ObjectCache<K, V>>) -> Self {
+        let counters = TreeCounters::default();
+        counters.compaction.lock().unwrap().max_layer_count = 1;
         LSMTree {
             data: RwLock::new(Inner {
                 mutable_layer: Self::new_mutable_layer(),
@@ -95,7 +167,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }),
             merge_fn,
             cache,
-            counters: Arc::new(Mutex::new(Default::default())),
+            counters: Arc::new(counters),
         }
     }
 
@@ -105,21 +177,29 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
         cache: Box<dyn ObjectCache<K, V>>,
     ) -> Result<Self, Error> {
+        let layers = layers_from_handles(handles).await?;
+        let max_layer_count = layers.len() as u64 + 1;
+        let counters = TreeCounters::default();
+        counters.compaction.lock().unwrap().max_layer_count = max_layer_count;
         Ok(LSMTree {
             data: RwLock::new(Inner {
                 mutable_layer: Self::new_mutable_layer(),
-                layers: layers_from_handles(handles).await?,
+                layers,
                 mutation_callback: None,
             }),
             merge_fn,
             cache,
-            counters: Arc::new(Mutex::new(Default::default())),
+            counters: Arc::new(counters),
         })
     }
 
     /// Replaces the immutable layers.
     pub fn set_layers(&self, layers: Vec<Arc<dyn Layer<K, V>>>) {
-        self.data.write().layers = layers;
+        let mut data = self.data.write();
+        data.layers = layers;
+        let layer_count = data.layers.len() + 1;
+        let mut counters = self.counters.compaction.lock().unwrap();
+        counters.max_layer_count = std::cmp::max(counters.max_layer_count, layer_count as u64);
     }
 
     /// Appends to the given layers at the end i.e. they should be base layers.  This is supposed
@@ -129,7 +209,11 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
     ) -> Result<(), Error> {
         let mut layers = layers_from_handles(handles).await?;
-        self.data.write().layers.append(&mut layers);
+        let mut data = self.data.write();
+        data.layers.append(&mut layers);
+        let layer_count = data.layers.len() + 1;
+        let mut counters = self.counters.compaction.lock().unwrap();
+        counters.max_layer_count = std::cmp::max(counters.max_layer_count, layer_count as u64);
         Ok(())
     }
 
@@ -145,6 +229,10 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         let mut data = self.data.write();
         let layer = std::mem::replace(&mut data.mutable_layer, Self::new_mutable_layer());
         data.layers.insert(0, layer);
+        let layer_count = data.layers.len() + 1;
+        let mut counters = self.counters.compaction.lock().unwrap();
+        counters.max_layer_count = std::cmp::max(counters.max_layer_count, layer_count as u64);
+        counters.total_layers_added += 1;
     }
 
     /// Resets the tree to an empty state.
@@ -154,27 +242,29 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         data.mutable_layer = Self::new_mutable_layer();
     }
 
-    /// Writes the items yielded by the iterator into the supplied object.
-    #[trace]
-    pub async fn compact_with_iterator<W: WriteBytes + Send>(
+    pub fn report_compaction_metrics(
         &self,
-        mut iterator: impl LayerIterator<K, V>,
-        num_items: usize,
-        writer: W,
-        block_size: u64,
-        mut yielder: Option<impl Yielder>,
-    ) -> Result<(), Error> {
-        let mut writer =
-            PersistentLayerWriter::<W, K, V>::new(writer, num_items, block_size).await?;
-        while let Some(item_ref) = iterator.get() {
-            debug!(item_ref:?; "compact: writing");
-            writer.write(item_ref).await?;
-            iterator.advance().await?;
-            if let Some(y) = yielder.as_mut() {
-                y.yield_now().await;
-            }
-        }
-        writer.flush().await
+        bytes_written: u64,
+        duration: std::time::Duration,
+        layer_count: usize,
+    ) {
+        let mut counters = self.counters.compaction.lock().unwrap();
+        counters.compactions += 1;
+        counters.compaction_bytes_written += bytes_written;
+        counters.compaction_time_ns += duration.as_nanos() as u64;
+
+        let bucket = if bytes_written == 0 {
+            0
+        } else {
+            std::cmp::min(LOG2_HISTOGRAM_BUCKETS - 1, 63 - bytes_written.leading_zeros() as usize)
+        };
+        counters.layer_size_histogram[bucket] += 1;
+
+        crate::metrics::lsm_tree_metrics().compaction_layer_stack_depth.insert(layer_count as u64);
+    }
+
+    pub fn compaction_bytes_written(&self) -> u64 {
+        self.counters.compaction.lock().unwrap().compaction_bytes_written
     }
 
     /// Returns an empty layer-set for this tree.
@@ -350,16 +440,36 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }
         });
         {
-            let counters = self.counters.lock();
-            root.record_uint("num_seeks", counters.num_seeks as u64);
-            root.record_uint(
-                "bloom_filter_success_percent",
-                if counters.layer_files_total == 0 {
+            let counters = self.counters.compaction.lock().unwrap();
+            root.record_uint("num_seeks", self.counters.num_seeks.load(Ordering::Relaxed) as u64);
+            root.record_uint("bloom_filter_success_percent", {
+                let layer_files_total = self.counters.layer_files_total.load(Ordering::Relaxed);
+                let layer_files_skipped = self.counters.layer_files_skipped.load(Ordering::Relaxed);
+                if layer_files_total == 0 {
                     0
                 } else {
-                    (counters.layer_files_skipped * 100).div_ceil(counters.layer_files_total) as u64
+                    (layer_files_skipped * 100).div_ceil(layer_files_total) as u64
+                }
+            });
+            root.record_uint("compactions", counters.compactions);
+            root.record_uint("compaction_bytes_written", counters.compaction_bytes_written);
+            root.record_uint("compaction_time_ns", counters.compaction_time_ns);
+            root.record_uint("total_layers_added", counters.total_layers_added);
+            root.record_uint("max_layer_count", counters.max_layer_count);
+
+            let layer_sizes = root.create_uint_exponential_histogram(
+                "layer_size_histogram_log2",
+                fuchsia_inspect::ExponentialHistogramParams {
+                    floor: 1,
+                    initial_step: 1,
+                    step_multiplier: 2,
+                    buckets: LOG2_HISTOGRAM_BUCKETS,
                 },
             );
+            for (i, count) in counters.layer_size_histogram.iter().enumerate() {
+                layer_sizes.insert_multiple(1u64 << i, *count as usize);
+            }
+            root.record(layer_sizes);
         }
     }
 }
@@ -402,7 +512,7 @@ impl<K, V> AsRef<dyn Layer<K, V>> for LockedLayer<K, V> {
 pub struct LayerSet<K, V> {
     pub layers: Vec<LockedLayer<K, V>>,
     merge_fn: merge::MergeFn<K, V>,
-    counters: Arc<Mutex<Counters>>,
+    counters: Arc<TreeCounters>,
 }
 
 impl<K: Key + LayerKey + OrdLowerBound, V: Value> LayerSet<K, V> {
@@ -455,7 +565,7 @@ pub trait Yielder: Send {
 
 #[cfg(test)]
 mod tests {
-    use super::{LSMTree, Yielder};
+    use super::{LSMTree, Yielder, compact_with_iterator};
     use crate::drop_event::DropEvent;
     use crate::lsm_tree::cache::{
         NullCache, ObjectCache, ObjectCachePlaceholder, ObjectCacheResult,
@@ -573,7 +683,7 @@ mod tests {
             let layer_set = tree.immutable_layer_set();
             let mut merger = layer_set.merger();
             let iter = merger.query(Query::FullScan).await.expect("create merger");
-            tree.compact_with_iterator(
+            compact_with_iterator(
                 iter,
                 items.len(),
                 Writer::new(&handle).await,
@@ -644,7 +754,7 @@ mod tests {
             let layer_set = tree.immutable_layer_set();
             let mut merger = layer_set.merger();
             let iter = merger.query(Query::FullScan).await.expect("create merger");
-            tree.compact_with_iterator(
+            compact_with_iterator(
                 iter,
                 0,
                 Writer::new(&handle).await,

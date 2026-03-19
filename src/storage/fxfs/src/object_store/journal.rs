@@ -59,6 +59,7 @@ use crate::serialized_types::{LATEST_VERSION, Migrate, Version, Versioned, migra
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use event_listener::Event;
 use fprint::TypeFingerprint;
+use fuchsia_inspect::NumericProperty;
 use fuchsia_sync::Mutex;
 use futures::FutureExt as _;
 use futures::future::poll_fn;
@@ -1887,6 +1888,11 @@ impl Journal {
             self.inner.lock().image_builder_mode.is_none(),
             "compact called in image builder mode"
         );
+        let bytes_before = self.objects.compaction_bytes_written();
+        let _measure = crate::metrics::DurationMeasureScope::new(
+            &crate::metrics::lsm_tree_metrics().journal_compaction_time,
+        );
+        crate::metrics::lsm_tree_metrics().journal_compactions_total.add(1);
         let trace = self.trace.load(Ordering::Relaxed);
         debug!("Compaction starting");
         if trace {
@@ -1899,6 +1905,10 @@ impl Journal {
             info!("J: end compaction");
         }
         debug!("Compaction finished");
+        let bytes_after = self.objects.compaction_bytes_written();
+        crate::metrics::lsm_tree_metrics()
+            .journal_compaction_bytes_written
+            .add(bytes_after.saturating_sub(bytes_before));
         Ok(())
     }
 

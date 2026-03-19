@@ -18,7 +18,7 @@ impl DurationMeasure {
     pub fn new(node: &Node, name: &str) -> Self {
         Self {
             latency: node.create_uint_exponential_histogram(
-                name.to_owned() + "_latency",
+                name.to_owned() + "_latency_ns",
                 Self::latency_histogram_params(),
             ),
             time: node.create_uint(name.to_owned() + "_time_ns", 0),
@@ -88,6 +88,10 @@ pub struct LsmTreeMetrics {
     pub insert: DurationMeasure,
     pub replace_or_insert: DurationMeasure,
     pub merge_into: DurationMeasure,
+    pub compaction_layer_stack_depth: fuchsia_inspect::UintExponentialHistogramProperty,
+    pub journal_compactions_total: fuchsia_inspect::UintProperty,
+    pub journal_compaction_bytes_written: fuchsia_inspect::UintProperty,
+    pub journal_compaction_time: DurationMeasure,
     _node: fuchsia_inspect::Node,
 }
 
@@ -99,6 +103,19 @@ pub fn lsm_tree_metrics() -> &'static LsmTreeMetrics {
             insert: DurationMeasure::new(&node, "insert"),
             replace_or_insert: DurationMeasure::new(&node, "replace_or_insert"),
             merge_into: DurationMeasure::new(&node, "merge_into"),
+            compaction_layer_stack_depth: node.create_uint_exponential_histogram(
+                "compaction_layer_stack_depth",
+                fuchsia_inspect::ExponentialHistogramParams {
+                    floor: 0,
+                    initial_step: 1,
+                    step_multiplier: 2,
+                    buckets: 8,
+                },
+            ),
+            journal_compactions_total: node.create_uint("journal_compactions_total", 0),
+            journal_compaction_bytes_written: node
+                .create_uint("journal_compaction_bytes_written", 0),
+            journal_compaction_time: DurationMeasure::new(&node, "journal_compaction"),
             _node: node,
         }
     });
