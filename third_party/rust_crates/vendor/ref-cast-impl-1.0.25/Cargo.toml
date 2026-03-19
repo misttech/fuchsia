@@ -11,61 +11,46 @@
 
 [package]
 edition = "2021"
-rust-version = "1.56"
-name = "ref-cast"
-version = "1.0.24"
+rust-version = "1.61"
+name = "ref-cast-impl"
+version = "1.0.25"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
-build = "build.rs"
+build = false
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Safely cast &T to &U where the struct U contains a single field of type T."
+description = "Derive implementation for ref_cast::RefCast."
 documentation = "https://docs.rs/ref-cast"
-readme = "README.md"
-categories = [
-    "rust-patterns",
-    "no-std",
-    "no-std::no-alloc",
-]
+readme = false
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/ref-cast"
 
 [package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = [
     "--generate-link-to-definition",
+    "--generate-macro-expansion",
     "--extern-html-root-url=core=https://doc.rust-lang.org",
     "--extern-html-root-url=alloc=https://doc.rust-lang.org",
     "--extern-html-root-url=std=https://doc.rust-lang.org",
+    "--extern-html-root-url=proc_macro=https://doc.rust-lang.org",
 ]
-targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
-name = "ref_cast"
+name = "ref_cast_impl"
 path = "src/lib.rs"
+proc-macro = true
 
-[[test]]
-name = "compiletest"
-path = "tests/compiletest.rs"
+[dependencies.proc-macro2]
+version = "1.0.74"
 
-[[test]]
-name = "test_custom"
-path = "tests/test_custom.rs"
+[dependencies.quote]
+version = "1.0.35"
 
-[[test]]
-name = "test_trivial"
-path = "tests/test_trivial.rs"
+[dependencies.syn]
+version = "2.0.46"
 
-[dependencies.ref-cast-impl]
-version = "=1.0.24"
-
-[dev-dependencies.ref-cast-test-suite]
-version = "0"
-
-[dev-dependencies.rustversion]
-version = "1.0.13"
-
-[dev-dependencies.trybuild]
-version = "1.0.81"
-features = ["diff"]
+[dev-dependencies.ref-cast]
+version = "1"

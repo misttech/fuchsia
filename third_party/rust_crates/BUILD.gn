@@ -817,7 +817,7 @@ group("rayon") {
 }
 
 group("ref-cast") {
-  public_deps = [ ":ref-cast-v1_0_24" ]
+  public_deps = [ ":ref-cast-v1_0_25" ]
 }
 
 group("regex") {
@@ -14811,52 +14811,55 @@ rustc_library("redox_termios-v0_1_3") {
   applicable_licenses = [ ":redox_termios-v0_1_3.license" ]
 }
 
-license("ref-cast-v1_0_24.license") {
+license("ref-cast-v1_0_25.license") {
   public_package_name = "ref_cast"
   license_files = [
-    "//third_party/rust_crates/vendor/ref-cast-1.0.24/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ref-cast-1.0.24/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ref-cast-1.0.25/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ref-cast-1.0.25/LICENSE-MIT",
   ]
 }
 
-rustc_library("ref-cast-v1_0_24") {
+rustc_library("ref-cast-v1_0_25") {
   crate_name = "ref_cast"
-  source_root = "//third_party/rust_crates/vendor/ref-cast-1.0.24/src/lib.rs"
-  output_name = "ref_cast-1cfba75039d5bda3"
+  source_root = "//third_party/rust_crates/vendor/ref-cast-1.0.25/src/lib.rs"
+  output_name = "ref_cast-99458160bf132887"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ref-cast-impl-v1_0_24($host_toolchain)" ]
+  deps += [ ":ref-cast-impl-v1_0_25($host_toolchain)" ]
 
-  rustenv = []
+  rustenv = [
+    "CARGO_PKG_VERSION_PATCH=25",
+    "OUT_DIR=../../../compat/ref-cast",
+  ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1cfba75039d5bda3",
-    "-Cextra-filename=-1cfba75039d5bda3",
+    "-Cmetadata=99458160bf132887",
+    "-Cextra-filename=-99458160bf132887",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ref-cast-v1_0_24.license" ]
+  applicable_licenses = [ ":ref-cast-v1_0_25.license" ]
 }
 
-license("ref-cast-impl-v1_0_24.license") {
+license("ref-cast-impl-v1_0_25.license") {
   public_package_name = "ref_cast_impl"
   license_files = [
-    "//third_party/rust_crates/vendor/ref-cast-impl-1.0.24/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ref-cast-impl-1.0.24/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ref-cast-impl-1.0.25/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ref-cast-impl-1.0.25/LICENSE-MIT",
   ]
 }
 
-rustc_macro("ref-cast-impl-v1_0_24") {
+rustc_macro("ref-cast-impl-v1_0_25") {
   crate_name = "ref_cast_impl"
   source_root =
-      "//third_party/rust_crates/vendor/ref-cast-impl-1.0.24/src/lib.rs"
-  output_name = "ref_cast_impl-5d1a1c7feab3f525"
+      "//third_party/rust_crates/vendor/ref-cast-impl-1.0.25/src/lib.rs"
+  output_name = "ref_cast_impl-41ba6c2b70c98367"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -14867,17 +14870,17 @@ rustc_macro("ref-cast-impl-v1_0_24") {
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":syn-v2_0_117" ]
 
-  rustenv = []
+  rustenv = [ "CARGO_PKG_VERSION_PATCH=25" ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5d1a1c7feab3f525",
-    "-Cextra-filename=-5d1a1c7feab3f525",
+    "-Cmetadata=41ba6c2b70c98367",
+    "-Cextra-filename=-41ba6c2b70c98367",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ref-cast-impl-v1_0_24.license" ]
+  applicable_licenses = [ ":ref-cast-impl-v1_0_25.license" ]
 }
 
 license("regex-v1_7_3.license") {
