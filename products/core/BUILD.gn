@@ -163,26 +163,3 @@ product_assembly_configuration("core_with_minfs") {
   deps = [ "//build/info:build_info_files" ]
   version = build_info_version
 }
-
-product_assembly_configuration("core_with_dfv2_fuzzing") {
-  testonly = true
-  platform = {
-    forward_variables_from(_platform_configuration_base, "*")
-
-    driver_framework = {
-      test_fuzzing_config = {
-        enable_load_fuzzer = true
-        max_load_delay_ms = 300
-        enable_test_shutdown_delays = true
-      }
-    }
-  }
-  product = {
-    build_info = default_product_build_info
-  }
-
-  base_packages = _base_packages
-  cache_packages = _cache_packages
-  deps = [ "//build/info:build_info_files" ]
-  version = build_info_version
-}
