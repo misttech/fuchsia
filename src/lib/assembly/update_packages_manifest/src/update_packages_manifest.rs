@@ -42,7 +42,7 @@ impl UpdatePackagesManifest {
     /// Add a package to be updated by its PackageManifest.
     pub fn add_by_manifest(&mut self, package: &PackageManifest) -> Result<()> {
         let path = package.package_path();
-        let meta_blob = package.blobs().into_iter().find(|blob| blob.path == "meta/");
+        let meta_blob = package.blobs().iter().find(|blob| blob.path == "meta/");
         match meta_blob {
             Some(meta_blob) => self.add(path, meta_blob.merkle, package.repository()),
             _ => bail!(format!("Failed to find the meta far in package {}", path)),

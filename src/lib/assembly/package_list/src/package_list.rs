@@ -57,7 +57,7 @@ pub trait WritablePackageList {
         let path = package.package_path().to_string();
         package
             .blobs()
-            .into_iter()
+            .iter()
             .find(|blob| blob.path == "meta/")
             .ok_or_else(|| {
                 anyhow!("Failed to add package {} to the list, unable to find meta blob", path)

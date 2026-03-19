@@ -19,10 +19,8 @@ pub fn validate_package(manifest: &PackageManifest) -> Result<(), PackageValidat
     let blobs = manifest.blobs();
 
     // read meta.far contents
-    let meta_far_info = blobs
-        .into_iter()
-        .find(|b| b.path == "meta/")
-        .ok_or(PackageValidationError::MissingMetaFar)?;
+    let meta_far_info =
+        blobs.iter().find(|b| b.path == "meta/").ok_or(PackageValidationError::MissingMetaFar)?;
     let meta_far =
         File::open(&meta_far_info.source_path).map_err(|source| PackageValidationError::Open {
             source,

@@ -104,7 +104,7 @@ impl<'a, K: Key, T> IntoIterator for &'a NamedMap<K, T> {
     type Item = (&'a K, &'a T);
     type IntoIter = std::collections::btree_map::Iter<'a, K, T>;
     fn into_iter(self) -> Self::IntoIter {
-        (&self.entries).into_iter()
+        (&self.entries).iter()
     }
 }
 
