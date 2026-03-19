@@ -4,14 +4,14 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fdomain_fuchsia_debugger as fdebugger;
+use fdomain_fuchsia_exception::ProcessLimboProxy;
 use ffx_config::EnvironmentContext;
 use ffx_debug_crash_args::CrashCommand;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb::Debugger;
+use ffx_zxdb_fdomain::Debugger;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_debugger as fdebugger;
-use fidl_fuchsia_exception::ProcessLimboProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct CrashTool {

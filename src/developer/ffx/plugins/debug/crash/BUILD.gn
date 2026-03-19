@@ -18,9 +18,9 @@ ffx_plugin("ffx_debug_crash") {
   sources = [ "src/lib.rs" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
-    "//sdk/fidl/fuchsia.exception:fuchsia.exception_rust",
-    "//src/developer/debug/ffx_zxdb",
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust_fdomain",
+    "//sdk/fidl/fuchsia.exception:fuchsia.exception_rust_fdomain",
+    "//src/developer/debug/ffx_zxdb:ffx_zxdb_fdomain",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
