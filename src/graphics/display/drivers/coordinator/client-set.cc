@@ -33,12 +33,10 @@ ClientSet::~ClientSet() {
 
 void ClientSet::DispatchOnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                                           std::span<const display::DisplayId> removed_display_ids) {
-  if (virtcon_client_ready_) {
-    ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
+  if (virtcon_client_ != nullptr) {
     virtcon_client_->OnDisplaysChanged(added_display_ids, removed_display_ids);
   }
-  if (primary_client_ready_) {
-    ZX_DEBUG_ASSERT(primary_client_ != nullptr);
+  if (primary_client_ != nullptr) {
     primary_client_->OnDisplaysChanged(added_display_ids, removed_display_ids);
   }
 }
@@ -64,12 +62,10 @@ void ClientSet::DispatchOnDisplayVsync(display::DisplayId display_id, zx::time_m
 }
 
 void ClientSet::DispatchOnCaptureComplete() {
-  if (virtcon_client_ready_) {
-    ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
+  if (virtcon_client_ != nullptr) {
     virtcon_client_->OnCaptureComplete();
   }
-  if (primary_client_ready_) {
-    ZX_DEBUG_ASSERT(primary_client_ != nullptr);
+  if (primary_client_ != nullptr) {
     primary_client_->OnCaptureComplete();
   }
 }
@@ -98,8 +94,9 @@ void PrintChannelKoids(display::ClientPriority client_priority, const zx::channe
 
 }  // namespace
 
-zx::result<ClientId> ClientSet::ConnectClient(
+zx::result<> ClientSet::ConnectClient(
     Controller* controller, display::ClientPriority client_priority,
+    std::span<const display::DisplayId> current_display_ids,
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
@@ -129,16 +126,17 @@ zx::result<ClientId> ClientSet::ConnectClient(
   Client* client_ptr = client.get();
   clients_.push_back(std::move(client));
 
+  std::span<const display::DisplayId> removed_display_ids = {};
+  client_ptr->OnDisplaysChanged(current_display_ids, removed_display_ids);
+
   fdf::info("Client connected at priority {} with ID {}", client_priority,
             client_ptr->id().value());
 
   if (client_priority == display::ClientPriority::kVirtcon) {
     ZX_DEBUG_ASSERT(virtcon_client_ == nullptr);
-    ZX_DEBUG_ASSERT(!virtcon_client_ready_);
     virtcon_client_ = client_ptr;
   } else if (client_priority == display::ClientPriority::kPrimary) {
     ZX_DEBUG_ASSERT(primary_client_ == nullptr);
-    ZX_DEBUG_ASSERT(!primary_client_ready_);
     primary_client_ = client_ptr;
   } else {
     ZX_DEBUG_ASSERT_MSG(false, "Unsupported ClientPriority: %" PRIu32,
@@ -146,31 +144,7 @@ zx::result<ClientId> ClientSet::ConnectClient(
   }
   HandleClientOwnershipChanges();
 
-  return zx::ok(client_id);
-}
-
-void ClientSet::SendInitialState(ClientId client_id,
-                                 std::span<const display::DisplayId> current_display_ids) {
-  Client* client;
-  if (virtcon_client_ != nullptr && virtcon_client_->id() == client_id) {
-    client = virtcon_client_;
-  } else if (primary_client_ != nullptr && primary_client_->id() == client_id) {
-    client = primary_client_;
-  } else {
-    return;
-  }
-
-  std::span<const display::DisplayId> removed_display_ids = {};
-  client->OnDisplaysChanged(current_display_ids, removed_display_ids);
-
-  if (virtcon_client_ == client) {
-    ZX_DEBUG_ASSERT(!virtcon_client_ready_);
-    virtcon_client_ready_ = true;
-  } else {
-    ZX_DEBUG_ASSERT(primary_client_ == client);
-    ZX_DEBUG_ASSERT(!primary_client_ready_);
-    primary_client_ready_ = true;
-  }
+  return zx::ok();
 }
 
 std::optional<display::ClientPriority> ClientSet::FindConfigStampSource(
@@ -200,10 +174,8 @@ void ClientSet::OnClientDisconnected(Client* client) {
   if (client == virtcon_client_) {
     virtcon_client_ = nullptr;
     virtcon_mode_ = fuchsia_hardware_display::wire::VirtconMode::kFallback;
-    virtcon_client_ready_ = false;
   } else if (client == primary_client_) {
     primary_client_ = nullptr;
-    primary_client_ready_ = false;
   }
 
   if (client == client_owning_displays_) {
@@ -250,9 +222,7 @@ void ClientSet::Clear() {
 
   client_owning_displays_ = nullptr;
   primary_client_ = nullptr;
-  primary_client_ready_ = false;
   virtcon_client_ = nullptr;
-  virtcon_client_ready_ = false;
 
   clients_.clear();
 }

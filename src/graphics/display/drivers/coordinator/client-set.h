@@ -58,25 +58,21 @@ class ClientSet {
   // May change the client that owns the displays.
   void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
 
+  // Connects a client at the given priority level.
+  //
+  // After this method completes, the client will receive an OnDisplaysChanged
+  // event stating that the currently connected displays are those in
+  // `displays`.
+  //
   // `controller` must be non-null and must outlive the ClientSet.
   // `client_priority`, `coordinator_server_end`, and
   // `coordinator_listener_client_end` must be valid.
-  zx::result<ClientId> ConnectClient(
+  zx::result<> ConnectClient(
       Controller* controller, display::ClientPriority client_priority,
+      std::span<const display::DisplayId> current_display_ids,
       fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
       fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
           coordinator_listener_client_end);
-
-  // Transmits the initial set of connected displays to a client.
-  //
-  // After this method completes, the client will receive an OnDisplaysChanged
-  // event that describes all the currently connected displays.
-  //
-  // This method is a no-op if there is no client with the given `client_id`.
-  // This simplifies handling clients who disconnect before receiving the
-  // initial set of displays.
-  void SendInitialState(ClientId client_id,
-                        std::span<const display::DisplayId> current_display_ids);
 
   // `client` must point to a proxy associated with a client in this set.
   //
@@ -114,10 +110,6 @@ class ClientSet {
   Client* client_owning_displays_ = nullptr;
   Client* virtcon_client_ = nullptr;
   Client* primary_client_ = nullptr;
-
-  // True iff the corresponding client can dispatch FIDL events.
-  bool virtcon_client_ready_ = false;
-  bool primary_client_ready_ = false;
 
   fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ =
       fuchsia_hardware_display::wire::VirtconMode::kFallback;

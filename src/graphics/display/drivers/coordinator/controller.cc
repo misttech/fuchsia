@@ -505,30 +505,21 @@ zx::result<> Controller::CreateClient(
     return zx::error(ZX_ERR_UNAVAILABLE);
   }
 
-  zx::result<ClientId> connect_result =
-      clients_.ConnectClient(this, client_priority, std::move(coordinator_server_end),
-                             std::move(coordinator_listener_client_end));
+  cpp26::inplace_vector<display::DisplayId,
+                        display::EngineInfo::kMaxAllowedMaxConnectedDisplayCount>
+      current_display_ids;
+  for (const DisplayInfo& display : displays_) {
+    current_display_ids.push_back(display.id());
+  }
+  ZX_DEBUG_ASSERT(current_display_ids.size() == displays_.size());
+
+  zx::result<> connect_result = clients_.ConnectClient(this, client_priority, current_display_ids,
+                                                       std::move(coordinator_server_end),
+                                                       std::move(coordinator_listener_client_end));
   if (connect_result.is_error()) {
     fdf::debug("Failed to connect client: {}", connect_result.status_string());
     return connect_result.take_error();
   }
-  const ClientId client_id = connect_result.value();
-
-  if (displays_.is_empty()) {
-    std::span<const display::DisplayId> current_display_ids;
-    clients_.SendInitialState(client_id, current_display_ids);
-    return zx::ok();
-  }
-
-  display::DisplayId current_displays[displays_.size()];
-  int initialized_display_count = 0;
-  for (const DisplayInfo& display : displays_) {
-    current_displays[initialized_display_count] = display.id();
-    ++initialized_display_count;
-  }
-  std::span<const display::DisplayId> current_display_ids(current_displays,
-                                                          initialized_display_count);
-  clients_.SendInitialState(client_id, current_display_ids);
   return zx::ok();
 }
 
