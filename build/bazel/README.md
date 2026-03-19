@@ -224,7 +224,7 @@ the user's home directory (e.g. `$HOME/.cache/bazel/`) are:
 
 ## Building Bazel targets
 
-### bazel_build_action.gni
+### `bazel_build_action.gni`
 
 The `bazel_build_action` template, defined in
 `//build/bazel/bazel_build_action.gni`, is used to create a GN action that
@@ -344,7 +344,7 @@ Note that all Ninja outputs are accessed in Bazel through filegroups named from 
 target label that exposes it. I.e. one cannot access files using a Ninja artifact
 path such as `@gn_targets//obj/src/lib/foo.out`.
 
-#### bazel_input_file() filegroup naming
+#### `bazel_input_file()` filegroup naming
 
 The `bazel_input_file()` template requires a `generator` argument that must point
 to a GN target that generates Ninja output files.
@@ -398,7 +398,7 @@ If one defines several `bazel_input_file()` with the same filegroup package and 
 Bazel will complain about multiply defined targets in the corresponding `BUILD.bazel`
 file (which can be inspected, as comments indicate which exact GN target defined them).
 
-#### bazel_input_file() outputs selection
+#### `bazel_input_file()` outputs selection
 
 By default, `bazel_input_file()` exposes all outputs of the generator target,
 but this can only work if the following conditions apply:
@@ -436,7 +436,7 @@ as `@gn_targets//src/lib/bar:foo`.
 This is why defining `bazel_input_file()` targets *in the same BUILD.gn file as the
 generator target* is recommended, though not required.
 
-#### bazel_input_directory()
+#### `bazel_input_directory()`
 
 It is an error to list a directory as an output in a `bazel_input_file()`, as this
 will may result in incremental build errors. There is no easy way to detect this from
@@ -447,6 +447,60 @@ This creates a Bazel filegroup that uses a `glob()` statement, under the hood, t
 ensure that all files from the directory are visible from the Bazel sandbox / command
 execution environment, and carry dependency information properly across the GN / Bazel
 graph boundaries.
+
+### `bazel_input_file()` and `bazel_input_directory()` license information.
+
+Each `bazel_input_xxx()` target also generates an SPDX JSON file containing licensing
+information related to the Ninja outputs it covers. This information is automatically
+associated with each `@gn_targets` filegroup() target in the Bazel graph.
+
+In case accessing the licensing information is needed, it is available as a
+`license()` target with the same name as the filegroup, plus a `.license` suffix
+
+For example, `@gn_targets//src:foo.license` is the `license()` target that the
+`@gn_targets//src:foo` filegroup definition uses for its own `applicable_licenses`
+value. And `@gn_targets//src/BUILD.gn` looks like:
+
+
+```py
+license(
+    name = "foo.license",
+    package_name = "Legacy Ninja Build Outputs",
+    license_text = "_files/src/foo.bazel_inputs.license_spdx.json",
+)
+
+filegroup(
+   name = "foo",
+   applicable_licenses = [ ":foo.license" ],
+   srcs = [ ... ]
+)
+```
+
+Note that due to how the Bazel licensing pipelines work, simply depending on
+a `@gn_targets` filegroup() is not always sufficient to avoid the license checker
+to complain about targets without a proper license. In particular defining a
+`fuchsia_prebuilt_package()` target requires an explicit `applicable_licenses`
+value pointing to the archive's license, as in:
+
+```py
+fuchsia_prebuilt_package(
+    name = "msd-arm-mali",
+    applicable_licenses = ["@gn_targets//src/graphics/drivers/msd-arm-mali:msd-arm-mali.license"],
+    archive = "@gn_targets//src/graphics/drivers/msd-arm-mali:msd-arm-mali",
+    drivers = [ ... ]
+)
+```
+
+The same is true for a number of other Bazel rules pointing to `@gn_targets` inputs, as in:
+
+```py
+fuchsia_platform_artifacts(
+    name = "platform_user",
+    applicable_licenses = [ "@gn_targets//bundles/assembly:user.bazel_inputs.license" ],
+    directory = "@gn_targets//bundles/assembly:user.bazel_inputs.directory",
+    files = "@gn_targets//bundles/assembly:user.bazel_inputs",
+)
+```
 
 ## Configurations
 
