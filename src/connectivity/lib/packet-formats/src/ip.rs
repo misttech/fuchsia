@@ -234,6 +234,10 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
     fn as_ip_addr_ref(&self) -> IpAddr<&'_ Ipv4Packet<B>, &'_ Ipv6Packet<B>>;
 
     /// Reassembles a fragmented packet into a parsed IP packet.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided header is too small to hold a valid header.
     fn reassemble_fragmented_packet<BV: BufferViewMut<B>, IT: Iterator<Item = Vec<u8>>>(
         buffer: BV,
         header: Vec<u8>,

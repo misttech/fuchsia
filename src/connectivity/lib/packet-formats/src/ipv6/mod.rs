@@ -1518,6 +1518,10 @@ impl<B: Ipv6HeaderBuilder> PartialPacketBuilder for Ipv6PacketBuilderWithFragmen
 }
 
 /// Reassembles a fragmented packet into a parsed IP packet.
+///
+/// # Panics
+///
+/// Panics if the provided header is too small to hold a valid header.
 pub(crate) fn reassemble_fragmented_packet<
     B: SplitByteSliceMut,
     BV: BufferViewMut<B>,
@@ -1527,6 +1531,8 @@ pub(crate) fn reassemble_fragmented_packet<
     header: Vec<u8>,
     body_fragments: I,
 ) -> IpParseResult<Ipv6, ()> {
+    assert!(header.len() >= IPV6_FIXED_HDR_LEN);
+
     let bytes = buffer.as_mut();
 
     // First, copy over the header data.
@@ -1553,7 +1559,7 @@ pub(crate) fn reassemble_fragmented_packet<
     let payload_length = byte_count - IPV6_FIXED_HDR_LEN;
 
     // Make sure that the payload length is not more than the maximum
-    // possible IPv4 packet length.
+    // possible IPv6 packet length.
     if payload_length > usize::from(core::u16::MAX) {
         return debug_err!(
             Err(ParseError::Format.into()),
@@ -1562,8 +1568,8 @@ pub(crate) fn reassemble_fragmented_packet<
         );
     }
 
-    // We know the call to `unwrap` will not fail because we just copied the header
-    // bytes into `bytes`.
+    // We know the call to `unwrap` will not fail because we verified the length
+    // of `header` and copied it's bytes into `bytes`.
     let mut header = Ref::<_, FixedHeader>::from_prefix(bytes).unwrap().0;
 
     // Update the payload length field.

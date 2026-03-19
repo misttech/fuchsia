@@ -1112,6 +1112,10 @@ const DF_FLAG_OFFSET: u8 = 1;
 const MF_FLAG_OFFSET: u8 = 0;
 
 /// Reassembles a fragmented IPv4 packet into a parsed IPv4 packet.
+///
+/// # Panics
+///
+/// Panics if the provided header is too small to hold a valid header.
 pub(crate) fn reassemble_fragmented_packet<
     B: SplitByteSliceMut,
     BV: BufferViewMut<B>,
@@ -1121,6 +1125,8 @@ pub(crate) fn reassemble_fragmented_packet<
     header: Vec<u8>,
     body_fragments: I,
 ) -> Result<(), ParseError> {
+    assert!(header.len() >= HDR_PREFIX_LEN);
+
     let bytes = buffer.as_mut();
 
     // First, copy over the header data.
@@ -1145,20 +1151,22 @@ pub(crate) fn reassemble_fragmented_packet<
         );
     }
 
-    // We know the call to `unwrap` will not fail because we just copied the
-    // header bytes into `bytes`.
-    let mut header = Ref::<_, HeaderPrefix>::from_prefix(bytes).unwrap().0;
+    // We know the call to `unwrap` will not fail because we verified the length
+    // of `header` and copied it's bytes into `bytes`.
+    let mut header_ref = Ref::<_, HeaderPrefix>::from_prefix(bytes).unwrap().0;
+
+    let options_bytes = &header[HDR_PREFIX_LEN..header.len()];
 
     // Update the total length field.
-    header.total_len.set(u16::try_from(byte_count).unwrap());
+    header_ref.total_len.set(u16::try_from(byte_count).unwrap());
 
     // Zero out fragment related data since we will now have a
     // reassembled packet that does not need reassembly.
-    header.flags_frag_off = [0; 2];
+    header_ref.flags_frag_off = [0; 2];
 
     // Update header checksum.
-    header.hdr_checksum = [0; 2];
-    header.hdr_checksum = compute_header_checksum(header.as_bytes(), &[]);
+    header_ref.hdr_checksum = [0; 2];
+    header_ref.hdr_checksum = compute_header_checksum(header_ref.as_bytes(), options_bytes);
 
     Ok(())
 }

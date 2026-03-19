@@ -5,6 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use assert_matches::assert_matches;
+use core::fmt::Debug;
 use core::num::NonZeroU16;
 use core::time::Duration;
 
@@ -18,9 +19,7 @@ use net_types::ip::{
 use net_types::{
     MulticastAddr, NonMappedAddr, SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr,
 };
-use packet::{
-    Buf, InnerPacketBuilder, PacketBuilder as _, ParseBuffer, ParseMetadata, Serializer as _,
-};
+use packet::{Buf, InnerPacketBuilder, PacketBuilder, ParseBuffer, ParseMetadata, Serializer as _};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
     EthernetIpExt as _,
@@ -33,9 +32,15 @@ use packet_formats::icmp::{
 use packet_formats::ip::{
     FragmentOffset, IpPacket as _, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6ExtHdrType, Ipv6Proto,
 };
-use packet_formats::ipv4::Ipv4PacketBuilder;
-use packet_formats::ipv6::Ipv6PacketBuilder;
-use packet_formats::ipv6::ext_hdrs::ExtensionHeaderOptionAction;
+use packet_formats::ipv4::options::Ipv4Option;
+use packet_formats::ipv4::{Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions};
+use packet_formats::ipv6::ext_hdrs::{
+    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData,
+};
+use packet_formats::ipv6::{
+    Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment, Ipv6PacketBuilderWithFragmentHeader,
+    Ipv6PacketBuilderWithHbhOptions,
+};
 use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
 use rand::Rng;
@@ -172,28 +177,45 @@ fn process_ip_fragment<I: Ip>(
     fragment_id: u16,
     fragment_offset: u8,
     fragment_count: u8,
+    with_header_options: bool,
 ) {
     match I::VERSION {
-        IpVersion::V4 => {
-            process_ipv4_fragment(ctx, device, fragment_id, fragment_offset, fragment_count)
-        }
-        IpVersion::V6 => {
-            process_ipv6_fragment(ctx, device, fragment_id, fragment_offset, fragment_count)
-        }
+        IpVersion::V4 => process_ipv4_fragment(
+            ctx,
+            device,
+            fragment_id,
+            fragment_offset,
+            fragment_count,
+            with_header_options,
+        ),
+        IpVersion::V6 => process_ipv6_fragment(
+            ctx,
+            device,
+            fragment_id,
+            fragment_offset,
+            fragment_count,
+            with_header_options,
+        ),
     }
+}
+
+fn wrap_body<B: PacketBuilder + Debug>(builder: B, body: Vec<u8>) -> Buf<Vec<u8>> {
+    builder.wrap_body(Buf::new(body, ..)).serialize_vec_outer().unwrap().into_inner()
 }
 
 /// Generate and 'receive' an IPv4 fragment packet.
 ///
 /// `fragment_offset` is the fragment offset. `fragment_count` is the number
-/// of fragments for a packet. The generated packet will have a body of size
-/// 8 bytes.
+/// of fragments for a packet. `include_ipv4_option` indicates whether an IPv4
+/// Router Alert option should be included in the packet. The generated packet
+/// will have a body of size 8 bytes.
 fn process_ipv4_fragment(
     ctx: &mut FakeCtx,
     device: &DeviceId<FakeBindingsCtx>,
     fragment_id: u16,
     fragment_offset: u8,
     fragment_count: u8,
+    include_ipv4_option: bool,
 ) {
     assert!(fragment_offset < fragment_count);
 
@@ -205,7 +227,16 @@ fn process_ipv4_fragment(
     builder.mf_flag(m_flag);
     let mut body: Vec<u8> = Vec::new();
     body.extend(fragment_offset * 8..fragment_offset * 8 + 8);
-    let buffer = builder.wrap_body(Buf::new(body, ..)).serialize_vec_outer().unwrap().into_inner();
+
+    let buffer = if include_ipv4_option {
+        let builder =
+            Ipv4PacketBuilderWithOptions::new(builder, vec![Ipv4Option::RouterAlert { data: 55 }])
+                .expect("Single Router Alert option will fit");
+        wrap_body(builder, body)
+    } else {
+        wrap_body(builder, body)
+    };
+
     ctx.test_api().receive_ip_packet::<Ipv4, _>(
         device,
         Some(FrameDestination::Individual { local: true }),
@@ -216,33 +247,58 @@ fn process_ipv4_fragment(
 /// Generate and 'receive' an IPv6 fragment packet.
 ///
 /// `fragment_offset` is the fragment offset. `fragment_count` is the number
-/// of fragments for a packet. The generated packet will have a body of size
-/// 8 bytes.
+/// of fragments for a packet. `include_extension_header` indicates whether an
+/// IPv6 HopByHop extension header will be included in the packet. The generated
+/// packet will have a body of size 8 bytes.
 fn process_ipv6_fragment(
     ctx: &mut FakeCtx,
     device: &DeviceId<FakeBindingsCtx>,
     fragment_id: u16,
     fragment_offset: u8,
     fragment_count: u8,
+    include_extension_header: bool,
 ) {
-    assert!(fragment_offset < fragment_count);
+    let builder = Ipv6PacketBuilder::new(
+        TEST_ADDRS_V6.remote_ip,
+        TEST_ADDRS_V6.local_ip,
+        64,
+        Ipv6Proto::Proto(IpProto::Udp),
+    );
 
-    let m_flag = fragment_offset < (fragment_count - 1);
+    let mut body: Vec<u8> = Vec::new();
+    body.extend(fragment_offset * 8..fragment_offset * 8 + 8);
 
-    let mut bytes = vec![0; 48];
-    bytes[..4].copy_from_slice(&[0x60, 0x20, 0x00, 0x77][..]);
-    bytes[6] = Ipv6ExtHdrType::Fragment.into(); // Next Header
-    bytes[7] = 64;
-    bytes[8..24].copy_from_slice(TEST_ADDRS_V6.remote_ip.bytes());
-    bytes[24..40].copy_from_slice(TEST_ADDRS_V6.local_ip.bytes());
-    bytes[40] = IpProto::Udp.into();
-    bytes[42] = fragment_offset >> 5;
-    bytes[43] = ((fragment_offset & 0x1F) << 3) | if m_flag { 1 } else { 0 };
-    bytes[44..48].copy_from_slice(&(u32::try_from(fragment_id).unwrap().to_be_bytes()));
-    bytes.extend(fragment_offset * 8..fragment_offset * 8 + 8);
-    let payload_len = u16::try_from(bytes.len() - 40).unwrap();
-    bytes[4..6].copy_from_slice(&payload_len.to_be_bytes());
-    let buffer = Buf::new(bytes, ..);
+    fn wrap_fragment_header<B: Ipv6PacketBuilderBeforeFragment>(
+        builder: B,
+        fragment_id: u16,
+        fragment_offset: u8,
+        fragment_count: u8,
+    ) -> Ipv6PacketBuilderWithFragmentHeader<B> {
+        assert!(fragment_offset < fragment_count);
+        let m_flag = fragment_offset < (fragment_count - 1);
+        Ipv6PacketBuilderWithFragmentHeader::new(
+            builder,
+            FragmentOffset::new(fragment_offset.into()).unwrap(),
+            m_flag,
+            fragment_id.into(),
+        )
+    }
+
+    let buffer = if include_extension_header {
+        let builder = Ipv6PacketBuilderWithHbhOptions::new(
+            builder,
+            [HopByHopOption {
+                action: ExtensionHeaderOptionAction::SkipAndContinue,
+                mutable: false,
+                data: HopByHopOptionData::RouterAlert { data: 55 },
+            }],
+        )
+        .expect("single Router Alert option will fit");
+        wrap_body(wrap_fragment_header(builder, fragment_id, fragment_offset, fragment_count), body)
+    } else {
+        wrap_body(wrap_fragment_header(builder, fragment_id, fragment_offset, fragment_count), body)
+    };
+
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         device,
         Some(FrameDestination::Individual { local: true }),
@@ -574,14 +630,16 @@ fn test_ip_packet_reassembly_not_needed<I: TestIpExt + IpExt>() {
 
     // Test that a non fragmented packet gets dispatched right away.
 
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 1);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 1, false);
 
     // Make sure the packet got dispatched.
     IpCounterExpectations::<I>::expect_dispatched(1).assert_counters(&ctx.core_ctx(), &device);
 }
 
 #[ip_test(I)]
-fn test_ip_packet_reassembly<I: TestIpExt + IpExt>() {
+#[test_case(true; "with_header_options")]
+#[test_case(false; "without_header_options")]
+fn test_ip_packet_reassembly<I: TestIpExt + IpExt>(with_header_options: bool) {
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
     let fragment_id = 5;
@@ -590,10 +648,10 @@ fn test_ip_packet_reassembly<I: TestIpExt + IpExt>() {
     // all the fragments.
 
     // Process fragment #0
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 3, with_header_options);
 
     // Process fragment #1
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 1, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 1, 3, with_header_options);
 
     // Make sure no packets got dispatched yet.
     IpCounterExpectations::<I> {
@@ -605,7 +663,7 @@ fn test_ip_packet_reassembly<I: TestIpExt + IpExt>() {
     .assert_counters(&ctx.core_ctx(), &device);
 
     // Process fragment #2
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 2, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 2, 3, with_header_options);
 
     // Make sure the packet finally got dispatched now that the final
     // fragment has been 'received'.
@@ -620,7 +678,11 @@ fn test_ip_packet_reassembly<I: TestIpExt + IpExt>() {
 }
 
 #[ip_test(I)]
-fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + IpExt>() {
+#[test_case(true; "with_header_options")]
+#[test_case(false; "without_header_options")]
+fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + IpExt>(
+    with_header_options: bool,
+) {
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
     let fragment_id_0 = 5;
@@ -631,13 +693,13 @@ fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + I
     // the fragments with out of order arrival of fragments.
 
     // Process packet #0, fragment #1
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 1, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 1, 3, with_header_options);
 
     // Process packet #1, fragment #2
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 2, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 2, 3, with_header_options);
 
     // Process packet #1, fragment #0
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 0, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 0, 3, with_header_options);
 
     // Make sure no packets got dispatched yet.
     IpCounterExpectations::<I> {
@@ -649,7 +711,7 @@ fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + I
     .assert_counters(&ctx.core_ctx(), &device);
 
     // Process a packet that does not require reassembly (packet #2, fragment #0).
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_2, 0, 1);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_2, 0, 1, with_header_options);
 
     // Make packet #1 got dispatched since it didn't need reassembly.
     IpCounterExpectations::<I> {
@@ -662,7 +724,7 @@ fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + I
     .assert_counters(&ctx.core_ctx(), &device);
 
     // Process packet #0, fragment #2
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 2, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 2, 3, with_header_options);
 
     // Make sure no other packets got dispatched yet.
     IpCounterExpectations::<I> {
@@ -675,7 +737,7 @@ fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + I
     .assert_counters(&ctx.core_ctx(), &device);
 
     // Process packet #0, fragment #0
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 0, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_0, 0, 3, with_header_options);
 
     // Make sure that packet #0 finally got dispatched now that the final
     // fragment has been 'received'.
@@ -689,7 +751,7 @@ fn test_ip_packet_reassembly_with_packets_arriving_out_of_order<I: TestIpExt + I
     .assert_counters(&ctx.core_ctx(), &device);
 
     // Process packet #1, fragment #1
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 1, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id_1, 1, 3, with_header_options);
 
     // Make sure the packet finally got dispatched now that the final
     // fragment has been 'received'.
@@ -716,7 +778,7 @@ where
     // timer.
 
     // Process fragment #0
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 0, 3, false);
 
     // Make sure a timer got added.
     ctx.bindings_ctx.timer_ctx().assert_timers_installed_range([(
@@ -725,7 +787,7 @@ where
     )]);
 
     // Process fragment #1
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 1, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 1, 3, false);
 
     assert_eq!(
         ctx.trigger_next_timer().unwrap(),
@@ -736,7 +798,7 @@ where
     ctx.bindings_ctx.timer_ctx().assert_no_timers_installed();
 
     // Process fragment #2
-    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 2, 3);
+    process_ip_fragment::<I>(&mut ctx, &device, fragment_id, 2, 3, false);
 
     // Make sure no packets got dispatched yet since even though we
     // technically received all the fragments, this fragment (#2) arrived
@@ -790,7 +852,7 @@ fn test_ip_reassembly_when_forwarding<I: TestIpExt + IpExt>() {
 
     // Process fragment #0
     net.with_context("alice", |ctx| {
-        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 0, 3);
+        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 0, 3, false);
     });
     // Make sure the fragment was not sent from alice to bob.
     IpCounterExpectations::<I> {
@@ -802,7 +864,7 @@ fn test_ip_reassembly_when_forwarding<I: TestIpExt + IpExt>() {
 
     // Process fragment #1
     net.with_context("alice", |ctx| {
-        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 1, 3);
+        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 1, 3, false);
     });
     IpCounterExpectations::<I> {
         receive_ip_packet: 2,
@@ -817,7 +879,7 @@ fn test_ip_reassembly_when_forwarding<I: TestIpExt + IpExt>() {
 
     // Process fragment #2
     net.with_context("alice", |ctx| {
-        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 2, 3);
+        process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 2, 3, false);
     });
     // Now that the last fragment has arrived, Alice should have forwarded the
     // reassembled packet.
