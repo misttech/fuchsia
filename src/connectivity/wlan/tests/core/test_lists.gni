@@ -8,24 +8,26 @@
 # features for the test to pass, or a temporary exclusion because a
 # bug is causing the test to fail too often.
 
-core_tests_for_fyi =
-    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
-
 core_tests_for_general_cq = [
   "//src/connectivity/wlan/tests/core:connect_to_ap_test",
   "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
   "//src/connectivity/wlan/tests/core:sar_setting_test",
+  "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
 ]
 
-core_tests_for_general_cq_shielded_dut_only =
-    [ "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test" ]
-
-core_tests_for_wlan_cq_dut_only = [
+# Only tests which do not interact with an AP or SoftAP can be run
+# without a shield box. This distinction only matters for general
+# CQ, where capacity is lower.
+core_tests_for_general_cq_no_shield_box = [
   "//src/connectivity/wlan/tests/core:create_client_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_client_iface_with_particular_mac_test",
+  "//src/connectivity/wlan/tests/core:phy_existence_test",
 ]
 
-core_tests_for_wlan_cq_shielded_dut_only = [
+core_tests_for_wlan_cq = [
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
 ]
+
+core_tests_for_fyi =
+    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]

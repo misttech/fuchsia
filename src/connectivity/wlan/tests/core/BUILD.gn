@@ -119,15 +119,9 @@ group("tests_host") {
   public_deps = [
     ":tests_for_fyi",
     ":tests_for_general_cq",
-    ":tests_for_general_cq_dut_only",
-    ":tests_for_wlan_cq_dut_only",
-    ":tests_for_wlan_cq_shielded_dut_only",
+    ":tests_for_general_cq_no_shield_box",
+    ":tests_for_wlan_cq",
   ]
-}
-
-group("tests_for_fyi") {
-  testonly = true
-  public_deps = core_tests_for_fyi
 }
 
 group("tests_for_general_cq") {
@@ -135,17 +129,20 @@ group("tests_for_general_cq") {
   public_deps = core_tests_for_general_cq
 }
 
-group("tests_for_general_cq_dut_only") {
+# Only tests which do not interact with an AP or SoftAP can be run
+# without a shield box. This distinction only matters for general
+# CQ, where capacity is lower.
+group("tests_for_general_cq_no_shield_box") {
   testonly = true
-  public_deps = [ ":phy_existence_test" ]
+  public_deps = core_tests_for_general_cq_no_shield_box
 }
 
-group("tests_for_wlan_cq_dut_only") {
+group("tests_for_wlan_cq") {
   testonly = true
-  public_deps = core_tests_for_wlan_cq_dut_only
+  public_deps = core_tests_for_wlan_cq
 }
 
-group("tests_for_wlan_cq_shielded_dut_only") {
+group("tests_for_fyi") {
   testonly = true
-  public_deps = core_tests_for_wlan_cq_shielded_dut_only
+  public_deps = core_tests_for_fyi
 }
