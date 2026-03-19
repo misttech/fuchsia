@@ -291,10 +291,7 @@ impl ModelBuilderForAnalyzer {
         }
         if let Some(dynamic_children) = dynamic_components.get(instance.moniker()) {
             children.append(
-                &mut dynamic_children
-                    .into_iter()
-                    .map(|dynamic_child| dynamic_child.clone())
-                    .collect(),
+                &mut dynamic_children.iter().map(|dynamic_child| dynamic_child.clone()).collect(),
             );
         }
 

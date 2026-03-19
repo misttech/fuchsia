@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{normalize_field_key, SourceGenError};
+use crate::{SourceGenError, normalize_field_key};
 use cm_rust::{ConfigChecksum, ConfigDecl, ConfigNestedValueType, ConfigValueType};
 use proc_macro2::{Ident, Literal, TokenStream};
 use quote::quote;
@@ -21,7 +21,7 @@ pub fn create_rust_wrapper(
     let ConfigChecksum::Sha256(expected_checksum) = &config_decl.checksum;
 
     let expected_checksum =
-        expected_checksum.into_iter().map(|b| Literal::from_str(&format!("{:#04x}", b)).unwrap());
+        expected_checksum.iter().map(|b| Literal::from_str(&format!("{:#04x}", b)).unwrap());
 
     let mut field_declarations = vec![];
     let mut field_conversions = vec![];

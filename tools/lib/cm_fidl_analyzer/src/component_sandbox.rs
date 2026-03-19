@@ -331,7 +331,7 @@ impl ProgramOutputGenerator {
                 },
             )));
         };
-        let Some((_, capabilities)) = configs.into_iter().find(|(name, _)| *name == requested_name)
+        let Some((_, capabilities)) = configs.iter().find(|(name, _)| *name == requested_name)
         else {
             return Err(RouterError::NotFound(Arc::new(
                 RoutingError::DynamicDictionariesNotAllowed {

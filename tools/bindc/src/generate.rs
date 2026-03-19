@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use bind::parser::bind_library;
 use bind::parser::common::Include;
 use bind::{compiler, linter};
 use std::collections::HashSet;
 
-use crate::{cpp_generator, rust_generator, GeneratedBindingType};
+use crate::{GeneratedBindingType, cpp_generator, rust_generator};
 
 pub trait BindingGenerator {
     fn generate_using_declaration(self: &Self, using_decl: &Include) -> String;
@@ -140,7 +140,7 @@ fn check_names(declarations: &Vec<bind_library::Declaration>) -> Result<(), Erro
     let mut keys: HashSet<String> = HashSet::new();
 
     // Check key values.
-    for declaration in declarations.into_iter() {
+    for declaration in declarations.iter() {
         // Check if there is a duplicate key name.
         let fidl_key_name = declaration.identifier.name.to_uppercase();
         if keys.contains(&fidl_key_name) {

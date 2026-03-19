@@ -315,7 +315,7 @@ fn register_partial_templates<FR>(
 where
     FR: FileReader,
 {
-    for partial in template_files.into_iter().filter(|p| is_partial_template(p)) {
+    for partial in template_files.iter().filter(|p| is_partial_template(p)) {
         let content = file_reader.read_to_string(templates_dir.join(partial))?;
         let partial = partial.with_extension("");
 
@@ -414,10 +414,8 @@ impl TemplateTree {
     where
         FR: FileReader,
     {
-        let template_files = template_files
-            .into_iter()
-            .filter(|p| !is_partial_template(p))
-            .collect::<Vec<&PathBuf>>();
+        let template_files =
+            template_files.iter().filter(|p| !is_partial_template(p)).collect::<Vec<&PathBuf>>();
         if template_files.is_empty() {
             bail!("no templates found for project type \"{}\"", project_type);
         }

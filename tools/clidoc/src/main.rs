@@ -419,7 +419,7 @@ fn recurse_cmd_output<W: Write>(
         writeln!(output_writer, "__OPTIONS:__\n\n")?;
         // if there is a non-empty line of the contents starts with a * or `, then treat it as
         // markdown and do not print out the code fence.
-        let is_markdown = contents.into_iter().any(|s| {
+        let is_markdown = contents.iter().any(|s| {
             !s.is_empty() && (s.trim_start().starts_with("*") || s.trim_start().starts_with("`"))
         });
         if !is_markdown {

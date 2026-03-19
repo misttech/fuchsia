@@ -216,7 +216,7 @@ pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
             0 => {
                 let supported_keywords = self
                     .supported()
-                    .into_iter()
+                    .iter()
                     .map(|k| format!("\"{}\"", k))
                     .collect::<Vec<_>>()
                     .join(", ");
