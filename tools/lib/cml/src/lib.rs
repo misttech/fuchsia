@@ -23,7 +23,6 @@ use cml_macro::{OneOrMany, Reference};
 use json5format::{FormatOptions, PathOption};
 use maplit::{hashmap, hashset};
 use serde::{Deserialize, Serialize, de, ser};
-use serde_json::{Map, Value};
 use std::fmt;
 use std::hash::Hash;
 use std::num::NonZeroU32;
@@ -39,9 +38,7 @@ use crate::types::common::{ContextCapabilityClause, ContextPathClause, ContextSp
 pub use crate::types::document::{Document, DocumentContext, parse_and_hydrate};
 pub use crate::types::environment::{Environment, ResolverRegistration};
 pub use crate::types::expose::{ContextExpose, Expose};
-pub use crate::types::offer::{
-    Offer, OfferFromRef, OfferToAllCapability, OfferToRef, offer_to_all_from_offer,
-};
+pub use crate::types::offer::{Offer, OfferFromRef, OfferToAllCapability, OfferToRef};
 pub use crate::types::program::Program;
 pub use crate::types::r#use::{Use, UseFromRef};
 
@@ -71,22 +68,6 @@ pub fn load_cml_with_context(
 ) -> Result<DocumentContext, Error> {
     let file_arc = Arc::new(file.to_path_buf());
     parse_and_hydrate(file_arc, buffer)
-}
-
-/// Parses a string `buffer` into a vector of [Document]. `file` is used for error reporting.
-/// Supports JSON encoded as an array of Document JSON objects.
-pub fn parse_many_documents(
-    buffer: &String,
-    file: &std::path::Path,
-) -> Result<Vec<Document>, Error> {
-    let res: Result<Vec<Document>, _> = serde_json5::from_str(&buffer);
-    match res {
-        Err(_) => {
-            let d = parse_one_document(buffer, file)?;
-            Ok(vec![d])
-        }
-        Ok(docs) => Ok(docs),
-    }
 }
 
 /// Generates deserializer for `OneOrMany<Name>`.
@@ -130,58 +111,6 @@ pub enum SourceAvailability {
 impl Default for SourceAvailability {
     fn default() -> Self {
         Self::Required
-    }
-}
-
-impl<T> Canonicalize for Vec<T>
-where
-    T: Canonicalize + CapabilityClause + PathClause,
-{
-    fn canonicalize(&mut self) {
-        // Collapse like-entries into one. Like entries are those that are equal in all fields
-        // but their capability names. Accomplish this by collecting all the names into a vector
-        // keyed by an instance of T with its names removed.
-        let mut to_merge: Vec<(T, Vec<Name>)> = vec![];
-        let mut to_keep: Vec<T> = vec![];
-        self.iter().for_each(|c| {
-            // Any entry with a `path` set cannot be merged with another.
-            if !c.are_many_names_allowed() || c.path().is_some() {
-                to_keep.push(c.clone());
-                return;
-            }
-            let mut names: Vec<Name> = c.names().into_iter().map(Into::into).collect();
-            let mut copy: T = c.clone();
-            copy.set_names(vec![Name::from_str("a").unwrap()]); // The name here is arbitrary.
-            let r = to_merge.iter().position(|(t, _)| t == &copy);
-            match r {
-                Some(i) => to_merge[i].1.append(&mut names),
-                None => to_merge.push((copy, names)),
-            };
-        });
-        let mut merged = to_merge
-            .into_iter()
-            .map(|(mut t, names)| {
-                t.set_names(names);
-                t
-            })
-            .collect::<Vec<_>>();
-        to_keep.append(&mut merged);
-        *self = to_keep;
-
-        self.iter_mut().for_each(|c| c.canonicalize());
-        self.sort_by(|a, b| {
-            // Sort by capability type, then by the name of the first entry for
-            // that type.
-            let a_type = a.capability_type().unwrap();
-            let b_type = b.capability_type().unwrap();
-            a_type.cmp(b_type).then_with(|| {
-                let a_names = a.names();
-                let b_names = b.names();
-                let a_first_name = a_names.first().unwrap();
-                let b_first_name = b_names.first().unwrap();
-                a_first_name.cmp(b_first_name)
-            })
-        });
     }
 }
 
@@ -857,35 +786,12 @@ pub trait CapabilityClause: Clone + PartialEq + std::fmt::Debug {
     }
 }
 
-trait Canonicalize {
-    fn canonicalize(&mut self);
-}
-
 trait CanonicalizeContext {
     fn canonicalize_context(&mut self);
 }
 
-pub trait AsClause {
-    fn r#as(&self) -> Option<&BorrowedName>;
-}
-
 pub trait AsClauseContext {
     fn r#as(&self) -> Option<ContextSpanned<&BorrowedName>>;
-}
-
-pub trait PathClause {
-    fn path(&self) -> Option<&Path>;
-}
-
-pub trait FilterClause {
-    fn filter(&self) -> Option<&Map<String, Value>>;
-}
-
-pub fn alias_or_name<'a>(
-    alias: Option<&'a BorrowedName>,
-    name: &'a BorrowedName,
-) -> &'a BorrowedName {
-    alias.unwrap_or(name)
 }
 
 pub fn alias_or_name_context<'a>(
@@ -976,9 +882,10 @@ pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::document::Document;
+    use crate::types::document;
     use crate::types::environment::RunnerRegistration;
     use assert_matches::assert_matches;
+    use serde_json::Value;
     use std::path::Path;
 
     // Exercise reference parsing tests on `OfferFromRef` because it contains every reference
@@ -1046,5 +953,18 @@ mod tests {
         assert_matches!(serde_json5::from_str::<Capability>("{ unknown: \"\" }"), Err(_));
         assert_matches!(serde_json5::from_str::<Child>("{ unknown: \"\" }"), Err(_));
         assert_matches!(serde_json5::from_str::<Collection>("{ unknown: \"\" }"), Err(_));
+    }
+
+    #[test]
+    fn test_context_pipeline_denies_unknown_fields() {
+        let dummy_path = std::sync::Arc::new(std::path::PathBuf::from("test.cml"));
+        let bad_json = "{ unknown : \"\" }".to_string();
+
+        let result = document::parse_and_hydrate(dummy_path, &bad_json);
+
+        assert!(
+            result.is_err(),
+            "parse should fail because the underlying Document rejected unknown fields"
+        );
     }
 }

@@ -10,6 +10,7 @@ use fidl_fuchsia_component_decl::Component;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Write a depfile.
 /// Given an output and its includes, writes a depfile in Make format.
@@ -52,9 +53,31 @@ pub(crate) fn read_cml(file: &Path) -> Result<Document, Error> {
 /// collect .cml files to merge using "GN metadata", which can only output its merged
 /// representation as a JSON array. In the case of component GN rules, this is an
 /// array of many .cml JSON objects.
-pub(crate) fn read_cml_tolerate_gn_metadata(file: &Path) -> Result<Vec<Document>, Error> {
+pub(crate) fn read_cml_tolerate_gn_metadata(
+    file: &std::path::Path,
+) -> Result<Vec<cml::types::document::DocumentContext>, Error> {
     let buffer = read_file_to_string(file)?;
-    cml::parse_many_documents(&buffer, file)
+    let file_arc = Arc::new(file.to_path_buf());
+
+    let multiple_cml: Result<Vec<serde_json::Value>, _> = serde_json5::from_str(&buffer);
+
+    match multiple_cml {
+        Ok(values) => {
+            let mut docs = Vec::new();
+            for value in values {
+                let inner_str = serde_json::to_string(&value)
+                    .map_err(|e| Error::internal(format!("JSON stringify failed: {}", e)))?;
+                docs.push(cml::types::document::parse_and_hydrate(file_arc.clone(), &inner_str)?);
+            }
+            Ok(docs)
+        }
+        Err(_) => {
+            // Catch the "expected a sequence" error because we got a map { ... }
+            // This is just a normal, single CML file.
+            let single_doc = cml::types::document::parse_and_hydrate(file_arc, &buffer)?;
+            Ok(vec![single_doc])
+        }
+    }
 }
 
 fn read_file_to_string(file: &Path) -> Result<String, Error> {

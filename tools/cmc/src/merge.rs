@@ -9,7 +9,7 @@ use std::fmt::Display;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::sync::Arc;
 
 /// read in the provided list of json files, merge them, and pretty-print the merged result to
 /// stdout if output is None or to the provided path if output is Some.
@@ -36,19 +36,21 @@ pub(crate) fn merge(
             }
         }
     }
+
     if files.is_empty() {
-        return Err(Error::invalid_args(format!("no files provided")));
+        return Err(Error::invalid_args("no files provided".to_string()));
     }
 
-    // If given an aggregated CML file generated using GN metadata, merge all of the included
-    // CML objects therein.
-    let mut document = cml::parse_one_document(&"{}".to_string(), &PathBuf::from_str("").unwrap())?;
+    let dummy_path = Arc::new(PathBuf::from(""));
+    let mut document = cml::types::document::parse_and_hydrate(dummy_path, &"{}".to_string())?;
+
     for file in &files {
-        let include_documents = util::read_cml_tolerate_gn_metadata(&file)?;
-        for mut d in include_documents.into_iter() {
-            document.merge_from(&mut d, &file)?;
+        let include_documents = util::read_cml_tolerate_gn_metadata(file)?;
+        for d in include_documents.into_iter() {
+            document.merge_from(d, file)?;
         }
     }
+
     document.canonicalize();
 
     let mut writer: Box<dyn Write> = if let Some(output_path) = &output {
@@ -59,10 +61,10 @@ pub(crate) fn merge(
     } else {
         Box::new(std::io::stdout())
     };
+
     write!(writer, "{}", HeaderFormatter { input_files: files.as_ref() })?;
     serde_json::to_writer_pretty(writer, &document)?;
 
-    // Write files to depfile
     if let Some(depfile_path) = depfile {
         write_depfile(&depfile_path, output.as_ref(), &files)?;
     }

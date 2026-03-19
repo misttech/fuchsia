@@ -6,10 +6,7 @@ use crate::one_or_many::OneOrMany;
 use crate::types::capability::ContextCapability;
 use crate::types::common::{ContextCapabilityClause, option_one_or_many_as_ref_context};
 use crate::types::r#use::ContextUse;
-use crate::{
-    AsClause, AsClauseContext, Capability, CapabilityClause, ContextSpanned, Error, PathClause,
-    Use, alias_or_name, alias_or_name_context,
-};
+use crate::{AsClauseContext, ContextSpanned, Error, alias_or_name_context};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
     NamespacePath, OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
@@ -59,15 +56,6 @@ pub enum CapabilityId<'a> {
     Configuration(&'a BorrowedName),
 }
 
-/// Generates a `Vec<&BorrowedName>` -> `Vec<CapabilityId>` conversion function.
-macro_rules! capability_ids_from_names {
-    ($name:ident, $variant:expr) => {
-        fn $name(names: Vec<&'a BorrowedName>) -> Vec<Self> {
-            names.into_iter().map(|n| $variant(n)).collect()
-        }
-    };
-}
-
 /// Generates a `Vec<ContextSpanned<&BorrowedName>>` -> `Vec<(CapabilityId, Arc<PathBuf>)>` conversion function.
 macro_rules! capability_ids_from_context_names {
     ($name:ident, $variant:expr) => {
@@ -76,15 +64,6 @@ macro_rules! capability_ids_from_context_names {
                 .into_iter()
                 .map(|spanned_name| ($variant(spanned_name.value), spanned_name.origin))
                 .collect()
-        }
-    };
-}
-
-/// Generates a `Vec<Path>` -> `Vec<CapabilityId>` conversion function.
-macro_rules! capability_ids_from_paths {
-    ($name:ident, $variant:expr) => {
-        fn $name(paths: Vec<Path>) -> Vec<Self> {
-            paths.into_iter().map(|p| $variant(p)).collect()
         }
     };
 }
@@ -150,258 +129,6 @@ impl<'a> CapabilityId<'a> {
             | CapabilityId::UsedDictionary(p) => Some(p.clone().into()),
             _ => None,
         }
-    }
-
-    /// Given a Use clause, return the set of target identifiers.
-    ///
-    /// When only one capability identifier is specified, the target identifier name is derived
-    /// using the "path" clause. If a "path" clause is not specified, the target identifier is the
-    /// same name as the source.
-    ///
-    /// When multiple capability identifiers are specified, the target names are the same as the
-    /// source names.
-    pub fn from_use(use_: &'a Use) -> Result<Vec<Self>, Error> {
-        // TODO: Validate that exactly one of these is set.
-        let alias = use_.path.as_ref();
-        if let Some(n) = use_.service() {
-            return Ok(Self::used_services_from(Self::get_one_or_many_svc_paths(
-                n,
-                alias,
-                use_.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = use_.protocol() {
-            if let Some(numbered_handle) = use_.numbered_handle {
-                return Ok(n
-                    .iter()
-                    .map(|_| CapabilityId::UsedProtocolNumberedHandle(numbered_handle))
-                    .collect());
-            }
-            return Ok(Self::used_protocols_from(Self::get_one_or_many_svc_paths(
-                n,
-                alias,
-                use_.capability_type().unwrap(),
-            )?));
-        } else if let Some(_) = use_.directory.as_ref() {
-            if use_.path.is_none() {
-                return Err(Error::validate("\"path\" should be present for `use directory`."));
-            }
-            return Ok(vec![CapabilityId::UsedDirectory(use_.path.as_ref().unwrap().clone())]);
-        } else if let Some(_) = use_.storage.as_ref() {
-            if use_.path.is_none() {
-                return Err(Error::validate("\"path\" should be present for `use storage`."));
-            }
-            return Ok(vec![CapabilityId::UsedStorage(use_.path.as_ref().unwrap().clone())]);
-        } else if let Some(_) = use_.event_stream() {
-            if let Some(path) = use_.path() {
-                return Ok(vec![CapabilityId::UsedEventStream(path.clone())]);
-            }
-            return Ok(vec![CapabilityId::UsedEventStream(Path::new(
-                "/svc/fuchsia.component.EventStream",
-            )?)]);
-        } else if let Some(n) = use_.runner() {
-            match n {
-                OneOrMany::One(name) => {
-                    return Ok(vec![CapabilityId::UsedRunner(name)]);
-                }
-                OneOrMany::Many(_) => {
-                    return Err(Error::validate("`use runner` should occur at most once."));
-                }
-            }
-        } else if let Some(_) = use_.config() {
-            return match &use_.key {
-                None => Err(Error::validate("\"key\" should be present for `use config`.")),
-                Some(name) => Ok(vec![CapabilityId::UsedConfiguration(name)]),
-            };
-        } else if let Some(n) = use_.dictionary() {
-            return Ok(Self::used_dictionaries_from(Self::get_one_or_many_svc_paths(
-                n,
-                alias,
-                use_.capability_type().unwrap(),
-            )?));
-        }
-        // Unsupported capability type.
-        let supported_keywords = use_
-            .supported()
-            .into_iter()
-            .map(|k| format!("\"{}\"", k))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(Error::validate(format!(
-            "`{}` declaration is missing a capability keyword, one of: {}",
-            use_.decl_type(),
-            supported_keywords,
-        )))
-    }
-
-    pub fn from_capability(capability: &'a Capability) -> Result<Vec<Self>, Error> {
-        // TODO: Validate that exactly one of these is set.
-        if let Some(n) = capability.service() {
-            if n.is_many() && capability.path.is_some() {
-                return Err(Error::validate(
-                    "\"path\" can only be specified when one `service` is supplied.",
-                ));
-            }
-            return Ok(Self::services_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.protocol() {
-            if n.is_many() && capability.path.is_some() {
-                return Err(Error::validate(
-                    "\"path\" can only be specified when one `protocol` is supplied.",
-                ));
-            }
-            return Ok(Self::protocols_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.directory() {
-            return Ok(Self::directories_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.storage() {
-            if capability.storage_id.is_none() {
-                return Err(Error::validate(
-                    "Storage declaration is missing \"storage_id\", but is required.",
-                ));
-            }
-            return Ok(Self::storages_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.runner() {
-            return Ok(Self::runners_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.resolver() {
-            return Ok(Self::resolvers_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.event_stream() {
-            return Ok(Self::event_streams_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.dictionary() {
-            return Ok(Self::dictionaries_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = capability.config() {
-            return Ok(Self::configurations_from(Self::get_one_or_many_names_no_span(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
-        }
-
-        // Unsupported capability type.
-        let supported_keywords = capability
-            .supported()
-            .into_iter()
-            .map(|k| format!("\"{}\"", k))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(Error::validate(format!(
-            "`{}` declaration is missing a capability keyword, one of: {}",
-            capability.decl_type(),
-            supported_keywords,
-        )))
-    }
-
-    /// Given an Offer or Expose clause, return the set of target identifiers.
-    ///
-    /// When only one capability identifier is specified, the target identifier name is derived
-    /// using the "as" clause. If an "as" clause is not specified, the target identifier is the
-    /// same name as the source.
-    ///
-    /// When multiple capability identifiers are specified, the target names are the same as the
-    /// source names.
-    pub fn from_offer_expose<T>(clause: &'a T) -> Result<Vec<Self>, Error>
-    where
-        T: CapabilityClause + AsClause + fmt::Debug,
-    {
-        // TODO: Validate that exactly one of these is set.
-        let alias = clause.r#as();
-        if let Some(n) = clause.service() {
-            return Ok(Self::services_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.protocol() {
-            return Ok(Self::protocols_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.directory() {
-            return Ok(Self::directories_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.storage() {
-            return Ok(Self::storages_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.runner() {
-            return Ok(Self::runners_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.resolver() {
-            return Ok(Self::resolvers_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(event_stream) = clause.event_stream() {
-            return Ok(Self::event_streams_from(Self::get_one_or_many_names_no_span(
-                event_stream,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.dictionary() {
-            return Ok(Self::dictionaries_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        } else if let Some(n) = clause.config() {
-            return Ok(Self::configurations_from(Self::get_one_or_many_names_no_span(
-                n,
-                alias,
-                clause.capability_type().unwrap(),
-            )?));
-        }
-
-        // Unsupported capability type.
-        let supported_keywords = clause
-            .supported()
-            .into_iter()
-            .map(|k| format!("\"{}\"", k))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(Error::validate(format!(
-            "`{}` declaration is missing a capability keyword, one of: {}",
-            clause.decl_type(),
-            supported_keywords,
-        )))
     }
 
     pub fn from_context_capability(
@@ -704,26 +431,6 @@ impl<'a> CapabilityId<'a> {
     }
 
     /// Returns the target names as a `Vec` from a declaration with `names` and `alias` as a `Vec`.
-    fn get_one_or_many_names_no_span<'b>(
-        names: OneOrMany<&'b BorrowedName>,
-        alias: Option<&'b BorrowedName>,
-        capability_type: &str,
-    ) -> Result<Vec<&'b BorrowedName>, Error> {
-        let names: Vec<&BorrowedName> = names.into_iter().collect();
-        if names.len() == 1 {
-            Ok(vec![alias_or_name(alias, &names[0])])
-        } else {
-            if alias.is_some() {
-                return Err(Error::validate(format!(
-                    "\"as\" can only be specified when one `{}` is supplied.",
-                    capability_type,
-                )));
-            }
-            Ok(names)
-        }
-    }
-
-    /// Returns the target names as a `Vec` from a declaration with `names` and `alias` as a `Vec`.
     fn get_one_or_many_names_context<'b>(
         name_wrapper: ContextSpanned<OneOrMany<&'b BorrowedName>>,
         alias: Option<ContextSpanned<&'b BorrowedName>>,
@@ -751,27 +458,6 @@ impl<'a> CapabilityId<'a> {
             .collect();
 
         Ok(final_names)
-    }
-
-    /// Returns the target paths as a `Vec` from a `use` declaration with `names` and `alias`.
-    fn get_one_or_many_svc_paths(
-        names: OneOrMany<&BorrowedName>,
-        alias: Option<&Path>,
-        capability_type: &str,
-    ) -> Result<Vec<Path>, Error> {
-        let names: Vec<_> = names.into_iter().collect();
-        match (names.len(), alias) {
-            (_, None) => {
-                Ok(names.into_iter().map(|n| format!("/svc/{}", n).parse().unwrap()).collect())
-            }
-            (1, Some(alias)) => Ok(vec![alias.clone()]),
-            (_, Some(_)) => {
-                return Err(Error::validate(format!(
-                    "\"path\" can only be specified when one `{}` is supplied.",
-                    capability_type,
-                )));
-            }
-        }
     }
 
     fn get_one_or_many_svc_paths_context(
@@ -805,20 +491,6 @@ impl<'a> CapabilityId<'a> {
             )),
         }
     }
-
-    capability_ids_from_names!(services_from, CapabilityId::Service);
-    capability_ids_from_names!(protocols_from, CapabilityId::Protocol);
-    capability_ids_from_names!(directories_from, CapabilityId::Directory);
-    capability_ids_from_names!(storages_from, CapabilityId::Storage);
-    capability_ids_from_names!(runners_from, CapabilityId::Runner);
-    capability_ids_from_names!(resolvers_from, CapabilityId::Resolver);
-    capability_ids_from_names!(event_streams_from, CapabilityId::EventStream);
-    capability_ids_from_names!(dictionaries_from, CapabilityId::Dictionary);
-    capability_ids_from_names!(configurations_from, CapabilityId::Configuration);
-
-    capability_ids_from_paths!(used_services_from, CapabilityId::UsedService);
-    capability_ids_from_paths!(used_protocols_from, CapabilityId::UsedProtocol);
-    capability_ids_from_paths!(used_dictionaries_from, CapabilityId::UsedDictionary);
 
     capability_ids_from_context_names!(services_from_context, CapabilityId::Service);
     capability_ids_from_context_names!(protocols_from_context, CapabilityId::Protocol);
@@ -866,8 +538,7 @@ impl fmt::Display for CapabilityId<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::offer::{ContextOffer, Offer};
-    use crate::types::r#use::Use;
+    use crate::types::offer::ContextOffer;
     use assert_matches::assert_matches;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -876,13 +547,6 @@ mod tests {
     fn test_offer_service() -> Result<(), Error> {
         let a: Name = "a".parse().unwrap();
         let b: Name = "b".parse().unwrap();
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::One(a.clone())),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Service(&a)]
-        );
 
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
@@ -898,14 +562,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::Service(&a), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Service(&a), CapabilityId::Service(&b)]
         );
 
         assert_eq!(
@@ -926,15 +582,6 @@ mod tests {
         );
 
         // "as" aliasing.
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                service: Some(OneOrMany::One(a.clone())),
-                r#as: Some(b.clone()),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Service(&b)]
-        );
-
         assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
@@ -964,14 +611,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::One(a.clone())),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedService("/svc/a".parse().unwrap())]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     service: Some(ContextSpanned {
@@ -983,17 +622,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::UsedService("/svc/a".parse().unwrap()), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
-                ..Use::default()
-            },)?,
-            vec![
-                CapabilityId::UsedService("/svc/a".parse().unwrap()),
-                CapabilityId::UsedService("/svc/b".parse().unwrap())
-            ]
         );
 
         assert_eq!(
@@ -1011,15 +639,6 @@ mod tests {
                 (CapabilityId::UsedService("/svc/a".parse().unwrap()), synthetic_origin.clone()),
                 (CapabilityId::UsedService("/svc/b".parse().unwrap()), synthetic_origin.clone())
             ]
-        );
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                service: Some(OneOrMany::One(a.clone())),
-                path: Some("/b".parse().unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedService("/b".parse().unwrap())]
         );
 
         assert_eq!(
@@ -1048,15 +667,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                event_stream: Some(OneOrMany::One(Name::new("test".to_string()).unwrap())),
-                path: Some(cm_types::Path::new("/svc/myevent".to_string()).unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedEventStream("/svc/myevent".parse().unwrap()),]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     event_stream: Some(ContextSpanned {
@@ -1075,16 +685,6 @@ mod tests {
                 CapabilityId::UsedEventStream("/svc/myevent".parse().unwrap()),
                 synthetic_origin.clone()
             )]
-        );
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                event_stream: Some(OneOrMany::One(Name::new("test".to_string()).unwrap())),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedEventStream(
-                "/svc/fuchsia.component.EventStream".parse().unwrap()
-            ),]
         );
 
         assert_eq!(
@@ -1117,14 +717,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                protocol: Some(OneOrMany::One(a.clone())),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Protocol(&a)]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     protocol: Some(ContextSpanned {
@@ -1136,14 +728,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::Protocol(&a), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Protocol(&a), CapabilityId::Protocol(&b)]
         );
 
         assert_eq!(
@@ -1174,14 +758,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::One(a.clone())),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedProtocol("/svc/a".parse().unwrap())]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     protocol: Some(ContextSpanned {
@@ -1193,16 +769,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::UsedProtocol("/svc/a".parse().unwrap()), synthetic_origin.clone())]
-        );
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
-                ..Use::default()
-            },)?,
-            vec![
-                CapabilityId::UsedProtocol("/svc/a".parse().unwrap()),
-                CapabilityId::UsedProtocol("/svc/b".parse().unwrap())
-            ]
         );
 
         assert_eq!(
@@ -1220,15 +786,6 @@ mod tests {
                 (CapabilityId::UsedProtocol("/svc/a".parse().unwrap()), synthetic_origin.clone()),
                 (CapabilityId::UsedProtocol("/svc/b".parse().unwrap()), synthetic_origin.clone())
             ]
-        );
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                protocol: Some(OneOrMany::One(a.clone())),
-                path: Some("/b".parse().unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedProtocol("/b".parse().unwrap())]
         );
 
         assert_eq!(
@@ -1260,14 +817,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                directory: Some(OneOrMany::One(a.clone())),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Directory(&a)]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     directory: Some(ContextSpanned {
@@ -1279,14 +828,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::Directory(&a), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                directory: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Directory(&a), CapabilityId::Directory(&b),]
         );
 
         assert_eq!(
@@ -1314,15 +855,6 @@ mod tests {
         let a: Name = "a".parse().unwrap();
 
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                directory: Some(a.clone()),
-                path: Some("/b".parse().unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedDirectory("/b".parse().unwrap())]
-        );
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -1353,14 +885,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                storage: Some(OneOrMany::One(a.clone())),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Storage(&a)]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     storage: Some(ContextSpanned {
@@ -1372,14 +896,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::Storage(&a), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                storage: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Storage(&a), CapabilityId::Storage(&b),]
         );
 
         assert_eq!(
@@ -1409,15 +925,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                storage: Some(a.clone()),
-                path: Some("/b".parse().unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedStorage("/b".parse().unwrap())]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     storage: Some(ContextSpanned {
@@ -1441,14 +948,6 @@ mod tests {
     #[test]
     fn test_use_runner() -> Result<(), Error> {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                runner: Some("elf".parse().unwrap()),
-                ..Use::default()
-            })?,
-            vec![CapabilityId::UsedRunner(BorrowedName::new("elf").unwrap())]
-        );
 
         assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
@@ -1478,14 +977,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                dictionary: Some(OneOrMany::One(a.clone())),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Dictionary(&a)]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_offer_expose(&ContextSpanned {
                 value: ContextOffer {
                     dictionary: Some(ContextSpanned {
@@ -1497,14 +988,6 @@ mod tests {
                 origin: synthetic_origin.clone(),
             })?,
             vec![(CapabilityId::Dictionary(&a), synthetic_origin.clone())]
-        );
-
-        assert_eq!(
-            CapabilityId::from_offer_expose(&Offer {
-                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
-                ..Offer::default()
-            },)?,
-            vec![CapabilityId::Dictionary(&a), CapabilityId::Dictionary(&b)]
         );
 
         assert_eq!(
@@ -1535,14 +1018,6 @@ mod tests {
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                dictionary: Some(OneOrMany::One(a.clone())),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedDictionary("/svc/a".parse().unwrap())]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     dictionary: Some(ContextSpanned {
@@ -1560,17 +1035,6 @@ mod tests {
         );
 
         assert_eq!(
-            CapabilityId::from_use(&Use {
-                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
-                ..Use::default()
-            },)?,
-            vec![
-                CapabilityId::UsedDictionary("/svc/a".parse().unwrap()),
-                CapabilityId::UsedDictionary("/svc/b".parse().unwrap())
-            ]
-        );
-
-        assert_eq!(
             CapabilityId::from_context_use(&ContextSpanned {
                 value: ContextUse {
                     dictionary: Some(ContextSpanned {
@@ -1585,15 +1049,6 @@ mod tests {
                 (CapabilityId::UsedDictionary("/svc/a".parse().unwrap()), synthetic_origin.clone()),
                 (CapabilityId::UsedDictionary("/svc/b".parse().unwrap()), synthetic_origin.clone())
             ]
-        );
-
-        assert_eq!(
-            CapabilityId::from_use(&Use {
-                dictionary: Some(OneOrMany::One(a.clone())),
-                path: Some("/b".parse().unwrap()),
-                ..Use::default()
-            },)?,
-            vec![CapabilityId::UsedDictionary("/b".parse().unwrap())]
         );
 
         assert_eq!(
@@ -1619,8 +1074,6 @@ mod tests {
 
     #[test]
     fn test_errors() -> Result<(), Error> {
-        assert_matches!(CapabilityId::from_offer_expose(&Offer::default()), Err(_));
-
         let synthetic_origin = Arc::new(PathBuf::from("synthetic"));
 
         assert_matches!(

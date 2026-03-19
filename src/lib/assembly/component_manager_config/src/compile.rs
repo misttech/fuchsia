@@ -656,8 +656,9 @@ impl Config {
         }
 
         // Disallow multiple capability ids of the same name.
-        let capability_ids = CapabilityId::from_capability(capability)?;
-        for capability_id in capability_ids {
+        let binding = span_capability(capability.clone());
+        let capability_ids = CapabilityId::from_context_capability(&binding)?;
+        for (capability_id, _) in capability_ids {
             if !used_ids.insert(capability_id.to_string()) {
                 return Err(Error::validate(format!(
                     "\"{}\" is a duplicate \"capability\" name",
@@ -686,8 +687,9 @@ impl Config {
         }
 
         // Disallow multiple capability ids of the same name.
-        let capability_ids = CapabilityId::from_capability(capability)?;
-        for capability_id in capability_ids {
+        let binding = span_capability(capability.clone());
+        let capability_ids = CapabilityId::from_context_capability(&binding)?;
+        for (capability_id, _) in capability_ids {
             if !used_ids.insert(capability_id.to_string()) {
                 return Err(Error::validate(format!(
                     "\"{}\" is a duplicate \"capability\" name",

@@ -16,18 +16,17 @@ use crate::types::environment::{
 use crate::types::expose::{ContextExpose, Expose, ExposeFromRef, ExposeToRef};
 use crate::types::offer::{
     ContextOffer, Offer, OfferFromRef, OfferToRef, TargetAvailability,
-    offer_to_all_would_duplicate, offer_to_all_would_duplicate_context,
+    offer_to_all_would_duplicate_context,
 };
 use crate::types::program::ContextProgram;
 use crate::types::right::RightsClause;
 use crate::types::r#use::{ContextUse, Use, UseFromRef};
 use crate::validate::CapabilityRequirements;
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Availability, Capability, CapabilityClause, ConfigKey,
+    AnyRef, AsClauseContext, Availability, Capability, CapabilityClause, ConfigKey,
     ConfigNestedValueType, ConfigRuntimeSource, ConfigType, ConfigValueType, ContextCapability,
-    ContextPathClause, ContextSpanned, DictionaryRef, EventScope, FromClause, FromClauseContext,
-    OneOrMany, Path, PathClause, Program, ResolverRegistration, RootDictionaryRef,
-    SourceAvailability, validate,
+    ContextPathClause, ContextSpanned, DictionaryRef, EventScope, FromClauseContext, OneOrMany,
+    Path, Program, ResolverRegistration, RootDictionaryRef, SourceAvailability, validate,
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name, StartupMode};
@@ -2431,8 +2430,7 @@ mod tests {
     use crate::types::common::synthetic_span;
     use crate::types::offer::create_offer;
     use crate::{
-        AsClause, CapabilityClause, Document, FromClause, OneOrMany, Path, PathClause, Program,
-        load_cml_with_context,
+        CapabilityClause, Document, FromClause, OneOrMany, Path, Program, load_cml_with_context,
     };
     use assert_matches::assert_matches;
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};

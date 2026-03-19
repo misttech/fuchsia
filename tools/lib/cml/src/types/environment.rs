@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::one_or_many::{OneOrMany, option_one_or_many_as_ref};
+use crate::one_or_many::OneOrMany;
 use crate::types::common::*;
 use crate::{
-    AnyRef, AsClause, AsClauseContext, CapabilityClause, ContextPathClause, Error, FromClause,
-    FromClauseContext, OfferFromRef, PathClause, merge_spanned_vec,
+    AnyRef, AsClauseContext, ContextPathClause, Error, FromClauseContext, OfferFromRef,
+    merge_spanned_vec,
 };
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
@@ -83,56 +83,6 @@ pub struct Environment {
     #[reference_doc(json_type = "number", rename = "__stop_timeout_ms")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_timeout_ms: Option<StopTimeoutMs>,
-}
-
-impl Environment {
-    pub fn merge_from(&mut self, other: &mut Self) -> Result<(), Error> {
-        if self.extends.is_none() {
-            self.extends = other.extends.take();
-        } else if other.extends.is_some() && other.extends != self.extends {
-            return Err(Error::validate(
-                "cannot merge `environments` that declare conflicting `extends`",
-            ));
-        }
-
-        if self.stop_timeout_ms.is_none() {
-            self.stop_timeout_ms = other.stop_timeout_ms;
-        } else if other.stop_timeout_ms.is_some() && other.stop_timeout_ms != self.stop_timeout_ms {
-            return Err(Error::validate(
-                "cannot merge `environments` that declare conflicting `stop_timeout_ms`",
-            ));
-        }
-
-        // Perform naive vector concatenation and rely on later validation to ensure
-        // no conflicting entries.
-        match &mut self.runners {
-            Some(r) => {
-                if let Some(o) = &mut other.runners {
-                    r.append(o);
-                }
-            }
-            None => self.runners = other.runners.take(),
-        }
-
-        match &mut self.resolvers {
-            Some(r) => {
-                if let Some(o) = &mut other.resolvers {
-                    r.append(o);
-                }
-            }
-            None => self.resolvers = other.resolvers.take(),
-        }
-
-        match &mut self.debug {
-            Some(r) => {
-                if let Some(o) = &mut other.debug {
-                    r.append(o);
-                }
-            }
-            None => self.debug = other.debug.take(),
-        }
-        Ok(())
-    }
 }
 
 /// A reference in an environment.
@@ -256,12 +206,6 @@ impl FromClauseContext for ContextRunnerRegistration {
     }
 }
 
-impl FromClause for RunnerRegistration {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        OneOrMany::One(AnyRef::from(&self.from))
-    }
-}
-
 #[derive(Deserialize, Debug, PartialEq, ReferenceDoc, Serialize)]
 #[serde(deny_unknown_fields)]
 #[reference_doc(fields_as = "list")]
@@ -300,12 +244,6 @@ pub struct ContextResolverRegistration {
     pub resolver: ContextSpanned<Name>,
     pub from: ContextSpanned<RegistrationRef>,
     pub scheme: ContextSpanned<cm_types::UrlScheme>,
-}
-
-impl FromClause for ResolverRegistration {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        OneOrMany::One(AnyRef::from(&self.from))
-    }
 }
 
 impl FromClauseContext for ContextResolverRegistration {
@@ -444,81 +382,6 @@ impl ContextCapabilityClause for ContextDebugRegistration {
         None
     }
     fn set_availability(&mut self, _a: Option<ContextSpanned<Availability>>) {}
-}
-
-impl AsClause for DebugRegistration {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        self.r#as.as_ref().map(Name::as_ref)
-    }
-}
-
-impl PathClause for DebugRegistration {
-    fn path(&self) -> Option<&Path> {
-        None
-    }
-}
-
-impl FromClause for DebugRegistration {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        OneOrMany::One(AnyRef::from(&self.from))
-    }
-}
-
-impl CapabilityClause for DebugRegistration {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-
-    fn set_service(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_protocol(&mut self, o: Option<OneOrMany<Name>>) {
-        self.protocol = o;
-    }
-    fn set_directory(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_storage(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_runner(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_resolver(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_event_stream(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_dictionary(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_config(&mut self, _o: Option<OneOrMany<Name>>) {}
-
-    fn availability(&self) -> Option<Availability> {
-        None
-    }
-    fn set_availability(&mut self, _a: Option<Availability>) {}
-
-    fn decl_type(&self) -> &'static str {
-        "debug"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &["service", "protocol"]
-    }
-    fn are_many_names_allowed(&self) -> bool {
-        ["protocol"].contains(&self.capability_type().unwrap())
-    }
 }
 
 impl Hydrate for Environment {

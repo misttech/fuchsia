@@ -3,16 +3,13 @@
 // found in the LICENSE file.
 
 use crate::types::common::*;
-use crate::types::right::{Rights, RightsClause};
+use crate::types::right::Rights;
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Canonicalize, CanonicalizeContext, CapabilityClause,
-    DictionaryRef, Error, EventScope, FilterClause, FromClause, FromClauseContext, PathClause,
-    SourceAvailability,
+    AnyRef, AsClauseContext, CanonicalizeContext, DictionaryRef, Error, EventScope,
+    FromClauseContext, SourceAvailability,
 };
 
-use crate::one_or_many::{
-    OneOrMany, one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
-};
+use crate::one_or_many::{OneOrMany, one_or_many_from_context};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DependencyType, HandleType, Name, OnTerminate,
     ParseError, Path, RelativePath, StartupMode, Url,
@@ -20,7 +17,6 @@ pub use cm_types::{
 use cml_macro::{OneOrMany, Reference};
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use std::fmt;
 use std::path::PathBuf;
@@ -182,149 +178,6 @@ impl Expose {
             availability: None,
             source_availability: None,
         }
-    }
-}
-
-impl FromClause for Expose {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        one_or_many_from_impl(&self.from)
-    }
-}
-
-impl AsClause for Expose {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        self.r#as.as_ref().map(Name::as_ref)
-    }
-}
-
-impl PathClause for Expose {
-    fn path(&self) -> Option<&Path> {
-        None
-    }
-}
-
-impl FilterClause for Expose {
-    fn filter(&self) -> Option<&Map<String, Value>> {
-        None
-    }
-}
-
-impl RightsClause for Expose {
-    fn rights(&self) -> Option<&Rights> {
-        self.rights.as_ref()
-    }
-}
-
-impl Canonicalize for Expose {
-    fn canonicalize(&mut self) {
-        // Sort the names of the capabilities. Only capabilities with OneOrMany values are included here.
-        if let Some(service) = &mut self.service {
-            service.canonicalize();
-        } else if let Some(protocol) = &mut self.protocol {
-            protocol.canonicalize();
-        } else if let Some(directory) = &mut self.directory {
-            directory.canonicalize();
-        } else if let Some(runner) = &mut self.runner {
-            runner.canonicalize();
-        } else if let Some(resolver) = &mut self.resolver {
-            resolver.canonicalize();
-        } else if let Some(event_stream) = &mut self.event_stream {
-            event_stream.canonicalize();
-            if let Some(scope) = &mut self.scope {
-                scope.canonicalize();
-            }
-        }
-        // TODO(https://fxbug.dev/300500098): canonicalize dictionaries
-    }
-}
-
-impl CapabilityClause for Expose {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.service)
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.directory)
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.runner)
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.resolver)
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.event_stream)
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.dictionary)
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.config)
-    }
-
-    fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
-        self.service = o;
-    }
-    fn set_protocol(&mut self, o: Option<OneOrMany<Name>>) {
-        self.protocol = o;
-    }
-    fn set_directory(&mut self, o: Option<OneOrMany<Name>>) {
-        self.directory = o;
-    }
-    fn set_storage(&mut self, _o: Option<OneOrMany<Name>>) {}
-    fn set_runner(&mut self, o: Option<OneOrMany<Name>>) {
-        self.runner = o;
-    }
-    fn set_resolver(&mut self, o: Option<OneOrMany<Name>>) {
-        self.resolver = o;
-    }
-    fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
-        self.event_stream = o;
-    }
-    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
-        self.dictionary = o;
-    }
-    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
-        self.config = o;
-    }
-
-    fn availability(&self) -> Option<Availability> {
-        None
-    }
-    fn set_availability(&mut self, _a: Option<Availability>) {}
-
-    fn decl_type(&self) -> &'static str {
-        "expose"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &[
-            "service",
-            "protocol",
-            "directory",
-            "runner",
-            "resolver",
-            "event_stream",
-            "dictionary",
-            "config",
-        ]
-    }
-    fn are_many_names_allowed(&self) -> bool {
-        [
-            "service",
-            "protocol",
-            "directory",
-            "runner",
-            "resolver",
-            "event_stream",
-            "dictionary",
-            "config",
-        ]
-        .contains(&self.capability_type().unwrap())
     }
 }
 

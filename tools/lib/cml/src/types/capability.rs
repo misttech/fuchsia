@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Canonicalize, CanonicalizeContext, CapabilityClause,
-    ConfigNestedValueType, ConfigType, Error, FilterClause, PathClause,
+    AnyRef, AsClauseContext, CanonicalizeContext, ConfigNestedValueType, ConfigType, Error,
 };
 
-use crate::one_or_many::{OneOrMany, always_one, always_one_context, option_one_or_many_as_ref};
+use crate::one_or_many::{OneOrMany, always_one_context};
 use crate::types::common::*;
 use crate::types::right::{Rights, RightsClause};
 pub use cm_types::{
@@ -17,7 +16,6 @@ pub use cm_types::{
 use cml_macro::Reference;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use std::num::NonZeroU32;
 
 use std::fmt;
@@ -199,127 +197,6 @@ pub struct Capability {
     ///
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery: Option<DeliveryType>,
-}
-
-impl Canonicalize for Capability {
-    fn canonicalize(&mut self) {
-        // Sort the names of the capabilities. Only capabilities with OneOrMany values are included here.
-        if let Some(service) = &mut self.service {
-            service.canonicalize()
-        } else if let Some(protocol) = &mut self.protocol {
-            protocol.canonicalize()
-        } else if let Some(event_stream) = &mut self.event_stream {
-            event_stream.canonicalize()
-        }
-    }
-}
-
-impl AsClause for Capability {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        None
-    }
-}
-
-impl PathClause for Capability {
-    fn path(&self) -> Option<&Path> {
-        self.path.as_ref()
-    }
-}
-
-impl FilterClause for Capability {
-    fn filter(&self) -> Option<&Map<String, Value>> {
-        None
-    }
-}
-
-impl RightsClause for Capability {
-    fn rights(&self) -> Option<&Rights> {
-        self.rights.as_ref()
-    }
-}
-
-impl CapabilityClause for Capability {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.service)
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.directory.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.storage.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.runner.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.resolver.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.event_stream)
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.dictionary.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.config.as_ref().map(|n| OneOrMany::One(n.as_ref()))
-    }
-
-    fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
-        self.service = o;
-    }
-    fn set_protocol(&mut self, o: Option<OneOrMany<Name>>) {
-        self.protocol = o;
-    }
-    fn set_directory(&mut self, o: Option<OneOrMany<Name>>) {
-        self.directory = always_one(o);
-    }
-    fn set_storage(&mut self, o: Option<OneOrMany<Name>>) {
-        self.storage = always_one(o);
-    }
-    fn set_runner(&mut self, o: Option<OneOrMany<Name>>) {
-        self.runner = always_one(o);
-    }
-    fn set_resolver(&mut self, o: Option<OneOrMany<Name>>) {
-        self.resolver = always_one(o);
-    }
-    fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
-        self.event_stream = o;
-    }
-    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
-        self.dictionary = always_one(o);
-    }
-
-    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
-        self.config = always_one(o);
-    }
-
-    fn availability(&self) -> Option<Availability> {
-        None
-    }
-    fn set_availability(&mut self, _a: Option<Availability>) {}
-
-    fn decl_type(&self) -> &'static str {
-        "capability"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &[
-            "service",
-            "protocol",
-            "directory",
-            "storage",
-            "runner",
-            "resolver",
-            "event_stream",
-            "dictionary",
-            "config",
-        ]
-    }
-    fn are_many_names_allowed(&self) -> bool {
-        ["service", "protocol", "event_stream"].contains(&self.capability_type().unwrap())
-    }
 }
 
 /// A reference in a `storage from`.

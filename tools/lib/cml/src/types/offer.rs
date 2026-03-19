@@ -4,15 +4,12 @@
 
 use crate::types::common::*;
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Canonicalize, CanonicalizeContext, CapabilityClause,
-    CapabilityId, DictionaryRef, Error, EventScope, FromClause, FromClauseContext, PathClause,
-    SourceAvailability,
+    AnyRef, AsClauseContext, CanonicalizeContext, CapabilityId, DictionaryRef, Error, EventScope,
+    FromClauseContext, SourceAvailability,
 };
 
-use crate::one_or_many::{
-    OneOrMany, one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
-};
-use crate::types::right::{Rights, RightsClause};
+use crate::one_or_many::{OneOrMany, one_or_many_from_context};
+use crate::types::right::Rights;
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DependencyType, HandleType, Name, OnTerminate,
     ParseError, Path, RelativePath, StartupMode, Url,
@@ -263,148 +260,6 @@ impl Default for Offer {
     }
 }
 
-impl FromClause for Offer {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        one_or_many_from_impl(&self.from)
-    }
-}
-
-impl Canonicalize for Offer {
-    fn canonicalize(&mut self) {
-        // Sort the names of the capabilities. Only capabilities with OneOrMany values are included here.
-        if let Some(service) = &mut self.service {
-            service.canonicalize();
-        } else if let Some(protocol) = &mut self.protocol {
-            protocol.canonicalize();
-        } else if let Some(directory) = &mut self.directory {
-            directory.canonicalize();
-        } else if let Some(runner) = &mut self.runner {
-            runner.canonicalize();
-        } else if let Some(resolver) = &mut self.resolver {
-            resolver.canonicalize();
-        } else if let Some(storage) = &mut self.storage {
-            storage.canonicalize();
-        } else if let Some(event_stream) = &mut self.event_stream {
-            event_stream.canonicalize();
-            if let Some(scope) = &mut self.scope {
-                scope.canonicalize();
-            }
-        }
-    }
-}
-
-impl CapabilityClause for Offer {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.service)
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.directory)
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.storage)
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.runner)
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.resolver)
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.event_stream)
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.dictionary)
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.config)
-    }
-
-    fn set_service(&mut self, o: Option<OneOrMany<Name>>) {
-        self.service = o;
-    }
-    fn set_protocol(&mut self, o: Option<OneOrMany<Name>>) {
-        self.protocol = o;
-    }
-    fn set_directory(&mut self, o: Option<OneOrMany<Name>>) {
-        self.directory = o;
-    }
-    fn set_storage(&mut self, o: Option<OneOrMany<Name>>) {
-        self.storage = o;
-    }
-    fn set_runner(&mut self, o: Option<OneOrMany<Name>>) {
-        self.runner = o;
-    }
-    fn set_resolver(&mut self, o: Option<OneOrMany<Name>>) {
-        self.resolver = o;
-    }
-    fn set_event_stream(&mut self, o: Option<OneOrMany<Name>>) {
-        self.event_stream = o;
-    }
-    fn set_dictionary(&mut self, o: Option<OneOrMany<Name>>) {
-        self.dictionary = o;
-    }
-    fn set_config(&mut self, o: Option<OneOrMany<Name>>) {
-        self.config = o
-    }
-
-    fn availability(&self) -> Option<Availability> {
-        self.availability
-    }
-    fn set_availability(&mut self, a: Option<Availability>) {
-        self.availability = a;
-    }
-
-    fn decl_type(&self) -> &'static str {
-        "offer"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &[
-            "service",
-            "protocol",
-            "directory",
-            "storage",
-            "runner",
-            "resolver",
-            "event_stream",
-            "config",
-        ]
-    }
-    fn are_many_names_allowed(&self) -> bool {
-        [
-            "service",
-            "protocol",
-            "directory",
-            "storage",
-            "runner",
-            "resolver",
-            "event_stream",
-            "config",
-        ]
-        .contains(&self.capability_type().unwrap())
-    }
-}
-
-impl PathClause for Offer {
-    fn path(&self) -> Option<&Path> {
-        None
-    }
-}
-
-impl RightsClause for Offer {
-    fn rights(&self) -> Option<&Rights> {
-        self.rights.as_ref()
-    }
-}
-
-impl AsClause for Offer {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        self.r#as.as_ref().map(Name::as_ref)
-    }
-}
-
 /// A reference in an `offer to`.
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -442,21 +297,6 @@ impl<'a> OfferToAllCapability<'a> {
     }
 }
 
-pub fn offer_to_all_from_offer(value: &Offer) -> impl Iterator<Item = OfferToAllCapability<'_>> {
-    if let Some(protocol) = &value.protocol {
-        Either::Left(
-            protocol.iter().map(|protocol| OfferToAllCapability::Protocol(protocol.as_str())),
-        )
-    } else if let Some(dictionary) = &value.dictionary {
-        Either::Right(
-            dictionary
-                .iter()
-                .map(|dictionary| OfferToAllCapability::Dictionary(dictionary.as_str())),
-        )
-    } else {
-        panic!("Expected a dictionary or a protocol");
-    }
-}
 pub fn offer_to_all_and_component_diff_sources_message<'a>(
     capability: impl Iterator<Item = OfferToAllCapability<'a>>,
     component: &str,
@@ -499,60 +339,6 @@ pub fn offer_to_all_and_component_diff_capabilities_message<'a>(
     }
     write!(&mut output, r#" is aliased to "{}" with the same name as an offer to "all", but from different source {}"#, component, first_offer_to_all.offer_type_plural()).unwrap();
     output
-}
-
-/// Returns `Ok(true)` if desugaring the `offer_to_all` using `name` duplicates
-/// `specific_offer`. Returns `Ok(false)` if not a duplicate.
-///
-/// Returns Err if there is a validation error.
-pub fn offer_to_all_would_duplicate(
-    offer_to_all: &Offer,
-    specific_offer: &Offer,
-    target: &cm_types::BorrowedName,
-) -> Result<bool, Error> {
-    // Only protocols and dictionaries may be offered to all
-    assert!(offer_to_all.protocol.is_some() || offer_to_all.dictionary.is_some());
-
-    // If none of the pairs of the cross products of the two offer's protocols
-    // match, then the offer is certainly not a duplicate
-    if CapabilityId::from_offer_expose(specific_offer).iter().flatten().all(
-        |specific_offer_cap_id| {
-            CapabilityId::from_offer_expose(offer_to_all)
-                .iter()
-                .flatten()
-                .all(|offer_to_all_cap_id| offer_to_all_cap_id != specific_offer_cap_id)
-        },
-    ) {
-        return Ok(false);
-    }
-
-    let to_field_matches = specific_offer.to.iter().any(
-        |specific_offer_to| matches!(specific_offer_to, OfferToRef::Named(c) if **c == *target),
-    );
-
-    if !to_field_matches {
-        return Ok(false);
-    }
-
-    if offer_to_all.from != specific_offer.from {
-        return Err(Error::validate(offer_to_all_and_component_diff_sources_message(
-            offer_to_all_from_offer(offer_to_all),
-            target.as_str(),
-        )));
-    }
-
-    // Since the capability ID's match, the underlying protocol must also match
-    if offer_to_all_from_offer(offer_to_all).all(|to_all_protocol| {
-        offer_to_all_from_offer(specific_offer)
-            .all(|to_specific_protocol| to_all_protocol != to_specific_protocol)
-    }) {
-        return Err(Error::validate(offer_to_all_and_component_diff_capabilities_message(
-            offer_to_all_from_offer(offer_to_all),
-            target.as_str(),
-        )));
-    }
-
-    Ok(true)
 }
 
 /// A reference in an `offer from`.
