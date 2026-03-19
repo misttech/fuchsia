@@ -7,8 +7,12 @@ use assert_matches::assert_matches;
 use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative, push_box};
 use cm_types::{LongName, Name, Path, RelativePath, Url};
 use derivative::Derivative;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
 use std::collections::BTreeMap;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Name of the test runner.
 ///
@@ -18,7 +22,13 @@ pub const TEST_RUNNER_NAME: &str = "test_runner";
 /// Deserialize `object` into a cml::Document and then translate the result
 /// to ComponentDecl.
 pub fn new_decl_from_json(object: serde_json::Value) -> Result<ComponentDecl, Error> {
-    let doc = serde_json::from_value(object).context("failed to deserialize manifest")?;
+    let json_str = serde_json::to_string(&object).context("failed to stringify json value")?;
+
+    let dummy_path = Arc::new(PathBuf::from("programmatic_manifest.cml"));
+
+    let doc = cml::types::document::parse_and_hydrate(dummy_path, &json_str)
+        .context("failed to parse and hydrate manifest")?;
+
     let cm =
         cml::compile(&doc, cml::CompileOptions::default()).context("failed to compile manifest")?;
     Ok(cm.fidl_into_native())

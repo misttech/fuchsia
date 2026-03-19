@@ -157,7 +157,7 @@ impl ShellCommandsBuilder {
 
         let cml = DocumentContext { expose: Some(exposes), ..Default::default() };
 
-        let out_data = cml::translate::compile_context(&cml, cml::CompileOptions::default())
+        let out_data = cml::translate::compile(&cml, cml::CompileOptions::default())
             .context("compiling shell command routes")?;
         let cm_name = "shell-commands.cm";
         let cm_path = out_dir.as_ref().join(cm_name);

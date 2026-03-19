@@ -637,3 +637,33 @@ impl Hydrate for Capability {
         })
     }
 }
+
+/// Converts Capability -> CS ContextCapability
+pub fn span_capability(cap: Capability) -> ContextSpanned<ContextCapability> {
+    let context_cap = ContextCapability {
+        origin: Arc::new(PathBuf::from("programmatic_manifest.cml")),
+        service: cap.service.map(synthetic_span),
+        protocol: cap.protocol.map(synthetic_span),
+        directory: cap.directory.map(synthetic_span),
+        storage: cap.storage.map(synthetic_span),
+        runner: cap.runner.map(synthetic_span),
+        resolver: cap.resolver.map(synthetic_span),
+        event_stream: cap.event_stream.map(synthetic_span),
+        dictionary: cap.dictionary.map(synthetic_span),
+        config: cap.config.map(synthetic_span),
+        path: cap.path.map(synthetic_span),
+        rights: cap.rights.map(synthetic_span),
+        from: cap.from.map(synthetic_span),
+        backing_dir: cap.backing_dir.map(synthetic_span),
+        subdir: cap.subdir.map(synthetic_span),
+        storage_id: cap.storage_id.map(synthetic_span),
+        config_type: cap.config_type.map(synthetic_span),
+        config_max_size: cap.config_max_size.map(synthetic_span),
+        config_max_count: cap.config_max_count.map(synthetic_span),
+        config_element_type: cap.config_element_type.map(synthetic_span),
+        value: cap.value.map(synthetic_span),
+        delivery: cap.delivery.map(synthetic_span),
+    };
+
+    synthetic_span(context_cap)
+}

@@ -6,16 +6,17 @@ use argh::FromArgs;
 use cm_types::{Url, symmetrical_enums};
 use cml::error::{Error, Location};
 use cml::translate::CompileOptions;
-use cml::types::capability::Capability;
+use cml::types::capability::{Capability, span_capability};
 use cml::types::capability_id::CapabilityId;
 use fidl::persist;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as component_internal;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_internal as component_internal};
 
 trait Mergeable {
     fn merge(self, another: Self) -> Result<Self, Error>
@@ -462,10 +463,13 @@ impl TryFrom<Config> for component_internal::Config {
             namespace_capabilities: config
                 .namespace_capabilities
                 .as_ref()
-                .map(|c| {
-                    cml::translate::translate_capabilities_deprecated(
+                .map(|capabilities| {
+                    let spanned_caps: Vec<_> =
+                        capabilities.iter().cloned().map(span_capability).collect();
+
+                    cml::translate::translate_capabilities(
                         &CompileOptions::default(),
-                        c,
+                        &spanned_caps,
                         false,
                     )
                 })
@@ -473,10 +477,13 @@ impl TryFrom<Config> for component_internal::Config {
             builtin_capabilities: config
                 .builtin_capabilities
                 .as_ref()
-                .map(|c| {
-                    cml::translate::translate_capabilities_deprecated(
+                .map(|capabilities| {
+                    let spanned_caps: Vec<_> =
+                        capabilities.iter().cloned().map(span_capability).collect();
+
+                    cml::translate::translate_capabilities(
                         &CompileOptions::default(),
-                        c,
+                        &spanned_caps,
                         true,
                     )
                 })
@@ -841,9 +848,10 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::unpersist;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
     use std::io::Read;
     use tempfile::TempDir;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
     fn compile_str(input: &str) -> Result<component_internal::Config, Error> {
         let tmp_dir = TempDir::new().unwrap();

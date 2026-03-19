@@ -59,6 +59,7 @@ macro_rules! val {
 }
 
 /// Validates a given cml.
+#[allow(dead_code)]
 pub(crate) fn validate_cml(
     document: &Document,
     file: Option<&Path>,
@@ -75,7 +76,6 @@ pub(crate) fn validate_cml(
     res
 }
 
-#[allow(dead_code)]
 pub(crate) fn validate_cml_context(
     document: &DocumentContext,
     features: &FeatureSet,
@@ -11165,7 +11165,7 @@ mod tests {
         });
 
         let options = CompileOptions::new();
-        assert_matches!(compile(&input, options), Err(Error::Validate { .. }));
+        assert_matches!(compile(&input, options), Err(Error::ValidateContext { .. }));
     }
 
     // Tests for config capabilities

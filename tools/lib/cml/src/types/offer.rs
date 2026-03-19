@@ -983,16 +983,44 @@ pub fn offer_to_all_would_duplicate_context(
     Ok(true)
 }
 
+impl ContextOffer {
+    pub fn empty(from: OneOrMany<OfferFromRef>, to: OneOrMany<OfferToRef>) -> Self {
+        Self {
+            origin: std::sync::Arc::new(std::path::PathBuf::from("programmatic_manifest.cml")),
+            from: synthetic_span(from),
+            to: synthetic_span(to),
+            protocol: None,
+            r#as: None,
+            service: None,
+            directory: None,
+            config: None,
+            runner: None,
+            resolver: None,
+            storage: None,
+            dictionary: None,
+            dependency: None,
+            rights: None,
+            subdir: None,
+            event_stream: None,
+            scope: None,
+            availability: None,
+            source_availability: None,
+            target_availability: None,
+        }
+    }
+}
+
 #[cfg(test)]
 pub fn create_offer(
     protocol_name: &str,
     from: OneOrMany<OfferFromRef>,
     to: OneOrMany<OfferToRef>,
-) -> Offer {
-    Offer {
-        protocol: Some(OneOrMany::One(Name::from_str(protocol_name).unwrap())),
-        ..Offer::empty(from, to)
-    }
+) -> ContextSpanned<ContextOffer> {
+    let protocol = Some(OneOrMany::One(Name::from_str(protocol_name).unwrap())).map(synthetic_span);
+
+    let offer = ContextOffer { protocol, ..ContextOffer::empty(from, to) };
+
+    synthetic_span(offer)
 }
 
 #[cfg(test)]
@@ -1015,7 +1043,7 @@ mod tests {
 
         // different protocols
         assert!(
-            !offer_to_all_would_duplicate(
+            !offer_to_all_would_duplicate_context(
                 &offer_to_all,
                 &offer,
                 &Name::from_str("something").unwrap()
@@ -1031,7 +1059,7 @@ mod tests {
 
         // different targets
         assert!(
-            !offer_to_all_would_duplicate(
+            !offer_to_all_would_duplicate_context(
                 &offer_to_all,
                 &offer,
                 &Name::from_str("something").unwrap()
@@ -1045,11 +1073,11 @@ mod tests {
             OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
         );
 
-        offer.r#as = Some(Name::from_str("FakeLog").unwrap());
+        offer.value.r#as = Some(synthetic_span(Name::from_str("FakeLog").unwrap()));
 
         // target has alias
         assert!(
-            !offer_to_all_would_duplicate(
+            !offer_to_all_would_duplicate_context(
                 &offer_to_all,
                 &offer,
                 &Name::from_str("something").unwrap()
@@ -1064,7 +1092,7 @@ mod tests {
         );
 
         assert!(
-            offer_to_all_would_duplicate(
+            offer_to_all_would_duplicate_context(
                 &offer_to_all,
                 &offer,
                 &Name::from_str("something").unwrap()
@@ -1079,7 +1107,7 @@ mod tests {
         );
 
         assert!(
-            offer_to_all_would_duplicate(
+            offer_to_all_would_duplicate_context(
                 &offer_to_all,
                 &offer,
                 &Name::from_str("something").unwrap()

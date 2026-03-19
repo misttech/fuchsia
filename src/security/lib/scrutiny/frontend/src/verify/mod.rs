@@ -119,6 +119,9 @@ mod tests {
     use cm_types::Url;
     use component_id_index::InstanceId;
     use fidl::persist;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_component_internal as component_internal;
+    use fidl_fuchsia_io as fio;
     use maplit::hashset;
     use routing::component_instance::ComponentInstanceInterface;
     use scrutiny_collection::core::{
@@ -135,10 +138,6 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_component_decl as fdecl,
-        fidl_fuchsia_component_internal as component_internal, fidl_fuchsia_io as fio,
-    };
 
     static CORE_DEP_STR: &str = "core_dep";
 
@@ -285,9 +284,11 @@ mod tests {
         let mut components = vec![];
         let mut manifests = vec![];
         for (uri, json) in cmls {
-            let decl =
-                cml::compile(&serde_json::from_value(json)?, cml::CompileOptions::default())?
-                    .fidl_into_native();
+            let json_str = serde_json::to_string(&json)?;
+            let file_path = std::sync::Arc::new(std::path::PathBuf::from(uri));
+            let doc = cml::types::document::parse_and_hydrate(file_path, &json_str)?;
+            let decl = cml::compile(&doc, cml::CompileOptions::default())?.fidl_into_native();
+
             let manifest = make_v2_manifest(id, decl)?;
             let component = make_v2_component(id, uri);
 

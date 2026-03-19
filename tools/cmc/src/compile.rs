@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use tempfile_ext::NamedTempFileExt as _;
 
 use cml::load::{CmlLoader, OsResolver};
-use cml::translate::compile_context;
 use cml::types::common::ContextSpanned;
 use cml::types::program::ContextProgram;
 
@@ -60,7 +59,7 @@ pub(crate) fn compile(
     let options =
         if let Some(s) = config_package_path { options.config_package_path(s) } else { options };
 
-    let mut out_data = compile_context(&document, options)?;
+    let mut out_data = cml::compile(&document, options)?;
 
     let mut includes: Vec<PathBuf> =
         loader.visited_files().into_iter().filter(|p| p != file).collect();

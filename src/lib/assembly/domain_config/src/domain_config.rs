@@ -102,7 +102,7 @@ impl DomainConfigPackage {
 
         if self.config.expose_directories {
             let cml = DocumentContext { expose: Some(exposes), ..Default::default() };
-            let out_data = cml::translate::compile_context(&cml, cml::CompileOptions::default())
+            let out_data = cml::translate::compile(&cml, cml::CompileOptions::default())
                 .with_context(|| format!("compiling domain config routes"))?;
 
             let cm_name = format!("{}.cm", &self.config.name);

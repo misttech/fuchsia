@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use assembly_util::NamedMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
-use cml::translate::compile_context;
+use cml::translate::compile;
 use cml::types::expose::{ContextExpose, ExposeFromRef};
 use cml::{Availability, CompileOptions, ContextCapability, DocumentContext, OneOrMany};
 use fidl::persist;
@@ -151,7 +151,7 @@ pub fn build_config_capability_package(
         ..Default::default()
     };
 
-    let out_data = compile_context(&cml, CompileOptions::default())
+    let out_data = compile(&cml, CompileOptions::default())
         .with_context(|| format!("compiling config capability CML"))?;
 
     let cm_name = format!("config.cm");

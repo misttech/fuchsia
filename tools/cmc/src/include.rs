@@ -7,7 +7,7 @@ use crate::util;
 use crate::util::write_depfile;
 use cml::features::FeatureSet;
 use cml::load::{CmlLoader, OsResolver};
-use cml::translate::compile_context;
+use cml::translate::compile;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -35,10 +35,7 @@ pub(crate) fn merge_includes(
     document.canonicalize();
 
     if validate {
-        compile_context(
-            &document,
-            cml::CompileOptions::new().features(features).file(file.as_path()),
-        )?;
+        compile(&document, cml::CompileOptions::new().features(features).file(file.as_path()))?;
     }
 
     let json_str = serde_json::to_string_pretty(&document)?;

@@ -535,11 +535,12 @@ where
 mod tests {
     use super::*;
     use anyhow::Context as _;
-    use serde::de::DeserializeOwned;
     use serde::Serialize;
+    use serde::de::DeserializeOwned;
     use serde_json::json;
     use std::fmt::Debug;
-    use std::path::Path;
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     #[fuchsia::test]
     fn string_round_trip() {
@@ -714,7 +715,8 @@ mod tests {
 
     #[track_caller]
     fn round_trip_as_program<T: Debug + DeserializeOwned + Serialize>(t: &T) -> anyhow::Result<T> {
-        let file_path = Path::new("/fake/path/for/roundtrip/test");
+        let file_path = Arc::new(PathBuf::from("/fake/path/for/roundtrip/test"));
+
         let mut program_json = serde_json::to_value(&t).context("serializing T as json")?;
         program_json
             .as_object_mut()
@@ -726,9 +728,10 @@ mod tests {
         }))
         .context("serializing generated document as JSON")?;
 
-        let document = cml::parse_one_document(&manifest_str, file_path)
+        let document = cml::types::document::parse_and_hydrate(file_path, &manifest_str)
             .context("parsing generated document as CML")?;
-        let compiled = cml::compile(&document, cml::CompileOptions::new().file(file_path))
+
+        let compiled = cml::compile(&document, cml::CompileOptions::default())
             .context("compiling generated CML")?;
 
         let program = compiled
