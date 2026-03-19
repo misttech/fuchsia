@@ -27,9 +27,8 @@ class RingBufferServer;
 class AudioCompositeServer;
 
 struct Engine {
-  Engine()
-      : ring_buffer_format(
-            fuchsia_hardware_audio::Format2::WithPcmFormat(fuchsia_hardware_audio::PcmFormat{})) {}
+  inline Engine();
+
   size_t ring_buffer_index;
   size_t dai_index;
   std::optional<AmlTdmConfigDevice> device;
@@ -236,6 +235,12 @@ class AudioCompositeServer final
   // Inspect-related
   std::unique_ptr<Recorder> recorder_;
 };
+
+// This can't be defined until all the types are complete, so it has to be
+// outside the Engine class definition.
+inline Engine::Engine()
+    : ring_buffer_format(
+          fuchsia_hardware_audio::Format2::WithPcmFormat(fuchsia_hardware_audio::PcmFormat{})) {}
 
 }  // namespace audio::aml_g12
 
