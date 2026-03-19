@@ -123,7 +123,7 @@ KCOUNTER(vm_mmu_protect_make_execute_pages, "vm.mmu.protect.make_execute_pages")
 KCOUNTER(vm_mmu_page_table_alloc, "vm.mmu.pt.alloc")
 KCOUNTER(vm_mmu_page_table_free, "vm.mmu.pt.free")
 KCOUNTER(vm_mmu_page_table_reclaim, "vm.mmu.pt.reclaim")
-KCOUNTER(vm_mmu_harvest_preempts, "vm.mmu.harvest.preempts")
+KCOUNTER(vm_mmu_set_af_fail, "vm.mmu.set_af_fail")
 
 page_cache::PageCache page_cache;
 
@@ -469,6 +469,10 @@ class ArmArchVmAspace::ConsistencyManager {
     Flush();
 
     if (!list_is_empty(&to_free_)) {
+      // Any page tables in the to_free_ list have been disconnected from tt_virt_ and are no longer
+      // discoverable. Synchronize to ensure any previous readers have finished before freeing the
+      // pages.
+      aspace_.rcu_.Synchronize();
       CacheFreePages(&to_free_);
     }
   }
@@ -596,7 +600,7 @@ class ArmArchVmAspace::ConsistencyManager {
   static_assert(sizeof(PendingTlbs) == 8);
 
   // The aspace we are invalidating TLBs for.
-  const ArmArchVmAspace& aspace_;
+  ArmArchVmAspace& aspace_;
 
   // vm_page_t's to release to the PMM after the TLB invalidation occurs.
   list_node to_free_ = LIST_INITIAL_VALUE(to_free_);
@@ -1038,7 +1042,11 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::MapPageTable(pte_t attrs, bool ro,
           // terminal mappings start with the AF flag set, we then also need to start non-terminal
           // mappings as having the AF set.
           pte = page_table_paddr | MMU_PTE_L012_DESCRIPTOR_TABLE | MMU_PTE_ATTR_RES_SOFTWARE_AF;
-          update_pte(&page_table[index], pte);
+          // To ensure any rcu readers see the zeroed page table use a store-release here, which is
+          // paired with the load-acquire in the reader path. This is technically redundant, since
+          // the dsb above that synchronized with the hardware page table walkers would have also
+          // synchronized with the readers, but the explicit release here is added for clarity.
+          ktl::atomic_ref(page_table[index]).store(pte, ktl::memory_order_release);
           mapped++;
 
           // Tell the consistency manager that we've mapped an inner node.
@@ -1355,10 +1363,9 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(size_t* entry_limit, vaddr_t va
     // limit is too small to reach a terminal PTE.
     if (*entry_limit > 1) {
       *entry_limit -= 1;
-    } else if (!lock_.lock().IsContested() && pending_access_faults_.load() == 0) {
+    } else if (!lock_.lock().IsContested()) {
       // The entry_limit is either about to be, or already is, 0, but since the lock is not
-      // contended and there are no access faults in progress, we can reset the counter and perform
-      // another block of work before checking again.
+      // contended we can reset the counter and perform another block of work before checking again.
       *entry_limit = kHarvestEntriesBetweenUnlocks;
     } else {
       // This either changes the entry_limit from 1->0, or is a no-op if it was already 0. As the
@@ -1386,7 +1393,11 @@ void ArmArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in,
     const size_t chunk_size = ktl::min(size, block_size - vaddr_rem);
     const vaddr_t index = vaddr_rel >> index_shift;
 
-    pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    // In the case where this ends up being a reference to another table we load-acquire to ensure
+    // the contents of the table reflect the order it become visible to us. This matches the
+    // release performed when mapping in new page tables.
+    pte_t orig_pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_acquire);
+    pte_t pte = orig_pte;
 
     if (index_shift > page_size_shift_ &&
         (pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_BLOCK &&
@@ -1397,14 +1408,26 @@ void ArmArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in,
                (pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_TABLE) {
       // Set the software bit we use to represent that this page table has been accessed.
       pte |= MMU_PTE_ATTR_RES_SOFTWARE_AF;
-      update_pte(&page_table[index], pte);
+
+      // The result of the compare exchange is ignored as in the unlikely event we have raced with
+      // some other page table operation then we will just take another accessed fault.
+      if (!ktl::atomic_ref(page_table[index])
+               .compare_exchange_strong(orig_pte, pte, ktl::memory_order_relaxed)) {
+        vm_mmu_set_af_fail.Add(1);
+      }
       const paddr_t page_table_paddr = pte & MMU_PTE_OUTPUT_ADDR_MASK;
       pte_t* next_page_table = static_cast<pte_t*>(paddr_to_physmap(page_table_paddr));
       MarkAccessedPageTable(vaddr, vaddr_rem, chunk_size, index_shift - (page_size_shift_ - 3),
                             next_page_table);
     } else if (is_pte_valid(pte) && (pte & MMU_PTE_ATTR_AF) == 0) {
       pte |= MMU_PTE_ATTR_AF;
-      update_pte(&page_table[index], pte);
+
+      // The result of the compare exchange is ignored as in the unlikely event we have raced with
+      // some other page table operation then we will just take another accessed fault.
+      if (!ktl::atomic_ref(page_table[index])
+               .compare_exchange_strong(orig_pte, pte, ktl::memory_order_relaxed)) {
+        vm_mmu_set_af_fail.Add(1);
+      }
     }
     vaddr += chunk_size;
     vaddr_rel += chunk_size;
@@ -1761,20 +1784,8 @@ zx_status_t ArmArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
 
   while (remaining_size) {
     // Release and re-acquire the lock to let contending threads have a chance
-    // to acquire the arch aspace lock between iterations. Use arch::Yield() to
-    // give other CPUs spinning on the aspace mutex a slight edge in acquiring
-    // the mutex. Reenable preemption to flush any pending preemptions that may
-    // have pended during the critical section.
+    // to acquire the arch aspace lock between iterations.
     Guard<CriticalMutex> guard{&lock_};
-    if (pending_access_faults_.load() != 0) {
-      vm_mmu_harvest_preempts.Add(1);
-      guard.CallUnlocked([] { arch::Yield(); });
-      // There could still be pending_access_faults_, but they do not have the
-      // lock and we have no way to block and give them our priority. Instead of
-      // spinning and hoping they get scheduled and take the lock we perform one
-      // iteration of harvesting and then give them another chance to take the
-      // lock.
-    }
     ktrace::Scope trace = KTRACE_BEGIN_SCOPE_ENABLE(
         LOCAL_KTRACE_ENABLE, "kernel:vm", "harvest_loop", ("remaining_size", remaining_size));
     size_t entry_limit = kHarvestEntriesBetweenUnlocks;
@@ -1805,9 +1816,6 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
   // never directly on the unified aspace.
   DEBUG_ASSERT(!IsUnified());
 
-  AutoPendingAccessFault pending_access_fault{this};
-  Guard<CriticalMutex> a{&lock_};
-
   const vaddr_t vaddr_rel = vaddr - vaddr_base_;
   const vaddr_t vaddr_rel_max = 1UL << top_size_shift_;
   const size_t size = count * kPageSize;
@@ -1820,6 +1828,11 @@ zx_status_t ArmArchVmAspace::MarkAccessed(vaddr_t vaddr, size_t count) {
   }
 
   LOCAL_KTRACE("mmu mark accessed", ("vaddr", vaddr), ("size", size));
+
+  // Begin our read side critical section that ensures that the page tables we find from tt_virt_
+  // will remain valid. Note that the caller of MarkAccessed has guaranteed that the aspace is both
+  // alive and that Destroy() will not be called during.
+  rcu::AutoSimpleGenerationalReader reader(rcu_);
 
   MarkAccessedPageTable(vaddr, vaddr_rel, size, top_index_shift_, tt_virt_);
   if (!accessed_since_last_check_) {

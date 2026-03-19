@@ -8,6 +8,7 @@
 #ifndef ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_ASPACE_H_
 #define ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_ASPACE_H_
 
+#include <lib/mmu_rcu/simple_generational_rcu.h>
 #include <lib/relaxed_atomic.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
@@ -145,7 +146,7 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
                                   ConsistencyManager& cm) TA_REQ(lock_);
 
   void MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in, size_t size, uint index_shift,
-                             pte_t* page_table) TA_REQ(lock_);
+                             pte_t* page_table);
 
   // Splits a descriptor block into a set of next-level-down page blocks/pages.
   //
@@ -233,30 +234,40 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
 
   mutable DECLARE_CRITICAL_MUTEX(ArmArchVmAspace) lock_;
 
-  // Tracks the number of pending access faults. A non-zero value informs the access harvester to
-  // back off to avoid contention with access faults.
-  RelaxedAtomic<uint64_t> pending_access_faults_{0};
-
-  // Private RAII type to manage scoped inc/dec of pending_access_faults_ and preemption disabling.
-  class AutoPendingAccessFault {
-   public:
-    explicit AutoPendingAccessFault(ArmArchVmAspace* aspace);
-    ~AutoPendingAccessFault();
-
-    AutoPendingAccessFault(const AutoPendingAccessFault&) = delete;
-    AutoPendingAccessFault& operator=(const AutoPendingAccessFault&) = delete;
-
-   private:
-    // Include a preempt disable block so that during the state where we do not have the lock, but
-    // have incremented the pending_access_faults_, we cannot be preempted.
-    AutoPreemptDisabler preempt_disable_;
-    ArmArchVmAspace* aspace_;
-  };
-
   // Page allocate function, if set will be used instead of the default allocator
   const page_alloc_fn_t test_page_alloc_func_ = nullptr;
 
   // Pointer to the translation table.
+  //
+  // An RCU-like system is used for page table management. Unlike an actual RCU system, the page
+  // tables are not copied when modified, but rather updated live in parallel with readers. The
+  // life cycle management and read-side critical sections are, however, the same and so we can
+  // still use an rcu primitive in the implementation. The protocols are as follows:
+  //
+  // # Readers
+  //
+  // In order for a reader to actually avoid taking the main lock_, the external caller must
+  // provide a guarantee on object liveness, i.e. that Destroy() is not going to be called.
+  //
+  // The rcu_ read lock allows the reader to know that any page table it finds from the tt_virt_
+  // root will not be freed, and will be a 'valid' page table. Valid means that it can be
+  // interpreted as a page table with entries, although it may no longer actually be installed and
+  // findable by the hardware walker. To achieve this readers must:
+  //  * Assume that the value of any entry in the page table may change due to concurrent map/unmap
+  //    operations.
+  //  * Use load acquire orders when reading next level page table pointers to synchronize with
+  //    writers.
+  //
+  // For the moment the only reader is the MarkAccessed method, which will attempt to set the AF
+  // flag on entries.
+  //
+  // # Updaters
+  //
+  // To coordinate with parallel readers an update must:
+  //  * Use at least relaxed atomic operations when manipulating page table entries.
+  //  * Use atomic release operations when installing new page tables.
+  //  * Until Synchronize() is called should treat any page table as if visible to the hardware
+  //    walker and so must be a valid page table.
   paddr_t tt_phys_ = 0;
   vm_page_t* tt_page_ = nullptr;
   pte_t* tt_virt_ = nullptr;
@@ -277,17 +288,9 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
 
   // Number of CPUs this aspace is currently active on.
   ktl::atomic<uint32_t> num_active_cpus_ = 0;
+
+  rcu::SimpleGenerational rcu_;
 };
-
-inline ArmArchVmAspace::AutoPendingAccessFault::AutoPendingAccessFault(ArmArchVmAspace* aspace)
-    : aspace_{aspace} {
-  aspace_->pending_access_faults_.fetch_add(1);
-}
-
-inline ArmArchVmAspace::AutoPendingAccessFault::~AutoPendingAccessFault() {
-  [[maybe_unused]] const uint64_t previous_value = aspace_->pending_access_faults_.fetch_sub(1);
-  DEBUG_ASSERT(previous_value >= 1);
-}
 
 class ArmVmICacheConsistencyManager final : public ArchVmICacheConsistencyManagerInterface {
  public:
