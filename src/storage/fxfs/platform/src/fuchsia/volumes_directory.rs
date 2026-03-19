@@ -18,9 +18,7 @@ use fidl_fuchsia_fs_startup::{
     CheckOptions, CreateOptions, MountOptions, VolumeRequest, VolumeRequestStream,
 };
 use fidl_fuchsia_fxfs::{FileBackedVolumeProviderMarker, ProjectIdMarker};
-use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectTree, FsInspectVolume};
-use fuchsia_async as fasync;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
@@ -39,7 +37,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::directory::helper::DirectlyMutable;
-
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 const MEBIBYTE: u64 = 1024 * 1024;
 
 struct ProfileState {
@@ -589,7 +587,13 @@ impl VolumesDirectory {
         if let Some(state) = profiling_state {
             state.task.abort().await;
         }
-        self.lock().await.terminate().await
+        self.lock().await.terminate().await;
+        // TODO(https://fxbug.dev/452935329): Turn this into a real assert.
+        debug_assert!(
+            self.pager_dirty_bytes_count.load() == 0,
+            "Leaked {} dirty bytes.",
+            self.pager_dirty_bytes_count.load()
+        );
     }
 
     /// Serves the given volume on `outgoing_dir_server_end`.
@@ -843,6 +847,8 @@ impl VolumesDirectory {
     /// Reports that a certain number of bytes were cleaned in a pager-backed VMO.
     pub fn report_pager_clean(&self, byte_count: u64) {
         let prev_dirty = self.pager_dirty_bytes_count.fetch_sub(byte_count);
+        // TODO(https://fxbug.dev/452935329): Turn this into a real assert.
+        debug_assert!(prev_dirty >= byte_count, "Underflowed dirty bytes.");
 
         if prev_dirty < byte_count {
             // An unlikely scenario, but if there was an underflow, reset the pager dirty bytes to
@@ -1073,8 +1079,6 @@ mod tests {
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
-    use fidl_fuchsia_io as fio;
-    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use futures::{TryStreamExt, join};
@@ -1096,7 +1100,7 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
-
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
     async fn write_image_to_file(image: DeviceHolder, file: fio::FileProxy) {
         file.resize(image.size()).await.unwrap().expect("resize failed");
         let vmo = TempClonable::new(
