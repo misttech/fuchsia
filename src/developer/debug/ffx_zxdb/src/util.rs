@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl_fuchsia_debugger as fdebugger;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_debugger as fdebugger;
 
 /// A representation of a DebugAgent instance.
 pub struct Agent {
@@ -18,7 +19,8 @@ pub struct Agent {
 /// Iterates over all DebugAgent instances and collects all of the processes that each is attached
 /// to.
 pub async fn get_all_debug_agents(launcher_proxy: &fdebugger::LauncherProxy) -> Result<Vec<Agent>> {
-    let (iter, server_end) = fidl::endpoints::create_proxy::<fdebugger::AgentIteratorMarker>();
+    let (iter, server_end) =
+        launcher_proxy.domain().create_proxy::<fdebugger::AgentIteratorMarker>();
     launcher_proxy.get_agents(server_end)?;
 
     let mut agent_vec = Vec::<Agent>::new();
@@ -26,8 +28,10 @@ pub async fn get_all_debug_agents(launcher_proxy: &fdebugger::LauncherProxy) -> 
     while !agents.is_empty() {
         for agent in agents.into_iter() {
             let debug_agent_proxy = agent.client_end.into_proxy();
-            let (iter_proxy, iter_server) =
-                fidl::endpoints::create_proxy::<fdebugger::AttachedProcessIteratorMarker>();
+            let (iter_proxy, iter_server) = debug_agent_proxy
+                .domain()
+                .create_proxy::<fdebugger::AttachedProcessIteratorMarker>(
+            );
             debug_agent_proxy.get_attached_processes(iter_server)?;
 
             let mut agent =

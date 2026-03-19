@@ -4,35 +4,54 @@
 
 import("//build/rust/rustc_library.gni")
 
-rustc_library("ffx_zxdb") {
-  version = "0.1.0"
-  edition = "2024"
+template("ffx_zxdb_lib") {
+  rustc_library(target_name) {
+    forward_variables_from(invoker, "*", [ "deps" ])
+    version = "0.1.0"
+    edition = "2024"
 
+    deps = [
+      "//sdk/rust/zx-status",
+      "//sdk/rust/zx-types",
+      "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/errors:lib",
+      "//src/developer/ffx/lib/symbol-index",
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:futures-util",
+      "//third_party/rust_crates:rand",
+      "//third_party/rust_crates:signal-hook",
+      "//third_party/rust_crates:tokio",
+    ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    data_deps = [ "//src/developer/debug/zxdb:zxdb_host_tool" ]
+
+    sources = [
+      "src/background.rs",
+      "src/command_builder.rs",
+      "src/debug_agent.rs",
+      "src/debugger.rs",
+      "src/lib.rs",
+      "src/util.rs",
+    ]
+  }
+}
+
+ffx_zxdb_lib("ffx_zxdb") {
   deps = [
-    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
-    "//sdk/rust/zx-status",
-    "//sdk/rust/zx-types",
-    "//src/developer/ffx/config:lib",
-    "//src/developer/ffx/lib/errors:lib",
-    "//src/developer/ffx/lib/symbol-index",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:futures-util",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:signal-hook",
-    "//third_party/rust_crates:tokio",
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust_flex",
+    "//src/lib/fdomain/client:flex_fidl",
   ]
+}
 
-  data_deps = [ "//src/developer/debug/zxdb:zxdb_host_tool" ]
-
-  sources = [
-    "src/background.rs",
-    "src/command_builder.rs",
-    "src/debug_agent.rs",
-    "src/debugger.rs",
-    "src/lib.rs",
-    "src/util.rs",
+ffx_zxdb_lib("ffx_zxdb_fdomain") {
+  deps = [
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust_fdomain_flex",
+    "//src/lib/fdomain/client:flex_fdomain",
   ]
+  features = [ "fdomain" ]
 }
