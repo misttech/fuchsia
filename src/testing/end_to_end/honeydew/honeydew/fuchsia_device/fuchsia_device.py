@@ -238,6 +238,12 @@ class FuchsiaDevice(
         )
 
     @properties.DynamicProperty
+    def boot_id(self) -> str:
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.boot_id()
+        )
+
+    @properties.DynamicProperty
     def last_reboot_reason(self) -> str:
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.last_reboot_reason()

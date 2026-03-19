@@ -1332,6 +1332,32 @@ class AsyncFuchsiaDevice(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
+    async def boot_id(self) -> str:
+        """Gets the boot id from a device.
+
+        Returns:
+            The boot id string.
+
+        Raises:
+            errors.FuchsiaDeviceError: On failure to get boot ID.
+        """
+        try:
+            rcs_proxy = fd_remotecontrol.RemoteControlClient(
+                self.fuchsia_controller.ctx.connect_remote_control_proxy()
+            )
+            resp = (await rcs_proxy.identify_host()).unwrap()
+
+            if resp.response.boot_id is not None:
+                return str(resp.response.boot_id)
+
+            raise errors.FuchsiaDeviceError(
+                f"Boot ID not populated in IdentifyHost response for {self.device_name}"
+            )
+        except Exception as err:
+            raise errors.FuchsiaDeviceError(
+                f"Failed to get boot ID from {self.device_name}"
+            ) from err
+
     async def _last_reboot_info(self) -> f_feedback.LastReboot:
         """Gets the last reboot reason from a device.
 

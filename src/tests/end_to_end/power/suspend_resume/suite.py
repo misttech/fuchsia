@@ -30,6 +30,21 @@ class SuspendResumeTestSuite(fuchsia_base_test.FuchsiaBaseTest):
         usb_power_hub, usb_port = self._lookup_usb_power_hub(self.dut)
         self.dut.set_usb_power_hub(usb_power_hub, usb_port)
 
+    def setup_test(self) -> None:
+        super().setup_test()
+        self._boot_id_before = self.dut.boot_id
+        _LOGGER.info(
+            f"Recorded boot ID at start of test: {self._boot_id_before}"
+        )
+
+    def teardown_test(self) -> None:
+        assert_equal(
+            self.dut.boot_id,
+            self._boot_id_before,
+            f"Boot ID changed from {self._boot_id_before} to {self.dut.boot_id}",
+        )
+        super().teardown_test()
+
     def test_suspend_resume(self) -> None:
         power.suspend_resume(
             self.dut, Deadline.from_timeout(timedelta(minutes=1))
