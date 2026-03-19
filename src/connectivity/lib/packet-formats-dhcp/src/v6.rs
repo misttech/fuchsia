@@ -1123,7 +1123,7 @@ impl<'a> RecordBuilder for DhcpOption<'a> {
                     |len| (*requested_opts, len),
                 );
                 let () = buf.write_obj_front(&U16::new(len)).expect("buffer is too small");
-                for opt_code in requested_opts.into_iter() {
+                for opt_code in requested_opts.iter() {
                     let () = buf
                         .write_obj_front(&u16::from(*opt_code).to_be_bytes())
                         .expect("buffer is too small");

@@ -370,7 +370,7 @@ fn codegen_encode_list<W: io::Write>(
 ) -> Result {
     let element_name = format!("{}_element", name);
 
-    write_indented!(sink, indent, "for {} in {}.into_iter() {{\n", element_name, name)?;
+    write_indented!(sink, indent, "for {} in {}.iter() {{\n", element_name, name)?;
     // Increment indent
     {
         let indent = indent + TABSTOP;

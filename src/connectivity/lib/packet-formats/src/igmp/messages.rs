@@ -911,7 +911,7 @@ mod tests {
                 (
                     MulticastAddr::new(Ipv4Addr::new(addr)).unwrap(),
                     IgmpGroupRecordType::try_from(rec_type).unwrap(),
-                    sources.into_iter().copied().map(Ipv4Addr::new),
+                    sources.iter().copied().map(Ipv4Addr::new),
                 )
             }),
         );

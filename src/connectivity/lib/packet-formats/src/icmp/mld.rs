@@ -1019,7 +1019,7 @@ mod tests {
         assert_eq!(icmp.message_body.header.max_response_code.get(), max_resp_code);
         assert_eq!(icmp.message_body.header.group_addr, group_addr);
         assert_eq!(icmp.message_body.sources.len(), sources.len());
-        for (expected, actual) in sources.iter().zip(icmp.message_body.sources.into_iter()) {
+        for (expected, actual) in sources.iter().zip(icmp.message_body.sources.iter()) {
             assert_eq!(actual, expected);
         }
 
@@ -1229,7 +1229,7 @@ mod tests {
             S_FLAG,
             Mldv2QRV::new(QRV),
             Mldv2QQIC::lossy_try_from(Duration::from_secs(QQIC.into())).unwrap(),
-            SOURCES.into_iter(),
+            SOURCES.iter(),
         );
 
         let bytes =
@@ -1253,7 +1253,7 @@ mod tests {
         use crate::testdata::mld_router_report_v2::*;
 
         let builder = Mldv2ReportMessageBuilder::new(
-            RECORDS_HEADERS.into_iter().zip(RECORDS_SOURCES.into_iter()).map(|record| {
+            RECORDS_HEADERS.iter().zip(RECORDS_SOURCES.iter()).map(|record| {
                 let (record_header, record_sources) = record;
                 let (record_type, multicast_addr) = record_header;
                 (MulticastAddr::new(*multicast_addr).unwrap(), *record_type, record_sources.iter())

@@ -8,10 +8,9 @@
 //! supporting tests of this `fidl_fuchsia_net_neighbor_ext` crate and tests
 //! of clients of the `fuchsia.net.neighbors` FIDL library, respectively.
 
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use futures::future::FusedFuture;
 use futures::{FutureExt, Stream, StreamExt as _};
+use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_neighbor as fnet_neighbor};
 
 /// Responds to the given `GetNext` request with the given batch of events.
 fn handle_get_next(
@@ -124,7 +123,7 @@ pub fn generate_event_from_spec(spec: &EventSpec) -> fnet_neighbor::EntryIterato
 
 /// Generates a list of neighbor entry iterator items from the provided spec.
 pub fn generate_events_from_spec(spec: &[EventSpec]) -> Vec<fnet_neighbor::EntryIteratorItem> {
-    spec.into_iter().map(generate_event_from_spec).collect()
+    spec.iter().map(generate_event_from_spec).collect()
 }
 
 /// Generates an arbitrary but valid neighbor entry iterator item that is unique

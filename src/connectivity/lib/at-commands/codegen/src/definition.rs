@@ -73,7 +73,7 @@ impl Arguments {
         match self {
             Self::ArgumentList(vec) => vec.is_empty(),
             Self::ParenthesisDelimitedArgumentLists(vec) => {
-                vec.is_empty() || vec.into_iter().all(|el| el.is_empty())
+                vec.is_empty() || vec.iter().all(|el| el.is_empty())
             }
         }
     }

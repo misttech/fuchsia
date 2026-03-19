@@ -307,7 +307,7 @@ fn codegen_extract_map<W: io::Write>(
     write_indented!(
         sink,
         indent,
-        "for {} in arg_vec[{}..].into_iter() {{\n",
+        "for {} in arg_vec[{}..].iter() {{\n",
         element_name,
         initial_index
     )?;
@@ -354,7 +354,7 @@ fn codegen_extract_list<W: io::Write>(
     write_indented!(
         sink,
         indent,
-        "for {} in arg_vec[{}..].into_iter() {{\n",
+        "for {} in arg_vec[{}..].iter() {{\n",
         element_raw_name,
         initial_index
     )?;
