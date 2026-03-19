@@ -1003,5 +1003,13 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:        swarmingOutputType,
 			AlwaysFlake: true,
 		},
+		// For https://fxbug.dev/494269890
+		&stringInLogCheck{
+			// LINT.IfChange(no_fdomain_client)
+			String: "FFX Library Error: NoFDomainClient",
+			// LINT.ThenChange(//src/developer/ffx/lib/fuchsia-controller/src/lib_context.rs:no_fdomain_client)
+			Type:               swarmingOutputType,
+			SkipAllPassedTests: true,
+		},
 	}
 }

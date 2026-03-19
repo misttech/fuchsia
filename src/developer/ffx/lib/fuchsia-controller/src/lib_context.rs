@@ -65,7 +65,9 @@ impl LibContext {
     }
 
     pub(crate) fn write_err<T: std::fmt::Debug>(&self, err: T) {
+        // LINT.IfChange(no_fdomain_client)
         let error = format!("FFX Library Error: {err:?}");
+        // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_fdomain_client)
         let mut guard = self.buf.lock().unwrap();
         let buf = guard.deref_mut();
         buf[0..8].clone_from_slice(&error.len().to_ne_bytes());
