@@ -32,13 +32,6 @@
             availability: "optional",
         },
         {
-            config: "fuchsia.fshost.StorageHost",
-            key: "storage_host",
-            type: "bool",
-            default: false,
-            availability: "optional",
-        },
-        {
             service: [ "fuchsia.storage.partitions.PartitionService" ],
             availability: "optional",
         },

@@ -170,8 +170,7 @@ async fn main() {
     filter.case_insensitive(true);
     let filter = filter.build().unwrap();
 
-    let fvm_instance =
-        BenchmarkVolumeFactory::from_config(config.storage_host, config.fxfs_blob).await;
+    let fvm_instance = BenchmarkVolumeFactory::from_config(config.fxfs_blob).await;
     let mut benchmark_set = BenchmarkSet::new();
     add_io_benchmarks(&mut benchmark_set);
     add_directory_benchmarks(&mut benchmark_set);
