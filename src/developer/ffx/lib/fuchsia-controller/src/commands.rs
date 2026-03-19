@@ -589,8 +589,23 @@ impl LibraryCommand {
             }
             Self::HandleClose { lib, handle, responder } => {
                 let res = lib.fdomain_state().await.take_handle(handle);
-                if let Ok(handle) = res {
-                    let _ = handle.close().await;
+                if let Ok(h) = res {
+                    if let Err(e) = h.close().await {
+                        // It's unclear so far what to do in the event of this scenario. If we lose
+                        // connection to the device, we're going to lose all other handle
+                        // connections, so maybe there's no point bothering to raise an exception
+                        // for attempting to close the handle.
+                        //
+                        // That being said, since this is FDomain, a failure to close a handle for
+                        // other reasons (since we have to do this remotely on the target device),
+                        // may present issues in other ways, but this is likely predicated on
+                        // trying to synchronize around channel closures in strange ways.
+                        //
+                        // For the time being, we'll log a warning, but we may want to revisit
+                        // whether we should surface an error to the caller in the event that this
+                        // kind of thing surfaces bugs in existing code.
+                        log::warn!("Failed closing handle {handle}: {e}");
+                    }
                 } else {
                     log::trace!("Attempted to close {handle} but no handle found");
                 }
