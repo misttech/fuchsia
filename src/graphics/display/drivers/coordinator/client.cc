@@ -1637,7 +1637,7 @@ void Client::SubmitSpecialConfigs() {
 
   zx::result<> result = controller_.engine_driver_client()->SetMinimumRgb(GetMinimumRgb());
   if (!result.is_ok()) {
-    fdf::error("Failed to submit minimum RGB value: {}", result);
+    fdf::warn("Failed to submit minimum RGB value: {}", result);
   }
 }
 
