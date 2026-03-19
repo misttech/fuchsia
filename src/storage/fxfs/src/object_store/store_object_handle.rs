@@ -1520,7 +1520,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             }
         }
 
-        let mut range_iter = ranges.into_iter();
+        let mut range_iter = ranges.iter();
         // There should be at least one range if the buffer has data in it
         let mut target_range = range_iter.next().unwrap().clone();
         let mut mutations = Vec::new();

@@ -135,7 +135,7 @@ impl ChecksumList {
                     start_journal_offset: journal_offset,
                     device_range: gap,
                     checksums: gap_checksums
-                        .into_iter()
+                        .iter()
                         .map(|c| (ChecksumState::Unverified(vec![*c]), u64::MAX))
                         .collect(),
                 });

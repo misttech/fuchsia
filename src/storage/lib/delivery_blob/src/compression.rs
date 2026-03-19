@@ -388,7 +388,7 @@ impl ChunkedArchiveHeader {
         }
 
         let seek_table = entries
-            .into_iter()
+            .iter()
             .map(|entry| ChunkInfo::from_entry(entry, header_length))
             .try_collect()?;
         Ok(Some((DecodedArchive { seek_table, compression_algorithm }, chunk_data)))

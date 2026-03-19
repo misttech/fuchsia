@@ -121,7 +121,7 @@ pub async fn partition_matches_with_proxy(
             partition_proxy.get_type_guid().await.context("transport error on get_type_guid")?;
         zx::Status::ok(status).context("get_type_guid failed")?;
         let guid = guid_option.ok_or_else(|| anyhow!("Expected type guid"))?;
-        if !matcher_type_guids.into_iter().any(|x| x == &guid.value) {
+        if !matcher_type_guids.iter().any(|x| x == &guid.value) {
             return Ok(false);
         }
     }
@@ -133,7 +133,7 @@ pub async fn partition_matches_with_proxy(
             .context("transport error on get_instance_guid")?;
         zx::Status::ok(status).context("get_instance_guid failed")?;
         let guid = guid_option.ok_or_else(|| anyhow!("Expected instance guid"))?;
-        if !matcher_instance_guids.into_iter().any(|x| x == &guid.value) {
+        if !matcher_instance_guids.iter().any(|x| x == &guid.value) {
             return Ok(false);
         }
     }
@@ -184,7 +184,7 @@ pub async fn partition_matches_with_proxy(
 
     if let Some(matcher_detected_disk_formats) = &matcher.detected_disk_formats {
         let detected_format = detect_disk_format(&partition_proxy).await;
-        if !matcher_detected_disk_formats.into_iter().any(|x| x == &detected_format) {
+        if !matcher_detected_disk_formats.iter().any(|x| x == &detected_format) {
             return Ok(false);
         }
     }

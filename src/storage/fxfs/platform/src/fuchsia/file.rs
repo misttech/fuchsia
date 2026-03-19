@@ -796,7 +796,9 @@ mod tests {
         open_file_checked,
     };
     use anyhow::format_err;
+    use fidl_fuchsia_io as fio;
     use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
+    use fuchsia_async as fasync;
     use fuchsia_fs::file;
     use futures::join;
     use fxfs::fsck::fsck;
@@ -809,7 +811,6 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 
@@ -1213,7 +1214,7 @@ mod tests {
                 .expect("FIDL call failed")
                 .map_err(Status::from_raw)
                 .expect("File read was successful");
-            assert!(buf.iter().eq("hello".as_bytes().into_iter()));
+            assert!(buf.iter().eq("hello".as_bytes().iter()));
         }
         {
             let offset = file
@@ -1229,7 +1230,7 @@ mod tests {
                 .expect("FIDL call failed")
                 .map_err(Status::from_raw)
                 .expect("File read was successful");
-            assert!(buf.iter().eq("world".as_bytes().into_iter()));
+            assert!(buf.iter().eq("world".as_bytes().iter()));
         }
         {
             let offset = file
@@ -1245,7 +1246,7 @@ mod tests {
                 .expect("FIDL call failed")
                 .map_err(Status::from_raw)
                 .expect("File read was successful");
-            assert!(buf.iter().eq("world".as_bytes().into_iter()));
+            assert!(buf.iter().eq("world".as_bytes().iter()));
         }
         {
             let offset = file
@@ -1261,7 +1262,7 @@ mod tests {
                 .expect("FIDL call failed")
                 .map_err(Status::from_raw)
                 .expect("File read was successful");
-            assert!(buf.iter().eq("!".as_bytes().into_iter()));
+            assert!(buf.iter().eq("!".as_bytes().iter()));
         }
 
         close_file_checked(file).await;

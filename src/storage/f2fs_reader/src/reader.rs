@@ -227,7 +227,7 @@ impl F2fsReader {
                 nat_journal.entries.len()
             );
             Ok(HashMap::from_iter(
-                nat_journal.entries[..n_nats as usize].into_iter().map(|e| (e.ino, e.entry)),
+                nat_journal.entries[..n_nats as usize].iter().map(|e| (e.ino, e.entry)),
             ))
         } else {
             // Read the default summary block location from the "hot data" segment.

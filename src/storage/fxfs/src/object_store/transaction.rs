@@ -568,7 +568,7 @@ impl LockKeys {
         match self {
             LockKeys::None => LockKeysIter::None,
             LockKeys::Inline(key) => LockKeysIter::Inline(key),
-            LockKeys::Vec(keys) => LockKeysIter::Vec(keys.into_iter()),
+            LockKeys::Vec(keys) => LockKeysIter::Vec(keys.iter()),
         }
     }
 }
@@ -576,7 +576,7 @@ impl LockKeys {
 enum LockKeysIter<'a> {
     None,
     Inline(&'a LockKey),
-    Vec(<&'a Vec<LockKey> as IntoIterator>::IntoIter),
+    Vec(std::slice::Iter<'a, LockKey>),
 }
 
 impl<'a> Iterator for LockKeysIter<'a> {
