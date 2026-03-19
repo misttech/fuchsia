@@ -501,6 +501,18 @@ void Client::SetDisplayLayers(SetDisplayLayersRequestView request,
   }
   DisplayConfig& display_config = *display_configs_it;
 
+  // The static_cast does not overflow or underflow (causing UB) because
+  // `engine_max_layer_count()` is guaranteed to be positive and at most
+  // `display::EngineInfo::kMaxAllowedMaxLayerCount`.
+  if (request->layer_ids.size() > static_cast<size_t>(display_config.engine_max_layer_count())) {
+    fdf::error(
+        "SetDisplayLayers for display {} failed: requested {} layers, but hardware limit is {}. "
+        "Terminating client.",
+        display_id.value(), request->layer_ids.size(), display_config.engine_max_layer_count());
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
   display_config.draft_has_layer_list_change_ = true;
   display_config.draft_has_layer_list_change_property_.Set(true);
 
@@ -1040,12 +1052,6 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
     const DisplayConfig& display_config, std::span<const display::ModeAndId> preferred_modes) {
   ZX_DEBUG_ASSERT(!display_config.draft_layers_.is_empty());
 
-  // The cast will not result in UB because the maximum layer count is
-  // guaranteed to be positive.
-  const size_t max_layer_count = display_config.engine_max_layer_count();
-  ZX_DEBUG_ASSERT_MSG(max_layer_count > 0,
-                      "DisplayConfig contract broken: engine_max_layer_count() must be positive");
-
   // Frame used for checking that each layer's `display_destination` lies
   // entirely within the display output.
 
@@ -1072,15 +1078,19 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
   cpp26::inplace_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
 
+  // The cast will not result in UB because the maximum layer count is
+  // guaranteed to be positive.
+  const size_t max_layer_count = display_config.engine_max_layer_count();
+  ZX_DEBUG_ASSERT_MSG(max_layer_count > 0,
+                      "DisplayConfig contract broken: engine_max_layer_count() must be positive");
+
   // Normalize the display configuration, and perform Coordinator-level
   // checks. The engine drivers API contract does not allow passing
   // configurations that fail these checks.
   for (const LayerNode& draft_layer_node : display_config.draft_layers_) {
     const display::DriverLayer& driver_layer = draft_layer_node.layer->draft_layer_config_;
     driver_layers.push_back(driver_layer);
-    if (driver_layers.size() > max_layer_count) {
-      return display::ConfigCheckResult::kUnsupportedConfig;
-    }
+    ZX_DEBUG_ASSERT(driver_layers.size() <= max_layer_count);
 
     if (driver_layer.image_source().width() != 0 && driver_layer.image_source().height() != 0) {
       // Frame for checking that the layer's `image_source` lies entirely within
@@ -1334,7 +1344,7 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
 
     fhd::wire::Info fidl_display_info;
     fidl_display_info.id = display_config.id().ToFidl();
-    fidl_display_info.max_layer_count = controller_.engine_info().max_layer_count();
+    fidl_display_info.max_layer_count = display_config.engine_max_layer_count();
 
     zx::result<std::span<const display::ModeAndId>> display_preferred_modes_result =
         controller_.GetDisplayPreferredModes(display_config.id());
