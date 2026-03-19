@@ -274,6 +274,7 @@ fidl_library://fidl/fuchsia.hardware.usb.dci (unstable)
 fidl_library://fidl/fuchsia.hardware.usb.descriptor (unstable)
 fidl_library://fidl/fuchsia.hardware.usb.endpoint (unstable)
 fidl_library://fidl/fuchsia.hardware.usb.phy (unstable)
+fidl_library://fidl/fuchsia.hardware.usb.policy (unstable)
 fidl_library://fidl/fuchsia.hardware.usb.request (unstable)
 fidl_library://fidl/fuchsia.hardware.uwb (unstable)
 fidl_library://fidl/fuchsia.hardware.vreg (unstable)
@@ -378,6 +379,7 @@ fidl_library://fidl/fuchsia.update.channel
 fidl_library://fidl/fuchsia.update.channelcontrol
 fidl_library://fidl/fuchsia.update.config
 fidl_library://fidl/fuchsia.url
+fidl_library://fidl/fuchsia.usb.policy (unstable)
 fidl_library://fidl/fuchsia.version
 fidl_library://fidl/fuchsia.weave
 fidl_library://fidl/fuchsia.web

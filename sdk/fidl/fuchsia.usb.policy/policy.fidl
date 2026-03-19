@@ -1,0 +1,33 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+library fuchsia.usb.policy;
+
+using fuchsia.hardware.usb.policy;
+using zx;
+
+/// A snapshot of the USB controller's current status and health.
+type HealthReport = table {
+    /// The current state of the device as defined by the USB 2.0 spec.
+    1: state fuchsia.hardware.usb.policy.DeviceState;
+    /// The address assigned to the USB device.
+    2: address uint8;
+};
+
+/// Protocol for retrieving diagnostic and health information from the USB system.
+@discoverable
+open protocol Health {
+    /// Returns a snapshot of the current USB health and device state.
+    flexible GetReport() -> (HealthReport) error zx.Status;
+};
+
+/// An interface to monitor dynamic changes to the USB device state.
+open protocol PolicyProvider {
+    compose fuchsia.hardware.usb.policy.DeviceStateWatcher;
+};
+
+/// A service definition grouping the USB policy provider interface.
+service Service {
+    /// A client end to connect to the PolicyProvider protocol.
+    provider client_end:PolicyProvider;
+};
