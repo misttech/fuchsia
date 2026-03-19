@@ -52,6 +52,8 @@ pub use Handle as Exception;
 #[rustfmt::skip]
 pub use Handle as Fifo;
 #[rustfmt::skip]
+pub use Handle as Iob;
+#[rustfmt::skip]
 pub use Handle as Job;
 #[rustfmt::skip]
 pub use Handle as Process;
