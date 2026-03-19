@@ -10,9 +10,10 @@ mod daemon_work;
 mod sag_work;
 
 use anyhow::Result;
-use fidl_fuchsia_power_broker as fbroker;
-use fidl_fuchsia_power_system as fsystem;
-use fidl_fuchsia_power_topology_test as fpt;
+use {
+    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
+    fidl_fuchsia_power_topology_test as fpt,
+};
 
 use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::Criterion;
@@ -50,7 +51,7 @@ fn get_daemon_benches() -> criterion::Benchmark {
 }
 
 fn get_large_topology_lease_benches(name: &'static str) -> criterion::Benchmark {
-    let num_elements = 10;
+    let num_elements = 20;
     let topology_control = daemon_work::prepare_large_topology(num_elements);
     criterion::Benchmark::new(name, move |b| {
         b.iter(|| {
