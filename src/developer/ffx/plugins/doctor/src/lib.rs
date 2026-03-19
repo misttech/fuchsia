@@ -2013,7 +2013,24 @@ async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
         LedgerMode::Verbose
     };
 
-    let expected_socket_path: PathBuf = env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
+    let expected_socket_path: PathBuf =
+        match env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH) {
+            Ok(pb) => pb,
+            Err(e) => {
+                let warning_node = ledger.add_node(
+                    format!(
+                        "Could not find USB Driver Socket path with config {}. Error: {}",
+                        usb_driver_api::CONFIG_USB_SOCKET_PATH,
+                        e,
+                    )
+                    .as_str(),
+                    LedgerMode::Automatic,
+                )?;
+                ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
+                ledger.close(usb_driver_node)?;
+                return Ok(());
+            }
+        };
 
     for usb_driver_status in usb_driver_statuses {
         let UsbDriverStatus { pid, socket_path } = usb_driver_status;
@@ -2075,7 +2092,8 @@ async fn check_inotify_watches<W: Write>(ledger: &mut DoctorLedger<W>) -> Result
     let uid = match std::fs::metadata("/proc/self") {
         Ok(m) => m.uid(),
         Err(e) => {
-            let node = ledger.add_node(&format!("Could not get uid: {}", e), LedgerMode::Verbose)?;
+            let node =
+                ledger.add_node(&format!("Could not get uid: {}", e), LedgerMode::Verbose)?;
             ledger.set_outcome(node, LedgerOutcome::Failure)?;
             ledger.close(watch_node)?;
             return Ok(());
