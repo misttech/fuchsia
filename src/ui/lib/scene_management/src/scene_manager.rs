@@ -114,6 +114,7 @@ impl FlatlandInstance {
         let root_transform_id = id_generator.next_transform_id();
         flatland.create_transform(&root_transform_id)?;
         flatland.set_root_transform(&root_transform_id)?;
+        flatland.set_hit_regions(&root_transform_id, &[])?;
 
         Ok(FlatlandInstance {
             flatland: Arc::new(Mutex::new(flatland)),
