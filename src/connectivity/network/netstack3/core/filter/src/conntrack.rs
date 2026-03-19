@@ -161,7 +161,7 @@ where
 impl<I, E, BC> Table<I, E, BC>
 where
     I: IpExt,
-    E: Default + Send + Sync + PartialEq + CompatibleWith + 'static,
+    E: Debug + Default + Send + Sync + PartialEq + CompatibleWith + 'static,
     BC: FilterBindingsTypes + TimerContext,
 {
     /// Attempts to insert the `Connection` into the table.
@@ -310,12 +310,13 @@ where
             let shared = exclusive.make_shared();
             let clone = Arc::clone(&shared);
 
-            let res = guard.table.insert(shared.inner.original_tuple.clone(), shared.clone());
-            debug_assert!(res.is_none());
+            assert_matches!(
+                guard.table.insert(shared.inner.original_tuple.clone(), shared.clone()),
+                None
+            );
 
             if shared.inner.reply_tuple != shared.inner.original_tuple {
-                let res = guard.table.insert(shared.inner.reply_tuple.clone(), shared);
-                debug_assert!(res.is_none());
+                assert_matches!(guard.table.insert(shared.inner.reply_tuple.clone(), shared), None);
             }
 
             // For the most part, this will only schedule the timer once, when
@@ -335,7 +336,7 @@ where
 impl<I, E, BC> Table<I, E, BC>
 where
     I: IpExt,
-    E: Default,
+    E: Debug + Default,
     BC: FilterBindingsTypes + TimerContext,
 {
     /// Returns a [`Connection`] for the packet's flow. If a connection does not
@@ -362,9 +363,12 @@ where
             },
         };
 
-        let direction = connection
-            .direction(&tuple)
-            .expect("tuple must match connection as we just looked up connection by tuple");
+        let direction = match connection.direction(&tuple) {
+            Some(direction) => direction,
+            None => unreachable!(
+                "tuple didn't match connection after looking up in map: {tuple:?} {connection:?}"
+            ),
+        };
 
         match connection.update(bindings_ctx, &packet, direction) {
             Ok(ConnectionUpdateAction::NoAction) => Ok(Some((connection, direction))),
@@ -979,9 +983,15 @@ where
                 establishment_lifecycle: EstablishmentLifecycle::SeenOriginal,
                 protocol_state: match tuple.protocol {
                     TransportProtocol::Tcp => {
-                        let (segment, payload_len) = transport_data
-                            .tcp_segment_and_len()
-                            .expect("protocol was TCP, so transport data should have TCP info");
+                        let (segment, payload_len) = match transport_data.tcp_segment_and_len() {
+                            Some(v) => v,
+                            // This should be impossible as PacketMetadata
+                            // ensures the Tuple and transport information
+                            // are the same protocol.
+                            None => unreachable!(
+                                "protocol was TCP, but didn't have TCP info: {transport_data:?}"
+                            ),
+                        };
 
                         ProtocolState::Tcp(tcp::Connection::new(
                             segment,
