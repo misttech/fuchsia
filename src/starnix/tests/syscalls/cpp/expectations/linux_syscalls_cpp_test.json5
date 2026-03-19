@@ -99,27 +99,6 @@
                 "NetlinkSocket.RecvMsg",
                 "NetlinkSocket.NlctrlFamily",
 
-                // TODO(https://fxbug.dev/436982276): OverlayFS is failing to mount in Machina.
-                "OverlayFsTest.*",
-                "OverlayFsAccessTest.*",
-                "OverlayFs/FsMountTest.ChownMinusOneOnSIDFileFails/0",
-                "OverlayFs/FsMountTest.ChownSameOwnerAndGroupFails/0",
-                "OverlayFs/FsMountTest.OpenWithTruncAndCreatOnReadOnlyFsReturnsEROFS/0",
-                "OverlayFs/FsMountTest.ChownOnSGIDFileDropsSGIDBit/0",
-                "OverlayFs/FsMountTest.OpenWithTruncAndCreatWithExistingFileSucceeds/0",
-                "OverlayFs/FsMountTest.ChownOnSUIDFileDropsSUIDBit/0",
-                "OverlayFs/FsMountTest.OpenWithTruncAndCreatWithNoPermsReturnsEACCES/0",
-                "OverlayFs/FsMountTest.ChownMinusOneSucceeds/0",
-                "OverlayFs/FsMountTest.CreateAndRenameDirectory/0",
-
-                // TODO(https://fxbug.dev/355404941): Not Machina-specific.
-                "OverlayFs/FsMountTest.CantBypassDirectoryPermissions/0",
-                "OverlayFs/FsMountTest.ChmodWithDifferentModes/0",
-                "OverlayFs/FsMountTest.CreateWithDifferentModes/0",
-
-                // TODO(https://fxbug.dev/368658840): Not Machina-specific.
-                "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
-
                 // TODO(https://fxbug.dev/437191224)
                 "PerfEventOpenTest.WhenDisabledEventCountShouldBeZero",
                 "PerfEventOpenTest.ValidInputsSucceed",
