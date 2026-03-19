@@ -25,6 +25,7 @@ namespace display::test {
 
 namespace {
 
+constexpr uint32_t kMaxDisplayLayersCount = 2;
 using PowerMode = fuchsia_ui_display_singleton::PowerMode;
 
 struct DisplayPowerInfo {
@@ -91,7 +92,7 @@ TEST_F(DisplayPowerManagerMockTest, Ok) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight, kMaxDisplayLayersCount));
 
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
@@ -187,7 +188,7 @@ TEST_F(DisplayPowerManagerMockTest, NotSupported) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight, kMaxDisplayLayersCount));
 
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),

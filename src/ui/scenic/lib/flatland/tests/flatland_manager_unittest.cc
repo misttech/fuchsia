@@ -120,10 +120,13 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
     const display::WireDisplayId kDisplayId = {.value = 1};
     constexpr uint32_t kDisplayWidth = 640;
     constexpr uint32_t kDisplayHeight = 480;
+    constexpr uint32_t kMaxDisplayLayersCount = 2;
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers;
     manager_ = std::make_unique<FlatlandManager>(
         dispatcher(), mock_flatland_presenter_, uber_struct_system_, link_system_,
-        std::make_shared<display::Display>(kDisplayId, kDisplayWidth, kDisplayHeight), importers,
+        std::make_shared<display::Display>(kDisplayId, kDisplayWidth, kDisplayHeight,
+                                           kMaxDisplayLayersCount),
+        importers,
         /*register_view_focuser*/ [this](auto...) { view_focuser_registered_ = true; },
         /*register_view_ref_focused*/ [this](auto...) { view_ref_focused_registered_ = true; },
         /*register_touch_source*/ [this](auto...) { touch_source_registered_ = true; },

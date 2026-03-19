@@ -927,7 +927,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
                                  /*out_buffer_collection*/ nullptr);
 
@@ -1056,7 +1057,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
   session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
                                  /*out_buffer_collection*/ nullptr);
 
@@ -1165,7 +1167,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
                                  /*out_buffer_collection*/ nullptr);
 
@@ -1286,7 +1289,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
                                  /*out_buffer_collection*/ nullptr);
 
@@ -1457,7 +1461,8 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
 
   // Now we can finally render.
@@ -1584,9 +1589,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
       dispatcher(), display_manager_->coordinator_proxy(), renderer,
       utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_pixeltest"),
       flatland::DisplayCompositorConfig{
-          // Force GPU composition.
-          // This setting is redundant because `max_display_layers == 1` so we
-          // fall back to GPU composition anyway, but this is not obvious.
+          // Force GPU composition for this test.
           .enable_direct_to_display = false,
       });
 
@@ -1628,7 +1631,8 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
 
   // Now we can finally render.
@@ -1853,7 +1857,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
 
   // Setup the uberstruct data.
@@ -2108,7 +2113,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
 
   // Setup the uberstruct data.
@@ -2307,7 +2313,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   fuchsia::sysmem2::BufferCollectionInfo unused_render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
                                  /*out_buffer_collection*/ &unused_render_target_info);
 
@@ -2469,7 +2476,8 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
   fuchsia::sysmem2::BufferCollectionInfo unused_render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
-      .formats = {kDisplayPixelFormat}};
+      .formats = {kDisplayPixelFormat},
+      .max_layer_count = display->max_layer_count()};
   // Create display VMOs for the boards where color layers are not supported.
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &unused_render_target_info);
 

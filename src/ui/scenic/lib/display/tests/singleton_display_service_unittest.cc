@@ -15,6 +15,8 @@
 
 namespace display::test {
 
+constexpr uint32_t kMaxDisplayLayersCount = 2;
+
 TEST(SingletonDisplayService, GetMetrics) {
   static constexpr uint32_t kWidthInPx = 777;
   static constexpr uint32_t kHeightInPx = 555;
@@ -25,7 +27,8 @@ TEST(SingletonDisplayService, GetMetrics) {
       display::WireDisplayId{.value = 1},
       WireDisplayMode{.active_area = {.width = kWidthInPx, .height = kHeightInPx},
                       .refresh_rate_millihertz = kRefreshRate},
-      kWidthInMm, kHeightInMm, std::vector{fuchsia_images2::wire::PixelFormat::kB8G8R8A8});
+      kWidthInMm, kHeightInMm, kMaxDisplayLayersCount,
+      std::vector{fuchsia_images2::wire::PixelFormat::kB8G8R8A8});
   auto singleton = std::make_unique<SingletonDisplayService>(display);
 
   uint32_t width_in_px = 0;
@@ -65,8 +68,8 @@ TEST(SingletonDisplayService, DevicePixelRatioChange) {
       std::make_shared<Display>(display::WireDisplayId{.value = 1},
                                 WireDisplayMode{.active_area = {.width = 777, .height = 555},
                                                 .refresh_rate_millihertz = 4400},
-                                /*width_in_mm=*/77, /*height_in_mm=*/55,
-                                std::vector{fuchsia_images2::wire::PixelFormat::kB8G8R8A8});
+                                /*width_in_mm=*/77, /*height_in_mm=*/55, kMaxDisplayLayersCount,
+                                std::vector{fuchsia_images2::PixelFormat::kB8G8R8A8});
   auto singleton = std::make_unique<SingletonDisplayService>(display);
 
   const float kDPRx = 1.25f;
@@ -86,8 +89,9 @@ TEST(SingletonDisplayService, DevicePixelRatioChange) {
 }
 
 TEST(SingletonDisplayService, GetOwnershipEvent) {
-  auto display = std::make_shared<Display>(display::WireDisplayId{.value = 1},
-                                           /*width_in_px=*/777, /*height_in_px=*/555);
+  auto display =
+      std::make_shared<Display>(display::WireDisplayId{.value = 1},
+                                /*width_in_px=*/777, /*height_in_px=*/555, kMaxDisplayLayersCount);
   auto singleton = std::make_unique<SingletonDisplayService>(display);
 
   std::optional<zx::event> event;

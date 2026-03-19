@@ -505,6 +505,27 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   const uint32_t num_images = static_cast<uint32_t>(data.images.size());
 
   DisplayEngineData& display_engine_data = display_engine_data_map_.at(data.display_id);
+
+  // If the display doesn't support any layers, we cannot composite anything to it,
+  // not even an empty scene or GPU fallback image.
+  if (display_engine_data.max_layer_count == 0) {
+    TRACE_INSTANT("gfx", "scenic_d2d_failed: no hardware layers available", TRACE_SCOPE_THREAD);
+    FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: display " << data.display_id.value()
+                         << " supports 0 layers.";
+    return false;
+  }
+
+  // Proactively fallback to GPU composition if the number of layers exceeds the hardware limit.
+  if (num_images > display_engine_data.max_layer_count) {
+    TRACE_INSTANT("gfx", "scenic_d2d_failed: too few hardware layers available",
+                  TRACE_SCOPE_THREAD);
+    FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() falling back to GPU: "
+                         << "requested layers (" << num_images << ") exceeds limit ("
+                         << display_engine_data.max_layer_count << ") for display "
+                         << data.display_id.value();
+    return false;
+  }
+
   if (num_images == 0) {
     SetDisplayLayers(data.display_id, std::span(&display_engine_data.empty_scene_layer, 1));
     return true;
@@ -751,6 +772,12 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     // Retrieve fence.
     event_data.wait_event = std::move(render_fences[0]);
 
+    if (display_engine_data.layers.empty()) {
+      FLATLAND_VERBOSE_LOG << "PerformGpuComposition() failed: no layers available for display "
+                           << render_data.display_id.value();
+      return false;
+    }
+
     /* const*/ display::LayerId layer = display_engine_data.layers[0];
     SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer, 1});
 
@@ -874,7 +901,6 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
   bool applied_display_mode = false;
   for (const auto& data : render_data_list) {
     const display::DisplayId& display_id = data.display_id;
-
     if (!SetRenderDataOnDisplay(data)) {
       // TODO(https://fxbug.dev/42157429): just because setting the data on one display fails (e.g.
       // due to too many layers), that doesn't mean that all displays need to use GPU-composition.
@@ -985,8 +1011,8 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   FX_DCHECK(!display_engine_data_map_.contains(display_id))
       << "DisplayCompositor::AddDisplay(): display already exists: " << display_id.value();
 
-  display_info_map_[display_id] = std::move(info);
   DisplayEngineData& display_engine_data = display_engine_data_map_[display_id];
+  display_engine_data.max_layer_count = info.max_layer_count;
 
   // Used to set mode before the next `ApplyConfig()`.
   display_engine_data.updated_display_mode.emplace(display->mode());
@@ -1009,7 +1035,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
     // used when we directly composite render data in hardware via the display coordinator.
     // TODO(https://fxbug.dev/42157936): per-display layer lists are probably a bad idea; this
     // approach doesn't reflect the constraints of the underlying display hardware.
-    for (uint32_t i = 0; i < config_.max_display_layers; i++) {
+    for (uint32_t i = 0; i < display->max_layer_count(); i++) {
       display_engine_data.layers.push_back(display_coordinator_.CreateLayer());
     }
   }

@@ -136,11 +136,12 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
 
     DisplayInfo display_info{
         .dimensions = glm::uvec2{hw_display->width_in_px(), hw_display->height_in_px()},
-        .formats = display.display()->pixel_formats()};
+        .formats = display.display()->pixel_formats(),
+        .max_layer_count = hw_display->max_layer_count()};
 
     fuchsia::sysmem2::BufferCollectionInfo render_target_info;
     flatland_compositor_->AddDisplay(hw_display, display_info,
-                                     /*num_vmos*/ kNumDisplayFramebuffers, &render_target_info);
+                                     /* num_vmos= */ kNumDisplayFramebuffers, &render_target_info);
   }
 
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,

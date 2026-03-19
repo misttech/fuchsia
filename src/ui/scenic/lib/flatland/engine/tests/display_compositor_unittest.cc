@@ -64,6 +64,8 @@ namespace flatland::test {
 
 namespace {
 
+constexpr uint32_t kMaxDisplayLayersCount = 2;
+
 // Returns a matcher matching the `field` from [`fuchsia.hardware.display/Coordinator.FunctionName`]
 // FIDL request.
 #define MatchRequestField(FunctionName, field, matcher)                                          \
@@ -156,7 +158,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
     display_compositor_ = std::make_shared<flatland::DisplayCompositor>(
         dispatcher(), std::move(coordinator_proxy), renderer_,
         utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_unittest"),
-        flatland::DisplayCompositorConfig{.max_display_layers = 2});
+        flatland::DisplayCompositorConfig{});
   }
 
   void TearDown() override {
@@ -216,6 +218,12 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
     std::scoped_lock lock(display_compositor_->lock_);
     return display_compositor_->buffer_collection_supports_display_.contains(id) &&
            display_compositor_->buffer_collection_supports_display_[id];
+  }
+
+  bool TryDirectToDisplay(const std::vector<RenderData>& render_data_list) {
+    std::scoped_lock lock(display_compositor_->lock_);
+    return display_compositor_->TryDirectToDisplay(render_data_list, /* frame_number= */ 1,
+                                                   /* trace_flow_id= */ 1);
   }
 
  protected:
@@ -926,7 +934,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   const TransformHandle root_handle = session.graph().CreateTransform();
   display::DisplayId display_id(1);
   glm::uvec2 resolution(1024, 768);
-  DisplayInfo display_info = {resolution, {kPixelFormat}};
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
@@ -1203,8 +1211,9 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
-  DisplayInfo display_info = {resolution, {kPixelFormat}};
-  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1404,8 +1413,9 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
-  DisplayInfo display_info = {resolution, {kPixelFormat}};
-  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1618,7 +1628,7 @@ TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest)
 TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer) {
   const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
-  DisplayInfo display_info = {resolution, {kPixelFormat}};
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(testing::AnyNumber());
@@ -1644,7 +1654,8 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
 
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
 
-  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1680,6 +1691,60 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
         .Times(1)
         .WillOnce(Return());
   }
+}
+
+TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbackToGpu) {
+  static constexpr display::DisplayId kDisplayId(1);
+  static constexpr glm::uvec2 resolution(1024, 768);
+  static constexpr uint32_t kMaxDisplayLayersCount = 1;
+  const DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+
+  // Note: Scenic creates display->max_layer_count() layers for the pool PLUS
+  // one additional layer for the empty scene. Total = kMaxDisplayLayersCount + 1.
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(
+          testing::Invoke([&](auto, MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            completer.Reply(fit::ok());
+          }));
+
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  display_compositor_->AddDisplay(&display, display_info, /* num_vmos= */ 0,
+                                  /* out_buffer_collection= */ nullptr);
+
+  auto session = CreateSession();
+  const TransformHandle root_handle = session.graph().CreateTransform();
+  const TransformHandle child_handle = session.graph().CreateTransform();
+  session.graph().AddChild(root_handle, child_handle);
+
+  auto root_image_id = allocation::GenerateUniqueImageId();
+  auto child_image_id = allocation::GenerateUniqueImageId();
+
+  auto root_struct = session.CreateUberStructWithCurrentTopology(root_handle);
+  root_struct->images[root_handle] = {.identifier = root_image_id};
+  root_struct->images[child_handle] = {.identifier = child_image_id};
+  session.PushUberStruct(std::move(root_struct));
+
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(0);
+
+  const auto render_data_list =
+      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}});
+
+  ASSERT_EQ(render_data_list[0].layers.size(), 2u);
+  bool result = TryDirectToDisplay(render_data_list);
+  EXPECT_FALSE(result);
+
+  // Cleanup: All layers (kMaxDisplayLayersCount + 1 empty scene layer) should be destroyed.
+  for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
+        .Times(1)
+        .WillOnce(Return());
+  }
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
 }  // namespace flatland::test

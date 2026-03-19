@@ -41,9 +41,6 @@ struct DisplayCompositorConfig {
   // Whether to attempt display composition at all. If false we always fall back to GPU-compositing.
   bool enable_direct_to_display = true;
 
-  // The maximum number of layers that can be displayed at once, on a given display.
-  uint32_t max_display_layers = 1;
-
   // If true, all images will be tinted when we fall back to GPU-compositing.
   bool tint_gpu_fallback_images = false;
 
@@ -172,6 +169,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   };
 
   struct DisplayEngineData {
+    // The maximum number of hardware layers supported by this display.
+    uint32_t max_layer_count = 0;
+
     // The layer used to render an empty scene to the display through a solid black color.
     display::LayerId empty_scene_layer;
 
@@ -317,11 +317,6 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Software renderer used when render data cannot be directly composited to the display.
   const std::shared_ptr<Renderer> renderer_;
-
-  // Maps a display ID to the the DisplayInfo struct. This is kept separate from the
-  // display_DisplayCompositor_data_map_ since this only this data is needed for the
-  // render_data_func_.
-  std::unordered_map<display::DisplayId, DisplayInfo> display_info_map_;
 
   // Maps a display ID to a struct of all the information needed to properly render to
   // that display in both the hardware and software composition paths.

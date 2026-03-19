@@ -75,10 +75,11 @@ void DisplayManager::BindDefaultDisplayCoordinator(
 
 void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
                                        fidl::VectorView<WireDisplayId> removed) {
-  for (WireDisplayInfo& display : added) {
+  for (WireDisplayInfo& display_info : added) {
     // Ignore display if |i_can_haz_display_id| is set and it doesn't match ID.
-    if (i_can_haz_display_id_.has_value() && display.id.value != i_can_haz_display_id_->value) {
-      FX_LOGS(INFO) << "Ignoring display with id=" << display.id.value
+    if (i_can_haz_display_id_.has_value() &&
+        display_info.id.value != i_can_haz_display_id_->value) {
+      FX_LOGS(INFO) << "Ignoring display with id=" << display_info.id.value
                     << " ... waiting for display with id=" << i_can_haz_display_id_->value;
       continue;
     }
@@ -86,27 +87,28 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
     if (default_display_) {
       FX_LOGS(INFO) << "Default display already exists with id="
                     << default_display_->display_id().value()
-                    << " ... skipping newly added display id=" << display.id.value;
+                    << " ... skipping newly added display id=" << display_info.id.value;
     } else {
       size_t mode_index = 0;
 
       // Set display mode if requested.
       if (display_mode_index_override_.has_value()) {
-        if (*display_mode_index_override_ < display.modes.size()) {
+        if (*display_mode_index_override_ < display_info.modes.size()) {
           mode_index = *display_mode_index_override_;
         } else {
           FX_LOGS(ERROR) << "Requested display mode=" << *display_mode_index_override_
-                         << " doesn't exist for display with id=" << display.id.value;
+                         << " doesn't exist for display with id=" << display_info.id.value;
         }
       } else {
         std::optional<size_t> mode_index_satisfying_constraints =
-            PickFirstDisplayModeSatisfyingConstraints(display.modes, display_mode_constraints_);
+            PickFirstDisplayModeSatisfyingConstraints(display_info.modes,
+                                                      display_mode_constraints_);
 
         // TODO(https://fxbug.dev/42097581): handle this more robustly.
         FX_CHECK(mode_index_satisfying_constraints.has_value())
             << "Failed to find a display mode satisfying all display constraints for "
                "display with id="
-            << display.id.value;
+            << display_info.id.value;
 
         mode_index = *mode_index_satisfying_constraints;
       }
@@ -115,15 +117,17 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
         // TODO(https://fxbug.dev/402804098): `flatland::DisplayCompositor` now handles this, so
         // this is redundant, right?  Verify and delete.
         [[maybe_unused]] fidl::OneWayStatus set_display_mode_result =
-            coordinator_proxy_->raw()->SetDisplayMode(display.id, display.modes[mode_index]);
+            coordinator_proxy_->raw()->SetDisplayMode(display_info.id,
+                                                      display_info.modes[mode_index]);
       }
 
-      const WireDisplayMode& mode = display.modes[mode_index];
-      std::vector<fuchsia_images2::PixelFormat> pixel_formats(display.pixel_format.begin(),
-                                                              display.pixel_format.end());
-      default_display_ =
-          std::make_unique<Display>(display.id, mode, display.horizontal_size_mm,
-                                    display.vertical_size_mm, std::move(pixel_formats));
+      const WireDisplayMode& mode = display_info.modes[mode_index];
+      std::vector<fuchsia_images2::PixelFormat> pixel_formats(display_info.pixel_format.begin(),
+                                                              display_info.pixel_format.end());
+
+      default_display_ = std::make_unique<Display>(
+          display_info.id, mode, display_info.horizontal_size_mm, display_info.vertical_size_mm,
+          display_info.max_layer_count, std::move(pixel_formats));
       OnClientOwnershipChange(owns_display_coordinator_);
 
       if (display_available_cb_) {

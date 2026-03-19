@@ -42,6 +42,11 @@ namespace display {
 // - Provides Inspect properties for monitoring API calls and cache behavior.
 //
 // Thread-safety: This class is thread-unsafe; concurrent access must be externally synchronized.
+//
+// Key limitations:
+// - Although the API appears to support multiple displays, the implementation
+//   only supports a single display.  The private method CheckDisplayId() is to
+//   guarantee that clients do not try to interact with multiple displays.
 class CoordinatorProxy {
  public:
   // Configure which checks are enabled within `HeuristicsSayThatCheckConfigWouldFail()`.
@@ -119,6 +124,9 @@ class CoordinatorProxy {
   //
   // `display_id` must not be `kInvalidDisplayId`.  Each invocation must use the same ID; multiple
   // displays are not supported.
+  //
+  // `layer_ids` must have at most the hardware layer limit elements. Violating this
+  // precondition will cause the Display Coordinator to close the FIDL channel.
   void SetDisplayLayers(const DisplayId& display_id, const std::span<const LayerId>& layer_ids);
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/SetLayerPrimaryConfig()`.

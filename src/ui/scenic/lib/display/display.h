@@ -29,8 +29,9 @@ namespace display {
 class Display {
  public:
   Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_in_mm,
-          uint32_t height_in_mm, std::vector<fuchsia_images2::PixelFormat> pixel_formats);
-  Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px);
+          uint32_t height_in_mm, uint32_t max_layer_count,
+          std::vector<fuchsia_images2::PixelFormat> pixel_formats);
+  Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px, uint32_t max_layer_count);
   virtual ~Display() = default;
 
   using VsyncCallbackId = int;
@@ -73,6 +74,8 @@ class Display {
 
   uint32_t maximum_refresh_rate_in_millihertz() const { return mode_.refresh_rate_millihertz; }
 
+  uint32_t max_layer_count() const { return max_layer_count_; }
+
   // Event signaled by DisplayManager when ownership of the display
   // changes. This event backs Scenic's GetDisplayOwnershipEvent API.
   const zx::event& ownership_event() const { return ownership_event_; }
@@ -97,6 +100,7 @@ class Display {
   const WireDisplayMode mode_;
   const uint32_t width_in_mm_;
   const uint32_t height_in_mm_;
+  const uint32_t max_layer_count_;
   // |device_pixel_ratio_| may be written from FlatlandDisplay thread and read by SingletonDisplay
   // service running on the main thread.
   std::atomic<glm::vec2> device_pixel_ratio_;

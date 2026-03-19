@@ -17,6 +17,8 @@
 
 namespace display::test {
 
+static constexpr uint32_t kMaxDisplayLayersCount = 2;
+
 class VsyncSourceTest : public gtest::TestLoopFixture {
  public:
   void SetUp() override {
@@ -27,7 +29,8 @@ class VsyncSourceTest : public gtest::TestLoopFixture {
     vsync_source_manager_ = std::make_unique<VsyncSourceManager>(*display_manager_);
 
     const WireDisplayId kDisplayId = {.value = 1};
-    display_manager_->SetDefaultDisplayForTests(std::make_shared<Display>(kDisplayId, 1024, 768));
+    display_manager_->SetDefaultDisplayForTests(
+        std::make_shared<Display>(kDisplayId, 1024, 768, kMaxDisplayLayersCount));
   }
 
   void TearDown() override {

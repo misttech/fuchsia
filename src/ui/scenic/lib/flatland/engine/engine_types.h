@@ -25,6 +25,9 @@ struct DisplayInfo {
 
   // The pixel formats available on this particular display.
   std::vector<fuchsia_images2::PixelFormat> formats;
+
+  // The maximum number of hardware layers supported by this display.
+  uint32_t max_layer_count = 0;
 };
 
 // Struct to combine the source and destination rectangles used to set a layer's

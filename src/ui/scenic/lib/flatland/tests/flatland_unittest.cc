@@ -435,9 +435,10 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
   std::shared_ptr<FlatlandDisplay> CreateFlatlandDisplay(uint32_t width_in_px,
                                                          uint32_t height_in_px) {
+    static constexpr uint32_t kMaxDisplayLayersCount = 2;
     auto session_id = scheduling::GetNextSessionId();
-    auto display = std::make_shared<display::Display>(display::WireDisplayId{.value = 1},
-                                                      width_in_px, height_in_px);
+    auto display = std::make_shared<display::Display>(
+        display::WireDisplayId{.value = 1}, width_in_px, height_in_px, kMaxDisplayLayersCount);
     flatland_displays_.push_back({});
     return FlatlandDisplay::New(
         std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()),

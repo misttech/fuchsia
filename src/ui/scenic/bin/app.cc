@@ -46,10 +46,6 @@ constexpr zx::duration kShutdownTimeout = zx::sec(1);
 // all resources are cleaned up.
 constexpr zx::duration kEscherCleanupRetryInterval{10'000'000};  // 10 millisecond
 
-// The maximum number of "layers" that can be passed to the display hardware in a single frame,
-// per display.
-constexpr uint32_t kMaxDisplayLayers = 2;
-
 // See "Config for Fuchsia Visual Debugging": go/config-fuchsia-visual-debugging
 constexpr uint8_t VISUAL_DEBUGGING_LEVEL_INFO = 2;
 constexpr uint8_t VISUAL_DEBUGGING_LEVEL_INFO_PLUS = 3;
@@ -418,7 +414,6 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                                                   "flatland::DisplayCompositor"),
         flatland::DisplayCompositorConfig{
             .enable_direct_to_display = config_values_.display_composition(),
-            .max_display_layers = kMaxDisplayLayers,
             .tint_gpu_fallback_images =
                 (config_values_.visual_debugging_level() >= VISUAL_DEBUGGING_LEVEL_INFO),
             .enable_frame_counter_overlay =

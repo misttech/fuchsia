@@ -25,6 +25,8 @@ namespace display::test {
 
 class CoordinatorProxyTest : public gtest::RealLoopFixture {
  public:
+  static constexpr uint32_t kMaxDisplayLayersCount = 2;
+
   constexpr static std::array<WireDisplayMode, 2> kSupportedDisplayModes = {
       fuchsia_hardware_display_types::wire::Mode{.active_area = {.width = 1024, .height = 768},
                                                  .refresh_rate_millihertz = 60000,
@@ -48,7 +50,9 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
     fuchsia_hardware_display::wire::Info display_info = {
         .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(
             const_cast<WireDisplayMode*>(kSupportedDisplayModes.data()),
-            kSupportedDisplayModes.size())};
+            kSupportedDisplayModes.size()),
+        .max_layer_count = kMaxDisplayLayersCount,
+    };
 
     auto mock_coordinator =
         std::make_unique<testing::StrictMock<MockDisplayCoordinator>>(display_info);

@@ -24,6 +24,8 @@ namespace display::test {
 
 namespace {
 
+constexpr uint32_t kMaxDisplayLayersCount = 2;
+
 class DisplayManagerMockTest : public gtest::TestLoopFixture {
  public:
   // |testing::Test|
@@ -67,7 +69,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight, kMaxDisplayLayersCount));
 
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
@@ -103,10 +105,11 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
 }
 
 TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
-  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static constexpr display::WireDisplayId kDisplayId = {.value = 1};
   static constexpr int kDisplayWidth = 1024;
   static constexpr int kDisplayHeight = 768;
   static constexpr int kDisplayRefreshRateHz = 60;
+  static constexpr uint32_t kMaxDisplayLayersCount = 7;
 
   auto [coordinator_client, coordinator_server] =
       fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
@@ -132,6 +135,7 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
       .horizontal_size_mm = 120,
       .vertical_size_mm = 100,
       .using_fallback_size = false,
+      .max_layer_count = kMaxDisplayLayersCount,
   };
   MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
@@ -146,6 +150,7 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
   EXPECT_EQ(default_display->maximum_refresh_rate_in_millihertz(),
             static_cast<uint32_t>(kDisplayRefreshRateHz * 1'000));
   EXPECT_THAT(default_display->pixel_formats(), testing::ElementsAre(pixel_format));
+  EXPECT_EQ(default_display->max_layer_count(), kMaxDisplayLayersCount);
 }
 
 TEST_F(DisplayManagerMockTest, MultipleDisplayVsyncCallbacks) {
@@ -162,7 +167,7 @@ TEST_F(DisplayManagerMockTest, MultipleDisplayVsyncCallbacks) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight, kMaxDisplayLayersCount));
 
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));

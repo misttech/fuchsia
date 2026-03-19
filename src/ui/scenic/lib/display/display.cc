@@ -16,12 +16,14 @@
 namespace display {
 
 Display::Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_in_mm,
-                 uint32_t height_in_mm, std::vector<fuchsia_images2::PixelFormat> pixel_formats)
+                 uint32_t height_in_mm, uint32_t max_layer_count,
+                 std::vector<fuchsia_images2::PixelFormat> pixel_formats)
     : vsync_timing_(std::make_shared<scheduling::VsyncTiming>()),
       display_id_(id),
       mode_(mode),
       width_in_mm_(width_in_mm),
       height_in_mm_(height_in_mm),
+      max_layer_count_(max_layer_count),
       pixel_formats_(std::move(pixel_formats)) {
   zx::event::create(0, &ownership_event_);
   device_pixel_ratio_.store({1.f, 1.f});
@@ -29,11 +31,13 @@ Display::Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_i
   // Most displays will have a longer interval.  If so, `OnVsync()` will adjust.
   vsync_timing_->set_vsync_interval(kMinimumVsyncInterval);
 }
-Display::Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px)
+
+Display::Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px,
+                 uint32_t max_layer_count)
     : Display(id,
               WireDisplayMode{.active_area = {.width = width_in_px, .height = height_in_px},
                               .refresh_rate_millihertz = 60'000},
-              0, 0, {fuchsia_images2::PixelFormat::kB8G8R8A8}) {}
+              0, 0, max_layer_count, {fuchsia_images2::PixelFormat::kB8G8R8A8}) {}
 
 void Display::Claim() {
   FX_DCHECK(!claimed_);
