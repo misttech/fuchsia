@@ -172,22 +172,65 @@ fuchsia_test_package("fuchsia-storage-benchmarks-tests") {
   }
 }
 
-fuchsia_component_perf_test("storage_benchmarks") {
-  package = ":storage-benchmarks"
-  component_name = "storage-benchmarks"
-  expected_metric_names_filepath =
-      "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.txt"
-  results_path_test_arg = "--output-fuchsiaperf"
-  test_type = "storage"
+template("storage_benchmark") {
+  fuchsia_component_perf_test(target_name) {
+    package = ":storage-benchmarks"
+    component_name = "storage-benchmarks"
+    expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.${invoker.fs}.txt"
+    results_path_test_arg = "--output-fuchsiaperf"
+    test_type = "storage"
+    test_component_args = [
+      "--filter",
+      "${invoker.fs}",
+    ]
+    environments =
+        performance_testing_environments - invoker.excluded_environments
+  }
+}
 
-  # We don't enable this test on Astro because of the potential for it to cause extra flash wear
-  # on that device type.
-  environments = performance_testing_environments - [ astro_env ]
+benchmarks = []
+
+foreach(fs,
+        [
+          "minfs",
+          "blobfs",
+          "f2fs",
+        ]) {
+  target_name = "storage_${fs}_benchmarks"
+  benchmarks += [ ":${target_name}" ]
+  storage_benchmark(target_name) {
+    fs = fs
+    excluded_environments = [
+      # These benchmarks aren't enabled on Astro to avoid extra flash wear on that device type.
+      astro_env,
+
+      # Minfs and Blobfs aren't enabled on Sorrel because they are slow to run and aren't used on
+      # that device. F2fs's minimum partition size with FVM is too larger for Sorrel.
+      sorrel_env,
+    ]
+  }
+}
+
+foreach(fs,
+        [
+          "memfs",
+          "fxfs",
+          "fxblob",
+        ]) {
+  target_name = "storage_${fs}_benchmarks"
+  benchmarks += [ ":${target_name}" ]
+  storage_benchmark(target_name) {
+    fs = fs
+    excluded_environments = [
+      # These benchmarks aren't enabled on Astro to avoid extra flash wear on that device type.
+      astro_env,
+    ]
+  }
 }
 
 group("benchmarks") {
   testonly = true
-  deps = [ ":storage_benchmarks" ]
+  deps = benchmarks
 }
 
 group("tests") {

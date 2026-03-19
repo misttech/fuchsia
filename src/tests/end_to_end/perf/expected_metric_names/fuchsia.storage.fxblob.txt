@@ -1,0 +1,11 @@
+[no-summarize-metrics]
+fuchsia.storage: PageInBlobRandomCompressed/fxblob
+fuchsia.storage: PageInBlobSequentialCompressed/fxblob
+fuchsia.storage: PageInBlobSequentialUncompressed/fxblob
+fuchsia.storage: WriteBlob/2097152/fxblob
+fuchsia.storage: WriteBlob/26214400/fxblob
+fuchsia.storage: WriteRealisticBlobs/fxblob
+fuchsia.storage: OpenAndGetVmoMetaFileCold/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoMetaFileWarm/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobCold/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobWarm/fxblob-pkgdir
