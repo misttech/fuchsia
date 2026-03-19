@@ -58,12 +58,7 @@ if (is_host && target_cpu == "x64") {
   }
 
   host_test_data("test_data") {
-    deps = [
-      # This dep currently does nothing, but if the circular dependency issue
-      # is solved then it'll add a proper dep on the built image.
-      "//build/images/fuchsia:fuchsia_zbi_for_host_tests",
-      "//src/firmware/gigaboot/cpp:fuchsia",
-    ]
+    deps = [ "//src/firmware/gigaboot/cpp:fuchsia" ]
     sources = [
       "//prebuilt/third_party/edk2/qemu-x64/OVMF_CODE.fd",
       "//prebuilt/third_party/edk2/qemu-x64/OVMF_VARS.fd",
