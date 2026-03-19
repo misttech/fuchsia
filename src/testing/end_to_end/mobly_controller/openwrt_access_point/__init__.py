@@ -262,7 +262,7 @@ class OpenWrtAP:
                 ipv4_private: Any 192.168, 172.16, 10, or 169.254 addresses
                 ipv4_public: Any IPv4 public addresses
                 ipv6_link_local: Any fe80:: addresses
-                ipv6_private: Any fd00:: addresses
+                ipv6_private_local: Any fd00:: addresses
                 ipv6_public: Any publicly routable addresses
         """
         stdout = self.ssh.run(f"ip -o addr show {interface}").stdout.decode(
@@ -277,7 +277,7 @@ class OpenWrtAP:
         ipv4_private_addresses = []
         ipv4_public_addresses = []
         ipv6_link_local_addresses = []
-        ipv6_private_addresses = []
+        ipv6_private_local_addresses = []
         ipv6_public_addresses = []
 
         for addr in addrs:
@@ -299,7 +299,7 @@ class OpenWrtAP:
                 if on_device_ip.is_link_local:
                     ipv6_link_local_addresses.append(str(on_device_ip))
                 elif on_device_ip.is_private:
-                    ipv6_private_addresses.append(str(on_device_ip))
+                    ipv6_private_local_addresses.append(str(on_device_ip))
                 elif on_device_ip.is_global:
                     ipv6_public_addresses.append(str(on_device_ip))
 
@@ -307,7 +307,7 @@ class OpenWrtAP:
             "ipv4_private": ipv4_private_addresses,
             "ipv4_public": ipv4_public_addresses,
             "ipv6_link_local": ipv6_link_local_addresses,
-            "ipv6_private": ipv6_private_addresses,
+            "ipv6_private_local": ipv6_private_local_addresses,
             "ipv6_public": ipv6_public_addresses,
         }
 

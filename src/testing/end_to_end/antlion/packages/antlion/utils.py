@@ -663,7 +663,7 @@ def get_interface_ip_addresses(
     ipv4_private_addresses = []
     ipv4_public_addresses = []
     ipv6_link_local_addresses = []
-    ipv6_private_addresses = []
+    ipv6_private_local_addresses = []
     ipv6_public_addresses = []
 
     for addr in addrs:
@@ -685,7 +685,7 @@ def get_interface_ip_addresses(
             if on_device_ip.is_link_local:
                 ipv6_link_local_addresses.append(str(on_device_ip))
             elif on_device_ip.is_private:
-                ipv6_private_addresses.append(str(on_device_ip))
+                ipv6_private_local_addresses.append(str(on_device_ip))
             elif on_device_ip.is_global:
                 ipv6_public_addresses.append(str(on_device_ip))
 
@@ -693,7 +693,7 @@ def get_interface_ip_addresses(
         "ipv4_private": ipv4_private_addresses,
         "ipv4_public": ipv4_public_addresses,
         "ipv6_link_local": ipv6_link_local_addresses,
-        "ipv6_private": ipv6_private_addresses,
+        "ipv6_private_local": ipv6_private_local_addresses,
         "ipv6_public": ipv6_public_addresses,
     }
 

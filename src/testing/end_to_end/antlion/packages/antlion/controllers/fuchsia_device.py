@@ -738,7 +738,7 @@ class FuchsiaDevice:
             # sufficient for connectivity in some environments.
             valid_addrs = (
                 ip_addrs["ipv6_link_local"]
-                + ip_addrs["ipv6_private"]
+                + ip_addrs["ipv6_private_local"]
                 + ip_addrs["ipv6_public"]
             )
             if len(valid_addrs) > 0:
