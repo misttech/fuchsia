@@ -383,6 +383,12 @@ pub trait Proxy: Sized + Send + Sync {
     fn domain(&self) -> Arc<crate::Client> {
         self.as_channel().domain()
     }
+
+    /// Returns a future that completes when the server receives the
+    /// `PEER_CLOSED` signal.
+    fn on_closed(&self) -> crate::OnFDomainSignals {
+        self.as_channel().on_closed()
+    }
 }
 
 /// A stream of requests coming into a FIDL server over a channel.
