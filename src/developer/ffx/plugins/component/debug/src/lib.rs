@@ -12,7 +12,7 @@ use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_debug_args::ComponentDebugCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb_fdomain::Debugger;
+use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use zx_types::zx_koid_t;

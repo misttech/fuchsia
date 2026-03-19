@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use flex_client::ProxyHasDomain;
-use flex_fuchsia_debugger as fdebugger;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_debugger as fdebugger;
 
 /// A representation of a DebugAgent instance.
 pub struct Agent {

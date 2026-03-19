@@ -9,7 +9,7 @@ use fdomain_fuchsia_exception::ProcessLimboProxy;
 use ffx_config::EnvironmentContext;
 use ffx_debug_crash_args::CrashCommand;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb_fdomain::Debugger;
+use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool};
 use target_holders::fdomain::moniker;
 

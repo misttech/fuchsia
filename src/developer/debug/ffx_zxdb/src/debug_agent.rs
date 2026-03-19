@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use flex_client::ProxyHasDomain;
-use flex_fuchsia_debugger as fdebugger;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_debugger as fdebugger;
 use futures_util::future::FutureExt;
 use std::path::{Path, PathBuf};
 use std::{env, io};
@@ -47,12 +47,10 @@ impl DebugAgentSocket {
         let (mut unix_conn, _) = self.unix_socket.accept().await?;
 
         // Create a FIDL socket to the debug_agent on the device.
-        let (fidl_left, fidl_right) = match &self.proxy {
+        let (fidl_conn, fidl_right) = match &self.proxy {
             DebuggerProxy::DebugAgentProxy(agent) => agent.domain().create_stream_socket(),
             DebuggerProxy::LauncherProxy(launcher) => launcher.domain().create_stream_socket(),
         };
-
-        let fidl_conn = flex_client::socket_to_async(fidl_left);
 
         let (mut unix_rx, mut unix_tx) = unix_conn.split();
         let (mut fidl_rx, mut fidl_tx) = futures::io::AsyncReadExt::split(fidl_conn);

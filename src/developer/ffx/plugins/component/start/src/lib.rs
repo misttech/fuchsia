@@ -13,7 +13,7 @@ use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_que
 use ffx_component_start_args::ComponentStartCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb_fdomain::Debugger;
+use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 

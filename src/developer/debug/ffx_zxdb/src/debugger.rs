@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use errors::ffx_error;
+use fdomain_fuchsia_debugger as fdebugger;
 use ffx_config::EnvironmentContext;
-use flex_fuchsia_debugger as fdebugger;
 use fuchsia_async::{Task, unblock};
 use signal_hook::consts::signal::SIGUSR1;
 use signal_hook::iterator::Signals;
