@@ -12,7 +12,6 @@
 namespace forensics {
 namespace crash_reports {
 
-constexpr char kHourlySnapshot[] = "hourly_snapshot";
 constexpr char kHourlySnapshotProgramName[] = "system";
 constexpr char kHourlySnapshotSignature[] = "fuchsia-hourly-snapshot";
 
