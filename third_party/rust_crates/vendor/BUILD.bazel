@@ -811,14 +811,14 @@ alias(
 )
 
 alias(
-    name = "euclid-0.22.11",
-    actual = "//third_party/rust_crates/vendor/euclid-0.22.11:euclid",
+    name = "euclid-0.22.14",
+    actual = "//third_party/rust_crates/vendor/euclid-0.22.14:euclid",
     tags = ["manual"],
 )
 
 alias(
     name = "euclid",
-    actual = "//third_party/rust_crates/vendor/euclid-0.22.11:euclid",
+    actual = "//third_party/rust_crates/vendor/euclid-0.22.14:euclid",
     tags = ["manual"],
 )
 
