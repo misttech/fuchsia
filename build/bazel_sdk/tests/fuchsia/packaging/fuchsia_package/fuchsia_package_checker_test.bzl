@@ -4,14 +4,13 @@
 
 # buildifier: disable=module-docstring
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest")
 load(
     "@rules_fuchsia//fuchsia:private_defs.bzl",
     "FUCHSIA_API_LEVEL_TARGET",
     "FUCHSIA_TOOLCHAIN_DEFINITION",
     "FuchsiaPackageInfo",
     "REPOSITORY_DEFAULT_FUCHSIA_API_LEVEL_TARGET",
-    "get_fuchsia_api_level",
     "get_fuchsia_sdk_toolchain",
 )
 load(

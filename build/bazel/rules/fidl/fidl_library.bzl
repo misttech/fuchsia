@@ -4,7 +4,6 @@
 
 """Rule for declaring a FIDL library"""
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",

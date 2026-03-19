@@ -17,7 +17,6 @@ load(
     "idk_molecule",
     "idk_noop_atom",
 )
-load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
 load(

@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
-
 # The blocklist is all mirrors that have licensing concerns
 # that Fuchsia does not want in its' checkout.
 blocklist = [

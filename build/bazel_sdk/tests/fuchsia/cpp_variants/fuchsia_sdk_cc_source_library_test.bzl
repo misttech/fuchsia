@@ -9,7 +9,6 @@ load("@fuchsia_sdk//:generated_constants.bzl", "ALL_CC_SOURCE_TARGETS")
 load(
     "@rules_fuchsia//fuchsia:private_defs.bzl",
     "FUCHSIA_API_LEVEL_TARGET",
-    "REPOSITORY_DEFAULT_FUCHSIA_API_LEVEL_TARGET",
 )
 
 NATIVE_CPU_ALIASES = {

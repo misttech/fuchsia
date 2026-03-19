@@ -5,7 +5,7 @@
 """Rules for generating FIDL IR."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@fuchsia_build_info//:args.bzl", "idk_buildable_cpus", "runtime_supported_api_levels")
+load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
 load(":fidl_summary.bzl", "fidl_summary")
 load(":providers.bzl", "FidlLibraryInfo")
 

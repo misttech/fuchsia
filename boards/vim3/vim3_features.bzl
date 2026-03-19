@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "build_info_version", "compilation_mode")
+load("@fuchsia_build_info//:args.bzl", "compilation_mode")
 
 BASE_PROVIDED_FEATURES = [
     "fuchsia::aml-hrtimer",

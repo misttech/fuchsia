@@ -6,7 +6,7 @@
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
-load(":providers.bzl", "FuchsiaProductAssemblyInfo", "FuchsiaProductImageInfo")
+load(":providers.bzl", "FuchsiaProductAssemblyInfo")
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 def _fuchsia_elf_sizes_impl(ctx):

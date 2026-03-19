@@ -4,7 +4,6 @@
 
 """Define the json_validator_valico_test() macro."""
 
-load("@rules_python//python:py_test.bzl", "py_test")
 load("//build/bazel/host_tests:host_test.bzl", "host_test")
 
 def json_validator_valico_test(name, test_schema, test_document, extra_args = [], expect_failure = False):

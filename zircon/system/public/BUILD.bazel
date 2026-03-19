@@ -6,7 +6,6 @@
 # files synchronized.
 # LINT.IfChange
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 cc_library(
     name = "public",

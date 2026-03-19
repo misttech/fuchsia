@@ -32,8 +32,6 @@ load("@fuchsia_icu_config//:constants.bzl", "icu_flavors")
 
 """
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
-
 _CONSTANTS_BZL_TEMPLATE = """# AUTO_GENERATED - DO NOT EDIT!
 
 icu_flavors = struct(

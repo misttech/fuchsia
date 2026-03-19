@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 
 package(default_visibility = ["//visibility:public"])

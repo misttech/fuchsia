@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules/python:py_toolchain.bzl", "PY_TOOLCHAIN_ATTRS", "generate_python_build_action")
 

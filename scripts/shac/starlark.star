@@ -96,8 +96,14 @@ def _buildifier_lint(ctx):
             if "docstring" in warning["category"]:
                 continue
 
+            level = "warning"
+            if warning["category"] == "load":
+                # Unused imports are completely unnecessary, so treat them as
+                # errors.
+                level = "error"
+
             ctx.emit.finding(
-                level = "warning",
+                level = level,
                 filepath = file_result["filename"],
                 message = warning["message"],
                 line = warning.get("start", {}).get("line"),
