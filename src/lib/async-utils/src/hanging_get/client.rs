@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl::client::QueryResponseFut;
+use fidl::encoding::ResourceDialect;
 use futures::future::{FusedFuture as _, FutureExt as _, MaybeDone};
 use futures::stream::{FusedStream, Stream};
 use futures::task::{Context, Poll};
@@ -13,17 +14,24 @@ use std::pin::Pin;
 /// "Hanging Get" design pattern for flow control as in //docs/development/api/fidl.md#flow_control
 #[must_use = "streams do nothing unless polled"]
 #[pin_project]
-pub struct HangingGetStream<P, O, Q = fn(&P) -> QueryResponseFut<O>> {
+pub struct HangingGetStream<
+    P,
+    O,
+    D: ResourceDialect = fidl::encoding::DefaultFuchsiaResourceDialect,
+    Q = fn(&P) -> QueryResponseFut<O, D>,
+> {
     proxy: P,
     query: Q,
-    response: QueryResponseFut<O>,
+    response: QueryResponseFut<O, D>,
     eager: bool,
+    _dialect: std::marker::PhantomData<D>,
 }
 
-impl<P, O, Q> Stream for HangingGetStream<P, O, Q>
+impl<P, O, D, Q> Stream for HangingGetStream<P, O, D, Q>
 where
     O: Unpin,
-    Q: FnMut(&P) -> QueryResponseFut<O>,
+    Q: FnMut(&P) -> QueryResponseFut<O, D>,
+    D: ResourceDialect,
 {
     type Item = fidl::Result<O>;
 
@@ -62,25 +70,27 @@ where
     }
 }
 
-impl<P, O, Q> FusedStream for HangingGetStream<P, O, Q>
+impl<P, O, D, Q> FusedStream for HangingGetStream<P, O, D, Q>
 where
     O: Unpin,
-    Q: FnMut(&P) -> QueryResponseFut<O>,
+    Q: FnMut(&P) -> QueryResponseFut<O, D>,
+    D: ResourceDialect,
 {
     fn is_terminated(&self) -> bool {
         false
     }
 }
 
-impl<P, O, Q> HangingGetStream<P, O, Q>
+impl<P, O, D, Q> HangingGetStream<P, O, D, Q>
 where
-    Q: FnMut(&P) -> QueryResponseFut<O>,
+    Q: FnMut(&P) -> QueryResponseFut<O, D>,
     O: Unpin,
+    D: ResourceDialect,
 {
     fn new_inner(proxy: P, mut query: Q, eager: bool) -> Self {
         let response = if eager { query(&proxy) } else { QueryResponseFut(MaybeDone::Gone) };
 
-        Self { proxy, query, response, eager }
+        Self { proxy, query, response, eager, _dialect: std::marker::PhantomData }
     }
 
     /// Creates a new lazily-polled hanging-get stream.
@@ -94,17 +104,18 @@ where
     }
 }
 
-impl<P, O> HangingGetStream<P, O, fn(&P) -> QueryResponseFut<O>>
+impl<P, O, D> HangingGetStream<P, O, D, fn(&P) -> QueryResponseFut<O, D>>
 where
     O: Unpin,
+    D: ResourceDialect,
 {
     /// Creates a new lazily-polled hanging-get stream with a function pointer.
-    pub fn new_with_fn_ptr(proxy: P, query: fn(&P) -> QueryResponseFut<O>) -> Self {
+    pub fn new_with_fn_ptr(proxy: P, query: fn(&P) -> QueryResponseFut<O, D>) -> Self {
         Self::new(proxy, query)
     }
 
     /// Creates a new eagerly-polled hanging-get stream with a function pointer.
-    pub fn new_eager_with_fn_ptr(proxy: P, query: fn(&P) -> QueryResponseFut<O>) -> Self {
+    pub fn new_eager_with_fn_ptr(proxy: P, query: fn(&P) -> QueryResponseFut<O, D>) -> Self {
         Self::new_eager(proxy, query)
     }
 }
