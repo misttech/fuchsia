@@ -123,6 +123,50 @@ profiler session in the background.
    Wrote profile to profile.pb
    ```
 
+### Profiling on boot
+
+You can configure the profiler to attach to processes as soon as they start upon
+the next device reboot. This is useful for analyzing early startup performance
+or the boot sequence.
+
+1. Start the profile session targeting the next boot:
+
+   ```posix-terminal
+   ffx profiler attach --system-wide --on-boot
+   ```
+
+   The CLI will output a confirmation such as:
+
+   ```none {:.devsite-disable-click-to-copy}
+   On-boot profiling session configured. Profiles will be collected when the
+   target component starts.
+   ```
+
+2. Reboot your device.
+
+3. Wait for the device to finish booting and the target processes to start. You
+   can check the status of active sessions using the `status` command.
+
+4. Stop the session to download the accumulated profile:
+
+   ```posix-terminal
+   ffx profiler stop
+   ```
+
+### Checking profiler status
+
+To view any active background or on-boot profiling sessions that are currently
+running on the device, use the `status` command:
+
+```posix-terminal
+ffx profiler status
+```
+
+```none {:.devsite-disable-click-to-copy}
+Active background sessions:
+  - task_id: 1
+```
+
 ### Attaching to Existing Processes
 
 You can attach to specific components or processes.
@@ -190,7 +234,8 @@ launch`, and `ffx profiler stop`:
 
 - `--output`: Name or path of the output trace file. Defaults to `profile.pb`.
 - `--print-stats`: Print stats about how the profiling session went to stdout.
-- `--color-output`: If true, include color codes in output. Defaults to true if terminal output is detected.
+- `--color-output`: If true, include color codes in output. Defaults to true if
+  terminal output is detected.
 
 The following options apply to both `ffx profiler attach` and `ffx profiler
 launch`:
@@ -208,8 +253,13 @@ launch`:
   will run interactively and wait until you press `<ENTER>` to stop capturing.
 - **Background (`--background`)**: Run the profiler session in the background.
 
-There are additional options available. These are primarilary used to troubleshoot the profiler and
-provide fine-grained control of the profiler execution.
+The following option applies only to `ffx profiler attach`:
+
+- **On Boot (`--on-boot`)**: Run the profiler session when the device next boots.
+
+There are additional options available. These are primarilary used to
+troubleshoot the profiler and provide fine-grained control of the profiler
+execution.
 See the [ffx profiler reference][ffx-profiler] for more details.
 
 ## Analyzing the Profile
