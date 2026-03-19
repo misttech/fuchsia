@@ -13,21 +13,27 @@ alias(
 
 fuchsia_platform_artifacts(
     name = "platform_user",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = [
+        "@gn_targets//bundles/assembly:user.bazel_inputs.license",
+    ],
     directory = "@gn_targets//bundles/assembly:user.bazel_inputs.directory",
     files = "@gn_targets//bundles/assembly:user.bazel_inputs",
 )
 
 fuchsia_platform_artifacts(
     name = "platform_userdebug",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = [
+        "@gn_targets//bundles/assembly:userdebug.bazel_inputs.license",
+    ],
     directory = "@gn_targets//bundles/assembly:userdebug.bazel_inputs.directory",
     files = "@gn_targets//bundles/assembly:userdebug.bazel_inputs",
 )
 
 fuchsia_platform_artifacts(
     name = "platform_eng",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = [
+        "@gn_targets//bundles/assembly:eng.bazel_inputs.license",
+    ],
     directory = "@gn_targets//bundles/assembly:eng.bazel_inputs.directory",
     files = "@gn_targets//bundles/assembly:eng.bazel_inputs",
 )

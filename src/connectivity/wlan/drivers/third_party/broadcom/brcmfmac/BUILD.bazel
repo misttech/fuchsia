@@ -8,7 +8,7 @@ package(default_visibility = ["//visibility:public"])
 
 fuchsia_prebuilt_package(
     name = "brcmfmac-astro",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = ["@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-astro.license"],
     archive = "@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-astro",
     drivers = [
         "meta/brcmfmac.cm",
@@ -17,7 +17,7 @@ fuchsia_prebuilt_package(
 
 fuchsia_prebuilt_package(
     name = "brcmfmac-sherlock",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = ["@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-sherlock.license"],
     archive = "@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-sherlock",
     drivers = [
         "meta/brcmfmac.cm",
@@ -26,7 +26,7 @@ fuchsia_prebuilt_package(
 
 fuchsia_prebuilt_package(
     name = "brcmfmac-nelson",
-    applicable_licenses = ["@gn_targets//:all_licenses_spdx_json"],
+    applicable_licenses = ["@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-nelson.license"],
     archive = "@gn_targets//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-nelson",
     drivers = [
         "meta/brcmfmac.cm",
