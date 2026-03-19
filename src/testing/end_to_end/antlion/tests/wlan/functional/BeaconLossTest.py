@@ -26,6 +26,7 @@ from mobly.records import TestResultRecord
 
 
 class BeaconLossTest(base_test.WifiBaseTest):
+    MAX_ASSOCIATE_ATTEMPTS = 2
     # Default number of test iterations here.
     # Override using parameter in config file.
     # Eg: "beacon_loss_test_iterations": "10"
@@ -73,6 +74,42 @@ class BeaconLossTest(base_test.WifiBaseTest):
         self.download_logs()
         self.access_point.stop_all_aps()
 
+    def _associate_dut_with_retry(self, ssid: str) -> None:
+        for i in range(self.MAX_ASSOCIATE_ATTEMPTS):
+            try:
+                self.log.debug(
+                    f"Attempt {i + 1}/{self.MAX_ASSOCIATE_ATTEMPTS} to associate with SSID: {ssid}"
+                )
+                self.dut.associate(ssid, SecurityMode.OPEN)
+                time.sleep(self.wait_client_connection_setup_s)
+                if self.dut.is_connected():
+                    self.log.info(
+                        f"Successfully associated and connected to SSID: {ssid}"
+                    )
+                    return
+                else:
+                    retry_message = (
+                        "Retrying..."
+                        if i < self.MAX_ASSOCIATE_ATTEMPTS - 1
+                        else "Retries exhausted."
+                    )
+                    self.log.warning(
+                        f"DUT failed to connect on attempt {i + 1}/{self.MAX_ASSOCIATE_ATTEMPTS}. {retry_message}"
+                    )
+            except Exception as e:
+                retry_message = (
+                    "Retrying..."
+                    if i < self.MAX_ASSOCIATE_ATTEMPTS - 1
+                    else "Retries exhausted."
+                )
+                self.log.warning(
+                    f"Exception occurred on association attempt {i + 1}/{self.MAX_ASSOCIATE_ATTEMPTS}: {e}. {retry_message}"
+                )
+
+        raise signals.TestError(
+            f"Failed to associate and connect to SSID {ssid} after {self.MAX_ASSOCIATE_ATTEMPTS} attempts."
+        )
+
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
         self.access_point.stop_all_aps()
@@ -90,44 +127,51 @@ class BeaconLossTest(base_test.WifiBaseTest):
         else:
             self.in_use_interface = self.access_point.wlan_2g
 
-        # TODO(b/144505723): [ACTS] update BeaconLossTest.py to handle client
-        # roaming, saved networks, etc.
-        self.log.info("sending associate command for ssid %s", self.ssid)
-        self.dut.associate(self.ssid, SecurityMode.OPEN)
+        self.log.info(
+            f"Initial association with SSID: {self.ssid} on channel {channel}"
+        )
+        self._associate_dut_with_retry(self.ssid)
 
-        asserts.assert_true(self.dut.is_connected(), "Failed to connect.")
-
-        time.sleep(self.wait_client_connection_setup_s)
-
-        for _ in range(0, self.num_of_iterations):
+        for i in range(self.num_of_iterations):
+            self.log.info(
+                f"Iteration {i + 1}/{self.num_of_iterations}: Testing beacon loss on interface {self.in_use_interface}"
+            )
             # Turn off AP radio
-            self.log.info("turning off radio")
+            self.log.info(
+                f"Turning off AP radio for interface: {self.in_use_interface}"
+            )
             self.access_point.iwconfig.ap_iwconfig(
                 self.in_use_interface, "txpower off"
             )
             time.sleep(self.wait_after_ap_txoff_s)
 
-            # Did we disconnect from AP?
+            # Verify disconnection from AP
             asserts.assert_false(
-                self.dut.is_connected(), "Failed to disconnect."
+                self.dut.is_connected(),
+                f"DUT failed to disconnect from {self.ssid} after AP radio off",
             )
+            self.log.info(f"DUT successfully disconnected from {self.ssid}")
 
             # Turn on AP radio
-            self.log.info("turning on radio")
+            self.log.info(
+                f"Turning on AP radio for interface: {self.in_use_interface}"
+            )
             self.access_point.iwconfig.ap_iwconfig(
                 self.in_use_interface, "txpower on"
             )
             time.sleep(self.wait_to_connect_after_ap_txon_s)
 
-            # Tell the client to connect
-            self.log.info(f"sending associate command for ssid {self.ssid}")
+            # Initiate reconnection
+            self.log.info(f"Sending associate command for SSID {self.ssid}")
             self.dut.associate(self.ssid, SecurityMode.OPEN)
             time.sleep(self.wait_client_connection_setup_s)
 
-            # Did we connect back to WiFi?
+            # Verify reconnection
             asserts.assert_true(
-                self.dut.is_connected(), "Failed to connect back."
+                self.dut.is_connected(),
+                f"Failed to connect back to {self.ssid}",
             )
+            self.log.info(f"DUT successfully reconnected to {self.ssid}")
 
     def test_beacon_loss_2g(self) -> None:
         self.beacon_loss(channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G)
