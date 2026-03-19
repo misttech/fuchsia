@@ -7,6 +7,7 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
+# A regular library target. This does not compile any tests.
 go_library(
     name = "lib",
     srcs = ["lib.go"],
@@ -14,6 +15,8 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
+# A host test wrapping the library's tests, which will be visible to Fuchsia test runners
+# as well as `bazel test`.
 host_go_test(
     name = "lib_test",
     srcs = ["lib_test.go"],
@@ -47,4 +50,5 @@ test_suite(
         ":lib_test",
         ":main_test",
     ],
+    visibility = ["//visibility:public"],
 )

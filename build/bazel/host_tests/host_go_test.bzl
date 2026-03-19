@@ -13,6 +13,7 @@ def legacy_host_go_test(
         test_args = [],
         test_data = [],
         tags = [],
+        visibility = None,
         **kwargs):
     """Define a host test wrapping a Go binary that can be used with Fuchsia test runners.
 
@@ -45,6 +46,7 @@ def legacy_host_go_test(
     go_test(
         name = binary_name,
         tags = tags,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
@@ -55,6 +57,7 @@ def legacy_host_go_test(
         test_args = test_args,
         data = test_data,
         target_compatible_with = HOST_CONSTRAINTS,
+        visibility = visibility,
     )
 
 def _host_go_test_impl(
@@ -73,6 +76,7 @@ def _host_go_test_impl(
     go_test(
         name = binary_name,
         tags = tags,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
@@ -83,6 +87,7 @@ def _host_go_test_impl(
         test_args = test_args,
         data = test_data,
         target_compatible_with = HOST_CONSTRAINTS,
+        visibility = visibility,
     )
 
 # TODO(https://fxbug.dev/349341932): Switch to symbolic macro once the inherit_attrs error is fixed.
