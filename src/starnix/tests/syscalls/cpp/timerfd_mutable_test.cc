@@ -65,6 +65,9 @@ TEST(TimerFD, AlarmCancelOnSet) {
   // "before" the poll, and the poll will not see it.
   rendezvous.holder.hold();
   printf("main_thread: wait here to ensure test_thread entered epoll_wait\n");
+  // A sleep alone removes flakiness 100%, but a wait alone does not. Let's
+  // see if this makes a difference.
+  sleep(1);
   test_helper::WaitUntilBlocked(test_thread_tid, true);
   printf("main_thread: ending wait, on to changing the timeline\n");
 
