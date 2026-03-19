@@ -6,14 +6,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use component_debug::query::get_single_instance_from_query;
 use component_debug::realm::{Runtime, get_runtime};
+use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_debug_args::ComponentDebugCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
-use ffx_zxdb::Debugger;
-use fho::{FfxMain, FfxTool};
-use target_holders::{RemoteControlProxyHolder, moniker};
+use ffx_zxdb_fdomain::Debugger;
+use fho::{FfxMain, FfxTool, deferred};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use zx_types::zx_koid_t;
 
 #[derive(FfxTool)]
@@ -21,8 +22,8 @@ pub struct DebugTool {
     #[command]
     cmd: ComponentDebugCommand,
 
-    #[with(moniker("/core/debugger"))]
-    debugger_proxy: fidl_fuchsia_debugger::LauncherProxy,
+    #[with(deferred(moniker("/core/debugger")))]
+    debugger_proxy: fho::Deferred<fdomain_fuchsia_debugger::LauncherProxy>,
 
     rcs: RemoteControlProxyHolder,
 
@@ -52,7 +53,7 @@ impl FfxMain for DebugTool {
             get_runtime(&instance.moniker, &realm_query).await.unwrap_or(Runtime::Unknown);
         let job_koid = get_job_koid(&runtime).await?;
 
-        let mut debugger = Debugger::launch(&self.context, self.debugger_proxy).await?;
+        let mut debugger = Debugger::launch(&self.context, self.debugger_proxy.await?).await?;
         debugger.command.attach_job_koid(job_koid);
         debugger.run().await?;
         Ok(())
