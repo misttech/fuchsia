@@ -1825,7 +1825,10 @@ fn irq_thread_main(
                     break;
                 }
             }
-            zx::PacketContents::Interrupt(_) if let Some(cq) = command_queue.upgrade() => {
+            zx::PacketContents::Interrupt(_) => {
+                let Some(cq) = command_queue.upgrade() else {
+                    break;
+                };
                 if cq.on_interrupt(&virtual_interrupt) {
                     // We need to wait for the virtual IRQ, then ack the physical IRQ.
                     trace!("Waiting for virtual IRQ ack");
