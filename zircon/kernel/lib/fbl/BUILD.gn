@@ -32,7 +32,6 @@ library_headers("headers") {
     "//zircon/kernel/lib/ktl:headers",
 
     # <fbl/gparena.h> has #include <lib/page/size.h>
-    # <fbl/object_tracker.h> has #include <lib/page/size.h>
     # <fbl/paged_view.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
   ]
@@ -52,7 +51,6 @@ source_set("kernel-tests") {
     "arena_tests.cc",
     "gparena_tests.cc",
     "name_tests.cc",
-    "object_tracker_tests.cc",
     "paged_view_tests.cc",
   ]
 
