@@ -3,32 +3,29 @@
 // found in the LICENSE file.
 
 use crate::features::{Feature, FeatureSet};
-use crate::types::capability::{Capability, CapabilityFromRef, ContextCapability};
+use crate::types::capability::{CapabilityFromRef, ContextCapability};
 use crate::types::capability_id::CapabilityId;
-use crate::types::child::{Child, ContextChild};
-use crate::types::collection::{Collection, ContextCollection};
-use crate::types::document::{Document, DocumentContext};
-use crate::types::environment::{
-    ContextEnvironment, Environment, EnvironmentExtends, RegistrationRef,
-};
-use crate::types::expose::{ContextExpose, Expose, ExposeFromRef, ExposeToRef};
+use crate::types::child::ContextChild;
+use crate::types::collection::ContextCollection;
+use crate::types::document::DocumentContext;
+use crate::types::environment::{ContextEnvironment, EnvironmentExtends, RegistrationRef};
+use crate::types::expose::{ContextExpose, ExposeFromRef, ExposeToRef};
 use crate::types::offer::{
-    ContextOffer, Offer, OfferFromRef, OfferToAllCapability, OfferToRef, TargetAvailability,
-    offer_to_all_would_duplicate, offer_to_all_would_duplicate_context,
+    ContextOffer, OfferFromRef, OfferToAllCapability, OfferToRef, TargetAvailability,
+    offer_to_all_would_duplicate_context,
 };
-use crate::types::program::{ContextProgram, Program};
+use crate::types::program::ContextProgram;
 use crate::types::right::Rights;
-use crate::types::r#use::{ContextUse, Use, UseFromRef};
+use crate::types::r#use::{ContextUse, UseFromRef};
 use crate::{
-    AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType,
-    ContextCapabilityClause, ContextSpanned, DependencyType, DictionaryRef, Error, EventScope,
-    FromClause, FromClauseContext, OneOrMany, RootDictionaryRef, SourceAvailability,
+    AnyRef, Availability, ConfigKey, ConfigType, ConfigValueType, ContextCapabilityClause,
+    ContextSpanned, DependencyType, DictionaryRef, Error, EventScope, FromClauseContext, OneOrMany,
+    RootDictionaryRef, SourceAvailability,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::hash::Hash;
-use std::path::Path;
-use std::{fmt, iter};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -58,38 +55,13 @@ macro_rules! val {
     };
 }
 
-/// Validates a given cml.
-#[allow(dead_code)]
 pub(crate) fn validate_cml(
-    document: &Document,
-    file: Option<&Path>,
-    features: &FeatureSet,
-    capability_requirements: &CapabilityRequirements<'_>,
-) -> Result<(), Error> {
-    let mut ctx = ValidationContext::new(&document, features, capability_requirements);
-    let mut res = ctx.validate();
-    if let Err(Error::Validate { filename, .. }) = &mut res {
-        if let Some(file) = file {
-            *filename = Some(file.to_string_lossy().into_owned());
-        }
-    }
-    res
-}
-
-pub(crate) fn validate_cml_context(
     document: &DocumentContext,
     features: &FeatureSet,
     capability_requirements: &CapabilityRequirements<'_>,
 ) -> Result<(), Error> {
-    let mut ctx = ValidationContextV2::new(&document, features, capability_requirements);
+    let mut ctx = ValidationContext::new(&document, features, capability_requirements);
     ctx.validate()
-}
-
-fn offer_can_have_dependency_no_span(offer: &Offer) -> bool {
-    offer.directory.is_some()
-        || offer.protocol.is_some()
-        || offer.service.is_some()
-        || offer.dictionary.is_some()
 }
 
 fn offer_can_have_dependency(offer: &ContextOffer) -> bool {
@@ -97,10 +69,6 @@ fn offer_can_have_dependency(offer: &ContextOffer) -> bool {
         || offer.protocol.is_some()
         || offer.service.is_some()
         || offer.dictionary.is_some()
-}
-
-fn offer_dependency_no_span(offer: &Offer) -> DependencyType {
-    offer.dependency.clone().unwrap_or(DependencyType::Strong)
 }
 
 fn offer_dependency(offer: &ContextOffer) -> DependencyType {
@@ -112,7 +80,7 @@ fn offer_dependency(offer: &ContextOffer) -> DependencyType {
 
 type ConflictInfo<'a> = (CapabilityId<'a>, Arc<PathBuf>);
 
-struct ValidationContextV2<'a> {
+struct ValidationContext<'a> {
     document: &'a DocumentContext,
     features: &'a FeatureSet,
     capability_requirements: &'a CapabilityRequirements<'a>,
@@ -129,13 +97,13 @@ struct ValidationContextV2<'a> {
     all_services: HashSet<Name>,
 }
 
-impl<'a> ValidationContextV2<'a> {
+impl<'a> ValidationContext<'a> {
     fn new(
         document: &'a DocumentContext,
         features: &'a FeatureSet,
         capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
-        ValidationContextV2 {
+        ValidationContext {
             document,
             features,
             capability_requirements,
@@ -1569,7 +1537,8 @@ which is almost certainly a mistake: {}",
                     return None;
                 }
 
-                if u.availability.as_ref().map(|s| s.value) != Some(Availability::Optional) {
+                let avail = u.availability.as_ref().map(|s| &s.value);
+                if avail == Some(&Availability::Required) || avail.is_none() {
                     return None;
                 }
 
@@ -2069,24 +2038,6 @@ which is almost certainly a mistake: {}",
     }
 }
 
-struct ValidationContext<'a> {
-    document: &'a Document,
-    features: &'a FeatureSet,
-    capability_requirements: &'a CapabilityRequirements<'a>,
-    all_children: HashMap<&'a BorrowedName, &'a Child>,
-    all_collections: HashSet<&'a BorrowedName>,
-    all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
-    all_services: HashSet<&'a BorrowedName>,
-    all_protocols: HashSet<&'a BorrowedName>,
-    all_directories: HashSet<&'a BorrowedName>,
-    all_runners: HashSet<&'a BorrowedName>,
-    all_resolvers: HashSet<&'a BorrowedName>,
-    all_dictionaries: HashMap<&'a BorrowedName, &'a Capability>,
-    all_configs: HashSet<&'a BorrowedName>,
-    all_environment_names: HashSet<&'a BorrowedName>,
-    all_capability_names: HashSet<&'a BorrowedName>,
-}
-
 // Facet key for fuchsia.test
 const TEST_FACET_KEY: &'static str = "fuchsia.test";
 
@@ -2096,1558 +2047,7 @@ const TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: &'static str = "deprecated-all
 // Facet key for type.
 const TEST_TYPE_FACET_KEY: &'static str = "type";
 
-impl<'a> ValidationContext<'a> {
-    fn new(
-        document: &'a Document,
-        features: &'a FeatureSet,
-        capability_requirements: &'a CapabilityRequirements<'a>,
-    ) -> Self {
-        ValidationContext {
-            document,
-            features,
-            capability_requirements,
-            all_children: HashMap::new(),
-            all_collections: HashSet::new(),
-            all_storages: HashMap::new(),
-            all_services: HashSet::new(),
-            all_protocols: HashSet::new(),
-            all_directories: HashSet::new(),
-            all_runners: HashSet::new(),
-            all_resolvers: HashSet::new(),
-            all_dictionaries: HashMap::new(),
-            all_configs: HashSet::new(),
-            all_environment_names: HashSet::new(),
-            all_capability_names: HashSet::new(),
-        }
-    }
-
-    fn validate(&mut self) -> Result<(), Error> {
-        // Ensure child components, collections, and storage don't use the
-        // same name.
-        //
-        // We currently have the ability to distinguish between storage and
-        // children/collections based on context, but still enforce name
-        // uniqueness to give us flexibility in future.
-        let all_children_names =
-            self.document.all_children_names().into_iter().zip(iter::repeat("children"));
-        let all_collection_names =
-            self.document.all_collection_names().into_iter().zip(iter::repeat("collections"));
-        let all_storage_names =
-            self.document.all_storage_names().into_iter().zip(iter::repeat("storage"));
-        let all_runner_names =
-            self.document.all_runner_names().into_iter().zip(iter::repeat("runners"));
-        let all_resolver_names =
-            self.document.all_resolver_names().into_iter().zip(iter::repeat("resolvers"));
-        let all_environment_names =
-            self.document.all_environment_names().into_iter().zip(iter::repeat("environments"));
-        let all_dictionary_names =
-            self.document.all_dictionary_names().into_iter().zip(iter::repeat("dictionaries"));
-        ensure_no_duplicate_names(
-            all_children_names
-                .chain(all_collection_names)
-                .chain(all_storage_names)
-                .chain(all_runner_names)
-                .chain(all_resolver_names)
-                .chain(all_environment_names)
-                .chain(all_dictionary_names),
-        )?;
-
-        // Populate the sets of children and collections.
-        if let Some(children) = &self.document.children {
-            self.all_children = children.iter().map(|c| (c.name.as_ref(), c)).collect();
-        }
-        self.all_collections = self.document.all_collection_names().into_iter().collect();
-        self.all_storages = self.document.all_storage_with_sources();
-        self.all_services = self.document.all_service_names().into_iter().collect();
-        self.all_protocols = self.document.all_protocol_names().into_iter().collect();
-        self.all_directories = self.document.all_directory_names().into_iter().collect();
-        self.all_runners = self.document.all_runner_names().into_iter().collect();
-        self.all_resolvers = self.document.all_resolver_names().into_iter().collect();
-        self.all_dictionaries = self.document.all_dictionaries().into_iter().collect();
-        self.all_configs = self.document.all_config_names().into_iter().collect();
-        self.all_environment_names = self.document.all_environment_names().into_iter().collect();
-        self.all_capability_names = self.document.all_capability_names();
-
-        // Validate "children".
-        if let Some(children) = &self.document.children {
-            for child in children {
-                self.validate_child(&child)?;
-            }
-        }
-
-        // Validate "collections".
-        if let Some(collections) = &self.document.collections {
-            for collection in collections {
-                self.validate_collection(&collection)?;
-            }
-        }
-
-        // Validate "capabilities".
-        if let Some(capabilities) = self.document.capabilities.as_ref() {
-            let mut used_ids = HashMap::new();
-            for capability in capabilities {
-                self.validate_capability(capability, &mut used_ids)?;
-            }
-        }
-
-        // Validate "use".
-        let mut uses_runner = false;
-        if let Some(uses) = self.document.r#use.as_ref() {
-            let mut used_ids = HashMap::new();
-            for use_ in uses.iter() {
-                self.validate_use(&use_, &mut used_ids)?;
-                if use_.runner.is_some() {
-                    uses_runner = true;
-                }
-            }
-        }
-
-        // Validate "expose".
-        if let Some(exposes) = self.document.expose.as_ref() {
-            let mut used_ids = HashMap::new();
-            let mut exposed_to_framework_ids = HashMap::new();
-            for expose in exposes.iter() {
-                self.validate_expose(&expose, &mut used_ids, &mut exposed_to_framework_ids)?;
-            }
-        }
-
-        // Validate "offer".
-        if let Some(offers) = self.document.offer.as_ref() {
-            let mut duplicate_check: HashSet<CapabilityId<'a>> = HashSet::new();
-            let mut problem_protocols = Vec::new();
-            let mut problem_dictionaries = Vec::new();
-
-            offers
-                .iter()
-                .filter(|o| matches!(o.to, OneOrMany::One(OfferToRef::All)))
-                .try_for_each(|offer| -> Result<(), Error> {
-                    if offer.protocol.is_some() {
-                        for cap_id in CapabilityId::from_offer_expose(offer)? {
-                            if !duplicate_check.insert(cap_id.clone()) {
-                                problem_protocols.push(cap_id);
-                            }
-                        }
-                    }
-
-                    if offer.dictionary.is_some() {
-                        for cap_id in CapabilityId::from_offer_expose(offer)? {
-                            if !duplicate_check.insert(cap_id.clone()) {
-                                problem_dictionaries.push(cap_id);
-                            }
-                        }
-                    }
-                    Ok(())
-                })?;
-
-            if !problem_protocols.is_empty() {
-                return Err(Error::validate(format!(
-                    r#"{} {:?} offered to "all" multiple times"#,
-                    "Protocol(s)",
-                    problem_protocols.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
-                )));
-            }
-
-            if !problem_dictionaries.is_empty() {
-                return Err(Error::validate(format!(
-                    r#"{} {:?} offered to "all" multiple times"#,
-                    "Dictionary(s)",
-                    problem_dictionaries.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
-                )));
-            }
-
-            let offered_to_all = offers
-                .iter()
-                .filter(|o| matches!(o.to, OneOrMany::One(OfferToRef::All)))
-                .filter(|o| o.protocol.is_some() || o.dictionary.is_some())
-                .collect::<Vec<&Offer>>();
-
-            let mut used_ids = HashMap::new();
-            for offer in offers.iter() {
-                self.validate_offer(&offer, &mut used_ids, &offered_to_all)?;
-            }
-        }
-
-        if uses_runner {
-            // Component "use"s a runner. Ensure we don't also have a runner specified in "program",
-            // which would necessarily conflict.
-            self.validate_runner_not_specified(self.document.program.as_ref())?;
-        } else {
-            // Component doesn't "use" a runner. Ensure we don't have a component with a "program"
-            // block which fails to specify a runner.
-            self.validate_runner_specified(self.document.program.as_ref())?;
-        }
-
-        // Validate "environments".
-        if let Some(environments) = &self.document.environments {
-            for env in environments {
-                self.validate_environment(&env)?;
-            }
-        }
-
-        // Validate "config"
-        self.validate_config(&self.document.config)?;
-
-        // Check that required offers are present
-        self.validate_required_offer_decls()?;
-
-        // Check that required use decls are present
-        self.validate_required_use_decls()?;
-
-        self.validate_facets()?;
-
-        Ok(())
-    }
-
-    fn get_test_facet(&self) -> Option<&serde_json::Value> {
-        match &self.document.facets {
-            Some(m) => m.get(TEST_FACET_KEY),
-            None => None,
-        }
-    }
-
-    fn validate_facets(&self) -> Result<(), Error> {
-        let test_facet_map = {
-            let test_facet = self.get_test_facet();
-            match &test_facet {
-                None => None,
-                Some(serde_json::Value::Object(m)) => Some(m),
-                Some(facet) => {
-                    return Err(Error::validate(format!(
-                        "'{TEST_FACET_KEY}' is not an object: {facet:?}"
-                    )));
-                }
-            }
-        };
-
-        let restrict_test_type = self.features.has(&Feature::RestrictTestTypeInFacet);
-        let enable_allow_non_hermetic_packages =
-            self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature);
-
-        if restrict_test_type {
-            let test_type = test_facet_map.map(|m| m.get(TEST_TYPE_FACET_KEY)).flatten();
-            if test_type.is_some() {
-                return Err(Error::validate(format!(
-                    "'{}' is not allowed in facets. Refer \
-https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#non-hermetic_tests \
-to run your test in the correct test realm.",
-                    TEST_TYPE_FACET_KEY
-                )));
-            }
-        }
-
-        if enable_allow_non_hermetic_packages {
-            let allow_non_hermetic_packages = self.features.has(&Feature::AllowNonHermeticPackages);
-            let deprecated_allowed_packages = test_facet_map
-                .map_or(false, |m| m.contains_key(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY));
-            if deprecated_allowed_packages && !allow_non_hermetic_packages {
-                return Err(Error::validate(format!(
-                    "restricted_feature '{}' should be present with facet '{}'",
-                    Feature::AllowNonHermeticPackages,
-                    TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
-                )));
-            }
-            if allow_non_hermetic_packages && !deprecated_allowed_packages {
-                return Err(Error::validate(format!(
-                    "Remove restricted_feature '{}' as manifest does not contain facet '{}'",
-                    Feature::AllowNonHermeticPackages,
-                    TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
-                )));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_child(&mut self, child: &'a Child) -> Result<(), Error> {
-        if let Some(resource) = child.url.resource() {
-            if resource.ends_with(".cml") {
-                return Err(Error::validate(format!(
-                    "child URL ends in .cml instead of .cm, \
-which is almost certainly a mistake: {}",
-                    child.url
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_collection(&mut self, collection: &'a Collection) -> Result<(), Error> {
-        if collection.allow_long_names.is_some() {
-            self.features.check(Feature::AllowLongNames)?;
-        }
-        Ok(())
-    }
-
-    fn validate_capability(
-        &mut self,
-        capability: &'a Capability,
-        used_ids: &mut HashMap<String, CapabilityId<'a>>,
-    ) -> Result<(), Error> {
-        if capability.directory.is_some() && capability.path.is_none() {
-            return Err(Error::validate("\"path\" should be present with \"directory\""));
-        }
-        if capability.directory.is_some() && capability.rights.is_none() {
-            return Err(Error::validate("\"rights\" should be present with \"directory\""));
-        }
-        if capability.storage.as_ref().is_some() {
-            if capability.from.is_none() {
-                return Err(Error::validate("\"from\" should be present with \"storage\""));
-            }
-            if capability.path.is_some() {
-                return Err(Error::validate(
-                    "\"path\" cannot be present with \"storage\", use \"backing_dir\"",
-                ));
-            }
-            if capability.backing_dir.is_none() {
-                return Err(Error::validate("\"backing_dir\" should be present with \"storage\""));
-            }
-            if capability.storage_id.is_none() {
-                return Err(Error::validate("\"storage_id\" should be present with \"storage\""));
-            }
-        }
-        if capability.runner.is_some() && capability.from.is_some() {
-            return Err(Error::validate("\"from\" should not be present with \"runner\""));
-        }
-        if capability.runner.is_some() && capability.path.is_none() {
-            return Err(Error::validate("\"path\" should be present with \"runner\""));
-        }
-        if capability.resolver.is_some() && capability.from.is_some() {
-            return Err(Error::validate("\"from\" should not be present with \"resolver\""));
-        }
-        if capability.resolver.is_some() && capability.path.is_none() {
-            return Err(Error::validate("\"path\" should be present with \"resolver\""));
-        }
-
-        if capability.dictionary.as_ref().is_some() && capability.path.is_some() {
-            self.features.check(Feature::DynamicDictionaries)?;
-        }
-        if capability.delivery.is_some() {
-            self.features.check(Feature::DeliveryType)?;
-        }
-        if let Some(from) = capability.from.as_ref() {
-            self.validate_component_child_ref("\"capabilities\" source", &AnyRef::from(from))?;
-        }
-
-        // Disallow multiple capability ids of the same name.
-        let capability_ids = CapabilityId::from_capability(capability)?;
-        for capability_id in capability_ids {
-            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
-                return Err(Error::validate(format!(
-                    "\"{}\" is a duplicate \"capability\" name",
-                    capability_id,
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_use(
-        &mut self,
-        use_: &'a Use,
-        used_ids: &mut HashMap<String, CapabilityId<'a>>,
-    ) -> Result<(), Error> {
-        use_.capability_type()?;
-        for checker in [
-            self.service_from_self_checker(use_),
-            self.protocol_from_self_checker(use_),
-            self.directory_from_self_checker(use_),
-            self.config_from_self_checker(use_),
-        ] {
-            checker.validate("used")?;
-        }
-
-        if use_.from == Some(UseFromRef::Debug) && use_.protocol.is_none() {
-            return Err(Error::validate("only \"protocol\" supports source from \"debug\""));
-        }
-        if use_.event_stream.is_some() && use_.availability.is_some() {
-            return Err(Error::validate("\"availability\" cannot be used with \"event_stream\""));
-        }
-        if use_.event_stream.is_none() && use_.filter.is_some() {
-            return Err(Error::validate("\"filter\" can only be used with \"event_stream\""));
-        }
-        if use_.storage.is_some() && use_.from.is_some() {
-            return Err(Error::validate("\"from\" cannot be used with \"storage\""));
-        }
-        if use_.runner.is_some() && use_.availability.is_some() {
-            return Err(Error::validate("\"availability\" cannot be used with \"runner\""));
-        }
-        if use_.from == Some(UseFromRef::Self_) && use_.event_stream.is_some() {
-            return Err(Error::validate("\"from: self\" cannot be used with \"event_stream\""));
-        }
-        if use_.from == Some(UseFromRef::Self_) && use_.runner.is_some() {
-            return Err(Error::validate("\"from: self\" cannot be used with \"runner\""));
-        }
-        if use_.availability == Some(Availability::SameAsTarget) {
-            return Err(Error::validate(
-                "\"availability: same_as_target\" cannot be used with use declarations",
-            ));
-        }
-        if use_.dictionary.is_some() {
-            self.features.check(Feature::UseDictionaries)?;
-        }
-        if let Some(UseFromRef::Dictionary(_)) = use_.from.as_ref() {
-            if use_.storage.is_some() {
-                return Err(Error::validate(
-                    "Dictionaries do not support \"storage\" capabilities",
-                ));
-            }
-            if use_.event_stream.is_some() {
-                return Err(Error::validate(
-                    "Dictionaries do not support \"event_stream\" capabilities",
-                ));
-            }
-        }
-        if let Some(config) = use_.config.as_ref() {
-            if use_.key == None {
-                return Err(Error::validate(format!("Config '{}' missing field 'key'", config)));
-            }
-            let _ = use_config_to_value_type(use_)?;
-            let availability = use_.availability.unwrap_or(Availability::Required);
-            if availability == Availability::Required && use_.config_default.is_some() {
-                return Err(Error::validate(format!(
-                    "Config '{}' is required and has a default value",
-                    config
-                )));
-            }
-        }
-        if use_.numbered_handle.as_ref().is_some() {
-            if use_.protocol.is_some() {
-                if use_.path.is_some() {
-                    return Err(Error::validate(format!(
-                        "`path` and `numbered_handle` are incompatible"
-                    )));
-                }
-            } else {
-                return Err(Error::validate(format!(
-                    "`numbered_handle` is only supported for `use protocol`"
-                )));
-            }
-        }
-
-        // Disallow multiple capability ids of the same name.
-        let capability_ids = CapabilityId::from_use(use_)?;
-        for capability_id in capability_ids {
-            if let Some(conflicting_capability_id) =
-                used_ids.insert(capability_id.to_string(), capability_id.clone())
-            {
-                if let (CapabilityId::UsedDictionary(_), CapabilityId::UsedDictionary(_)) =
-                    (&capability_id, &conflicting_capability_id)
-                {
-                    // Dictionaries may have conflicting use paths, as they'll be merged together
-                    // at runtime.
-                } else {
-                    return Err(Error::validate(format!(
-                        "\"{}\" is a duplicate \"use\" target {}",
-                        capability_id,
-                        capability_id.type_str()
-                    )));
-                }
-            }
-            let dir = capability_id.get_dir_path();
-
-            // Capability paths must not conflict with `/pkg`, or namespace generation might fail
-            let pkg_path = cm_types::NamespacePath::new("/pkg").unwrap();
-            if let Some(ref dir) = dir {
-                if dir.has_prefix(&pkg_path) {
-                    return Err(Error::validate(format!(
-                        "{} \"{}\" conflicts with the protected path \"/pkg\", please use this capability with a different path",
-                        capability_id.type_str(),
-                        capability_id,
-                    )));
-                }
-            }
-
-            // Validate that paths-based capabilities (service, directory, protocol)
-            // are not prefixes of each other.
-            for (_, used_id) in used_ids.iter() {
-                if capability_id == *used_id {
-                    continue;
-                }
-                let Some(ref path_b) = capability_id.get_target_path() else {
-                    continue;
-                };
-                let Some(path_a) = used_id.get_target_path() else {
-                    continue;
-                };
-                #[derive(Debug, Clone, Copy)]
-                enum NodeType {
-                    Service,
-                    Directory,
-                    // This variant is never constructed if we're at an API version before "use
-                    // dictionary" was added.
-                    #[allow(unused)]
-                    Dictionary,
-                }
-                fn capability_id_to_type(id: &CapabilityId<'_>) -> Option<NodeType> {
-                    match id {
-                        CapabilityId::UsedConfiguration(_) => None,
-                        #[cfg(fuchsia_api_level_at_least = "30")]
-                        CapabilityId::UsedDictionary(_) => Some(NodeType::Dictionary),
-                        CapabilityId::UsedDirectory(_) => Some(NodeType::Directory),
-                        CapabilityId::UsedEventStream(_) => Some(NodeType::Service),
-                        CapabilityId::UsedProtocol(_) => Some(NodeType::Service),
-                        #[cfg(fuchsia_api_level_at_least = "HEAD")]
-                        CapabilityId::UsedRunner(_) => None,
-                        CapabilityId::UsedService(_) => Some(NodeType::Directory),
-                        CapabilityId::UsedStorage(_) => Some(NodeType::Directory),
-                        _ => None,
-                    }
-                }
-                let Some(type_a) = capability_id_to_type(&used_id) else {
-                    continue;
-                };
-                let Some(type_b) = capability_id_to_type(&capability_id) else {
-                    continue;
-                };
-                let mut conflicts = false;
-                match (type_a, type_b) {
-                    (NodeType::Service, NodeType::Service)
-                    | (NodeType::Directory, NodeType::Service)
-                    | (NodeType::Service, NodeType::Directory)
-                    | (NodeType::Directory, NodeType::Directory) => {
-                        if path_a.has_prefix(&path_b) || path_b.has_prefix(&path_a) {
-                            conflicts = true;
-                        }
-                    }
-                    (NodeType::Dictionary, NodeType::Service)
-                    | (NodeType::Dictionary, NodeType::Directory) => {
-                        if path_a.has_prefix(&path_b) {
-                            conflicts = true;
-                        }
-                    }
-                    (NodeType::Service, NodeType::Dictionary)
-                    | (NodeType::Directory, NodeType::Dictionary) => {
-                        if path_b.has_prefix(&path_a) {
-                            conflicts = true;
-                        }
-                    }
-                    (NodeType::Dictionary, NodeType::Dictionary) => {
-                        // All combinations of two dictionaries are valid.
-                    }
-                }
-                if conflicts {
-                    return Err(Error::validate(format!(
-                        "{} \"{}\" is a prefix of \"use\" target {} \"{}\"",
-                        used_id.type_str(),
-                        used_id,
-                        capability_id.type_str(),
-                        capability_id,
-                    )));
-                }
-            }
-        }
-
-        if let Some(_) = use_.directory.as_ref() {
-            // All directory "use" expressions must have directory rights.
-            match &use_.rights {
-                Some(rights) => self.validate_directory_rights(&rights)?,
-                None => {
-                    return Err(Error::validate(
-                        "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer.",
-                    ));
-                }
-            };
-        }
-
-        match (&use_.from, &use_.dependency) {
-            (Some(UseFromRef::Named(name)), _) if use_.service.is_some() => {
-                self.validate_component_child_or_collection_ref(
-                    "\"use\" source",
-                    &AnyRef::Named(name),
-                )?;
-            }
-            (Some(UseFromRef::Named(name)), _) => {
-                self.validate_component_child_or_capability_ref(
-                    "\"use\" source",
-                    &AnyRef::Named(name),
-                )?;
-            }
-            (
-                Some(UseFromRef::Dictionary(DictionaryRef {
-                    path: _,
-                    root: RootDictionaryRef::Named(name),
-                })),
-                _,
-            ) => {
-                self.validate_component_child_or_capability_ref(
-                    "\"use\" source",
-                    &AnyRef::Named(name),
-                )?;
-            }
-            (_, Some(DependencyType::Weak)) => {
-                return Err(Error::validate(format!(
-                    "Only `use` from children can have dependency: \"weak\""
-                )));
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn validate_expose(
-        &self,
-        expose: &'a Expose,
-        used_ids: &mut HashMap<String, CapabilityId<'a>>,
-        exposed_to_framework_ids: &mut HashMap<String, CapabilityId<'a>>,
-    ) -> Result<(), Error> {
-        expose.capability_type()?;
-        for checker in [
-            self.service_from_self_checker(expose),
-            self.protocol_from_self_checker(expose),
-            self.directory_from_self_checker(expose),
-            self.runner_from_self_checker(expose),
-            self.resolver_from_self_checker(expose),
-            self.dictionary_from_self_checker(expose),
-            self.config_from_self_checker(expose),
-        ] {
-            checker.validate("exposed")?;
-        }
-
-        // Ensure directory rights are valid.
-        if let Some(_) = expose.directory.as_ref() {
-            if expose.from.iter().any(|r| *r == ExposeFromRef::Self_) || expose.rights.is_some() {
-                if let Some(rights) = expose.rights.as_ref() {
-                    self.validate_directory_rights(&rights)?;
-                }
-            }
-
-            // Exposing a subdirectory makes sense for routing but when exposing to framework,
-            // the subdir should be exposed directly.
-            if expose.to == Some(ExposeToRef::Framework) {
-                if expose.subdir.is_some() {
-                    return Err(Error::validate(
-                        "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead.",
-                    ));
-                }
-            }
-        }
-
-        if let Some(event_stream) = &expose.event_stream {
-            if event_stream.iter().len() > 1 && expose.r#as.is_some() {
-                return Err(Error::validate(format!(
-                    "as cannot be used with multiple event streams"
-                )));
-            }
-            if let Some(ExposeToRef::Framework) = &expose.to {
-                return Err(Error::validate(format!("cannot expose an event_stream to framework")));
-            }
-            for from in expose.from.iter() {
-                if from == &ExposeFromRef::Self_ {
-                    return Err(Error::validate(format!("Cannot expose event_streams from self")));
-                }
-            }
-            if let Some(scopes) = &expose.scope {
-                for scope in scopes {
-                    match scope {
-                        EventScope::Named(name) => {
-                            if !self.all_children.contains_key(&name.as_ref())
-                                && !self.all_collections.contains(&name.as_ref())
-                            {
-                                return Err(Error::validate(format!(
-                                    "event_stream scope {} did not match a component or collection in this .cml file.",
-                                    name.as_str()
-                                )));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for ref_ in expose.from.iter() {
-            if let ExposeFromRef::Dictionary(d) = ref_ {
-                if expose.event_stream.is_some() {
-                    return Err(Error::validate(
-                        "Dictionaries do not support \"event_stream\" capabilities",
-                    ));
-                }
-                match &d.root {
-                    RootDictionaryRef::Self_ | RootDictionaryRef::Named(_) => {}
-                    RootDictionaryRef::Parent => {
-                        return Err(Error::validate(
-                            "`expose` dictionary path must begin with `self` or `#<child-name>`",
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Ensure we haven't already exposed an entity of the same name.
-        let capability_ids = CapabilityId::from_offer_expose(expose)?;
-        for capability_id in capability_ids {
-            let mut ids = &mut *used_ids;
-            if expose.to == Some(ExposeToRef::Framework) {
-                ids = &mut *exposed_to_framework_ids;
-            }
-            if ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
-                if let CapabilityId::Service(_) = capability_id {
-                    // Services may have duplicates (aggregation).
-                } else {
-                    return Err(Error::validate(format!(
-                        "\"{}\" is a duplicate \"expose\" target capability for \"{}\"",
-                        capability_id,
-                        expose.to.as_ref().unwrap_or(&ExposeToRef::Parent)
-                    )));
-                }
-            }
-        }
-
-        // Validate `from` (done last because this validation depends on the capability type, which
-        // must be validated first)
-        self.validate_from_clause(
-            "expose",
-            expose,
-            &expose.source_availability,
-            &expose.availability,
-        )?;
-
-        Ok(())
-    }
-
-    fn validate_offer(
-        &mut self,
-        offer: &'a Offer,
-        used_ids: &mut HashMap<Name, HashMap<String, CapabilityId<'a>>>,
-        protocols_offered_to_all: &[&'a Offer],
-    ) -> Result<(), Error> {
-        offer.capability_type()?;
-        for checker in [
-            self.service_from_self_checker(offer),
-            self.protocol_from_self_checker(offer),
-            self.directory_from_self_checker(offer),
-            self.storage_from_self_checker(offer),
-            self.runner_from_self_checker(offer),
-            self.resolver_from_self_checker(offer),
-            self.dictionary_from_self_checker(offer),
-            self.config_from_self_checker(offer),
-        ] {
-            checker.validate("offered")?;
-        }
-
-        if let Some(stream) = offer.event_stream.as_ref() {
-            if stream.iter().len() > 1 && offer.r#as.is_some() {
-                return Err(Error::validate(format!("as cannot be used with multiple events")));
-            }
-            for from in &offer.from {
-                match from {
-                    OfferFromRef::Self_ => {
-                        return Err(Error::validate(format!(
-                            "cannot offer an event_stream from self"
-                        )));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Ensure directory rights are valid.
-        if let Some(_) = offer.directory.as_ref() {
-            if offer.from.iter().any(|r| *r == OfferFromRef::Self_) || offer.rights.is_some() {
-                if let Some(rights) = offer.rights.as_ref() {
-                    self.validate_directory_rights(&rights)?;
-                }
-            }
-        }
-
-        if let Some(storage) = offer.storage.as_ref() {
-            for storage in storage {
-                if offer.from.iter().any(|r| r.is_named()) {
-                    return Err(Error::validate(format!(
-                        "Storage \"{}\" is offered from a child, but storage capabilities cannot be exposed",
-                        storage
-                    )));
-                }
-            }
-        }
-
-        for ref_ in offer.from.iter() {
-            if let OfferFromRef::Dictionary(_) = ref_ {
-                if offer.storage.is_some() {
-                    return Err(Error::validate(
-                        "Dictionaries do not support \"storage\" capabilities",
-                    ));
-                }
-                if offer.event_stream.is_some() {
-                    return Err(Error::validate(
-                        "Dictionaries do not support \"event_stream\" capabilities",
-                    ));
-                }
-            }
-        }
-
-        // Ensure that dependency is set for the right capabilities.
-        if !offer_can_have_dependency_no_span(offer) && offer.dependency.is_some() {
-            return Err(Error::validate(
-                "Dependency can only be provided for protocol, directory, and service capabilities",
-            ));
-        }
-
-        // Validate every target of this offer.
-        let target_cap_ids = CapabilityId::from_offer_expose(offer)?;
-        for to in &offer.to {
-            // Ensure the "to" value is a child, collection, or dictionary capability.
-            let to_target = match to {
-                OfferToRef::All => continue,
-                OfferToRef::Named(to_target) => {
-                    // Verify that only a legal set of offers-to-all are made, including that any
-                    // offer to all duplicated as an offer to a specific component are exactly the same
-                    for offer_to_all in protocols_offered_to_all {
-                        offer_to_all_would_duplicate(offer_to_all, offer, to_target)?;
-                    }
-
-                    // Check that any referenced child actually exists.
-                    // Skip the check if target availability is unknown.
-                    if offer.target_availability == Some(TargetAvailability::Unknown)
-                        || self.all_children.contains_key(&to_target.as_ref())
-                        || self.all_collections.contains(&to_target.as_ref())
-                    {
-                        // Allowed.
-                    } else {
-                        if let OneOrMany::One(from) = &offer.from {
-                            return Err(Error::validate(format!(
-                                "\"{to}\" is an \"offer\" target from \"{from}\" but \"{to}\" does \
-                                not appear in \"children\" or \"collections\"",
-                            )));
-                        } else {
-                            return Err(Error::validate(format!(
-                                "\"{to}\" is an \"offer\" target but \"{to}\" does not appear in \
-                                \"children\" or \"collections\"",
-                            )));
-                        }
-                    }
-
-                    // Ensure we are not offering a capability back to its source.
-                    if let Some(storage) = offer.storage.as_ref() {
-                        for storage in storage {
-                            // Storage can only have a single `from` clause and this has been
-                            // verified.
-                            if let OneOrMany::One(OfferFromRef::Self_) = &offer.from {
-                                if let Some(CapabilityFromRef::Named(source)) =
-                                    self.all_storages.get(&storage.as_ref())
-                                {
-                                    if to_target == source {
-                                        return Err(Error::validate(format!(
-                                            "Storage offer target \"{}\" is same as source",
-                                            to
-                                        )));
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        for reference in offer.from.iter() {
-                            // Weak offers from a child to itself are acceptable.
-                            if offer_dependency_no_span(offer) == DependencyType::Weak {
-                                continue;
-                            }
-                            match reference {
-                                OfferFromRef::Named(name) if name == to_target => {
-                                    return Err(Error::validate(format!(
-                                        "Offer target \"{}\" is same as source",
-                                        to
-                                    )));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    to_target
-                }
-                OfferToRef::OwnDictionary(to_target) => {
-                    if let Ok(capability_ids) = CapabilityId::from_offer_expose(offer) {
-                        for id in capability_ids {
-                            match &id {
-                                CapabilityId::Protocol(_)
-                                | CapabilityId::Dictionary(_)
-                                | CapabilityId::Directory(_)
-                                | CapabilityId::Runner(_)
-                                | CapabilityId::Resolver(_)
-                                | CapabilityId::Service(_)
-                                | CapabilityId::Configuration(_) => {}
-                                CapabilityId::Storage(_) | CapabilityId::EventStream(_) => {
-                                    let type_name = id.type_str();
-                                    return Err(Error::validate(format!(
-                                        "\"offer\" to dictionary \"{to}\" for \"{type_name}\" but \
-                                        dictionaries do not support this type yet."
-                                    )));
-                                }
-                                CapabilityId::UsedService(_)
-                                | CapabilityId::UsedProtocol(_)
-                                | CapabilityId::UsedProtocolNumberedHandle(_)
-                                | CapabilityId::UsedDirectory(_)
-                                | CapabilityId::UsedStorage(_)
-                                | CapabilityId::UsedEventStream(_)
-                                | CapabilityId::UsedRunner(_)
-                                | CapabilityId::UsedConfiguration(_)
-                                | CapabilityId::UsedDictionary(_) => {
-                                    unreachable!("this is not a use")
-                                }
-                            }
-                        }
-                    }
-                    // Check that any referenced child actually exists.
-                    match self.all_dictionaries.get(&to_target.as_ref()) {
-                        Some(d) => {
-                            if d.path.is_some() {
-                                return Err(Error::validate(format!(
-                                    "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
-                                    sets \"path\". Therefore, it is a dynamic dictionary that \
-                                    does not allow offers into it."
-                                )));
-                            }
-                        }
-                        None => {
-                            if offer.target_availability != Some(TargetAvailability::Unknown) {
-                                return Err(Error::validate(format!(
-                                    "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
-                                    is not a dictionary capability defined by this component"
-                                )));
-                            }
-                        }
-                    }
-                    to_target
-                }
-            };
-
-            // Ensure that a target is not offered more than once.
-            let ids_for_entity = used_ids.entry(to_target.clone()).or_insert(HashMap::new());
-            for target_cap_id in &target_cap_ids {
-                if ids_for_entity.insert(target_cap_id.to_string(), target_cap_id.clone()).is_some()
-                {
-                    if let CapabilityId::Service(_) = target_cap_id {
-                        // Services may have duplicates (aggregation).
-                    } else {
-                        return Err(Error::validate(format!(
-                            "\"{}\" is a duplicate \"offer\" target capability for \"{}\"",
-                            target_cap_id, to
-                        )));
-                    }
-                }
-            }
-        }
-
-        // Validate `from` (done last because this validation depends on the capability type, which
-        // must be validated first)
-        self.validate_from_clause("offer", offer, &offer.source_availability, &offer.availability)?;
-
-        Ok(())
-    }
-
-    fn validate_required_offer_decls(&self) -> Result<(), Error> {
-        let children_stub = Vec::new();
-        let children = self.document.children.as_ref().unwrap_or(&children_stub);
-        let collections_stub = Vec::new();
-        let collections = self.document.collections.as_ref().unwrap_or(&collections_stub);
-        let offers_stub = Vec::new();
-        let offers = self.document.offer.as_ref().unwrap_or(&offers_stub);
-
-        for required_offer in self.capability_requirements.must_offer {
-            // for each child, check if any offer is:
-            //   1) Targeting this child (or all)
-            //   AND
-            //   2) Offering the current required capability
-            for child in children.iter() {
-                if !offers
-                    .iter()
-                    .any(|offer| Self::has_required_offer(offer, &child.name, required_offer))
-                {
-                    let capability_type = required_offer.offer_type();
-                    return Err(Error::validate(format!(
-                        r#"{capability_type} "{}" is not offered to child component "{}" but it is a required offer"#,
-                        required_offer.name(),
-                        child.name
-                    )));
-                }
-            }
-
-            for collection in collections.iter() {
-                if !offers
-                    .iter()
-                    .any(|offer| Self::has_required_offer(offer, &collection.name, required_offer))
-                {
-                    let capability_type = required_offer.offer_type();
-                    return Err(Error::validate(format!(
-                        r#"{capability_type} "{}" is not offered to collection "{}" but it is a required offer"#,
-                        required_offer.name(),
-                        collection.name
-                    )));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn has_required_offer(
-        offer: &Offer,
-        target_name: &BorrowedName,
-        required_offer: &OfferToAllCapability<'_>,
-    ) -> bool {
-        let names_this_collection = offer.to.iter().any(|target| match target {
-            OfferToRef::Named(name) => **name == *target_name,
-            OfferToRef::All => true,
-            OfferToRef::OwnDictionary(_) => false,
-        });
-        let capability_names = match required_offer {
-            OfferToAllCapability::Dictionary(_) => offer.dictionary.as_ref(),
-            OfferToAllCapability::Protocol(_) => offer.protocol.as_ref(),
-        };
-        let names_this_capability = match capability_names.as_ref() {
-            Some(OneOrMany::Many(names)) => {
-                names.iter().any(|cap_name| cap_name.as_str() == required_offer.name())
-            }
-            Some(OneOrMany::One(name)) => {
-                let cap_name = offer.r#as.as_ref().unwrap_or(name);
-                cap_name.as_str() == required_offer.name()
-            }
-            None => false,
-        };
-        names_this_collection && names_this_capability
-    }
-
-    fn validate_required_use_decls(&self) -> Result<(), Error> {
-        let use_decls_stub = Vec::new();
-        let use_decls = self.document.r#use.as_ref().unwrap_or(&use_decls_stub);
-
-        for required_usage in self.capability_requirements.must_use {
-            if !use_decls.iter().any(|usage| match usage.protocol.as_ref() {
-                None => false,
-                Some(protocol) => protocol
-                    .iter()
-                    .any(|protocol_name| protocol_name.as_str() == required_usage.name()),
-            }) {
-                return Err(Error::validate(format!(
-                    r#"Protocol "{}" is not used by a component but is required by all"#,
-                    required_usage.name(),
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validates that the from clause:
-    ///
-    /// - is applicable to the capability type,
-    /// - does not contain duplicates,
-    /// - references names that exist.
-    /// - has availability "optional" if the source is "void"
-    ///
-    /// `verb` is used in any error messages and is expected to be "offer", "expose", etc.
-    fn validate_from_clause<T>(
-        &self,
-        verb: &str,
-        cap: &T,
-        source_availability: &Option<SourceAvailability>,
-        availability: &Option<Availability>,
-    ) -> Result<(), Error>
-    where
-        T: CapabilityClause + FromClause,
-    {
-        let from = cap.from_();
-        if cap.service().is_none() && from.is_many() {
-            return Err(Error::validate(format!(
-                "\"{}\" capabilities cannot have multiple \"from\" clauses",
-                cap.capability_type().unwrap()
-            )));
-        }
-
-        if from.is_many() {
-            ensure_no_duplicate_values(&cap.from_())?;
-        }
-
-        let reference_description = format!("\"{}\" source", verb);
-        for from_clause in from {
-            // If this is a protocol, it could reference either a child or a storage capability
-            // (for the storage admin protocol).
-            let ref_validity_res = if cap.protocol().is_some() {
-                self.validate_component_child_or_capability_ref(
-                    &reference_description,
-                    &from_clause,
-                )
-            } else if cap.service().is_some() {
-                // Services can also be sourced from collections.
-                self.validate_component_child_or_collection_ref(
-                    &reference_description,
-                    &from_clause,
-                )
-            } else {
-                self.validate_component_child_ref(&reference_description, &from_clause)
-            };
-
-            match ref_validity_res {
-                Ok(()) if from_clause == AnyRef::Void => {
-                    // The source is valid and void
-                    if availability != &Some(Availability::Optional) {
-                        return Err(Error::validate(format!(
-                            "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"{}\", from: \"{}\"",
-                            cap.names().iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "),
-                            cap.from_(),
-                        )));
-                    }
-                }
-                Ok(()) => {
-                    // The source is valid and not void.
-                }
-                Err(_) if source_availability == &Some(SourceAvailability::Unknown) => {
-                    // The source is invalid, and will be rewritten to void
-                    if availability != &Some(Availability::Optional) && availability != &None {
-                        return Err(Error::validate(format!(
-                            "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"{}\", from: \"{}\"",
-                            cap.names().iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "),
-                            cap.from_(),
-                        )));
-                    }
-                }
-                Err(e) => {
-                    // The source is invalid, but we're expecting it to be valid.
-                    return Err(e);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Validates that the given component exists.
-    ///
-    /// - `reference_description` is a human-readable description of the reference used in error
-    ///   message, such as `"offer" source`.
-    /// - `component_ref` is a reference to a component. If the reference is a named child, we
-    ///   ensure that the child component exists.
-    fn validate_component_child_ref(
-        &self,
-        reference_description: &str,
-        component_ref: &AnyRef<'_>,
-    ) -> Result<(), Error> {
-        match component_ref {
-            AnyRef::Named(name) => {
-                // Ensure we have a child defined by that name.
-                if !self.all_children.contains_key(name) {
-                    return Err(Error::validate(format!(
-                        "{} \"{}\" does not appear in \"children\"",
-                        reference_description, component_ref
-                    )));
-                }
-                Ok(())
-            }
-            // We don't attempt to validate other reference types.
-            _ => Ok(()),
-        }
-    }
-
-    /// Validates that the given component/collection exists.
-    ///
-    /// - `reference_description` is a human-readable description of the reference used in error
-    ///   message, such as `"offer" source`.
-    /// - `component_ref` is a reference to a component/collection. If the reference is a named
-    ///   child or collection, we ensure that the child component/collection exists.
-    fn validate_component_child_or_collection_ref(
-        &self,
-        reference_description: &str,
-        component_ref: &AnyRef<'_>,
-    ) -> Result<(), Error> {
-        match component_ref {
-            AnyRef::Named(name) => {
-                // Ensure we have a child or collection defined by that name.
-                if !self.all_children.contains_key(name) && !self.all_collections.contains(name) {
-                    return Err(Error::validate(format!(
-                        "{} \"{}\" does not appear in \"children\" or \"collections\"",
-                        reference_description, component_ref
-                    )));
-                }
-                Ok(())
-            }
-            // We don't attempt to validate other reference types.
-            _ => Ok(()),
-        }
-    }
-
-    /// Validates that the given capability exists.
-    ///
-    /// - `reference_description` is a human-readable description of the reference used in error
-    ///   message, such as `"offer" source`.
-    /// - `capability_ref` is a reference to a capability. If the reference is a named capability,
-    ///   we ensure that the capability exists.
-    fn validate_component_capability_ref(
-        &self,
-        reference_description: &str,
-        capability_ref: &AnyRef<'_>,
-    ) -> Result<(), Error> {
-        match capability_ref {
-            AnyRef::Named(name) => {
-                if !self.all_capability_names.contains(name) {
-                    return Err(Error::validate(format!(
-                        "{} \"{}\" does not appear in \"capabilities\"",
-                        reference_description, capability_ref
-                    )));
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-
-    /// Validates that the given child component, collection, or capability exists.
-    ///
-    /// - `reference_description` is a human-readable description of the reference used in error
-    ///   message, such as `"offer" source`.
-    /// - `ref_` is a reference to a child component or capability. If the reference contains a
-    ///   name, we ensure that a child component or a capability with the name exists.
-    fn validate_component_child_or_capability_ref(
-        &self,
-        reference_description: &str,
-        ref_: &AnyRef<'_>,
-    ) -> Result<(), Error> {
-        if self.validate_component_child_ref(reference_description, ref_).is_err()
-            && self.validate_component_capability_ref(reference_description, ref_).is_err()
-        {
-            return Err(Error::validate(format!(
-                "{} \"{}\" does not appear in \"children\" or \"capabilities\"",
-                reference_description, ref_
-            )));
-        }
-        Ok(())
-    }
-
-    /// Validates that directory rights for all route types are valid, i.e that it does not
-    /// contain duplicate rights.
-    fn validate_directory_rights(&self, rights_clause: &Rights) -> Result<(), Error> {
-        let mut rights = HashSet::new();
-        for right_token in rights_clause.0.iter() {
-            for right in right_token.expand() {
-                if !rights.insert(right) {
-                    return Err(Error::validate(format!(
-                        "\"{}\" is duplicated in the rights clause.",
-                        right_token
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Ensure we don't have a component with a "program" block which fails to specify a runner.
-    /// This should only be called if the manifest doesn't "use" a runner.
-    fn validate_runner_specified(&self, program: Option<&Program>) -> Result<(), Error> {
-        match program {
-            Some(program) => match program.runner {
-                Some(_) => Ok(()),
-                None => {
-                    return Err(Error::validate(
-                        "Component has a `program` block defined, but doesn't specify a `runner`. \
-                        Components need to use a runner to actually execute code.",
-                    ));
-                }
-            },
-            None => Ok(()),
-        }
-    }
-
-    /// Ensure we don't have a component with a "program" block which fails to specify a runner.
-    /// This should only be called if the manifest "use"s a runner.
-    fn validate_runner_not_specified(&self, program: Option<&Program>) -> Result<(), Error> {
-        match program {
-            Some(program) => match program.runner {
-                Some(_) => {
-                    // Use/runner always conflicts with program/runner, because use/runner
-                    // can't be from environment in CML.
-                    return Err(Error::validate(
-                        "Component has conflicting runners in `program` block and `use` block.",
-                    ));
-                }
-                None => Ok(()),
-            },
-            None => Ok(()),
-        }
-    }
-
-    fn validate_config(
-        &self,
-        fields: &Option<BTreeMap<ConfigKey, ConfigValueType>>,
-    ) -> Result<(), Error> {
-        // If we `use` a config capability optionally without a default then it has to exist in the `config` block.
-        // Collect the names of the keys here.
-        let optional_use_keys: BTreeMap<ConfigKey, ConfigValueType> = self
-            .document
-            .r#use
-            .iter()
-            .flatten()
-            .map(|u| {
-                if u.config == None {
-                    return None;
-                }
-                if u.availability == Some(Availability::Required) || u.availability == None {
-                    return None;
-                }
-                if let Some(_) = u.config_default.as_ref() {
-                    return None;
-                }
-                let key = ConfigKey(u.key.clone().expect("key should be set").into());
-                let value = use_config_to_value_type(u).expect("config type should be valid");
-                Some((key, value))
-            })
-            .flatten()
-            .collect();
-
-        let Some(fields) = fields else {
-            if !optional_use_keys.is_empty() {
-                return Err(Error::validate(
-                    "Optionally using a config capability without a default requires a matching 'config' section.",
-                ));
-            }
-            return Ok(());
-        };
-
-        if fields.is_empty() {
-            return Err(Error::validate("'config' section is empty"));
-        }
-
-        for (key, value) in optional_use_keys {
-            if !fields.contains_key(&key) {
-                return Err(Error::validate(format!(
-                    "'config' section must contain key for optional use '{}'",
-                    key
-                )));
-            }
-            if fields.get(&key) != Some(&value) {
-                return Err(Error::validate(format!(
-                    "Use and config block differ on type for key '{}'",
-                    key
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_environment(&mut self, environment: &'a Environment) -> Result<(), Error> {
-        match &environment.extends {
-            Some(EnvironmentExtends::None) => {
-                if environment.stop_timeout_ms.is_none() {
-                    return Err(Error::validate(
-                        "'__stop_timeout_ms' must be provided if the environment does not extend \
-                        another environment",
-                    ));
-                }
-            }
-            Some(EnvironmentExtends::Realm) | None => {}
-        }
-
-        if let Some(runners) = &environment.runners {
-            let mut used_names = HashMap::new();
-            for registration in runners {
-                // Validate that this name is not already used.
-                let name = registration.r#as.as_ref().unwrap_or(&registration.runner);
-                if let Some(previous_runner) = used_names.insert(name, &registration.runner) {
-                    return Err(Error::validate(format!(
-                        "Duplicate runners registered under name \"{}\": \"{}\" and \"{}\".",
-                        name, &registration.runner, previous_runner
-                    )));
-                }
-
-                // Ensure that the environment is defined in `runners` if it comes from `self`.
-                if registration.from == RegistrationRef::Self_
-                    && !self.all_runners.contains(&registration.runner.as_ref())
-                {
-                    return Err(Error::validate(format!(
-                        "Runner \"{}\" registered in environment is not in \"runners\"",
-                        &registration.runner,
-                    )));
-                }
-
-                self.validate_component_child_ref(
-                    &format!("\"{}\" runner source", &registration.runner),
-                    &AnyRef::from(&registration.from),
-                )?;
-            }
-        }
-
-        if let Some(resolvers) = &environment.resolvers {
-            let mut used_schemes = HashMap::new();
-            for registration in resolvers {
-                // Validate that the scheme is not already used.
-                if let Some(previous_resolver) =
-                    used_schemes.insert(&registration.scheme, &registration.resolver)
-                {
-                    return Err(Error::validate(format!(
-                        "scheme \"{}\" for resolver \"{}\" is already registered; \
-                        previously registered to resolver \"{}\".",
-                        &registration.scheme, &registration.resolver, previous_resolver
-                    )));
-                }
-
-                self.validate_component_child_ref(
-                    &format!("\"{}\" resolver source", &registration.resolver),
-                    &AnyRef::from(&registration.from),
-                )?;
-            }
-        }
-
-        if let Some(debug_capabilities) = &environment.debug {
-            for debug in debug_capabilities {
-                self.protocol_from_self_checker(debug).validate("registered as debug")?;
-                self.validate_from_clause("debug", debug, &None, &None)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn service_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.service(),
-            from: input.from_(),
-            container: &self.all_services,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "service",
-        }
-    }
-
-    fn protocol_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.protocol(),
-            from: input.from_(),
-            container: &self.all_protocols,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "protocol",
-        }
-    }
-
-    fn directory_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.directory(),
-            from: input.from_(),
-            container: &self.all_directories,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "directory",
-        }
-    }
-
-    fn storage_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.storage(),
-            from: input.from_(),
-            container: &self.all_storages,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "storage",
-        }
-    }
-
-    fn runner_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.runner(),
-            from: input.from_(),
-            container: &self.all_runners,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "runner",
-        }
-    }
-
-    fn resolver_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.resolver(),
-            from: input.from_(),
-            container: &self.all_resolvers,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "resolver",
-        }
-    }
-
-    fn dictionary_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.dictionary(),
-            from: input.from_(),
-            container: &self.all_dictionaries,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "dictionary",
-        }
-    }
-
-    fn config_from_self_checker<'b>(
-        &'b self,
-        input: &'b (impl CapabilityClause + FromClause),
-    ) -> RouteFromSelfChecker<'b> {
-        RouteFromSelfChecker {
-            capability_name: input.config(),
-            from: input.from_(),
-            container: &self.all_configs,
-            all_dictionaries: &self.all_dictionaries,
-            typename: "config",
-        }
-    }
-}
-
 /// Helper type that assists with validating declarations of `{use, offer, expose} from self`.
-struct RouteFromSelfChecker<'a> {
-    /// The value of the capability property (protocol, service, etc.)
-    capability_name: Option<OneOrMany<&'a BorrowedName>>,
-
-    /// The value of `from`.
-    from: OneOrMany<AnyRef<'a>>,
-
-    /// A [Container] which is used to check for the existence of a capability definition.
-    container: &'a dyn Container,
-
-    /// Reference to [ValidationContext::all_dictionaries].
-    all_dictionaries: &'a HashMap<&'a BorrowedName, &'a Capability>,
-
-    /// The string name for the capability's type.
-    typename: &'static str,
-}
-
-impl<'a> RouteFromSelfChecker<'a> {
-    fn validate(self, operand: &'static str) -> Result<(), Error> {
-        let Self { capability_name, from, container, all_dictionaries, typename } = self;
-        let Some(capability) = capability_name else {
-            return Ok(());
-        };
-        for capability in capability {
-            for from in &from {
-                match from {
-                    AnyRef::Self_ if !container.contains(capability) => {
-                        return Err(Error::validate(format!(
-                            "{typename} \"{capability}\" is {operand} from self, so it \
-                            must be declared as a \"{typename}\" in \"capabilities\"",
-                        )));
-                    }
-                    AnyRef::Dictionary(DictionaryRef { root: RootDictionaryRef::Self_, path }) => {
-                        let first_segment = path.iter_segments().next().unwrap();
-                        if !all_dictionaries.contains_key(first_segment) {
-                            return Err(Error::validate(format!(
-                                "{typename} \"{capability}\" is {operand} from \"self/{path}\", so \
-                                \"{first_segment}\" must be declared as a \"dictionary\" in \"capabilities\"",
-                            )));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
 struct RouteFromSelfCheckerV2<'a> {
     capability_name: Option<ContextSpanned<OneOrMany<AnyRef<'a>>>>,
 
@@ -3736,57 +2136,6 @@ impl<T> Container for HashMap<Name, T> {
     fn contains(&self, key: &BorrowedName) -> bool {
         self.contains_key(key)
     }
-}
-
-// Construct the config type information out of a `use` for a configuration capability.
-// This will return validation errors if the `use` is missing fields.
-pub fn use_config_to_value_type(u: &Use) -> Result<ConfigValueType, Error> {
-    let config = u.config.clone().expect("Only call use_config_to_value_type on a Config");
-
-    let Some(config_type) = u.config_type.as_ref() else {
-        return Err(Error::validate(format!("Config '{}' is missing field 'type'", config)));
-    };
-
-    let config_type = match config_type {
-        ConfigType::Bool => ConfigValueType::Bool { mutability: None },
-        ConfigType::Uint8 => ConfigValueType::Uint8 { mutability: None },
-        ConfigType::Uint16 => ConfigValueType::Uint16 { mutability: None },
-        ConfigType::Uint32 => ConfigValueType::Uint32 { mutability: None },
-        ConfigType::Uint64 => ConfigValueType::Uint64 { mutability: None },
-        ConfigType::Int8 => ConfigValueType::Int8 { mutability: None },
-        ConfigType::Int16 => ConfigValueType::Int16 { mutability: None },
-        ConfigType::Int32 => ConfigValueType::Int32 { mutability: None },
-        ConfigType::Int64 => ConfigValueType::Int64 { mutability: None },
-        ConfigType::String => {
-            let Some(max_size) = u.config_max_size else {
-                return Err(Error::validate(format!(
-                    "Config '{}' is type String but is missing field 'max_size'",
-                    config
-                )));
-            };
-            ConfigValueType::String { max_size: max_size.into(), mutability: None }
-        }
-        ConfigType::Vector => {
-            let Some(ref element) = u.config_element_type else {
-                return Err(Error::validate(format!(
-                    "Config '{}' is type Vector but is missing field 'element'",
-                    config
-                )));
-            };
-            let Some(max_count) = u.config_max_count else {
-                return Err(Error::validate(format!(
-                    "Config '{}' is type Vector but is missing field 'max_count'",
-                    config
-                )));
-            };
-            ConfigValueType::Vector {
-                max_count: max_count.into(),
-                element: element.clone(),
-                mutability: None,
-            }
-        }
-    };
-    Ok(config_type)
 }
 
 // Construct the config type information out of a `use` for a configuration capability.
@@ -3895,23 +2244,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use serde_json::json;
-
-    macro_rules! test_validate_cml {
-        (
-            $(
-                $test_name:ident($input:expr, $($pattern:tt)+),
-            )+
-        ) => {
-            $(
-                #[test]
-                fn $test_name() {
-                    let input = format!("{}", $input);
-                    let result = validate_for_test("test.cml", &input.as_bytes());
-                    assert_matches!(result, $($pattern)+);
-                }
-            )+
-        }
-    }
+    use std::path::Path;
 
     macro_rules! test_validate_cml_with_context {
         (
@@ -3924,27 +2257,6 @@ mod tests {
                 fn $test_name() {
                     let input = format!("{}", $input);
                     let result = validate_for_test_context("test.cml", &input.as_bytes());
-                    assert_matches!(result, $($pattern)+);
-                }
-            )+
-        }
-    }
-
-    macro_rules! test_validate_cml_with_feature {
-        (
-            $features:expr,
-            {
-                $(
-                    $test_name:ident($input:expr, $($pattern:tt)+),
-                )+
-            }
-        ) => {
-            $(
-                #[test]
-                fn $test_name() {
-                    let input = format!("{}", $input);
-                    let features = $features;
-                    let result = validate_with_features_for_test("test.cml", &input.as_bytes(), &features, &vec![], &vec![], &vec![]);
                     assert_matches!(result, $($pattern)+);
                 }
             )+
@@ -3965,58 +2277,15 @@ mod tests {
                 fn $test_name() {
                     let input = format!("{}", $input);
                     let features = $features;
-                    let result = validate_with_features_for_test_context("test.cml", &input.as_bytes(), &features, &vec![], &vec![], &vec![]);
+                    let result = validate_with_features_for_test("test.cml", &input.as_bytes(), &features, &vec![], &vec![], &vec![]);
                     assert_matches!(result, $($pattern)+);
                 }
             )+
         }
     }
 
-    fn validate_for_test(filename: &str, input: &[u8]) -> Result<(), Error> {
-        validate_with_features_for_test(filename, input, &FeatureSet::empty(), &[], &[], &[])
-    }
-
     fn validate_for_test_context(filename: &str, input: &[u8]) -> Result<(), Error> {
-        validate_with_features_for_test_context(
-            filename,
-            input,
-            &FeatureSet::empty(),
-            &[],
-            &[],
-            &[],
-        )
-    }
-
-    fn validate_with_features_for_test_context(
-        filename: &str,
-        input: &[u8],
-        features: &FeatureSet,
-        required_offers: &[String],
-        required_uses: &[String],
-        required_dictionary_offers: &[String],
-    ) -> Result<(), Error> {
-        let input = format!("{}", std::str::from_utf8(input).unwrap().to_string());
-        let file = Path::new(filename);
-        let document = crate::load_cml_with_context(&input, file)?;
-        validate_cml_context(
-            &document,
-            &features,
-            &CapabilityRequirements {
-                must_offer: &required_offers
-                    .iter()
-                    .map(|value| OfferToAllCapability::Protocol(value))
-                    .chain(
-                        required_dictionary_offers
-                            .iter()
-                            .map(|value| OfferToAllCapability::Dictionary(value)),
-                    )
-                    .collect::<Vec<_>>(),
-                must_use: &required_uses
-                    .iter()
-                    .map(|value| MustUseRequirement::Protocol(value))
-                    .collect::<Vec<_>>(),
-            },
-        )
+        validate_with_features_for_test(filename, input, &FeatureSet::empty(), &[], &[], &[])
     }
 
     fn validate_with_features_for_test(
@@ -4029,10 +2298,9 @@ mod tests {
     ) -> Result<(), Error> {
         let input = format!("{}", std::str::from_utf8(input).unwrap().to_string());
         let file = Path::new(filename);
-        let document = crate::parse_one_document(&input, &file)?;
+        let document = crate::load_cml_with_context(&input, file)?;
         validate_cml(
             &document,
-            Some(&file),
             &features,
             &CapabilityRequirements {
                 must_offer: &required_offers
@@ -4081,9 +2349,8 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::Validate { err, .. }) => {
                 assert_eq!(err, unused_component_err_message("fuchsia.logger.LogSink"));
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
 
@@ -4393,12 +2660,11 @@ mod tests {
 
         // aliased duplications are forbidden
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContexts { err, .. }) => {
                 assert_eq!(
                     err,
                     offer_to_all_and_component_diff_capabilities_message([OfferToAllCapability::Protocol("fuchsia.logger.LogSink")].into_iter(), "something"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
 
@@ -4438,12 +2704,11 @@ mod tests {
 
         // offering the same protocol without an alias from different sources is forbidden
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContexts { err, .. }) => {
                 assert_eq!(
                     err,
                     offer_to_all_and_component_diff_sources_message([OfferToAllCapability::Protocol("fuchsia.logger.LogSink")].into_iter(), "something"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
     }
@@ -4524,12 +2789,11 @@ mod tests {
 
         // aliased duplications are forbidden
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContexts { err, .. }) => {
                 assert_eq!(
                     err,
                     offer_to_all_and_component_diff_capabilities_message([OfferToAllCapability::Dictionary("diagnostics")].into_iter(), "something"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
 
@@ -4569,12 +2833,11 @@ mod tests {
 
         // offering the same dictionary without an alias from different sources is forbidden
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContexts { err, .. }) => {
                 assert_eq!(
                     err,
                     offer_to_all_and_component_diff_sources_message([OfferToAllCapability::Dictionary("diagnostics")].into_iter(), "something"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
     }
@@ -4610,7 +2873,7 @@ mod tests {
             ]
         }"##;
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -4625,53 +2888,6 @@ mod tests {
                     err,
                     offer_to_all_diff_sources_message(&["fuchsia.logger.LogSink"]),
                 );
-            }
-        );
-    }
-
-    #[test]
-    fn offer_to_all_from_diff_sources_no_span() {
-        let input = r##"{
-            children: [
-                {
-                    name: "logger",
-                    url: "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
-                },
-                {
-                    name: "something",
-                    url: "fuchsia-pkg://fuchsia.com/something#meta/something.cm",
-                },
-            ],
-            offer: [
-                {
-                    protocol: "fuchsia.logger.LogSink",
-                    from: "parent",
-                    to: "all"
-                },
-                {
-                    protocol: "fuchsia.logger.LogSink",
-                    from: "framework",
-                    to: "all"
-                },
-            ]
-        }"##;
-
-        let result = validate_with_features_for_test(
-            "test.cml",
-            input.as_bytes(),
-            &FeatureSet::empty(),
-            &vec!["fuchsia.logger.LogSink".into()],
-            &Vec::new(),
-            &[],
-        );
-
-        assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
-                assert_eq!(
-                    err,
-                    offer_to_all_diff_sources_message(&["fuchsia.logger.LogSink"]),
-                );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
             }
         );
     }
@@ -4716,7 +2932,7 @@ mod tests {
             ]
         }"##;
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -4781,42 +2997,6 @@ mod tests {
     }
 
     #[test]
-    fn required_dict_offers_accept_aliases_no_span() {
-        let input = r##"{
-            capabilities: [
-                {
-                    dictionary: "test-diagnostics",
-                }
-            ],
-            children: [
-                {
-                    name: "something",
-                    url: "fuchsia-pkg://fuchsia.com/something#meta/something.cm",
-                },
-            ],
-            offer: [
-                {
-                    dictionary: "test-diagnostics",
-                    from: "self",
-                    to: "#something",
-                    as: "diagnostics",
-                }
-            ]
-        }"##;
-
-        let result = validate_with_features_for_test(
-            "test.cml",
-            input.as_bytes(),
-            &FeatureSet::empty(),
-            &[],
-            &[],
-            &["diagnostics".into()],
-        );
-
-        assert_matches!(result, Ok(_));
-    }
-
-    #[test]
     fn required_dict_offers_accept_aliases() {
         let input = r##"{
             capabilities: [
@@ -4840,7 +3020,7 @@ mod tests {
             ]
         }"##;
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -4910,7 +3090,7 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContext { err, origin }) => {
                 assert_eq!(
                     err,
                     fail_to_make_required_offer(
@@ -4919,11 +3099,11 @@ mod tests {
                         "something",
                     ),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
+                assert!(origin.is_some(), "Expected there to be a origin in error message");
             }
         );
 
-        let result_context = validate_with_features_for_test_context(
+        let result_context = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -4977,16 +3157,16 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContext { err, origin }) => {
                 assert_eq!(
                     err,
                     fail_to_make_required_offer("fuchsia.logger.LogSink", "collection", "coll"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
+                assert!(origin.is_some(), "Expected there to be a origin in error message");
             }
         );
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -5047,7 +3227,7 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContext { err, origin }) => {
                 assert_eq!(
                     err,
                     fail_to_make_required_offer_dictionary(
@@ -5056,11 +3236,11 @@ mod tests {
                         "something",
                     ),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
+                assert!(origin.is_some(), "Expected there to be a origin in error message");
             }
         );
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -5123,16 +3303,16 @@ mod tests {
             &["diagnostics".to_string()],
         );
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContext { err, origin }) => {
                 assert_eq!(
                     err,
                     fail_to_make_required_offer_dictionary("diagnostics", "collection", "coll"),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
+                assert!(origin.is_some(), "Expected there to be a origin in error message");
             }
         );
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -5192,7 +3372,7 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::Validate { err, filename }) => {
+            Err(Error::ValidateContext { err, origin }) => {
                 assert_eq!(
                     err,
                     fail_to_make_required_offer_dictionary(
@@ -5201,11 +3381,11 @@ mod tests {
                         "logger",
                     ),
                 );
-                assert!(filename.is_some(), "Expected there to be a filename in error message");
+                assert!(origin.is_some(), "Expected there to be a origin in error message");
             }
         );
 
-        let result = validate_with_features_for_test_context(
+        let result = validate_with_features_for_test(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -5231,7 +3411,7 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_json_fails() {
-        let result = validate_for_test("test.cml", b"{");
+        let result = validate_for_test_context("test.cml", b"{");
         let expected_err = r#" --> 1:2
   |
 1 | {
@@ -5256,8 +3436,6 @@ mod tests {
                 },
             ],
         }"##;
-        let result = validate_for_test("test.cml", input.as_bytes());
-        assert_matches!(result, Ok(()));
 
         let result = validate_for_test_context("test.cml", input.as_bytes());
         assert_matches!(result, Ok(()));
@@ -5273,7 +3451,7 @@ mod tests {
         },
     ],
 }"##;
-        let result = validate_for_test("test.cml", input.as_bytes());
+        let result = validate_for_test_context("test.cml", input.as_bytes());
         assert_matches!(
             result,
             Err(Error::Parse { err, location: Some(l), filename: Some(f) })
@@ -6642,7 +4820,7 @@ mod tests {
 
     }
 
-    test_validate_cml! {
+    test_validate_cml_with_context! {
         // include
         test_cml_empty_include(
             json!(
@@ -6667,57 +4845,6 @@ mod tests {
                 }
             ),
             Ok(())
-        ),
-
-        // program
-        test_cml_empty_json_no_span(
-            json!({}),
-            Ok(())
-        ),
-        test_cml_program_no_span(
-            json!(
-                {
-                    "program": {
-                        "runner": "elf",
-                        "binary": "bin/app",
-                    },
-                }
-            ),
-            Ok(())
-        ),
-        test_cml_program_use_runner_no_span(
-            json!(
-                {
-                    "program": {
-                        "binary": "bin/app",
-                    },
-                    "use": [
-                        { "runner": "elf", "from": "parent" }
-                    ]
-                }
-            ),
-            Ok(())
-        ),
-        test_cml_program_use_runner_conflict_no_span(
-            json!(
-                {
-                    "program": {
-                        "runner": "elf",
-                        "binary": "bin/app",
-                    },
-                    "use": [
-                        { "runner": "elf", "from": "parent" }
-                    ]
-                }
-            ),
-            Err(Error::Validate { err, .. }) if &err ==
-                "Component has conflicting runners in `program` block and `use` block."
-        ),
-        test_cml_program_no_runner_no_span(
-            json!({"program": { "binary": "bin/app" }}),
-            Err(Error::Validate { err, .. }) if &err ==
-                "Component has a `program` block defined, but doesn't specify a `runner`. \
-                Components need to use a runner to actually execute code."
         ),
 
         // use
@@ -6762,18 +4889,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_expose_event_stream_multiple_as_no_span(
-            json!({
-                "expose": [
-                    {
-                        "event_stream": ["started", "stopped"],
-                        "from" : "framework",
-                        "as": "something"
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "as cannot be used with multiple event streams"
-        ),
+
         test_cml_offer_event_stream_capability_requested_not_from_framework(
             json!({
                 "offer": [
@@ -6784,7 +4900,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"#something\" is an \"offer\" target from \"parent\" but \"#something\" does not appear in \"children\" or \"collections\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"#something\" is an \"offer\" target from \"parent\" but \"#something\" does not appear in \"children\" or \"collections\""
         ),
         test_cml_offer_event_stream_capability_requested_with_filter(
             json!({
@@ -6796,7 +4912,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"#something\" is an \"offer\" target from \"framework\" but \"#something\" does not appear in \"children\" or \"collections\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"#something\" is an \"offer\" target from \"framework\" but \"#something\" does not appear in \"children\" or \"collections\""
         ),
         test_cml_offer_event_stream_multiple_as(
             json!({
@@ -6809,23 +4925,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "as cannot be used with multiple events"
-        ),
-        test_cml_expose_event_stream_from_self_no_span(
-            json!({
-                "expose": [
-                    { "event_stream": ["started", "stopped"], "from" : "self" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "Cannot expose event_streams from self"
-        ),
-        test_cml_offer_event_stream_from_self_no_span(
-            json!({
-                "offer": [
-                    { "event_stream": ["started", "stopped"], "from" : "self", "to": "#self" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "cannot offer an event_stream from self"
+            Err(Error::ValidateContext { err, .. }) if &err == "as cannot be used with multiple events"
         ),
         test_cml_offer_event_stream_from_anything_else(
             json!({
@@ -6837,19 +4937,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"#self\" is an \"offer\" target from \"framework\" but \"#self\" does not appear in \"children\" or \"collections\""
-        ),
-        test_cml_expose_event_stream_to_framework_no_span(
-            json!({
-                "expose": [
-                    {
-                        "event_stream": ["started", "stopped"],
-                        "from" : "self",
-                        "to": "framework"
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "cannot expose an event_stream to framework"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"#self\" is an \"offer\" target from \"framework\" but \"#self\" does not appear in \"children\" or \"collections\""
         ),
         test_cml_expose_event_stream_scope_invalid_component(
             json!({
@@ -6861,212 +4949,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "event_stream scope invalid_component did not match a component or collection in this .cml file."
-        ),
-
-        test_cml_use_from_self_no_span(
-            json!({
-                "use": [
-                    {
-                        "protocol": [ "bar_protocol", "baz_protocol" ],
-                        "from": "self",
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "from": "self",
-                        "path": "/dir",
-                        "rights": [ "r*" ],
-                    },
-                    {
-                        "service": "foo_service",
-                        "from": "self",
-                    },
-                    {
-                        "config": "foo_config",
-                        "type": "bool",
-                        "key": "k",
-                        "from": "self",
-                    },
-                ],
-                "capabilities": [
-                    {
-                        "protocol": "bar_protocol",
-                    },
-                    {
-                        "protocol": "baz_protocol",
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "path": "/dir",
-                        "rights": [ "r*" ],
-                    },
-                    {
-                        "service": "foo_service",
-                    },
-                    {
-                        "config": "foo_config",
-                        "type": "bool",
-                    },
-                ]
-            }),
-            Ok(())
-        ),
-        test_cml_use_protocol_from_self_missing_no_span(
-            json!({
-                "use": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is used from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_use_numbered_handle_not_protocol_no_span(
-            json!({
-                "use": [
-                    {
-                        "runner": "foo",
-                        "numbered_handle": 0xab,
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
-        ),
-        test_cml_use_numbered_handle_and_path_no_span(
-            json!({
-                "use": [
-                    {
-                        "protocol": "foo",
-                        "path": "/svc/foo",
-                        "numbered_handle": 0xab,
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
-        ),
-        test_cml_use_directory_from_self_missing_no_span(
-            json!({
-                "use": [
-                    {
-                        "directory": "foo_directory",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"foo_directory\" is used from self, so it must be declared as a \"directory\" in \"capabilities\""
-        ),
-        test_cml_use_service_from_self_missing_no_span(
-            json!({
-                "use": [
-                    {
-                        "service": "foo_service",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "service \"foo_service\" is used from self, so it must be declared as a \"service\" in \"capabilities\""
-        ),
-        test_cml_use_config_from_self_missing_no_span(
-            json!({
-                "use": [
-                    {
-                        "config": "foo_config",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "config \"foo_config\" is used from self, so it must be declared as a \"config\" in \"capabilities\""
-        ),
-        test_cml_use_from_self_missing_dictionary_no_span(
-            json!({
-                "use": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self/dict/inner",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is used from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
-        ),
-        test_cml_use_event_stream_duplicate_no_span(
-            json!({
-                "use": [
-                    { "event_stream": ["started", "started"], "from" : "parent" },
-                ]
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: array with duplicate element, expected a name or nonempty array of names, with unique elements"
-        ),
-        test_cml_use_event_stream_overlapping_path_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
-                    {
-                        "event_stream": ["started"],
-                        "path": "/foo/bar/baz/er",
-                        "from": "parent",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar/baz\" is a prefix of \"use\" target event_stream \"/foo/bar/baz/er\""
-        ),
-        test_cml_use_event_stream_invalid_path_no_span(
-            json!({
-                "use": [
-                    {
-                        "event_stream": ["started"],
-                        "path": "my_stream",
-                        "from": "parent",
-                    },
-                ],
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: string \"my_stream\", expected a path with leading `/` and non-empty segments, where each segment is no more than fuchsia.io/MAX_NAME_LENGTH bytes in length, cannot be . or .., and cannot contain embedded NULs"
-        ),
-        test_cml_use_event_stream_self_ref_no_span(
-            json!({
-                "use": [
-                    {
-                        "event_stream": ["started"],
-                        "path": "/svc/my_stream",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"from: self\" cannot be used with \"event_stream\""
-        ),
-        test_cml_use_runner_debug_ref_no_span(
-            json!({
-                "use": [
-                    {
-                        "runner": "elf",
-                        "from": "debug",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
-        ),
-        test_cml_use_runner_self_ref_no_span(
-            json!({
-                "use": [
-                    {
-                        "runner": "elf",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"from: self\" cannot be used with \"runner\""
-        ),
-        test_cml_use_missing_props_no_span(
-            json!({
-                "use": [ { "path": "/svc/fuchsia.logger.Log" } ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
-        ),
-        test_cml_use_from_with_storage_no_span(
-            json!({
-                "use": [ { "storage": "cache", "from": "parent" } ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"from\" cannot be used with \"storage\""
+            Err(Error::ValidateContext { err, .. }) if &err == "event_stream scope invalid_component did not match a component or collection in this .cml file."
         ),
         test_cml_use_invalid_from(
             json!({
@@ -7090,7 +4973,7 @@ mod tests {
                   { "protocol": "fuchsia.sys2.Admin", "from": "#mystorage" }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"use\" source \"#mystorage\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"use\" source \"#mystorage\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_use_bad_path(
             json!({
@@ -7101,16 +4984,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied."
-        ),
-        test_cml_use_bad_duplicate_target_names_no_span(
-            json!({
-                "use": [
-                  { "protocol": "fuchsia.component.Realm" },
-                  { "protocol": "fuchsia.component.Realm" },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol"
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied."
         ),
         test_cml_use_empty_protocols(
             json!({
@@ -7146,59 +5020,13 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if err.starts_with("unknown field `resolver`, expected one of")
         ),
-
-        test_cml_use_disallows_nested_dirs_directory_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\""
-        ),
-        test_cml_use_disallows_nested_dirs_storage_no_span(
-            json!({
-                "use": [
-                    { "storage": "foobar", "path": "/foo/bar" },
-                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
-        ),
-        test_cml_use_disallows_nested_dirs_directory_and_storage_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
-        ),
-        test_cml_use_disallows_common_prefixes_service_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia" },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\""
-        ),
-        test_cml_use_disallows_common_prefixes_protocol_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia.2" },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\""
-        ),
         test_cml_use_disallows_pkg_conflicts_for_directories(
             json!({
                 "use": [
                     { "directory": "dir", "path": "/pkg/dir", "rights": [ "r*" ] },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"/pkg/dir\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
+            Err(Error::ValidateContext { err, .. }) if &err == "directory \"/pkg/dir\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
         ),
         test_cml_use_disallows_pkg_conflicts_for_protocols(
             json!({
@@ -7206,7 +5034,7 @@ mod tests {
                     { "protocol": "prot", "path": "/pkg/protocol" },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"/pkg/protocol\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"/pkg/protocol\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
         ),
         test_cml_use_disallows_pkg_conflicts_for_storage(
             json!({
@@ -7214,27 +5042,7 @@ mod tests {
                     { "storage": "store", "path": "/pkg/storage" },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "storage \"/pkg/storage\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
-        ),
-        test_cml_use_disallows_filter_on_non_events_no_span(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ], "filter": {"path": "/diagnostics"} },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"filter\" can only be used with \"event_stream\""
-        ),
-        test_cml_availability_not_supported_for_event_streams_no_span(
-            json!({
-                "use": [
-                    {
-                        "event_stream": ["destroyed"],
-                        "from": "parent",
-                        "availability": "optional",
-                    }
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"availability\" cannot be used with \"event_stream\""
+            Err(Error::ValidateContext { err, .. }) if &err == "storage \"/pkg/storage\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
         ),
         test_cml_use_from_parent_weak(
             json!({
@@ -7246,7 +5054,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
+            Err(Error::ValidateContext { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
         ),
         test_cml_use_from_child_weak(
             json!({
@@ -7403,7 +5211,7 @@ mod tests {
                     { "protocol": "fuchsia.logger.Log", "from": "#missing" },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_expose_duplicate_target_names(
             json!({
@@ -7421,7 +5229,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"thing\" is a duplicate \"expose\" target capability for \"parent\""
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"thing\" is a duplicate \"expose\" target capability for \"parent\""
         ),
         test_cml_expose_invalid_multiple_from(
             json!({
@@ -7441,7 +5249,7 @@ mod tests {
                         },
                     ]
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"protocol\" capabilities cannot have multiple \"from\" clauses"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"protocol\" capabilities cannot have multiple \"from\" clauses"
         ),
         test_cml_expose_from_missing_named_source(
             json!({
@@ -7452,7 +5260,7 @@ mod tests {
                         },
                     ],
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#does-not-exist\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#does-not-exist\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_expose_bad_from(
             json!({
@@ -7479,7 +5287,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"as\" can only be specified when one `protocol` is supplied."
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"as\" can only be specified when one `protocol` is supplied."
         ),
         test_cml_expose_empty_protocols(
             json!({
@@ -7512,160 +5320,6 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"/\", expected a path with no leading `/` and non-empty segments"
         ),
-        test_cml_expose_invalid_subdir_to_framework_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "directory": "foo",
-                        "rights": ["r*"],
-                        "path": "/foo",
-                    },
-                ],
-                "expose": [
-                    {
-                        "directory": "foo",
-                        "from": "self",
-                        "to": "framework",
-                        "subdir": "blob",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://fuchsia.com/pkg#comp.cm",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead."
-        ),
-        test_cml_expose_from_self_no_span(
-            json!({
-                "expose": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self",
-                    },
-                    {
-                        "protocol": [ "bar_protocol", "baz_protocol" ],
-                        "from": "self",
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "from": "self",
-                    },
-                    {
-                        "runner": "foo_runner",
-                        "from": "self",
-                    },
-                    {
-                        "resolver": "foo_resolver",
-                        "from": "self",
-                    },
-                ],
-                "capabilities": [
-                    {
-                        "protocol": "foo_protocol",
-                    },
-                    {
-                        "protocol": "bar_protocol",
-                    },
-                    {
-                        "protocol": "baz_protocol",
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "path": "/dir",
-                        "rights": [ "r*" ],
-                    },
-                    {
-                        "runner": "foo_runner",
-                        "path": "/svc/runner",
-                    },
-                    {
-                        "resolver": "foo_resolver",
-                        "path": "/svc/resolver",
-                    },
-                ]
-            }),
-            Ok(())
-        ),
-        test_cml_expose_protocol_from_self_missing_no_span(
-            json!({
-                "expose": [
-                    {
-                        "protocol": "pkg_protocol",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"pkg_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_expose_protocol_from_self_missing_multiple_no_span(
-            json!({
-                "expose": [
-                    {
-                        "protocol": [ "foo_protocol", "bar_protocol" ],
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_expose_directory_from_self_missing_no_span(
-            json!({
-                "expose": [
-                    {
-                        "directory": "pkg_directory",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"pkg_directory\" is exposed from self, so it must be declared as a \"directory\" in \"capabilities\""
-        ),
-        test_cml_expose_service_from_self_missing_no_span(
-            json!({
-                "expose": [
-                    {
-                        "service": "pkg_service",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "service \"pkg_service\" is exposed from self, so it must be declared as a \"service\" in \"capabilities\""
-        ),
-        test_cml_expose_runner_from_self_missing_no_span(
-            json!({
-                "expose": [
-                    {
-                        "runner": "dart",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "runner \"dart\" is exposed from self, so it must be declared as a \"runner\" in \"capabilities\""
-        ),
-        test_cml_expose_resolver_from_self_missing_no_span(
-            json!({
-                "expose": [
-                    {
-                        "resolver": "pkg_resolver",
-                        "from": "self",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "resolver \"pkg_resolver\" is exposed from self, so it must be declared as a \"resolver\" in \"capabilities\""
-        ),
-        test_cml_expose_from_self_missing_dictionary_no_span(
-            json!({
-                "expose": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self/dict/inner",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is exposed from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
-        ),
         test_cml_expose_from_dictionary_invalid(
             json!({
                 "expose": [
@@ -7676,65 +5330,6 @@ mod tests {
                 ],
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"bad/a\", expected one or an array of \"framework\", \"self\", \"#<child-name>\", or a dictionary path"
-        ),
-        test_cml_expose_from_dictionary_parent_no_span(
-            json!({
-                "expose": [
-                    {
-                        "protocol": "pkg_protocol",
-                        "from": "parent/a",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`expose` dictionary path must begin with `self` or `#<child-name>`"
-        ),
-        test_cml_expose_protocol_from_collection_invalid_no_span(
-            json!({
-                "collections": [ {
-                    "name": "coll",
-                    "durability": "transient",
-                } ],
-                "expose": [
-                    { "protocol": "fuchsia.logger.Log", "from": "#coll" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\" or \"capabilities\""
-        ),
-        test_cml_expose_directory_from_collection_invalid_no_span(
-            json!({
-                "collections": [ {
-                    "name": "coll",
-                    "durability": "transient",
-                } ],
-                "expose": [
-                    { "directory": "temp", "from": "#coll" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
-        ),
-        test_cml_expose_runner_from_collection_invalid_no_span(
-            json!({
-                "collections": [ {
-                    "name": "coll",
-                    "durability": "transient",
-                } ],
-                "expose": [
-                    { "runner": "elf", "from": "#coll" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
-        ),
-        test_cml_expose_resolver_from_collection_invalid_no_span(
-            json!({
-                "collections": [ {
-                    "name": "coll",
-                    "durability": "transient",
-                } ],
-                "expose": [
-                    { "resolver": "base", "from": "#coll" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
         ),
         // offer
         test_cml_offer(
@@ -7899,29 +5494,7 @@ mod tests {
                         },
                     ],
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
-        ),
-        test_cml_storage_offer_from_child_no_span(
-            json!({
-                    "offer": [
-                        {
-                            "storage": "cache",
-                            "from": "#storage_provider",
-                            "to": [ "#echo_server" ],
-                        },
-                    ],
-                    "children": [
-                        {
-                            "name": "echo_server",
-                            "url": "fuchsia-pkg://fuchsia.com/echo_server#meta/echo_server.cm",
-                        },
-                        {
-                            "name": "storage_provider",
-                            "url": "fuchsia-pkg://fuchsia.com/storage_provider#meta/storage_provider.cm",
-                        },
-                    ],
-                }),
-            Err(Error::Validate { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_offer_bad_from(
             json!({
@@ -7953,7 +5526,7 @@ mod tests {
                         },
                     ]
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"protocol\" capabilities cannot have multiple \"from\" clauses"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"protocol\" capabilities cannot have multiple \"from\" clauses"
         ),
         test_cml_offer_from_missing_named_source(
             json!({
@@ -7971,7 +5544,7 @@ mod tests {
                         },
                     ]
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#does-not-exist\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#does-not-exist\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_offer_protocol_from_collection_invalid(
             json!({
@@ -7987,7 +5560,7 @@ mod tests {
                     { "protocol": "fuchsia.logger.Log", "from": "#coll", "to": [ "#echo_server" ] },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\" or \"capabilities\""
         ),
         test_cml_offer_directory_from_collection_invalid(
             json!({
@@ -8003,23 +5576,7 @@ mod tests {
                     { "directory": "temp", "from": "#coll", "to": [ "#echo_server" ] },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
-        ),
-        test_cml_offer_storage_from_collection_invalid_no_span(
-            json!({
-                "collections": [ {
-                    "name": "coll",
-                    "durability": "transient",
-                } ],
-                "children": [ {
-                    "name": "echo_server",
-                    "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm",
-                } ],
-                "offer": [
-                    { "storage": "cache", "from": "#coll", "to": [ "#echo_server" ] },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
         ),
         test_cml_offer_runner_from_collection_invalid(
             json!({
@@ -8035,7 +5592,7 @@ mod tests {
                     { "runner": "elf", "from": "#coll", "to": [ "#echo_server" ] },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
         ),
         test_cml_offer_resolver_from_collection_invalid(
             json!({
@@ -8051,7 +5608,7 @@ mod tests {
                     { "resolver": "base", "from": "#coll", "to": [ "#echo_server" ] },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
         ),
         test_cml_offer_from_dictionary_invalid(
             json!({
@@ -8086,7 +5643,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" has dictionary target \
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" has dictionary target \
             \"self/dict\" but \"dict\" is not a dictionary capability defined by \
             this component"
         ),
@@ -8141,7 +5698,7 @@ mod tests {
                     "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
                 } ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"#missing\" is an \"offer\" target from \"#logger\" but \"#missing\" does not appear in \"children\" or \"collections\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"#missing\" is an \"offer\" target from \"#logger\" but \"#missing\" does not appear in \"children\" or \"collections\""
         ),
         test_cml_offer_target_bad_to(
             json!({
@@ -8183,7 +5740,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "Offer target \"#child\" is same as source"
+            Err(Error::ValidateContext { err, .. }) if &err == "Offer target \"#child\" is same as source"
         ),
         test_cml_offer_target_equals_from_weak(
             json!({
@@ -8228,7 +5785,7 @@ mod tests {
                     "storage_id": "static_instance_id_or_moniker",
                 } ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "Storage offer target \"#logger\" is same as source"
+            Err(Error::ValidateContext { err, .. }) if &err == "Storage offer target \"#logger\" is same as source"
         ),
         test_cml_offer_duplicate_target_names(
             json!({
@@ -8261,7 +5818,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"thing\" is a duplicate \"offer\" target capability for \"#echo_server\""
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"thing\" is a duplicate \"offer\" target capability for \"#echo_server\""
         ),
         test_cml_offer_duplicate_storage_names(
             json!({
@@ -8288,7 +5845,7 @@ mod tests {
                     "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm"
                 } ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"cache\" is a duplicate \"offer\" target capability for \"#echo_server\""
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"cache\" is a duplicate \"offer\" target capability for \"#echo_server\""
         ),
         // if "as" is specified, only 1 array item is allowed.
         test_cml_offer_bad_as(
@@ -8308,232 +5865,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"as\" can only be specified when one `protocol` is supplied."
-        ),
-        test_cml_offer_bad_subdir_no_span(
-            json!({
-                "offer": [
-                    {
-                        "directory": "index",
-                        "subdir": "/",
-                        "from": "parent",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    }
-                ]
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: string \"/\", expected a path with no leading `/` and non-empty segments"
-        ),
-        test_cml_offer_from_self_no_span(
-            json!({
-                "offer": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                    {
-                        "protocol": [ "bar_protocol", "baz_protocol" ],
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                    {
-                        "runner": "foo_runner",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                    {
-                        "resolver": "foo_resolver",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-                "capabilities": [
-                    {
-                        "protocol": "foo_protocol",
-                    },
-                    {
-                        "protocol": "bar_protocol",
-                    },
-                    {
-                        "protocol": "baz_protocol",
-                    },
-                    {
-                        "directory": "foo_directory",
-                        "path": "/dir",
-                        "rights": [ "r*" ],
-                    },
-                    {
-                        "runner": "foo_runner",
-                        "path": "/svc/fuchsia.sys2.ComponentRunner",
-                    },
-                    {
-                        "resolver": "foo_resolver",
-                        "path": "/svc/fuchsia.component.resolution.Resolver",
-                    },
-                ]
-            }),
-            Ok(())
-        ),
-        test_cml_offer_service_from_self_missing_no_span(
-            json!({
-                "offer": [
-                    {
-                        "service": "pkg_service",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "service \"pkg_service\" is offered from self, so it must be declared as a \"service\" in \"capabilities\""
-        ),
-        test_cml_offer_protocol_from_self_missing_no_span(
-            json!({
-                "offer": [
-                    {
-                        "protocol": "pkg_protocol",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"pkg_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_offer_protocol_from_self_missing_multiple_no_span(
-            json!({
-                "offer": [
-                    {
-                        "protocol": [ "foo_protocol", "bar_protocol" ],
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_offer_directory_from_self_missing_no_span(
-            json!({
-                "offer": [
-                    {
-                        "directory": "pkg_directory",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "directory \"pkg_directory\" is offered from self, so it must be declared as a \"directory\" in \"capabilities\""
-        ),
-        test_cml_offer_runner_from_self_missing_no_span(
-            json!({
-                "offer": [
-                    {
-                        "runner": "dart",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "runner \"dart\" is offered from self, so it must be declared as a \"runner\" in \"capabilities\""
-        ),
-        test_cml_offer_resolver_from_self_missing_no_span(
-            json!({
-                "offer": [
-                    {
-                        "resolver": "pkg_resolver",
-                        "from": "self",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "resolver \"pkg_resolver\" is offered from self, so it must be declared as a \"resolver\" in \"capabilities\""
-        ),
-        test_cml_offer_storage_from_self_missing_no_span(
-            json!({
-                    "offer": [
-                        {
-                            "storage": "cache",
-                            "from": "self",
-                            "to": [ "#echo_server" ],
-                        },
-                    ],
-                    "children": [
-                        {
-                            "name": "echo_server",
-                            "url": "fuchsia-pkg://fuchsia.com/echo_server#meta/echo_server.cm",
-                        },
-                    ],
-                }),
-            Err(Error::Validate { err, .. }) if &err == "storage \"cache\" is offered from self, so it must be declared as a \"storage\" in \"capabilities\""
-        ),
-        test_cml_offer_from_self_missing_dictionary_no_span(
-            json!({
-                "offer": [
-                    {
-                        "protocol": "foo_protocol",
-                        "from": "self/dict/inner",
-                        "to": [ "#modular" ],
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is offered from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"as\" can only be specified when one `protocol` is supplied."
         ),
         test_cml_offer_dependency_on_wrong_type(
             json!({
@@ -8548,7 +5880,7 @@ mod tests {
                         "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm",
                     } ],
                 }),
-            Err(Error::Validate { err, .. }) if err.starts_with("Dependency can only be provided for")
+            Err(Error::ValidateContext { err, .. }) if err.starts_with("Dependency can only be provided for")
         ),
 
         // children
@@ -8590,17 +5922,6 @@ mod tests {
              }),
              Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"children\" and once in \"children\""
          ),
-         test_cml_children_url_ends_in_cml_no_span(
-            json!({
-                "children": [
-                     {
-                         "name": "logger",
-                         "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml"
-                     },
-                 ]
-             }),
-             Err(Error::Validate { err, ..}) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml"
-         ),
           test_cml_children_bad_startup(
             json!({
                 "children": [
@@ -8625,195 +5946,6 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "unknown variant `zzz`, expected `none` or `reboot`"
         ),
-
-
-        test_cml_children_bad_environment_no_span(
-            json!({
-                "children": [
-                    {
-                        "name": "logger",
-                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
-                        "environment": "parent",
-                    }
-                ]
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
-        ),
-        test_cml_children_environment_no_span(
-            json!({
-                "children": [
-                    {
-                        "name": "logger",
-                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
-                        "environment": "#foo_env",
-                    }
-                ],
-                "environments": [
-                    {
-                        "name": "foo_env",
-                    }
-                ]
-            }),
-            Ok(())
-        ),
-        test_cml_collections_bad_environment_no_span(
-            json!({
-                "collections": [
-                    {
-                        "name": "tests",
-                        "durability": "transient",
-                        "environment": "parent",
-                    }
-                ]
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
-        ),
-        test_cml_collections_environment_no_span(
-            json!({
-                "collections": [
-                    {
-                        "name": "tests",
-                        "durability": "transient",
-                        "environment": "#foo_env",
-                    }
-                ],
-                "environments": [
-                    {
-                        "name": "foo_env",
-                    }
-                ]
-            }),
-            Ok(())
-        ),
-
-        test_cml_environment_timeout_no_span(
-            json!({
-                "environments": [
-                    {
-                        "name": "foo_env",
-                        "__stop_timeout_ms": 10000,
-                    }
-                ]
-            }),
-            Ok(())
-        ),
-
-        test_cml_environment_bad_timeout_no_span(
-            json!({
-                "environments": [
-                    {
-                        "name": "foo_env",
-                        "__stop_timeout_ms": -3,
-                    }
-                ]
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid value: integer `-3`, expected an unsigned 32-bit integer"
-        ),
-        test_cml_environment_debug_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "protocol": "fuchsia.logger.Log2",
-                    },
-                ],
-                "environments": [
-                    {
-                        "name": "foo_env",
-                        "extends": "realm",
-                        "debug": [
-                            {
-                                "protocol": "fuchsia.module.Module",
-                                "from": "#modular",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.OtherLog",
-                                "from": "parent",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.Log2",
-                                "from": "self",
-                            },
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-           Ok(())
-        ),
-        test_cml_environment_debug_missing_capability_no_span(
-            json!({
-                "environments": [
-                    {
-                        "name": "foo_env",
-                        "extends": "realm",
-                        "debug": [
-                            {
-                                "protocol": "fuchsia.module.Module",
-                                "from": "#modular",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.OtherLog",
-                                "from": "parent",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.Log2",
-                                "from": "self",
-                            },
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "protocol \"fuchsia.logger.Log2\" is registered as debug from self, so it must be declared as a \"protocol\" in \"capabilities\""
-        ),
-        test_cml_environment_invalid_from_child_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "protocol": "fuchsia.logger.Log2",
-                    },
-                ],
-                "environments": [
-                    {
-                        "name": "foo_env",
-                        "extends": "realm",
-                        "debug": [
-                            {
-                                "protocol": "fuchsia.module.Module",
-                                "from": "#missing",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.OtherLog",
-                                "from": "parent",
-                            },
-                            {
-                                "protocol": "fuchsia.logger.Log2",
-                                "from": "self",
-                            },
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "modular",
-                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"debug\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
-        ),
-
-
         // collections
         test_cml_collections(
             json!({
@@ -8892,17 +6024,6 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_protocol_multi_invalid_path_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "protocol": ["a", "b", "c"],
-                        "path": "/minfs",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied."
-        ),
         test_cml_protocol_all_valid_chars(
             json!({
                 "capabilities": [
@@ -8941,28 +6062,6 @@ mod tests {
                 ],
             }),
             Ok(())
-        ),
-        test_cml_directory_missing_path_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "directory": "dir",
-                        "rights": ["connect"],
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" should be present with \"directory\""
-        ),
-        test_cml_directory_missing_rights_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "directory": "dir",
-                        "path": "/dir",
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"rights\" should be present with \"directory\""
         ),
         test_cml_storage(
             json!({
@@ -9023,39 +6122,7 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker",
                     } ]
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"capabilities\" source \"#missing\" does not appear in \"children\""
-        ),
-        test_cml_storage_missing_path_or_backing_dir_no_span(
-            json!({
-                    "capabilities": [ {
-                        "storage": "minfs",
-                        "from": "self",
-                        "storage_id": "static_instance_id_or_moniker",
-                    } ]
-                }),
-            Err(Error::Validate { err, .. }) if &err == "\"backing_dir\" should be present with \"storage\""
-
-        ),
-        test_cml_storage_missing_storage_id_no_span(
-            json!({
-                    "capabilities": [ {
-                        "storage": "minfs",
-                        "from": "self",
-                        "backing_dir": "storage",
-                    }, ]
-                }),
-            Err(Error::Validate { err, .. }) if &err == "\"storage_id\" should be present with \"storage\""
-        ),
-        test_cml_storage_path_no_span(
-            json!({
-                    "capabilities": [ {
-                        "storage": "minfs",
-                        "from": "self",
-                        "path": "/minfs",
-                        "storage_id": "static_instance_id_or_moniker",
-                    } ]
-                }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"capabilities\" source \"#missing\" does not appear in \"children\""
         ),
         test_cml_runner(
             json!({
@@ -9085,50 +6152,6 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_runner_extraneous_from_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "runner": "a",
-                        "path": "/example",
-                        "from": "self",
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"from\" should not be present with \"runner\""
-        ),
-        test_cml_capability_missing_name_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "path": "/svc/fuchsia.component.resolution.Resolver",
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`capability` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"runner\", \"resolver\", \"event_stream\", \"dictionary\", \"config\""
-        ),
-        test_cml_resolver_missing_path_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "resolver": "pkg_resolver",
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" should be present with \"resolver\""
-        ),
-        test_cml_capabilities_extraneous_from_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "resolver": "pkg_resolver",
-                        "path": "/svc/fuchsia.component.resolution.Resolver",
-                        "from": "self",
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"from\" should not be present with \"resolver\""
-        ),
         test_cml_capabilities_duplicates(
             json!({
                 "capabilities": [
@@ -9142,7 +6165,7 @@ mod tests {
                     },
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "identifier \"pkg_resolver\" is defined twice, once in \"resolvers\" and once in \"runners\""
+            Err(Error::Validate { err, .. }) if &err == "identifier \"pkg_resolver\" is defined twice, once in \"resolver\" and once in \"runner\""
         ),
 
         // environments
@@ -9175,9 +6198,8 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err ==
-                "'__stop_timeout_ms' must be provided if the environment does not extend \
-                another environment"
+            Err(Error::ValidateContext { err, .. }) if &err ==
+                "'__stop_timeout_ms' must be provided if the environment extends 'none'"
         ),
 
         test_cml_environment_invalid_extends(
@@ -9295,7 +6317,7 @@ mod tests {
                     }
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "Duplicate runners registered under name \"dart\": \"other-dart\" and \"dart\"."
+            Err(Error::ValidateContexts { err, .. }) if &err == "Duplicate runners registered under name \"dart\": \"other-dart\" and \"dart\"."
         ),
         test_cml_environment_with_runner_from_missing_child(
             json!({
@@ -9312,7 +6334,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"elf\" runner source \"#missing_child\" does not appear in \"children\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"elf\" runner source \"#missing_child\" does not appear in \"children\""
         ),
         test_cml_environment_with_resolvers(
             json!({
@@ -9371,7 +6393,7 @@ mod tests {
                     }
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "scheme \"fuchsia-pkg\" for resolver \"base_resolver\" is already registered; previously registered to resolver \"pkg_resolver\"."
+            Err(Error::ValidateContexts { err, .. }) if &err == "scheme \"fuchsia-pkg\" for resolver \"base_resolver\" is already registered to \"pkg_resolver\"."
         ),
         test_cml_environment_with_resolver_from_missing_child(
             json!({
@@ -9389,27 +6411,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"pkg_resolver\" resolver source \"#missing_child\" does not appear in \"children\""
-        ),
-
-        // facets
-        test_cml_facets_no_span(
-            json!({
-                "facets": {
-                    "metadata": {
-                        "title": "foo",
-                        "authors": [ "me", "you" ],
-                        "year": 2018
-                    }
-                }
-            }),
-            Ok(())
-        ),
-        test_cml_facets_wrong_type_no_span(
-            json!({
-                "facets": 55
-            }),
-            Err(Error::Parse { err, .. }) if &err == "invalid type: integer `55`, expected a map"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"pkg_resolver\" resolver source \"#missing_child\" does not appear in \"children\""
         ),
 
         // constraints
@@ -9486,38 +6488,6 @@ mod tests {
                 ]
             }),
             Ok(())
-        ),
-        test_cml_rights_alias_star_expansion_with_longform_collision_no_span(
-            json!({
-                "use": [
-                  {
-                    "directory": "mydir",
-                    "path": "/mydir",
-                    "rights": ["r*", "read_bytes"],
-                  },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"read_bytes\" is duplicated in the rights clause."
-        ),
-        test_cml_rights_alias_star_expansion_collision_no_span(
-            json!({
-                "use": [
-                  {
-                    "directory": "mydir",
-                    "path": "/mydir",
-                    "rights": ["w*", "x*"],
-                  },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"x*\" is duplicated in the rights clause."
-        ),
-        test_cml_rights_use_invalid_no_span(
-            json!({
-                "use": [
-                  { "directory": "mydir", "path": "/mydir" },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."
         ),
 
         test_cml_path(
@@ -9873,7 +6843,7 @@ mod tests {
                     }
                 ]
            }),
-           Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"runners\" and once in \"children\""
+           Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"runner\" and once in \"children\""
         ),
         test_cml_duplicate_identifiers_environments(
             json!({
@@ -9889,7 +6859,7 @@ mod tests {
                      }
                  ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"environments\" and once in \"children\""
+            Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"environment\" and once in \"children\""
         ),
 
         // deny unknown fields
@@ -9942,7 +6912,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
         ),
         test_offer_source_availability_omitted(
             json!({
@@ -9960,18 +6930,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
-        ),
-        test_cml_use_invalid_availability_no_span(
-            json!({
-                "use": [
-                    {
-                        "protocol": "fuchsia.examples.Echo",
-                        "availability": "same_as_target",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
         ),
         test_offer_source_void_availability_required(
             json!({
@@ -9990,7 +6949,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
         ),
         test_offer_source_void_availability_same_as_target(
             json!({
@@ -10009,7 +6968,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
         ),
         test_offer_source_missing_availability_required(
             json!({
@@ -10029,7 +6988,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
         ),
         test_offer_source_missing_availability_same_as_target(
             json!({
@@ -10049,7 +7008,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
         ),
         test_expose_source_availability_unknown(
             json!({
@@ -10074,7 +7033,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
         ),
         test_expose_source_availability_omitted(
             json!({
@@ -10085,7 +7044,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
         ),
         test_expose_source_void_availability_required(
             json!({
@@ -10097,7 +7056,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
         ),
         test_expose_source_void_availability_same_as_target(
             json!({
@@ -10109,7 +7068,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"void\""
         ),
         test_expose_source_missing_availability_required(
             json!({
@@ -10122,7 +7081,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
         ),
         test_expose_source_missing_availability_same_as_target(
             json!({
@@ -10135,12 +7094,12 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
+            Err(Error::ValidateContext { err, .. }) if &err == "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"fuchsia.examples.Echo\", from: \"#bar\""
         ),
     }
 
     // Tests for services.
-    test_validate_cml! {
+    test_validate_cml_with_context! {
         test_cml_validate_use_service(
             json!({
                 "use": [
@@ -10149,12 +7108,6 @@ mod tests {
                 ],
             }),
             Ok(())
-        ),
-        test_cml_use_invalid_from_with_service_no_span(
-            json!({
-                "use": [ { "service": "foo", "from": "debug" } ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
         ),
         test_cml_validate_offer_service(
             json!({
@@ -10323,17 +7276,6 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_service_multi_invalid_path_no_span(
-            json!({
-                "capabilities": [
-                    {
-                        "service": ["a", "b", "c"],
-                        "path": "/minfs",
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" can only be specified when one `service` is supplied."
-        ),
         test_cml_service_all_valid_chars(
             json!({
                 "capabilities": [
@@ -10347,7 +7289,7 @@ mod tests {
     }
 
     // Tests structured config
-    test_validate_cml_with_feature! { FeatureSet::from(vec![]), {
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![]), {
         test_cml_configs(
             json!({
                 "config": {
@@ -10599,7 +7541,7 @@ mod tests {
     }}
 
     // Tests the use of `allow_long_names` when the "AllowLongNames" feature is set.
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::AllowLongNames]), {
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::AllowLongNames]), {
         test_cml_validate_set_allow_long_names_true(
             json!({
                 "collections": [
@@ -10627,7 +7569,7 @@ mod tests {
     }}
 
     // Tests using a dictionary when the UseDictionaries feature is set
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::UseDictionaries]), {
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::UseDictionaries]), {
         test_cml_validate_set_allow_use_dictionaries(
             json!({
                 "use": [
@@ -10646,7 +7588,7 @@ mod tests {
     }}
 
     // Tests that two dictionaries can be used at the same path
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::UseDictionaries]), {
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::UseDictionaries]), {
         test_cml_validate_set_allow_use_2_dictionaries_at_same_path(
             json!({
                 "use": [
@@ -10664,25 +7606,8 @@ mod tests {
         ),
     }}
 
-    // Tests that the use of `allow_long_names` fails when the "AllowLongNames"
-    // feature is not set.
-    test_validate_cml! {
-        test_cml_allow_long_names_without_feature_no_span(
-            json!({
-                "collections": [
-                    {
-                        "name": "foo",
-                        "durability": "transient",
-                        "allow_long_names": true
-                    },
-                ],
-            }),
-            Err(Error::RestrictedFeature(s)) if s == "allow_long_names"
-        ),
-    }
-
     // Tests that using a dictionary fails when the "UseDictionaries" feature is not set.
-    test_validate_cml! {
+    test_validate_cml_with_context! {
         test_cml_allow_use_dictionary_without_feature(
             json!({
                 "use": [
@@ -10693,41 +7618,6 @@ mod tests {
                 ],
             }),
             Err(Error::RestrictedFeature(s)) if s == "use_dictionaries"
-        ),
-    }
-
-    // Tests validate_facets function without the feature set
-    test_validate_cml! {
-        test_valid_empty_facets_no_span(
-            json!({
-                "facets": {}
-            }),
-            Ok(())
-        ),
-
-        test_invalid_empty_facets_no_span(
-            json!({
-                "facets": ""
-            }),
-            Err(err) if err.to_string().contains("invalid type: string")
-        ),
-        test_valid_empty_fuchsia_test_facet_no_span(
-            json!({
-                "facets": {TEST_FACET_KEY: {}}
-            }),
-            Ok(())
-        ),
-
-        test_valid_allowed_pkg_without_feature_no_span(
-            json!({
-                "facets": {
-                    TEST_TYPE_FACET_KEY: "some_realm",
-                    TEST_FACET_KEY: {
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
-                    }
-                }
-            }),
-            Ok(())
         ),
     }
 
@@ -10767,33 +7657,6 @@ mod tests {
     }
 
     // Tests validate_facets function with the RestrictTestTypeInFacet enabled.
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::RestrictTestTypeInFacet]), {
-        test_valid_empty_facets_with_test_type_feature_enabled_no_span(
-            json!({
-                "facets": {}
-            }),
-            Ok(())
-        ),
-        test_valid_empty_fuchsia_test_facet_with_test_type_feature_enabled_no_span(
-            json!({
-                "facets": {TEST_FACET_KEY: {}}
-            }),
-            Ok(())
-        ),
-
-        test_invalid_test_type_with_feature_enabled_no_span(
-            json!({
-                "facets": {
-                    TEST_FACET_KEY: {
-                        TEST_TYPE_FACET_KEY: "some_realm",
-                    }
-                }
-            }),
-            Err(err) if err.to_string().contains(TEST_TYPE_FACET_KEY)
-        ),
-    }}
-
-    // Tests validate_facets function with the RestrictTestTypeInFacet enabled.
     test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::RestrictTestTypeInFacet]), {
         test_valid_empty_facets_with_test_type_feature_enabled(
             json!({
@@ -10817,33 +7680,6 @@ mod tests {
                 }
             }),
             Err(err) if err.to_string().contains(TEST_TYPE_FACET_KEY)
-        ),
-    }}
-
-    // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature disabled.
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::AllowNonHermeticPackages]), {
-        test_valid_empty_facets_with_feature_disabled_no_span(
-            json!({
-                "facets": {}
-            }),
-            Ok(())
-        ),
-        test_valid_empty_fuchsia_test_facet_with_feature_disabled_no_span(
-            json!({
-                "facets": {TEST_FACET_KEY: {}}
-            }),
-            Ok(())
-        ),
-
-        test_valid_allowed_pkg_with_feature_disabled_no_span(
-            json!({
-                "facets": {
-                    TEST_FACET_KEY: {
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
-                    }
-                }
-            }),
-            Ok(())
         ),
     }}
 
@@ -10875,33 +7711,6 @@ mod tests {
     }}
 
     // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature enabled.
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature]), {
-        test_valid_empty_facets_with_feature_enabled_no_span(
-            json!({
-                "facets": {}
-            }),
-            Ok(())
-        ),
-        test_valid_empty_fuchsia_test_facet_with_feature_enabled_no_span(
-            json!({
-                "facets": {TEST_FACET_KEY: {}}
-            }),
-            Ok(())
-        ),
-
-        test_invalid_allowed_pkg_with_feature_enabled_no_span(
-            json!({
-                "facets": {
-                    TEST_FACET_KEY: {
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
-                    }
-                }
-            }),
-            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
-        ),
-    }}
-
-    // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature enabled.
     test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature]), {
         test_valid_empty_facets_with_feature_enabled(
             json!({
@@ -10925,33 +7734,6 @@ mod tests {
                 }
             }),
             Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
-        ),
-    }}
-
-    // Tests validate_facets function with the feature enabled and allowed pkg feature set.
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature, Feature::AllowNonHermeticPackages]), {
-        test_invalid_empty_facets_with_feature_enabled_no_span(
-            json!({
-                "facets": {}
-            }),
-            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
-        ),
-        test_invalid_empty_fuchsia_test_facet_with_feature_enabled_no_span(
-            json!({
-                "facets": {TEST_FACET_KEY: {}}
-            }),
-            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
-        ),
-
-        test_valid_allowed_pkg_with_feature_enabled_no_span(
-            json!({
-                "facets": {
-                    TEST_FACET_KEY: {
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
-                    }
-                }
-            }),
-            Ok(())
         ),
     }}
 
@@ -10983,7 +7765,7 @@ mod tests {
         ),
     }}
 
-    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::DynamicDictionaries]), {
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::DynamicDictionaries]), {
         test_cml_offer_to_dictionary_unsupported(
             json!({
                 "offer": [
@@ -10999,7 +7781,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" to dictionary \
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" to dictionary \
             \"self/dict\" for \"event_stream\" but dictionaries do not support this type yet."
         ),
         test_cml_dictionary_ref(
@@ -11074,7 +7856,7 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"p\" is a duplicate \"offer\" target capability for \"self/dict\""
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"p\" is a duplicate \"offer\" target capability for \"self/dict\""
         ),
         test_cml_offer_to_dictionary_dynamic(
             json!({
@@ -11092,13 +7874,13 @@ mod tests {
                     },
                 ],
             }),
-            Err(Error::Validate { err, .. }) if &err == "\"offer\" has dictionary target \"self/dict\" but \"dict\" sets \"path\". Therefore, it is a dynamic dictionary that does not allow offers into it."
+            Err(Error::ValidateContext { err, .. }) if &err == "\"offer\" has dictionary target \"self/dict\" but \"dict\" sets \"path\". Therefore, it is a dynamic dictionary that does not allow offers into it."
         ),
     }}
 
     // Tests that offering and exposing service capabilities to the same target and target name is
     // allowed.
-    test_validate_cml! {
+    test_validate_cml_with_context! {
         test_cml_aggregate_expose(
             json!({
                 "expose": [
@@ -11169,7 +7951,7 @@ mod tests {
     }
 
     // Tests for config capabilities
-    test_validate_cml! {
+    test_validate_cml_with_context! {
         a_test_cml_use_config(
         json!({"use": [
             {
@@ -11192,31 +7974,7 @@ mod tests {
         ],}),
         Ok(())
         ),
-        test_cml_use_config_bad_vector_no_span(
-        json!({"use": [
-            {
-                "config": "fuchsia.config.MyConfig",
-                "key": "my_config",
-                "type": "vector",
-                "element": { "type": "bool"},
-                // Missing max count.
-            },
-        ],}),
-        Err(Error::Validate {err,  .. })
-        if &err == "Config 'fuchsia.config.MyConfig' is type Vector but is missing field 'max_count'"
-        ),
-        test_cml_use_config_bad_string_no_span(
-        json!({"use": [
-            {
-                "config": "fuchsia.config.MyConfig",
-                "key": "my_config",
-                "type": "string",
-                // Missing max size.
-            },
-        ],}),
-        Err(Error::Validate { err, .. })
-        if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'"
-        ),
+
 
         test_cml_optional_use_no_config(
         json!({"use": [
@@ -11254,21 +8012,8 @@ mod tests {
         "config": {
             "my_config": { "type": "uint8"}
         }}),
-        Err(Error::Validate {err, ..})
+        Err(Error::ValidateContexts {err, ..})
         if &err == "Use and config block differ on type for key 'my_config'"
-        ),
-
-        test_config_required_with_default_no_span(
-        json!({"use": [
-            {
-                "config": "fuchsia.config.MyConfig",
-                "key": "my_config",
-                "type": "bool",
-                "default": "true",
-            },
-        ]}),
-        Err(Error::Validate {err, ..})
-        if &err == "Config 'fuchsia.config.MyConfig' is required and has a default value"
         ),
 
         test_cml_optional_use_good(
@@ -11286,17 +8031,6 @@ mod tests {
     }),
     Ok(())
         ),
-    test_cml_use_two_types_bad_no_span(
-        json!({"use": [
-            {
-                "protocol": "fuchsia.protocol.MyProtocol",
-                "service": "fuchsia.service.MyService",
-            },
-        ],
-    }),
-        Err(Error::Validate {err, ..})
-        if &err == "use declaration has multiple capability types defined: [\"service\", \"protocol\"]"
-        ),
     test_cml_offer_two_types_bad(
         json!({"offer": [
             {
@@ -11307,20 +8041,8 @@ mod tests {
             },
         ],
     }),
-        Err(Error::Validate {err, ..})
+        Err(Error::ValidateContext {err, ..})
         if &err == "offer declaration has multiple capability types defined: [\"service\", \"protocol\"]"
-        ),
-    test_cml_expose_two_types_bad_no_span(
-        json!({"expose": [
-            {
-                "protocol": "fuchsia.protocol.MyProtocol",
-                "service": "fuchsia.service.MyService",
-                "from" : "self",
-            },
-        ],
-    }),
-        Err(Error::Validate {err, ..})
-        if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]"
         ),
     }
 }

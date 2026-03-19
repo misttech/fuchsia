@@ -92,7 +92,7 @@ pub fn compile(
     document: &DocumentContext,
     options: CompileOptions<'_>,
 ) -> Result<fdecl::Component, Error> {
-    validate::validate_cml_context(
+    validate::validate_cml(
         &document,
         options.features.unwrap_or(&FeatureSet::empty()),
         &options.capability_requirements,
