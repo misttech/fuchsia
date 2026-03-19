@@ -176,7 +176,7 @@ elif [[ "${BOOTLOADER}" == "sorrel" ]]; then
   fi
 else
   fx-warn "Skipping bootloader provisioning of SSH keys because bootloader is ${BOOTLOADER}"
-  fx-warn "If you need to upload SSH keys, after flashing is done, reboot the device to the Fuchsia bootloader and re-run `fx flash-kola`."
+  fx-warn "If you need to upload SSH keys, after flashing is done, reboot the device to the Fuchsia bootloader and re-run \`fx flash-kola\`."
 fi
 
 if [[ "$WIPE_USERDATA" == "no" ]]; then
