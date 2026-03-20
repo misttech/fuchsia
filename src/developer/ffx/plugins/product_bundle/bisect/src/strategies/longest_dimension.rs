@@ -16,12 +16,10 @@ impl SearchStrategy for LongestDimensionStrategy {
 
         // Now that we've reduced the size of the remaining search window, go through and update
         // the midpoint pointers to reflect that change.
-        let range = &space.platform.remaining_artifacts;
-        space.platform.current_artifact = range.start + (range.len() / 2);
-        let range = &space.product.remaining_artifacts;
-        space.product.current_artifact = range.start + (range.len() / 2);
-        let range = &space.board.remaining_artifacts;
-        space.board.current_artifact = range.start + (range.len() / 2);
+        for series in space.iter_all_artifacts_mut() {
+            let range = &series.remaining_artifacts;
+            series.current_artifact = range.start + (range.len() / 2);
+        }
     }
 
     fn should_continue(
@@ -105,6 +103,8 @@ mod tests {
                 product_versions,
             ),
             board: create_mock_artifact_series(ArtifactType::Board, "board", board_versions),
+            product_input_bundles: vec![],
+            board_input_bundle_sets: vec![],
         }
     }
 

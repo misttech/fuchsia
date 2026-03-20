@@ -172,7 +172,18 @@ impl BisectionPlan {
             Self::interpolate_artifact(client, &starting_pb.board, &ending_pb.board, writer)
                 .await?;
 
-        let result = Ok(SearchSpace::new(platform, product, board));
+        // TODO: We will enable bisection across these dimensions at some point in the future.
+        // For now, we skip interpolating and ignore them entirely.
+        let product_input_bundles = Vec::new();
+        let board_input_bundle_sets = Vec::new();
+
+        let result = Ok(SearchSpace::new(
+            platform,
+            product,
+            board,
+            product_input_bundles,
+            board_input_bundle_sets,
+        ));
         result
     }
 
@@ -329,6 +340,8 @@ mod tests {
             platform: create_mock_artifact_series("platform", vec!["1", "2", "3"]),
             product: create_mock_artifact_series("product", vec!["a", "b", "c"]),
             board: create_mock_artifact_series("board", vec!["x", "y", "z"]),
+            product_input_bundles: vec![],
+            board_input_bundle_sets: vec![],
         }
     }
 

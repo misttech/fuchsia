@@ -33,16 +33,11 @@ pub(super) fn find_culprit<'a>(
             let bad_vas = &bad_candidate.versioned_artifact_set;
 
             // We count how many artifacts are different between the two sets.
-            let mut diff_count = 0;
-            if good_vas.platform != bad_vas.platform {
-                diff_count += 1;
-            }
-            if good_vas.product != bad_vas.product {
-                diff_count += 1;
-            }
-            if good_vas.board != bad_vas.board {
-                diff_count += 1;
-            }
+            let diff_count = good_vas
+                .iter_all()
+                .zip(bad_vas.iter_all())
+                .filter(|(good_artifact, bad_artifact)| good_artifact != bad_artifact)
+                .count();
 
             // A culprit can only be identified if exactly one artifact has changed.
             // If more than one changed, we can't be sure which one caused the failure.
@@ -52,13 +47,18 @@ pub(super) fn find_culprit<'a>(
 
             // Now, we determine which artifact was the one that changed
             // and check if the versions are adjacent in the search space.
-            let (series, good_version, bad_version) = if good_vas.platform != bad_vas.platform {
-                (&space.platform, &good_vas.platform, &bad_vas.platform)
-            } else if good_vas.product != bad_vas.product {
-                (&space.product, &good_vas.product, &bad_vas.product)
-            } else {
-                (&space.board, &good_vas.board, &bad_vas.board)
-            };
+            let (good_version, bad_version) = good_vas
+                .iter_all()
+                .zip(bad_vas.iter_all())
+                .find(|(good_artifact, bad_artifact)| good_artifact != bad_artifact)
+                .unwrap();
+
+            let series = space
+                .iter_all_artifacts()
+                .find(|s| {
+                    s.artifact_type == good_version.artifact_type && s.name == good_version.name
+                })
+                .unwrap();
 
             // To check for adjacency, we find the index of each version
             // within the artifact's version list. The `position()` method
@@ -90,14 +90,16 @@ pub(super) fn should_continue(space: &SearchSpace, results: &Vec<StepResult>) ->
         let good_vas = &good.versioned_artifact_set;
         let bad_vas = &bad.versioned_artifact_set;
 
-        let (good_artifact, bad_artifact) = if good_vas.platform != bad_vas.platform {
-            (good_vas.platform.clone(), bad_vas.platform.clone())
-        } else if good_vas.product != bad_vas.product {
-            (good_vas.product.clone(), bad_vas.product.clone())
-        } else {
-            (good_vas.board.clone(), bad_vas.board.clone())
-        };
-        return BisectionStatus::CulpritFound(Box::new(good_artifact), Box::new(bad_artifact));
+        let (good_artifact, bad_artifact) = good_vas
+            .iter_all()
+            .zip(bad_vas.iter_all())
+            .find(|(good_artifact, bad_artifact)| good_artifact != bad_artifact)
+            .unwrap();
+
+        return BisectionStatus::CulpritFound(
+            Box::new(good_artifact.clone()),
+            Box::new(bad_artifact.clone()),
+        );
     }
 
     // Check if the current search space state points to an artifact set we've already tested.
@@ -116,33 +118,32 @@ pub(super) fn should_continue(space: &SearchSpace, results: &Vec<StepResult>) ->
 /// A helper function to perform the core bisection logic on the single longest
 /// dimension of the search space.
 pub(super) fn halve_longest_dimension(space: &mut SearchSpace, test_passed: bool) {
-    let platform_len = space.platform.remaining_artifacts.len();
-    let product_len = space.product.remaining_artifacts.len();
-    let board_len = space.board.remaining_artifacts.len();
-
     // Determine which artifact has the most versions remaining to search.
-    let longest_series = if platform_len >= product_len && platform_len >= board_len {
-        &mut space.platform
-    } else if product_len >= platform_len && product_len >= board_len {
-        &mut space.product
-    } else {
-        &mut space.board
-    };
+    // In the event of a tie, prefer the earlier dimension (e.g. platform over product).
+    let longest_series = space.iter_all_artifacts_mut().reduce(|longest, current| {
+        if longest.remaining_artifacts.len() >= current.remaining_artifacts.len() {
+            longest
+        } else {
+            current
+        }
+    });
 
-    // If the longest version list can't be split anymore, there's nothing to do.
-    if longest_series.remaining_artifacts.len() <= 1 {
-        return;
-    }
+    if let Some(longest_series) = longest_series {
+        // If the longest version list can't be split anymore, there's nothing to do.
+        if longest_series.remaining_artifacts.len() <= 1 {
+            return;
+        }
 
-    let view = longest_series.remaining_artifacts.clone();
-    let midpoint = view.start + view.len() / 2;
+        let view = longest_series.remaining_artifacts.clone();
+        let midpoint = view.start + view.len() / 2;
 
-    // Cut the length of the longest series in half, keeping the right half if the test passed
-    // and keeping the left half if the test failed.
-    if test_passed {
-        longest_series.remaining_artifacts = (midpoint + 1)..view.end;
-    } else {
-        longest_series.remaining_artifacts = view.start..midpoint;
+        // Cut the length of the longest series in half, keeping the right half if the test passed
+        // and keeping the left half if the test failed.
+        if test_passed {
+            longest_series.remaining_artifacts = (midpoint + 1)..view.end;
+        } else {
+            longest_series.remaining_artifacts = view.start..midpoint;
+        }
     }
 }
 
@@ -203,6 +204,8 @@ mod tests {
                 product_versions,
             ),
             board: create_mock_artifact_series(ArtifactType::Board, "board", board_versions),
+            product_input_bundles: vec![],
+            board_input_bundle_sets: vec![],
         }
     }
 
@@ -232,6 +235,8 @@ mod tests {
                 cipd: None,
                 slot: Slot::A,
             },
+            product_input_bundles: vec![],
+            board_input_bundle_sets: vec![],
         }
     }
 

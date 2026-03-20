@@ -58,6 +58,10 @@ pub struct SearchSpace {
     pub product: ArtifactVersionSeries,
     /// The board artifact series.
     pub board: ArtifactVersionSeries,
+    /// Product input bundles artifact series.
+    pub product_input_bundles: Vec<ArtifactVersionSeries>,
+    /// Board input bundles artifact series.
+    pub board_input_bundle_sets: Vec<ArtifactVersionSeries>,
 }
 
 /// Represents the status of the bisection process.
@@ -77,11 +81,21 @@ impl SearchSpace {
         platform_versions: Vec<MOSIdentifier>,
         product_versions: Vec<MOSIdentifier>,
         board_versions: Vec<MOSIdentifier>,
+        product_input_bundles_versions: Vec<Vec<MOSIdentifier>>,
+        board_input_bundle_sets_versions: Vec<Vec<MOSIdentifier>>,
     ) -> Self {
         Self {
             platform: ArtifactVersionSeries::from_versions(platform_versions),
             product: ArtifactVersionSeries::from_versions(product_versions),
             board: ArtifactVersionSeries::from_versions(board_versions),
+            product_input_bundles: product_input_bundles_versions
+                .into_iter()
+                .map(ArtifactVersionSeries::from_versions)
+                .collect(),
+            board_input_bundle_sets: board_input_bundle_sets_versions
+                .into_iter()
+                .map(ArtifactVersionSeries::from_versions)
+                .collect(),
         }
     }
 
@@ -90,21 +104,43 @@ impl SearchSpace {
         std::iter::once(&self.platform)
             .chain(std::iter::once(&self.product))
             .chain(std::iter::once(&self.board))
+            .chain(self.product_input_bundles.iter())
+            .chain(self.board_input_bundle_sets.iter())
+    }
+
+    /// Returns a mutable iterator over all artifact series in the search space.
+    pub fn iter_all_artifacts_mut(&mut self) -> impl Iterator<Item = &mut ArtifactVersionSeries> {
+        std::iter::once(&mut self.platform)
+            .chain(std::iter::once(&mut self.product))
+            .chain(std::iter::once(&mut self.board))
+            .chain(self.product_input_bundles.iter_mut())
+            .chain(self.board_input_bundle_sets.iter_mut())
     }
 
     /// Returns the number of dimensions in the search space.
     pub fn num_dimensions(&self) -> usize {
-        // 3: Platform, Product, Board.
-        // In the future, this will need to count the number of PIB and BIB dimensions.
-        3
+        3 + self.product_input_bundles.len() + self.board_input_bundle_sets.len()
     }
 
     /// Get the set of artifacts at the current indices.
     pub fn get_current_versioned_artifact_set(&self) -> Result<VersionedArtifactSet> {
+        let product_input_bundles = self
+            .product_input_bundles
+            .iter()
+            .map(|series| series.get_artifact_at_index(series.current_artifact).clone())
+            .collect();
+        let board_input_bundle_sets = self
+            .board_input_bundle_sets
+            .iter()
+            .map(|series| series.get_artifact_at_index(series.current_artifact).clone())
+            .collect();
+
         Ok(VersionedArtifactSet {
             platform: self.platform.get_artifact_at_index(self.platform.current_artifact).clone(),
             product: self.product.get_artifact_at_index(self.product.current_artifact).clone(),
             board: self.board.get_artifact_at_index(self.board.current_artifact).clone(),
+            product_input_bundles,
+            board_input_bundle_sets,
         })
     }
 
@@ -234,20 +270,27 @@ mod tests {
         let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2"]);
         let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b", "c"]);
         let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
+        let additional_versions =
+            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i", "j"])];
 
         let search_space = SearchSpace::new(
             platform_versions.clone(),
             product_versions.clone(),
             board_versions.clone(),
+            additional_versions.clone(),
+            vec![],
         );
 
         assert_eq!(search_space.platform.versions.len(), 2);
         assert_eq!(search_space.product.versions.len(), 3);
         assert_eq!(search_space.board.versions.len(), 1);
+        assert_eq!(search_space.product_input_bundles.len(), 1);
+        assert_eq!(search_space.product_input_bundles[0].versions.len(), 2);
 
         assert_eq!(search_space.platform.current_artifact, 1);
         assert_eq!(search_space.product.current_artifact, 1);
         assert_eq!(search_space.board.current_artifact, 0);
+        assert_eq!(search_space.product_input_bundles[0].current_artifact, 1);
     }
 
     #[test]
@@ -256,11 +299,15 @@ mod tests {
             mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
         let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b"]);
         let board_versions = mock_series("board", ArtifactType::Board, vec!["x", "y", "z"]);
+        let additional_versions =
+            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i", "j", "k"])];
 
         let mut search_space = SearchSpace::new(
             platform_versions.clone(),
             product_versions.clone(),
             board_versions.clone(),
+            additional_versions.clone(),
+            vec![],
         );
 
         // Check initial state
@@ -268,16 +315,19 @@ mod tests {
         assert_eq!(initial_set.platform.version, "2");
         assert_eq!(initial_set.product.version, "b");
         assert_eq!(initial_set.board.version, "y");
+        assert_eq!(initial_set.product_input_bundles[0].version, "j");
 
         // Modify and check again
         search_space.platform.current_artifact = 0;
         search_space.product.current_artifact = 0;
         search_space.board.current_artifact = 2;
+        search_space.product_input_bundles[0].current_artifact = 0;
 
         let modified_set = search_space.get_current_versioned_artifact_set().unwrap();
         assert_eq!(modified_set.platform.version, "1");
         assert_eq!(modified_set.product.version, "a");
         assert_eq!(modified_set.board.version, "z");
+        assert_eq!(modified_set.product_input_bundles[0].version, "i");
     }
 
     #[test]
@@ -285,8 +335,16 @@ mod tests {
         let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1"]);
         let product_versions = mock_series("product", ArtifactType::Product, vec!["a"]);
         let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
+        let additional_versions =
+            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i"])];
 
-        let search_space = SearchSpace::new(platform_versions, product_versions, board_versions);
+        let search_space = SearchSpace::new(
+            platform_versions,
+            product_versions,
+            board_versions,
+            additional_versions,
+            vec![],
+        );
 
         let mut iter = search_space.iter_all_artifacts();
         let platform_series = iter.next().unwrap();
@@ -300,6 +358,10 @@ mod tests {
         let board_series = iter.next().unwrap();
         assert_eq!(board_series.name, "board");
         assert_eq!(board_series.artifact_type, ArtifactType::Board);
+
+        let additional_series = iter.next().unwrap();
+        assert_eq!(additional_series.name, "pib");
+        assert_eq!(additional_series.artifact_type, ArtifactType::ProductInputBundle);
 
         assert!(iter.next().is_none());
     }

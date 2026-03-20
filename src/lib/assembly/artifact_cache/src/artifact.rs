@@ -32,6 +32,8 @@ pub enum ArtifactType {
     Board,
     /// Product Input Bundle
     ProductInputBundle,
+    /// Board Input Bundle
+    BoardInputBundleSet,
 }
 
 impl FromStr for ArtifactType {
@@ -55,6 +57,7 @@ impl fmt::Display for ArtifactType {
             ArtifactType::Product => write!(f, "products"),
             ArtifactType::Board => write!(f, "boards"),
             ArtifactType::ProductInputBundle => write!(f, "product_input_bundles"),
+            ArtifactType::BoardInputBundleSet => write!(f, "board_input_bundle_sets"),
         }
     }
 }

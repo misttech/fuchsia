@@ -33,7 +33,7 @@ impl SearchStrategy for AllDimensionsStrategy {
         // to ensure we can isolate the culprit (Phase 2).
         if remaining_artifacts_len > space.num_dimensions() + 1 {
             // Phase 1: Bisect all dimensions.
-            for series in [&mut space.platform, &mut space.product, &mut space.board] {
+            for series in space.iter_all_artifacts_mut() {
                 if series.remaining_artifacts.len() <= 1 {
                     continue;
                 }
@@ -53,12 +53,10 @@ impl SearchStrategy for AllDimensionsStrategy {
         }
 
         // After shrinking the search space, always update the midpoint pointers for the next step.
-        let range = &space.platform.remaining_artifacts;
-        space.platform.current_artifact = range.start + (range.len() / 2);
-        let range = &space.product.remaining_artifacts;
-        space.product.current_artifact = range.start + (range.len() / 2);
-        let range = &space.board.remaining_artifacts;
-        space.board.current_artifact = range.start + (range.len() / 2);
+        for series in space.iter_all_artifacts_mut() {
+            let range = &series.remaining_artifacts;
+            series.current_artifact = range.start + (range.len() / 2);
+        }
     }
 
     fn should_continue(
@@ -145,6 +143,8 @@ mod tests {
                 product_versions,
             ),
             board: create_mock_artifact_series(ArtifactType::Board, "board", board_versions),
+            product_input_bundles: vec![],
+            board_input_bundle_sets: vec![],
         }
     }
 

@@ -652,8 +652,13 @@ mod tests {
         };
 
         let mock_series = ArtifactVersionSeries::from_versions(vec![good.clone()]);
-        controller.plan.search_space =
-            SearchSpace::new(vec![good.clone()], vec![good.clone()], vec![good.clone()]);
+        controller.plan.search_space = SearchSpace::new(
+            vec![good.clone()],
+            vec![good.clone()],
+            vec![good.clone()],
+            vec![],
+            vec![],
+        );
         controller.plan.search_space.platform = mock_series;
 
         block_on(controller.print_culprit(&good, &bad));
@@ -732,8 +737,13 @@ mod tests {
         controller.plan.status =
             BisectionStatus::CulpritFound(Box::new(good.clone()), Box::new(bad));
         let mock_series = ArtifactVersionSeries::from_versions(vec![good.clone()]);
-        controller.plan.search_space =
-            SearchSpace::new(vec![good.clone()], vec![good.clone()], vec![good.clone()]);
+        controller.plan.search_space = SearchSpace::new(
+            vec![good.clone()],
+            vec![good.clone()],
+            vec![good.clone()],
+            vec![],
+            vec![],
+        );
         controller.plan.search_space.platform = mock_series;
 
         let result = block_on(controller.run());

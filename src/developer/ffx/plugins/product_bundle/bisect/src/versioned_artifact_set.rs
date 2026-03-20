@@ -15,6 +15,10 @@ pub struct VersionedArtifactSet {
     pub product: MOSIdentifier,
     /// The board artifact.
     pub board: MOSIdentifier,
+    /// Product input bundles.
+    pub product_input_bundles: Vec<MOSIdentifier>,
+    /// Board input bundles.
+    pub board_input_bundle_sets: Vec<MOSIdentifier>,
 }
 
 impl Eq for VersionedArtifactSet {}
@@ -24,10 +28,21 @@ impl PartialEq for VersionedArtifactSet {
         self.platform == other.platform
             && self.product == other.product
             && self.board == other.board
+            && self.product_input_bundles == other.product_input_bundles
+            && self.board_input_bundle_sets == other.board_input_bundle_sets
     }
 }
 
 impl VersionedArtifactSet {
+    /// Iterates over every artifact in the set generically.
+    pub fn iter_all(&self) -> impl Iterator<Item = &MOSIdentifier> {
+        std::iter::once(&self.platform)
+            .chain(std::iter::once(&self.product))
+            .chain(std::iter::once(&self.board))
+            .chain(self.product_input_bundles.iter())
+            .chain(self.board_input_bundle_sets.iter())
+    }
+
     /// Create a VersionedArtifactSet instance from a list of MOS resource identifiers.
     pub fn new_from_mos_ids(ids: Vec<MOSIdentifier>, requested_slot: Slot) -> Result<Self> {
         // Define a private accumulator struct to build up a versioned artifact set
@@ -37,6 +52,8 @@ impl VersionedArtifactSet {
             platform: Option<MOSIdentifier>,
             product: Option<MOSIdentifier>,
             board: Option<MOSIdentifier>,
+            product_input_bundles: Vec<MOSIdentifier>,
+            board_input_bundle_sets: Vec<MOSIdentifier>,
         }
         let mut accumulator = VersionedArtifactSetAccumulator::default();
 
@@ -78,8 +95,12 @@ impl VersionedArtifactSet {
                     }
                     accumulator.board = Some(id);
                 }
-                // TODO(https://fxbug.dev/477620714): Bisect across PIBs
-                ArtifactType::ProductInputBundle => {}
+                ArtifactType::ProductInputBundle => {
+                    accumulator.product_input_bundles.push(id);
+                }
+                ArtifactType::BoardInputBundleSet => {
+                    accumulator.board_input_bundle_sets.push(id);
+                }
             }
         }
 
@@ -93,7 +114,13 @@ impl VersionedArtifactSet {
             .board
             .ok_or_else(|| anyhow::anyhow!("A 'board' artifact was not found."))?;
 
-        Ok(VersionedArtifactSet { platform, product, board })
+        Ok(VersionedArtifactSet {
+            platform,
+            product,
+            board,
+            product_input_bundles: accumulator.product_input_bundles,
+            board_input_bundle_sets: accumulator.board_input_bundle_sets,
+        })
     }
 }
 
