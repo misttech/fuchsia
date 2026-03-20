@@ -30,6 +30,11 @@ impl ArtifactCache {
         Ok(Self { build_dir, cache, ensured_artifacts, gcs_client })
     }
 
+    /// Returns a reference to the underlying GCS client.
+    pub fn gcs_client(&self) -> &Client {
+        &self.gcs_client
+    }
+
     /// Delete all ensured artifacts.
     pub fn purge(&self) -> Result<()> {
         if self.ensured_artifacts.exists() {

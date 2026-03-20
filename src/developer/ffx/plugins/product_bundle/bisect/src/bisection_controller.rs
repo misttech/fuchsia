@@ -7,7 +7,6 @@ use crate::search_space::BisectionStatus;
 use crate::versioned_artifact_set::VersionedArtifactSet;
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
-use assembly_api;
 use assembly_artifact_cache::{ArtifactCache, MOSIdentifier, Slot};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::Architecture;
@@ -19,11 +18,10 @@ use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use product_bundle::{ProductBundleBuilder, Slot as PBSlot};
-use serde_json;
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Write};
 use tempfile::tempdir;
-
+use {assembly_api, serde_json};
 /// The BisectionController runs the entire bisection process.
 /// It maintains a reference to the BisectionPlan and manages the assembly artifact cache.
 pub struct BisectionController<'a> {
@@ -123,7 +121,7 @@ impl<'a> BisectionController<'a> {
         if !matches!(self.plan.status, BisectionStatus::Continue) {
             self.print("Bisection plan already completed.")?;
             if let BisectionStatus::CulpritFound(good, bad) = self.plan.status.clone() {
-                self.print_culprit(&good, &bad);
+                self.print_culprit(&good, &bad).await;
             } else if let BisectionStatus::Exhausted = self.plan.status {
                 self.print(" -> Bisection search space exhausted without finding a culprit.")?;
             }
@@ -135,7 +133,7 @@ impl<'a> BisectionController<'a> {
             match self.step().await? {
                 BisectionStatus::Continue => continue,
                 BisectionStatus::CulpritFound(good, bad) => {
-                    self.print_culprit(&good, &bad);
+                    self.print_culprit(&good, &bad).await;
                     break;
                 }
                 BisectionStatus::Exhausted => {
@@ -276,7 +274,7 @@ impl<'a> BisectionController<'a> {
     }
 
     /// Print information about the culprit once it has been found.
-    fn print_culprit(&mut self, good: &MOSIdentifier, bad: &MOSIdentifier) {
+    async fn print_culprit(&mut self, good: &MOSIdentifier, bad: &MOSIdentifier) {
         let _ = self.print(&self.plan.search_space.to_string_representation(Some(bad)));
         let _ = self.print(&format!(
             "\n************\nThe test passed with a product bundle containing {} artifact \"{}\" at version \"{}\", but it failed at version \"{}\".",
@@ -285,7 +283,30 @@ impl<'a> BisectionController<'a> {
             good.version,
             bad.version
         ));
-        let _ = self.print(&format!("\nThe bug was introduced in {:?}.\n", bad));
+
+        let _ = self.print("\nThe bug was introduced in:");
+        let _ = self.print(&format!("  Type: {}", bad.artifact_type));
+        let _ = self.print(&format!("  Name: {}", bad.name));
+        let _ = self.print(&format!("  Version: {}", bad.version));
+        let _ = self.print(&format!("  Repository: {}", bad.repository));
+
+        let cipd = if let Some(c) = &bad.cipd {
+            Some(c.clone())
+        } else {
+            // Attempt to retrieve full release info containing CIPD if it was stripped
+            // during interpolation (as interpolate API does not return full CIPD metadata).
+            let client =
+                assembly_artifact_cache::mos::MOSClient::new(self.cache.gcs_client().clone());
+            client.get_artifact_release_info(bad).await.ok().and_then(|info| info.cipd)
+        };
+
+        if let Some(cipd) = cipd {
+            let _ = self.print(&format!(
+                "  CIPD URL: https://chrome-infra-packages.appspot.com/p/{}/+/{}",
+                cipd.path, cipd.tag
+            ));
+        }
+        let _ = self.print("");
     }
 
     /// Run assembly with the current collection of assembly artifacts
@@ -612,7 +633,10 @@ mod tests {
             name: "fuchsia".to_string(),
             version: "1.2.3".to_string(),
             repository: "fuchsia".to_string(),
-            cipd: None,
+            cipd: Some(assembly_artifact_cache::CIPDPackage {
+                path: Utf8PathBuf::from("fake/path"),
+                tag: "fake_tag".to_string(),
+            }),
             slot: Slot::A,
         };
         let bad = MOSIdentifier {
@@ -620,7 +644,10 @@ mod tests {
             name: "fuchsia".to_string(),
             version: "1.2.4".to_string(),
             repository: "fuchsia".to_string(),
-            cipd: None,
+            cipd: Some(assembly_artifact_cache::CIPDPackage {
+                path: Utf8PathBuf::from("fake/path"),
+                tag: "fake_tag".to_string(),
+            }),
             slot: Slot::A,
         };
 
@@ -629,7 +656,7 @@ mod tests {
             SearchSpace::new(vec![good.clone()], vec![good.clone()], vec![good.clone()]);
         controller.plan.search_space.platform = mock_series;
 
-        controller.print_culprit(&good, &bad);
+        block_on(controller.print_culprit(&good, &bad));
         let output = test_buffers.stdout.clone().into_string();
         let expected_substring = "The test passed with a product bundle containing platform artifact \"fuchsia\" at version \"1.2.3\", but it failed at version \"1.2.4\".";
         assert!(
@@ -660,6 +687,7 @@ mod tests {
         let (mut controller, _dir) =
             block_on(setup_controller(responses, &mut writer, &env_context));
         controller.plan.status = BisectionStatus::Exhausted;
+
         let result = block_on(controller.run());
         assert!(result.is_ok());
         let output = test_buffers.stdout.clone().into_string();
@@ -684,7 +712,10 @@ mod tests {
             name: "fuchsia".to_string(),
             version: "1.2.3".to_string(),
             repository: "fuchsia".to_string(),
-            cipd: None,
+            cipd: Some(assembly_artifact_cache::CIPDPackage {
+                path: Utf8PathBuf::from("fake/path"),
+                tag: "fake_tag".to_string(),
+            }),
             slot: Slot::A,
         };
         let bad = MOSIdentifier {
@@ -692,7 +723,10 @@ mod tests {
             name: "fuchsia".to_string(),
             version: "1.2.4".to_string(),
             repository: "fuchsia".to_string(),
-            cipd: None,
+            cipd: Some(assembly_artifact_cache::CIPDPackage {
+                path: Utf8PathBuf::from("fake/path"),
+                tag: "fake_tag".to_string(),
+            }),
             slot: Slot::A,
         };
         controller.plan.status =
@@ -701,6 +735,7 @@ mod tests {
         controller.plan.search_space =
             SearchSpace::new(vec![good.clone()], vec![good.clone()], vec![good.clone()]);
         controller.plan.search_space.platform = mock_series;
+
         let result = block_on(controller.run());
         assert!(result.is_ok());
         let output = test_buffers.stdout.clone().into_string();

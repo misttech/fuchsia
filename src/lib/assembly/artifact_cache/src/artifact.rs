@@ -62,7 +62,9 @@ impl fmt::Display for ArtifactType {
 /// A reference to an artifact in CIPD.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct CIPDPackage {
+    /// The package path.
     pub path: Utf8PathBuf,
+    /// The package tag or version.
     pub tag: String,
 }
 
