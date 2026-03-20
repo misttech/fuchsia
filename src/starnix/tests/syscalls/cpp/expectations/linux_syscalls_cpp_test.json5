@@ -37,6 +37,13 @@
                 "Pty.EchoFlags",
                 "Pty.EchoModes",
 
+                // TODO(https://fxbug.dev/437153843): These tests seem to behave erratically across
+                // environments, yet consistently within that environment. For example, they pass
+                // on my local machine (150 iterations), yet fail on CQ, yet again pass in CI.
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
+                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
+
                 // TODO(https://fxbug.dev/436916785): These tests actually suspend the system,
                 // and in Machina this results in the tests timing out after 180s.
                 "SysfsPowerTest.SuspendStatsFilesUpdateAfterSuccessfulSuspend",
@@ -122,11 +129,6 @@
 
                 // TODO(https://fxbug.dev/436979594)
                 "ProcTaskDirTest.SelfEnvironIsNotEmpty",
-
-                // TODO(https://fxbug.dev/437153843): These seem to only fail on infrastructure?
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
 
                 // TODO(https://fxbug.dev/437162553)
                 "SocketFault/SocketFault.Read/1",
