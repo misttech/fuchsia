@@ -4,18 +4,18 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use ffx_profile_heapdump_common::{
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
+use ffx_profile_heapdump_common_fdomain::{
     build_process_selector, connect_to_collector, prettify_collector_error,
 };
 use ffx_profile_heapdump_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl::endpoints::create_proxy;
-use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use serde::Serialize;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 /// Representation of the [fheapdump_client::StoredSnapshot] FIDL type for machine output.
 #[derive(Serialize)]
@@ -76,14 +76,16 @@ async fn list(
     cmd: ListCommand,
     writer: &mut MachineWriter<Vec<StoredSnapshot>>,
 ) -> Result<()> {
-    let (iterator_proxy, iterator_server) = create_proxy();
+    let (iterator_proxy, iterator_server) =
+        remote_control.domain().create_proxy::<fheapdump_client::StoredSnapshotIteratorMarker>();
     let request = fheapdump_client::CollectorListStoredSnapshotsRequest {
         iterator: Some(iterator_server),
         process_selector: build_process_selector(cmd.by_name, cmd.by_koid)?,
         ..Default::default()
     };
 
-    let collector = connect_to_collector(&remote_control, cmd.collector).await?;
+    let collector: fheapdump_client::CollectorProxy =
+        connect_to_collector(&remote_control, cmd.collector).await?;
     collector.list_stored_snapshots(request)?;
 
     let stored_snapshots = receive_list_of_stored_snapshots(iterator_proxy).await?;
