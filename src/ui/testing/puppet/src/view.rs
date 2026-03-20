@@ -645,7 +645,7 @@ impl View {
             None => None,
             Some(buttons) => Some(
                 buttons
-                    .into_iter()
+                    .iter()
                     .map(|button| {
                         test_input::MouseButton::from_primitive_allow_unknown(*button as u32)
                     })
