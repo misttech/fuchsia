@@ -5,13 +5,17 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use blocking::Unblock;
+
+use fdomain_client::Socket;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_media as fmedia;
+use ffx_audio_common_fdomain as ffx_audio_common;
 use ffx_audio_record_args::{AudioCaptureUsageExtended, RecordCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use fidl::endpoints::create_proxy;
 use futures::{AsyncWrite, FutureExt};
-use target_holders::moniker;
-use {fidl_fuchsia_audio_controller as fac, fidl_fuchsia_media as fmedia};
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct RecordTool {
@@ -57,8 +61,9 @@ impl FfxMain for RecordTool {
             ),
         };
 
-        let (record_remote, record_local) = fidl::Socket::create_datagram();
-        let (cancel_proxy, cancel_server) = create_proxy::<fac::RecordCancelerMarker>();
+        let (record_remote, record_local) = self.controller.domain().create_datagram_socket();
+        let (cancel_proxy, cancel_server) =
+            self.controller.domain().create_proxy::<fac::RecordCancelerMarker>();
 
         let request = fac::RecorderRecordRequest {
             source: Some(location),
@@ -87,7 +92,7 @@ async fn record_impl<W>(
     controller: fac::RecorderProxy,
     request: fac::RecorderRecordRequest,
     keypress_waiter: impl futures::Future<Output = Result<(), std::io::Error>>,
-    record_local: fidl::Socket,
+    record_local: Socket,
     mut wav_writer: W, // Output generalized to stdout or a test buffer. Forward data
     // from daemon to this writer.
     mut output_result_writer: SimpleWriter,
@@ -120,15 +125,16 @@ mod tests {
         // Test without sending a cancel message. Still set up the canceling proxy and server,
         // but never send the message from proxy to daemon to cancel. Test daemon should
         // exit after duration (real daemon exits after sending all duration amount of packets).
-        let controller = ffx_audio_common::tests::fake_audio_recorder();
+        let client = fdomain_local::local_client_empty();
+        let controller = ffx_audio_common::tests::fake_audio_recorder(client.clone());
         let test_buffers = TestBuffers::default();
         let result_writer: SimpleWriter = SimpleWriter::new_test(&test_buffers);
 
-        let (cancel_proxy, cancel_server) = create_proxy::<fac::RecordCancelerMarker>();
+        let (cancel_proxy, cancel_server) = client.create_proxy::<fac::RecordCancelerMarker>();
 
         let test_stdout = TestBuffer::default();
 
-        let (record_remote, record_local) = fidl::Socket::create_datagram();
+        let (record_remote, record_local) = client.create_datagram_socket();
         let request = fac::RecorderRecordRequest {
             source: None,
             stream_type: None,
@@ -168,15 +174,16 @@ mod tests {
 
     #[fuchsia::test]
     pub async fn test_record_immediate_cancel() -> Result<(), fho::Error> {
-        let controller = ffx_audio_common::tests::fake_audio_recorder();
+        let client = fdomain_local::local_client_empty();
+        let controller = ffx_audio_common::tests::fake_audio_recorder(client.clone());
         let test_buffers = TestBuffers::default();
         let result_writer: SimpleWriter = SimpleWriter::new_test(&test_buffers);
 
-        let (cancel_proxy, cancel_server) = create_proxy::<fac::RecordCancelerMarker>();
+        let (cancel_proxy, cancel_server) = client.create_proxy::<fac::RecordCancelerMarker>();
 
         let test_stdout = TestBuffer::default();
 
-        let (record_remote, record_local) = fidl::Socket::create_datagram();
+        let (record_remote, record_local) = client.create_datagram_socket();
         let request = fac::RecorderRecordRequest {
             source: None,
             stream_type: None,

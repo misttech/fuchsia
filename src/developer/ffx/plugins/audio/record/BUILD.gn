@@ -21,13 +21,13 @@ ffx_plugin("ffx_audio_record") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
-    "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_fdomain",
+    "//sdk/fidl/fuchsia.media:fuchsia.media_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/audio/common:ffx_audio_common",
-    "//src/lib/fidl/rust/fidl",
+    "//src/developer/ffx/plugins/audio/common:ffx_audio_common_fdomain",
+    "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:blocking",
@@ -35,8 +35,8 @@ ffx_plugin("ffx_audio_record") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
   ]
 
