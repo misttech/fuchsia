@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
+use fidl::MonotonicInstant;
+use flex_fuchsia_memory_heapdump_client as fheapdump_client;
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -45,7 +46,7 @@ pub struct Allocation {
     pub stack_trace: Rc<StackTrace>,
 
     /// Allocation timestamp, in nanoseconds.
-    pub timestamp: Option<fidl::MonotonicInstant>,
+    pub timestamp: Option<MonotonicInstant>,
 
     /// Memory dump of this block's contents.
     pub contents: Option<Vec<u8>>,
@@ -175,7 +176,7 @@ impl Snapshot {
             size: u64,
             thread_info_key: Option<u64>,
             stack_trace_key: u64,
-            timestamp: Option<fidl::MonotonicInstant>,
+            timestamp: Option<MonotonicInstant>,
         }
         let mut allocation_addresses: HashSet<u64> = HashSet::new();
         let mut allocations: Vec<AllocationValue> = vec![];
@@ -346,20 +347,17 @@ impl Snapshot {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
     use test_case::test_case;
 
     // Constants used by some of the tests below:
     const FAKE_ALLOCATION_1_ADDRESS: u64 = 1234;
     const FAKE_ALLOCATION_1_SIZE: u64 = 8;
-    const FAKE_ALLOCATION_1_TIMESTAMP: fidl::MonotonicInstant =
-        fidl::MonotonicInstant::from_nanos(888888888);
+    const FAKE_ALLOCATION_1_TIMESTAMP: MonotonicInstant = MonotonicInstant::from_nanos(888888888);
     const FAKE_ALLOCATION_1_CONTENTS: [u8; FAKE_ALLOCATION_1_SIZE as usize] = *b"12345678";
     const FAKE_ALLOCATION_2_ADDRESS: u64 = 5678;
     const FAKE_ALLOCATION_2_SIZE: u64 = 4;
-    const FAKE_ALLOCATION_2_TIMESTAMP: fidl::MonotonicInstant =
-        fidl::MonotonicInstant::from_nanos(-777777777); // test negative value too
+    const FAKE_ALLOCATION_2_TIMESTAMP: MonotonicInstant = MonotonicInstant::from_nanos(-777777777); // test negative value too
     const FAKE_THREAD_1_KOID: u64 = 1212;
     const FAKE_THREAD_1_NAME: &str = "fake-thread-1-name";
     const FAKE_THREAD_1_KEY: u64 = 4567;
@@ -383,8 +381,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send the end of stream marker.
@@ -399,8 +401,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_one_batch() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a batch containing two allocations - whose threads, stack traces and contents can be
@@ -538,8 +544,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_two_batches() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a first batch.
@@ -694,8 +704,12 @@ mod tests {
     async fn test_allocation_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::Allocation),
     ) -> Result<Snapshot, Error> {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with an Allocation with all the required fields set.
@@ -748,8 +762,12 @@ mod tests {
     async fn test_thread_info_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ThreadInfo),
     ) -> Result<Snapshot, Error> {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a ThreadInfo with all the required fields set.
@@ -786,8 +804,12 @@ mod tests {
     async fn test_stack_trace_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::StackTrace),
     ) -> Result<Snapshot, Error> {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a StackTrace with all the required fields set.
@@ -827,8 +849,12 @@ mod tests {
     async fn test_executable_region_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ExecutableRegion),
     ) -> Result<Snapshot, Error> {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with an ExecutableRegion with all the required fields set.
@@ -866,8 +892,12 @@ mod tests {
     async fn test_block_contents_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::BlockContents),
     ) -> Result<Snapshot, Error> {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Start with a BlockContents with all the required fields set.
@@ -915,8 +945,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_conflicting_allocations() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send two allocations with the same address along with the stack trace they reference.
@@ -964,8 +998,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_conflicting_executable_regions() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send two executable regions with the same address.
@@ -1008,8 +1046,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_block_contents_wrong_size() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation whose BlockContents has the wrong size.
@@ -1055,8 +1097,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty_stack_trace() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation that references an empty stack trace.
@@ -1099,8 +1145,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_chunked_stack_trace() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation and the first chunk of its stack trace.
@@ -1153,8 +1203,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty_block_contents() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send a zero-sized allocation and its empty contents.
@@ -1202,8 +1256,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_chunked_block_contents() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Split the contents in two halves.
@@ -1265,8 +1323,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_missing_end_of_stream() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Send an allocation and its stack trace.
@@ -1302,8 +1364,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_multi_contents() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));
 
         // Send two snapshots with different KOIDs.
@@ -1361,8 +1427,12 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_multi_missing_end_of_stream() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));
 
         // Send two snapshots with different KOIDs.

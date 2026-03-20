@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
+use flex_fuchsia_memory_heapdump_client as fheapdump_client;
 use measure_tape_for_snapshot_element::Measurable;
 use zx_types::ZX_CHANNEL_MAX_MSG_BYTES;
 
@@ -85,7 +85,6 @@ impl<'a> Streamer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
     use maplit::hashmap;
     use std::collections::HashMap;
@@ -125,8 +124,12 @@ mod tests {
     #[test_case(generate_one_million_allocations_hashmap() ; "one million")]
     #[fasync::run_singlethreaded(test)]
     async fn test_streamer(allocations: HashMap<u64, u64>) {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (mut receiver_proxy, receiver_stream) =
-            create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
+            client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
 
         // Transmit a snapshot with the given `allocations`, all referencing the same thread info
