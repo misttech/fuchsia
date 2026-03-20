@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_cycle_args::WMCycleCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session_window::ManagerProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct CycleTool {
@@ -41,12 +41,13 @@ pub async fn cycle_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session_window::ManagerRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session_window::ManagerRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_cycle() {
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             ManagerRequest::Cycle { responder } => {
                 let _ = responder.send();
             }
