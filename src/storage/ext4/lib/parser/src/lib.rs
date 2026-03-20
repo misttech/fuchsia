@@ -285,8 +285,8 @@ mod tests {
             .expect("failed to open file");
         let original_contents = "file1 contents.\n";
         assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
-        let new_contents = "CONTENTS!\n";
-        let offset = 6;
+        let new_contents = "new";
+        let offset = 5;
         file.seek(fio::SeekOrigin::Start, offset)
             .await
             .expect("failed FIDL seek")

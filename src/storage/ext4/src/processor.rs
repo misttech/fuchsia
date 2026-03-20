@@ -155,8 +155,17 @@ impl Ext4Processor {
 
         let inode = self.inode(inode_num)?;
         let persisted_size = inode.size();
-        // Must overwrite the entire file.
-        if offset + data.as_ref().len() as u64 != persisted_size {
+        // If the file has been truncated to zero, we must write to the same size of the persisted
+        // size.
+        if let Some(_) = self.file_size.lock().get(&inode_num) {
+            if offset + data.as_ref().len() as u64 != persisted_size {
+                file_metrics.num_writes_past_eof_attempts += 1;
+                return Err(ParsingError::NotSupported(
+                    "writing past EOF / partial writes".to_string(),
+                ));
+            }
+        }
+        if offset + data.as_ref().len() as u64 > persisted_size {
             file_metrics.num_writes_past_eof_attempts += 1;
             return Err(ParsingError::NotSupported(
                 "writing past EOF / partial writes".to_string(),
@@ -343,11 +352,10 @@ mod tests {
         let original_size = rw_processor.inode(file_ino).expect("failed to read inode").size();
         assert_eq!(original_size, expected.len() as u64);
 
-        expected[original_size as usize - 2] = 1;
-        expected[original_size as usize - 1] = 1;
         rw_processor
-            .overwrite_file_contents(file_ino, &[1u8; 2], original_size - 2)
+            .overwrite_file_contents(file_ino, &[1u8; 1], 1)
             .expect("failed to overwrite extents");
+        expected[1] = 1;
 
         let new_data = rw_processor.read_data(file_ino).expect("failed to read data");
         assert_eq!(new_data, expected);
