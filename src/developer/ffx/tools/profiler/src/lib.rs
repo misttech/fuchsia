@@ -8,18 +8,19 @@ use args::{ProfilerCommand, ProfilerSubCommand};
 use async_fs::File;
 use core::fmt;
 use errors::{ffx_bail, ffx_error};
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_cpu_profiler as profiler;
+use fdomain_fuchsia_cpu_profiler::SessionResult;
+use fdomain_fuchsia_test_manager as test_manager;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, bug, deferred, return_user_error, user_error};
-use fidl_fuchsia_cpu_profiler as profiler;
-use fidl_fuchsia_cpu_profiler::SessionResult;
-use fidl_fuchsia_test_manager as test_manager;
 use log::info;
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{BufRead, IsTerminal, stdin};
 use std::time::Duration;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use tempfile::Builder;
 use termion::{color, style};
 
@@ -80,7 +81,7 @@ impl FfxMain for ProfilerTool {
     }
 }
 
-fn gather_targets(opts: &args::Attach) -> Result<fidl_fuchsia_cpu_profiler::TargetConfig> {
+fn gather_targets(opts: &args::Attach) -> Result<profiler::TargetConfig> {
     if let Some(moniker) = &opts.moniker {
         if !opts.pids.is_empty()
             || !opts.tids.is_empty()
@@ -273,6 +274,13 @@ impl From<profiler::SessionManagerProxy> for ProfilerSessionManagerProxy {
 }
 
 impl ProfilerSessionManagerProxy {
+    pub fn domain(&self) -> std::sync::Arc<fdomain_client::Client> {
+        match self {
+            Self::Controller(c) => c.domain(),
+            Self::SessionManager(mgr) => mgr.domain(),
+        }
+    }
+
     pub async fn configure(
         &self,
         req: profiler::SessionConfigureRequest,
@@ -374,8 +382,7 @@ async fn finalize_profile_session(
     let mut copy_task = copy_task;
 
     let stats = if is_background {
-        let (client, server) = fidl::Socket::create_stream();
-        let client = fidl::AsyncSocket::from_socket(client);
+        let (client, server) = proxy.domain().create_stream_socket();
 
         let req = profiler::SessionManagerStopSessionRequest {
             output: Some(server),
@@ -455,10 +462,8 @@ async fn run_session(
     opts: SessionOpts,
 ) -> fho::Result<()> {
     info!(config:? = config, opts:? = opts; "Running profiler session...");
-    let (client, server) = fidl::Socket::create_stream();
-    let client = fidl::AsyncSocket::from_socket(client);
+    let (client, server) = session_proxy.domain().create_stream_socket();
 
-    // run_session is running the profiling session in the foreground
     session_proxy
         .configure(profiler::SessionConfigureRequest {
             output: Some(server),
@@ -924,7 +929,7 @@ mod tests {
         };
         let target = gather_targets(&args);
         match target {
-            Ok(fidl_fuchsia_cpu_profiler::TargetConfig::Tasks(vec)) => assert!(vec.len() == 9),
+            Ok(profiler::TargetConfig::Tasks(vec)) => assert!(vec.len() == 9),
             _ => assert!(false),
         }
 
@@ -1123,11 +1128,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_no_active_session() {
+        use fdomain_fuchsia_cpu_profiler::{ManagerError, SessionManagerRequest};
         use ffx_writer::TestBuffers;
-        use fidl_fuchsia_cpu_profiler::{ManagerError, SessionManagerRequest};
-        use target_holders::fake_proxy;
+        use target_holders::fdomain::fake_proxy;
+        let client = fdomain_local::local_client_empty();
 
-        let session_manager = fake_proxy(move |req| match req {
+        let session_manager = fake_proxy(std::sync::Arc::clone(&client), move |req| match req {
             SessionManagerRequest::StopSession { payload: _, responder } => {
                 responder.send(Err(ManagerError::NoSuchTask)).unwrap();
             }
