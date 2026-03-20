@@ -13,7 +13,6 @@ minimal hardware requirements.
 
 * Minimal resource usage.
 * Maximize code reuse with Terminal app.
-* Boot animation for startup and shutdown.
 * Runtime product configuration.
 * Flicker free single framebuffer mode.
 
@@ -35,11 +34,6 @@ The type of reboot depends on the duration of the third button press:
 
 * To reboot to the bootloader, the third press must be a long press (more than
   1 second).
-
-## Roadmap
-
-1. Boot animation chime support.
-2. Silent boot system for runtime suppression of chime.
 
 ## Testing
 

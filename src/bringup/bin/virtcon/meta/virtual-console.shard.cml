@@ -11,7 +11,6 @@
     offer: [
         {
             config: [
-                "fuchsia.virtcon.BootAnimation",
                 "fuchsia.virtcon.BufferCount",
                 "fuchsia.virtcon.ColorScheme",
                 "fuchsia.virtcon.Disable",

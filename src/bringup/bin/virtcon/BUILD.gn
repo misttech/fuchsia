@@ -6,7 +6,6 @@ import("//build/assembly/bootfs_files_for_assembly.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
-import("//src/bringup/bin/virtcon/virtcon_args.gni")
 
 fuchsia_component_manifest("manifest") {
   component_name = "virtual-console"
@@ -29,20 +28,6 @@ fuchsia_package("package") {
     ":component",
     ":font",
   ]
-}
-
-# The boot animation, which is added to all products, but the source path is
-# controlled by product gni files.
-# TODO(118048) Add Product Assembly feature to allow products to specify a path
-# to the boot animation file to use.
-bootfs_files_for_assembly("boot_animation") {
-  deps = [ ":boot_animation_resource" ]
-}
-
-resource("boot_animation_resource") {
-  sources = [ virtcon_boot_animation_path ]
-  outputs = [ "data/boot-animation.riv" ]
-  visibility = [ ":*" ]
 }
 
 group("tests") {
@@ -90,7 +75,6 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.virtualconsole:fuchsia.virtualconsole_rust",
     "//sdk/rust/zx",
-    "//src/graphics/lib/compute/rive-rs",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -150,14 +134,8 @@ resource("font_test") {
   outputs = [ "data/font.ttf" ]
 }
 
-resource("boot_animation_test") {
-  sources = [ "data/test.riv" ]
-  outputs = [ "data/boot-animation.riv" ]
-}
-
 fuchsia_test_component("virtual_console_tests_component") {
   deps = [
-    ":boot_animation_test",
     ":font_test",
     ":lib_test",
     "//src/bringup/bin/ptysvc:component",

@@ -926,19 +926,6 @@ assembly_input_bundle("ptysvc") {
 # optionally included by user products.
 #
 assembly_input_bundle("virtcon") {
-  bootfs_files_labels = [
-    # TODO(120776) The boot animation is configured via a global GN arg, which
-    # needs to be migrated to a path provided by the product to assembly, which
-    # then places it in the appropriate path in bootfs.
-    #
-    # As such, this isn't something that should be added to a platform bundle,
-    # but the migration with the products that use that GN arg is sufficiently
-    # complicated that this is clearer that trying to do a removal of the
-    # default boot animation in those products that shouldn't include it (if
-    # it's included by default via `//products/common/bringup.gni`).
-    "//src/bringup/bin/virtcon:boot_animation",
-  ]
-
   bootfs_packages = [ "//src/bringup/bin/virtcon:package" ]
   bootstrap_shards =
       [ "//src/bringup/bin/virtcon/meta/virtual-console.shard.cml" ]

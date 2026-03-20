@@ -168,7 +168,6 @@ impl AppAssistant for VirtualConsoleAppAssistant {
             self.args.rounded_corners,
             self.args.font_size,
             self.args.dpi.iter().cloned().collect(),
-            self.args.boot_animation,
             is_primary,
         )?;
 

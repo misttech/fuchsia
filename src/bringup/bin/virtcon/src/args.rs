@@ -19,7 +19,6 @@ pub struct VirtualConsoleArgs {
     pub show_logo: bool,
     pub keyrepeat: bool,
     pub rounded_corners: bool,
-    pub boot_animation: bool,
     pub color_scheme: ColorScheme,
     pub keymap: String,
     pub display_rotation: DisplayRotation,
@@ -47,7 +46,6 @@ impl TryFrom<Config> for VirtualConsoleArgs {
             show_logo: config.show_logo,
             keyrepeat: config.keyrepeat,
             rounded_corners: config.rounded_corners,
-            boot_animation: config.boot_animation,
             color_scheme: ColorScheme::from_str(&config.color_scheme)?,
             keymap,
             display_rotation: DisplayRotation::try_from(config.display_rotation)?,
@@ -67,7 +65,6 @@ mod tests {
     fn new_config() -> Config {
         // Should match defaults set in component manifest.
         Config {
-            boot_animation: false,
             buffer_count: 1,
             color_scheme: "default".into(),
             disable: false,
@@ -144,19 +141,6 @@ mod tests {
         let config = Config { rounded_corners: false, ..new_config() };
         let args = VirtualConsoleArgs::try_from(config)?;
         assert_eq!(args.rounded_corners, false);
-
-        Ok(())
-    }
-
-    #[test]
-    fn check_boot_animation() -> Result<(), Error> {
-        let config = Config { boot_animation: true, ..new_config() };
-        let args = VirtualConsoleArgs::try_from(config)?;
-        assert_eq!(args.boot_animation, true);
-
-        let config = Config { boot_animation: false, ..new_config() };
-        let args = VirtualConsoleArgs::try_from(config)?;
-        assert_eq!(args.boot_animation, false);
 
         Ok(())
     }

@@ -14,7 +14,6 @@ config/profiles/bringup.profiles
 ?config/profiles/core.profiles
 ?config/profiles/starnix.profiles
 ?config/zxcrypt
-?data/boot-animation.riv
 ?data/bootfs_packages
 lib/ld.so.1
 lib/libc++.so.2

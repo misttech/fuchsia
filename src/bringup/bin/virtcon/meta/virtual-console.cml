@@ -19,13 +19,6 @@
     ],
     use: [
         {
-            config: "fuchsia.virtcon.BootAnimation",
-            key: "boot_animation",
-            availability: "optional",
-            type: "bool",
-            default: false,
-        },
-        {
             config: "fuchsia.virtcon.BufferCount",
             key: "buffer_count",
             availability: "optional",

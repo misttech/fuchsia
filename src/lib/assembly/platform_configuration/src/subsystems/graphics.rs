@@ -38,7 +38,6 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
             builder.platform_bundle("vulkan_loader")?;
         }
 
-        builder.set_config_capability("fuchsia.virtcon.BootAnimation", Config::new_void())?;
         builder.set_config_capability("fuchsia.virtcon.BufferCount", Config::new_void())?;
 
         if let Some(scheme) = &virtcon_config.color_scheme {

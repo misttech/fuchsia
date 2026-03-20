@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use crate::args::{MAX_FONT_SIZE, MIN_FONT_SIZE};
-use crate::colors::{ColorScheme, DARK_COLOR_SCHEME, LIGHT_COLOR_SCHEME, SPECIAL_COLOR_SCHEME};
+use crate::colors::ColorScheme;
 use crate::terminal::Terminal;
 use crate::text_grid::{TextGridFacet, TextGridMessages};
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use carnelian::drawing::load_font;
 use carnelian::render::Context as RenderContext;
-use carnelian::render::rive::load_rive;
-use carnelian::scene::facets::{FacetId, RiveFacet};
+use carnelian::scene::facets::FacetId;
 use carnelian::scene::scene::{Scene, SceneBuilder, SceneOrder};
 use carnelian::{
     AppSender, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey, input,
@@ -25,7 +24,6 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::connect_channel_to_protocol;
 use futures::future::{FutureExt as _, join_all};
 use pty::key_util::{CodePoint, HidUsage};
-use rive_rs as rive;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::mem;
@@ -75,14 +73,6 @@ const FONT_SIZE_INCREMENT: f32 = 4.0;
 
 // Maximum terminal size in cells. We support up to 4 layers per cell.
 const MAX_CELLS: u32 = SceneOrder::MAX.as_u32() / 4;
-
-struct Animation {
-    // Artboard has weak references to data owned by file.
-    _file: rive::File,
-    artboard: rive::Object<rive::Artboard>,
-    instance: rive::animation::LinearAnimationInstance,
-    last_presentation_time: Option<zx::MonotonicInstant>,
-}
 
 struct SceneDetails {
     scene: Scene,
@@ -189,7 +179,6 @@ pub struct VirtualConsoleViewAssistant {
     scene_details: Option<SceneDetails>,
     terminals: BTreeMap<u32, (Terminal, TerminalStatus)>,
     font_set: FontSet,
-    animation: Option<Animation>,
     active_terminal_id: u32,
     virtcon_mode: VirtconMode,
     desired_virtcon_mode: VirtconMode,
@@ -200,8 +189,6 @@ pub struct VirtualConsoleViewAssistant {
     power_button_press_handler: RepeatedButtonPressHandler,
 }
 
-const BOOT_ANIMATION_PATH_1: &'static str = "/pkg/data/boot-animation.riv";
-const BOOT_ANIMATION_PATH_2: &'static str = "/boot/data/boot-animation.riv";
 const FONT: &'static str = "/pkg/data/font.ttf";
 const BOLD_FONT_PATH_1: &'static str = "/pkg/data/bold-font.ttf";
 const BOLD_FONT_PATH_2: &'static str = "/boot/data/bold-font.ttf";
@@ -219,7 +206,6 @@ impl VirtualConsoleViewAssistant {
         round_scene_corners: bool,
         font_size: f32,
         dpi: BTreeSet<u32>,
-        boot_animation: bool,
         is_primary: bool,
     ) -> Result<ViewAssistantPtr, Error> {
         let cell_size = Size::new(8.0, 16.0);
@@ -247,36 +233,7 @@ impl VirtualConsoleViewAssistant {
         }
         let font_set = FontSet::new(font, bold_font, italic_font, bold_italic_font, fallback_fonts);
         let virtcon_mode = VirtconMode::Forced; // We always start out in forced mode.
-        let (animation, desired_virtcon_mode) = if boot_animation {
-            let file =
-                load_rive(BOOT_ANIMATION_PATH_1).or_else(|_| load_rive(BOOT_ANIMATION_PATH_2))?;
-            let artboard = file.artboard().ok_or_else(|| anyhow!("missing artboard"))?;
-            let artboard_ref = artboard.as_ref();
-            let color_scheme_name = match color_scheme {
-                DARK_COLOR_SCHEME => "dark",
-                LIGHT_COLOR_SCHEME => "light",
-                SPECIAL_COLOR_SCHEME => "special",
-                _ => "other",
-            };
-            // Find animation that matches color scheme or fallback to first animation
-            // if not found.
-            let animation = artboard_ref
-                .animations()
-                .find(|animation| {
-                    let name = animation.cast::<rive::animation::Animation>().as_ref().name();
-                    name == color_scheme_name
-                })
-                .or_else(|| artboard_ref.animations().next())
-                .ok_or_else(|| anyhow!("missing animation"))?;
-            let instance = rive::animation::LinearAnimationInstance::new(animation);
-            let last_presentation_time = None;
-            let animation =
-                Some(Animation { _file: file, artboard, instance, last_presentation_time });
-
-            (animation, VirtconMode::Forced)
-        } else {
-            (None, VirtconMode::Fallback)
-        };
+        let desired_virtcon_mode = VirtconMode::Fallback;
         let owns_display = true;
         let active_pointer_id = None;
         let start_pointer_location = Point::zero();
@@ -295,7 +252,6 @@ impl VirtualConsoleViewAssistant {
             scene_details,
             terminals,
             font_set,
-            animation,
             active_terminal_id,
             virtcon_mode,
             desired_virtcon_mode,
@@ -308,19 +264,10 @@ impl VirtualConsoleViewAssistant {
     }
 
     #[cfg(test)]
-    fn new_for_test(animation: bool) -> Result<ViewAssistantPtr, Error> {
+    fn new_for_test() -> Result<ViewAssistantPtr, Error> {
         let app_sender = AppSender::new_for_testing_purposes_only();
         let dpi: BTreeSet<u32> = [160, 320, 480, 640].iter().cloned().collect();
-        Self::new(
-            &app_sender,
-            Default::default(),
-            ColorScheme::default(),
-            false,
-            14.0,
-            dpi,
-            animation,
-            true,
-        )
+        Self::new(&app_sender, Default::default(), ColorScheme::default(), false, 14.0, dpi, true)
     }
 
     // Resize all terminals for 'new_size'.
@@ -398,15 +345,6 @@ impl VirtualConsoleViewAssistant {
                 (format!("{}{}{} {}", left, *id, right, t.title()), fg)
             })
             .collect()
-    }
-
-    fn cancel_animation(&mut self) {
-        if self.animation.is_some() {
-            self.desired_virtcon_mode = VirtconMode::Fallback;
-            self.scene_details = None;
-            self.animation = None;
-            self.app_sender.request_render(self.view_key);
-        }
     }
 
     fn set_desired_virtcon_mode(&mut self, _context: &ViewAssistantContext) -> Result<(), Error> {
@@ -568,7 +506,6 @@ impl VirtualConsoleViewAssistant {
                 let modifiers = &keyboard_event.modifiers;
                 match keyboard_event.hid_usage {
                     HID_USAGE_KEY_ESC if modifiers.alt => {
-                        self.cancel_animation();
                         self.desired_virtcon_mode =
                             if self.desired_virtcon_mode == VirtconMode::Fallback {
                                 VirtconMode::Forced
@@ -601,7 +538,6 @@ impl VirtualConsoleViewAssistant {
                 let modifiers = &keyboard_event.modifiers;
                 match keyboard_event.code_point {
                     None => {
-                        const HID_USAGE_KEY_ESC: u32 = 0x29;
                         const HID_USAGE_KEY_TAB: u32 = 0x2b;
                         const HID_USAGE_KEY_F1: u32 = 0x3a;
                         const HID_USAGE_KEY_F10: u32 = 0x43;
@@ -615,10 +551,6 @@ impl VirtualConsoleViewAssistant {
                         const HID_USAGE_KEY_VOL_UP: u32 = 0xe9;
 
                         match keyboard_event.hid_usage {
-                            HID_USAGE_KEY_ESC if self.animation.is_some() => {
-                                self.cancel_animation();
-                                return Ok(true);
-                            }
                             HID_USAGE_KEY_F1..=HID_USAGE_KEY_F10 if modifiers.alt => {
                                 let id = keyboard_event.hid_usage - HID_USAGE_KEY_F1;
                                 self.set_active_terminal(id);
@@ -717,10 +649,7 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
                 .round_scene_corners(self.round_scene_corners)
                 .mutable(false);
 
-            let textgrid = if let Some(animation) = &self.animation {
-                builder.facet(Box::new(RiveFacet::new(context.size, animation.artboard.clone())));
-                None
-            } else {
+            let textgrid = {
                 let scale_factor = if let Some(info) = context.display_info.as_ref() {
                     // Use 1.0 scale factor when fallback sizes are used as opposed
                     // to actual values reported by the display.
@@ -774,34 +703,8 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
             SceneDetails { scene: builder.build(), textgrid }
         });
 
-        if let Some(animation) = &mut self.animation {
-            let presentation_time = context.presentation_time;
-            let elapsed = if let Some(last_presentation_time) = animation.last_presentation_time {
-                const NANOS_PER_SECOND: f32 = 1_000_000_000.0;
-                (presentation_time - last_presentation_time).into_nanos() as f32 / NANOS_PER_SECOND
-            } else {
-                0.0
-            };
-            animation.last_presentation_time = Some(presentation_time);
-
-            let artboard_ref = animation.artboard.as_ref();
-            animation.instance.advance(elapsed);
-            animation.instance.apply(animation.artboard.clone(), 1.0);
-            artboard_ref.advance(elapsed);
-        }
-
         scene_details.scene.render(render_context, ready_event, context)?;
         self.scene_details = Some(scene_details);
-
-        if let Some(animation) = &mut self.animation {
-            // Switch to fallback mode when animation ends so primary client can
-            // take over. Otherwise, request another frame.
-            if animation.instance.is_done() {
-                self.desired_virtcon_mode = VirtconMode::Fallback;
-            } else {
-                context.request_render();
-            }
-        }
 
         self.set_desired_virtcon_mode(context)?;
 
@@ -920,10 +823,8 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
                         .insert(*id, (terminal, TerminalStatus { has_output, at_top, at_bottom }));
                     // Rebuild the scene after a terminal is added. This should
                     // be fine as it is rare that a terminal is added.
-                    if self.animation.is_none() {
-                        self.scene_details = None;
-                        self.app_sender.request_render(self.view_key);
-                    }
+                    self.scene_details = None;
+                    self.app_sender.request_render(self.view_key);
                     if *make_active {
                         self.set_active_terminal(*id);
                     }
@@ -962,15 +863,7 @@ mod tests {
 
     #[test]
     fn can_create_view() -> Result<(), Error> {
-        let animation = false;
-        let _ = VirtualConsoleViewAssistant::new_for_test(animation)?;
-        Ok(())
-    }
-
-    #[test]
-    fn can_create_view_with_animation() -> Result<(), Error> {
-        let animation = true;
-        let _ = VirtualConsoleViewAssistant::new_for_test(animation)?;
+        let _ = VirtualConsoleViewAssistant::new_for_test()?;
         Ok(())
     }
 
