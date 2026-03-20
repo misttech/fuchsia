@@ -3,12 +3,24 @@
 // found in the LICENSE file.
 
 use cm_rust::CapabilityDecl;
-use component_debug::capability::{RouteSegment, get_all_route_segments};
+use flex_client::ProxyHasDomain;
+use flex_client::fidl::DiscoverableProtocolMarker;
+
+#[cfg(not(feature = "fdomain"))]
+use component_debug as flex_component_debug;
+#[cfg(feature = "fdomain")]
+use component_debug_fdomain as flex_component_debug;
+
+#[cfg(not(feature = "fdomain"))]
+use rcs;
+#[cfg(feature = "fdomain")]
+use rcs_fdomain as rcs;
+
 use errors::{ffx_bail, ffx_error};
-use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
-use fidl_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
+use flex_component_debug::capability::{RouteSegment, get_all_route_segments};
+use flex_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use flex_fuchsia_memory_heapdump_client as fheapdump_client;
+use flex_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
 
 const COLLECTOR_CAPABILITY: &str = fheapdump_client::CollectorMarker::PROTOCOL_NAME;
 
@@ -40,7 +52,7 @@ pub async fn connect_to_collector(
     moniker: Option<String>,
 ) -> anyhow::Result<fheapdump_client::CollectorProxy> {
     let query_proxy =
-        rcs::root_realm_query(&remote_control, std::time::Duration::from_secs(15)).await?;
+        rcs::root_realm_query(remote_control, std::time::Duration::from_secs(15)).await?;
 
     let moniker = if let Some(moniker) = moniker {
         moniker
@@ -59,7 +71,8 @@ pub async fn connect_to_collector(
     };
 
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-    let (proxy, server) = fidl::endpoints::create_proxy::<fheapdump_client::CollectorMarker>();
+    let (proxy, server) =
+        remote_control.domain().create_proxy::<fheapdump_client::CollectorMarker>();
     remote_control
         .connect_capability(
             &moniker,
