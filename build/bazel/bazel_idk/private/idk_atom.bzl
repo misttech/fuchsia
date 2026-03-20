@@ -206,10 +206,18 @@ def _get_additional_info(ctx, files_map, additional_prebuild_info):
         if library_type == "shared":
             # The stripped IFS file removes text that should not be exposed
             # (e.g., undefined symbols) or that can vary by architecture.
+            ifs_source_file = lib_info.stripped_ifs_file
+
+            # The IFS file name should match the link stub name.
+            expected_ifs_name = lib_info.link_lib.basename.removesuffix(".so") + ".ifs"
+            if ifs_source_file.basename != expected_ifs_name:
+                fail("Expected IFS file to be named `%s` but got `%s`." %
+                     (expected_ifs_name, ifs_source_file.basename))
+
             # TODO(https://fxbug.dev/417307356): Use the correct destination
             # path for the unversioned IFS file built at "PLATFORM".
-            ifs_dest = "%s/%s" % (link_lib_dest_dir, lib_info.stripped_ifs_file.basename)
-            files_map[ifs_dest] = lib_info.stripped_ifs_file
+            ifs_dest = "%s/%s" % (link_lib_dest_dir, ifs_source_file.basename)
+            files_map[ifs_dest] = ifs_source_file
             binaries["ifs"] = ifs_dest
 
             debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_info.debug.basename)

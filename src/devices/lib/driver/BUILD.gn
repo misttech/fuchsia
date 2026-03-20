@@ -267,7 +267,7 @@ shared_library("driver") {
 }
 
 ifs_shared_library("driver_runtime") {
-  abi = "//src/devices/bin/driver_runtime/driver_runtime.ifs"
+  abi = "//src/devices/bin/driver_runtime/libdriver_runtime.ifs"
 }
 
 group("tests") {

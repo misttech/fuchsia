@@ -8,11 +8,15 @@ load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 def _generate_link_stubs_for_shared_library_impl(ctx):
     shared_library = ctx.file.shared_library
-    ifs_file_name_base = shared_library.basename.removesuffix(shared_library.extension)
+
+    # For convenience, the IFS file name should match the name of the link stub.
+    link_stub_name = shared_library.basename
+    link_stub_extension = shared_library.extension
+    ifs_file_name_base = link_stub_name.removesuffix(link_stub_extension)
 
     unstripped_ifs_output = ctx.actions.declare_file(ifs_file_name_base + "full_ifs.ifs")
     stripped_ifs_output = ctx.actions.declare_file(ifs_file_name_base + "ifs")
-    link_stub_output = ctx.actions.declare_file("link_stub/" + shared_library.basename)
+    link_stub_output = ctx.actions.declare_file("link_stub/" + link_stub_name)
 
     args = ctx.actions.args()
     args.add("--write-if-changed")
