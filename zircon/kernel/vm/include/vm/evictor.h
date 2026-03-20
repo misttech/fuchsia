@@ -196,7 +196,7 @@ class Evictor {
   // requested if there was another eviction happening. This may acquire arbitrary vmo and aspace
   // locks.
   EvictionResult EvictUntilTargetsMet(uint64_t min_pages_to_evict, uint64_t free_pages_target,
-                                      EvictionLevel level) TA_EXCL(lock_);
+                                      EvictionLevel level, bool oom_trigger) TA_EXCL(lock_);
 
   // Evict the requested number of |target_pages| from vmos by querying the page queues. The
   // returned struct has the number of pages evicted. The |eviction_level|

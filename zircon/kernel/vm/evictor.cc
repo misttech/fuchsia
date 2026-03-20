@@ -359,8 +359,8 @@ Evictor::EvictionResult Evictor::EvictFromTargetInternal(Evictor::EvictionTarget
   }
 
   const uint64_t free_pages_before = CountFreePages();
-  EvictionResult result =
-      EvictUntilTargetsMet(target.min_pages_to_free, target.free_pages_target, target.level);
+  EvictionResult result = EvictUntilTargetsMet(target.min_pages_to_free, target.free_pages_target,
+                                               target.level, target.oom_trigger);
   const uint64_t free_pages_after = CountFreePages();
 
   if (target.print_counts) {
@@ -444,7 +444,7 @@ void Evictor::EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_targ
 
 Evictor::EvictionResult Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_evict,
                                                       uint64_t free_pages_target,
-                                                      EvictionLevel level) {
+                                                      EvictionLevel level, bool oom_trigger) {
   if (!IsEvictionEnabled()) {
     return EvictionResult{};
   }
@@ -485,7 +485,12 @@ Evictor::EvictionResult Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_evic
     // Cap the number of pages to free so that we do not monopolize the eviction_lock_, ensuring
     // that parallel attempts at achieving different eviction outcomes do not unnecessarily block
     // each other.
-    pages_to_free = ktl::min(128ul, pages_to_free);
+    //
+    // For OOM evictions we do not cap the number of pages so that we can evict as fast as possible
+    // to resolve the OOM condition quickly.
+    if (!oom_trigger) {
+      pages_to_free = ktl::min(128ul, pages_to_free);
+    }
 
     EvictedPageCounts pages_freed = EvictPageQueues(pages_to_free, level);
     // Should we fail to free any pages then we give up and consider the eviction request complete.
