@@ -12,6 +12,7 @@ use fuchsia_component::runtime::{Connector, ConnectorReceiver, Dictionary};
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
+use vfs::file::vmo::read_only;
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fidl_test_components as ftest,
     fidl_fuchsia_component_runtime as fruntime, fuchsia_async as fasync,
@@ -25,6 +26,11 @@ enum IncomingRequest {
 #[fasync::run_singlethreaded]
 async fn main() {
     info!("trigger.cm started");
+    let args: Vec<String> = std::env::args().collect();
+    let verify_dir = args
+        .iter()
+        .position(|a| a == "--verify-dir")
+        .and_then(|i| args.get(i + 1).map(|s| s.to_string()));
     let dictionary = Dictionary::new().await;
     let (connector, trigger_receiver) = Connector::new().await;
     dictionary.insert("fidl.test.components.Trigger-d", connector).await;
@@ -36,13 +42,40 @@ async fn main() {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Trigger);
     fs.dir("svc").add_fidl_service(IncomingRequest::Router);
+
+    let out_dir = vfs::pseudo_directory! {
+        "example_file" => read_only(b"Hello from dictionary!")
+    };
+    fs.add_entry_at("dict_dir", out_dir);
+
     fs.take_and_serve_directory_handle().expect("failed to serve outgoing directory");
+    let verify_dir = verify_dir.clone();
     fs.for_each_concurrent(None, move |request: IncomingRequest| {
         let dictionary = dictionary.clone();
+        let verify_dir = verify_dir.clone();
         async move {
             match request {
                 IncomingRequest::Trigger(stream) => {
-                    run_trigger_service("Triggered c", stream).await
+                    if let Some(dir_path) = &verify_dir {
+                        match std::fs::read_to_string(format!("{}/example_file", dir_path)) {
+                            Ok(content) => {
+                                if content.trim() == "Hello from dictionary!" {
+                                    run_trigger_service("Directory verified", stream).await
+                                } else {
+                                    run_trigger_service("Directory content mismatch", stream).await
+                                }
+                            }
+                            Err(e) => {
+                                run_trigger_service(
+                                    &format!("Directory read failed: {:?}", e),
+                                    stream,
+                                )
+                                .await
+                            }
+                        }
+                    } else {
+                        run_trigger_service("Triggered c", stream).await
+                    }
                 }
                 IncomingRequest::Router(mut stream) => {
                     while let Ok(Some(request)) = stream.try_next().await {

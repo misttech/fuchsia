@@ -12,7 +12,10 @@ rustc_test("dictionaries_integration_test_bin") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//examples/components/routing/fidl:echo_rust",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -39,6 +42,7 @@ rustc_binary("dict_trigger_bin") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -52,6 +56,7 @@ fuchsia_unittest_package("dictionaries_integration_test") {
   restricted_features = [ "use_dictionaries" ]
   deps = [
     ":dictionaries_integration_test_bin",
+    ":directory_test",
     ":trigger_c",
     "//src/sys/component_manager:component-manager-realm-builder-cmp",
     "//src/sys/component_manager/testing/echo_server",
@@ -65,6 +70,12 @@ fuchsia_component("trigger_c") {
   deps = [ ":dict_trigger_bin" ]
   manifest = "meta/trigger_c.cml"
   restricted_features = [ "dynamic_dictionaries" ]
+}
+
+fuchsia_component("directory_test") {
+  testonly = true
+  manifest = "meta/directory_test.cml"
+  deps = [ ":dict_trigger_bin" ]
 }
 
 group("tests") {

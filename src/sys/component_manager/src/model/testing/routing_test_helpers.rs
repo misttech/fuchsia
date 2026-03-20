@@ -290,18 +290,23 @@ impl RoutingTest {
             .expect("could not create test file");
 
         // Create and populate an outgoing directory for each component.
-        let mock_resolver = MockResolver::new();
+        let mock_resolver = Arc::new(MockResolver::new());
         for (name, decl) in &builder.components {
             let host_fn = match builder.custom_outgoing_host_fns.remove(*name) {
                 // If a custom outgoing HostFn was provided, use that.
                 Some(host_fn) => host_fn,
                 // Otherwise, create a default HostFn filled with sample data.
-                None => Self::build_outgoing_dir(
-                    decl,
-                    &test_dir_proxy,
-                    builder.outgoing_paths.remove(name as &str).unwrap_or_else(|| HashMap::new()),
-                )
-                .host_fn(),
+                None => {
+                    let out_dir = Self::build_outgoing_dir(
+                        decl,
+                        &test_dir_proxy,
+                        builder
+                            .outgoing_paths
+                            .remove(name as &str)
+                            .unwrap_or_else(|| HashMap::new()),
+                    );
+                    out_dir.host_fn()
+                }
             };
             mock_runner.add_host_fn(&format!("test:///{}", name), host_fn);
             mock_resolver.add_component(name, decl.clone());
@@ -340,7 +345,7 @@ impl RoutingTest {
         let mut env_builder = BuiltinEnvironmentBuilder::new()
             .set_inspector(inspector)
             .set_runtime_config(config)
-            .add_resolver("test".to_string(), Arc::new(mock_resolver))
+            .add_resolver("test".to_string(), mock_resolver.clone())
             .add_runner(TEST_RUNNER_NAME.parse().unwrap(), mock_runner.clone(), true);
         for name in builder.mock_builtin_runners.clone() {
             env_builder = env_builder.add_runner(name, mock_runner.clone(), true)

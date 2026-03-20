@@ -16,6 +16,11 @@
         },
         { dictionary: "dict" },
         { protocol: "fidl.test.components.Trigger" },
+        {
+            directory: "dict_dir",
+            rights: [ "r*" ],
+            path: "/dict_dir",
+        },
     ],
     use: [
         { protocol: "fidl.examples.routing.echo.Echo" },
@@ -38,6 +43,10 @@
                 "dict",
                 "dynamic",
             ],
+            from: "self",
+        },
+        {
+            directory: "dict_dir",
             from: "self",
         },
     ],

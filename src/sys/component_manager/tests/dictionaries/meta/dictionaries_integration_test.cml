@@ -30,6 +30,10 @@
             name: "echo_server",
             url: "#meta/echo_server.cm",
         },
+        {
+            name: "directory_test",
+            url: "#meta/directory_test.cm",
+        },
     ],
     capabilities: [
         { dictionary: "outer" },
@@ -42,6 +46,10 @@
                 "fidl.test.components.Trigger-c",
             ],
             from: "self/outer",
+        },
+        {
+            protocol: "fuchsia.component.Realm",
+            from: "framework",
         },
         {
             protocol: [ "fidl.test.components.Trigger-d" ],
@@ -58,6 +66,7 @@
             protocol: "fidl.examples.routing.echo.Echo",
             from: "#echo_server",
             to: [
+                "#directory_test",
                 "#trigger_a",
                 "#trigger_b",
                 "#trigger_c",
@@ -81,9 +90,19 @@
             to: "self/outer",
         },
         {
+            dictionary: "outer",
+            from: "self",
+            to: "#directory_test",
+        },
+        {
             dictionary: "dynamic",
             from: "#trigger_c",
             as: "inner",
+            to: "self/outer",
+        },
+        {
+            directory: "dict_dir",
+            from: "#trigger_c",
             to: "self/outer",
         },
     ],

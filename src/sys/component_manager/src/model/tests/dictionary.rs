@@ -409,3 +409,28 @@ async fn use_dictionary_with_service_from_collection() {
 
     test.check_open_node(["b"].try_into().unwrap(), "/my_dictionary/foo".parse().unwrap()).await;
 }
+
+#[fuchsia::test]
+async fn use_runner_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_use_runner_from_dictionary().await
+}
+
+#[fuchsia::test]
+async fn offer_runner_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_offer_runner_from_dictionary().await
+}
+
+#[fuchsia::test]
+async fn offer_resolver_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_offer_resolver_from_dictionary().await
+}
+
+#[fuchsia::test]
+async fn use_config_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_use_config_from_dictionary().await
+}
+
+#[fuchsia::test]
+async fn offer_config_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_offer_config_from_dictionary().await
+}

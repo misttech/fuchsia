@@ -55,13 +55,18 @@ impl MockResolver {
         MockResolver { inner: SyncMutex::new(Default::default()) }
     }
 
-    async fn resolve_async(
+    pub(crate) async fn resolve_async(
         &self,
         component_url: String,
     ) -> Result<ResolvedComponent, ResolverError> {
         let (decl, config_values, maybe_blocker, client) = {
             const NAME_PREFIX: &str = "test:///";
-            debug_assert!(component_url.starts_with(NAME_PREFIX), "invalid component url");
+            if !component_url.starts_with(NAME_PREFIX) {
+                return Err(ResolverError::manifest_not_found(anyhow::format_err!(
+                    "invalid component url: {}",
+                    component_url
+                )));
+            }
             let (_, name) = component_url.split_at(NAME_PREFIX.len());
             let mut guard = self.inner.lock();
             let decl = guard.components.get(name).cloned().ok_or_else(|| {

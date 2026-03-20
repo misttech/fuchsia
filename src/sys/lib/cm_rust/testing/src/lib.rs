@@ -7,12 +7,10 @@ use assert_matches::assert_matches;
 use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative, push_box};
 use cm_types::{LongName, Name, Path, RelativePath, Url};
 use derivative::Derivative;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_data as fdata;
-use fidl_fuchsia_io as fio;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 /// Name of the test runner.
 ///
@@ -731,6 +729,7 @@ impl UseBuilder {
                 | CapabilityTypeName::Protocol
                 | CapabilityTypeName::Directory
                 | CapabilityTypeName::Runner
+                | CapabilityTypeName::Config
         );
         self.source_dictionary = dictionary.parse().unwrap();
         self
@@ -973,6 +972,7 @@ impl ExposeBuilder {
                 | CapabilityTypeName::Dictionary
                 | CapabilityTypeName::Runner
                 | CapabilityTypeName::Resolver
+                | CapabilityTypeName::Config
         );
         self.source_dictionary = dictionary.parse().unwrap();
         self
@@ -1206,6 +1206,7 @@ impl OfferBuilder {
                 | CapabilityTypeName::Dictionary
                 | CapabilityTypeName::Runner
                 | CapabilityTypeName::Resolver
+                | CapabilityTypeName::Config
         );
         self.source_dictionary = dictionary.parse().unwrap();
         self

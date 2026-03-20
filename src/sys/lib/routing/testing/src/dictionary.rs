@@ -6,6 +6,7 @@ use crate::{CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder}
 use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;
+use moniker::Moniker;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use zx_status::Status;
@@ -1930,5 +1931,402 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             },
         )
         .await;
+    }
+
+    pub async fn test_use_runner_from_dictionary(&self) {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .runner_default("foo")
+                    .dictionary_default("dict")
+                    .offer(
+                        OfferBuilder::runner()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Capability("dict".parse().unwrap())),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("dict")
+                            .source(OfferSource::Self_)
+                            .target_static_child("mid"),
+                    )
+                    .child_default("mid")
+                    .build(),
+            ),
+            (
+                "mid",
+                ComponentDeclBuilder::new_empty_component()
+                    .use_(UseBuilder::runner().name("bar").from_dictionary("dict"))
+                    .build(),
+            ),
+        ];
+
+        let test = T::new("root", components).build().await;
+        let mid_component =
+            test.look_up_instance(&["mid"].try_into().unwrap()).await.expect("mid instance");
+        let source = routing::route_capability(
+            routing::RouteRequest::UseRunner(UseRunnerDecl {
+                source: UseSource::Parent,
+                source_name: "bar".parse().unwrap(),
+                source_dictionary: "dict".parse().unwrap(),
+            }),
+            &mid_component,
+            &mut routing::mapper::NoopRouteMapper,
+        )
+        .await
+        .expect("failed to route runner");
+
+        match source {
+            routing::RouteSource {
+                source:
+                    routing::capability_source::CapabilitySource::Component(
+                        routing::capability_source::ComponentSource {
+                            capability:
+                                routing::capability_source::ComponentCapability::Runner(RunnerDecl {
+                                    name,
+                                    ..
+                                }),
+                            moniker,
+                        },
+                    ),
+                relative_path,
+            } if relative_path.is_dot() => {
+                assert_eq!(name, "foo");
+                assert_eq!(moniker, Moniker::root());
+            }
+            _ => panic!("unexpected source: {:?}", source),
+        }
+    }
+
+    pub async fn test_offer_runner_from_dictionary(&self) {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .runner_default("foo")
+                    .dictionary_default("dict")
+                    .offer(
+                        OfferBuilder::runner()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Capability("dict".parse().unwrap())),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("dict")
+                            .source(OfferSource::Self_)
+                            .target_static_child("mid"),
+                    )
+                    .child_default("mid")
+                    .build(),
+            ),
+            (
+                "mid",
+                ComponentDeclBuilder::new()
+                    .offer(
+                        OfferBuilder::runner()
+                            .name("bar")
+                            .target_name("baz")
+                            .from_dictionary("dict")
+                            .source(OfferSource::Parent)
+                            .target_static_child("leaf"),
+                    )
+                    .child_default("leaf")
+                    .build(),
+            ),
+            (
+                "leaf",
+                ComponentDeclBuilder::new_empty_component()
+                    .use_(UseBuilder::runner().name("baz"))
+                    .build(),
+            ),
+        ];
+
+        let test = T::new("root", components).build().await;
+        let leaf_component = test
+            .look_up_instance(&["mid", "leaf"].try_into().unwrap())
+            .await
+            .expect("leaf instance");
+        let source = routing::route_capability(
+            routing::RouteRequest::UseRunner(UseRunnerDecl {
+                source: UseSource::Parent,
+                source_name: "baz".parse().unwrap(),
+                source_dictionary: Default::default(),
+            }),
+            &leaf_component,
+            &mut routing::mapper::NoopRouteMapper,
+        )
+        .await
+        .expect("failed to route runner");
+
+        match source {
+            routing::RouteSource {
+                source:
+                    routing::capability_source::CapabilitySource::Component(
+                        routing::capability_source::ComponentSource {
+                            capability:
+                                routing::capability_source::ComponentCapability::Runner(RunnerDecl {
+                                    name,
+                                    ..
+                                }),
+                            moniker,
+                        },
+                    ),
+                relative_path,
+            } if relative_path.is_dot() => {
+                assert_eq!(name, "foo");
+                assert_eq!(moniker, Moniker::root());
+            }
+            _ => panic!("unexpected source: {:?}", source),
+        }
+    }
+
+    pub async fn test_offer_resolver_from_dictionary(&self) {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .resolver_default("foo")
+                    .dictionary_default("dict")
+                    .offer(
+                        OfferBuilder::resolver()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Capability("dict".parse().unwrap())),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("dict")
+                            .source(OfferSource::Self_)
+                            .target_static_child("mid"),
+                    )
+                    .child_default("mid")
+                    .build(),
+            ),
+            (
+                "mid",
+                ComponentDeclBuilder::new()
+                    .offer(
+                        OfferBuilder::resolver()
+                            .name("bar")
+                            .target_name("baz")
+                            .from_dictionary("dict")
+                            .source(OfferSource::Parent)
+                            .target_static_child("leaf"),
+                    )
+                    .child_default("leaf")
+                    .build(),
+            ),
+            (
+                "leaf",
+                ComponentDeclBuilder::new()
+                    .environment(EnvironmentBuilder::new().name("env").resolver(
+                        ResolverRegistration {
+                            resolver: "baz".parse().unwrap(),
+                            source: RegistrationSource::Parent,
+                            scheme: "test".to_string(),
+                        },
+                    ))
+                    .build(),
+            ),
+        ];
+
+        let test = T::new("root", components).build().await;
+        let leaf_component = test
+            .look_up_instance(&["mid", "leaf"].try_into().unwrap())
+            .await
+            .expect("leaf instance");
+
+        let source = routing::route_capability(
+            routing::RouteRequest::Resolver(ResolverRegistration {
+                resolver: "baz".parse().unwrap(),
+                source: RegistrationSource::Parent,
+                scheme: "test".to_string(),
+            }),
+            &leaf_component,
+            &mut routing::mapper::NoopRouteMapper,
+        )
+        .await
+        .expect("failed to route resolver");
+
+        match source {
+            routing::RouteSource {
+                source:
+                    routing::capability_source::CapabilitySource::Component(
+                        routing::capability_source::ComponentSource {
+                            capability:
+                                routing::capability_source::ComponentCapability::Resolver(
+                                    ResolverDecl { name, .. },
+                                ),
+                            moniker,
+                        },
+                    ),
+                relative_path,
+            } if relative_path.is_dot() => {
+                assert_eq!(name, "foo");
+                assert_eq!(moniker, Moniker::root());
+            }
+            _ => panic!("unexpected source: {:?}", source),
+        }
+    }
+
+    pub async fn test_use_config_from_dictionary(&self) {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .capability(CapabilityBuilder::config().name("foo").value(10_i32.into()))
+                    .dictionary_default("dict")
+                    .offer(
+                        OfferBuilder::config()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Capability("dict".parse().unwrap())),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("dict")
+                            .source(OfferSource::Self_)
+                            .target_static_child("leaf"),
+                    )
+                    .child_default("leaf")
+                    .build(),
+            ),
+            (
+                "leaf",
+                ComponentDeclBuilder::new()
+                    .use_(
+                        UseBuilder::config()
+                            .name("bar")
+                            .config_type(ConfigValueType::Int32)
+                            .from_dictionary("dict"),
+                    )
+                    .build(),
+            ),
+        ];
+
+        let test = T::new("root", components).build().await;
+        let leaf_component =
+            test.look_up_instance(&["leaf"].try_into().unwrap()).await.expect("leaf instance");
+        let source = routing::route_capability(
+            routing::RouteRequest::UseConfig(UseConfigurationDecl {
+                source: UseSource::Parent,
+                source_name: "bar".parse().unwrap(),
+                target_name: "bar".parse().unwrap(),
+                availability: Availability::Required,
+                type_: ConfigValueType::Int32,
+                default: None,
+                source_dictionary: "dict".parse().unwrap(),
+            }),
+            &leaf_component,
+            &mut routing::mapper::NoopRouteMapper,
+        )
+        .await
+        .expect("failed to route config");
+
+        match source {
+            routing::RouteSource {
+                source:
+                    routing::capability_source::CapabilitySource::Component(
+                        routing::capability_source::ComponentSource {
+                            capability: routing::capability_source::ComponentCapability::Config(_),
+                            moniker,
+                        },
+                    ),
+                relative_path,
+            } if relative_path.is_dot() => {
+                assert_eq!(moniker, moniker::Moniker::root());
+            }
+            _ => panic!("unexpected source: {:?}", source),
+        }
+    }
+
+    pub async fn test_offer_config_from_dictionary(&self) {
+        let components = vec![
+            (
+                "root",
+                ComponentDeclBuilder::new()
+                    .capability(CapabilityBuilder::config().name("foo").value(10_i32.into()))
+                    .dictionary_default("dict")
+                    .offer(
+                        OfferBuilder::config()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Capability("dict".parse().unwrap())),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("dict")
+                            .source(OfferSource::Self_)
+                            .target_static_child("mid"),
+                    )
+                    .child_default("mid")
+                    .build(),
+            ),
+            (
+                "mid",
+                ComponentDeclBuilder::new()
+                    .offer(
+                        OfferBuilder::config()
+                            .name("bar")
+                            .target_name("baz")
+                            .from_dictionary("dict")
+                            .source(OfferSource::Parent)
+                            .target_static_child("leaf"),
+                    )
+                    .child_default("leaf")
+                    .build(),
+            ),
+            (
+                "leaf",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::config().name("baz").config_type(ConfigValueType::Int32))
+                    .build(),
+            ),
+        ];
+
+        let test = T::new("root", components).build().await;
+        let leaf_component = test
+            .look_up_instance(&["mid", "leaf"].try_into().unwrap())
+            .await
+            .expect("leaf instance");
+        let source = routing::route_capability(
+            routing::RouteRequest::UseConfig(UseConfigurationDecl {
+                source: UseSource::Parent,
+                source_name: "baz".parse().unwrap(),
+                target_name: "baz".parse().unwrap(),
+                availability: Availability::Required,
+                type_: ConfigValueType::Int32,
+                default: None,
+                source_dictionary: Default::default(),
+            }),
+            &leaf_component,
+            &mut routing::mapper::NoopRouteMapper,
+        )
+        .await
+        .expect("failed to route config");
+
+        match source {
+            routing::RouteSource {
+                source:
+                    routing::capability_source::CapabilitySource::Component(
+                        routing::capability_source::ComponentSource {
+                            capability: routing::capability_source::ComponentCapability::Config(_),
+                            moniker,
+                        },
+                    ),
+                relative_path,
+            } if relative_path.is_dot() => {
+                assert_eq!(moniker, moniker::Moniker::root());
+            }
+            _ => panic!("unexpected source: {:?}", source),
+        }
     }
 }

@@ -491,3 +491,22 @@ async fn directory_mock(handles: LocalComponentHandles) -> Result<(), Error> {
     );
     Ok(())
 }
+
+#[fuchsia::test]
+async fn use_directory_from_dictionary_static() {
+    let realm =
+        fuchsia_component::client::connect_to_protocol::<fidl_fuchsia_component::RealmMarker>()
+            .expect("failed to connect to Realm");
+
+    let child_ref = fidl_fuchsia_component_decl::ChildRef {
+        name: "directory_test".to_string(),
+        collection: None,
+    };
+
+    let (client, server) = fidl::endpoints::create_endpoints();
+    realm.open_exposed_dir(&child_ref, server).await.unwrap().unwrap();
+
+    let trigger = client::connect_to_protocol_at_dir_root::<ftest::TriggerMarker>(&client).unwrap();
+    let out = trigger.run().await.unwrap();
+    assert_eq!(&out, "Directory verified");
+}
