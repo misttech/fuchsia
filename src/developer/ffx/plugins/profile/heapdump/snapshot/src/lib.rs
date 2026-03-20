@@ -5,19 +5,18 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
 use ffx_config::EnvironmentContext;
-use ffx_profile_heapdump_common::{
+use ffx_profile_heapdump_common_fdomain::{
     LabelValue, PProfProfileBuilder, build_process_selector, check_snapshot_error,
     connect_to_collector,
 };
 use ffx_profile_heapdump_snapshot_args::SnapshotCommand;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl::endpoints::create_request_stream;
-use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
-use heapdump_snapshot::Snapshot;
 use std::io::Write;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("ffx_profile_heapdump"))]
@@ -44,7 +43,7 @@ struct SnapshotWithMetadata {
     process_name: Option<String>,
     process_koid: Option<u64>,
     contents_prefix: String,
-    snapshot: Snapshot,
+    snapshot: heapdump_snapshot_fdomain::Snapshot,
 }
 
 async fn snapshot(
@@ -55,7 +54,8 @@ async fn snapshot(
     let contents_dir = cmd.output_contents_dir.as_ref().map(std::path::Path::new);
     let multi_process = cmd.multi_process;
 
-    let (receiver_client, receiver_stream) = create_request_stream();
+    let (receiver_client, receiver_stream) =
+        remote_control.domain().create_request_stream::<fheapdump_client::SnapshotReceiverMarker>();
     let request = fheapdump_client::CollectorTakeLiveSnapshotRequest {
         process_selector: build_process_selector(cmd.by_name, cmd.by_koid)?,
         receiver: Some(receiver_client),
@@ -64,23 +64,30 @@ async fn snapshot(
         ..Default::default()
     };
 
-    let collector = connect_to_collector(&remote_control, cmd.collector).await?;
+    let collector: fheapdump_client::CollectorProxy =
+        connect_to_collector(&remote_control, cmd.collector).await?;
     collector.take_live_snapshot(request)?;
 
     // Receive the snapshot(s).
     let snapshots: Vec<SnapshotWithMetadata> = if multi_process {
         check_snapshot_error(
-            heapdump_snapshot::Snapshot::receive_multi_from(receiver_stream).await,
+            heapdump_snapshot_fdomain::Snapshot::receive_multi_from(receiver_stream).await,
         )?
         .into_iter()
-        .map(|heapdump_snapshot::SnapshotWithHeader { process_name, process_koid, snapshot }| {
-            SnapshotWithMetadata {
-                process_name: Some(process_name),
-                process_koid: Some(process_koid),
-                contents_prefix: format!("{process_koid}-"),
-                snapshot: snapshot,
-            }
-        })
+        .map(
+            |heapdump_snapshot_fdomain::SnapshotWithHeader {
+                 process_name,
+                 process_koid,
+                 snapshot,
+             }| {
+                SnapshotWithMetadata {
+                    process_name: Some(process_name),
+                    process_koid: Some(process_koid),
+                    contents_prefix: format!("{process_koid}-"),
+                    snapshot: snapshot,
+                }
+            },
+        )
         .collect()
     } else {
         vec![SnapshotWithMetadata {
@@ -88,7 +95,7 @@ async fn snapshot(
             process_koid: None,
             contents_prefix: "".to_string(),
             snapshot: check_snapshot_error(
-                heapdump_snapshot::Snapshot::receive_single_from(receiver_stream).await,
+                heapdump_snapshot_fdomain::Snapshot::receive_single_from(receiver_stream).await,
             )?,
         }]
     };
@@ -111,7 +118,7 @@ async fn snapshot(
 
         for snapshot in &snapshots {
             for info in &snapshot.snapshot.allocations {
-                if let Some(ref data) = info.contents {
+                if let Some(data) = &info.contents {
                     let address = info.address.ok_or(ffx_error!(
                         "Cannot to create an output file for an allocation without address."
                     ))?;
