@@ -37,6 +37,40 @@ impl Incoming {
         })
     }
 
+    /// Connects to the protocol in the service instance's path in the given directory, with
+    /// zx::Channel. Logs and returns a [`Status::CONNECTION_REFUSED`] if the service instance
+    /// couldn't be opened.
+    pub fn connect_protocol_next<P: fidl_next::Discoverable, D>(
+        &self,
+    ) -> Result<fidl_next::ClientEnd<P, libasync_fidl::AsyncChannel<D>>, Status>
+    where
+        D: Default,
+    {
+        let path = format!("/svc/{}", P::PROTOCOL_NAME);
+        Self::connect_protocol_next_at(self, &path)
+    }
+
+    /// Connects to the protocol in the service instance's path in the given directory, with
+    /// zx::Channel. Logs and returns a [`Status::CONNECTION_REFUSED`] if the service instance
+    /// couldn't be opened.
+    pub fn connect_protocol_next_at<P: fidl_next::Discoverable, D>(
+        dir: &impl AsRefDirectory,
+        path: &str,
+    ) -> Result<fidl_next::ClientEnd<P, libasync_fidl::AsyncChannel<D>>, Status>
+    where
+        D: Default,
+    {
+        let (client_end, server_end) = zx::Channel::create();
+        let client_end = fidl_next::ClientEnd::<P, zx::Channel>::from_untyped(client_end);
+        dir.as_ref_directory().open(path, fio::Flags::PROTOCOL_SERVICE, server_end).map_err(
+            |e| {
+                error!("Failed to connect to discoverable protocol `{}`: {e}", P::PROTOCOL_NAME);
+                Status::CONNECTION_REFUSED
+            },
+        )?;
+        Ok(libasync_fidl::AsyncChannel::<D>::client_from_zx_channel::<P>(client_end))
+    }
+
     /// Creates a connector to the given service's default instance by its marker type. This can be
     /// convenient when the compiler can't deduce the [`ServiceProxy`] type on its own.
     ///
@@ -228,7 +262,7 @@ impl Directory for Incoming {
 
         for entry in &self.0 {
             if let Some(remain) = match_prefix(&path, &entry.path) {
-                return entry.directory.open(&format!("/{}", remain), flags, server_end);
+                return entry.directory.open(&format!("{}", remain), flags, server_end);
             }
         }
         Err(Status::NOT_FOUND)

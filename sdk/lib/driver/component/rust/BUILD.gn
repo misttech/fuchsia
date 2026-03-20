@@ -28,6 +28,7 @@ rustc_library("rust") {
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
     "//sdk/lib/driver/runtime/rust/fidl",
+    "//sdk/lib/driver/runtime/rust/libasync/fidl",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
