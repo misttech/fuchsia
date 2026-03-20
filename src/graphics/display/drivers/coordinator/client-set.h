@@ -97,20 +97,30 @@ class ClientSet {
   Client* GetClientOwningDisplays() const;
 
  private:
+  // Recomputes the client that owns the displays.
+  //
+  // Must be called at least once when the set of connected clients changes, and
+  // when the virtcon mode changes.
+  //
+  // This method is idempotent.
   void HandleClientOwnershipChanges();
 
   std::list<std::unique_ptr<Client>> clients_;
+
+  // Points into `clients_`.
+  //
+  // Updated by `HandleClientOwnershipChanges()`.
+  Client* client_owning_displays_ = nullptr;
 
   ClientId next_client_id_ = ClientId(1);
 
   // The inspect node that lists all client connections.
   inspect::Node root_node_;
 
-  // Pointers to instances owned by `clients_`.
-  Client* client_owning_displays_ = nullptr;
-  Client* virtcon_client_ = nullptr;
-  Client* primary_client_ = nullptr;
-
+  // Display ownership selection override.
+  //
+  // The value is reset to kFallback each time a Virtcon client connects. The
+  // client can switch to kForced.
   fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ =
       fuchsia_hardware_display::wire::VirtconMode::kFallback;
 };

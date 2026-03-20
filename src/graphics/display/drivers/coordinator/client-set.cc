@@ -33,11 +33,8 @@ ClientSet::~ClientSet() {
 
 void ClientSet::DispatchOnDisplaysChanged(std::span<const display::DisplayId> added_display_ids,
                                           std::span<const display::DisplayId> removed_display_ids) {
-  if (virtcon_client_ != nullptr) {
-    virtcon_client_->OnDisplaysChanged(added_display_ids, removed_display_ids);
-  }
-  if (primary_client_ != nullptr) {
-    primary_client_->OnDisplaysChanged(added_display_ids, removed_display_ids);
+  for (std::unique_ptr<Client>& client : clients_) {
+    client->OnDisplaysChanged(added_display_ids, removed_display_ids);
   }
 }
 
@@ -49,24 +46,17 @@ void ClientSet::DispatchOnDisplayVsync(display::DisplayId display_id, zx::time_m
   ZX_DEBUG_ASSERT(client_priority != display::ClientPriority::kInvalid);
 
   zx_instant_mono_t fidl_timestamp = timestamp.get();
-  if (client_priority == display::ClientPriority::kPrimary) {
-    primary_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
-    return;
+  for (std::unique_ptr<Client>& client : clients_) {
+    if (client->priority() == client_priority) {
+      client->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
+      break;
+    }
   }
-  if (client_priority == display::ClientPriority::kVirtcon) {
-    virtcon_client_->OnDisplayVsync(display_id, fidl_timestamp, vsync_config_stamp);
-    return;
-  }
-  ZX_DEBUG_ASSERT_MSG(false, "Unsupported ClientPriority: %" PRIu32,
-                      client_priority.ValueForLogging());
 }
 
 void ClientSet::DispatchOnCaptureComplete() {
-  if (virtcon_client_ != nullptr) {
-    virtcon_client_->OnCaptureComplete();
-  }
-  if (primary_client_ != nullptr) {
-    primary_client_->OnCaptureComplete();
+  for (std::unique_ptr<Client>& client : clients_) {
+    client->OnCaptureComplete();
   }
 }
 
@@ -107,17 +97,31 @@ zx::result<> ClientSet::ConnectClient(
 
   PrintChannelKoids(client_priority, coordinator_server_end.channel());
 
-  if ((client_priority == display::ClientPriority::kVirtcon && virtcon_client_ != nullptr) ||
-      (client_priority == display::ClientPriority::kPrimary && primary_client_ != nullptr)) {
-    fdf::debug("Client already bound at priority {}", client_priority);
-    return zx::error(ZX_ERR_ALREADY_BOUND);
+  for (const std::unique_ptr<Client>& existing_client : clients_) {
+    if (existing_client->priority() == client_priority) {
+      fdf::warn("Rejecting client connection. A client is already bound at priority {}",
+                client_priority);
+      return zx::error(ZX_ERR_ALREADY_BOUND);
+    }
   }
 
   ClientId client_id = next_client_id_;
   ++next_client_id_;
-  auto client = std::make_unique<Client>(controller, client_priority, client_id,
-                                         std::move(coordinator_server_end),
-                                         std::move(coordinator_listener_client_end));
+
+  fbl::AllocChecker alloc_checker;
+  auto client = fbl::make_unique_checked<Client>(&alloc_checker, controller, client_priority,
+                                                 client_id, std::move(coordinator_server_end),
+                                                 std::move(coordinator_listener_client_end));
+  if (!alloc_checker.check()) {
+    fdf::error("Failed to allocate memory for Client");
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+
+  // The default Virtcon mode is fallback. Each client has to explicitly request
+  // forced mode.
+  if (client_priority == display::ClientPriority::kVirtcon) {
+    virtcon_mode_ = fuchsia_hardware_display::wire::VirtconMode::kFallback;
+  }
 
   inspect::Node client_inspect_node =
       root_node_.CreateChild(fbl::StringPrintf("client-%" PRIu64, client_id.value()));
@@ -132,16 +136,6 @@ zx::result<> ClientSet::ConnectClient(
   fdf::info("Client connected at priority {} with ID {}", client_priority,
             client_ptr->id().value());
 
-  if (client_priority == display::ClientPriority::kVirtcon) {
-    ZX_DEBUG_ASSERT(virtcon_client_ == nullptr);
-    virtcon_client_ = client_ptr;
-  } else if (client_priority == display::ClientPriority::kPrimary) {
-    ZX_DEBUG_ASSERT(primary_client_ == nullptr);
-    primary_client_ = client_ptr;
-  } else {
-    ZX_DEBUG_ASSERT_MSG(false, "Unsupported ClientPriority: %" PRIu32,
-                        client_priority.ValueForLogging());
-  }
   HandleClientOwnershipChanges();
 
   return zx::ok();
@@ -171,13 +165,6 @@ void ClientSet::OnClientDisconnected(Client* client) {
 
   fdf::info("Client disconnected: priority {}, ID {}", client->priority(), client->id().value());
 
-  if (client == virtcon_client_) {
-    virtcon_client_ = nullptr;
-    virtcon_mode_ = fuchsia_hardware_display::wire::VirtconMode::kFallback;
-  } else if (client == primary_client_) {
-    primary_client_ = nullptr;
-  }
-
   if (client == client_owning_displays_) {
     client_owning_displays_ = nullptr;
   }
@@ -194,13 +181,20 @@ void ClientSet::OnClientDisconnected(Client* client) {
 }
 
 void ClientSet::HandleClientOwnershipChanges() {
-  Client* new_client_owning_displays;
-  if (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kForced ||
-      (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kFallback &&
-       primary_client_ == nullptr)) {
-    new_client_owning_displays = virtcon_client_;
-  } else {
-    new_client_owning_displays = primary_client_;
+  Client* new_client_owning_displays = nullptr;
+  for (std::unique_ptr<Client>& client : clients_) {
+    // Special case handling for forced Virtcon mode.
+    if (client->priority() == display::ClientPriority::kVirtcon) {
+      if (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kForced) {
+        new_client_owning_displays = client.get();
+        break;
+      }
+    }
+
+    if (!new_client_owning_displays ||
+        client->priority() > new_client_owning_displays->priority()) {
+      new_client_owning_displays = client.get();
+    }
   }
 
   if (new_client_owning_displays != client_owning_displays_) {
@@ -221,8 +215,6 @@ void ClientSet::Clear() {
   }
 
   client_owning_displays_ = nullptr;
-  primary_client_ = nullptr;
-  virtcon_client_ = nullptr;
 
   clients_.clear();
 }
