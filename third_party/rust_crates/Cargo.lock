@@ -2203,11 +2203,11 @@ dependencies = [
 
 [[package]]
 name = "home"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "589533453244b0995c858700322199b2becb13b627df2851f64a2775d024abcf"
+checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5701,10 +5701,6 @@ version = "0.52.0"
 
 [[package]]
 name = "windows-sys"
-version = "0.59.0"
-
-[[package]]
-name = "windows-sys"
 version = "0.60.2"
 
 [[package]]
@@ -5842,3 +5838,8 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
+
+[[patch.unused]]
+name = "windows-sys"
+version = "0.59.0"
+

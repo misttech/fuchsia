@@ -313,7 +313,7 @@ async-fs = "2.2.0"
 cargo_metadata = "0.23.1"
 crossterm = "0.19"
 fuse3 = { version = "0.6.1", features = ["tokio-runtime", "unprivileged"] }
-home = "0.5.11"
+home = "0.5.12"
 hyper-rustls = { version = "0.24.2", default-features = false, features = ["rustls-native-certs"] }
 indoc = "2.0.7"
 loom = { version = "0.7.2", features = ["checkpoint", "futures"] }
