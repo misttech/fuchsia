@@ -61,13 +61,13 @@ use netstack3_core::ip::{
 use thiserror::Error;
 use zx::{self as zx, HandleBased, Rights};
 
-use fidl_fuchsia_hardware_network as fhardware_network;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
-use fidl_fuchsia_net_resources as fnet_resources;
-use fuchsia_async as fasync;
+use {
+    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
+    fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fuchsia_async as fasync,
+};
 
 use crate::bindings::devices::{
     self, BlackholeDeviceInfo, DynamicCommonInfo, EthernetInfo, LoopbackInfo,
@@ -1181,7 +1181,7 @@ async fn set_configuration(
         api: netstack3_core::CoreApi<'a, &'a mut BindingsCtx>,
         pending: PendingIpDeviceConfigurationUpdate<'a, I, DeviceId<BindingsCtx>>,
     ) -> I::ConfigurationUpdate {
-        let want_ip_enabled = pending.config_update().as_ref().ip_enabled;
+        let new_ip_enabled = pending.config_update().as_ref().ip_enabled;
         let core_id = pending.device_id();
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
@@ -1190,12 +1190,15 @@ async fn set_configuration(
             map_ip_twice!(I, (IpInvariant(api), pending), |(IpInvariant(api), pending)| Output(
                 api.device_ip::<I>().apply_configuration(pending)
             ));
-        if let Some(want_ip_enabled) = want_ip_enabled {
-            info!(
-                "updated {:?} ip_enabled on {core_id:?} to {want_ip_enabled}, was {}",
-                I::VERSION,
-                update.as_ref().ip_enabled.expect("ip_enabled should be set")
-            );
+        if let Some(new_ip_enabled) = new_ip_enabled {
+            let old_ip_eneabled = update.as_ref().ip_enabled.expect("ip_enabled should be set");
+            if new_ip_enabled != old_ip_eneabled {
+                info!(
+                    "updated {:?} ip_enabled on {core_id:?} to {new_ip_enabled}, was {}",
+                    I::VERSION,
+                    old_ip_eneabled
+                );
+            }
         }
         update
     }
