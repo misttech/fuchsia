@@ -5,3 +5,6 @@ chelfi@google.com
 etiennej@google.com
 fdurso@google.com
 plabatut@google.com
+
+# Build system files throughout the tree
+per-file **.gn,**.gni,**.bazel,**.bzl = file:/build/OWNERS
