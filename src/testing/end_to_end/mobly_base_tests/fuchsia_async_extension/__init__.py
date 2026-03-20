@@ -52,6 +52,7 @@ def make_sync_wrapper(
 class _AsyncBaseTestClassMeta(base_test.BaseTestClass):
     _MOBLY_INHERITED_METHOD_NAMES = [
         "pre_run",
+        "setup_generated_tests",
         "setup_class",
         "teardown_class",
         "setup_test",
@@ -67,10 +68,10 @@ class _AsyncBaseTestClassMeta(base_test.BaseTestClass):
         dict_items = list(cls.__dict__.items())
         for attr_name, attr_value in dict_items:
             # Handle Mobly lifecycle methods
-            if attr_name in cls._MOBLY_INHERITED_METHOD_NAMES:
-                assert inspect.iscoroutinefunction(
-                    attr_value
-                ), f"Lifecycle method {attr_name} in {cls.__name__} must be a coroutine function (async def)."
+            if (
+                attr_name in cls._MOBLY_INHERITED_METHOD_NAMES
+                and inspect.iscoroutinefunction(attr_value)
+            ):
                 async_attr_name = f"_async_{attr_name}"
                 setattr(cls, async_attr_name, attr_value)
                 setattr(cls, attr_name, make_sync_wrapper(attr_value))
@@ -89,28 +90,31 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
     # This ensures each subclass of this one will define these methods as async,
     # because mypy checks will enforce that. Then the __init_subclass__ in
     # _AsyncBaseTestClassMeta will wrap them with make_sync_wrapper.
-    async def pre_run(self) -> None:
+    async def pre_run(self):  # type: ignore
         pass
 
-    async def setup_class(self) -> None:
+    async def setup_generated_tests(self):  # type: ignore
         pass
 
-    async def teardown_class(self) -> None:
+    async def setup_class(self):  # type: ignore
         pass
 
-    async def setup_test(self) -> None:
+    async def teardown_class(self):  # type: ignore
         pass
 
-    async def teardown_test(self) -> None:
+    async def setup_test(self):  # type: ignore
         pass
 
-    async def on_fail(self, record: Any) -> None:
+    async def teardown_test(self):  # type: ignore
         pass
 
-    async def on_pass(self, record: Any) -> None:
+    async def on_fail(self, record):  # type: ignore
         pass
 
-    async def on_skip(self, record: Any) -> None:
+    async def on_pass(self, record):  # type: ignore
+        pass
+
+    async def on_skip(self, record):  # type: ignore
         pass
 
     def generate_tests(

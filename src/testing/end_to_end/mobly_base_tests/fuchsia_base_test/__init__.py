@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Async Fuchsia base test class."""
 
+import enum
 import functools
 import importlib
 import inspect
@@ -11,6 +12,9 @@ import os
 import pathlib
 import typing
 from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar, Union
+
+if typing.TYPE_CHECKING:
+    from .fuchsia_base_test import FuchsiaBaseTest
 
 import fuchsia_async_extension
 from honeydew import errors
@@ -28,14 +32,6 @@ from mobly import signals, test_runner
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 
-# Import enums from the synchronous base test to maintain compatibility
-from .fuchsia_base_test import (
-    HEALTH_CHECK_FAILURE_MESSAGE,
-    FuchsiaTestCases,
-    SnapshotOn,
-    TracingOn,
-)
-
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
@@ -48,6 +44,98 @@ T = TypeVar("T")
 
 
 # LINT.IfChange
+HEALTH_CHECK_FAILURE_MESSAGE = (
+    "One or more FuchsiaDevice's health check failed in "
+    "teardown_test. So failing the test case..."
+)
+# LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
+
+
+class SnapshotOn(enum.StrEnum):
+    """How often we need to collect the snapshot"""
+
+    # Once per test case.
+    TEARDOWN_TEST = "teardown_test"
+
+    # Once per test case on failure only.
+    TEARDOWN_TEST_ON_FAIL = "teardown_test_on_fail"
+
+    # Once per test class.
+    TEARDOWN_CLASS = "teardown_class"
+
+    # Once per test class on failure only.
+    TEARDOWN_CLASS_ON_FAIL = "teardown_class_on_fail"
+
+    # Do not collect snapshot
+    NEVER = "never"
+
+
+class TracingOn(enum.StrEnum):
+    """Tracing behavior for tests.
+
+    This user param does not support any tests that reboot the device.
+    """
+
+    # Once per test case.
+    TEARDOWN_TEST = "teardown_test"
+
+    # Once per test case on failure only.
+    TEARDOWN_TEST_ON_FAIL = "teardown_test_on_fail"
+
+    # Once per test class.
+    TEARDOWN_CLASS = "teardown_class"
+
+    # Once per test class on failure only.
+    TEARDOWN_CLASS_ON_FAIL = "teardown_class_on_fail"
+
+    # Do not collect
+    NEVER = "never"
+
+
+# TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
+# AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
+# implementations instead. FuchsiaBaseTest will soon be deleted in favor
+# of AsyncFuchsiaBaseTest.
+
+
+# LINT.IfChange(sync_test_cases)
+class FuchsiaTestCases:
+    """Base class for modular test cases."""
+
+    def __init__(self, mobly_test: "FuchsiaBaseTest"):
+        self.mobly_test = mobly_test
+
+    def setup_test(self) -> None:
+        """Called before each test case."""
+
+    def teardown_test(self) -> None:
+        """Called after each test case."""
+
+    def inject_test_cases(self) -> None:
+        for attr_name, method in inspect.getmembers(self, callable):
+            if attr_name.startswith("test_"):
+
+                @functools.wraps(method)
+                def wrapper(
+                    *args: Any, method: Any = method, **kwargs: Any
+                ) -> None:
+                    try:
+                        self.setup_test()
+                        method(*args, **kwargs)
+                    finally:
+                        self.teardown_test()
+
+                self.mobly_test.generate_tests(
+                    test_logic=wrapper,
+                    name_func=lambda *a, name=attr_name: name,
+                    arg_sets=[()],
+                )
+
+
+# LINT.ThenChange(:async_test_cases)
+
+
+# LINT.IfChange(async_test_cases)
 class AsyncFuchsiaTestCases:
     """Base class for modular test cases."""
 
@@ -57,10 +145,10 @@ class AsyncFuchsiaTestCases:
     ):
         self.mobly_test = mobly_test
 
-    async def setup_test(self) -> None:
+    async def setup_test(self):  # type: ignore
         """Called before each test case."""
 
-    async def teardown_test(self) -> None:
+    async def teardown_test(self):  # type: ignore
         """Called after each test case."""
 
     def inject_test_cases(self) -> None:
@@ -88,7 +176,7 @@ class AsyncFuchsiaTestCases:
                 )
 
 
-# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/fuchsia_base_test.py)
+# LINT.ThenChange(:sync_test_cases)
 
 
 class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
@@ -111,14 +199,14 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
     TEST_CASES: list[type[AsyncFuchsiaTestCases]] | None = None
 
-    async def pre_run(self) -> None:
+    async def pre_run(self):  # type: ignore
         if self.TEST_CASES is None:
             return
 
         for tc in self.TEST_CASES:
             tc(self).inject_test_cases()
 
-    async def setup_class(self) -> None:
+    async def setup_class(self):  # type: ignore
         """setup_class is called once before running tests.
 
         It does the following things:
@@ -150,7 +238,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 device.tracing.initialize(categories=self.trace_categories)
                 await device.tracing.start()
 
-    async def setup_test(self) -> None:
+    async def setup_test(self):  # type: ignore
         """setup_test is called once before running each test.
 
         It does the following things:
@@ -182,7 +270,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     device.tracing.initialize(categories=self.trace_categories)
                     await device.tracing.start()
 
-    async def teardown_test(self) -> None:
+    async def teardown_test(self):  # type: ignore
         """teardown_test is called once after running each test.
 
         It does the following things:
@@ -224,7 +312,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             _LOGGER.warning(HEALTH_CHECK_FAILURE_MESSAGE)
             raise signals.TestFailure(HEALTH_CHECK_FAILURE_MESSAGE)
 
-    async def teardown_class(self) -> None:
+    async def teardown_class(self):  # type: ignore
         """teardown_class is called once after running all tests.
 
         It does the following things:
@@ -270,7 +358,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 self, directory=self._teardown_class_artifacts
             )
 
-    async def on_fail(self, record: TestResultRecord) -> None:
+    async def on_fail(self, record):  # type: ignore
         """on_fail is called once when a test case fails.
 
         It does the following things:
@@ -308,13 +396,13 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     def output_file_path(self, file_name: str) -> pathlib.Path:
         return self._output_dir().joinpath(file_name)
 
-    async def on_pass(self, record: TestResultRecord) -> None:
+    async def on_pass(self, record):  # type: ignore
         pass
 
-    async def on_skip(self, record: TestResultRecord) -> None:
+    async def on_skip(self, record):  # type: ignore
         pass
 
-    async def _collect_snapshot(self, directory: str) -> None:
+    async def _collect_snapshot(self, directory):  # type: ignore
         """Collects snapshots for all the FuchsiaDevice objects and stores them
         in the directory specified.
 
@@ -378,7 +466,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
         return config.get(key) if config else None
 
-    async def _health_check_and_recover(self) -> None:
+    async def _health_check_and_recover(self):  # type: ignore
         """Ensure all AsyncFuchsiaDevice objects are healthy and if unhealthy perform
         a power_cycle in an attempt to recover.
         """
@@ -403,9 +491,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             "AsyncFuchsiaDevice objects..."
         )
 
-    async def _recover_device(
-        self, fx_device: async_fuchsia_device.AsyncFuchsiaDevice
-    ) -> None:
+    async def _recover_device(self, fx_device):  # type: ignore[no-untyped-def]
         """Try to recover the fuchsia device by power cycling it if the test has
         access to a power switch.
 
@@ -497,9 +583,9 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 None,
             )
 
-    async def _log_message_to_devices(
-        self, message: str, level: custom_types.LEVEL
-    ) -> None:
+    async def _log_message_to_devices(  # type: ignore[no-untyped-def]
+        self, message, level
+    ):
         """Log message in all the Fuchsia devices.
 
         Args:

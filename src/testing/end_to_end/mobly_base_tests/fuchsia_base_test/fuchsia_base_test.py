@@ -4,20 +4,15 @@
 """Fuchsia base test class."""
 
 import contextlib
-import enum
-import functools
-import inspect
 import logging
-import pathlib
-from collections.abc import Iterator
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+from typing import Any, Iterator, ParamSpec, TypeVar
 
 import fuchsia_async_extension
+import fuchsia_base_test as fuchsia_base_test_init
 from honeydew.auxiliary_devices.power_switch import power_switch
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
-from mobly.base_test import BaseTestClass as MoblyBaseTestClass
 from mobly.records import TestResultRecord
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -25,99 +20,17 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 T = TypeVar("T")
 
-# LINT.IfChange
+
+# Export backward compatibility aliases for tests
 HEALTH_CHECK_FAILURE_MESSAGE = (
-    "One or more FuchsiaDevice's health check failed in "
-    "teardown_test. So failing the test case..."
+    fuchsia_base_test_init.HEALTH_CHECK_FAILURE_MESSAGE
 )
-# LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
+SnapshotOn = fuchsia_base_test_init.SnapshotOn
+TracingOn = fuchsia_base_test_init.TracingOn
+FuchsiaTestCases = fuchsia_base_test_init.FuchsiaTestCases
 
 
-class SnapshotOn(enum.StrEnum):
-    """How often we need to collect the snapshot"""
-
-    # Once per test case.
-    TEARDOWN_TEST = "teardown_test"
-
-    # Once per test case on failure only.
-    TEARDOWN_TEST_ON_FAIL = "teardown_test_on_fail"
-
-    # Once per test class.
-    TEARDOWN_CLASS = "teardown_class"
-
-    # Once per test class on failure only.
-    TEARDOWN_CLASS_ON_FAIL = "teardown_class_on_fail"
-
-    # Do not collect snapshot
-    NEVER = "never"
-
-
-class TracingOn(enum.StrEnum):
-    """Tracing behavior for tests.
-
-    This user param does not support any tests that reboot the device.
-    """
-
-    # Once per test case.
-    TEARDOWN_TEST = "teardown_test"
-
-    # Once per test case on failure only.
-    TEARDOWN_TEST_ON_FAIL = "teardown_test_on_fail"
-
-    # Once per test class.
-    TEARDOWN_CLASS = "teardown_class"
-
-    # Once per test class on failure only.
-    TEARDOWN_CLASS_ON_FAIL = "teardown_class_on_fail"
-
-    # Do not collect
-    NEVER = "never"
-
-
-# TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
-# AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
-# implementations instead. FuchsiaBaseTest will soon be deleted in favor
-# of AsyncFuchsiaBaseTest.
-
-
-# LINT.IfChange
-class FuchsiaTestCases:
-    """Base class for modular test cases."""
-
-    def __init__(self, mobly_test: "FuchsiaBaseTest"):
-        self.mobly_test = mobly_test
-
-    def setup_test(self) -> None:
-        """Called before each test case."""
-
-    def teardown_test(self) -> None:
-        """Called after each test case."""
-
-    def inject_test_cases(self) -> None:
-        for attr_name, method in inspect.getmembers(self, callable):
-            if attr_name.startswith("test_"):
-
-                @functools.wraps(method)
-                def wrapper(
-                    *args: Any, method: Any = method, **kwargs: Any
-                ) -> None:
-                    try:
-                        self.setup_test()
-                        method(*args, **kwargs)
-                    finally:
-                        self.teardown_test()
-
-                self.mobly_test.generate_tests(
-                    test_logic=wrapper,
-                    name_func=lambda *a, name=attr_name: name,
-                    arg_sets=[()],
-                )
-
-
-# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/__init__.py)
-
-
-class FuchsiaBaseTest(MoblyBaseTestClass):
+class FuchsiaBaseTest(fuchsia_base_test_init.AsyncFuchsiaBaseTest):
     """Fuchsia-specific base test class
 
     Attributes:
@@ -143,9 +56,9 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         on a global event loop.
     """
 
-    TEST_CASES: list[type[FuchsiaTestCases]] | None = None
+    TEST_CASES: list[type[fuchsia_base_test_init.FuchsiaTestCases]] | None = None  # type: ignore[assignment]
 
-    fuchsia_devices: list[fuchsia_device.FuchsiaDevice]
+    fuchsia_devices: list[fuchsia_device.FuchsiaDevice]  # type: ignore[assignment]
 
     @contextlib.contextmanager
     def _async_devices(self) -> Iterator[None]:
@@ -164,12 +77,10 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
             self.fuchsia_devices = original_devices
 
     def pre_run(self) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
+        super().pre_run()
 
-        with self._async_devices():
-            fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_pre_run(self)
-            )
+    def setup_generated_tests(self) -> None:
+        super().setup_generated_tests()
 
     def setup_class(
         self,
@@ -181,11 +92,7 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
             * Instantiates all fuchsia devices into self.fuchsia_devices
             * Instantiates and starts tracing if specified in the user params
         """
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        fuchsia_async_extension.get_loop().run_until_complete(
-            fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_setup_class(self)
-        )
+        super().setup_class()
         async_devices_result: list[Any] = self.fuchsia_devices
         self.fuchsia_devices = [
             device.as_sync() for device in async_devices_result
@@ -199,14 +106,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
             * Logs a info message onto device that test case has started.
             * Instantiates and starts tracing if specified in the user params
         """
-        import fuchsia_base_test as fuchsia_base_test_init
-
         with self._async_devices():
-            fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_setup_test(
-                    self
-                )
-            )
+            super().setup_test()
 
     def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
@@ -217,14 +118,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
               "teardown_test"
             * Logs a info message onto device that test case has ended.
         """
-        import fuchsia_base_test as fuchsia_base_test_init
-
         with self._async_devices():
-            fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_teardown_test(
-                    self
-                )
-            )
+            super().teardown_test()
 
     def teardown_class(self) -> None:
         """teardown_class is called once after running all tests.
@@ -237,14 +132,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
               it under "<log_path>/teardown_class<_on_fail>" directory if `tracing_on`
               test param is set to "teardown_class" or "teardown_class_on_fail".
         """
-        import fuchsia_base_test as fuchsia_base_test_init
-
         with self._async_devices():
-            fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_teardown_class(
-                    self
-                )
-            )
+            super().teardown_class()
 
     def on_fail(self, record: TestResultRecord) -> None:
         """on_fail is called once when a test case fails.
@@ -254,188 +143,71 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
               test case directory if `snapshot_on` test param is set to
               "on_fail"
         """
-        import fuchsia_base_test as fuchsia_base_test_init
-
         with self._async_devices():
-            fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._async_on_fail(
-                    self, record
-                )
-            )
-
-    def _output_dir(self) -> pathlib.Path:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return fuchsia_base_test_init.AsyncFuchsiaBaseTest._output_dir(self)
-
-    def output_file_path(self, file_name: str) -> pathlib.Path:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return fuchsia_base_test_init.AsyncFuchsiaBaseTest.output_file_path(
-            self, file_name
-        )
+            super().on_fail(record)
 
     def on_pass(self, record: TestResultRecord) -> None:
-        pass
+        with self._async_devices():
+            super().on_pass(record)
 
     def on_skip(self, record: TestResultRecord) -> None:
-        pass
+        with self._async_devices():
+            super().on_skip(record)
 
     def _collect_snapshot(self, directory: str) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
+        """Collects snapshots for all the FuchsiaDevice objects and stores them
+        in the directory specified.
 
+        Args:
+            directory: Absolute path on the host where snapshot file need to be
+                saved.
+        """
         with self._async_devices():
             fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._collect_snapshot(
-                    self, directory
-                )
+                super()._collect_snapshot(directory)
             )
-
-    def _get_controller_configs(
-        self, controller_type: str
-    ) -> list[dict[str, object]]:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return (
-            fuchsia_base_test_init.AsyncFuchsiaBaseTest._get_controller_configs(
-                self, controller_type
-            )
-        )
-
-    def _get_device_config(
-        self, controller_type: str, identifier_key: str, identifier_value: str
-    ) -> dict[str, object]:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return fuchsia_base_test_init.AsyncFuchsiaBaseTest._get_device_config(
-            self, controller_type, identifier_key, identifier_value
-        )
-
-    def _get_device_config_value(
-        self,
-        key: str,
-        identifier_key: str,
-        identifier_value: str,
-        controller_type: str = "FuchsiaDevice",
-    ) -> Any | None:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return fuchsia_base_test_init.AsyncFuchsiaBaseTest._get_device_config_value(
-            self, key, identifier_key, identifier_value, controller_type
-        )
 
     def _health_check_and_recover(self) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
-
+        """Ensure all FuchsiaDevice objects are healthy and if unhealthy perform
+        a power_cycle in an attempt to recover.
+        """
         with self._async_devices():
             fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._health_check_and_recover(
-                    self
-                )
+                super()._health_check_and_recover()
             )
 
     def _recover_device(self, fx_device: fuchsia_device.FuchsiaDevice) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
+        """Try to recover the fuchsia device by power cycling it if the test has
+        access to a power switch.
 
-        fuchsia_async_extension.get_loop().run_until_complete(
-            fuchsia_base_test_init.AsyncFuchsiaBaseTest._recover_device(
-                self, fx_device.as_async()
+        Args:
+            fx_device: FuchsiaDevice object
+        """
+        with self._async_devices():
+            fuchsia_async_extension.get_loop().run_until_complete(
+                super()._recover_device(fx_device.as_async())
             )
-        )
 
     def _lookup_power_switch(
-        self, fx_device: fuchsia_device.FuchsiaDevice
+        self, fx_device: fuchsia_device.FuchsiaDevice  # type: ignore[override]
     ) -> tuple[power_switch.PowerSwitch, int | None]:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return fuchsia_base_test_init.AsyncFuchsiaBaseTest._lookup_power_switch(
-            self, fx_device.as_async()
-        )
+        return super()._lookup_power_switch(fx_device.as_async())
 
     def _lookup_usb_power_hub(
-        self, fx_device: fuchsia_device.FuchsiaDevice
+        self, fx_device: fuchsia_device.FuchsiaDevice  # type: ignore[override]
     ) -> tuple[usb_power_hub.UsbPowerHub, int | None]:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        return (
-            fuchsia_base_test_init.AsyncFuchsiaBaseTest._lookup_usb_power_hub(
-                self, fx_device.as_async()
-            )
-        )
+        return super()._lookup_usb_power_hub(fx_device.as_async())
 
     def _log_message_to_devices(
         self, message: str, level: custom_types.LEVEL
     ) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
+        """Log message in all the Fuchsia devices.
 
+        Args:
+            message: Message that need to logged.
+            level: Log message level.
+        """
         with self._async_devices():
             fuchsia_async_extension.get_loop().run_until_complete(
-                fuchsia_base_test_init.AsyncFuchsiaBaseTest._log_message_to_devices(
-                    self, message, level
-                )
+                super()._log_message_to_devices(message, level)
             )
-
-    def _process_metric_user_params(self) -> None:
-        import fuchsia_base_test as fuchsia_base_test_init
-
-        fuchsia_base_test_init.AsyncFuchsiaBaseTest._process_metric_user_params(
-            self
-        )
-
-    def generate_tests(
-        self,
-        test_logic: Callable[P, None | Coroutine[Any, Any, None]],
-        name_func: Callable[P, str],
-        arg_sets: list[P.args],
-        uid_func: Callable[P, str] | None = None,
-    ) -> None:
-        if inspect.iscoroutinefunction(test_logic):
-
-            @functools.wraps(test_logic)
-            def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
-                return fuchsia_async_extension.get_loop().run_until_complete(
-                    test_logic(*t_args, **t_kwargs)
-                )
-
-            return super().generate_tests(
-                wrapper, name_func, arg_sets, uid_func
-            )
-        return super().generate_tests(test_logic, name_func, arg_sets, uid_func)
-
-    def __init_subclass__(cls) -> None:
-        """Creates an async Mobly entrypoint method for each overridden async
-        method and each async test method.
-        """
-
-        super().__init_subclass__()
-
-        # The `make_sync_wrapper` closure factory safely captures the wrapped func
-        # and correctly provide types for the wrapped func.
-        def make_sync_wrapper(
-            func: Callable[P, Coroutine[Any, Any, T]]
-        ) -> Callable[P, T]:
-            @functools.wraps(func)
-            def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                return fuchsia_async_extension.get_loop().run_until_complete(
-                    func(*args, **kwargs)
-                )
-
-            return wrapper
-
-        # Copy original cls.__dict__ items so the for-loop can modify attributes of cls as needed.
-        dict_items = list(cls.__dict__.items())
-        for attr_name, attr_value in dict_items:
-            # Handle async test methods (e.g., 'async def test_my_feature').
-            #
-            # Mobly expects test methods to be synchronous. To support async tests,
-            # we do the following:
-            #   a. Rename the original async test method (e.g., 'test_my_feature')
-            #      to a private name (e.g., '__async_test_my_feature').
-            #   b. Replace the original method name ('test_my_feature') with a
-            #      synchronous wrapper created by make_sync_wrapper.
-            if attr_name.startswith("test_") and inspect.iscoroutinefunction(
-                attr_value
-            ):
-                async_attr_name = f"__async_{attr_name}"
-                setattr(cls, async_attr_name, attr_value)
-                setattr(cls, attr_name, make_sync_wrapper(attr_value))

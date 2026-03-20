@@ -928,7 +928,7 @@ func infraToolLogChecks() []FailureModeCheck {
 		&stringInLogCheck{
 			// LINT.IfChange
 			String: "One or more FuchsiaDevice's health check failed in teardown_test. So failing the test case...",
-			// LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/fuchsia_base_test.py)
+			// LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/__init__.py)
 			Type: swarmingOutputType,
 		},
 		&stringInLogCheck{
