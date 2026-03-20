@@ -118,7 +118,7 @@ async fn handles_to_infos(
 // the addresses together.
 fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     let mut merged_map: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
-    let mut result = vec![];
+    let mut result = HashSet::<TargetInfo>::with_capacity(targets.len());
     for t in targets {
         if let Some(boot_id) = t.boot_id {
             match merged_map.entry(boot_id) {
@@ -133,11 +133,11 @@ fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
                 }
             }
         } else {
-            result.push(t);
+            result.insert(t);
         }
     }
     result.extend(merged_map.into_values());
-    result
+    result.into_iter().collect()
 }
 
 pub async fn list_targets(
@@ -292,6 +292,16 @@ mod test {
         let t2 = make_target_info(addr2, None);
         let targets = merge_target_addrs(vec![t1, t2]);
         assert_eq!(targets.len(), 2);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_duplicate_targets_no_bootid() {
+        let addr1: addr::TargetAddr = "127.0.0.1:1".parse().unwrap();
+        let t1 = make_target_info(addr1, None);
+        let t2 = make_target_info(addr1, None);
+        let t3 = make_target_info(addr1, None);
+        let targets = merge_target_addrs(vec![t1, t2, t3]);
+        assert_eq!(targets.len(), 1);
     }
 
     #[fuchsia::test]

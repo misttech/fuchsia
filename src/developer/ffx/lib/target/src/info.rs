@@ -9,14 +9,14 @@ use discovery::query::TargetInfoQuery;
 use fidl_fuchsia_developer_ffx as ffx;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Hash, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum RemoteControlState {
     Up,
     Down,
     Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Hash, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum TargetState {
     Unknown,
     Product,
@@ -68,7 +68,7 @@ impl From<ffx::TargetVSockCtx> for VSockCtx {
 }
 
 // LINT.IfChange
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Hash, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TargetInfo {
     pub nodename: Option<String>,
     pub addresses: Vec<TargetAddr>,
