@@ -18,6 +18,7 @@ ffx_plugin("ffx_repository") {
     "default:ffx_repository_default",
     "packages:ffx_repository_packages",
     "publish:ffx_repository_publish",
+    "serve_archive:ffx_repository_serve_archive",
     "server:ffx_repository_server",
   ]
 
