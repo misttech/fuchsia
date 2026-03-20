@@ -1502,9 +1502,12 @@ void Client::ReleaseResources() {
 
   // Release all imported buffer collections on display drivers.
   for (const auto& [k, v] : collection_map_) {
-    // TODO(https://fxbug.dev/42180237): Consider handling the error instead of ignoring it.
-    [[maybe_unused]] zx::result<> result =
+    zx::result<> result =
         controller_.engine_driver_client()->ReleaseBufferCollection(v.driver_buffer_collection_id);
+    if (result.is_error()) {
+      fdf::warn("Failed to release buffer collection {} on driver: {}",
+                v.driver_buffer_collection_id.value(), result.status_string());
+    }
   }
   collection_map_.clear();
 }
