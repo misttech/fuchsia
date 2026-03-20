@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_list_args::WMListCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session_window::ManagerProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct ListTool {
@@ -51,8 +51,8 @@ pub async fn list_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session_window::{ListedView, ManagerRequest};
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session_window::{ListedView, ManagerRequest};
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_list() {
@@ -62,7 +62,8 @@ mod test {
             ListedView { position: 2, id: "view2".to_string() },
             ListedView { position: 3, id: "view3".to_string() },
         ];
-        let proxy = fake_proxy(move |req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, move |req| match req {
             ManagerRequest::Cycle { .. } => unreachable!(),
             ManagerRequest::Focus { .. } => unreachable!(),
             ManagerRequest::List { responder } => {
