@@ -6,14 +6,20 @@ pub mod args;
 
 use anyhow::{Context, Result};
 use args::ListCompositesCommand;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
 use std::io::Write;
-use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
 pub async fn list_composites(
     cmd: ListCompositesCommand,
     writer: &mut dyn Write,
     proxy: fdd::ManagerProxy,
 ) -> Result<()> {
+    writeln!(
+        writer,
+        "WARNING: This command is deprecated. Use `ffx driver composite list` instead."
+    )?;
+
     let (iterator, iterator_server) =
         fidl::endpoints::create_proxy::<fdd::CompositeInfoIteratorMarker>();
     proxy.get_composite_info(iterator_server).context("GetCompositeInfo() failed")?;
@@ -153,6 +159,11 @@ mod tests {
         };
 
         let mut test_write_buffer = TestWriteBuffer { content: "".to_string() };
+        writeln!(
+            &mut test_write_buffer,
+            "WARNING: This command is deprecated. Use `ffx driver composite list` instead."
+        )
+        .unwrap();
         write_composite(
             &mut test_write_buffer,
             test_composite,
@@ -162,7 +173,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            include_str!("../../../tests/golden/list_composites_verbose"),
+            format!(
+                "WARNING: This command is deprecated. Use `ffx driver composite list` instead.\n{}",
+                include_str!("../../../tests/golden/list_composites_verbose")
+            ),
             test_write_buffer.content
         );
     }
@@ -191,6 +205,11 @@ mod tests {
         };
 
         let mut test_write_buffer = TestWriteBuffer { content: "".to_string() };
+        writeln!(
+            &mut test_write_buffer,
+            "WARNING: This command is deprecated. Use `ffx driver composite list` instead."
+        )
+        .unwrap();
         write_composite(
             &mut test_write_buffer,
             test_composite,
@@ -202,7 +221,10 @@ mod tests {
         println!("{}", test_write_buffer.content);
 
         assert_eq!(
-            include_str!("../../../tests/golden/list_composites_verbose_empty_fields"),
+            format!(
+                "WARNING: This command is deprecated. Use `ffx driver composite list` instead.\n{}",
+                include_str!("../../../tests/golden/list_composites_verbose_empty_fields")
+            ),
             test_write_buffer.content
         );
     }

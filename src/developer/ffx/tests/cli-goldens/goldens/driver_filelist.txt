@@ -1,4 +1,7 @@
 ffx/driver.golden
+ffx/driver/composite.golden
+ffx/driver/composite/list.golden
+ffx/driver/composite/show.golden
 ffx/driver/disable.golden
 ffx/driver/doctor.golden
 ffx/driver/dump.golden

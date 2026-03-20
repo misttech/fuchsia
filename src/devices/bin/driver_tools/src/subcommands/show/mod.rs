@@ -66,10 +66,10 @@ pub async fn show(
         driver_info.driver_framework_version.unwrap_or(1)
     )?;
 
-    if let Some(device_categories) = driver_info.device_categories {
-        write!(writer, "Device Categories: [")?;
+    if let Some(node_categories) = driver_info.device_categories {
+        write!(writer, "Node Categories: [")?;
 
-        for (i, category_table) in device_categories.iter().enumerate() {
+        for (i, category_table) in node_categories.iter().enumerate() {
             if let Some(category) = &category_table.category {
                 if let Some(subcategory) = &category_table.subcategory {
                     if !subcategory.is_empty() {
@@ -82,7 +82,7 @@ pub async fn show(
                 }
             }
 
-            if i != device_categories.len() - 1 {
+            if i != node_categories.len() - 1 {
                 write!(writer, ", ")?;
             }
         }
@@ -90,11 +90,10 @@ pub async fn show(
     }
 
     if let Some(url) = driver_info.url {
-        if let Some(devices) = driver_to_devices.get(&url) {
-            writeln!(writer, "{0: <10}:\n  {1}", "Devices", devices.join("\n  "))?;
+        if let Some(nodes) = driver_to_devices.get(&url) {
+            writeln!(writer, "{0: <10}:\n  {1}", "Nodes", nodes.join("\n  "))?;
         }
     }
-
     let bind_rules =
         driver_info.bind_rules_bytecode.map(|bytecode| dump_bind_rules(bytecode).ok()).flatten();
     match bind_rules {
@@ -262,8 +261,8 @@ mod tests {
             r#"Name      : foo
 URL       : fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm
 DF Version: 1
-Device Categories: [connectivity::ethernet, usb]
-Devices   :
+Node Categories: [connectivity::ethernet, usb]
+Nodes     :
   dev.sys.foo
 Issue parsing the bind rules bytecode
 

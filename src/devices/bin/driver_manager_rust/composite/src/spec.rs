@@ -4,10 +4,11 @@
 
 use crate::parent_set_collector::ParentSetCollector;
 use driver_manager_node::{Node, NodeManager, NodeProperty, NodePropertyValue};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
 use flyweights::FlyStr;
 use futures::channel::oneshot;
 use std::rc::{Rc, Weak};
-use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
 #[derive(Copy, Clone)]
 pub enum Condition {
@@ -295,12 +296,8 @@ impl CompositeNodeSpec {
 
     pub fn get_composite_info(&self) -> fdd::CompositeNodeInfo {
         let mut info = fdd::CompositeNodeInfo::default();
-        if self.parent_set_collector.is_none() {
-            info.parent_topological_paths = Some(vec![None; self.parent_nodes.len()]);
-            return info;
-        }
 
-        if let Some(composite_info) = &self.composite_info {
+        let (spec, matched_driver) = if let Some(composite_info) = &self.composite_info {
             let spec = Some(fdf::CompositeNodeSpec {
                 name: Some(composite_info.spec.name.clone()),
                 parents2: Some(
@@ -322,21 +319,37 @@ impl CompositeNodeSpec {
                 primary_parent_index: Some(md.primary_parent_index),
                 ..Default::default()
             });
-
-            info.composite = Some(fdd::CompositeInfo::Composite(fdf::CompositeInfo {
-                spec,
-                matched_driver,
+            (spec, matched_driver)
+        } else {
+            let spec = Some(fdf::CompositeNodeSpec {
+                name: Some(self.name.clone()),
+                parents2: Some(self.parent_specs.clone().into_iter().map(|p| p.into()).collect()),
                 ..Default::default()
-            }));
+            });
+            (spec, None)
+        };
+
+        info.composite = Some(fdd::CompositeInfo::Composite(fdf::CompositeInfo {
+            spec,
+            matched_driver,
+            ..Default::default()
+        }));
+
+        if self.parent_set_collector.is_none() {
+            info.parent_topological_paths = Some(vec![None; self.parent_nodes.len()]);
+            info.parent_monikers = Some(vec![None; self.parent_nodes.len()]);
+            return info;
         }
 
         let collector = self.parent_set_collector.as_ref().unwrap();
         info.parent_topological_paths = Some(collector.get_parent_topological_paths());
+        info.parent_monikers = Some(collector.get_parent_monikers());
 
         if let Some(node_weak) = collector.completed_composite_node()
             && let Some(node) = node_weak.upgrade()
         {
             info.topological_path = Some(node.make_topological_path(false));
+            info.moniker = Some(node.make_component_moniker());
         }
         info
     }

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::subcommands::composite::args::CompositeCommand;
 use super::subcommands::disable::args::DisableCommand;
 use super::subcommands::doctor::args::DoctorCommand;
 use super::subcommands::dump::args::DumpCommand;
@@ -60,6 +61,7 @@ pub type BoxedShowCommand = Boxed<ShowCommand>;
 pub type BoxedTestNodeCommand = Boxed<TestNodeCommand>;
 pub type BoxedNodeCommand = Boxed<NodeCommand>;
 pub type BoxedHostCommand = Boxed<HostCommand>;
+pub type BoxedCompositeCommand = Boxed<CompositeCommand>;
 #[cfg(not(target_os = "fuchsia"))]
 pub type BoxedStaticChecksCommand = Boxed<StaticChecksCommand>;
 
@@ -93,6 +95,7 @@ pub enum DriverSubCommand {
     // New and improved driver commands.
     Node(BoxedNodeCommand),
     Host(BoxedHostCommand),
+    Composite(BoxedCompositeCommand),
 }
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -115,4 +118,5 @@ pub enum DriverSubCommand {
     // New and improved driver commands.
     Node(BoxedNodeCommand),
     Host(BoxedHostCommand),
+    Composite(BoxedCompositeCommand),
 }

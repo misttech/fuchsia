@@ -79,6 +79,14 @@ type CompositeNodeInfo = table {
 
     // Information about the composite.
     3: composite CompositeInfo;
+
+    /// The monikers of the parent nodes of this composite, ordered by index.
+    @available(added=NEXT)
+    4: parent_monikers vector<string:<MAX, optional>>:MAX;
+
+    /// The moniker of the created composite node. Empty if not created.
+    @available(added=NEXT)
+    5: moniker string:NODE_MONIKER_MAX;
 };
 
 /// Contains information for a thread.

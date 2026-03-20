@@ -97,7 +97,14 @@ void CompositeNodeSpec::Remove(RemoveCompositeNodeCallback callback) {
 }
 
 fdd::wire::CompositeNodeInfo CompositeNodeSpec::GetCompositeInfo(fidl::AnyArena& arena) const {
-  return parent_set_collector_.GetCompositeInfo(arena, composite_info_);
+  if (composite_info_.has_value()) {
+    return parent_set_collector_.GetCompositeInfo(arena, composite_info_);
+  }
+  fuchsia_driver_framework::CompositeInfo info;
+  fuchsia_driver_framework::CompositeNodeSpec spec;
+  spec.name(name_);
+  info.spec(std::move(spec));
+  return parent_set_collector_.GetCompositeInfo(arena, info);
 }
 
 }  // namespace driver_manager

@@ -15,13 +15,33 @@ pub async fn list_composite_node_specs(
     writer: &mut dyn Write,
     driver_development_proxy: fdd::ManagerProxy,
 ) -> Result<()> {
+    writeln!(
+        writer,
+        "WARNING: This command is deprecated. Use `ffx driver composite list` or `ffx driver composite show` instead."
+    )?;
+
     let composite_infos =
-        fuchsia_driver_dev::get_composite_node_specs(&driver_development_proxy, cmd.name)
+        fuchsia_driver_dev::get_composite_node_specs(&driver_development_proxy, None)
             .await
             .context("Failed to get composite node specs")?;
 
+    let filtered_infos: Vec<_> = if let Some(name_filter) = &cmd.name {
+        composite_infos
+            .into_iter()
+            .filter(|info| {
+                info.spec
+                    .as_ref()
+                    .and_then(|spec| spec.name.as_ref())
+                    .map(|name| name.contains(name_filter))
+                    .unwrap_or(false)
+            })
+            .collect()
+    } else {
+        composite_infos
+    };
+
     if !cmd.verbose {
-        for composite_info in composite_infos {
+        for composite_info in filtered_infos {
             let name =
                 composite_info.spec.and_then(|spec| spec.name).unwrap_or_else(|| "N/A".to_string());
             let driver = composite_info
@@ -35,7 +55,7 @@ pub async fn list_composite_node_specs(
         return Ok(());
     }
 
-    for composite_info in composite_infos {
+    for composite_info in filtered_infos {
         let matched_driver = composite_info.matched_driver.unwrap_or_default();
         let spec = composite_info.spec.unwrap_or_default();
         if let Some(name) = &spec.name {
@@ -105,9 +125,10 @@ mod tests {
     use super::*;
     use argh::FromArgs;
     use fidl::endpoints::ServerEnd;
+    use fidl_fuchsia_driver_framework as fdf;
+    use fuchsia_async as fasync;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
-    use {fidl_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `list_composite_node_specs` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
@@ -298,7 +319,8 @@ mod tests {
 
         assert_eq!(
             output,
-            r#"Name      : test_spec
+            r#"WARNING: This command is deprecated. Use `ffx driver composite list` or `ffx driver composite show` instead.
+Name      : test_spec
 Driver    : None
 Nodes     : 1
 Node 0    : None

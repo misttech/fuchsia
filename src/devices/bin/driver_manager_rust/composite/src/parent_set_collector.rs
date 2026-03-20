@@ -122,6 +122,10 @@ impl ParentSetCollector {
             .collect()
     }
 
+    pub(crate) fn get_parent_monikers(&self) -> Vec<Option<String>> {
+        self.parents.iter().map(|node| node.upgrade().map(|n| n.make_component_moniker())).collect()
+    }
+
     pub(crate) fn completed_composite_node(&self) -> Option<Weak<Node>> {
         self.completed_composite_node.clone()
     }

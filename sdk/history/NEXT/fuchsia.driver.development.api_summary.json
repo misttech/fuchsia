@@ -48,6 +48,18 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.driver.development/CompositeNodeInfo.moniker",
+        "ordinal": "5",
+        "type": "string:1024"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.driver.development/CompositeNodeInfo.parent_monikers",
+        "ordinal": "4",
+        "type": "vector<string:optional>"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.driver.development/CompositeNodeInfo.parent_topological_paths",
         "ordinal": "1",
         "type": "vector<string:optional>"

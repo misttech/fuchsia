@@ -56,6 +56,8 @@ class ParentSetCollector {
 
   fidl::VectorView<fidl::StringView> GetParentTopologicalPaths(fidl::AnyArena& arena) const;
 
+  fidl::VectorView<fidl::StringView> GetParentMonikers(fidl::AnyArena& arena) const;
+
   const std::optional<std::weak_ptr<Node>>& get(uint32_t index) const { return parents_[index]; }
 
   std::optional<std::weak_ptr<Node>> completed_composite_node() const {

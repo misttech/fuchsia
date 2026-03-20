@@ -76,23 +76,27 @@ fuchsia_driver_development::wire::CompositeNodeInfo ParentSetCollector::GetCompo
   namespace fdd = fuchsia_driver_development;
 
   auto composite_node_info = fdd::wire::CompositeNodeInfo::Builder(arena);
-  if (!HasCompositeInfo()) {
-    fidl::VectorView<fidl::StringView> parent_topological_paths(arena, size());
-    composite_node_info.parent_topological_paths(parent_topological_paths);
-    return composite_node_info.Build();
-  }
 
   if (composite_info.has_value()) {
     composite_node_info.composite(fdd::wire::CompositeInfo::WithComposite(
         arena, fidl::ToWire(arena, composite_info.value())));
   }
 
+  if (!HasCompositeInfo()) {
+    fidl::VectorView<fidl::StringView> parent_topological_paths(arena, size());
+    composite_node_info.parent_topological_paths(parent_topological_paths);
+    composite_node_info.parent_monikers(fidl::VectorView<fidl::StringView>(arena, size()));
+    return composite_node_info.Build();
+  }
+
   composite_node_info.parent_topological_paths(GetParentTopologicalPaths(arena));
+  composite_node_info.parent_monikers(GetParentMonikers(arena));
 
   std::optional<NodeWkPtr> composite_node = completed_composite_node();
   if (composite_node) {
     if (auto node_ptr = composite_node->lock(); node_ptr) {
       composite_node_info.topological_path(node_ptr->MakeTopologicalPath());
+      composite_node_info.moniker(fidl::StringView(arena, node_ptr->MakeComponentMoniker()));
     }
   }
   return composite_node_info.Build();
@@ -114,6 +118,24 @@ fidl::VectorView<fidl::StringView> ParentSetCollector::GetParentTopologicalPaths
     }
   }
   return parent_topological_paths;
+}
+
+fidl::VectorView<fidl::StringView> ParentSetCollector::GetParentMonikers(
+    fidl::AnyArena& arena) const {
+  fidl::VectorView<fidl::StringView> parent_monikers(arena, parents_.size());
+  for (uint32_t i = 0; i < parents_.size(); i++) {
+    if (parents_[i] == std::nullopt) {
+      parent_monikers[i] = fidl::StringView();
+      continue;
+    }
+
+    if (auto node = parents_[i]->lock(); node) {
+      parent_monikers[i] = fidl::StringView(arena, node->MakeComponentMoniker());
+    } else {
+      parent_monikers[i] = fidl::StringView();
+    }
+  }
+  return parent_monikers;
 }
 
 }  // namespace driver_manager

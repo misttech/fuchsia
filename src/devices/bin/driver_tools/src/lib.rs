@@ -19,14 +19,14 @@ pub async fn driver(
     writer: &mut dyn io::Write,
 ) -> Result<()> {
     match cmd.subcommand {
-        DriverSubCommand::Dump(subcmd) => {
+        DriverSubCommand::Disable(subcmd) => {
             let driver_development_proxy = driver_connector
                 .get_driver_development_proxy(subcmd.0.select)
                 .await
                 .context("Failed to get driver development proxy")?;
-            subcommands::dump::dump(*subcmd.0, writer, driver_development_proxy)
+            subcommands::disable::disable(*subcmd.0, writer, driver_development_proxy)
                 .await
-                .context("Dump subcommand failed")?;
+                .context("Disable subcommand failed")?;
         }
         DriverSubCommand::Doctor(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -36,6 +36,15 @@ pub async fn driver(
             subcommands::doctor::doctor(*subcmd.0, driver_development_proxy, writer)
                 .await
                 .context("Doctor subcommand failed")?;
+        }
+        DriverSubCommand::Dump(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(subcmd.0.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::dump::dump(*subcmd.0, writer, driver_development_proxy)
+                .await
+                .context("Dump subcommand failed")?;
         }
         DriverSubCommand::List(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -57,7 +66,7 @@ pub async fn driver(
                 driver_development_proxy,
             )
             .await
-            .context("List composites subcommand failed")?;
+            .context("ListComposites subcommand failed")?;
         }
         DriverSubCommand::ListDevices(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -66,7 +75,7 @@ pub async fn driver(
                 .context("Failed to get driver development proxy")?;
             subcommands::list_devices::list_devices(*subcmd.0, driver_development_proxy)
                 .await
-                .context("List-devices subcommand failed")?;
+                .context("ListDevices subcommand failed")?;
         }
         DriverSubCommand::ListHosts(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -75,7 +84,7 @@ pub async fn driver(
                 .context("Failed to get driver development proxy")?;
             subcommands::list_hosts::list_hosts(*subcmd.0, driver_development_proxy)
                 .await
-                .context("List-hosts subcommand failed")?;
+                .context("ListHosts subcommand failed")?;
         }
         DriverSubCommand::ListCompositeNodeSpecs(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -88,7 +97,7 @@ pub async fn driver(
                 driver_development_proxy,
             )
             .await
-            .context("list-composite-node-specs subcommand failed")?;
+            .context("ListCompositeNodeSpecs subcommand failed")?;
         }
         DriverSubCommand::Register(subcmd) => {
             let driver_registrar_proxy = driver_connector
@@ -126,12 +135,6 @@ pub async fn driver(
                 .await
                 .context("Show subcommand failed")?;
         }
-        #[cfg(not(target_os = "fuchsia"))]
-        DriverSubCommand::StaticChecks(subcmd) => {
-            static_checks_lib::static_checks(*subcmd.0, writer)
-                .await
-                .context("StaticChecks subcommand failed")?;
-        }
         DriverSubCommand::TestNode(subcmd) => {
             let driver_development_proxy = driver_connector
                 .get_driver_development_proxy(subcmd.0.select)
@@ -139,16 +142,7 @@ pub async fn driver(
                 .context("Failed to get driver development proxy")?;
             subcommands::test_node::test_node(&subcmd.0, driver_development_proxy)
                 .await
-                .context("AddTestNode subcommand failed")?;
-        }
-        DriverSubCommand::Disable(subcmd) => {
-            let driver_development_proxy = driver_connector
-                .get_driver_development_proxy(subcmd.0.select)
-                .await
-                .context("Failed to get driver development proxy")?;
-            subcommands::disable::disable(*subcmd.0, writer, driver_development_proxy)
-                .await
-                .context("Disable subcommand failed")?;
+                .context("TestNode subcommand failed")?;
         }
         DriverSubCommand::Node(subcmd) => {
             let driver_development_proxy = driver_connector
@@ -168,7 +162,23 @@ pub async fn driver(
                 .await
                 .context("Host subcommand failed")?;
         }
-    };
+        DriverSubCommand::Composite(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::composite::composite(*subcmd.0, writer, driver_development_proxy)
+                .await
+                .context("Composite subcommand failed")?;
+        }
+        #[cfg(not(target_os = "fuchsia"))]
+        DriverSubCommand::StaticChecks(subcmd) => {
+            static_checks_lib::static_checks(*subcmd.0, writer)
+                .await
+                .context("StaticChecks subcommand failed")?;
+        }
+    }
+
     Ok(())
 }
 
@@ -185,23 +195,23 @@ pub fn is_machine_supported(cmd: &DriverCommand) -> bool {
 }
 
 pub async fn driver_machine(
-    cmd: &DriverCommand,
+    cmd: DriverCommand,
     driver_connector: impl DriverConnector,
 ) -> Result<Option<serde_json::Value>> {
-    match &cmd.subcommand {
-        DriverSubCommand::Host(host_cmd) => {
-            let driver_development_proxy = driver_connector
-                .get_driver_development_proxy(cmd.select)
-                .await
-                .context("Failed to get driver development proxy")?;
-            subcommands::host::host_machine(&host_cmd.0, &driver_development_proxy).await
-        }
+    match cmd.subcommand {
         DriverSubCommand::Node(node_cmd) => {
             let driver_development_proxy = driver_connector
                 .get_driver_development_proxy(cmd.select)
                 .await
                 .context("Failed to get driver development proxy")?;
             subcommands::node::node_machine(&node_cmd.0, &driver_development_proxy).await
+        }
+        DriverSubCommand::Host(host_cmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::host::host_machine(&host_cmd.0, &driver_development_proxy).await
         }
         _ => Ok(None),
     }

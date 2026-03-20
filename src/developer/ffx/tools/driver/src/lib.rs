@@ -6,12 +6,12 @@ use component_debug::capability;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
+use fidl_fuchsia_developer_remotecontrol as rc;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_registrar as fdr;
+use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_test_manager as ftm;
 use target_holders::RemoteControlProxyHolder;
-use {
-    fidl_fuchsia_developer_remotecontrol as rc, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_registrar as fdr, fidl_fuchsia_sys2 as fsys,
-    fidl_fuchsia_test_manager as ftm,
-};
 
 mod args;
 
@@ -203,7 +203,7 @@ impl FfxMain for DriverTool {
 
         if writer.is_machine() && driver_tools::is_machine_supported(&tool_cmd) {
             let connector = DriverConnector::new(remote_control);
-            if let Some(value) = driver_tools::driver_machine(&tool_cmd, connector).await? {
+            if let Some(value) = driver_tools::driver_machine(tool_cmd, connector).await? {
                 writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
                 return Ok(());
             }
