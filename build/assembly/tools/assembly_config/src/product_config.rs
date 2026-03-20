@@ -15,6 +15,7 @@ use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
 use starnix_container::StarnixContainerGenerator;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 
@@ -144,6 +145,9 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     let temp_repackaged_path = Utf8PathBuf::from_path_buf(temp_repackaged_dir.path().to_path_buf())
         .map_err(|p| anyhow::anyhow!("converting temp path to utf8: {:?}", p))?;
 
+    // Replace all packages referenced by starnix containers with the latest version.
+    let mut packages_to_update = HashMap::new();
+
     // Repackage starnix containers if they have a prebuilt package.
     for container in &mut config.product.starnix_containers {
         let container_manifest_path = match &container.images_or_package {
@@ -152,43 +156,42 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
                 "The hybrid product config command does not support building starnix containers from images.",
             )),
         }?;
-        {
-            let outdir = temp_repackaged_path.join("repackaged_containers").join(&container.name);
-            fs::create_dir_all(&outdir).context("creating repackaged container dir")?;
+        let outdir = temp_repackaged_path.join("repackaged_containers").join(&container.name);
+        fs::create_dir_all(&outdir).context("creating repackaged container dir")?;
 
-            let container_base_manifest_path =
-                find_package_in_pibs(&config.product_input_bundles, &container.base)
-                    .with_context(|| {
-                        format!(
-                            "finding starnix base package '{}' in product input bundles",
-                            &container.base
-                        )
-                    })?
-                    .clone();
+        let container_base_manifest_path =
+            find_package_in_pibs(&config.product_input_bundles, &container.base)
+                .with_context(|| {
+                    format!(
+                        "finding starnix base package '{}' in product input bundles",
+                        &container.base
+                    )
+                })?
+                .clone();
 
-            let package_set = if config.platform.build_type == BuildType::Eng {
-                &mut config.product.packages.cache
-            } else {
-                &mut config.product.packages.base
-            };
-            let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
-            for (name, manifest) in container.hals.iter().zip(hals.iter()) {
-                package_set.insert(
-                    name.clone(),
-                    ProductPackageDetails { manifest: manifest.clone(), config_data: Vec::new() },
-                );
-            }
+        let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
 
-            let output_manifest_path = starnix_container::StarnixContainerRepackager {
-                name: container.name.clone(),
-                outdir,
-                container_manifest_path: container_manifest_path.clone(),
-                base: container_base_manifest_path,
-                hals,
-                skip_subpackages: container.skip_subpackages,
-            }
-            .build(&mut depfile)?;
-            container.images_or_package = StarnixImagesOrPackage::Package(output_manifest_path);
+        for (name, manifest) in container.hals.iter().zip(hals.iter()) {
+            packages_to_update.insert(name.clone(), manifest.clone());
+        }
+
+        let output_manifest_path = starnix_container::StarnixContainerRepackager {
+            name: container.name.clone(),
+            outdir,
+            container_manifest_path: container_manifest_path.clone(),
+            base: container_base_manifest_path,
+            hals: hals.clone(),
+            skip_subpackages: container.skip_subpackages,
+        }
+        .build(&mut depfile)?;
+        container.images_or_package = StarnixImagesOrPackage::Package(output_manifest_path.clone());
+        packages_to_update.insert(container.name.clone(), output_manifest_path);
+    }
+
+    // Replace the HALs in the product config package sets.
+    for (name, path) in &packages_to_update {
+        if let Some(target_path) = find_package_in_product(&mut config, name) {
+            *target_path = path.clone();
         }
     }
 
@@ -314,6 +317,7 @@ mod tests {
     use super::*;
     use crate::ProductInputBundleArgs;
     use fuchsia_pkg::PackageName;
+    use fuchsia_url::RelativePackageUrl;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -526,16 +530,43 @@ mod tests {
         let hal_metafar_path = tmp_path.join("hal_meta.far");
         let mut builder = PackageBuilder::new("hal", FAKE_ABI_REVISION);
         builder.manifest_path(&hal_path);
+
+        let hal_blob_path = tmp_path.join("hal_blob.txt");
+        fs::write(&hal_blob_path, "new hal content").unwrap();
+        builder.add_file_as_blob("data/hal_blob.txt", hal_blob_path).unwrap();
+
         builder.build(&tmp_path, &hal_metafar_path).unwrap();
 
-        // 3. Create container package (the one to be repackaged)
+        // 3. Create OLD HAL package (to put in container)
+        let old_hal_path = tmp_path.join("old_hal_manifest.json");
+        let old_hal_metafar_path = tmp_path.join("old_hal_meta.far");
+        let mut builder = PackageBuilder::new("hal", FAKE_ABI_REVISION);
+        builder.manifest_path(&old_hal_path);
+
+        let old_hal_blob_path = tmp_path.join("old_hal_blob.txt");
+        fs::write(&old_hal_blob_path, "old hal content").unwrap();
+        builder.add_file_as_blob("data/hal_blob.txt", old_hal_blob_path).unwrap();
+
+        builder.build(&tmp_path, &old_hal_metafar_path).unwrap();
+
+        // 4. Create container package (the one to be repackaged)
         let container_path = tmp_path.join("container_manifest.json");
         let container_metafar_path = tmp_path.join("container_meta.far");
         let mut builder = PackageBuilder::new("container", FAKE_ABI_REVISION);
         builder.manifest_path(&container_path);
+
+        let old_hal_manifest = PackageManifest::try_load_from(&old_hal_path).unwrap();
+        builder
+            .add_subpackage(
+                &"hal".parse::<RelativePackageUrl>().unwrap(),
+                old_hal_manifest.hash(),
+                old_hal_path.clone().into(),
+            )
+            .unwrap();
+
         builder.build(&tmp_path, &container_metafar_path).unwrap();
 
-        // 4. Create PIB
+        // 5. Create PIB
         let pib_dir = tmp_path.join("pib");
         fs::create_dir(&pib_dir).unwrap();
         let pib_args = ProductInputBundleArgs {
@@ -598,6 +629,12 @@ mod tests {
                 // Verify that the blob from the base package is in the repackaged container.
                 let repackaged_manifest = PackageManifest::try_load_from(p).unwrap();
                 assert!(repackaged_manifest.blobs().iter().any(|b| b.path == "data/blob.txt"));
+
+                // Verify that the hal subpackage points to the NEW hash.
+                let subpackages = repackaged_manifest.subpackages();
+                let hal_sub = subpackages.iter().find(|s| s.name == "hal").unwrap();
+                let expected_hal_manifest = PackageManifest::try_load_from(&hal_path).unwrap();
+                assert_eq!(hal_sub.merkle, expected_hal_manifest.hash());
             }
             _ => panic!("Expected package"),
         }
