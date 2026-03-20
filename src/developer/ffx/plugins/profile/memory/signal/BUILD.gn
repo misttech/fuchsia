@@ -11,7 +11,7 @@ ffx_plugin("ffx_profile_memory_signal") {
 
   sources = [ "src/lib.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.memory.debug:fuchsia.memory.debug_rust",
+    "//sdk/fidl/fuchsia.memory.debug:fuchsia.memory.debug_rust_fdomain",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
