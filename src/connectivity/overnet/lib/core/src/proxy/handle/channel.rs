@@ -30,7 +30,7 @@ impl Proxyable for Channel {
     type Message = ChannelMessage;
 
     fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
-        Ok(fidl::Channel::from_handle(hdl).into_proxied()?)
+        Ok(fidl::Channel::from(hdl).into_proxied()?)
     }
 
     fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {

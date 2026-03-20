@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use realm_client::{InstalledNamespace, extend_namespace};
@@ -84,14 +83,13 @@ impl DriversOnlyTestRealm {
     pub fn take_sync_testcontroller_proxy(
         &mut self,
     ) -> fidl_testcontroller::TestControllerSynchronousProxy {
-        fidl_testcontroller::TestControllerSynchronousProxy::new(fidl::Channel::from_handle(
+        fidl_testcontroller::TestControllerSynchronousProxy::new(
             self.testcontroller_proxy
                 .take()
                 .unwrap()
                 .into_channel()
                 .expect("Failed to get fidl::AsyncChannel from proxy")
-                .into_zx_channel()
-                .into_handle(),
-        ))
+                .into_zx_channel(),
+        )
     }
 }

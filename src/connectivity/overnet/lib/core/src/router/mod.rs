@@ -30,7 +30,7 @@ use crate::proxy::{
 };
 use anyhow::{Context as _, Error, bail, format_err};
 use async_utils::mutex_ticket::MutexTicket;
-use fidl::{Channel, EventPair, HandleBased, NullableHandle, Socket};
+use fidl::{Channel, EventPair, NullableHandle, Socket};
 use fidl_fuchsia_overnet_protocol::{
     ChannelHandle, EventPairHandle, EventPairRights, SocketHandle, SocketType, StreamId, StreamRef,
     ZirconHandle,
@@ -443,7 +443,7 @@ impl Router {
                         info.pair_handle_key,
                         tx,
                         crate::proxy::spawn_send(
-                            Channel::from_handle(handle).into_proxied()?,
+                            Channel::from(handle).into_proxied()?,
                             rx,
                             stream_writer.into(),
                             stream_reader.into(),
@@ -459,7 +459,7 @@ impl Router {
                         info.pair_handle_key,
                         tx,
                         crate::proxy::spawn_send(
-                            Socket::from_handle(handle).into_proxied()?,
+                            Socket::from(handle).into_proxied()?,
                             rx,
                             stream_writer.into(),
                             stream_reader.into(),
@@ -475,7 +475,7 @@ impl Router {
                         info.pair_handle_key,
                         tx,
                         crate::proxy::spawn_send(
-                            EventPair::from_handle(handle).into_proxied()?,
+                            EventPair::from(handle).into_proxied()?,
                             rx,
                             stream_writer.into(),
                             stream_reader.into(),

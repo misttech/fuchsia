@@ -222,7 +222,7 @@ async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Er
 
             if let Ok(process_handle) = kernel_job.get_child(&process_koid, zx::Rights::SAME_RIGHTS)
             {
-                let process = zx::Process::from_handle(process_handle);
+                let process = zx::Process::from(process_handle);
                 match process.suspend() {
                     Ok(suspend_handle) => {
                         handles.insert(process_koid, suspend_handle);

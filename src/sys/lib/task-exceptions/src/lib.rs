@@ -5,7 +5,6 @@
 use fuchsia_async as fasync;
 use std::task::Poll;
 use std::{mem, ptr};
-use zx::{self as zx, sys as zx_sys, HandleBased};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExceptionType {
@@ -54,8 +53,8 @@ pub struct ExceptionInfo {
 
 #[repr(C)]
 struct ZxExceptionInfo {
-    pid: zx_sys::zx_koid_t,
-    tid: zx_sys::zx_koid_t,
+    pid: zx::sys::zx_koid_t,
+    tid: zx::sys::zx_koid_t,
     type_: u32,
     padding1: [u8; 4],
 }
@@ -111,7 +110,7 @@ impl futures::Stream for ExceptionsStream {
                 if msg_buf.n_handles() != 1 {
                     return Poll::Ready(Some(Err(zx::Status::BAD_HANDLE)));
                 }
-                let exception_handle = zx::Exception::from_handle(msg_buf.take_handle(0).unwrap());
+                let exception_handle = zx::Exception::from(msg_buf.take_handle(0).unwrap());
                 let zx_exception_info: ZxExceptionInfo =
                     unsafe { ptr::read(msg_buf.bytes().as_ptr() as *const _) };
                 return Poll::Ready(Some(Ok(ExceptionInfo {
@@ -128,9 +127,10 @@ impl futures::Stream for ExceptionsStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::{format_err, Context, Error};
+    use anyhow::{Context, Error, format_err};
     use fuchsia_component::client as fclient;
     use futures::TryStreamExt;
+    use zx::HandleBased;
     use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_runtime as fruntime};
 
     #[fasync::run_singlethreaded(test)]
@@ -173,7 +173,7 @@ mod tests {
             .context("failed to get VMO of executable")?;
 
         // Launch the process
-        let child_job_dup = child_job.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+        let child_job_dup = child_job.duplicate(zx::Rights::SAME_RIGHTS)?;
         let launch_info = fprocess::LaunchInfo {
             executable: vmo,
             job: child_job_dup,

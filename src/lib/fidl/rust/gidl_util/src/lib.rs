@@ -88,7 +88,7 @@ pub fn copy_handle<T: HandleBased>(handle_info: &zx_types::zx_handle_info_t) -> 
     // Safety: The `from_raw` method is only unsafe because it can lead to
     // handles being double-closed if used incorrectly. GIDL-generated code
     // ensures that handles are only closed once.
-    T::from_handle(unsafe { NullableHandle::from_raw(handle_info.handle) })
+    T::from(unsafe { NullableHandle::from_raw(handle_info.handle) })
 }
 
 /// Copies raw handles from the given indices to a new vector.

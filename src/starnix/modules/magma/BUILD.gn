@@ -28,7 +28,6 @@ rustc_library("magma") {
     "//sdk/rust/zx",
     "//src/graphics/lib/magma/src/libmagma",
     "//src/lib/fdio/rust:fdio",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/magma",

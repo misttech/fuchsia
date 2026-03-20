@@ -9,9 +9,9 @@ use circuit::stream::stream;
 use fidl::HandleBased;
 use fuchsia_async::Task;
 use futures::prelude::*;
-use overnet_core::{log_errors, NodeId, NodeIdGenerator, Router};
-use std::sync::atomic::{AtomicU64, Ordering};
+use overnet_core::{NodeId, NodeIdGenerator, Router, log_errors};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod channel;
 mod socket;
@@ -150,7 +150,7 @@ impl Fixture {
         let h = h.into_handle();
         log::info!(test_name:% = self.test_name; "distribute_handle: make {:?} on {:?}", h, target);
         let (dist_local, dist_remote) = match target {
-            Target::A => return H::from_handle(h),
+            Target::A => return H::from(h),
             Target::B => (&self.dist_a_to_b, &self.dist_b),
             Target::C => (&self.dist_a_to_c, &self.dist_c),
         };
@@ -162,7 +162,7 @@ impl Fixture {
         assert_eq!(handles.len(), 1);
         let h = std::mem::replace(handles, vec![]).into_iter().next().unwrap();
         log::info!(test_name:% = self.test_name; "distribute_handle: remote is {:?}", h);
-        return H::from_handle(h.handle);
+        return H::from(h.handle);
     }
 
     pub fn log(&mut self, msg: &str) {

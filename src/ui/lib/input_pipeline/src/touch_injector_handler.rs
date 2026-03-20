@@ -10,13 +10,8 @@ use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics, touch
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
+use fidl::AsHandleRef;
 use fidl::endpoints::{Proxy, create_proxy};
-use fidl::{AsHandleRef, HandleBased};
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_ui_input as fidl_ui_input;
-use fidl_fuchsia_ui_pointerinjector as pointerinjector;
-use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
-use fidl_fuchsia_ui_policy as fidl_ui_policy;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -24,6 +19,12 @@ use metrics_registry::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use {
+    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
+    fidl_fuchsia_ui_pointerinjector as pointerinjector,
+    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
+    fidl_fuchsia_ui_policy as fidl_ui_policy,
+};
 
 /// An input handler that parses touch events and forwards them to Scenic through the
 /// fidl_fuchsia_pointerinjector protocols.
@@ -267,13 +268,7 @@ impl TouchInjectorHandler {
             device_info: event.device_info.clone(),
             pressed_buttons: event.pressed_buttons.clone(),
             wake_lease: event.wake_lease.as_ref().map(|lease| {
-                fidl::EventPair::from_handle(
-                    lease
-                        .as_handle_ref()
-                        .duplicate(zx::Rights::SAME_RIGHTS)
-                        .expect("failed to duplicate event pair")
-                        .into_handle(),
-                )
+                lease.duplicate(zx::Rights::SAME_RIGHTS).expect("failed to duplicate event pair")
             }),
             ..Default::default()
         }
@@ -753,16 +748,16 @@ mod tests {
         get_touch_screen_device_descriptor,
     };
     use assert_matches::assert_matches;
-    use fidl_fuchsia_input_report as fidl_input_report;
-    use fidl_fuchsia_ui_input as fidl_ui_input;
-    use fidl_fuchsia_ui_policy as fidl_ui_policy;
-    use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::convert::TryFrom as _;
     use std::ops::Add;
+    use {
+        fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
+        fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
+    };
 
     const TOUCH_ID: u32 = 1;
     const DISPLAY_WIDTH: f32 = 100.0;

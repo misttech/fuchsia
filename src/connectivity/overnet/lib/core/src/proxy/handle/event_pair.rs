@@ -26,7 +26,7 @@ impl Proxyable for EventPair {
     type Message = EventPairMessage;
 
     fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
-        Ok(fidl::EventPair::from_handle(hdl).into_proxied()?)
+        Ok(fidl::EventPair::from(hdl).into_proxied()?)
     }
 
     fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {

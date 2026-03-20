@@ -106,10 +106,10 @@ async fn create_and_import_event(
 ) -> Result<(Event, EventId), Error> {
     let event = Event::create();
 
-    let their_event = event.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+    let their_event = event.duplicate(zx::Rights::SAME_RIGHTS)?;
     let event_id_value = event.koid()?.raw_koid();
     let event_id = EventId(event_id_value);
-    coordinator.import_event(Event::from_handle(their_event.into_handle()), &event_id.into())?;
+    coordinator.import_event(their_event, &event_id.into())?;
     Ok((event, event_id))
 }
 

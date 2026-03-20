@@ -716,13 +716,6 @@ pub trait HandleBased: AsHandleRef + From<NullableHandle> + Into<NullableHandle>
     fn into_raw(self) -> sys::zx_handle_t {
         self.into_handle().into_raw()
     }
-
-    /// Creates an instance of this type from a handle.
-    ///
-    /// This is a convenience function which simply forwards to the `From` trait.
-    fn from_handle(handle: NullableHandle) -> Self {
-        Self::from(handle)
-    }
 }
 
 /// A trait implemented by all handles for objects which have a peer.

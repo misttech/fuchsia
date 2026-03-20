@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_pty as fpty;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
-use zx::{self as zx, HandleBased};
 
 /// This function attempts to determine whether the given `fd` is a pty. If it is a pty then the
 /// corresponding fuchsia.hardware.pty.Device proxy is returned as well as an eventpair for
@@ -114,10 +113,7 @@ impl Drop for RawPty {
     fn drop(&mut self) {
         // If previous mode wasn't already raw, reset it.
         if (self.previous_feature & fpty::FEATURE_RAW) != fpty::FEATURE_RAW {
-            let pty_chan = std::mem::replace(
-                &mut self.pty,
-                zx::Channel::from_handle(zx::NullableHandle::invalid()),
-            );
+            let pty_chan = std::mem::replace(&mut self.pty, zx::Channel::invalid());
             let pty = fpty::DeviceSynchronousProxy::new(pty_chan);
             let (status, _) =
                 pty.clr_set_feature(fpty::FEATURE_RAW, 0, zx::MonotonicInstant::INFINITE).unwrap();

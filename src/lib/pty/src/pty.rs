@@ -10,7 +10,7 @@ use fuchsia_trace as ftrace;
 use std::ffi::CStr;
 use std::fs::File;
 use std::os::fd::OwnedFd;
-use zx::{self as zx, HandleBased as _, ProcessInfo, ProcessInfoFlags};
+use zx::{ProcessInfo, ProcessInfoFlags};
 
 /// An object used for interacting with the shell.
 #[derive(Clone)]
@@ -63,7 +63,7 @@ impl ServerPty {
         ftrace::duration!("pty", "Pty:spawn");
         let client_pty = self.open_client_pty().await.context("unable to create client_pty")?;
         let process = match fdio::spawn_etc(
-            &zx::Job::from_handle(zx::NullableHandle::invalid()),
+            &zx::Job::invalid(),
             fdio::SpawnOptions::CLONE_ALL - fdio::SpawnOptions::CLONE_STDIO,
             command,
             argv,

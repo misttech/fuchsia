@@ -361,7 +361,7 @@ impl Usercopy {
                     continue;
                 }
 
-                let excp = zx::Exception::from_handle(buf.take_handle(0).unwrap());
+                let excp = zx::Exception::from(buf.take_handle(0).unwrap());
                 let thread = excp.get_thread().unwrap();
                 let mut regs = thread.read_state_general_regs().unwrap();
                 let report = thread.exception_report().unwrap();

@@ -29,7 +29,7 @@ impl Proxyable for Socket {
     type Message = SocketMessage;
 
     fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
-        Ok(fidl::Socket::from_handle(hdl).into_proxied()?)
+        Ok(fidl::Socket::from(hdl).into_proxied()?)
     }
 
     fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {

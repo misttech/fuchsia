@@ -210,11 +210,8 @@ async fn launch_process_impl(
         .await
         .map_err(LaunchError::LoadInfo)?;
 
-    let component_job = launch_info
-        .job
-        .as_handle_ref()
-        .duplicate(zx::Rights::SAME_RIGHTS)
-        .expect("handle duplication failed!");
+    let component_job =
+        launch_info.job.duplicate(zx::Rights::SAME_RIGHTS).expect("handle duplication failed!");
 
     let (status, process) = launcher.launch(launch_info).await.map_err(LaunchError::LaunchCall)?;
 
@@ -227,7 +224,7 @@ async fn launch_process_impl(
 
     trace_component_start(&process, component_instance, url).await;
 
-    Ok((process, ScopedJob::new(zx::Job::from_handle(component_job))))
+    Ok((process, ScopedJob::new(component_job)))
 }
 
 /// Reports the component starting to the trace system, if tracing is enabled.

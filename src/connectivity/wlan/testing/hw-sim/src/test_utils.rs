@@ -1,14 +1,13 @@
 // Copyright 2018 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 use crate::event::{self, Handler};
 use crate::netdevice_helper;
 use crate::wlancfg_helper::{NetworkConfigBuilder, start_ap_and_wait_for_confirmation};
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fuchsia_async::{DurationExt, MonotonicInstant, TimeoutExt, Timer};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
-use zx::prelude::*;
-
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use ieee80211::{MacAddr, MacAddrBytes};
@@ -404,16 +403,15 @@ impl Drop for TestHelper {
         let event_stream = self.event_stream.take();
         drop(event_stream);
 
-        let sync_proxy = wlantap::WlantapPhySynchronousProxy::new(fidl::Channel::from_handle(
+        let sync_proxy = wlantap::WlantapPhySynchronousProxy::new(
             // Arc::into_inner() should succeed in a properly constructed test. Using a WlantapPhyProxy
             // returned from TestHelper beyond the lifetime of TestHelper is not supported.
             Arc::<wlantap::WlantapPhyProxy>::into_inner(proxy)
                 .expect("Outstanding references to WlantapPhyProxy! Failed to drop TestHelper.")
                 .into_channel()
                 .expect("failed to get fidl::AsyncChannel from proxy")
-                .into_zx_channel()
-                .into_handle(),
-        ));
+                .into_zx_channel(),
+        );
 
         // TODO(b/307808624): At this point in the shutdown, we should
         // stop wlancfg first and destroy all ifaces through

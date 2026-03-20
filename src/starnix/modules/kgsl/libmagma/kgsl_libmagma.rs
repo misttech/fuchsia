@@ -16,7 +16,6 @@ use magma::{
 use starnix_logging::log_error;
 use std::panic::Location;
 use std::sync::Arc;
-use zx::HandleBased;
 
 fn magma_result(status: magma_status_t) -> Result<(), magma_status_t> {
     if status == MAGMA_STATUS_OK { Ok(()) } else { Err(status) }
@@ -91,7 +90,7 @@ impl Device {
         magma_result(result).kgsl_log_error()?;
         if result_buffer_out != 0 {
             // Safety: from_raw takes ownership of the buffer handle.
-            return Ok(QueryOutput::Buffer(zx::Vmo::from_handle(unsafe {
+            return Ok(QueryOutput::Buffer(zx::Vmo::from(unsafe {
                 zx::NullableHandle::from_raw(result_buffer_out)
             })));
         }

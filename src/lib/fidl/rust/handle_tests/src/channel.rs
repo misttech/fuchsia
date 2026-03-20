@@ -77,7 +77,7 @@ async fn send_channel(
     send_message(fixture, first, after_send_first, vec![(&[], &mut second_b)]).await;
     send_message(
         fixture,
-        (second.0, fidl::Channel::from_handle(second_b.into_iter().next().unwrap())),
+        (second.0, fidl::Channel::from(second_b.into_iter().next().unwrap())),
         after_send_second,
         vec![(&[100, 101, 102, 103, 104], &mut vec![])],
     )

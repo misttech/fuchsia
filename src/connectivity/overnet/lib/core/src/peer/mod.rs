@@ -11,7 +11,7 @@ use crate::coding::{decode_fidl, encode_fidl};
 use crate::future_help::Observer;
 use crate::labels::{Endpoint, NodeId, TransferKey};
 use crate::router::{FoundTransfer, Router};
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use fidl::{Channel, HandleBased};
 use fidl_fuchsia_overnet_protocol::{
     ChannelHandle, ConfigRequest, ConfigResponse, ConnectToService, ConnectToServiceOptions,
@@ -91,11 +91,7 @@ impl<'a> PeerConnRef<'a> {
     }
 
     pub fn endpoint(&self) -> Endpoint {
-        if self.conn.is_client() {
-            Endpoint::Client
-        } else {
-            Endpoint::Server
-        }
+        if self.conn.is_client() { Endpoint::Client } else { Endpoint::Server }
     }
 
     pub fn peer_node_id(&self) -> NodeId {
@@ -463,7 +459,7 @@ async fn client_conn_stream(
                 {
                     FramedStreamReadResult::Frame(frame_type, bytes) => (frame_type, bytes),
                     FramedStreamReadResult::Closed(s) => {
-                        return Err(RunnerError::ConnectionClosed(s))
+                        return Err(RunnerError::ConnectionClosed(s));
                     }
                 };
                 match frame_type {
@@ -637,7 +633,7 @@ async fn server_conn_stream(
                         rights,
                         options: _,
                     }) => {
-                        let app_channel = Channel::from_handle(
+                        let app_channel = Channel::from(
                             router
                                 .recv_proxied(
                                     ZirconHandle::Channel(ChannelHandle { stream_ref, rights }),

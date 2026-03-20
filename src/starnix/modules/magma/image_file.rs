@@ -12,7 +12,6 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
-use zx::HandleBased;
 
 pub struct ImageInfo {
     /// The magma image info associated with the `memory`.
@@ -27,13 +26,10 @@ impl Clone for ImageInfo {
         ImageInfo {
             info: self.info,
             token: self.token.as_ref().map(|token| fuicomp::BufferCollectionImportToken {
-                value: fidl::EventPair::from_handle(
-                    token
-                        .value
-                        .as_handle_ref()
-                        .duplicate(zx::Rights::SAME_RIGHTS)
-                        .expect("Failed to duplicate the buffer token."),
-                ),
+                value: token
+                    .value
+                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .expect("Failed to duplicate the buffer token."),
             }),
         }
     }

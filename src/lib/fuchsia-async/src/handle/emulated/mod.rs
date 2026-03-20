@@ -301,13 +301,6 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
         self.as_handle_ref().duplicate(rights).map(|handle| Self::from(handle))
     }
 
-    /// Creates an instance of this type from a handle.
-    ///
-    /// This is a convenience function which simply forwards to the `From` trait.
-    fn from_handle(handle: Handle) -> Self {
-        Self::from(handle)
-    }
-
     /// Converts the value into its inner handle.
     ///
     /// This is a convenience function which simply forwards to the `Into` trait.

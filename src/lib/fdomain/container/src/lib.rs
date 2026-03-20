@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::AsHandleRef;
 use fidl::endpoints::ClientEnd;
-use fidl::{AsHandleRef, HandleBased};
 use futures::prelude::*;
 use replace_with::replace_with;
 use std::collections::hash_map::Entry;
@@ -879,17 +879,13 @@ impl FDomain {
 
                 let handle = match info.object_type {
                     fidl::ObjectType::CHANNEL => {
-                        AnyHandle::Channel(fidl::Channel::from_handle(info.handle))
+                        AnyHandle::Channel(fidl::Channel::from(info.handle))
                     }
-                    fidl::ObjectType::SOCKET => {
-                        AnyHandle::Socket(fidl::Socket::from_handle(info.handle))
-                    }
+                    fidl::ObjectType::SOCKET => AnyHandle::Socket(fidl::Socket::from(info.handle)),
                     fidl::ObjectType::EVENTPAIR => {
-                        AnyHandle::EventPair(fidl::EventPair::from_handle(info.handle))
+                        AnyHandle::EventPair(fidl::EventPair::from(info.handle))
                     }
-                    fidl::ObjectType::EVENT => {
-                        AnyHandle::Event(fidl::Event::from_handle(info.handle))
-                    }
+                    fidl::ObjectType::EVENT => AnyHandle::Event(fidl::Event::from(info.handle)),
                     _ => AnyHandle::Unknown(handles::Unknown(info.handle, info.object_type)),
                 };
 

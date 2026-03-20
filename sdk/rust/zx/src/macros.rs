@@ -39,6 +39,11 @@ macro_rules! delegated_concrete_handle_based_impls {
         }
 
         // TODO(https://fxbug.dev/465766514) remove with NullableHandle migration
+        pub fn invalid() -> Self {
+            $ctor($crate::NullableHandle::invalid())
+        }
+
+        // TODO(https://fxbug.dev/465766514) remove with NullableHandle migration
         pub fn is_invalid(&self) -> bool {
             self.0.is_invalid()
         }
