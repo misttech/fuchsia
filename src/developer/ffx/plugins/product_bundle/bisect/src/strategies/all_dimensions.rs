@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 pub struct AllDimensionsStrategy;
 
 impl SearchStrategy for AllDimensionsStrategy {
-    fn update(&self, space: &mut SearchSpace, test_passed: bool) {
+    fn process_result(&self, space: &mut SearchSpace, test_passed: bool) {
         // Determine how many artifacts are left to search across all dimensions.
         let remaining_artifacts_len =
             space.iter_all_artifacts().map(|s| s.remaining_artifacts.len()).max().unwrap_or(0);
@@ -51,7 +51,9 @@ impl SearchStrategy for AllDimensionsStrategy {
             // Phase 2: Bisect only the longest dimension.
             util::halve_longest_dimension(space, test_passed);
         }
+    }
 
+    fn prepare_next_step(&self, space: &mut SearchSpace) {
         // After shrinking the search space, always update the midpoint pointers for the next step.
         for series in space.iter_all_artifacts_mut() {
             let range = &series.remaining_artifacts;
@@ -166,7 +168,8 @@ mod tests {
         assert!(space.platform.remaining_artifacts.len() > space.num_dimensions() + 1);
 
         // Action: Report a passing test.
-        strategy.update(&mut space, true);
+        strategy.process_result(&mut space, true);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: All dimensions are shrunk to their upper half.
         // Platform: midpoint=4, new range=(4+1)..8 = 5..8
@@ -191,7 +194,8 @@ mod tests {
         assert!(space.platform.remaining_artifacts.len() > space.num_dimensions() + 1);
 
         // Action: Report a failing test.
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: All dimensions are shrunk to their lower half.
         // Platform: midpoint=4, new range=0..(4+1) = 0..5
@@ -216,7 +220,8 @@ mod tests {
         assert!(space.platform.remaining_artifacts.len() <= space.num_dimensions() + 1);
 
         // Action: Report a failing test.
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: Only the longest dimension (platform) is shrunk.
         // Platform: midpoint=2, new range=0..(2) = 0..2
@@ -233,7 +238,8 @@ mod tests {
         let mut space =
             create_mock_search_space(vec!["1", "2", "3", "4", "5", "6"], vec!["a"], vec!["x"]);
         let strategy = AllDimensionsStrategy;
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Long dimension is shrunk
         assert_eq!(space.platform.remaining_artifacts, 0..4);

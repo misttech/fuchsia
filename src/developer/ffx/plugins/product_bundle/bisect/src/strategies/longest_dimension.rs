@@ -11,9 +11,11 @@ use serde::{Deserialize, Serialize};
 pub struct LongestDimensionStrategy;
 
 impl SearchStrategy for LongestDimensionStrategy {
-    fn update(&self, space: &mut SearchSpace, test_passed: bool) {
+    fn process_result(&self, space: &mut SearchSpace, test_passed: bool) {
         util::halve_longest_dimension(space, test_passed);
+    }
 
+    fn prepare_next_step(&self, space: &mut SearchSpace) {
         // Now that we've reduced the size of the remaining search window, go through and update
         // the midpoint pointers to reflect that change.
         for series in space.iter_all_artifacts_mut() {
@@ -122,13 +124,15 @@ mod tests {
             vec!["x", "y"],
         );
         let strategy = LongestDimensionStrategy;
+        strategy.prepare_next_step(&mut space);
 
         // Initial state: platform is longest (len 8), range is 0..8, current is 4.
         assert_eq!(space.platform.remaining_artifacts, 0..8);
         assert_eq!(space.platform.current_artifact, 4);
 
         // Action: Report a passing test.
-        strategy.update(&mut space, true);
+        strategy.process_result(&mut space, true);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: Platform's range is now the upper half, and current is updated.
         // The new range is (midpoint + 1)..end = 5..8. The new current is 5 + (3 / 2) = 6.
@@ -149,13 +153,15 @@ mod tests {
             vec!["x", "y"],
         );
         let strategy = LongestDimensionStrategy;
+        strategy.prepare_next_step(&mut space);
 
         // Initial state: platform is longest (len 8), range is 0..8, current is 4.
         assert_eq!(space.platform.remaining_artifacts, 0..8);
         assert_eq!(space.platform.current_artifact, 4);
 
         // Action: Report a failing test.
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: Platform's range is now the lower half, and current is updated.
         // The new range is start..midpoint = 0..4. The new current is 0 + (4/2) = 2.
@@ -178,7 +184,8 @@ mod tests {
         let strategy = LongestDimensionStrategy;
 
         // Action: Report a failing test.
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: Platform is shrunk, product is not.
         assert_eq!(space.platform.remaining_artifacts, 0..2);
@@ -198,7 +205,8 @@ mod tests {
         let strategy = LongestDimensionStrategy;
 
         // Action: Report a failing test.
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
 
         // Assert: Product is shrunk, board is not.
         assert_eq!(space.platform.remaining_artifacts, 0..2);
@@ -220,14 +228,16 @@ mod tests {
         let mut space_odd =
             create_mock_search_space(vec!["1", "2", "3", "4", "5", "6", "7"], vec![], vec![]);
         assert_eq!(space_odd.platform.remaining_artifacts, 0..7);
-        strategy.update(&mut space_odd, false); // Fail -> lower half
+        strategy.process_result(&mut space_odd, false); // Fail -> lower half
+        strategy.prepare_next_step(&mut space_odd);
         assert_eq!(space_odd.platform.remaining_artifacts, 0..3); // Midpoint is 3. Range is 0..3.
 
         // Even length (8)
         let mut space_even =
             create_mock_search_space(vec!["1", "2", "3", "4", "5", "6", "7", "8"], vec![], vec![]);
         assert_eq!(space_even.platform.remaining_artifacts, 0..8);
-        strategy.update(&mut space_even, true); // Pass -> upper half
+        strategy.process_result(&mut space_even, true); // Pass -> upper half
+        strategy.prepare_next_step(&mut space_even);
         assert_eq!(space_even.platform.remaining_artifacts, 5..8); // Midpoint is 4. Range is 5..8.
     }
 
@@ -237,7 +247,8 @@ mod tests {
         let mut space = create_mock_search_space(vec!["1", "2"], vec![], vec![]);
         let strategy = LongestDimensionStrategy;
 
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
         assert_eq!(space.platform.remaining_artifacts, 0..1);
     }
 
@@ -248,12 +259,14 @@ mod tests {
         let strategy = LongestDimensionStrategy;
 
         let initial_range = space.platform.remaining_artifacts.clone();
-        strategy.update(&mut space, false);
+        strategy.process_result(&mut space, false);
+        strategy.prepare_next_step(&mut space);
         assert_eq!(space.platform.remaining_artifacts, initial_range);
 
         let mut space_empty = create_mock_search_space(vec![], vec![], vec![]);
         let initial_range_empty = space_empty.platform.remaining_artifacts.clone();
-        strategy.update(&mut space_empty, false);
+        strategy.process_result(&mut space_empty, false);
+        strategy.prepare_next_step(&mut space_empty);
         assert_eq!(space_empty.platform.remaining_artifacts, initial_range_empty);
     }
 }

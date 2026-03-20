@@ -16,8 +16,11 @@ use serde::{Deserialize, Serialize};
 
 /// A trait for bisection search strategies.
 pub trait SearchStrategy {
-    /// Updates the search space based on the result of a test.
-    fn update(&self, space: &mut SearchSpace, test_passed: bool);
+    /// Look at the test result and shrink the ranges of the remaining artifacts.
+    fn process_result(&self, space: &mut SearchSpace, test_passed: bool);
+
+    /// Look at the remaining ranges and set the pointers for the next test.
+    fn prepare_next_step(&self, space: &mut SearchSpace);
 
     /// Determines whether the bisection should continue, has found a culprit,
     /// or has exhausted the search space.

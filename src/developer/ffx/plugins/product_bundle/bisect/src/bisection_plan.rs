@@ -57,8 +57,11 @@ impl BisectionPlan {
             Self::get_pb_release_info(client, &cmd.name, &cmd.to_failure, cmd.slot, writer).await?;
 
         // Retrieve an interpolated version list between each starting and ending artifact.
-        let search_space =
+        let mut search_space =
             Self::interpolate(client, starting_pb.clone(), ending_pb.clone(), writer).await?;
+
+        // Setup the current_artifact pointers according to the current strategy.
+        strategy.as_dyn().prepare_next_step(&mut search_space);
 
         let results = vec![
             StepResult { versioned_artifact_set: starting_pb, image_path: None, test_passed: true },
@@ -82,7 +85,9 @@ impl BisectionPlan {
     pub fn update(&mut self, result: StepResult) -> BisectionStatus {
         self.results.push(result);
         let search_space = &mut self.search_space;
-        self.strategy.as_dyn().update(search_space, self.results.last().unwrap().test_passed);
+        let test_passed = self.results.last().unwrap().test_passed;
+        self.strategy.as_dyn().process_result(search_space, test_passed);
+        self.strategy.as_dyn().prepare_next_step(search_space);
         self.status = self.strategy.as_dyn().should_continue(search_space, &self.results);
         self.status.clone()
     }
