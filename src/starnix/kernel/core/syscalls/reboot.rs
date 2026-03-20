@@ -188,6 +188,10 @@ fn parse_shutdown_reason(reboot_args: &[&[u8]], arg_bytes: &FsString) -> fpower:
         fpower::ShutdownReason::AndroidRescueParty
     } else if reboot_args.contains(&&b"userrequested"[..]) {
         fpower::ShutdownReason::UserRequest
+    } else if reboot_args.contains(&&b"thermal"[..]) {
+        fpower::ShutdownReason::HighTemperature
+    } else if reboot_args.contains(&&b"battery"[..]) {
+        fpower::ShutdownReason::BatteryDrained
     } else if reboot_args == [b""]
     // args empty? splitting "" returns [""], not []
     {
@@ -209,3 +213,33 @@ mod arch32 {
 
 #[cfg(target_arch = "aarch64")]
 pub use arch32::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check_parse_shutdown_reason(args: &str, expected: fpower::ShutdownReason) {
+        let bytes = FsString::from(args.as_bytes().to_vec());
+        let split_args: Vec<_> = bytes.split_str(b",").collect();
+        let reason = super::parse_shutdown_reason(&split_args, &bytes);
+        assert_eq!(reason, expected, "Failed for args: {}", args);
+    }
+
+    #[test]
+    fn parse_shutdown_reason_thermal() {
+        check_parse_shutdown_reason("shutdown,thermal", fpower::ShutdownReason::HighTemperature);
+    }
+
+    #[test]
+    fn parse_shutdown_reason_battery() {
+        check_parse_shutdown_reason("shutdown,battery", fpower::ShutdownReason::BatteryDrained);
+    }
+
+    #[test]
+    fn parse_shutdown_reason_thermal_and_battery() {
+        check_parse_shutdown_reason(
+            "shutdown,thermal,battery",
+            fpower::ShutdownReason::HighTemperature,
+        );
+    }
+}
