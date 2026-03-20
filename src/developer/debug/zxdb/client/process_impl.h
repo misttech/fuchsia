@@ -75,6 +75,8 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   std::optional<debug_ipc::AddressRegion> GetSharedAddressSpace() const override;
   std::vector<AsyncTaskProvider*> GetAsyncTaskProvidersForLanguage(
       ExprLanguage language) const override;
+  void AddAsyncTaskProviderForTesting(ExprLanguage language,
+                                      std::unique_ptr<AsyncTaskProvider> provider) override;
 
   // Notifications from the agent that a thread has started or exited.
   void OnThreadStarting(const debug_ipc::ThreadRecord& record);

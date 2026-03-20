@@ -147,6 +147,7 @@ void RemoteAPITest::InjectExceptionWithStack(const debug_ipc::NotifyException& e
   // Create an exception record with a thread frame so it's valid. There must be one frame even
   // though the stack will be immediately overwritten.
   debug_ipc::NotifyException modified(exception);
+  modified.thread.name = thread->GetName();
   modified.thread.stack_amount = debug_ipc::ThreadRecord::StackAmount::kMinimal;
   modified.thread.frames.clear();
   if (!frames.empty())
@@ -155,7 +156,7 @@ void RemoteAPITest::InjectExceptionWithStack(const debug_ipc::NotifyException& e
   // To manually set the thread state, set the general metadata which will pick up the basic flags
   // and the first stack frame. Then re-set the stack frame with the information passed in by our
   // caller.
-  thread->SetMetadata(modified.thread);
+  thread->SetMetadata(modified.thread, /*skip_frames=*/true);
   thread->GetStack().SetFramesForTest(std::move(frames), has_all_frames);
 
   // Set up a default ThreadStatusReply with the given information if there isn't one already. It's

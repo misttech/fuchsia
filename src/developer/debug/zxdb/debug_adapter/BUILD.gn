@@ -6,6 +6,8 @@ import("//build/test.gni")
 
 static_library("debug_adapter") {
   sources = [
+    "async_backtrace_subscription.cc",
+    "async_backtrace_subscription.h",
     "context.cc",
     "context.h",
     "handlers/request_attach.cc",
@@ -54,6 +56,7 @@ static_library("debug_adapter") {
 source_set("tests") {
   testonly = true
   sources = [
+    "async_backtrace_subscription_unittest.cc",
     "context_test.cc",
     "context_test.h",
     "context_unittest.cc",

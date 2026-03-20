@@ -336,6 +336,11 @@ std::vector<AsyncTaskProvider*> ProcessImpl::GetAsyncTaskProvidersForLanguage(
   return ret;
 }
 
+void ProcessImpl::AddAsyncTaskProviderForTesting(ExprLanguage language,
+                                                 std::unique_ptr<AsyncTaskProvider> provider) {
+  async_task_providers_[language].push_back(std::move(provider));
+}
+
 void ProcessImpl::OnThreadStarting(const debug_ipc::ThreadRecord& record) {
   if (threads_.find(record.id.thread) != threads_.end()) {
     // Duplicate new thread notification. Some legitimate cases could cause

@@ -229,6 +229,9 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
   virtual std::vector<AsyncTaskProvider*> GetAsyncTaskProvidersForLanguage(
       ExprLanguage language) const = 0;
 
+  virtual void AddAsyncTaskProviderForTesting(ExprLanguage language,
+                                              std::unique_ptr<AsyncTaskProvider> provider) = 0;
+
   StartType start_type() const { return start_type_; }
   Kind kind() const { return kind_; }
   void set_kind(Kind kind) { kind_ = kind; }

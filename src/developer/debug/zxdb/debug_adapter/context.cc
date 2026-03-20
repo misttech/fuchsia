@@ -218,6 +218,8 @@ void DebugAdapterContext::Init() {
   session()->process_observers().AddObserver(this);
   session()->breakpoint_observers().AddObserver(this);
 
+  async_backtrace_subscription_.emplace(session()->GetWeakPtr(), dap_);
+
   init_done_ = true;
 }
 

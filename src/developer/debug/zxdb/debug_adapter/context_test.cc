@@ -58,6 +58,8 @@ void DebugAdapterContextTest::InitializeDebugging() {
   RunClient();
   RunClient();
   response.get();
+
+  DeinitializeAsyncBacktraceSubscription();
 }
 
 }  // namespace zxdb

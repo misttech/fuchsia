@@ -20,6 +20,7 @@
 #include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/console/console.h"
+#include "src/developer/debug/zxdb/debug_adapter/async_backtrace_subscription.h"
 #include "src/developer/debug/zxdb/expr/format_node.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
@@ -130,9 +131,23 @@ class DebugAdapterContext : public ThreadObserver,
   void DeleteBreakpointsForSource(const std::filesystem::path& source);
   void DeleteAllBreakpoints();
 
+  // Deinitializes the `AsyncBacktraceSubscription` for testing purposes.
+  //
+  // This can be used to reduce noise for tests that don't care about async backtrace behavior, as
+  // leaving it in-place results in additional `dap::Event`s on thread events, requiring extra
+  // `RunClient()` calls.
+  //
+  // This can only be called once, after `DebugAdapterContext::Init`.
+  void DeinitializeAsyncBacktraceSubscriptionForTesting() {
+    FX_DCHECK(async_backtrace_subscription_.has_value())
+        << "DeinitializeAsyncBacktraceSubscriptionForTesting can only be called once after "
+           "DebugAdapterContext::Init";
+    async_backtrace_subscription_.reset();
+  }
+
  private:
   Console* const console_;
-  const std::unique_ptr<dap::Session> dap_;
+  const std::shared_ptr<dap::Session> dap_;
   std::shared_ptr<DebugAdapterReader> reader_;
   std::shared_ptr<DebugAdapterWriter> writer_;
 
@@ -167,6 +182,9 @@ class DebugAdapterContext : public ThreadObserver,
   // members, so `source_to_bp_` trades off a potential simplification for sake of correctness.
   // See https://fxbug.dev/377344509 and `FileLine::comp_dir()` documentation for more context.
   std::map<std::filesystem::path, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
+
+  // Monitors async-backtrace state changes and propagates via custom DAP events.
+  std::optional<AsyncBacktraceSubscription> async_backtrace_subscription_;
 
   void Init();
 };

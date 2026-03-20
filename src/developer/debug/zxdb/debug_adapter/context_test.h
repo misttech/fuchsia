@@ -78,8 +78,8 @@ class DebugAdapterContextTest : public RemoteAPITest {
   static constexpr uint64_t kProcessKoid = 875123541;
   static constexpr uint64_t kThreadKoid = 19028730;
 
-  DebugAdapterContext& context() { return *context_.get(); }
-  dap::Session& client() { return *client_.get(); }
+  DebugAdapterContext& context() { return *context_; }
+  dap::Session& client() { return *client_; }
 
   void RunClient() {
     if (auto payload = client_->getPayload()) {
@@ -87,8 +87,25 @@ class DebugAdapterContextTest : public RemoteAPITest {
     }
   }
 
+  void RunPendingClientCalls() {
+    while (HasPendingClientCalls()) {
+      RunClient();
+    }
+  }
+
+  bool HasPendingClientCalls() const { return pipe_.end2().IsAvailable(1); }
+
   // Helper method to set up debug adapter session between client and server.
   void InitializeDebugging();
+
+  // Disable the `DebugAdapterContext`'s `AsyncBacktraceSubscription` after `InitializeDebugging()`
+  // by default to reduce test noise, since leaving it in-place results in additional `dap::Event`s
+  // on thread events, requiring extra `RunClient()` calls.
+  //
+  // This is virtual to allow derived test classes to opt-in to testing async-backtrace behavior.
+  virtual void DeinitializeAsyncBacktraceSubscription() {
+    context_->DeinitializeAsyncBacktraceSubscriptionForTesting();
+  }
 
   // testing::Test implementation.
   void SetUp() override;

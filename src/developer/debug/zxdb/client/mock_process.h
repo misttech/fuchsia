@@ -65,6 +65,10 @@ class MockProcess : public Process {
       ExprLanguage language) const override {
     return {};
   }
+  void AddAsyncTaskProviderForTesting(ExprLanguage language,
+                                      std::unique_ptr<AsyncTaskProvider> provider) override {
+    FX_NOTIMPLEMENTED();
+  }
 
   // unwinder::AsyncMemory::Delegate implementation.
   void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,

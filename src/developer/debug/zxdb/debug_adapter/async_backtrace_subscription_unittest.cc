@@ -1,0 +1,407 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include <gtest/gtest.h>
+
+#include "src/developer/debug/zxdb/client/async_task.h"
+#include "src/developer/debug/zxdb/client/mock_frame.h"
+#include "src/developer/debug/zxdb/client/process.h"
+#include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/debug_adapter/context_test.h"
+#include "src/developer/debug/zxdb/symbols/compile_unit.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_lang.h"
+#include "src/developer/debug/zxdb/symbols/function.h"
+#include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/symbol_context.h"
+#include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
+
+namespace zxdb {
+namespace {
+
+class AsyncBacktraceSubscriptionTest : public DebugAdapterContextTest {
+  void DeinitializeAsyncBacktraceSubscription() override {
+    // Override the default behavior of disabling the `AsyncBacktraceSubscription` since we want to
+    // test async backtrace behavior.
+  }
+};
+
+class FakeAsyncTask : public AsyncTask {
+ public:
+  FakeAsyncTask(Session* session, std::string name) : AsyncTask(session), name_(std::move(name)) {}
+
+  uint64_t GetId() const override { return 1; }
+  Type GetType() const override { return Type::kFuture; }
+  const Location& GetLocation() const override { return loc_; }
+  const Identifier& GetIdentifier() const override {
+    if (ident_.empty()) {
+      ident_ = Identifier(IdentifierComponent(name_));
+    }
+    return ident_;
+  }
+  std::string GetState() const override { return "Pending"; }
+  const std::vector<NamedValue>& GetValues() const override { return values_; }
+  std::vector<Ref> GetChildren() const override {
+    std::vector<Ref> refs;
+    for (const auto& child : children_) {
+      refs.push_back(*child);
+    }
+    return refs;
+  }
+
+  void AddChild(std::unique_ptr<FakeAsyncTask> child) { children_.push_back(std::move(child)); }
+
+ private:
+  std::string name_;
+  std::vector<std::unique_ptr<FakeAsyncTask>> children_;
+  Location loc_;
+  mutable Identifier ident_;
+  std::vector<NamedValue> values_;
+};
+
+class FakeAsyncTaskProvider : public AsyncTaskProvider {
+ public:
+  bool CanHandle(Frame* frame) const override { return true; }
+
+  void GetTasks(
+      Frame* frame,
+      fit::callback<void(const Err&, std::vector<std::unique_ptr<AsyncTask>>)> cb) override {
+    std::vector<std::unique_ptr<AsyncTask>> tasks;
+    auto root = std::make_unique<FakeAsyncTask>(frame->session(), "root");
+    auto child = std::make_unique<FakeAsyncTask>(frame->session(), "child");
+    child->AddChild(std::make_unique<FakeAsyncTask>(frame->session(), "grandchild"));
+    root->AddChild(std::move(child));
+    tasks.push_back(std::move(root));
+    cb(Err(), std::move(tasks));
+  }
+};
+
+class RaceConditionAsyncTaskProvider : public AsyncTaskProvider {
+ public:
+  bool CanHandle(Frame* frame) const override { return true; }
+
+  void GetTasks(
+      Frame* frame,
+      fit::callback<void(const Err&, std::vector<std::unique_ptr<AsyncTask>>)> cb) override {
+    callbacks_.push_back({.session = frame->session(), .cb = std::move(cb)});
+  }
+
+  struct SavedCallback {
+    Session* session;
+    fit::callback<void(const Err&, std::vector<std::unique_ptr<AsyncTask>>)> cb;
+  };
+  std::vector<SavedCallback> callbacks_;
+};
+
+}  // namespace
+
+TEST_F(AsyncBacktraceSubscriptionTest, SingleThreadLifecycle) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust,
+                                          std::make_unique<FakeAsyncTaskProvider>());
+  RunClient();
+
+  InjectThread(kProcessKoid, kThreadKoid);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Expect an update from `ThreadObserver::DidCreateThread`.
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 0u);
+
+  updates.clear();
+  Thread* thread = process->GetThreadFromKoid(kThreadKoid);
+  ASSERT_NE(thread, nullptr);
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, loc, 0x1000));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), /*has_all_frames=*/false);
+
+  // Force the thread to sync its stack frames.
+  //
+  // This results in the invocation order `OnThreadStopped` -> `DidUpdateStackFrames` ->
+  // `CollectAndReportAsyncBacktrace`'s `Sync` callback, which allows us to verify that
+  // `DidUpdateStackFrames` does not cancel the pending async-backtrace collection callback when
+  // the thread has not yet resumed (i.e. when `CurrentStopSupportsFrames()` is true).
+  EXPECT_TRUE(thread->CurrentStopSupportsFrames());
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Expect a non-cancelled update from `ThreadObserver::OnThreadStopped`.
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "root");
+
+  updates.clear();
+  thread->Continue(false);
+
+  // Process the Continue response to update thread state.
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  EXPECT_FALSE(thread->CurrentStopSupportsFrames());
+
+  // Expect an update from `ThreadObserver::DidUpdateStackFrames` (Thread Resumed).
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 0u);
+
+  updates.clear();
+  debug_ipc::NotifyThreadExiting notify_exit;
+  notify_exit.record.id = {.process = kProcessKoid, .thread = kThreadKoid};
+  notify_exit.record.state = debug_ipc::ThreadRecord::State::kDead;
+
+  session().DispatchNotifyThreadExiting(notify_exit);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Expect an update from `ThreadObserver::WillDestroyThread`.
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_FALSE(updates[0].tasks.has_value());
+}
+
+TEST_F(AsyncBacktraceSubscriptionTest, NestedAsyncTaskStructure) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust,
+                                          std::make_unique<FakeAsyncTaskProvider>());
+
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Expect an update from `ThreadObserver::DidCreateThread`.
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 0u);
+
+  updates.clear();
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, loc, 0));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Expect an update from `ThreadObserver::OnThreadStopped`.
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
+  EXPECT_EQ(updates[0].name, "test 19028730");
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "root");
+  EXPECT_EQ(updates[0].tasks.value()[0].children.size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].name, "child");
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].children.size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].name, "grandchild");
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].children.size(), 0u);
+}
+
+TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  auto provider = std::make_unique<RaceConditionAsyncTaskProvider>();
+  auto* provider_ptr = provider.get();
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust, std::move(provider));
+
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  updates.clear();
+
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+
+  std::vector<std::unique_ptr<Frame>> frames1;
+  frames1.push_back(std::make_unique<MockFrame>(&session(), thread, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames1), true);
+
+  // Triggering a second update should cancel the first callback.
+  std::vector<std::unique_ptr<Frame>> frames2;
+  frames2.push_back(std::make_unique<MockFrame>(&session(), thread, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames2), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 2u);
+
+  // Execute the first callback. It shouldn't emit an update because it was cancelled.
+  auto cb1 = std::move(provider_ptr->callbacks_[0]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks1;
+  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, "task_1"));
+  cb1.cb(Err(), std::move(tasks1));
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(updates.size(), 0u);
+
+  // Execute the second callback. It should emit an update.
+  auto cb2 = std::move(provider_ptr->callbacks_[1]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks2;
+  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, "task_2"));
+  cb2.cb(Err(), std::move(tasks2));
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
+}
+
+TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  auto provider = std::make_unique<RaceConditionAsyncTaskProvider>();
+  auto* provider_ptr = provider.get();
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust, std::move(provider));
+
+  constexpr uint64_t kThreadKoid1 = kThreadKoid;
+  constexpr uint64_t kThreadKoid2 = kThreadKoid + 1;
+
+  Thread* thread1 = InjectThread(kProcessKoid, kThreadKoid1);
+  Thread* thread2 = InjectThread(kProcessKoid, kThreadKoid2);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  updates.clear();
+
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+
+  // Triggering updates from different threads shouldn't affect each other.
+  std::vector<std::unique_ptr<Frame>> frames1;
+  frames1.push_back(std::make_unique<MockFrame>(&session(), thread1, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid1, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames1), true);
+
+  std::vector<std::unique_ptr<Frame>> frames2;
+  frames2.push_back(std::make_unique<MockFrame>(&session(), thread2, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid2, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames2), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 2u);
+
+  // Execute the first callback. It should emit an update, since the second (concurrent)
+  // `ThreadObserver::OnThreadStopped` event is for a different thread.
+  auto cb1 = std::move(provider_ptr->callbacks_[0]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks1;
+  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, "task_1"));
+  cb1.cb(Err(), std::move(tasks1));
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_1");
+
+  updates.clear();
+
+  // Execute the second callback and expect an update.
+  auto cb2 = std::move(provider_ptr->callbacks_[1]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks2;
+  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, "task_2"));
+  cb2.cb(Err(), std::move(tasks2));
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(updates.size(), 1u);
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
+}
+
+}  // namespace zxdb
