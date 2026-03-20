@@ -703,21 +703,25 @@ TEST_F(OverlayFsAccessTest, MounterAndOtherAccessChecks) {
 
     // Other UID can read if it has access in the overlay, even if it could not read directly from
     // `lower_`.
-    EXPECT_THAT(open((overlay_ + "/readable").c_str(), O_RDONLY), SyscallSucceeds());
+    fbl::unique_fd fd(open((overlay_ + "/readable").c_str(), O_RDONLY));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
     EXPECT_THAT(open((overlay_ + "/lower_readable").c_str(), O_RDONLY),
                 SyscallFailsWithErrno(EACCES));
-    EXPECT_THAT(open((overlay_ + "/upper_readable").c_str(), O_RDONLY), SyscallSucceeds());
+    fd.reset(open((overlay_ + "/upper_readable").c_str(), O_RDONLY));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Other UID can write if it has access in the overlay, even if it could not write directly via
     // `lower_`.
-    EXPECT_THAT(open((overlay_ + "/writable").c_str(), O_WRONLY), SyscallSucceeds());
+    fd.reset(open((overlay_ + "/writable").c_str(), O_WRONLY));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
     EXPECT_THAT(open((overlay_ + "/lower_writable").c_str(), O_WRONLY),
                 SyscallFailsWithErrno(EACCES));
-    EXPECT_THAT(open((overlay_ + "/upper_writable").c_str(), O_WRONLY), SyscallSucceeds());
+    fd.reset(open((overlay_ + "/upper_writable").c_str(), O_WRONLY));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
 
     // Other UID can create a new file, which should be owned by them.
-    EXPECT_THAT(open((overlay_ + "/new_file").c_str(), O_WRONLY | O_CREAT, 0666),
-                SyscallSucceeds());
+    fd.reset(open((overlay_ + "/new_file").c_str(), O_WRONLY | O_CREAT, 0666));
+    EXPECT_THAT(fd.get(), SyscallSucceeds());
   });
   ASSERT_TRUE(helper.WaitForChildren());
 
