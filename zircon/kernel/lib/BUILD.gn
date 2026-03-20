@@ -29,6 +29,7 @@ all_libs = [
   "arch",
   "backtrace",
   "boot-options",
+  "btree",
   "cbuf",
   "code-patching",
   "console",
