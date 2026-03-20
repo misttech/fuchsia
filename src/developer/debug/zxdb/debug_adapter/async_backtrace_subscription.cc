@@ -8,13 +8,17 @@
 
 #include "src/developer/debug/zxdb/client/async_task.h"
 #include "src/developer/debug/zxdb/client/async_task_tree.h"
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
+#include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/symbols/location.h"
 
 namespace dap {
 
-DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncTaskNode, "", DAP_FIELD(name, "name"),
-                              DAP_FIELD(children, "children"))
+DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncTaskNode, "", DAP_FIELD(name, "name"), DAP_FIELD(file, "file"),
+                              DAP_FIELD(line, "line"), DAP_FIELD(children, "children"))
 
 DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncBacktraceUpdate, "vscode-fuchsia.updateAsyncBacktrace",
                               DAP_FIELD(id, "id"), DAP_FIELD(name, "name"),
@@ -116,12 +120,23 @@ void AsyncBacktraceSubscription::CollectAndReportAsyncBacktrace(Thread* thread) 
       return;
     }
 
+    auto file_provider = SourceFileProviderImpl(weak_thread->GetProcess()->GetTarget()->settings());
     weak_this->dap_->send(dap::AsyncBacktraceUpdate{
         .id = static_cast<int64_t>(weak_thread->GetKoid()),
         .name = weak_thread->GetName(),
         .tasks = weak_thread->GetAsyncTaskTree().Map<dap::AsyncTaskNode>(
-            [](const zxdb::AsyncTask& task, dap::AsyncTaskNode* node) {
+            [&file_provider](const zxdb::AsyncTask& task, dap::AsyncTaskNode* node) {
               node->name = task.GetIdentifier().GetFullName();
+              const zxdb::Location& location = task.GetLocation();
+              if (location.file_line().is_valid()) {
+                // TODO(https://fxbug.dev/494582844): Skip reading source file content.
+                auto data_or = file_provider.GetFileData(location.file_line().file(),
+                                                         location.file_line().comp_dir());
+                if (!data_or.has_error()) {
+                  node->file = std::move(data_or.value().full_path);
+                  node->line = location.file_line().line();
+                }
+              }
             },
             [](dap::AsyncTaskNode* node) { return &node->children; }),
     });

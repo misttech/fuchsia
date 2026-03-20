@@ -8,6 +8,7 @@
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/common/scoped_temp_file.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_lang.h"
@@ -20,6 +21,16 @@ namespace zxdb {
 namespace {
 
 class AsyncBacktraceSubscriptionTest : public DebugAdapterContextTest {
+ public:
+  void SetUp() override {
+    DebugAdapterContextTest::SetUp();
+    temp_file_ = std::make_unique<ScopedTempFile>();
+    fake_file_path_ = temp_file_->name();
+  }
+
+  std::unique_ptr<ScopedTempFile> temp_file_;
+  std::string fake_file_path_;
+
   void DeinitializeAsyncBacktraceSubscription() override {
     // Override the default behavior of disabling the `AsyncBacktraceSubscription` since we want to
     // test async backtrace behavior.
@@ -28,7 +39,8 @@ class AsyncBacktraceSubscriptionTest : public DebugAdapterContextTest {
 
 class FakeAsyncTask : public AsyncTask {
  public:
-  FakeAsyncTask(Session* session, std::string name) : AsyncTask(session), name_(std::move(name)) {}
+  FakeAsyncTask(Session* session, std::string name, Location loc = Location())
+      : AsyncTask(session), name_(std::move(name)), loc_(std::move(loc)) {}
 
   uint64_t GetId() const override { return 1; }
   Type GetType() const override { return Type::kFuture; }
@@ -61,19 +73,26 @@ class FakeAsyncTask : public AsyncTask {
 
 class FakeAsyncTaskProvider : public AsyncTaskProvider {
  public:
+  explicit FakeAsyncTaskProvider(std::string fake_file_path)
+      : fake_file_path_(std::move(fake_file_path)) {}
+
   bool CanHandle(Frame* frame) const override { return true; }
 
   void GetTasks(
       Frame* frame,
       fit::callback<void(const Err&, std::vector<std::unique_ptr<AsyncTask>>)> cb) override {
     std::vector<std::unique_ptr<AsyncTask>> tasks;
-    auto root = std::make_unique<FakeAsyncTask>(frame->session(), "root");
+    Location loc(0x1234, FileLine(fake_file_path_, 42), 0, SymbolContext::ForRelativeAddresses());
+    auto root = std::make_unique<FakeAsyncTask>(frame->session(), "root", std::move(loc));
     auto child = std::make_unique<FakeAsyncTask>(frame->session(), "child");
     child->AddChild(std::make_unique<FakeAsyncTask>(frame->session(), "grandchild"));
     root->AddChild(std::move(child));
     tasks.push_back(std::move(root));
     cb(Err(), std::move(tasks));
   }
+
+ private:
+  std::string fake_file_path_;
 };
 
 class RaceConditionAsyncTaskProvider : public AsyncTaskProvider {
@@ -104,7 +123,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, SingleThreadLifecycle) {
 
   Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
   process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust,
-                                          std::make_unique<FakeAsyncTaskProvider>());
+                                          std::make_unique<FakeAsyncTaskProvider>(fake_file_path_));
   RunClient();
 
   InjectThread(kProcessKoid, kThreadKoid);
@@ -200,7 +219,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, NestedAsyncTaskStructure) {
 
   Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
   process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust,
-                                          std::make_unique<FakeAsyncTaskProvider>());
+                                          std::make_unique<FakeAsyncTaskProvider>(fake_file_path_));
 
   Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
 
@@ -246,6 +265,12 @@ TEST_F(AsyncBacktraceSubscriptionTest, NestedAsyncTaskStructure) {
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children.size(), 1u);
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].name, "grandchild");
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].children.size(), 0u);
+
+  // Verify that the file and line fields are correctly handled.
+  EXPECT_TRUE(updates[0].tasks.value()[0].file.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].file.value(), fake_file_path_);
+  EXPECT_TRUE(updates[0].tasks.value()[0].line.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].line.value(), 42);
 }
 
 TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {

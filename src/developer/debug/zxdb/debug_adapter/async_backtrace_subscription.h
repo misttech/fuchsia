@@ -18,6 +18,8 @@ namespace dap {
 
 struct AsyncTaskNode {
   string name;
+  optional<string> file;
+  optional<integer> line;
   array<AsyncTaskNode> children;
 };
 

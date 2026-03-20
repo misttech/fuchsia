@@ -37,6 +37,7 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
     frame.source = dap::Source{};
 
     // Try to get the source path.
+    // TODO(https://fxbug.dev/494582844): Skip reading source file content.
     auto data_or =
         file_provider.GetFileData(location.file_line().file(), location.file_line().comp_dir());
     if (!data_or.has_error()) {
