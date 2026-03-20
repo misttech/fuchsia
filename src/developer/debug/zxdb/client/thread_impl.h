@@ -42,6 +42,9 @@ class ThreadImpl final : public Thread, public Stack::Delegate, public AsyncTask
   std::optional<StopInfo> CurrentStopInfo() const override;
   void Pause(fit::callback<void()> on_paused) override;
   void Continue(bool forward_exception) override;
+  void AddController(std::unique_ptr<ThreadController> controller,
+                     fit::callback<void(const Err&)> on_done,
+                     AddControllerOptions options = {}) override;
   void ContinueWith(std::unique_ptr<ThreadController> controller,
                     fit::callback<void(const Err&)> on_continue) override;
   void AddPostStopTask(PostStopTask task) override;

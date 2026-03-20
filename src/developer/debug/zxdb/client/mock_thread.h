@@ -35,6 +35,9 @@ class MockThread : public Thread, public Stack::Delegate, public AsyncTaskTree::
         FROM_HERE, [on_paused = std::move(on_paused)]() mutable { on_paused(); });
   }
   void Continue(bool forward_exception) override {}
+  void AddController(std::unique_ptr<ThreadController> controller,
+                     fit::callback<void(const Err&)> on_done,
+                     AddControllerOptions options = {}) override {}
   void ContinueWith(std::unique_ptr<ThreadController> controller,
                     fit::callback<void(const Err&)> on_continue) override {}
   void AddPostStopTask(PostStopTask task) override {}

@@ -24,6 +24,8 @@
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
+#include "src/developer/debug/zxdb/client/until_process_controller.h"
+#include "src/developer/debug/zxdb/client/until_thread_controller.h"
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
 #include "src/developer/debug/zxdb/expr/expr_language.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
@@ -31,7 +33,6 @@
 #include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/module_symbol_status.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
-
 namespace zxdb {
 
 ProcessImpl::ProcessImpl(TargetImpl* target, uint64_t koid, const std::string& name,
@@ -196,7 +197,17 @@ void ProcessImpl::Continue(bool forward_exceptions) {
 
 void ProcessImpl::ContinueUntil(std::vector<InputLocation> locations,
                                 fit::callback<void(const Err&)> cb) {
-  cb(Err("Process-wide 'until' is not implemented."));
+  auto coordinator = fxl::MakeRefCounted<ProcessUntilThreadController>(
+      weak_factory_.GetWeakPtr(), std::move(locations), std::move(cb));
+
+  for (Thread* thread : GetThreads()) {
+    auto controller = std::make_unique<UntilThreadController>(coordinator);
+    thread->ContinueWith(std::move(controller), [](const Err& err) mutable {
+      // No-op; the breakpoint setting callback is handled by the coordinator.
+      // This cannot be null because existing code expects a callback to output the log from
+      // setting the breakpoint.
+    });
+  }
 }
 
 void ProcessImpl::CancelAllThreadControllers() {

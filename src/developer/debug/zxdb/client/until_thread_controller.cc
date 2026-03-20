@@ -16,6 +16,7 @@
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/client/until_process_controller.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
 #include "src/developer/debug/zxdb/symbols/input_location.h"
 
@@ -34,14 +35,31 @@ UntilThreadController::UntilThreadController(std::vector<InputLocation> location
       comparison_(cmp),
       weak_factory_(this) {}
 
+UntilThreadController::UntilThreadController(fxl::RefPtr<ProcessUntilThreadController> coordinator,
+                                             fit::deferred_callback on_done)
+    : ThreadController(std::move(on_done)),
+      coordinator_(std::move(coordinator)),
+      weak_factory_(this) {
+  if (coordinator_) {
+    coordinator_->AddWorker(weak_factory_.GetWeakPtr());
+  }
+}
+
 UntilThreadController::~UntilThreadController() {
-  if (breakpoint_)
+  if (breakpoint_) {
     GetSystem()->DeleteBreakpoint(breakpoint_.get());
+  }
 }
 
 void UntilThreadController::InitWithThread(Thread* thread, fit::callback<void(const Err&)> cb) {
   SetThread(thread);
 
+  if (coordinator_) {
+    cb(Err());
+    return;
+  }
+
+  // Breakpoint settings.
   BreakpointSettings settings;
   settings.scope = ExecutionScope(thread);
   settings.locations = std::move(locations_);
@@ -110,6 +128,12 @@ ThreadController::StopOp UntilThreadController::OnThreadStop(
     return kContinue;
   }
 
+  // Only care about stops if one of the breakpoints hit was ours. Don't check the stop_type since
+  // as long as the breakpoint was hit, we don't care how the program got there (it could have
+  // single-stepped to the breakpoint).
+  Breakpoint* our_breakpoint = coordinator_ && coordinator_->breakpoint()
+                                   ? coordinator_->breakpoint().get()
+                                   : breakpoint_.get();
   // Other controllers such as the StepOverRangeThreadController can use this as a sub-controller.
   // If the controllers don't care about breakpoint set failures, they may start using the thread
   // right away without waiting for the callback in InitWithThread() to asynchronously complete
@@ -117,16 +141,12 @@ ThreadController::StopOp UntilThreadController::OnThreadStop(
   //
   // This is generally fine, we just need to be careful not to do anything in OnBreakpointSet() that
   // the code in this function depends on.
-  if (!breakpoint_) {
+  if (!our_breakpoint) {
     // Our internal breakpoint shouldn't be deleted out from under ourselves.
     FX_NOTREACHED();
     return kUnexpected;
   }
 
-  // Only care about stops if one of the breakpoints hit was ours. Don't check the stop_type since
-  // as long as the breakpoint was hit, we don't care how the program got there (it could have
-  // single-stepped to the breakpoint).
-  Breakpoint* our_breakpoint = breakpoint_.get();
   bool is_our_breakpoint = false;
   for (auto& hit : hit_breakpoints) {
     if (hit && hit.get() == our_breakpoint) {
@@ -141,6 +161,9 @@ ThreadController::StopOp UntilThreadController::OnThreadStop(
 
   if (!threshold_frame_.is_valid()) {
     Log("No frame check required, we're done.");
+    if (coordinator_) {
+      coordinator_->OnThreadHitBreakpoint(thread());
+    }
     return kStopDone;
   }
 
@@ -169,7 +192,15 @@ ThreadController::StopOp UntilThreadController::OnThreadStop(
     return kContinue;
   }
   Log("Found target frame (or older), 'until' operation complete.");
+  if (coordinator_) {
+    coordinator_->OnThreadHitBreakpoint(thread());
+  }
   return kStopDone;
+}
+
+void UntilThreadController::Cancel() {
+  if (thread())
+    thread()->NotifyControllerDone(this);
 }
 
 std::vector<const BreakpointLocation*> UntilThreadController::GetLocations() const {

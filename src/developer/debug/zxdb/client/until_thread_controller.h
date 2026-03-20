@@ -5,14 +5,17 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_UNTIL_THREAD_CONTROLLER_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_UNTIL_THREAD_CONTROLLER_H_
 
+#include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <stdint.h>
 
 #include <vector>
 
-#include "lib/fit/function.h"
 #include "src/developer/debug/zxdb/client/frame_fingerprint.h"
 #include "src/developer/debug/zxdb/client/thread_controller.h"
+#include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/symbols/input_location.h"
+#include "src/lib/fxl/memory/ref_counted.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace zxdb {
@@ -20,9 +23,15 @@ namespace zxdb {
 class Breakpoint;
 class BreakpointLocation;
 class Err;
+class Process;
+class ProcessUntilThreadController;
+class Session;
 class System;
 class Target;
+class UntilThreadController;
 
+// The "until" thread controller.
+//
 // The "until" thread controller continues until a given instruction is reached. It sets a
 // breakpoint at the desired location(s) and continues execution.
 //
@@ -59,6 +68,9 @@ class UntilThreadController : public ThreadController {
   UntilThreadController(std::vector<InputLocation> locations, FrameFingerprint newest_frame,
                         FrameComparison cmp, fit::deferred_callback on_done = {});
 
+  explicit UntilThreadController(fxl::RefPtr<ProcessUntilThreadController> coordinator,
+                                 fit::deferred_callback on_done = {});
+
   ~UntilThreadController() override;
 
   // ThreadController implementation:
@@ -67,6 +79,11 @@ class UntilThreadController : public ThreadController {
   StopOp OnThreadStop(debug_ipc::ExceptionType stop_type,
                       const std::vector<fxl::WeakPtr<Breakpoint>>& hit_breakpoints) override;
   const char* GetName() const override { return "Until"; }
+
+  // Forcefully removes this controller from its thread.
+  void Cancel();
+
+  Thread* thread() { return ThreadController::thread(); }
 
   // Returns the resolved locations where this thread controller is running to. When active, this
   // will always contain at least one element (InitWithThread() will report error if there are no
@@ -88,6 +105,7 @@ class UntilThreadController : public ThreadController {
   FrameFingerprint threshold_frame_;
   FrameComparison comparison_ = kRunUntilOlderFrame;
 
+  fxl::RefPtr<ProcessUntilThreadController> coordinator_;
   fxl::WeakPtr<Breakpoint> breakpoint_;
 
   fxl::WeakPtrFactory<UntilThreadController> weak_factory_;

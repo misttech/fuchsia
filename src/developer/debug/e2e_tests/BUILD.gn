@@ -141,6 +141,7 @@ if (is_host && has_board) {
         "scripts/starnix_proc.script",
         "scripts/step_plt.script",
         "scripts/template_functions.script",
+        "scripts/until.script",
         "scripts/unwind_plt.script",
       ]
     }

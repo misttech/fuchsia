@@ -113,7 +113,7 @@ void RunVerbUntil(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
   ConsoleContext* console_context = cmd_context->GetConsoleContext();
 
   // Dispatch the request.
-  if (cmd.HasNoun(Noun::kProcess) && !cmd.HasNoun(Noun::kThread) && !cmd.HasNoun(Noun::kFrame)) {
+  if (!cmd.HasNoun(Noun::kThread) && !cmd.HasNoun(Noun::kFrame)) {
     // Process-wide ("process until ...").
     if (Err err = AssertRunningTarget(console_context, "until", cmd.target()); err.has_error())
       return cmd_context->ReportError(err);

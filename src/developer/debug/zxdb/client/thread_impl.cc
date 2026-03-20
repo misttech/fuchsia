@@ -163,24 +163,33 @@ void ThreadImpl::Continue(bool forward_exception) {
   session()->remote_api()->Resume(request, [](const Err& err, debug_ipc::ResumeReply) {});
 }
 
-void ThreadImpl::ContinueWith(std::unique_ptr<ThreadController> controller,
-                              fit::callback<void(const Err&)> on_continue) {
+void ThreadImpl::AddController(std::unique_ptr<ThreadController> controller,
+                               fit::callback<void(const Err&)> on_done,
+                               AddControllerOptions options) {
   ThreadController* controller_ptr = controller.get();
 
   // Add it first so that its presence will be noted by anything its initialization function does.
   controllers_.push_back(std::move(controller));
 
   controller_ptr->InitWithThread(
-      this, [this, controller_ptr, on_continue = std::move(on_continue)](const Err& err) mutable {
+      this, [this, controller_ptr, on_done = std::move(on_done), options](const Err& err) mutable {
         if (err.has_error()) {
           controller_ptr->Log("InitWithThread failed: %s", err.msg().c_str());
           NotifyControllerDone(controller_ptr);  // Remove the controller.
         } else {
-          controller_ptr->Log("Initialized, continuing...");
-          Continue(false);
+          controller_ptr->Log("Initialized.");
+          if (options.continue_) {
+            this->Continue(false);
+          }
         }
-        on_continue(err);
+        if (on_done)
+          on_done(err);
       });
+}
+
+void ThreadImpl::ContinueWith(std::unique_ptr<ThreadController> controller,
+                              fit::callback<void(const Err&)> on_continue) {
+  AddController(std::move(controller), std::move(on_continue), AddControllerOptions(true));
 }
 
 void ThreadImpl::AddPostStopTask(PostStopTask task) {

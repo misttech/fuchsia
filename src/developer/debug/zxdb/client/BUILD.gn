@@ -70,6 +70,7 @@ static_library("client") {
     "thread.h",
     "thread_controller.h",
     "thread_observer.h",
+    "until_process_controller.h",
     "until_thread_controller.h",
   ]
 
@@ -162,6 +163,7 @@ static_library("client") {
     "thread_controller.cc",
     "thread_impl.cc",
     "thread_impl.h",
+    "until_process_controller.cc",
     "until_thread_controller.cc",
   ]
 

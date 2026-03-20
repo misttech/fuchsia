@@ -82,6 +82,18 @@ class Thread : public ClientObject {
   // marked as handled and the thread is resumed.
   virtual void Continue(bool forward_exception) = 0;
 
+  struct AddControllerOptions {
+    AddControllerOptions(bool do_continue = false) : continue_(do_continue) {}
+    bool continue_;
+  };
+
+  // Adds a ThreadController to the thread. The controller will be initialized.
+  // The on_done callback will be called when initialization is complete.
+  // This DOES NOT resume the thread unless options.continue_ is true.
+  virtual void AddController(std::unique_ptr<ThreadController> controller,
+                             fit::callback<void(const Err&)> on_done,
+                             AddControllerOptions options = AddControllerOptions()) = 0;
+
   // Continues the thread using the given ThreadController. This is used to implement the more
   // complex forms of stepping.
   //
