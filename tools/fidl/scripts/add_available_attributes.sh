@@ -55,8 +55,6 @@ for dir in sdk/{fidl,banjo}/fuchsia.* sdk/banjo/ddk.hw.physiter; do
     # This is the only case with two FIDL libraries in the same BUILD.gn.
     # Neither are exposed in the SDK so we can skip it.
     [[ "$library" == "fuchsia.power.battery" ]] && continue
-    # This library has no .fidl files and should likely be removed.
-    [[ "$library" == "fuchsia.device.vsock" ]] && continue
     # Ensure there is only one fidl target.
     if [[ "$(rg '^fidl\("' "$dir/BUILD.gn" -c)" -ne 1 ]]; then
         echo "unexpected BUILD.gn: $dir/BUILD.gn" >&2
