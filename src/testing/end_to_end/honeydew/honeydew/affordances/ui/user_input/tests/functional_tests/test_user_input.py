@@ -14,7 +14,7 @@ from honeydew.affordances.ui.screenshot import types
 from honeydew.affordances.ui.user_input import types as ui_custom_types
 from honeydew.utils import common
 
-TOUCH_APP = (
+INPUT_APP = (
     "fuchsia-pkg://fuchsia.com/flatland-examples#meta/"
     "simplest-app-flatland-session.cm"
 )
@@ -51,21 +51,19 @@ class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
         image.save(os.path.join(self.test_case_path, file_name))
         return image
 
-    def test_user_input_tap(self) -> None:
-        self.dut.session.add_component(TOUCH_APP)
+    def _wait_for_pixel_change(
+        self, before: types.ScreenshotImage, tag: str
+    ) -> None:
+        """Waits for the top-left pixel to change from the 'before' screenshot.
 
-        # The app will change the color when a tap is received.
-        # Ensure the top left pixel changes after tap
-        before = self._take_and_save_screenshot("before")
-
-        touch_device = self.dut.user_input.create_touch_device()
-        touch_device.tap(
-            location=ui_custom_types.Coordinate(x=1, y=2), tap_event_count=1
-        )
+        Args:
+            before: The screenshot taken before the action.
+            tag: A descriptive tag for the screenshot (e.g., 'tap', 'swipe').
+        """
 
         def pixel_changed_condition() -> bool:
             current_screenshot = self._take_and_save_screenshot(
-                "after", self.screenshot_attempt_count
+                f"after_{tag}", self.screenshot_attempt_count
             )
             self.screenshot_attempt_count += 1
             return before.data[0:4] != current_screenshot.data[0:4]
@@ -74,17 +72,39 @@ class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
             common.wait_for_state(
                 state_fn=pixel_changed_condition,
                 expected_state=True,
-                wait_time=2,  # Time to wait between retries in seconds
+                wait_time=2,
             )
         except errors.HoneydewTimeoutError:
-            asserts.fail("color did not change after tap within timeout")
+            asserts.fail(f"color did not change after {tag} within timeout")
 
-    def test_user_input_swipe(self) -> None:
-        self.dut.session.add_component(TOUCH_APP)
+    def _click_to_focus(self) -> None:
+        """Clicks on the screen to focus the app, and waits for color change."""
+        self.mouse_device = self.dut.user_input.create_mouse_device()
+        before_click = self._take_and_save_screenshot("before_click_for_focus")
+        self.mouse_device.click()
+
+        self._wait_for_pixel_change(before_click, "click_for_focus")
+
+    def test_user_input_tap(self) -> None:
+        self.dut.session.add_component(INPUT_APP)
 
         # The app will change the color when a tap is received.
         # Ensure the top left pixel changes after tap
-        before = self._take_and_save_screenshot("before")
+        before = self._take_and_save_screenshot("before_tap")
+
+        touch_device = self.dut.user_input.create_touch_device()
+        touch_device.tap(
+            location=ui_custom_types.Coordinate(x=1, y=2), tap_event_count=1
+        )
+
+        self._wait_for_pixel_change(before, "tap")
+
+    def test_user_input_swipe(self) -> None:
+        self.dut.session.add_component(INPUT_APP)
+
+        # The app will change the color when a tap is received.
+        # Ensure the top left pixel changes after tap
+        before = self._take_and_save_screenshot("before_swipe")
 
         touch_device = self.dut.user_input.create_touch_device()
 
@@ -95,52 +115,42 @@ class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
             duration_ms=2000,
         )
 
-        def pixel_changed_condition() -> bool:
-            current_screenshot = self._take_and_save_screenshot(
-                "after", self.screenshot_attempt_count
-            )
-            self.screenshot_attempt_count += 1
-            return before.data[0:4] != current_screenshot.data[0:4]
-
-        try:
-            common.wait_for_state(
-                state_fn=pixel_changed_condition,
-                expected_state=True,
-                wait_time=2,  # Time to wait between retries in seconds
-            )
-        except errors.HoneydewTimeoutError:
-            asserts.fail("color did not change after tap within timeout")
+        self._wait_for_pixel_change(before, "swipe")
 
     def test_user_input_press_key(self) -> None:
-        self.dut.session.add_component(TOUCH_APP)
-
-        # The app will change the color when a key is received.
-        # Ensure the top left pixel changes after
-        #
-        # TODO(b/320543407): Re-enable the assertion once we get the example app
-        # to properly render into scenic. See b/320543407 for details.
-        # before = self.device.screenshot.take()
+        self.dut.session.add_component(INPUT_APP)
 
         keyboard_device = self.dut.user_input.create_keyboard_device()
+        before_keypress = self._take_and_save_screenshot("before_keypress")
 
         keyboard_device.key_press(key_code=0x00070004)  # Key A
 
-        # TODO(b/320543407): Re-enable the assertion once we get the example app
-        # to properly render into scenic. See b/320543407 for details.
-        # after = self.device.screenshot.take()
-        # asserts.assert_not_equal(before.data[0:4], after.data[0:4])
+        self._wait_for_pixel_change(before_keypress, "keypress")
 
-    def test_user_input_scroll(self) -> None:
-        self.dut.session.add_component(TOUCH_APP)
-
-        # TODO(b/492192785): Add test assertions once the example app
-        # supports and reacts to mouse input.
-
+    def test_user_input_mouse_click(self) -> None:
+        self.dut.session.add_component(INPUT_APP)
         mouse_device = self.dut.user_input.create_mouse_device()
+
+        # The app will change the color when a click is received.
+        # Ensure the top left pixel changes after click
+        before = self._take_and_save_screenshot("before_mouse_click")
+
+        mouse_device.click()
+
+        self._wait_for_pixel_change(before, "mouse_click")
+
+    def test_user_input_mouse_scroll(self) -> None:
+        self.dut.session.add_component(INPUT_APP)
+        self._click_to_focus()
+
+        # Now get the color before scroll
+        before_scroll = self._take_and_save_screenshot("before_scroll")
 
         # Simulate a scroll event. If the underlying FIDL connection or
         # registry fails, this will raise a UserInputError and fail the test.
-        mouse_device.scroll(scroll_v_detent=10)
+        self.mouse_device.scroll(scroll_v_detent=10)
+
+        self._wait_for_pixel_change(before_scroll, "scroll")
 
 
 class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):

@@ -13,7 +13,9 @@ rustc_binary("bin") {
   source_root = "src/main.rs"
   sources = [
     "src/internal_message.rs",
+    "src/keyboard.rs",
     "src/main.rs",
+    "src/mouse.rs",
     "src/touch.rs",
   ]
 
@@ -22,6 +24,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
     "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
     "//src/lib/async-utils",

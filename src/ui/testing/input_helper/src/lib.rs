@@ -28,10 +28,10 @@ use keymaps::inverse_keymap::{InverseKeymap, Shift};
 use keymaps::usages::{Usages, hid_usage_to_input3_key};
 use log::{error, info, warn};
 use std::time::Duration;
-use zx::HandleBased;
+use zx::{self, HandleBased};
 use {
     fidl_fuchsia_math as math, fidl_fuchsia_power_system as fps, fidl_fuchsia_time_alarms as fta,
-    fidl_fuchsia_ui_display_singleton as display_info, fuchsia_async as fasync, zx,
+    fidl_fuchsia_ui_display_singleton as display_info, fuchsia_async as fasync,
 };
 
 mod input_device;

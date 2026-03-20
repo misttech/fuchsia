@@ -13,6 +13,8 @@ pub enum InternalMessage {
     CreateView(fviews::ViewCreationToken, fviews::ViewIdentityOnCreation),
     OnPresentError { error: fland::FlatlandError },
     OnNextFrameBegin,
+    KeyboardEvent { trace_id: fuchsia_trace::Id, change_color: bool },
     Relayout { size: SizeU },
     TouchEvent { phase: EventPhase, trace_id: fuchsia_trace::Id },
+    MouseEvent { trace_id: fuchsia_trace::Id, change_color: bool },
 }

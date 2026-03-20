@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 mod internal_message;
+mod keyboard;
+mod mouse;
 mod touch;
 
 use async_utils::hanging_get::client::HangingGetStream;
@@ -14,15 +16,15 @@ use fidl_fuchsia_ui_pointer::EventPhase;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::{self as component};
 use fuchsia_scenic::ViewRefPair;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::prelude::*;
 use internal_message::InternalMessage;
 use log::{error, warn};
 use std::env;
 use {
     fidl_fuchsia_math as fmath, fidl_fuchsia_ui_app as fapp, fidl_fuchsia_ui_composition as fland,
-    fidl_fuchsia_ui_pointer as fptr, fidl_fuchsia_ui_views as fviews, fuchsia_async as fasync,
-    fuchsia_trace as trace,
+    fidl_fuchsia_ui_input3 as fuiinput, fidl_fuchsia_ui_pointer as fptr,
+    fidl_fuchsia_ui_views as fviews, fuchsia_async as fasync, fuchsia_trace as trace,
 };
 
 const IMAGE_ID: fland::ContentId = fland::ContentId { value: 2 };
@@ -35,6 +37,7 @@ struct AppModel<'a> {
     view_controller: Option<ViewControllerProxy>,
     color: fland::ColorRgba,
     size: fmath::SizeU,
+    keyboard: Option<fuiinput::KeyboardProxy>,
 }
 
 impl<'a> AppModel<'a> {
@@ -50,6 +53,7 @@ impl<'a> AppModel<'a> {
             view_controller: None,
             color: fland::ColorRgba { red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0 },
             size: fmath::SizeU { width: 100, height: 100 },
+            keyboard: None,
         }
     }
 
@@ -70,10 +74,19 @@ impl<'a> AppModel<'a> {
         let (parent_viewport_watcher, parent_viewport_watcher_request) =
             create_proxy::<fland::ParentViewportWatcherMarker>();
 
-        // Set up the protocols we care about (currently just touch).
+        // Keyboard setup
+        let keyboard = connect_to_protocol::<fuiinput::KeyboardMarker>()
+            .expect("error connecting to Keyboard");
+
         let (touch, touch_request) = create_proxy::<fptr::TouchSourceMarker>();
-        let view_bound_protocols =
-            fland::ViewBoundProtocols { touch_source: Some(touch_request), ..Default::default() };
+        let (mouse, mouse_request) = create_proxy::<fptr::MouseSourceMarker>();
+        let (focuser, focuser_request) = create_proxy::<fviews::FocuserMarker>();
+        let view_bound_protocols = fland::ViewBoundProtocols {
+            touch_source: Some(touch_request),
+            mouse_source: Some(mouse_request),
+            view_focuser: Some(focuser_request),
+            ..Default::default()
+        };
 
         // Create the view.
         let fuchsia_scenic::flatland::ViewCreationTokenPair {
@@ -81,12 +94,17 @@ impl<'a> AppModel<'a> {
             viewport_creation_token,
         } = fuchsia_scenic::flatland::ViewCreationTokenPair::new()
             .expect("failed to create view tokens");
+        let view_identity = fviews::ViewIdentityOnCreation::from(
+            ViewRefPair::new().expect("failed viewref creation"),
+        );
+        let view_ref_for_keyboard = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
+            .expect("failed to dup view ref");
+        let view_ref_for_focuser = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
+            .expect("failed to dup view ref");
         self.flatland
             .create_view2(
                 view_creation_token,
-                fviews::ViewIdentityOnCreation::from(
-                    ViewRefPair::new().expect("failed viewref creation"),
-                ),
+                view_identity,
                 view_bound_protocols,
                 parent_viewport_watcher_request,
             )
@@ -111,11 +129,25 @@ impl<'a> AppModel<'a> {
             .present_view(view_spec, None, Some(view_controller_request))
             .await
             .expect("failed to present view")
-            .unwrap_or_else(|e| println!("{:?}", e));
+            .unwrap_or_else(|e| error!("{:?}", e));
+
+        let (keyboard_listener_client, keyboard_listener_stream) =
+            fidl::endpoints::create_request_stream::<fuiinput::KeyboardListenerMarker>();
+        keyboard
+            .add_listener(view_ref_for_keyboard, keyboard_listener_client)
+            .await
+            .expect("add_listener");
+
+        if let Err(e) = focuser.request_focus(view_ref_for_focuser).await {
+            error!("Failed to request focus: {:?}", e);
+        }
 
         // Listen for updates over channels we just created.
+        keyboard::spawn_keyboard_listener(keyboard_listener_stream, self.internal_sender.clone());
+        self.keyboard = Some(keyboard);
         Self::spawn_layout_info_watcher(parent_viewport_watcher, self.internal_sender.clone());
         touch::spawn_touch_source_watcher(touch, self.internal_sender.clone());
+        mouse::spawn_mouse_source_watcher(mouse, self.internal_sender.clone());
     }
 
     async fn create_view_with_token_identity(
@@ -127,10 +159,21 @@ impl<'a> AppModel<'a> {
         let (parent_viewport_watcher, parent_viewport_watcher_request) =
             create_proxy::<fland::ParentViewportWatcherMarker>();
 
-        // Set up the protocols we care about (currently just touch).
+        // Set up the protocols we care about (currently touch and mouse).
         let (touch, touch_request) = create_proxy::<fptr::TouchSourceMarker>();
-        let view_bound_protocols =
-            fland::ViewBoundProtocols { touch_source: Some(touch_request), ..Default::default() };
+        let (mouse, mouse_request) = create_proxy::<fptr::MouseSourceMarker>();
+        let (focuser, focuser_request) = create_proxy::<fviews::FocuserMarker>();
+        let view_bound_protocols = fland::ViewBoundProtocols {
+            touch_source: Some(touch_request),
+            mouse_source: Some(mouse_request),
+            view_focuser: Some(focuser_request),
+            ..Default::default()
+        };
+
+        let view_ref_for_keyboard = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
+            .expect("failed to dup view ref");
+        let view_ref_for_focuser = fuchsia_scenic::duplicate_view_ref(&view_identity.view_ref)
+            .expect("failed to dup view ref");
 
         // Create the view.
         self.flatland
@@ -149,6 +192,23 @@ impl<'a> AppModel<'a> {
         // Listen for updates over channels we just created.
         Self::spawn_layout_info_watcher(parent_viewport_watcher, self.internal_sender.clone());
         touch::spawn_touch_source_watcher(touch, self.internal_sender.clone());
+        mouse::spawn_mouse_source_watcher(mouse, self.internal_sender.clone());
+
+        // Keyboard setup
+        let keyboard = connect_to_protocol::<fuiinput::KeyboardMarker>()
+            .expect("error connecting to Keyboard");
+        let (keyboard_listener_client, keyboard_listener_stream) =
+            fidl::endpoints::create_request_stream::<fuiinput::KeyboardListenerMarker>();
+        keyboard
+            .add_listener(view_ref_for_keyboard, keyboard_listener_client)
+            .await
+            .expect("add_listener");
+
+        if let Err(e) = focuser.request_focus(view_ref_for_focuser).await {
+            warn!("Failed to request focus: {:?}", e);
+        }
+        keyboard::spawn_keyboard_listener(keyboard_listener_stream, self.internal_sender.clone());
+        self.keyboard = Some(keyboard);
     }
 
     fn spawn_layout_info_watcher(
@@ -225,7 +285,7 @@ fn setup_view_provider_fidl_services(sender: UnboundedSender<InternalMessage>) {
                     future::ok(())
                 })
                 .unwrap_or_else(|e| {
-                    eprintln!("error running TemporaryFlatlandViewProvider server: {:?}", e)
+                    error!("error running TemporaryFlatlandViewProvider server: {:?}", e)
                 }),
         )
         .detach()
@@ -260,7 +320,7 @@ fn setup_handle_flatland_events(
                 };
                 future::ok(())
             })
-            .unwrap_or_else(|e| eprintln!("error listening for Flatland Events: {:?}", e)),
+            .unwrap_or_else(|e| error!("error listening for Flatland Events: {:?}", e)),
     )
     .detach();
 }
@@ -300,7 +360,6 @@ async fn main() {
 
     let mut present_count = 1;
 
-    // Vec for tracking touch event trace flow ids.
     let mut touch_updates = Vec::<trace::Id>::new();
 
     loop {
@@ -341,6 +400,20 @@ async fn main() {
                         let trace_id = trace::Id::random();
                         touch_updates.push(trace_id);
                         trace::flow_begin!("input", "touch_update", trace_id);
+                        app.next_color();
+                    }
+                  },
+                  InternalMessage::MouseEvent{ trace_id, change_color } => {
+                    trace::duration!("input", "OnMouseEvent");
+                    trace::flow_end!("input", "mouse_in_simplest_app", trace_id);
+                    if change_color {
+                        app.next_color();
+                    }
+                  },
+                  InternalMessage::KeyboardEvent{ trace_id, change_color } => {
+                    trace::duration!("input", "OnKeyboardEvent");
+                    trace::flow_end!("input", "keyboard_in_simplest_app", trace_id);
+                    if change_color {
                         app.next_color();
                     }
                   },

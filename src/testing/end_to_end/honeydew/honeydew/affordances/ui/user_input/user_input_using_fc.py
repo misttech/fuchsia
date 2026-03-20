@@ -221,6 +221,48 @@ class AsyncMouseDeviceUsingFc(user_input.AsyncMouseDevice, AsyncLazyReady):
                 f"scroll operation failed on {self._device_name}"
             ) from status
 
+    @ensure_ready
+    async def click(
+        self,
+        button: int = user_input.DEFAULTS["MOUSE_BUTTON"],
+    ) -> None:
+        """Instantiates a click event (button down and up)."""
+        assert self._mouse_proxy is not None
+        try:
+            button_map = {
+                0: f_test_input.MouseButton.FIRST,
+                1: f_test_input.MouseButton.SECOND,
+                2: f_test_input.MouseButton.THIRD,
+            }
+            if button not in button_map:
+                raise user_input_errors.UserInputError(
+                    f"Unsupported mouse button index: {button}. "
+                    f"Supported indices: {list(button_map.keys())}"
+                )
+            pressed_buttons = [button_map[button]]
+
+            # We will first send the DOWN event, which will include the button in pressed_buttons,
+            # and no movement.
+            await self._mouse_proxy.simulate_mouse_event(
+                movement_x=0,
+                movement_y=0,
+                pressed_buttons=pressed_buttons,
+                scroll_v_detent=0,
+                scroll_h_detent=0,
+            )
+            # Send UP event
+            await self._mouse_proxy.simulate_mouse_event(
+                movement_x=0,
+                movement_y=0,
+                pressed_buttons=[],
+                scroll_v_detent=0,
+                scroll_h_detent=0,
+            )
+        except fcp.FcTransportStatus as status:
+            raise user_input_errors.UserInputError(
+                f"click operation failed on {self._device_name}"
+            ) from status
+
 
 class TouchDeviceUsingFc(user_input.TouchDevice):
     """Virtual TouchDevice wrapper."""
@@ -394,6 +436,15 @@ class MouseDeviceUsingFc(user_input.MouseDevice):
         """Instantiates a scroll event."""
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.scroll(scroll_v_detent, scroll_h_detent)
+        )
+
+    def click(
+        self,
+        button: int = user_input.DEFAULTS["MOUSE_BUTTON"],
+    ) -> None:
+        """Instantiates a click event (button down and up)."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.click(button)
         )
 
     def as_async(self) -> AsyncMouseDeviceUsingFc:

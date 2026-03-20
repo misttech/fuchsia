@@ -15,6 +15,7 @@ DEFAULTS: dict[str, Any] = {
     "TAP_DURATION_MS": 300,
     "SWIPE_DURATION_MS": 0,
     "ONE_TAP_DURATION_MS": 0,
+    "MOUSE_BUTTON": 0,
 }
 
 
@@ -110,6 +111,20 @@ class AsyncMouseDevice(abc.ABC):
 
         Raises:
             UserInputError: if failed scroll operation.
+        """
+
+    @abc.abstractmethod
+    async def click(
+        self,
+        button: int = DEFAULTS["MOUSE_BUTTON"],
+    ) -> None:
+        """Instantiates a click event (button down and up).
+
+        Args:
+            button: mouse button id, defaults to 0 (FIRST).
+
+        Raises:
+            UserInputError: if failed click operation.
         """
 
 
@@ -219,7 +234,7 @@ class TouchDevice(abc.ABC):
 
 
 class KeyboardDevice(abc.ABC):
-    """Abstract base class for UserInput Keyboard or Button."""
+    """Abstract base class for UserInput Keyboard."""
 
     @abc.abstractmethod
     def key_press(
@@ -257,6 +272,20 @@ class MouseDevice(abc.ABC):
 
         Raises:
             UserInputError: if failed scroll operation.
+        """
+
+    @abc.abstractmethod
+    def click(
+        self,
+        button: int = DEFAULTS["MOUSE_BUTTON"],
+    ) -> None:
+        """Instantiates a click event (button down and up).
+
+        Args:
+            button: mouse button id, defaults to 0 (FIRST).
+
+        Raises:
+            UserInputError: if failed click operation.
         """
 
     @abc.abstractmethod

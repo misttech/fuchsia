@@ -13,6 +13,7 @@ import fidl_fuchsia_ui_test_input as f_test_input
 import fuchsia_controller_py
 
 from honeydew import errors
+from honeydew.affordances.ui.user_input import errors as user_input_errors
 from honeydew.affordances.ui.user_input import types as ui_custom_types
 from honeydew.affordances.ui.user_input import user_input_using_fc
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -378,6 +379,81 @@ class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ]
         )
+
+    @mock.patch.object(
+        f_test_input.MouseClient,
+        "simulate_mouse_event",
+        new_callable=mock.AsyncMock,
+    )
+    @mock.patch.object(
+        f_test_input.RegistryClient,
+        "register_mouse",
+        new_callable=mock.AsyncMock,
+        return_value=None,
+    )
+    async def test_click(self, unused_register_mouse, simulate_mouse_event) -> None:  # type: ignore[no-untyped-def]
+        """Test for UserInput.click() method."""
+
+        mouse_device = self.user_input().create_mouse_device()
+        await mouse_device.click(
+            button=0,
+        )
+        simulate_mouse_event.assert_has_calls(
+            [
+                mock.call(
+                    movement_x=0,
+                    movement_y=0,
+                    pressed_buttons=[f_test_input.MouseButton.FIRST],
+                    scroll_v_detent=0,
+                    scroll_h_detent=0,
+                ),
+                mock.call(
+                    movement_x=0,
+                    movement_y=0,
+                    pressed_buttons=[],
+                    scroll_v_detent=0,
+                    scroll_h_detent=0,
+                ),
+            ]
+        )
+
+        simulate_mouse_event.reset_mock()
+        await mouse_device.click(
+            button=1,
+        )
+        simulate_mouse_event.assert_has_calls(
+            [
+                mock.call(
+                    movement_x=0,
+                    movement_y=0,
+                    pressed_buttons=[f_test_input.MouseButton.SECOND],
+                    scroll_v_detent=0,
+                    scroll_h_detent=0,
+                ),
+                mock.call(
+                    movement_x=0,
+                    movement_y=0,
+                    pressed_buttons=[],
+                    scroll_v_detent=0,
+                    scroll_h_detent=0,
+                ),
+            ]
+        )
+
+    @mock.patch.object(
+        f_test_input.RegistryClient,
+        "register_mouse",
+        new_callable=mock.AsyncMock,
+        return_value=None,
+    )
+    async def test_click_invalid_button_raises_error(self, unused_register_mouse) -> None:  # type: ignore[no-untyped-def]
+        """Test for UserInput.click() method with invalid button index."""
+        mouse_device = self.user_input().create_mouse_device()
+        with self.assertRaisesRegex(
+            user_input_errors.UserInputError,
+            "Unsupported mouse button index: 3",
+        ):
+            await mouse_device.click(button=3)
 
 
 if __name__ == "__main__":

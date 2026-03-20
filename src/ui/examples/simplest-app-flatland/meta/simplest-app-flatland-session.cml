@@ -23,6 +23,7 @@
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.input3.Keyboard",
             ],
         },
     ],

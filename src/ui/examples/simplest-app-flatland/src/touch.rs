@@ -79,8 +79,7 @@ pub fn spawn_touch_source_watcher(
                         fuchsia_trace::duration!("input", "touch_source_watcher");
 
                         let trace_id = e.trace_flow_id.expect("Trace flow id should exist");
-                        // need to step dispatch_event_to_client to allow the flow end on scenic.
-                        fuchsia_trace::flow_step!(
+                        fuchsia_trace::flow_end!(
                             "input",
                             "dispatch_event_to_client",
                             trace_id.into()
