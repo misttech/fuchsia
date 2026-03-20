@@ -16,7 +16,28 @@ set -o pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
 
-fx-warn "fx emu [args] is no longer preferred. Call ffx emu [args] instead."
-fx-info "Executing fx emu ${@}"
+KNOWN_COMMANDS="start stop list show console help"
+IS_KNOWN=0
+for cmd in ${KNOWN_COMMANDS}; do
+  if [[ "$1" == "$cmd" ]]; then
+    IS_KNOWN=1
+    break
+  fi
+done
 
-fx-command-run ffx emu "$@"
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+  # If the first argument is help, let ffx emu handle it
+  fx-warn "fx emu is no longer preferred. Call ffx emu instead."
+  fx-command-run ffx emu "$@"
+  exit $?
+fi
+
+if [[ "$IS_KNOWN" -eq 1 ]]; then
+  fx-warn "fx emu is no longer preferred. Call ffx emu instead."
+  fx-info "Executing ffx emu ${*}"
+  fx-command-run ffx emu "$@"
+else
+  fx-warn "fx emu is no longer preferred. For starting an emulator, call ffx emu start instead."
+  fx-info "Executing ffx emu start ${*}"
+  fx-command-run ffx emu start "$@"
+fi
