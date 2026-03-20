@@ -8,10 +8,6 @@ import("//build/rust/rustc_binary.gni")
 import("//build/testing/symbols_dir_test_data.gni")
 import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
-assert(
-    has_board,
-    "This file must only be included in build configurations that have a board.")
-
 if (is_host) {
   ffx_e2e_test("ffx_target_net_lib_e2e_test") {
     edition = "2024"
@@ -36,14 +32,11 @@ if (is_host) {
     testonly = true
     deps = [ ":ffx_target_net_lib_e2e_test" ]
   }
-} else if (current_toolchain == default_toolchain) {
-  # Don't let the assembly templates expand except on the default toolchain.
-  # Weirndess ensues if they're expanded on variant toolchains like for asan.
-  test_product_bundle("product_bundle") {
-    name = "ffx-target-net-test"
+}
 
-    # Use generic/emu board for the target arch.
-    board_config = "//boards/${target_cpu}"
+ffx_e2e_product_bundle("product_bundle") {
+  name = "ffx-target-net-test"
+  product_configuration = {
     platform = {
       build_type = "eng"
       feature_set_level = "standard"

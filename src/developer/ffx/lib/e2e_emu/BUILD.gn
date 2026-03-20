@@ -4,67 +4,43 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
-import("//src/sys/pkg/repositories/devhost/devhost.gni")
+import("ffx_e2e_test.gni")
 
 # e2e_emu is used by cross toolchain targets.
 
-# For this library's own tests we need to make something available in the universe package
-# set without relying on the overall build system to do so via dependencies. Most test packages
-# are put in the base package set on infra builders so if we want continuous validation of
-# universe package resolution (which is how most developers work locally) then we need to make
-# our own isolated package repository for a package that's not in the base/cache set of the
-# overall build graph.
 _package_for_test_name = "ffx_e2e_emu_resolve_from_universe_for_own_tests"
 
-if (is_host && has_board) {
-  _package_for_test_label = ":${_package_for_test_name}($default_toolchain)"
-  _package_for_test_outdir =
-      get_label_info(_package_for_test_label, "target_out_dir")
-  _package_for_test_manifest_path = "${_package_for_test_outdir}/${_package_for_test_name}/package_manifest.json"
-
-  _package_manifests_list = "$target_out_dir/package_manifests.list"
-  generated_file("package_manifests.list") {
-    testonly = true
-    outputs = [ _package_manifests_list ]
-    output_conversion = "json"
-    contents = {
-      version = "1"
-      content = {
-        manifests =
-            [ rebase_path(_package_for_test_manifest_path, root_build_dir) ]
-      }
-    }
-
-    # Prevent packages in this list from making it into the overall system image via our deps.
-    metadata = {
-      package_barrier = []
-    }
-    deps = [ _package_for_test_label ]
-  }
-
-  _test_amber_files_path = "$target_out_dir/amber-files"
-  devhost_repository_publish("test_repo_publish") {
-    testonly = true
-
-    output_repository_dir = _test_amber_files_path
-
-    deps = [ ":package_manifests.list" ]
-    package_list_manifests = [ _package_manifests_list ]
-  }
-  host_test_data("test_package_repo_data") {
-    sources = [ _test_amber_files_path ]
-    deps = [ ":test_repo_publish" ]
-  }
-} else if (is_fuchsia) {
+if (is_fuchsia) {
   fuchsia_package(_package_for_test_name) {
     testonly = true
     visibility = [ ":*" ]
   }
-} else {
-  not_needed([ "_package_for_test_name" ])
+
+  ffx_e2e_package_repository("test_package_repo_for_own_tests") {
+    packages = [
+      {
+        label = ":$_package_for_test_name"
+      },
+    ]
+  }
+
+  ffx_e2e_package_repository("empty_package_repository") {
+    packages = []
+  }
 }
 
-if (is_host && has_board) {
+# This is an intentionally tiny product definition. If you're reading this because your test needs
+# more features enabled or additional packages, please use this template in your test's BUILD.gn
+# and customize the configuration to your needs instead of adding here.
+ffx_e2e_product_bundle("default_ffx_e2e_emu_product") {
+  product_configuration = {
+    platform = {
+      build_type = "eng"
+    }
+  }
+}
+
+if (is_host) {
   group("host_tests") {
     testonly = true
     deps = [ ":e2e_emu_test" ]
@@ -93,13 +69,13 @@ if (is_host && has_board) {
   _sdk_path = _sdk_outdir + "/sdk/exported/core"
 
   # Product bundle containing emulator image.
-  _pb_label = "//build/images/fuchsia:product_bundle($default_toolchain)"
-  _pb_outdir = get_label_info(_pb_label, "target_out_dir")
-  _product_bundle = "$_pb_outdir/product_bundle"
+  _pb_label = ":default_ffx_e2e_emu_product($default_toolchain)"
+  _product_bundle = get_label_info(_pb_label, "target_out_dir") +
+                    "/default_ffx_e2e_emu_product"
 
-  # Package repository inputs from the main build, so that `fx set ... --with //foo` will work.
-  _amber_files_label = "//build/images/updates:publish($default_toolchain)"
-  _amber_files_path = "$root_build_dir/amber-files"
+  _test_repo_label = ":test_package_repo_for_own_tests($target_toolchain)"
+  _test_repo_path = get_label_info(_test_repo_label, "target_out_dir") + "/" +
+                    get_label_info(_test_repo_label, "name")
 
   # This test uses non-public interfaces from e2e_emu, it cannot use `ffx_e2e_test` template
   # as the template includes e2e_emu as a dependency.
@@ -111,32 +87,27 @@ if (is_host && has_board) {
 
     data_deps = [
       ":isolated_emulator_data",
-
-      # Put this in the main data_deps since rustc_library doesn't have test_data_deps
-      ":test_package_repo_data",
       "//src/developer/ffx:suite_test_data",
     ]
 
     args = [
       "env PRODUCT_BUNDLE_PATH=" + rebase_path(_product_bundle, root_build_dir),
       "env TEST_PACKAGE_NAME=${_package_for_test_name}",
-      "env TEST_PACKAGE_REPOSITORY_PATH=" +
-          rebase_path(_test_amber_files_path, root_build_dir),
       "env PACKAGE_REPOSITORY_PATH=" +
-          rebase_path(_amber_files_path, root_build_dir),
+          rebase_path(_test_repo_path, root_build_dir),
     ]
   }
 
   host_test_data("isolated_emulator_data") {
     sources = [
-      _amber_files_path,
       _product_bundle,
       _sdk_path,
+      _test_repo_path,
     ]
     deps = [
-      _amber_files_label,
       _pb_label,
       _sdk_label,
+      _test_repo_label,
     ]
   }
 

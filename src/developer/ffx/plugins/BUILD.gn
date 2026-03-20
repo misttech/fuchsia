@@ -16,14 +16,3 @@ if (is_host) {
     ]
   }
 }
-
-if (is_fuchsia) {
-  group("package_deps_for_host_tests") {
-    testonly = true
-    deps = [
-      "component:package_deps_for_host_tests",
-      "profile:package_deps_for_host_tests",
-      "target:package_deps_for_host_tests",
-    ]
-  }
-}

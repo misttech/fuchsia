@@ -42,6 +42,7 @@ if (is_host) {
     data_deps = [ ":verify_dupefinder_data" ]
 
     product_bundle = ":product_bundle($default_toolchain)"
+    package_repository = ":package_repo($target_toolchain)"
 
     env = [
       "DUPEFINDER_PATH=" + rebase_path(_dupefinder_path, root_build_dir),
@@ -68,19 +69,9 @@ if (is_fuchsia) {
   }
 }
 
-# Don't let the assembly templates expand except on the default toolchain. Weirndess ensues if
-# they're expanded on variant toolchains like for asan.
-if (current_toolchain == default_toolchain) {
-  if (target_cpu == "arm64") {
-    _board_config_label = "//boards/arm64"
-  } else if (target_cpu == "x64") {
-    _board_config_label = "//boards/x64"
-  } else {
-    assert(false, "unsupported arch $target_cpu")
-  }
-  test_product_bundle("product_bundle") {
-    name = "verify_dupefinder_e2e"
-    board_config = _board_config_label
+ffx_e2e_product_bundle("product_bundle") {
+  name = "verify_dupefinder_e2e"
+  product_configuration = {
     platform = {
       build_type = "eng"
     }
@@ -90,4 +81,12 @@ if (current_toolchain == default_toolchain) {
       },
     ]
   }
+}
+
+ffx_e2e_package_repository("package_repo") {
+  packages = [
+    {
+      label = ":duplicate_allocations"
+    },
+  ]
 }

@@ -29,6 +29,8 @@ if (is_host) {
     source_root = "src/tests.rs"
     sources = [ source_root ]
 
+    product_bundle = ":product_bundle"
+
     deps = [
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
@@ -54,9 +56,16 @@ if (is_host) {
   }
 }
 
-if (is_fuchsia) {
-  group("package_deps_for_host_tests") {
-    testonly = true
-    deps = [ "//src/performance/memory/heapdump/example" ]
+ffx_e2e_product_bundle("product_bundle") {
+  name = "profile_heapdump_test"
+  product_configuration = {
+    platform = {
+      build_type = "eng"
+    }
+    base_packages = [
+      {
+        package_target = "//src/performance/memory/heapdump/example"
+      },
+    ]
   }
 }

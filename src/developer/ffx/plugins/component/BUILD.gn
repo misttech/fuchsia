@@ -94,13 +94,3 @@ if (is_host) {
     ]
   }
 }
-
-if (is_fuchsia) {
-  group("package_deps_for_host_tests") {
-    testonly = true
-    deps = [
-      "create:package_deps_for_host_tests",
-      "run:package_deps_for_host_tests",
-    ]
-  }
-}

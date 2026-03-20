@@ -47,21 +47,17 @@ ffx_plugin("ffx_target_ssh") {
 if (is_host) {
   group("host_tests") {
     testonly = true
-    if (has_board) {
-      deps = [ ":ffx_target_ssh_e2e_tests" ]
-    }
+    deps = [ ":ffx_target_ssh_e2e_tests" ]
   }
 
-  if (has_board) {
-    ffx_e2e_test("ffx_target_ssh_e2e_tests") {
-      edition = "2024"
-      source_root = "tests/e2e.rs"
-      sources = [ source_root ]
-      deps = [
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates:anyhow",
-        "//third_party/rust_crates:pretty_assertions",
-      ]
-    }
+  ffx_e2e_test("ffx_target_ssh_e2e_tests") {
+    edition = "2024"
+    source_root = "tests/e2e.rs"
+    sources = [ source_root ]
+    deps = [
+      "//src/lib/fuchsia",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:pretty_assertions",
+    ]
   }
 }

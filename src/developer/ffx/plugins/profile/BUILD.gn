@@ -64,10 +64,3 @@ if (is_host) {
     ]
   }
 }
-
-if (is_fuchsia) {
-  group("package_deps_for_host_tests") {
-    testonly = true
-    deps = [ "heapdump:package_deps_for_host_tests" ]
-  }
-}

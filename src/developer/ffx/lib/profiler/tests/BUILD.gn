@@ -8,10 +8,6 @@ import("//build/rust/rustc_binary.gni")
 import("//build/testing/symbols_dir_test_data.gni")
 import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
-assert(
-    has_board,
-    "This file must only be included in build configurations that have a board.")
-
 if (is_host) {
   ffx_e2e_test("ffx_profiler_lib_e2e_test") {
     edition = "2024"
@@ -58,21 +54,18 @@ if (is_host) {
     package_name = "print_symbolize_data"
     deps = [ ":print_symbolize_data" ]
   }
+}
 
-  # Don't let the assembly templates expand except on the default toolchain. Weirndess ensures if
-  # they're expanded on variant toolchains like for asan.
-  if (current_toolchain == default_toolchain) {
-    test_product_bundle("product_bundle") {
-      name = "ffx-profiler-test"
-      board_config = board_configuration_label
-      platform = {
-        build_type = "eng"
-      }
-      base_packages = [
-        {
-          package_target = ":package"
-        },
-      ]
+ffx_e2e_product_bundle("product_bundle") {
+  name = "ffx-profiler-test"
+  product_configuration = {
+    platform = {
+      build_type = "eng"
     }
+    base_packages = [
+      {
+        package_target = ":package"
+      },
+    ]
   }
 }
