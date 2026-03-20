@@ -8,7 +8,6 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
@@ -21,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "signal-hook",
-    package_url = "https://github.com/vorner/signal-hook",
-    package_version = "0.4.3",
+    package_name = "errno",
+    package_url = "https://github.com/lambda-fairy/rust-errno",
+    package_version = "0.3.14",
 )
 
 license(
@@ -36,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "signal_hook",
+    name = "errno",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -54,9 +53,8 @@ rust_library(
         ],
     ),
     crate_features = [
-        "channel",
         "default",
-        "iterator",
+        "std",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
@@ -65,7 +63,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=signal-hook",
+        "crate-name=errno",
         "manual",
         "noclippy",
         "norustfmt",
@@ -78,70 +76,23 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.4.3",
-    deps = [
-        "//third_party/rust_crates/vendor/libc-0.2.183:libc",
-        "//third_party/rust_crates/vendor/signal-hook-0.4.3:build_script_build",
-        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
-    ],
-)
-
-cargo_build_script(
-    name = "_bs",
-    srcs = glob(
-        include = ["**/*.rs"],
-        allow_empty = False,
-    ),
-    compile_data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            "**/*.rs",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
+    version = "0.3.14",
+    deps = select({
+        "@rules_rust//rust/platform:aarch64-apple-darwin": [
+            "//third_party/rust_crates/vendor/libc-0.2.183:libc",  # cfg(unix)
         ],
-    ),
-    crate_features = [
-        "channel",
-        "default",
-        "iterator",
-    ],
-    crate_name = "build_script_build",
-    crate_root = "build.rs",
-    data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/libc-0.2.183:libc",  # cfg(unix)
         ],
-    ),
-    edition = "2018",
-    pkg_name = "signal-hook",
-    rustc_flags = [
-        "--cap-lints=allow",
-    ],
-    tags = [
-        "cargo-bazel",
-        "crate-name=signal-hook",
-        "manual",
-        "noclippy",
-        "norustfmt",
-    ],
-    version = "0.4.3",
-    visibility = ["//visibility:private"],
-)
-
-alias(
-    name = "build_script_build",
-    actual = ":_bs",
-    tags = ["manual"],
+        "@rules_rust//rust/platform:x86_64-apple-darwin": [
+            "//third_party/rust_crates/vendor/libc-0.2.183:libc",  # cfg(unix)
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/libc-0.2.183:libc",  # cfg(unix)
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
+            "//third_party/rust_crates/vendor/libc-0.2.183:libc",  # cfg(unix)
+        ],
+        "//conditions:default": [],
+    }),
 )
