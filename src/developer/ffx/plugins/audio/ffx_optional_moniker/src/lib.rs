@@ -46,11 +46,16 @@
 use async_trait::async_trait;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv, TryFromEnvWith};
-use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use flex_fuchsia_io as fio;
+#[cfg(feature = "fdomain")]
+use rcs_fdomain as rcs;
 use std::marker::PhantomData;
 use std::time::Duration;
+#[cfg(not(feature = "fdomain"))]
 use target_holders::RemoteControlProxyHolder;
+#[cfg(feature = "fdomain")]
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
 
