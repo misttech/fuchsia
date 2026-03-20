@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"go.fuchsia.dev/fuchsia/tools/build"
 )
 
@@ -45,11 +46,8 @@ func TestLicenseUploads(t *testing.T) {
 		t.Fatalf("failed to write to fake LICENSE file: %s", err)
 	}
 
-	runFilesArchive := "runfiles.gz"
-	runFilesArchiveAbs := filepath.Join(dir, runFilesArchive)
-	if err := os.MkdirAll(runFilesArchiveAbs, 0755); err != nil {
-		t.Fatalf("failed to create RunFiles archive: %s", err)
-	}
+	runFilesArchiveName := "runfiles.gz"
+	runFilesArchive := filepath.Join(dir, runFilesArchiveName)
 	content = []byte("{\"logLevel\": 0}")
 	buf := bytes.Buffer{}
 	zw := gzip.NewWriter(&buf)
@@ -83,7 +81,7 @@ func TestLicenseUploads(t *testing.T) {
 			{
 				ComplianceFile:  complianceFile,
 				LicenseFilesDir: licenseFilesDir,
-				RunFilesArchive: runFilesArchive,
+				RunFilesArchive: runFilesArchiveName,
 			},
 			{
 				LicenseReviewArchive: licenseReviewArchive,
@@ -103,8 +101,8 @@ func TestLicenseUploads(t *testing.T) {
 			Recursive:   true,
 		},
 		{
-			Source:      runFilesArchiveAbs,
-			Destination: filepath.Join(namespace, runFilesArchive),
+			Source:      runFilesArchive,
+			Destination: filepath.Join(namespace, runFilesArchiveName),
 		},
 		{
 			Source:      licenseReviewArchiveAbs,
