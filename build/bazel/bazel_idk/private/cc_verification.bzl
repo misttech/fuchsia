@@ -53,7 +53,7 @@ def create_verify_pragma_once_target(
     Returns:
         The relative label of the target.
     """
-    target_name = "%s_verify_pragma_once" % name
+    target_name = "%s.verify_pragma_once" % name
     verify_no_pragma_once(
         name = target_name,
         files = files,
@@ -83,7 +83,7 @@ def create_verify_no_duplicate_files_target(
     Returns:
         The relative label of the target.
     """
-    target_name = "%s_verify_no_duplicate_files" % name
+    target_name = "%s.verify_no_duplicate_files" % name
     native.filegroup(
         name = target_name,
         data = hdrs + hdrs_for_internal_use + srcs,

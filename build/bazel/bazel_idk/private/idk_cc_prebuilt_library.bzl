@@ -12,6 +12,7 @@ load(
     "//build/bazel/rules/cc:shared_library.bzl",
     "generate_companion_files_for_shared_library",
     "get_library_info_for_static_library",
+    "verify_public_symbols",
 )
 load(
     ":cc_verification.bzl",
@@ -32,6 +33,18 @@ load(
 visibility(["//build/bazel/bazel_idk/..."])
 
 # LINT.IfChange(idk_cc_prebuilt_library)
+
+def _get_shared_library_output_name(name, output_name):
+    if output_name == "":
+        return name
+    elif output_name == name:
+        fail("The specified `output_name` (`%s`) matches the default. `output_name` only needs to be specified when overriding the default." % output_name)
+    else:
+        return output_name
+
+def _get_ifs_golden_file_name(output_name):
+    return "lib" + output_name + ".ifs"
+
 def _idk_cc_prebuilt_library_impl(
         name,
         prebuilt_library_type,
@@ -53,6 +66,7 @@ def _idk_cc_prebuilt_library_impl(
         libcxx_linkage,
         atom_type,
         allowlist,
+        ifs_golden_file,
         testonly,
         visibility,
         friend,  # buildifier: disable=unused-variable - For GN conversion only.
@@ -81,6 +95,9 @@ def _idk_cc_prebuilt_library_impl(
 
     if no_headers and (hdrs != [] or deps != []):
         fail("There must be no public headers or dependencies when `no_headers` is True.")
+
+    if ifs_golden_file and prebuilt_library_type != "shared":
+        fail("`ifs_golden_file` is only supported for 'shared' libraries.")
 
     if runtime_deps:
         if implementation_deps == []:
@@ -117,9 +134,7 @@ def _idk_cc_prebuilt_library_impl(
             fail("'lib' will automatically be added to the library file name.")
     else:
         if output_name == "":
-            output_name = name
-        elif output_name == name:
-            fail("The specified `output_name` (`%s`) matches the default. `output_name` only needs to be specified when overriding the default." % output_name)
+            fail("`output_name` is required for shared libraries.")
 
         # `output_name` should not start with `lib` for consistency and simplicity.
         if output_name.startswith("lib"):
@@ -333,17 +348,26 @@ def _idk_cc_prebuilt_library_impl(
     ]
 
     # IFS files do not apply to static libraries.
-    verify_public_symbols = prebuilt_library_type != "static"
+    must_verify_public_symbols = prebuilt_library_type != "static"
 
-    if verify_public_symbols:
-        atom_build_deps += [
-            # TODO(https://fxbug.dev/449812165): Implement this once IFS files are generated.
-            # The rule will need to do nothing when
-            # `ctx.attr._current_api_level[BuildSettingInfo].value == HEAD`
-            # because we do not maintain golden IFS files for "HEAD".
-            #
-            # create_verify_public_symbols_target()
-        ]
+    if must_verify_public_symbols:
+        verify_public_symbols_target_name = "%s.verify_public_symbols" % name
+
+        # This target may be a no-op rule when targting "HEAD" because we do
+        # not maintain golden IFS files for "HEAD".
+        # TODO(https://fxbug.dev/417307356): Make the rule do nothing when
+        # `ctx.attr._current_api_level[BuildSettingInfo].value == HEAD`.
+        verify_public_symbols(
+            name = verify_public_symbols_target_name,
+            prebuilt_library = underlying_library_info_target_name,
+            reference = ifs_golden_file,
+            library_name = "//" + native.package_name() + ":" + name,
+            testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
+        )
+
+        atom_build_deps.append(":%s" % verify_public_symbols_target_name)
 
     if stable and not no_headers:
         api_path = api_file_path
@@ -531,8 +555,8 @@ GN equivalent: `api`""",
         ),
         "output_name": attr.string(
             doc = """Name of the library to generate. Defaults to `name`.
-Will be appended to "lib" to generate the library file name.
-Must not begin with "lib". Not supported for static libraries.""",
+Will be appended to "lib" to generate the library file name. Must not begin with "lib".
+Required for shared libraries. Not supported for static libraries.""",
             configurable = False,
         ),
         "no_headers": attr.bool(
@@ -559,6 +583,11 @@ not have a stable ABI. Can be either "none" or "static".""",
         "allowlist": attr.label(
             doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
             mandatory = True,
+            configurable = False,
+        ),
+        "ifs_golden_file": attr.label(
+            doc = "The golden IFS file for shared libraries only. Set by the wrapper macro.",
+            mandatory = False,
             configurable = False,
         ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
@@ -591,11 +620,23 @@ Use the `idk_cc_shared_library()` wrapper instead.
     attrs = {
         # Do not inherit as this attribute is specified in the implementation.
         "prebuilt_library_type": None,
+        # These attributes are mandatory for shared libraries.
+        "output_name": attr.string(
+            doc = """Name of the library to generate. Defaults to `name`.
+Will be appended to "lib" to generate the library file name. Must not begin with "lib".""",
+            mandatory = True,
+            configurable = False,
+        ),
+        "ifs_golden_file": attr.label(
+            doc = "The golden IFS file for shared libraries. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
     },
     implementation = _idk_cc_shared_library_impl,
 )
 
-def idk_cc_shared_library(idk_name, category, api_file_path = None, **kwargs):
+def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
     """Defines a C++ prebuilt shared library that can be exported to an IDK.
 
     This is a wrapper around `_idk_cc_shared_library()` that supports a
@@ -605,14 +646,19 @@ def idk_cc_shared_library(idk_name, category, api_file_path = None, **kwargs):
     """
     stable = True
     atom_type = "cc_prebuilt_library"
+    output_name = _get_shared_library_output_name(name, output_name)
 
     _idk_cc_shared_library(
+        name = name,
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        output_name = output_name,
         atom_type = atom_type,
         allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
+        # TODO(https://fxbug.dev/417307356): Support API level-specific golden files.
+        ifs_golden_file = _get_ifs_golden_file_name(output_name),
         **kwargs
     )
 
@@ -731,7 +777,7 @@ GN equivalent: `deps`.""",
     },
 )
 
-def idk_cc_shared_library_zx(idk_name, category, api_file_path = None, **kwargs):
+def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
     """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
 
     This is a wrapper around `_idk_cc_shared_library_zx()` that supports a
@@ -741,14 +787,19 @@ def idk_cc_shared_library_zx(idk_name, category, api_file_path = None, **kwargs)
     """
     stable = True
     atom_type = "cc_prebuilt_library"
+    output_name = _get_shared_library_output_name(name, output_name)
 
     _idk_cc_shared_library_zx(
+        name = name,
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        output_name = output_name,
         atom_type = atom_type,
         allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
+        # TODO(https://fxbug.dev/417307356): Support API level-specific golden files.
+        ifs_golden_file = _get_ifs_golden_file_name(output_name),
         **kwargs
     )
 

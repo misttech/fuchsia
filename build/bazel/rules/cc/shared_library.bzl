@@ -2,9 +2,29 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 """Shared library rules for Fuchsia."""
+
+def _get_stripped_ifs_file_impl(ctx):
+    ifs_file = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].stripped_ifs_file
+    if not ifs_file:
+        fail("`stripped_ifs_file` must not be empty")
+    return [DefaultInfo(files = depset([ifs_file]))]
+
+_get_stripped_ifs_file = rule(
+    doc = "Simply declares the `stripped_ifs_file` from the `PrebuiltLibraryInfo` " +
+          "provider as an output. This allows use of this file in macros.",
+    implementation = _get_stripped_ifs_file_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            providers = [PrebuiltLibraryInfo],
+        ),
+    },
+)
 
 def _generate_link_stubs_for_shared_library_impl(ctx):
     shared_library = ctx.file.shared_library
@@ -160,8 +180,7 @@ generate_companion_files_for_shared_library = macro(
             configurable = False,
         ),
         "testonly": attr.bool(
-            doc = "Usual meaning..",
-            # mandatory = True,
+            doc = "Standard meaning.",
             configurable = False,
         ),
     },
@@ -185,8 +204,64 @@ get_library_info_for_static_library = rule(
         "static_library": attr.label(
             doc = "The static library file for which to create library info.",
             allow_single_file = True,
-            # providers = [CcInfo],
             mandatory = True,
+        ),
+    },
+)
+
+def _verify_public_symbols_impl(
+        name,
+        prebuilt_library,
+        reference,
+        library_name,
+        testonly,
+        visibility):
+    ifs_file_target_name = name + ".currentifs_file"
+
+    _get_stripped_ifs_file(
+        name = ifs_file_target_name,
+        prebuilt_library = prebuilt_library,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    verify_golden_files(
+        name = name,
+        candidate_files = [ifs_file_target_name],
+        golden_files = [reference],
+        message = "ABI has changed! In library {}".format(library_name),
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+verify_public_symbols = macro(
+    doc = """Verifies the list of public symbols from a prebuilt library against a golden file.
+
+When adding a new library to be tracked by this macro, you can create an empty
+file (usually named `[lib]${library_name}.ifs`), run the build, then run the
+`cp` command suggested by the build failure message to populate the golden file.""",
+    implementation = _verify_public_symbols_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            providers = [PrebuiltLibraryInfo],
+        ),
+        "reference": attr.label(
+            doc = "The checked-in reference IFS file.",
+            mandatory = True,
+            allow_single_file = True,
+            configurable = False,
+        ),
+        "library_name": attr.string(
+            doc = "A human-readable library name for debugging purposes.",
+            mandatory = True,
+            configurable = False,
+        ),
+        "testonly": attr.bool(
+            doc = "Usual Bazel meaning.",
+            default = False,
+            configurable = False,
         ),
     },
 )
