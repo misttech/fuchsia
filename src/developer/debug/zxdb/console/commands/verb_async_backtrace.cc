@@ -6,12 +6,17 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "src/developer/debug/shared/string_util.h"
+#include "src/developer/debug/zxdb/client/async_task.h"
+#include "src/developer/debug/zxdb/client/async_task_tree.h"
 #include "src/developer/debug/zxdb/client/frame.h"
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/common/file_util.h"
@@ -20,6 +25,8 @@
 #include "src/developer/debug/zxdb/console/async_output_buffer.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
+#include "src/developer/debug/zxdb/console/console_context.h"
+#include "src/developer/debug/zxdb/console/format_async_task.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
 #include "src/developer/debug/zxdb/console/format_name.h"
 #include "src/developer/debug/zxdb/console/format_node_console.h"
@@ -68,6 +75,9 @@ namespace {
 
 constexpr int kVerbose = 1;
 constexpr int kMoreVerbose = 2;
+constexpr int kUseTree = 3;
+
+const std::string kAwaiteeMarker = "└─ ";
 
 const char kAsyncBacktraceShortHelp[] = "async-backtrace / abt: Display all async tasks.";
 const char kAsyncBacktraceUsage[] = "async-backtrace";
@@ -85,14 +95,15 @@ Arguments
   --more-verbose
       Include more extra information
 
+  --use-tree
+      Use the new AsyncTaskTree implementation.
+
 Examples
 
   abt
   abt -v
   process 2 abt
 )";
-
-const std::string kAwaiteeMarker = "└─ ";
 
 struct FormatFutureOptions {
   bool verbose = false;
@@ -939,6 +950,48 @@ void RunVerbAsyncBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_c
   if (!cmd.thread())
     return cmd_context->ReportError(Err("There is no thread to show backtrace."));
 
+  if (cmd.HasSwitch(kUseTree)) {
+    FormatTaskOptions options;
+    if (cmd.HasSwitch(kMoreVerbose)) {
+      options.verbose = true;
+      options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+      options.variable.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+      options.variable.pointer_expand_depth = 3;
+      options.variable.max_depth = 6;
+    } else if (cmd.HasSwitch(kVerbose)) {
+      options.verbose = true;
+      options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+      options.variable.pointer_expand_depth = 1;
+      options.variable.max_depth = 3;
+    }
+
+    const TargetSymbols* symbols = cmd.thread()->GetProcess()->GetTarget()->GetSymbols();
+
+    auto& tree = cmd.thread()->GetAsyncTaskTree();
+    if (tree.has_tasks()) {
+      // We must have a frame to get an EvalContext with which to possibly evaluate captured
+      // variables if verbose was specified.
+      FX_DCHECK(!cmd.thread()->GetStack().empty());
+      cmd_context->Output(FormatAsyncTaskTree(tree, symbols, options,
+                                              cmd.thread()->GetStack()[0]->GetEvalContext()));
+    } else {
+      tree.Sync(cmd.thread(), [weak_thread = cmd.thread()->GetWeakPtr(), cmd_context, options,
+                               symbols](const Err& err, const Frame* frame) mutable {
+        if (err.has_error()) {
+          cmd_context->ReportError(err);
+        } else if (!weak_thread) {
+          cmd_context->ReportError(Err("Thread gone."));
+        } else if (!frame) {
+          cmd_context->ReportError(Err("Executor's stack frame is gone."));
+        } else {
+          cmd_context->Output(FormatAsyncTaskTree(weak_thread->GetAsyncTaskTree(), symbols, options,
+                                                  frame->GetEvalContext()));
+        }
+      });
+      return;
+    }
+  }
+
   FormatFutureOptions options;
   if (cmd.HasSwitch(kMoreVerbose)) {
     options.verbose = true;
@@ -976,6 +1029,7 @@ VerbRecord GetAsyncBacktraceVerbRecord() {
                  kAsyncBacktraceUsage, kAsyncBacktraceHelp, CommandGroup::kQuery);
   abt.switches.emplace_back(kVerbose, false, "verbose", 'v');
   abt.switches.emplace_back(kMoreVerbose, false, "more-verbose", 0);
+  abt.switches.emplace_back(kUseTree, false, "use-tree", 0);
   return abt;
 }
 

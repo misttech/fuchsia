@@ -28,6 +28,18 @@ Scope("scope")
    └─ Task(id = ??)
       └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 
+[zxdb] t 1 abt --use-tree
+## allow-out-of-order-output
+Task(id = ??)
+└─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
+   └─ fuchsia_async::runtime::fuchsia::timer::Timer
+Scope("scope")
+└─ Task(id = ??)
+   └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+└─ Scope("child")
+   └─ Task(id = ??)
+      └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+
 [zxdb] t 2 abt
 ## allow-out-of-order-output
 Task(id = ??)
@@ -40,7 +52,31 @@ Scope("scope")
    └─ Task(id = ??)
       └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 
+[zxdb] t 2 abt --use-tree
+## allow-out-of-order-output
+Task(id = ??)
+└─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
+   └─ fuchsia_async::runtime::fuchsia::timer::Timer
+Scope("scope")
+└─ Task(id = ??)
+   └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+└─ Scope("child")
+   └─ Task(id = ??)
+      └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+
 [zxdb] t 3 abt
+## allow-out-of-order-output
+Task(id = ??)
+└─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
+   └─ fuchsia_async::runtime::fuchsia::timer::Timer
+Scope("scope")
+└─ Task(id = ??)
+   └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+└─ Scope("child")
+   └─ Task(id = ??)
+      └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
+
+[zxdb] t 3 abt --use-tree
 ## allow-out-of-order-output
 Task(id = ??)
 └─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
