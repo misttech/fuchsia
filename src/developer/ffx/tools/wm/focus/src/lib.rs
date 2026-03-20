@@ -4,11 +4,11 @@
 
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_focus_args::WMFocusCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_session_window::ManagerProxy;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct FocusTool {
@@ -41,14 +41,15 @@ pub async fn focus_impl<W: std::io::Write>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_session_window::ManagerRequest;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_session_window::ManagerRequest;
+    use target_holders::fdomain::fake_proxy;
 
     #[fuchsia::test]
     async fn test_focus() {
         const POSITION: u64 = 1;
 
-        let proxy = fake_proxy(|req| match req {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
             ManagerRequest::Cycle { .. } => unreachable!(),
             ManagerRequest::Focus { position, responder } => {
                 assert_eq!(position, POSITION);
