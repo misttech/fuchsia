@@ -4,13 +4,15 @@
 
 use anyhow::{Error, anyhow};
 use blocking::Unblock;
-use fidl::Socket;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_audio_controller as fac;
+use flex_client::Socket;
+use flex_client::fidl::Proxy;
+use flex_fuchsia_audio_controller as fac;
 use futures::future::Either;
 use futures::{AsyncReadExt, AsyncWrite, FutureExt, TryFutureExt};
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
+#[cfg(feature = "fdomain")]
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, PartialEq, Deserialize)]
 pub struct PlayResult {
@@ -36,7 +38,7 @@ where
     let (play_result, _stdin_reader_result) = futures::future::try_join(
         controller.play(request).map_err(|e| anyhow!("future try join failed with error {e}")),
         async move {
-            let mut socket_writer = fidl::AsyncSocket::from_socket(play_local);
+            let mut socket_writer = flex_client::socket_to_async(play_local);
             let stdin_res = futures::io::copy(Unblock::new(input_reader), &mut socket_writer).await;
 
             // Close ffx end of socket so that daemon end reads EOF and stops waiting for data.
@@ -53,7 +55,7 @@ where
 pub async fn record<W>(
     controller: fac::RecorderProxy,
     request: fac::RecorderRecordRequest,
-    record_local: fidl::Socket,
+    record_local: flex_client::Socket,
     mut output_writer: W, // Output generalized to stdout or a test buffer. Forward data
     // from daemon to this writer.
     keypress_handler: impl futures::Future<Output = Result<(), std::io::Error>>,
@@ -65,7 +67,7 @@ where
         { controller.record(request).map_err(|e| anyhow!("Controller record failure: {:?}", e)) };
 
     let wav_fut = {
-        futures::io::copy(fidl::AsyncSocket::from_socket(record_local), &mut output_writer)
+        futures::io::copy(flex_client::socket_to_async(record_local), &mut output_writer)
             .map_err(|e| anyhow!("wav output failure: {:?}", e))
     };
 
@@ -137,7 +139,11 @@ pub async fn cancel_on_keypress(
 
 pub mod tests {
     use super::*;
+    #[cfg(not(feature = "fdomain"))]
     use fuchsia_audio::stop_listener;
+    #[cfg(feature = "fdomain")]
+    use fuchsia_audio_fdomain::stop_listener;
+    #[cfg(not(feature = "fdomain"))]
     use futures::AsyncWriteExt;
     use timeout::timeout;
 
@@ -165,13 +171,15 @@ pub mod tests {
     \x26\x21\x1d\x18\x14\x10\x0d\x0a\x07\x05\x03\x02\x01\x00\x00\x00\
     \x01\x02\x04\x06\x08\x0b\x0e\x11\x15\x1a\x1e\x23";
 
-    pub fn fake_audio_player() -> fac::PlayerProxy {
+    pub fn fake_audio_player(
+        #[cfg(feature = "fdomain")] client: Arc<fdomain_client::Client>,
+    ) -> fac::PlayerProxy {
         let callback = |req| match req {
             fac::PlayerRequest::Play { payload, responder } => {
                 let data_socket =
                     payload.wav_source.ok_or_else(|| anyhow!("Socket argument missing.")).unwrap();
 
-                let mut socket = fidl::AsyncSocket::from_socket(data_socket);
+                let mut socket = flex_client::socket_to_async(data_socket);
                 let mut wav_file = vec![0u8; 11];
                 fuchsia_async::Task::local(async move {
                     let _ = socket.read_exact(&mut wav_file).await.unwrap();
@@ -189,17 +197,23 @@ pub mod tests {
             _ => unimplemented!(),
         };
 
+        #[cfg(feature = "fdomain")]
+        return target_holders::fdomain::fake_proxy(client, callback);
+        #[cfg(not(feature = "fdomain"))]
         target_holders::fake_proxy(callback)
     }
 
-    pub fn fake_audio_recorder() -> fac::RecorderProxy {
+    pub fn fake_audio_recorder(
+        #[cfg(feature = "fdomain")] client: Arc<fdomain_client::Client>,
+    ) -> fac::RecorderProxy {
         let callback = |req| match req {
             fac::RecorderRequest::Record { payload, responder } => {
                 let wav_socket =
                     payload.wav_data.ok_or_else(|| anyhow!("Socket argument missing.")).unwrap();
 
                 fuchsia_async::Task::local(async move {
-                    let mut socket = fidl::AsyncSocket::from_socket(wav_socket);
+                    #[cfg_attr(feature = "fdomain", expect(unused_mut))]
+                    let mut socket = flex_client::socket_to_async(wav_socket);
                     socket.write_all(SINE_WAV).await.unwrap();
                 })
                 .detach();
@@ -236,6 +250,10 @@ pub mod tests {
             }
             _ => unimplemented!(),
         };
+
+        #[cfg(feature = "fdomain")]
+        return target_holders::fdomain::fake_proxy(client, callback);
+        #[cfg(not(feature = "fdomain"))]
         target_holders::fake_proxy(callback)
     }
 }
