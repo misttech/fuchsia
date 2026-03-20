@@ -486,7 +486,7 @@ impl FileOps for LoopDeviceFile {
             }
             LOOP_SET_FD => {
                 let fd = arg.into();
-                let backing_file = current_task.live().files.get(fd)?;
+                let backing_file = current_task.get_file(fd)?;
                 let mut state = self.device.state.lock();
                 state.set_backing_file(locked, current_task, backing_file)?;
                 Ok(SUCCESS)
@@ -537,7 +537,7 @@ impl FileOps for LoopDeviceFile {
             }
             LOOP_CHANGE_FD => {
                 let fd = arg.into();
-                let backing_file = current_task.live().files.get(fd)?;
+                let backing_file = current_task.get_file(fd)?;
                 let mut state = self.device.state.lock();
                 if let Some(_existing_file) = &state.backing_file {
                     // https://man7.org/linux/man-pages/man4/loop.4.html says:
@@ -581,7 +581,7 @@ impl FileOps for LoopDeviceFile {
                 let fd = FdNumber::from_raw(config.fd as i32);
                 check_block_size(config.block_size)?;
                 let mut state = self.device.state.lock();
-                if let Ok(backing_file) = current_task.live().files.get(fd) {
+                if let Ok(backing_file) = current_task.get_file(fd) {
                     state.set_backing_file(locked, current_task, backing_file)?;
                 }
                 state.block_size = config.block_size;

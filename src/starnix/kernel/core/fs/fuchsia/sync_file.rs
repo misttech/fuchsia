@@ -182,7 +182,7 @@ impl FileOps for SyncFile {
                 trace_duration!(CATEGORY_STARNIX, "SyncFileMerge");
                 let user_ref = UserRef::new(user_addr);
                 let mut merge_data: sync_merge_data = current_task.read_object(user_ref)?;
-                let file2 = current_task.live().files.get(FdNumber::from_raw(merge_data.fd2))?;
+                let file2 = current_task.get_file(FdNumber::from_raw(merge_data.fd2))?;
 
                 let mut fence = SyncFence { sync_points: vec![] };
                 let mut set = HashSet::<zx::Koid>::new();

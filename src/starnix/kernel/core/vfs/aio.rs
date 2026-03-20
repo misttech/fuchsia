@@ -275,7 +275,7 @@ impl IoOperation {
             return error!(EINVAL);
         }
         let file =
-            current_task.live().files.get(FdNumber::from_raw(control_block.aio_fildes as i32))?;
+            current_task.get_file(FdNumber::from_raw(control_block.aio_fildes as i32))?;
         let op_type = (control_block.aio_lio_opcode as u32).try_into()?;
         let offset = control_block.aio_offset.try_into().map_err(|_| errno!(EINVAL))?;
         let flags = control_block.aio_flags;

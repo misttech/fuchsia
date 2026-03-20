@@ -269,7 +269,7 @@ pub fn sys_execveat(
         //   directory.
         //
         // See https://man7.org/linux/man-pages/man2/open.2.html
-        let file = current_task.live().files.get_allowing_opath(dir_fd)?;
+        let file = current_task.get_file_allowing_opath(dir_fd)?;
 
         // We are forced to reopen the file with O_RDONLY to get access to the underlying VMO.
         // Note that skip the access check in the arguments in case the file mode does
@@ -1753,7 +1753,7 @@ pub fn sys_setns(
     ns_fd: FdNumber,
     ns_type: c_int,
 ) -> Result<(), Errno> {
-    let file_handle = current_task.live().files.get(ns_fd)?;
+    let file_handle = current_task.get_file(ns_fd)?;
 
     // From man pages this is not quite right because some namespace types require more capabilities
     // or require this capability in multiple namespaces, but it should cover our current test

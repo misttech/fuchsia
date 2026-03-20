@@ -175,7 +175,7 @@ pub fn sys_dup2(
         //  F_DUPFD, etc.).
         //
         // See https://man7.org/linux/man-pages/man2/open.2.html
-        current_task.live().files.get_allowing_opath(oldfd)?;
+        current_task.get_file_allowing_opath(oldfd)?;
         return Ok(newfd);
     }
     sys_dup3(locked, current_task, oldfd, newfd, 0)
@@ -229,7 +229,7 @@ pub fn sys_getdents(
     user_buffer: UserAddress,
     user_capacity: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let mut offset = file.offset.lock();
     let mut sink = DirentSink32::new(current_task, &mut offset, user_buffer, user_capacity);
     let result = file.readdir(locked, current_task, &mut sink);

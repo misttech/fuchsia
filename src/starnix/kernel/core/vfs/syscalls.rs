@@ -215,7 +215,7 @@ pub fn sys_read(
     address: UserAddress,
     length: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.read(
         locked,
         current_task,
@@ -231,7 +231,7 @@ pub fn sys_write(
     address: UserAddress,
     length: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.write(
         locked,
         current_task,
@@ -284,7 +284,7 @@ pub fn sys_lseek(
     offset: off_t,
     whence: u32,
 ) -> Result<off_t, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.seek(locked, current_task, SeekTarget::from_raw(whence, offset)?)
 }
 
@@ -297,9 +297,9 @@ pub fn sys_fcntl(
 ) -> Result<SyscallResult, Errno> {
     let file = match cmd {
         F_DUPFD | F_DUPFD_CLOEXEC | F_GETFD | F_SETFD | F_GETFL => {
-            current_task.live().files.get_allowing_opath(fd)?
+            current_task.get_file_allowing_opath(fd)?
         }
-        _ => current_task.live().files.get(fd)?,
+        _ => current_task.get_file(fd)?,
     };
 
     match cmd {
@@ -480,7 +480,7 @@ pub fn sys_pread64(
     length: usize,
     offset: off_t,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let offset = offset.try_into().map_err(|_| errno!(EINVAL))?;
     file.read_at(
         locked,
@@ -498,7 +498,7 @@ pub fn sys_pwrite64(
     length: usize,
     offset: off_t,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let offset = offset.try_into().map_err(|_| errno!(EINVAL))?;
     file.write_at(
         locked,
@@ -523,7 +523,7 @@ fn do_readv(
     if flags != 0 {
         track_stub!(TODO("https://fxbug.dev/322875072"), "preadv2 flags", flags);
     }
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let iovec = current_task.read_iovec(iovec_addr, iovec_count)?;
     let mut data = UserBuffersOutputBuffer::unified_new(current_task, iovec)?;
     if let Some(offset) = offset {
@@ -589,7 +589,7 @@ fn do_writev(
         track_stub!(TODO("https://fxbug.dev/322874523"), "pwritev2 flags", flags);
     }
 
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let iovec = current_task.read_iovec(iovec_addr, iovec_count)?;
     let mut data = UserBuffersInputBuffer::unified_new(current_task, iovec)?;
     let res = if let Some(offset) = offset {
@@ -661,7 +661,7 @@ pub fn fstatfs<T32: IntoBytes + Immutable + TryFrom<uapi::statfs>>(
     //   fstatfs(2) (since Linux 3.12).
     //
     // See https://man7.org/linux/man-pages/man2/open.2.html
-    let file = current_task.live().files.get_allowing_opath(fd)?;
+    let file = current_task.get_file_allowing_opath(fd)?;
     let mut stat = file.fs.statfs(locked, current_task)?;
     stat.f_flags |= file.name.mount.flags().bits() as i64;
     current_task.write_multi_arch_object(user_buf, stat)?;
@@ -971,7 +971,7 @@ pub fn sys_getdents64(
     user_buffer: UserAddress,
     user_capacity: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let mut offset = file.offset.lock();
     let mut sink = DirentSink64::new(current_task, &mut offset, user_buffer, user_capacity);
     let result = file.readdir(locked, current_task, &mut sink);
@@ -1017,7 +1017,7 @@ pub fn sys_fchdir(
     //   (since Linux 3.5).
     //
     // See https://man7.org/linux/man-pages/man2/open.2.html
-    let file = current_task.live().files.get_allowing_opath(fd)?;
+    let file = current_task.get_file_allowing_opath(fd)?;
     if !file.name.entry.node.is_dir() {
         return error!(ENOTDIR);
     }
@@ -1035,7 +1035,7 @@ pub fn sys_fstat(
     //   fstat(2) (since Linux 3.6).
     //
     // See https://man7.org/linux/man-pages/man2/open.2.html
-    let file = current_task.live().files.get_allowing_opath(fd)?;
+    let file = current_task.get_file_allowing_opath(fd)?;
     let result = file.node().stat(locked, current_task)?;
     current_task.write_object(buffer, &result)?;
     Ok(())
@@ -1187,7 +1187,7 @@ pub fn sys_ftruncate(
     length: off_t,
 ) -> Result<(), Errno> {
     let length = length.try_into().map_err(|_| errno!(EINVAL))?;
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.ftruncate(locked, current_task, length)?;
     Ok(())
 }
@@ -1368,7 +1368,7 @@ pub fn sys_fchmod(
 ) -> Result<(), Errno> {
     // Remove the filetype from the mode.
     let mode = mode & FileMode::PERMISSIONS;
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.name.entry.node.chmod(locked, current_task, &file.name.mount, mode)?;
     file.name.entry.notify_ignoring_excl_unlink(InotifyMask::ATTRIB);
     Ok(())
@@ -1400,7 +1400,7 @@ pub fn sys_fchown(
     owner: u32,
     group: u32,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.name.entry.node.chown(
         locked,
         current_task,
@@ -1490,7 +1490,7 @@ pub fn sys_fgetxattr(
     value_addr: UserAddress,
     size: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     do_getxattr(locked, current_task, &file.name, name_addr, value_addr, size)
 }
 
@@ -1540,7 +1540,7 @@ pub fn sys_fsetxattr(
     size: usize,
     flags: u32,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     do_setxattr(locked, current_task, &file.name, name_addr, value_addr, size, flags)
 }
 
@@ -1614,7 +1614,7 @@ pub fn sys_fremovexattr(
     fd: FdNumber,
     name_addr: UserCString,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     do_removexattr(locked, current_task, &file.name, name_addr)
 }
 
@@ -1689,7 +1689,7 @@ pub fn sys_flistxattr(
     list_addr: UserAddress,
     size: usize,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     do_listxattr(locked, current_task, &file.name, list_addr, size)
 }
 
@@ -1771,7 +1771,7 @@ pub fn sys_ioctl(
             Ok(SUCCESS)
         }
         _ => {
-            let file = current_task.live().files.get(fd)?;
+            let file = current_task.get_file(fd)?;
             file.ioctl(locked, current_task, request, arg)
         }
     }
@@ -2176,7 +2176,7 @@ pub fn sys_pidfd_getfd(
         return error!(EINVAL);
     }
 
-    let file = current_task.live().files.get(pidfd)?;
+    let file = current_task.get_file(pidfd)?;
     let tg = file.as_thread_group_key()?;
     let tg = tg.upgrade().ok_or_else(|| errno!(ESRCH))?;
     let task = TempRef::into_static(tg.read().tasks().next().ok_or_else(|| errno!(ESRCH))?);
@@ -2234,7 +2234,7 @@ pub fn sys_timerfd_gettime(
     fd: FdNumber,
     user_current_value: ITimerSpecPtr,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let timer_file = file.downcast_file::<TimerFile>().ok_or_else(|| errno!(EINVAL))?;
     let timer_info = timer_file.current_timer_spec();
     log_trace!("timerfd_gettime(fd={:?}, current_value={:?})", fd, timer_info);
@@ -2255,7 +2255,7 @@ pub fn sys_timerfd_settime(
         return error!(EINVAL);
     }
 
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let timer_file = file.downcast_file::<TimerFile>().ok_or_else(|| errno!(EINVAL))?;
 
     let new_timer_spec = current_task.read_multi_arch_object(user_new_value)?;
@@ -2342,7 +2342,7 @@ fn select(
         }
         if !aggregated_events.is_empty() {
             let fd = FdNumber::from_raw(fd as i32);
-            let file = current_task.live().files.get(fd)?;
+            let file = current_task.get_file(fd)?;
             waiter.add(locked, current_task, fd, Some(&file), aggregated_events)?;
         }
     }
@@ -2509,9 +2509,9 @@ pub fn sys_epoll_ctl(
     fd: FdNumber,
     event: UserRef<EpollEvent>,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(epfd)?;
+    let file = current_task.get_file(epfd)?;
     let epoll_file = file.downcast_file::<EpollFileObject>().ok_or_else(|| errno!(EINVAL))?;
-    let operand_file = current_task.live().files.get(fd)?;
+    let operand_file = current_task.get_file(fd)?;
 
     if Arc::ptr_eq(&file, &operand_file) {
         return error!(EINVAL);
@@ -2559,7 +2559,7 @@ fn do_epoll_pwait(
     deadline: zx::MonotonicInstant,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
-    let file = current_task.live().files.get(epfd)?;
+    let file = current_task.get_file(epfd)?;
     let epoll_file = file.downcast_file::<EpollFileObject>().ok_or_else(|| errno!(EINVAL))?;
 
     // Max_events must be greater than 0.
@@ -2716,7 +2716,7 @@ pub fn poll(
         if poll_descriptor.fd < 0 {
             continue;
         }
-        let file = current_task.live().files.get(FdNumber::from_raw(poll_descriptor.fd)).ok();
+        let file = current_task.get_file(FdNumber::from_raw(poll_descriptor.fd)).ok();
         waiter.add(
             locked,
             current_task,
@@ -2815,7 +2815,7 @@ pub fn sys_flock(
     fd: FdNumber,
     operation: u32,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let operation = FlockOperation::from_flags(operation)?;
     security::check_file_lock_access(current_task, &file)?;
     file.flock(locked, current_task, operation)
@@ -2830,7 +2830,7 @@ pub fn sys_syncfs(
     current_task: &CurrentTask,
     fd: FdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.fs.sync(locked, current_task)
 }
 
@@ -2839,7 +2839,7 @@ pub fn sys_fsync(
     current_task: &CurrentTask,
     fd: FdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.sync(current_task)
 }
 
@@ -2848,7 +2848,7 @@ pub fn sys_fdatasync(
     current_task: &CurrentTask,
     fd: FdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     file.data_sync(current_task)
 }
 
@@ -2867,7 +2867,7 @@ pub fn sys_sync_file_range(
         return error!(EINVAL);
     }
 
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
 
     if offset < 0 || length < 0 {
         return error!(EINVAL);
@@ -2925,7 +2925,7 @@ pub fn sys_fadvise64(
         return error!(EINVAL);
     }
 
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     // fadvise does not work on pipes.
     if file.downcast_file::<PipeFileObject>().is_some() {
         return error!(ESPIPE);
@@ -2947,7 +2947,7 @@ pub fn sys_fallocate(
     offset: off_t,
     len: off_t,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
 
     // Offset must not be less than 0.
     // Length must not be less than or equal to 0.
@@ -2989,7 +2989,7 @@ pub fn sys_inotify_add_watch(
         // Mask must include at least 1 event.
         return error!(EINVAL);
     }
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
     let options = if mask.contains(InotifyMask::DONT_FOLLOW) {
         LookupFlags::no_follow()
@@ -3009,7 +3009,7 @@ pub fn sys_inotify_rm_watch(
     fd: FdNumber,
     watch_id: WdNumber,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let inotify_file = file.downcast_file::<InotifyFileObject>().ok_or_else(|| errno!(EINVAL))?;
     inotify_file.remove_watch(watch_id, &file)
 }
@@ -3124,7 +3124,7 @@ pub fn sys_readahead(
     offset: off_t,
     length: usize,
 ) -> Result<(), Errno> {
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     // Allow only non-negative values of `offset`. Some versions of Linux allow it to be negative,
     // but GVisor tests require `readahead()` to fail in this case.
     let offset: usize = offset.try_into().map_err(|_| errno!(EINVAL))?;
@@ -3312,7 +3312,7 @@ pub fn sys_io_uring_enter(
             return error!(EINVAL);
         }
     }
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
     // TODO(https://fxbug.dev/297431387): Use `_sig` to change the signal mask for `current_task`.
     io_uring.enter(locked, current_task, to_submit, min_complete, flags)
@@ -3329,7 +3329,7 @@ pub fn sys_io_uring_register(
     if !current_task.kernel().features.io_uring {
         return error!(ENOSYS);
     }
-    let file = current_task.live().files.get(fd)?;
+    let file = current_task.get_file(fd)?;
     let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
     match opcode {
         IORING_REGISTER_BUFFERS => {
@@ -3498,7 +3498,7 @@ mod arch32 {
         fd: FdNumber,
         arch32_stat_buf: UserRef<uapi::arch32::stat64>,
     ) -> Result<(), Errno> {
-        let file = current_task.live().files.get_allowing_opath(fd)?;
+        let file = current_task.get_file_allowing_opath(fd)?;
         stat64(locked, current_task, file.node(), arch32_stat_buf)
     }
 
@@ -3583,7 +3583,7 @@ mod arch32 {
             //  F_DUPFD, etc.).
             //
             // See https://man7.org/linux/man-pages/man2/open.2.html
-            current_task.live().files.get_allowing_opath(oldfd)?;
+            current_task.get_file_allowing_opath(oldfd)?;
             return Ok(newfd);
         }
         sys_dup3(locked, current_task, oldfd, newfd, 0)

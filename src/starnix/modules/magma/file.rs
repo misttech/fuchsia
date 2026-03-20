@@ -312,7 +312,7 @@ impl MagmaFile {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let file = current_task.live().files.get(fd)?;
+        let file = current_task.get_file(fd)?;
         if let Some(file) = file.downcast_file::<ImageFile>() {
             let buffer = BufferInfo::Image(file.info.clone());
             Ok((
@@ -412,7 +412,7 @@ impl MagmaFile {
         let mut result_semaphore_id = 0;
 
         if let (Ok(connection), Ok(file)) =
-            (self.get_connection(control.connection), current_task.live().files.get(fd))
+            (self.get_connection(control.connection), current_task.get_file(fd))
         {
             let mut handles: Vec<magma_semaphore_t> = vec![];
             let mut ids: Vec<magma_semaphore_id_t> = vec![];

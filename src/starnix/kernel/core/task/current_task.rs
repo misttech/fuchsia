@@ -365,6 +365,14 @@ impl CurrentTask {
         self.live().files.add(locked, self, file, flags)
     }
 
+    pub fn get_file(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
+        self.live().files.get(fd)
+    }
+
+    pub fn get_file_allowing_opath(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
+        self.live().files.get_allowing_opath(fd)
+    }
+
     /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
     ///
     /// Signals are dequeued prior to the original signal mask being restored. This is done by the
@@ -566,7 +574,7 @@ impl CurrentTask {
             //   directory.
             //
             // See https://man7.org/linux/man-pages/man2/open.2.html
-            let file = self.live().files.get_allowing_opath(dir_fd)?;
+            let file = self.get_file_allowing_opath(dir_fd)?;
             file.name.to_passive()
         };
 
