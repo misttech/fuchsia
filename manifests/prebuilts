@@ -431,13 +431,13 @@
 
     <!--   Debian guest kernel images for x64 -->
     <package name="fuchsia_internal/linux/debian_guest-x64"
-             version="8VFlDTcugBj_ojAtq2-qtdl4v4ufiIQlBBj9ufKln7IC"
+             version="ezQ709W_p7DJaWBjqLGFgHt0Fmnz1Zijh-fsuHa3zKgC"
              path="prebuilt/virtualization/packages/debian_guest/images/x64"
              platforms="linux-amd64,linux-arm64"
              internal="true"/>
     <!--   Debian guest kernel images for arm64 -->
     <package name="fuchsia_internal/linux/debian_guest-arm64"
-             version="rkiQBm-0pyLNspMjVMjmDeYJw4aGZBSDN2EsGdObKZcC"
+             version="CZpGS6SARkS2Y4XHWP8y6t7LInGZ5Q-QMqGFkTY6HpwC"
              path="prebuilt/virtualization/packages/debian_guest/images/arm64"
              platforms="linux-amd64,linux-arm64"
              internal="true"/>

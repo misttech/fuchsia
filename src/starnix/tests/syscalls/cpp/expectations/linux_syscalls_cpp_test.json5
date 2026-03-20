@@ -18,6 +18,10 @@
                 "IoctlTest.SIOCSIFADDR_WithMultipleAddressesOnInterface",
                 "IoctlTest.SIOCSIFNETMASK_WithMultipleAddressesOnInterface",
 
+                // TODO(https://fxbug.dev/437149654): Started crashing after /dev/loop-control was added.
+                "MountTest.Ext4ReadOnlySmokeTest",
+                "MountTest.Ext4ReadOnlyInMutableStorageSmokeTest",
+
                 // TODO(https://fxbug.dev/479282469)
                 "PerfEventOpenTest.SampleIdIsValid",
                 "PerfEventOpenTest.MmapFirstRecordPageIsValid",
@@ -78,6 +82,12 @@
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
 
+                // TODO(https://fxbug.dev/494326733)
+                "LoopTest.BlkGetSize",
+                "LoopTest.BlkGetSize64",
+                "LoopTest.BlkGetSize_UnitsAndSafety",
+                "LoopTest.RemoveLoopDeviceFromKernelDeviceRegistry",
+
                 // TODO(https://fxbug.dev/490121956)
                 "MemfdTest.MapExecutableWithNOEXEC",
 
@@ -90,10 +100,6 @@
                 // TODO(https://fxbug.dev/437150943): I believe this is a kernel version issue.
                 "MountTest.BasicSharing",
                 "MountTest.BindIgnoresSharingFlags",
-
-                // TODO(https://fxbug.dev/437149654): Missing /dev/loop-control.
-                "MountTest.Ext4ReadOnlySmokeTest",
-                "MountTest.Ext4ReadOnlyInMutableStorageSmokeTest",
 
                 // TODO(https://fxbug.dev/437153843): I believe the tests / Starnix is incorrect.
                 "NetlinkSocket.RecvMsg",
@@ -117,14 +123,10 @@
                 // TODO(https://fxbug.dev/436979594)
                 "ProcTaskDirTest.SelfEnvironIsNotEmpty",
 
-                // TODO(https://fxbug.dev/436986890): Reliant on a missing TUN / TAP interface.
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_0",
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_32",
-                "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v4_prefix_1",
+                // TODO(https://fxbug.dev/437153843): These seem to only fail on infrastructure?
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
-                "RouteNetlinkSocketTestWithInterface.CreateAndProbeNeighbor",
 
                 // TODO(https://fxbug.dev/437162553)
                 "SocketFault/SocketFault.Read/1",
@@ -173,7 +175,6 @@
                 // TODO(https://fxbug.dev/436986890): Reliant on a missing TUN / TAP interface.
                 "TunTap/TunTapTest.CreateTunTapDevice/0",
                 "TunTap/TunTapTest.CreateTunTapDevice/1",
-                "SysctlTest.DisableIpv6Default",
 
                 // TODO(https://fxbug.dev/437171876): Machina is missing /sys/devices/ interfaces.
                 "UdevTest.AddDevMapper",
@@ -183,8 +184,8 @@
                 // TODO(https://fxbug.dev/436904274): Expectation relies on kernel version >= 5.13.
                 "UffdTest.NoOperationsBeforeInit",
 
-                // TODO(https://fxbug.dev/437173786): Missing a kernel module (/dev/uinput).
-                "UinputTest.*",
+                // TODO(https://fxbug.dev/437173786): Gemini proposed this is an incorrect test.
+                "UinputTest.UiSetEvbit",
             ],
         },
     ],
