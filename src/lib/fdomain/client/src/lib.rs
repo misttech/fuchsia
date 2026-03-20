@@ -372,9 +372,9 @@ struct SocketReadState {
 impl SocketReadState {
     /// Handle an incoming message, which is either a channel streaming event or
     /// response to a `ChannelRead` request.
-    fn handle_incoming_message(&mut self, msg: Result<proto::SocketData, Error>) {
+    fn handle_incoming_message(&mut self, msg: Result<proto::SocketData, Error>) -> Vec<Waker> {
         self.queued.push_back(msg);
-        self.wakers.drain(..).for_each(Waker::wake);
+        std::mem::replace(&mut self.wakers, Vec::new())
     }
 }
 
@@ -389,9 +389,9 @@ struct ChannelReadState {
 impl ChannelReadState {
     /// Handle an incoming message, which is either a channel streaming event or
     /// response to a `ChannelRead` request.
-    fn handle_incoming_message(&mut self, msg: Result<proto::ChannelMessage, Error>) {
+    fn handle_incoming_message(&mut self, msg: Result<proto::ChannelMessage, Error>) -> Vec<Waker> {
         self.queued.push_back(msg);
-        self.wakers.drain(..).for_each(Waker::wake);
+        std::mem::replace(&mut self.wakers, Vec::new())
     }
 }
 
@@ -404,6 +404,13 @@ struct ClientInner {
     next_tx_id: u32,
     waiting_to_close: Vec<proto::HandleId>,
     waiting_to_close_waker: Waker,
+
+    /// There is a lock around `ClientInner`, and sometimes the FIDL bindings
+    /// give us wakers that want to do handle operations synchronously on wake,
+    /// which means we can double-take the lock if we wake a waker while we hold
+    /// it. This is a place to store wakers that we'd like to be woken as soon
+    /// as we're not holding that lock, to avoid these weird reentrancy issues.
+    wakers_to_wake: Vec<Waker>,
 }
 
 impl ClientInner {
@@ -474,8 +481,9 @@ impl ClientInner {
             };
 
             let Some(tx_id) = NonZeroU32::new(header.tx_id) else {
-                if let Err(e) = self.process_event(header, data) {
-                    self.transport = Transport::Error(e);
+                match self.process_event(header, data) {
+                    Ok(wakers) => self.wakers_to_wake.extend(wakers),
+                    Err(e) => self.transport = Transport::Error(e),
                 }
                 continue;
             };
@@ -492,7 +500,11 @@ impl ClientInner {
     }
 
     /// Process an incoming message that arose from an event rather than a transaction reply.
-    fn process_event(&mut self, header: TransactionHeader, data: &[u8]) -> Result<(), InnerError> {
+    fn process_event(
+        &mut self,
+        header: TransactionHeader,
+        data: &[u8],
+    ) -> Result<Vec<Waker>, InnerError> {
         match header.ordinal {
             ordinals::ON_SOCKET_STREAMING_DATA => {
                 let msg = fidl_message::decode_message::<proto::SocketOnSocketStreamingDataRequest>(
@@ -506,16 +518,15 @@ impl ClientInner {
                         read_request_pending: false,
                     });
                 match msg.socket_message {
-                    proto::SocketMessage::Data(data) => {
-                        o.handle_incoming_message(Ok(data));
-                        Ok(())
-                    }
+                    proto::SocketMessage::Data(data) => Ok(o.handle_incoming_message(Ok(data))),
                     proto::SocketMessage::Stopped(proto::AioStopped { error }) => {
-                        if let Some(error) = error {
-                            o.handle_incoming_message(Err(Error::FDomain(*error)));
-                        }
+                        let ret = if let Some(error) = error {
+                            o.handle_incoming_message(Err(Error::FDomain(*error)))
+                        } else {
+                            Vec::new()
+                        };
                         o.is_streaming = false;
-                        Ok(())
+                        Ok(ret)
                     }
                     _ => Err(InnerError::ProtocolStreamEventIncompatible),
                 }
@@ -533,16 +544,15 @@ impl ClientInner {
                     }
                 });
                 match msg.channel_sent {
-                    proto::ChannelSent::Message(data) => {
-                        o.handle_incoming_message(Ok(data));
-                        Ok(())
-                    }
+                    proto::ChannelSent::Message(data) => Ok(o.handle_incoming_message(Ok(data))),
                     proto::ChannelSent::Stopped(proto::AioStopped { error }) => {
-                        if let Some(error) = error {
-                            o.handle_incoming_message(Err(Error::FDomain(*error)));
-                        }
+                        let ret = if let Some(error) = error {
+                            o.handle_incoming_message(Err(Error::FDomain(*error)))
+                        } else {
+                            Vec::new()
+                        };
                         o.is_streaming = false;
-                        Ok(())
+                        Ok(ret)
                     }
                     _ => Err(InnerError::ProtocolStreamEventIncompatible),
                 }
@@ -583,7 +593,8 @@ impl ClientInner {
             is_streaming: false,
             read_request_pending: false,
         });
-        state.handle_incoming_message(msg);
+        let wakers = state.handle_incoming_message(msg);
+        self.wakers_to_wake.extend(wakers);
         state.read_request_pending = false;
     }
 
@@ -599,7 +610,8 @@ impl ClientInner {
             is_streaming: false,
             read_request_pending: false,
         });
-        state.handle_incoming_message(msg);
+        let wakers = state.handle_incoming_message(msg);
+        self.wakers_to_wake.extend(wakers);
         state.read_request_pending = false;
     }
 }
@@ -617,6 +629,7 @@ impl Drop for ClientInner {
             state.wakers.drain(..).for_each(Waker::wake);
         }
         self.waiting_to_close_waker.wake_by_ref();
+        self.wakers_to_wake.drain(..).for_each(Waker::wake);
     }
 }
 
@@ -658,6 +671,7 @@ pub(crate) static DEAD_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
         next_tx_id: 1,
         waiting_to_close: Vec::new(),
         waiting_to_close_waker: std::task::Waker::noop().clone(),
+        wakers_to_wake: Vec::new(),
     })))
 });
 
@@ -679,6 +693,7 @@ impl Client {
             next_tx_id: 1,
             waiting_to_close: Vec::new(),
             waiting_to_close_waker: std::task::Waker::noop().clone(),
+            wakers_to_wake: Vec::new(),
         })));
 
         let client_weak = Arc::downgrade(&ret);
@@ -687,7 +702,14 @@ impl Client {
                 return Poll::Ready(());
             };
 
-            client.0.lock().poll_transport(ctx)
+            let (ret, deferred_wakers) = {
+                let mut inner = client.0.lock();
+                let ret = inner.poll_transport(ctx);
+                let deferred_wakers = std::mem::replace(&mut inner.wakers_to_wake, Vec::new());
+                (ret, deferred_wakers)
+            };
+            deferred_wakers.into_iter().for_each(Waker::wake);
+            ret
         });
 
         (ret, fut)

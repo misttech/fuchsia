@@ -4,17 +4,17 @@
 
 use crate::channel::HandleOp;
 use crate::{
-    AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals,
+    AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals, Socket,
 };
 use fdomain_container::FDomain;
 use fdomain_container::wire::FDomainCodec;
 use fidl_fuchsia_fdomain::Error as FDomainError;
 use fuchsia_sync::Mutex;
 use futures::stream::Stream;
-use futures::{FutureExt, StreamExt};
+use futures::{AsyncReadExt, FutureExt, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker, ready};
 
 #[derive(Clone, Debug)]
 struct TestError(String);
@@ -659,4 +659,67 @@ async fn client_drop_signals() {
     let Err(Error::Transport(None)) = task.await else {
         panic!("Wrong error type!");
     };
+}
+
+#[fuchsia::test]
+async fn waker_reentrancy_test() {
+    #[derive(Clone)]
+    struct WakerData {
+        real_waker: Waker,
+        sock: Arc<Socket>,
+    }
+
+    unsafe fn clone(data: *const ()) -> RawWaker {
+        let data = unsafe {
+            Box::into_raw(Box::new((*data.cast::<WakerData>()).clone())).cast_const().cast::<()>()
+        };
+        RawWaker::new(data, VTABLE)
+    }
+
+    unsafe fn wake(data: *const ()) {
+        let data = unsafe { Box::from_raw(data.cast_mut().cast::<WakerData>()) };
+        let data = *data;
+        let _ = data.sock.write_all(b"Woken");
+        data.real_waker.wake();
+    }
+
+    unsafe fn wake_by_ref(data: *const ()) {
+        let data = unsafe { &*data.cast_mut().cast::<WakerData>() };
+        let _ = data.sock.write_all(b"Woken");
+        data.real_waker.wake_by_ref();
+    }
+
+    unsafe fn drop(data: *const ()) {
+        unsafe {
+            let _ = Box::from_raw(data.cast_mut().cast::<WakerData>());
+        }
+    }
+
+    static VTABLE: &RawWakerVTable = &RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+
+    let (client, _fault_injector) = TestFDomain::new_client();
+    let (a, b) = client.create_stream_socket();
+    let (notif_waker, mut notification) = client.create_stream_socket();
+    let notif_waker = Arc::new(notif_waker);
+    let mut buf = [0u8; b"Message".len()];
+    let mut read = 0;
+
+    let task = fuchsia_async::Task::spawn(futures::future::poll_fn(move |cx| {
+        let waker_data =
+            Box::new(WakerData { real_waker: cx.waker().clone(), sock: Arc::clone(&notif_waker) });
+
+        let waker =
+            unsafe { Waker::new(Box::into_raw(waker_data).cast_const().cast::<()>(), VTABLE) };
+        let mut cx = Context::from_waker(&waker);
+        while read < buf.len() {
+            read += ready!(a.poll_socket(&mut cx, &mut buf[read..]))?;
+        }
+        Poll::Ready(Result::<(), crate::Error>::Ok(()))
+    }));
+
+    b.write_all(b"Message").await.unwrap();
+    task.await.unwrap();
+    let mut buf = [0u8; b"Woken".len()];
+    notification.read_exact(&mut buf).await.unwrap();
+    assert_eq!(b"Woken", &buf);
 }
