@@ -30,8 +30,8 @@ where
     S: Serializer,
 {
     let container = target
-        .into_iter()
-        .map(|entry| (entry.0.into_iter().collect::<Vec<_>>(), entry.1))
+        .iter()
+        .map(|entry| (entry.0.iter().collect::<Vec<_>>(), entry.1))
         .collect::<Vec<_>>();
     serde::Serialize::serialize(&container, ser)
 }

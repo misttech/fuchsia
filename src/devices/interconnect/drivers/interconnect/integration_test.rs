@@ -91,7 +91,7 @@ async fn test_interconnect_driver() -> Result<()> {
             .node_property_list
             .as_ref()
             .expect("node property list to be filled in")
-            .into_iter()
+            .iter()
             .any(|prop| prop.key == expected_key && prop.value == expected_value);
         assert!(prop_found);
     }

@@ -45,7 +45,7 @@ pub fn write_node_properties(
     let props_len = properties.len();
     writeln!(writer, "  {0} {1}", props_len, "Properties")?;
 
-    for (index, property) in properties.into_iter().enumerate() {
+    for (index, property) in properties.iter().enumerate() {
         let key = &property.key;
         let value = node_property_value_to_string(&property.value);
         writeln!(
@@ -62,11 +62,7 @@ pub fn write_node_properties(
 }
 
 pub fn colorized(string: &str, color: ansi_term::Colour, with_style: bool) -> String {
-    if with_style {
-        color.paint(string).to_string()
-    } else {
-        string.to_string()
-    }
+    if with_style { color.paint(string).to_string() } else { string.to_string() }
 }
 
 #[cfg(test)]

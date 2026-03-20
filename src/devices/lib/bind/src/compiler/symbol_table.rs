@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::compiler::{dependency_graph, CompilerError};
+use crate::compiler::{CompilerError, dependency_graph};
 use crate::parser::common::{CompoundIdentifier, Include};
 use crate::parser::{self, bind_library};
 use crate::{linter, make_identifier};
@@ -57,7 +57,7 @@ pub fn get_symbol_table_from_libraries<'a>(
     lint: bool,
 ) -> Result<SymbolTable, CompilerError> {
     let library_asts: Vec<bind_library::Ast> = libraries
-        .into_iter()
+        .iter()
         .map(|lib| {
             let ast = bind_library::Ast::try_from(lib.as_str())
                 .map_err(CompilerError::BindParserError)?;

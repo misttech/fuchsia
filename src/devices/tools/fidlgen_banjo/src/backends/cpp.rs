@@ -107,7 +107,7 @@ impl<'a, W: io::Write> CppBackend<'a, W> {
         ir: &FidlIr,
     ) -> Result<String, Error> {
         let assignments = methods
-            .into_iter()
+            .iter()
             .filter(|m| doesnt_use_error_syntax(m, ir))
             .map(|m| {
                 format!(
@@ -139,7 +139,7 @@ impl<'a, W: io::Write> CppBackend<'a, W> {
         ir: &FidlIr,
     ) -> Result<String, Error> {
         let assignments = methods
-            .into_iter()
+            .iter()
             .filter(|m| doesnt_use_error_syntax(m, ir))
             .map(|m| {
                 format!(
@@ -391,11 +391,7 @@ impl<'a, W: io::Write> CppBackend<'a, W> {
                 .iter()
                 .filter_map(|decl| {
                     // Find all protocols and extract their methods.
-                    if let Decl::Protocol { ref data } = *decl {
-                        Some(&data.methods)
-                    } else {
-                        None
-                    }
+                    if let Decl::Protocol { ref data } = *decl { Some(&data.methods) } else { None }
                 })
                 .flat_map(|methods| {
                     // Find all handle in/out params in each method.
