@@ -62,9 +62,6 @@ fuchsia_cc_driver("intel-i2c-driver") {
     "//zircon/system/ulib/zircon-internal",
   ]
 
-  # TODO(https://fxbug.dev/42136088): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-unused-function" ]
-
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
 }

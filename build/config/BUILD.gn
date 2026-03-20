@@ -867,11 +867,9 @@ config("Wno-missing-declarations") {
   }
 }
 
-# TODO(https://fxbug.dev/42136088): clean up instances of this outside of third party code.
 config("Wno-unused-function") {
   cflags = [ "-Wno-unused-function" ]
   visibility = [
-    "//src/devices/i2c/drivers/intel-i2c:intel-i2c-driver",
     "//zircon/third_party/uapp/dash",
     "//zircon/third_party/ulib/musl/ldso",
     "//zircon/third_party/ulib/musl/src/network",
