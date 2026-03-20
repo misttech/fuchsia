@@ -75,9 +75,9 @@ void FakeDisplayStack::ServeCoordinatorToProcessOutgoingDirectory() {
   coordinator_harness_.ServeToProcessOutgoingDirectory();
 }
 
-void FakeDisplayStack::RunDriverRuntimeLoopUntilIdle() {
-  ZX_ASSERT_MSG(!shutdown_, "RunDriverRuntimeLoopUntilIdle() called after SyncShutdown()");
-  driver_runtime_->RunUntilIdle();
+void FakeDisplayStack::RunDriverRuntimeDispatcherUntil(fit::function<bool()> condition) {
+  ZX_ASSERT_MSG(!shutdown_, "RunDriverRuntimeDispatcherUntil() called after SyncShutdown()");
+  driver_runtime_->RunUntil(std::move(condition));
 }
 
 }  // namespace fake_display

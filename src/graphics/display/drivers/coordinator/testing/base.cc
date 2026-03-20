@@ -56,17 +56,7 @@ void TestBase::TearDown() {
 }
 
 void TestBase::WaitUntil(fit::function<bool()> predicate) {
-  while (true) {
-    if (predicate()) {
-      return;
-    }
-
-    // The predicate may become true after the Coordinator or the
-    // fake-display driver process FIDL requests.
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
-
-    fake_display_stack_->RunDriverRuntimeLoopUntilIdle();
-  }
+  fake_display_stack_->RunDriverRuntimeDispatcherUntil(std::move(predicate));
 }
 
 fake_display::FakeDisplay& TestBase::FakeDisplayEngine() {

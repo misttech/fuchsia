@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/fit/function.h>
 #include <lib/zx/result.h>
 
 #include <memory>
@@ -57,10 +58,10 @@ class FakeDisplayStack {
   // Must not be called after `SyncShutdown()`.
   void ServeCoordinatorToProcessOutgoingDirectory();
 
-  // Runs the driver framework loop until all pending tasks are completed.
+  // Runs the driver framework foreground dispatcher until `condition` is met.
   //
   // Must not be called after `SyncShutdown()`.
-  void RunDriverRuntimeLoopUntilIdle();
+  void RunDriverRuntimeDispatcherUntil(fit::function<bool()> condition);
 
  private:
   bool shutdown_ = false;
