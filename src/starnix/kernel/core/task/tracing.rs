@@ -135,17 +135,16 @@ impl TracePerformanceEventManager {
 
         let ids = pid_table.task_ids();
         for tid in &ids {
-            let pair = pid_table.get_task(*tid).upgrade().map(|t| KoidPair {
-                process: t.thread_group().get_process_koid().ok(),
-                thread: t.thread.read().as_ref().and_then(|t| t.koid().ok()),
-            });
-            if let Some(pair) = pair {
-                // ignore entries with no process or thread.
-                if pair.process.is_some() || pair.thread.is_some() {
-                    pid_map.insert(*tid, pair);
-                }
-            } else {
-                unreachable!("Empty mapping for {tid}.");
+            let task_ref = pid_table.get_task(*tid);
+            let task = task_ref.upgrade().expect("Empty mapping for {tid}.");
+            let live = task.live().expect("tid {tid} is not live.");
+            let pair = KoidPair {
+                process: task.thread_group().get_process_koid().ok(),
+                thread: live.thread.read().as_ref().and_then(|t| t.koid().ok()),
+            };
+            // ignore entries with no process or thread.
+            if pair.process.is_some() || pair.thread.is_some() {
+                pid_map.insert(*tid, pair);
             }
         }
 
@@ -166,7 +165,7 @@ mod tests {
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
-            let tkoid = current_task.thread.read().as_ref().and_then(|t| t.koid().ok());
+            let tkoid = current_task.live().thread.read().as_ref().and_then(|t| t.koid().ok());
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
             let _another_current = create_task(locked, &kernel, "another-task");
@@ -230,9 +229,12 @@ mod tests {
                 .create_thread(b"my-new-test-thread")
                 .expect("test thread");
 
-            let mut thread = another_current.thread.write();
-            *thread = Some(Arc::new(test_thread));
-            drop(thread);
+            {
+                let another_current_live = another_current.live();
+                let mut thread = another_current_live.thread.write();
+                *thread = Some(Arc::new(test_thread));
+                drop(thread);
+            }
 
             let pid_map = manager.map.read().clone();
             let pid_dump = format!("{pid_map:?}");

@@ -269,7 +269,7 @@ pub fn sys_execveat(
         //   directory.
         //
         // See https://man7.org/linux/man-pages/man2/open.2.html
-        let file = current_task.files.get_allowing_opath(dir_fd)?;
+        let file = current_task.live().files.get_allowing_opath(dir_fd)?;
 
         // We are forced to reopen the file with O_RDONLY to get access to the underlying VMO.
         // Note that skip the access check in the arguments in case the file mode does
@@ -341,6 +341,7 @@ pub fn sys_getcpu(
     // from https://man7.org/linux/man-pages/man2/getcpu.2.html
     if !cpu_out.is_null() {
         let thread_stats = current_task
+            .live()
             .thread
             .read()
             .as_ref()
@@ -1752,7 +1753,7 @@ pub fn sys_setns(
     ns_fd: FdNumber,
     ns_type: c_int,
 ) -> Result<(), Errno> {
-    let file_handle = current_task.task.files.get(ns_fd)?;
+    let file_handle = current_task.live().files.get(ns_fd)?;
 
     // From man pages this is not quite right because some namespace types require more capabilities
     // or require this capability in multiple namespaces, but it should cover our current test
@@ -1766,7 +1767,7 @@ pub fn sys_setns(
         }
 
         track_stub!(TODO("https://fxbug.dev/297312091"), "setns CLONE_FS limitations");
-        current_task.task.fs().set_namespace(mount_ns.0.clone())?;
+        current_task.fs().set_namespace(mount_ns.0.clone())?;
         return Ok(());
     }
 
@@ -1792,7 +1793,7 @@ pub fn sys_unshare(
     }
 
     if (flags & CLONE_FILES) != 0 {
-        current_task.files.unshare();
+        current_task.live().files.unshare();
     }
 
     if (flags & CLONE_FS) != 0 {
@@ -1949,7 +1950,7 @@ pub fn sys_kcmp(
             fn get_file(task: &Task, index: u64) -> Result<FileHandle, Errno> {
                 // TODO: Test whether O_PATH is allowed here. Conceptually, seems like
                 //       O_PATH should be allowed, but we haven't tested it yet.
-                task.files.get_allowing_opath(FdNumber::from_raw(
+                task.live()?.files.get_allowing_opath(FdNumber::from_raw(
                     index.try_into().map_err(|_| errno!(EBADF))?,
                 ))
             }
@@ -1957,11 +1958,15 @@ pub fn sys_kcmp(
             let file2 = get_file(&task2, index2)?;
             Ok(encode_ordering(obfuscate_arc(&file1).cmp(&obfuscate_arc(&file2))))
         }
-        KcmpResource::FILES => Ok(encode_ordering(
-            obfuscate_value(task1.files.id().raw()).cmp(&obfuscate_value(task2.files.id().raw())),
-        )),
+        KcmpResource::FILES => {
+            let files1 = task1.live()?.files.id();
+            let files2 = task2.live()?.files.id();
+            Ok(encode_ordering(obfuscate_value(files1.raw()).cmp(&obfuscate_value(files2.raw()))))
+        }
         KcmpResource::FS => {
-            Ok(encode_ordering(obfuscate_arc(&task1.fs()).cmp(&obfuscate_arc(&task2.fs()))))
+            let fs1 = task1.live()?.fs();
+            let fs2 = task2.live()?.fs();
+            Ok(encode_ordering(obfuscate_arc(&fs1).cmp(&obfuscate_arc(&fs2))))
         }
         KcmpResource::SIGHAND => Ok(encode_ordering(
             obfuscate_arc(&task1.thread_group().signal_actions)

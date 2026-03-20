@@ -401,7 +401,7 @@ pub fn sys_signalfd4(
     let mask = current_task.read_object(mask_addr)?;
 
     if fd.raw() != -1 {
-        let file = current_task.files.get(fd)?;
+        let file = current_task.live().files.get(fd)?;
         let file = file.downcast_file::<SignalFd>().ok_or_else(|| errno!(EINVAL))?;
         file.set_mask(mask);
         Ok(fd)
@@ -732,7 +732,7 @@ pub fn sys_pidfd_send_signal(
         return error!(EINVAL);
     }
 
-    let file = current_task.files.get(pidfd)?;
+    let file = current_task.live().files.get(pidfd)?;
     let target = file.as_thread_group_key()?;
     let target = target.upgrade().ok_or_else(|| errno!(ESRCH))?;
 
@@ -949,7 +949,7 @@ pub fn sys_waitid(
         }),
         P_PIDFD => {
             let fd = FdNumber::from_raw(id);
-            let file = current_task.files.get(fd)?;
+            let file = current_task.live().files.get(fd)?;
             if file.flags().contains(OpenFlags::NONBLOCK) {
                 waiting_options.block = false;
             }
@@ -2496,10 +2496,13 @@ mod tests {
             std::mem::drop(child);
 
             // Check which signalfds are readable.
-            let sfd_term_int_file =
-                current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+            let sfd_term_int_file = current_task
+                .live()
+                .files
+                .get(sfd_term_int)
+                .expect("failed to get sfd_term_int file");
             let sfd_chld_file =
-                current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
+                current_task.live().files.get(sfd_chld).expect("failed to get sfd_chld file");
 
             let term_int_events = sfd_term_int_file
                 .query_events(locked, &current_task)
@@ -2557,10 +2560,13 @@ mod tests {
             let waiter = Waiter::new();
             let ready_items = Arc::new(Mutex::new(VecDeque::new()));
 
-            let sfd_term_int_file =
-                current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+            let sfd_term_int_file = current_task
+                .live()
+                .files
+                .get(sfd_term_int)
+                .expect("failed to get sfd_term_int file");
             let sfd_chld_file =
-                current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
+                current_task.live().files.get(sfd_chld).expect("failed to get sfd_chld file");
 
             sfd_term_int_file
                 .wait_async(

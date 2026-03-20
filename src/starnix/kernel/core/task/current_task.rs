@@ -12,11 +12,11 @@ use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
-    SeccompState, SeccompStateValue, Task, TaskFlags, ThreadState, Waiter,
+    SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,
-    NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
+    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext,
+    MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
@@ -207,6 +207,31 @@ impl CurrentTask {
         Self { task, thread_state, current_creds, _local_marker: Default::default() }
     }
 
+    /// Returns the live state of the task.
+    ///
+    /// This panics if the task has already transitioned to a zombie state because `CurrentTask`
+    /// only exists for live tasks.
+    #[track_caller]
+    pub fn live(&self) -> Arc<TaskLiveState> {
+        self.task.live().expect("CurrentTask must have TaskLiveState")
+    }
+
+    pub fn fs(&self) -> Arc<FsContext> {
+        self.live().fs()
+    }
+
+    pub fn has_shared_fs(&self) -> bool {
+        let fs = self.fs();
+        // This check is incorrect because someone else could be holding a temporary Arc to the
+        // FsContext and therefore increasing the strong count.
+        Arc::strong_count(&fs) > 2usize
+    }
+
+    pub fn unshare_fs(&self) {
+        let new_fs = self.fs().fork();
+        self.live().fs.update(new_fs);
+    }
+
     /// Returns the current subjective credentials of the task.
     ///
     /// The subjective credentials are the credentials that are used to check permissions for
@@ -337,7 +362,7 @@ impl CurrentTask {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.files.add(locked, self, file, flags)
+        self.live().files.add(locked, self, file, flags)
     }
 
     /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
@@ -541,7 +566,7 @@ impl CurrentTask {
             //   directory.
             //
             // See https://man7.org/linux/man-pages/man2/open.2.html
-            let file = self.files.get_allowing_opath(dir_fd)?;
+            let file = self.live().files.get_allowing_opath(dir_fd)?;
             file.name.to_passive()
         };
 
@@ -796,7 +821,7 @@ impl CurrentTask {
             match self.resolve_open_path(locked, &mut context, &dir, path, mode, flags) {
                 Ok((n, c)) => (n, c),
                 Err(e) => {
-                    let mut abs_path = dir.path(&self.task);
+                    let mut abs_path = dir.path(&self.fs());
                     abs_path.extend(&**path);
                     track_file_not_found(abs_path);
                     return Err(e);
@@ -1034,7 +1059,7 @@ impl CurrentTask {
             let new_mm = mm
                 .exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
                 .map_err(|status| from_status_like_fdio!(status))?;
-            self.mm.update(Some(new_mm.clone()));
+            self.live().mm.update(Some(new_mm.clone()));
             new_mm
         };
 
@@ -1126,8 +1151,8 @@ impl CurrentTask {
 
         // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
         // clone(2).
-        self.files.unshare();
-        self.files.exec(locked, self);
+        self.live().files.unshare();
+        self.live().files.exec(locked, self);
 
         // If SELinux is enabled, enforce permissions related to inheritance of file descriptors
         // and resource limits. Then update the current task's SID.
@@ -1514,7 +1539,7 @@ impl CurrentTask {
         }
 
         let fs = if clone_fs { self.fs() } else { self.fs().fork() };
-        let files = if clone_files { self.files.clone() } else { self.files.fork() };
+        let files = if clone_files { self.live().files.clone() } else { self.live().files.fork() };
 
         let kernel = self.kernel();
 
@@ -1627,6 +1652,7 @@ impl CurrentTask {
         // Only create the vfork event when the caller requested CLONE_VFORK.
         let vfork_event = if clone_vfork { Some(Arc::new(zx::Event::create())) } else { None };
 
+        let live = self.live();
         let mut child = TaskBuilder::new(Task::new(
             pid,
             command,
@@ -1636,8 +1662,8 @@ impl CurrentTask {
             memory_manager,
             fs,
             creds,
-            self.abstract_socket_namespace.clone(),
-            self.abstract_vsock_namespace.clone(),
+            live.abstract_socket_namespace.clone(),
+            live.abstract_vsock_namespace.clone(),
             child_signal_mask,
             child_kernel_signals,
             vfork_event,

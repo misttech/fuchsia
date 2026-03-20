@@ -686,6 +686,45 @@ impl TaskMutableState<Base = Task> {
     }
 }
 
+/// The live state of a task.
+///
+/// This structure contains the state of a task that is only relevant while the task is alive. It
+/// is dropped when the task enters the zombie state.
+pub struct TaskLiveState {
+    /// A handle to the underlying Zircon thread object.
+    ///
+    /// Some tasks lack an underlying Zircon thread. These tasks are used internally by the
+    /// Starnix kernel to track background work, typically on a `kthread`.
+    pub thread: RwLock<Option<Arc<zx::Thread>>>,
+
+    /// The file descriptor table for this task.
+    ///
+    /// This table can be share by many tasks.
+    pub files: FdTable,
+
+    /// The memory manager for this task.  This is `None` only for system tasks.
+    pub mm: RcuOptionArc<MemoryManager>,
+
+    /// The file system for this task.
+    pub fs: RcuArc<FsContext>,
+
+    /// The namespace for abstract AF_UNIX sockets for this task.
+    pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
+
+    /// The namespace for AF_VSOCK for this task.
+    pub abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
+}
+
+impl TaskLiveState {
+    pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
+        self.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
+    }
+
+    pub fn fs(&self) -> Arc<FsContext> {
+        self.fs.to_arc()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStateCode {
     // Task is being executed.
@@ -874,28 +913,10 @@ pub struct Task {
     /// process.
     pub thread_group: Arc<ThreadGroup>,
 
-    /// A handle to the underlying Zircon thread object.
+    /// The live state of the task.
     ///
-    /// Some tasks lack an underlying Zircon thread. These tasks are used internally by the
-    /// Starnix kernel to track background work, typically on a `kthread`.
-    pub thread: RwLock<Option<Arc<zx::Thread>>>,
-
-    /// The file descriptor table for this task.
-    ///
-    /// This table can be share by many tasks.
-    pub files: FdTable,
-
-    /// The memory manager for this task.  This is `None` only for system tasks.
-    pub mm: RcuOptionArc<MemoryManager>,
-
-    /// The file system for this task.
-    fs: RcuOptionArc<FsContext>,
-
-    /// The namespace for abstract AF_UNIX sockets for this task.
-    pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
-
-    /// The namespace for AF_VSOCK for this task.
-    pub abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
+    /// This is `None` for zombie tasks.
+    pub live_state: RcuOptionArc<TaskLiveState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1064,18 +1085,21 @@ impl Task {
     ) -> OwnedRef<Self> {
         let thread_group_key = ThreadGroupKey::from(&thread_group);
         OwnedRef::new_cyclic(|weak_self| {
+            let task_live = Arc::new(TaskLiveState {
+                thread: RwLock::new(thread.map(Arc::new)),
+                files,
+                mm: RcuOptionArc::new(mm),
+                fs: RcuArc::new(fs),
+                abstract_socket_namespace,
+                abstract_vsock_namespace,
+            });
             let task = Task {
                 weak_self,
                 tid,
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                thread: RwLock::new(thread.map(Arc::new)),
-                files,
-                mm: RcuOptionArc::new(mm),
-                fs: RcuOptionArc::new(Some(fs)),
-                abstract_socket_namespace,
-                abstract_vsock_namespace,
+                live_state: RcuOptionArc::new(Some(task_live)),
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
@@ -1149,25 +1173,28 @@ impl Task {
         self.get_task(ptracer)
     }
 
-    pub fn fs(&self) -> Arc<FsContext> {
-        self.fs.to_option_arc().expect("fs must be set")
+    /// Returns the live state of the task, if it exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its live
+    /// resources have been dropped.
+    #[track_caller]
+    pub fn live(&self) -> Result<Arc<TaskLiveState>, Errno> {
+        self.live_state.to_option_arc().ok_or_else(|| errno!(ESRCH))
     }
 
-    pub fn has_shared_fs(&self) -> bool {
-        let maybe_fs = self.fs.to_option_arc();
-        // This check is incorrect because someone else could be holding a temporary Arc to the
-        // FsContext and therefore increasing the strong count.
-        maybe_fs.is_some_and(|fs| Arc::strong_count(&fs) > 2usize)
-    }
-
+    /// Returns the memory manager of the task, if it exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Err(errno)`] where `errno` is:
+    ///
+    ///   - `ESRCH`: the task is dead and its live resources have been dropped.
+    ///   - `EINVAL`: the task does not have a memory manager.
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
-        self.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
-    }
-
-    pub fn unshare_fs(&self) {
-        let fs = self.fs().fork();
-        self.fs.update(Some(fs));
+        self.live()?.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }
 
     /// Modify the given elements of the scheduler state with new values and update the
@@ -1334,7 +1361,8 @@ impl Task {
     }
 
     pub fn thread_runtime_info(&self) -> Result<zx::TaskRuntimeInfo, Errno> {
-        self.thread
+        self.live()?
+            .thread
             .read()
             .as_ref()
             .ok_or_else(|| errno!(EINVAL))?
@@ -1351,8 +1379,13 @@ impl Task {
     /// This will interrupt any blocking syscalls if the task is blocked on one.
     /// The signal_state of the task must not be locked.
     pub fn interrupt(&self) {
+        let Ok(live) = self.live() else {
+            log_warn!("Cannot interrupt dead task {}", self.get_tid());
+            return;
+        };
+
         self.read().signals.run_state.wake();
-        if let Some(thread) = self.thread.read().as_ref() {
+        if let Some(thread) = live.thread.read().as_ref() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,
                 reason = "Force documented unsafe blocks in Starnix"
@@ -1372,6 +1405,11 @@ impl Task {
     }
 
     pub fn set_command_name(&self, mut new_name: TaskCommand) {
+        let Ok(live) = self.live() else {
+            log_warn!("Cannot set command name for dead task {}", self.get_tid());
+            return;
+        };
+
         // If we're going to update the process name, see if we can get a longer one than normally
         // provided in the Linux uapi. Only choose the argv0-based name if it's a superset of the
         // uapi-provided name to avoid clobbering the name provided by the user.
@@ -1388,7 +1426,7 @@ impl Task {
         let mut command_guard = self.persistent_info.command_guard();
 
         // Set the name on the Linux thread.
-        if let Some(thread) = self.thread.read().as_ref() {
+        if let Some(thread) = live.thread.read().as_ref() {
             set_zx_name(&**thread, new_name.as_bytes());
         }
 
@@ -1436,7 +1474,12 @@ impl Task {
 
     pub fn time_stats(&self) -> TaskTimeStats {
         use zx::Task;
-        let info = match &*self.thread.read() {
+        // TODO(https://fxbug.dev/297440106): Return time stats for zombie tasks.
+        let live = match self.live() {
+            Ok(live) => live,
+            Err(_) => return TaskTimeStats::default(),
+        };
+        let info = match &*live.thread.read() {
             Some(thread) => thread.get_runtime_info().expect("Failed to get thread stats"),
             None => return TaskTimeStats::default(),
         };
@@ -1461,10 +1504,15 @@ impl Task {
     }
 
     pub fn record_pid_koid_mapping(&self) {
+        let Ok(live) = self.live() else {
+            log_warn!("Cannot record pid/koid mapping for dead task {}", self.get_tid());
+            return;
+        };
+
         let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
 
         let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = self.thread.read().as_ref().and_then(|t| t.koid().ok());
+        let tkoid = live.thread.read().as_ref().and_then(|t| t.koid().ok());
         mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }
@@ -1484,13 +1532,14 @@ impl Releasable for Task {
 
         std::mem::drop(pids);
 
-        self.files.release();
-
         self.signal_vfork();
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
-        self.fs.update(None);
-        self.mm.update(None);
+        if let Ok(live) = self.live() {
+            live.files.release();
+            live.mm.update(None);
+        }
+        self.live_state.update(None);
 
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
         let current_task = CurrentTask::new(OwnedRef::new(self), thread_state.into());

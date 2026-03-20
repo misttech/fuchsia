@@ -88,7 +88,8 @@ where
     }
 
     // Hold a lock on the task's thread slot until we have a chance to initialize it.
-    let mut task_thread_guard = ref_task.thread.write();
+    let live_task = ref_task.live().unwrap();
+    let mut task_thread_guard = live_task.thread.write();
 
     // Spawn the process' thread. Note, this closure ends up executing in the process referred to by
     // `process_handle`.

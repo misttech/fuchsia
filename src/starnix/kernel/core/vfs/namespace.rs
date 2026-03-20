@@ -12,8 +12,8 @@ use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
     CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
-    FileSystemOptions, FileWriteGuardMode, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
-    PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
+    FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle, FsNodeOps, FsStr,
+    FsString, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
     fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fs_node_impl_not_dir,
 };
@@ -741,8 +741,9 @@ impl DynamicFileSource for ProcMountsFileSource {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let root = task.fs().root();
-        let ns = task.fs().namespace();
+        let task_fs = task.live()?.fs.read();
+        let root = task_fs.root();
+        let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
             let mountpoint = mount.read().mountpoint().unwrap_or_else(|| mount.root());
             if !mountpoint.is_descendant_of(&root) {
@@ -752,7 +753,7 @@ impl DynamicFileSource for ProcMountsFileSource {
                 sink,
                 "{} {} {} ",
                 mount.fs.options.source_for_display(),
-                mountpoint.path(&task),
+                mountpoint.path(&task_fs),
                 mount.fs.name(),
             )?;
             write_mount_info(&task, sink, mount)?;
@@ -837,8 +838,9 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let root = task.fs().root();
-        let ns = task.fs().namespace();
+        let task_fs = task.live()?.fs.read();
+        let root = task_fs.root();
+        let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
             let mountpoint = mount.read().mountpoint().unwrap_or_else(|| mount.root());
             if !mountpoint.is_descendant_of(&root) {
@@ -853,7 +855,7 @@ impl DynamicFileSource for ProcMountinfoFile {
                 parent.id,
                 mount.root.node.fs().dev_id,
                 path_from_fs_root(&mount.root),
-                mountpoint.path(&task),
+                mountpoint.path(&task_fs),
             )?;
             write_mount_info(&task, sink, mount)?;
             if let Some(peer_group) = mount.read().peer_group() {
@@ -1450,9 +1452,9 @@ impl NamespaceNode {
         self.mount_if_root().ok()?.read().mountpoint()
     }
 
-    /// The path from the task's root to this node.
-    pub fn path(&self, task: &Task) -> FsString {
-        self.path_from_root(Some(&task.fs().root())).into_path()
+    /// The path from the filesystem root to this node.
+    pub fn path(&self, fs: &FsContext) -> FsString {
+        self.path_from_root(Some(&fs.root())).into_path()
     }
 
     /// The path from the root of the namespace to this node.

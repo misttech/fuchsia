@@ -74,6 +74,7 @@ impl CrashReporter {
             .koid()
             .expect("handles for processes with crashing threads are still valid");
         let thread_koid = current_task
+            .live()
             .thread
             .read()
             .as_ref()

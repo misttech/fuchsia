@@ -190,35 +190,40 @@ pub async fn serve_container_controller(
                             if let Some(leader) =
                                 system_task.get_task(thread_group.leader).upgrade()
                             {
-                                let fds = leader.files.get_all_fds();
-                                for fd in fds {
-                                    if let Ok(file) = leader.files.get(fd) {
-                                        if let Ok(memory) = file.get_memory(
-                                            system_task
-                                                .kernel()
-                                                .kthreads
-                                                .unlocked_for_async()
-                                                .deref_mut(),
-                                            system_task,
-                                            None,
-                                            starnix_core::mm::ProtectionFlags::READ,
-                                        ) {
-                                            let memory_koid = memory
-                                                .info()
-                                                .expect("Failed to get memory info")
-                                                .koid;
-                                            if memory_koid.raw_koid() == koid {
-                                                let process_name = thread_group
-                                                    .process
-                                                    .get_name()
-                                                    .unwrap_or_default();
-                                                results.push(fstarcontainer::VmoReference {
-                                                    process_name: Some(process_name.to_string()),
-                                                    pid: Some(leader.get_pid() as u64),
-                                                    fd: Some(fd.raw()),
-                                                    koid: Some(koid),
-                                                    ..Default::default()
-                                                });
+                                if let Ok(live) = leader.live() {
+                                    let files = &live.files;
+                                    let fds = files.get_all_fds();
+                                    for fd in fds {
+                                        if let Ok(file) = files.get(fd) {
+                                            if let Ok(memory) = file.get_memory(
+                                                system_task
+                                                    .kernel()
+                                                    .kthreads
+                                                    .unlocked_for_async()
+                                                    .deref_mut(),
+                                                system_task,
+                                                None,
+                                                starnix_core::mm::ProtectionFlags::READ,
+                                            ) {
+                                                let memory_koid = memory
+                                                    .info()
+                                                    .expect("Failed to get memory info")
+                                                    .koid;
+                                                if memory_koid.raw_koid() == koid {
+                                                    let process_name = thread_group
+                                                        .process
+                                                        .get_name()
+                                                        .unwrap_or_default();
+                                                    results.push(fstarcontainer::VmoReference {
+                                                        process_name: Some(
+                                                            process_name.to_string(),
+                                                        ),
+                                                        pid: Some(leader.get_pid() as u64),
+                                                        fd: Some(fd.raw()),
+                                                        koid: Some(koid),
+                                                        ..Default::default()
+                                                    });
+                                                }
                                             }
                                         }
                                     }

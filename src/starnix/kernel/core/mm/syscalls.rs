@@ -113,7 +113,8 @@ where
         return error!(EINVAL);
     }
 
-    let file = if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.files.get(fd)?) };
+    let file =
+        if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.live().files.get(fd)?) };
     if flags & (MAP_PRIVATE | MAP_SHARED) == 0
         || flags & (MAP_PRIVATE | MAP_SHARED) == MAP_PRIVATE | MAP_SHARED
     {
@@ -379,7 +380,7 @@ pub fn sys_process_mrelease(
     if flags != 0 {
         return error!(EINVAL);
     }
-    let file = current_task.files.get(pidfd)?;
+    let file = current_task.live().files.get(pidfd)?;
     let task = current_task.get_task(file.as_thread_group_key()?.pid());
     let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
     if !task.load_stopped().is_stopped() {

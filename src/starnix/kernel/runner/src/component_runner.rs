@@ -272,7 +272,7 @@ pub async fn start_component(
                             locked,
                             current_task,
                             start_info.numbered_handles,
-                            &current_task.files,
+                            &current_task.live().files,
                         )
                         .map_err(|e| {
                             log_error!("Error while parsing the numbered handles: {e:?}");

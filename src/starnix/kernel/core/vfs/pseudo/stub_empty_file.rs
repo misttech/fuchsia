@@ -42,7 +42,7 @@ impl FileOps for StubEmptyFile {
         file: &crate::vfs::FileObject,
         current_task: &crate::task::CurrentTask,
     ) -> Result<(), starnix_uapi::errors::Errno> {
-        let path = file.name.path(current_task);
+        let path = file.name.path(&current_task.fs());
         starnix_logging::__track_stub_inner(
             self.bug,
             path.to_str_lossy().as_ref(),

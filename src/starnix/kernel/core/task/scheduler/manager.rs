@@ -93,7 +93,14 @@ impl SchedulerManager {
         };
 
         let role_name = self.role_name_inner(task, scheduler_state)?;
-        let thread = task.thread.read();
+        let live = match task.live() {
+            Ok(live) => live,
+            Err(_) => {
+                log_debug!("thread role update requested for task without live state, skipping");
+                return Ok(());
+            }
+        };
+        let thread = live.thread.read();
         let Some(thread) = thread.as_ref() else {
             log_debug!("thread role update requested for task without thread, skipping");
             return Ok(());

@@ -377,16 +377,14 @@ mod tests {
                 /* kernel_private = */ false,
             )
             .expect("Failed to create socket.");
-            current_task
-                .abstract_vsock_namespace
+            let vsock_ns = current_task.live().abstract_vsock_namespace.clone();
+            vsock_ns
                 .bind(locked, &current_task, VSOCK_PORT, &listen_socket)
                 .expect("Failed to bind socket.");
             listen_socket.listen(locked, &current_task, 10).expect("Failed to listen.");
 
-            let listen_socket = current_task
-                .abstract_vsock_namespace
-                .lookup(&VSOCK_PORT)
-                .expect("Failed to look up listening socket.");
+            let listen_socket =
+                vsock_ns.lookup(&VSOCK_PORT).expect("Failed to look up listening socket.");
             let remote = create_fuchsia_pipe(
                 locked,
                 &current_task,

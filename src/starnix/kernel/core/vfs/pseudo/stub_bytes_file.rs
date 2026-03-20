@@ -53,7 +53,7 @@ impl BytesFileOps for StubBytesFile {
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<(), Errno> {
-        let path = file.name.path(current_task);
+        let path = file.name.path(&current_task.fs());
         starnix_logging::__track_stub_inner(
             self.bug,
             path.to_str_lossy().as_ref(),

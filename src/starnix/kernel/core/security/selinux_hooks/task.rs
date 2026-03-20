@@ -152,7 +152,7 @@ fn close_inaccessible_file_descriptors(
     // Remap-to-null any fds that failed a check for allowing
     // `[child-process] [fd-from-child-fd-table]:fd { use }`,
     // or for any of the file permissions associated with the file mode and flags.
-    current_task.files.remap(locked, current_task, |file| {
+    current_task.live().files.remap(locked, current_task, |file| {
         let permissions =
             permissions_from_flags(file.flags().into(), file.node().security_state.lock().class);
         let permission_result = has_file_permissions(

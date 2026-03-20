@@ -23,9 +23,6 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_starnix_binder as fbinder;
-use fidl_fuchsia_unknown as funknown;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
@@ -60,6 +57,10 @@ use syncio::{
     zxio_node_attributes_t,
 };
 use zx::{Counter, HandleBased as _};
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder,
+    fidl_fuchsia_unknown as funknown,
+};
 
 fn is_special(file_info: &fio::FileInfo) -> bool {
     matches!(
@@ -2344,9 +2345,7 @@ mod test {
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
     use fidl::endpoints::{ServerEnd, create_request_stream};
-    use fidl_fuchsia_io as fio;
     use flyweights::FlyByteStr;
-    use fuchsia_async as fasync;
     use fuchsia_runtime::UtcDuration;
     use futures::StreamExt;
     use fxfs_testing::{TestFixture, TestFixtureOptions};
@@ -2362,6 +2361,7 @@ mod test {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::HandleBased;
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
@@ -4746,6 +4746,7 @@ mod test {
                 .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open");
             let fd = current_task
+                .live()
                 .files
                 .add(locked, current_task, file_handle, FdFlags::empty())
                 .expect("add file");
