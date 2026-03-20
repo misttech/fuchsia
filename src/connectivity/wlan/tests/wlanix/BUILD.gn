@@ -26,6 +26,14 @@ antlion_host_test("wifi_chip_existence_test") {
   ]
 }
 
+antlion_host_test("wlan_driver_restart_test") {
+  main_source = "//src/connectivity/wlan/tests/wlanix/WlanDriverRestartTest.py"
+  libraries = [
+    "//src/connectivity/wlan/tests/core/core_testing",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_host_test_data",
+  ]
+}
+
 antlion_host_test("wifi_chip_correctness_and_consistency_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/WifiChipCorrectnessAndConsistencyTest.py"
   libraries = [
@@ -121,6 +129,7 @@ group("tests_for_general_cq_no_shield_box") {
     ":wifi_chip_correctness_and_consistency_test",
     ":wifi_chip_existence_test",
     ":wlan_canary_test",
+    ":wlan_driver_restart_test",
   ]
 }
 
