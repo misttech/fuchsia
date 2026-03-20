@@ -451,17 +451,6 @@ pub(crate) struct IpFragmenter<'a, I: FragmentationIpExt, S: FragmentableIpSeria
     identifier: I::FragmentationId,
 }
 
-/// Trait to allow [`IpFragmenter::next`] to capture all the required lifetimes.
-// TODO(https://github.com/rust-lang/rust/issues/123432): Replace with `impl
-// use<'a, 'b>` when available in tree.
-pub trait Capture<'a, 'b> {}
-impl<'a, 'b, O> Capture<'a, 'b> for O
-where
-    O: 'b,
-    'a: 'b,
-{
-}
-
 /// Returns the biggest fragment body that can fit in `mtu` with a given IP
 /// `header` size.
 ///
@@ -522,9 +511,7 @@ impl<'a, I: FragmentationIpExt, S: FragmentableIpSerializer<I>> IpFragmenter<'a,
     ///
     /// Panics if fragmentation is not necessary for the `serializer` that
     /// created this `IpFragmenter`.
-    pub(crate) fn next(
-        &mut self,
-    ) -> Option<(impl Serializer<Buffer = EmptyBuf> + Capture<'a, '_>, bool)> {
+    pub(crate) fn next(&mut self) -> Option<(impl Serializer<Buffer = EmptyBuf>, bool)> {
         let Self {
             builder,
             body,

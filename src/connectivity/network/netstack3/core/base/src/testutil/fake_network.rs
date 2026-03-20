@@ -319,12 +319,9 @@ where
             // timer for the same or older FakeInstant.
             let mut timers = Vec::<(Spec::TimerId, FakeTimerId)>::new();
             ctx.with_fake_timer_ctx_mut(|ctx| {
-                while let Some(InstantAndData(t, timer)) = ctx.timers.peek() {
-                    // TODO(https://github.com/rust-lang/rust/issues/53667):
-                    // Remove this break once let_chains is stable.
-                    if *t > ctx.now() {
-                        break;
-                    }
+                while let Some(InstantAndData(t, timer)) = ctx.timers.peek()
+                    && *t <= ctx.now()
+                {
                     timers.push((timer.dispatch_id.clone(), timer.timer_id()));
                     assert_ne!(ctx.timers.pop(), None);
                 }
@@ -466,12 +463,9 @@ where
         mut filter_map_frame: F,
     ) -> usize {
         let mut frames_sent = 0;
-        while let Some(InstantAndData(t, _)) = self.pending_frames.peek() {
-            // TODO(https://github.com/rust-lang/rust/issues/53667): Remove
-            // this break once let_chains is stable.
-            if *t > self.current_time {
-                break;
-            }
+        while let Some(InstantAndData(t, _)) = self.pending_frames.peek()
+            && *t <= self.current_time
+        {
             // We can unwrap because we just peeked.
             let PendingFrameData { dst_context, meta, frame } =
                 self.pending_frames.pop().unwrap().1;

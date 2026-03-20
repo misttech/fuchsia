@@ -391,11 +391,7 @@ impl<'a, const N: usize> Payload for FragmentedPayload<'a, N> {
 
     fn partial_copy_uninit(&self, offset: usize, dst: &mut [MaybeUninit<u8>]) {
         self.apply_copy(offset, dst, |src, dst| {
-            // TODO(https://github.com/rust-lang/rust/issues/79995): Replace unsafe
-            // with copy_from_slice when stabiliized.
-            // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout.
-            let uninit_src: &[MaybeUninit<u8>] = unsafe { core::mem::transmute(src) };
-            dst.copy_from_slice(&uninit_src);
+            let _ = dst.write_copy_of_slice(src);
         });
     }
 }

@@ -817,12 +817,7 @@ impl Payload for &[u8] {
     }
 
     fn partial_copy_uninit(&self, offset: usize, dst: &mut [MaybeUninit<u8>]) {
-        // TODO(https://github.com/rust-lang/rust/issues/79995): Replace unsafe
-        // with copy_from_slice when stabiliized.
-        let src = &self[offset..offset + dst.len()];
-        // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout.
-        let uninit_src: &[MaybeUninit<u8>] = unsafe { core::mem::transmute(src) };
-        dst.copy_from_slice(&uninit_src);
+        let _ = dst.write_copy_of_slice(&self[offset..offset + dst.len()]);
     }
 
     fn new_empty() -> Self {

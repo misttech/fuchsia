@@ -1250,22 +1250,6 @@ struct BindingData<I: BindingsDataIpExt, T: Transport<I>> {
     sharing_domain: SharingDomain,
 }
 
-// Helper to add `get_or_default()` method for `Option<T>`.
-// TODO(https://github.com/rust-lang/rust/issues/82901): Replace with `get_or_default()`
-// once it's enabled in Rust.
-trait GetOrInsertDefault<T> {
-    fn get_or_default(&mut self) -> &mut T;
-}
-
-impl<T> GetOrInsertDefault<T> for Option<T>
-where
-    T: Default,
-{
-    fn get_or_default(&mut self) -> &mut T {
-        self.get_or_insert_with(Default::default)
-    }
-}
-
 impl<I, T> BindingData<I, T>
 where
     I: IpExt + IpSockAddrExt + BindingsDataIpExt,
@@ -2176,13 +2160,13 @@ where
 
             // `IP_TOS` is included only for IPv4 packets.
             if *ip_recv_tos && ipv4_dest_ip.is_some() {
-                ip_data.get_or_default().tos = Some(dscp_and_ecn.raw());
+                ip_data.get_or_insert_default().tos = Some(dscp_and_ecn.raw());
             }
 
             if *ip_receive_original_destination_address {
                 // `IP_ORIGDSTADDR` is included only for IPv4 packets.
                 if let Some(ipv4_dest_ip) = ipv4_dest_ip {
-                    ip_data.get_or_default().original_destination_address =
+                    ip_data.get_or_insert_default().original_destination_address =
                         Some(fnet::SocketAddress::Ipv4(fnet::Ipv4SocketAddress {
                             address: ipv4_dest_ip.into_fidl(),
                             port: destination_port,
@@ -2201,7 +2185,7 @@ where
                     let mut ipv6_data: Option<fposix_socket::Ipv6RecvControlData> = None;
 
                     if *recv_pkt_info {
-                        ipv6_data.get_or_default().pktinfo =
+                        ipv6_data.get_or_insert_default().pktinfo =
                             Some(fposix_socket::Ipv6PktInfoRecvControlData {
                                 iface: interface_id.into(),
                                 header_destination_addr: ipv6_dst_addr.into_fidl(),
@@ -2210,7 +2194,7 @@ where
 
                     // `IPV6_TCLASS` is included only if this is an IPv6 packet.
                     if *recv_tclass && ipv4_dest_ip.is_none() {
-                        ipv6_data.get_or_default().tclass = Some(dscp_and_ecn.raw());
+                        ipv6_data.get_or_insert_default().tclass = Some(dscp_and_ecn.raw());
                     }
 
                     // TODO(https://fxbug.dev/326102020): Support SOL_IPV6,
@@ -2228,15 +2212,16 @@ where
                 });
 
             if ip_data.is_some() {
-                network.get_or_default().ip = ip_data;
+                network.get_or_insert_default().ip = ip_data;
             }
 
             if ipv6_control_data.is_some() {
-                network.get_or_default().ipv6 = ipv6_control_data;
+                network.get_or_insert_default().ipv6 = ipv6_control_data;
             }
 
             if let Some(timestamp) = timestamp {
-                network.get_or_default().socket.get_or_default().timestamp = Some(timestamp);
+                network.get_or_insert_default().socket.get_or_insert_default().timestamp =
+                    Some(timestamp);
             };
         };
 

@@ -416,15 +416,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
             let () =
                 store.insert(entry.key(), &record).context("failed to store client in stash")?;
         }
-        // TODO(https://github.com/rust-lang/rust/issues/65225): use entry.insert.
-        match entry {
-            std::collections::hash_map::Entry::Occupied(mut occupied) => {
-                let _: LeaseRecord = occupied.insert(record);
-            }
-            std::collections::hash_map::Entry::Vacant(vacant) => {
-                let _: &mut LeaseRecord = vacant.insert(record);
-            }
-        };
+        let _ = entry.insert_entry(record);
         Ok(())
     }
 

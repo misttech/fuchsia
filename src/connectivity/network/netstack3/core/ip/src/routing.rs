@@ -145,14 +145,8 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
         &mut self,
         predicate: F,
     ) -> alloc::vec::Vec<Entry<I::Addr, D>> {
-        // TODO(https://github.com/rust-lang/rust/issues/43244): Use
-        // drain_filter to avoid extra allocation.
         let Self { table } = self;
-        let owned_table = core::mem::take(table);
-        let (removed, owned_table) =
-            owned_table.into_iter().partition(|entry| predicate(&entry.entry));
-        *table = owned_table;
-        removed.into_iter().map(|entry| entry.entry).collect()
+        table.extract_if(.., |entry| predicate(&entry.entry)).map(|entry| entry.entry).collect()
     }
 
     /// Get an iterator over all of the routing entries ([`Entry`]) this
