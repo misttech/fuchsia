@@ -4,14 +4,17 @@
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+
+use fdomain_client::fidl::Proxy;
+use fdomain_client::{HandleBased, Socket};
+use fdomain_fuchsia_audio_controller as fac;
 use ffx_audio_common::PlayResult;
+use ffx_audio_common_fdomain as ffx_audio_common;
 use ffx_audio_play_args::{AudioRenderUsageExtended, PlayCommand};
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
-use fidl::HandleBased;
-use fidl_fuchsia_audio_controller as fac;
 use std::io::Read;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct PlayTool {
@@ -27,7 +30,7 @@ fho::embedded_plugin!(PlayTool);
 impl FfxMain for PlayTool {
     type Writer = MachineWriter<PlayResult>;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        let (play_remote, play_local) = fidl::Socket::create_datagram();
+        let (play_remote, play_local) = self.controller.domain().create_datagram_socket();
         let reader: Box<dyn Read + Send + 'static> = match &self.cmd.file {
             Some(input_file_path) => {
                 let file = std::fs::File::open(input_file_path)
@@ -45,8 +48,8 @@ impl FfxMain for PlayTool {
 
 async fn play_impl(
     controller: fac::PlayerProxy,
-    wav_local: fidl::Socket,
-    wav_remote: fidl::Socket,
+    wav_local: Socket,
+    wav_remote: Socket,
     command: PlayCommand,
     input_reader: Box<dyn Read + Send + 'static>, // Input generalized to stdin, file, or test buffer.
     mut writer: MachineWriter<PlayResult>,
@@ -76,6 +79,7 @@ async fn play_impl(
     // Duplicate socket handle so that connection stays alive in real + testing scenarios.
     let remote_socket = wav_remote
         .duplicate_handle(fidl::Rights::SAME_RIGHTS)
+        .await
         .map_err(|e| anyhow!("Error duplicating socket: {e}"))?;
 
     let request = fac::PlayerPlayRequest {
@@ -95,7 +99,7 @@ async fn play_impl(
             format!("Successfully processed all audio data. Bytes processed: {:?}", {
                 result
                     .bytes_processed
-                    .map(|bytes| bytes.to_string())
+                    .map(|bytes: u64| bytes.to_string())
                     .unwrap_or_else(|| "Unavailable".to_string())
             })
         })
@@ -107,7 +111,6 @@ mod tests {
     use super::*;
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_media as fmedia;
-    use futures::AsyncWriteExt;
     use std::fs;
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
@@ -115,7 +118,8 @@ mod tests {
 
     #[fuchsia::test]
     pub async fn test_play() -> Result<(), fho::Error> {
-        let controller = ffx_audio_common::tests::fake_audio_player();
+        let client = fdomain_local::local_client_empty();
+        let controller = ffx_audio_common::tests::fake_audio_player(client.clone());
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<PlayResult> = MachineWriter::new_test(None, &test_buffers);
 
@@ -129,12 +133,8 @@ mod tests {
             clock: fac::ClockType::Flexible(fac::Flexible),
         };
 
-        let (play_remote, play_local) = fidl::Socket::create_datagram();
-        let mut async_play_local = fidl::AsyncSocket::from_socket(
-            play_local.duplicate_handle(fidl::Rights::SAME_RIGHTS).unwrap(),
-        );
-
-        async_play_local.write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
+        let (play_remote, play_local) = client.create_datagram_socket();
+        play_local.write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
         let result = play_impl(
             controller.clone(),
             play_local,
@@ -186,7 +186,7 @@ mod tests {
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<PlayResult> = MachineWriter::new_test(None, &test_buffers);
 
-        let (play_remote, play_local) = fidl::Socket::create_datagram();
+        let (play_remote, play_local) = client.create_datagram_socket();
         let result = play_impl(
             controller,
             play_local,
