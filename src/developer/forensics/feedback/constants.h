@@ -40,6 +40,7 @@ constexpr char kDailyPerProductCrashReportQuotaKey[] = "daily_per_product_crash_
 constexpr char kEnableDataRedactionKey[] = "enable_data_redaction";
 constexpr char kEnableHourlySnapshotsKey[] = "enable_hourly_snapshots";
 constexpr char kEnableLimitInspectDataKey[] = "enable_limit_inspect_data";
+constexpr char kSupportsUserInitiatedPoweroffsKey[] = "supports_user_initiated_poweroffs";
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Reboot reporting

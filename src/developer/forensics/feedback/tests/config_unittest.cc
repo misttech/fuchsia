@@ -1549,6 +1549,24 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizePositive) 
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1")}));
 }
 
+TEST_F(InspectConfigTest, ExposeConfig_SupportsUserInitiatedPoweroffsFalse) {
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .supports_user_initiated_poweroffs = false,
+                              });
+
+  EXPECT_THAT(InspectTree(),
+              BuildConfigMatcher({BoolIs(kSupportsUserInitiatedPoweroffsKey, false)}));
+}
+
+TEST_F(InspectConfigTest, ExposeConfig_SupportsUserInitiatedPoweroffsTrue) {
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .supports_user_initiated_poweroffs = true,
+                              });
+
+  EXPECT_THAT(InspectTree(),
+              BuildConfigMatcher({BoolIs(kSupportsUserInitiatedPoweroffsKey, true)}));
+}
+
 TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
   ExposeConfig(InspectRoot(), FeedbackConfig{
                                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
@@ -1558,6 +1576,7 @@ TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1"),
+                                 BoolIs(kSupportsUserInitiatedPoweroffsKey, false),
                              }));
 }
 
@@ -1565,6 +1584,7 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
   ExposeConfig(InspectRoot(), FeedbackConfig{
                                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+                                  .supports_user_initiated_poweroffs = true,
                                   .build_type_config =
                                       BuildTypeConfig{
                                           .crash_report_upload_policy = kConfigEnabled,
@@ -1583,6 +1603,7 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
                                  BoolIs(kEnableLimitInspectDataKey, true),
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1"),
+                                 BoolIs(kSupportsUserInitiatedPoweroffsKey, true),
                              }));
 }
 

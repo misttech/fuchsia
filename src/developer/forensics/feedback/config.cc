@@ -255,7 +255,7 @@ std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& jso
   config.build_type_config.enable_hourly_snapshots = json[kEnableHourlySnapshotsKey].GetBool();
   config.build_type_config.enable_limit_inspect_data = json[kEnableLimitInspectDataKey].GetBool();
   config.remote_device_id_provider = json["remote_device_id_provider"].GetBool();
-  config.supports_user_initiated_poweroffs = json["supports_user_initiated_poweroffs"].GetBool();
+  config.supports_user_initiated_poweroffs = json[kSupportsUserInitiatedPoweroffsKey].GetBool();
 
   if (const std::string policy = json[kCrashReportUploadPolicyKey].GetString();
       policy == "disabled") {
@@ -324,6 +324,8 @@ void ExposeConfig(inspect::Node& inspect_root, const FeedbackConfig& feedback_co
                         feedback_config.build_type_config.enable_hourly_snapshots);
         node.RecordBool(kEnableLimitInspectDataKey,
                         feedback_config.build_type_config.enable_limit_inspect_data);
+        node.RecordBool(kSupportsUserInitiatedPoweroffsKey,
+                        feedback_config.supports_user_initiated_poweroffs);
 
         node.RecordString(kSnapshotPersistenceMaxTmpSizeKey, snapshot_persistence_tmp_size);
         node.RecordString(kSnapshotPersistenceMaxCacheSizeKey, snapshot_persistence_cache_size);
