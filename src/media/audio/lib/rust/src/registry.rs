@@ -7,8 +7,8 @@ use crate::sigproc::{Element, ElementState, Topology};
 use anyhow::{Context, Error, anyhow};
 use async_utils::event::Event as AsyncEvent;
 use async_utils::hanging_get::client::HangingGetStream;
-use fidl::endpoints::create_proxy;
-use fidl_fuchsia_audio_device as fadevice;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_audio_device as fadevice;
 use fuchsia_async::Task;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -97,7 +97,8 @@ impl Registry {
             .cloned()
             .ok_or_else(|| anyhow!("Device with ID {} does not exist", token_id))?;
 
-        let (observer_proxy, observer_server) = create_proxy::<fadevice::ObserverMarker>();
+        let (observer_proxy, observer_server) =
+            self.proxy.domain().create_proxy::<fadevice::ObserverMarker>();
 
         let _ = self
             .proxy
@@ -437,6 +438,9 @@ mod test {
 
     use super::*;
     use async_utils::hanging_get::server::{HangingGet, Publisher};
+    #[cfg(feature = "fdomain")]
+    use fidl_test_util::fdomain::spawn_local_stream_handler;
+    #[cfg(not(feature = "fdomain"))]
     use fidl_test_util::spawn_local_stream_handler;
 
     type AddedResponse = fadevice::RegistryWatchDevicesAddedResponse;
@@ -452,6 +456,8 @@ mod test {
     fn serve_registry(
         initial_devices: Vec<fadevice::Info>,
     ) -> (fadevice::RegistryProxy, AddedPublisher, RemovedPublisher) {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let initial_added_response =
             AddedResponse { devices: Some(initial_devices), ..Default::default() };
         let watch_devices_added_notify: AddedNotifyFn =
@@ -473,21 +479,25 @@ mod test {
         let added_subscriber = Rc::new(Mutex::new(added_broker.new_subscriber()));
         let removed_subscriber = Rc::new(Mutex::new(removed_broker.new_subscriber()));
 
-        let proxy = spawn_local_stream_handler(move |request| {
-            let added_subscriber = added_subscriber.clone();
-            let removed_subscriber = removed_subscriber.clone();
-            async move {
-                match request {
-                    fadevice::RegistryRequest::WatchDevicesAdded { responder } => {
-                        added_subscriber.lock().await.register(responder).unwrap()
+        let proxy = spawn_local_stream_handler(
+            #[cfg(feature = "fdomain")]
+            &client,
+            move |request| {
+                let added_subscriber = added_subscriber.clone();
+                let removed_subscriber = removed_subscriber.clone();
+                async move {
+                    match request {
+                        fadevice::RegistryRequest::WatchDevicesAdded { responder } => {
+                            added_subscriber.lock().await.register(responder).unwrap()
+                        }
+                        fadevice::RegistryRequest::WatchDeviceRemoved { responder } => {
+                            removed_subscriber.lock().await.register(responder).unwrap()
+                        }
+                        _ => unimplemented!(),
                     }
-                    fadevice::RegistryRequest::WatchDeviceRemoved { responder } => {
-                        removed_subscriber.lock().await.register(responder).unwrap()
-                    }
-                    _ => unimplemented!(),
                 }
-            }
-        });
+            },
+        );
 
         (proxy, added_publisher, removed_publisher)
     }

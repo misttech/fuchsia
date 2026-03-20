@@ -5,16 +5,20 @@
 use crate::dai::DaiFormatSet;
 use crate::format_set::PcmFormatSet;
 use camino::Utf8PathBuf;
+use flex_fuchsia_audio_controller as fac;
+use flex_fuchsia_audio_device as fadevice;
+use flex_fuchsia_hardware_audio as fhaudio;
+use flex_fuchsia_io as fio;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use thiserror::Error;
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_hardware_audio as fhaudio, fidl_fuchsia_io as fio, zx_types,
-};
+use zx_types;
 // Separate this to a distinct alias, to clarify when various 'DeviceType's are used.
 use fadevice::DeviceType as AdrDevType;
+
+#[cfg(feature = "fdomain")]
+use fuchsia_fs_fdomain as fuchsia_fs;
 
 /// The type of an audio device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -704,9 +708,13 @@ pub async fn list_registry(
 #[cfg(test)]
 mod test {
     use super::*;
+    #[cfg(feature = "fdomain")]
+    use fidl_test_util::fdomain::spawn_stream_handler;
+    #[cfg(not(feature = "fdomain"))]
     use fidl_test_util::spawn_stream_handler;
     use std::sync::Arc;
     use test_case::test_case;
+    #[cfg(not(feature = "fdomain"))]
     use vfs::pseudo_directory;
 
     #[test_case("composite", fac::DeviceType::Composite; "composite")]
@@ -789,12 +797,14 @@ mod test {
         assert_eq!(expected_path, DevfsSelector(devfs).path());
     }
 
+    #[cfg(not(feature = "fdomain"))]
     fn placeholder_node() -> Arc<vfs::service::Service> {
         vfs::service::endpoint(move |_scope, _channel| {
             // Just drop the channel.
         })
     }
 
+    #[cfg(not(feature = "fdomain"))]
     #[fuchsia::test]
     async fn test_list_devfs() {
         // Placeholder for serving the device protocol.
@@ -854,33 +864,46 @@ mod test {
         );
     }
 
-    fn serve_registry(devices: Vec<fadevice::Info>) -> fadevice::RegistryProxy {
+    fn serve_registry(
+        #[cfg(feature = "fdomain")] client: &Arc<fdomain_client::Client>,
+        devices: Vec<fadevice::Info>,
+    ) -> fadevice::RegistryProxy {
         let devices = Arc::new(devices);
-        spawn_stream_handler(move |request| {
-            let devices = devices.clone();
-            async move {
-                match request {
-                    fadevice::RegistryRequest::WatchDevicesAdded { responder } => responder
-                        .send(Ok(&fadevice::RegistryWatchDevicesAddedResponse {
-                            devices: Some((*devices).clone()),
-                            ..Default::default()
-                        }))
-                        .unwrap(),
-                    _ => unimplemented!(),
+        spawn_stream_handler(
+            #[cfg(feature = "fdomain")]
+            client,
+            move |request| {
+                let devices = devices.clone();
+                async move {
+                    match request {
+                        fadevice::RegistryRequest::WatchDevicesAdded { responder } => responder
+                            .send(Ok(&fadevice::RegistryWatchDevicesAddedResponse {
+                                devices: Some((*devices).clone()),
+                                ..Default::default()
+                            }))
+                            .unwrap(),
+                        _ => unimplemented!(),
+                    }
                 }
-            }
-        })
+            },
+        )
     }
 
     #[fuchsia::test]
     async fn test_list_registry() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let devices = vec![
             fadevice::Info { token_id: Some(1), ..Default::default() },
             fadevice::Info { token_id: Some(2), ..Default::default() },
             fadevice::Info { token_id: Some(3), ..Default::default() },
         ];
 
-        let registry = serve_registry(devices);
+        let registry = serve_registry(
+            #[cfg(feature = "fdomain")]
+            &client,
+            devices,
+        );
 
         let infos = list_registry(&registry).await.unwrap();
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::format::SampleSize;
-use fidl_fuchsia_hardware_audio as fhaudio;
+use flex_fuchsia_hardware_audio as fhaudio;
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::str::FromStr;

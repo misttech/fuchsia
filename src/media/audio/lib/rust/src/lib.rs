@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, anyhow};
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_audio_controller as fac;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_audio_controller as fac;
 use futures::TryStreamExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
