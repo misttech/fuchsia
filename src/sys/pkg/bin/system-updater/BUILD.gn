@@ -42,6 +42,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-sync",
     "//src/lib/fuchsia-url",
+    "//src/lib/http-uri-ext",
     "//src/lib/include_str_from_working_dir",
     "//src/lib/mapped-vmo",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
@@ -63,6 +64,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:http",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:ring",
@@ -70,7 +72,6 @@ rustc_binary("bin") {
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:sha2",
     "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:url",
     "//third_party/rust_crates:uuid",
   ]
   non_rust_deps = [ ":epoch.json" ]

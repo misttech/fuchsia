@@ -266,7 +266,7 @@ impl UpdateTool {
     }
 
     async fn force_install<W: std::io::Write>(
-        pkg_url: url::Url,
+        pkg_url: http::Uri,
         reboot: bool,
         installer_proxy: InstallerProxy,
         writer: &mut W,

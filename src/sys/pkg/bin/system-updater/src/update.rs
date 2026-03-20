@@ -16,6 +16,7 @@ use futures::Future;
 use futures::channel::oneshot;
 use futures::future::FutureExt as _;
 use futures::stream::{FusedStream, StreamExt as _, TryStreamExt as _};
+use http_uri_ext::HttpUriExt as _;
 use include_str_from_working_dir::include_str_from_working_dir_env;
 use log::{error, info, warn};
 use std::collections::HashSet;
@@ -118,7 +119,12 @@ enum PrepareError {
     },
 
     #[error("while joining update url '{update_url}' with blob base url '{blob_base_url}'")]
-    JoinUrl { update_url: String, blob_base_url: String, source: url::ParseError },
+    JoinUrl {
+        update_url: String,
+        blob_base_url: String,
+        #[source]
+        source: http_uri_ext::Error,
+    },
 }
 
 impl PrepareError {
@@ -357,8 +363,8 @@ async fn update(
         let mut target_version = history::Version::default();
 
         let attempt_res = {
-            let attempt_fut = match config.update_url.scheme() {
-                "http" | "https" => PackagelessAttempt {
+            let attempt_fut = match config.update_url.scheme_str() {
+                Some("http" | "https") => PackagelessAttempt {
                     config: &config,
                     env: &env,
                     concurrent_blob_fetches,
@@ -838,7 +844,7 @@ impl Attempt<'_> {
             .await
             .map_err(PrepareError::PreparePartitionMetdata)?;
 
-        let update_url = AbsolutePackageUrl::from_url(&self.config.update_url)
+        let update_url = AbsolutePackageUrl::parse(&self.config.update_url.to_string())
             .map_err(PrepareError::ParseUpdatePackageUrl)?;
         let update_pkg = resolve_update_package(
             &self.env.pkg_resolver,
@@ -1196,6 +1202,7 @@ impl PackagelessAttempt<'_> {
             .await;
         *phase = metrics::Phase::ImageWrite;
 
+        let blob_base_url = blob_base_url.to_string();
         let () = match self
             .stage_images(co, &mut state, current_configuration, &manifest, &blob_base_url, &blobfs)
             .await
@@ -1247,7 +1254,7 @@ impl PackagelessAttempt<'_> {
     async fn prepare(
         &mut self,
         target_version: &mut history::Version,
-    ) -> Result<(paver::CurrentConfiguration, OtaManifest, url::Url), PrepareError> {
+    ) -> Result<(paver::CurrentConfiguration, OtaManifest, http::Uri), PrepareError> {
         // Ensure that the partition boot metadata is ready for the update to begin. Specifically:
         // - the current configuration must be Healthy and Active, and
         // - the non-current configuration must be Unbootable.
@@ -1271,9 +1278,8 @@ impl PackagelessAttempt<'_> {
             .await
             .map_err(PrepareError::PreparePartitionMetdata)?;
 
-        let manifest_bytes = fetch_url(self.config.update_url.as_ref(), None)
-            .await
-            .map_err(PrepareError::FetchUrl)?;
+        let update_url = self.config.update_url.to_string();
+        let manifest_bytes = fetch_url(&update_url, None).await.map_err(PrepareError::FetchUrl)?;
 
         let manifest = update_package::signed_manifest::parse_and_verify(
             &manifest_bytes,
@@ -1286,7 +1292,7 @@ impl PackagelessAttempt<'_> {
 
         let blob_base_url = self.config.update_url.join(&manifest.blob_base_url).map_err(|e| {
             PrepareError::JoinUrl {
-                update_url: self.config.update_url.to_string(),
+                update_url,
                 blob_base_url: manifest.blob_base_url.clone(),
                 source: e,
             }
@@ -1331,7 +1337,7 @@ impl PackagelessAttempt<'_> {
         state: &mut state::Stage,
         current_configuration: paver::CurrentConfiguration,
         manifest: &OtaManifest,
-        blob_base_url: &url::Url,
+        blob_base_url: &str,
         blobfs: &blobfs::Client,
     ) -> Result<(), StageError> {
         // Protect all blobs to guarantee forward progress, this might cause out of space issue in a
@@ -1392,7 +1398,7 @@ impl PackagelessAttempt<'_> {
                     match self
                         .env
                         .ota_downloader
-                        .fetch_blob(&blob_id, blob_base_url.as_ref(), false)
+                        .fetch_blob(&blob_id, blob_base_url, false)
                         .await
                         .map_err(StageError::Fidl)?
                     {
@@ -1420,7 +1426,7 @@ impl PackagelessAttempt<'_> {
                             let () = self
                                 .env
                                 .ota_downloader
-                                .fetch_blob(&blob_id, blob_base_url.as_ref(), false)
+                                .fetch_blob(&blob_id, blob_base_url, false)
                                 .await
                                 .map_err(StageError::Fidl)?
                                 .map_err(|e| StageError::FetchBlob(e.into()))?;
@@ -1476,7 +1482,7 @@ impl PackagelessAttempt<'_> {
         co: &mut async_generator::Yield<fupdate_installer_ext::State>,
         state: &mut state::Fetch,
         manifest: &OtaManifest,
-        blob_base_url: &url::Url,
+        blob_base_url: &str,
         blobfs: &blobfs::Client,
     ) -> Result<(), FetchError> {
         // Remove blobs of images from the retained_index.
@@ -1520,7 +1526,7 @@ impl PackagelessAttempt<'_> {
                     .ota_downloader
                     // Setting `overwrite_existing` to true to skip the `NeedsOverwrite` check in
                     // pkg-cache because we already checked it.
-                    .fetch_blob(&blob_id, blob_base_url.as_ref(), true)
+                    .fetch_blob(&blob_id, blob_base_url, true)
                     .await
                     .map_err(FetchError::Fidl)?
                     .map_err(|e| FetchError::FetchBlob(e.into()))?;

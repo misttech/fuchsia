@@ -288,7 +288,7 @@ async fn force_install_fails_on_invalid_url() {
     let env = TestEnv::new();
     let output = shell_process::run_process(
         BINARY_PATH,
-        ["force-install", "not-a-valid-url"],
+        ["force-install", "not/a-valid-url"],
         [("/svc", &env.svc_proxy)],
     )
     .await;

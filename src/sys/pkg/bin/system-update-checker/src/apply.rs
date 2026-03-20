@@ -74,7 +74,7 @@ trait UpdateInstaller {
 
     fn start_update(
         &mut self,
-        update_url: url::Url,
+        update_url: http::Uri,
         options: Options,
         reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
     ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>>;
@@ -89,7 +89,7 @@ impl UpdateInstaller for RealUpdateInstaller {
 
     fn start_update(
         &mut self,
-        update_url: url::Url,
+        update_url: http::Uri,
         options: Options,
         reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
     ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
@@ -209,7 +209,7 @@ mod test_apply_system_update_impl {
 
         fn start_update(
             &mut self,
-            _update_url: url::Url,
+            _update_url: http::Uri,
             _options: Options,
             _reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
@@ -237,7 +237,7 @@ mod test_apply_system_update_impl {
 
     #[derive(Default)]
     struct ArgumentCapturingUpdateInstaller {
-        update_url: Option<url::Url>,
+        update_url: Option<http::Uri>,
         options: Option<Options>,
         reboot_controller_server_end: Option<Option<ServerEnd<RebootControllerMarker>>>,
         state: Option<State>,
@@ -248,7 +248,7 @@ mod test_apply_system_update_impl {
 
         fn start_update(
             &mut self,
-            update_url: url::Url,
+            update_url: http::Uri,
             options: Options,
             reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
@@ -351,7 +351,7 @@ mod test_apply_system_update_impl {
 
         fn start_update(
             &mut self,
-            _update_url: url::Url,
+            _update_url: http::Uri,
             _options: Options,
             reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
@@ -391,7 +391,7 @@ mod test_apply_system_update_impl {
 
         fn start_update(
             &mut self,
-            _update_url: url::Url,
+            _update_url: http::Uri,
             _options: Options,
             _reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {
@@ -483,7 +483,7 @@ mod test_apply_system_update_impl {
 
         fn start_update(
             &mut self,
-            _update_url: url::Url,
+            _update_url: http::Uri,
             _options: Options,
             reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
         ) -> BoxFuture<'_, Result<Self::UpdateAttempt, UpdateAttemptError>> {

@@ -157,7 +157,7 @@ impl UpdateHistory {
     pub fn start_update_attempt<'a>(
         &self,
         options: Options,
-        update_url: &'a url::Url,
+        update_url: &'a http::Uri,
         start_time: SystemTime,
         data_sink: &'a DataSinkProxy,
         boot_manager: &'a BootManagerProxy,

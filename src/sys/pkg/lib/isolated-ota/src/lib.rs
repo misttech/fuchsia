@@ -42,7 +42,7 @@ pub enum UpdateUrlSource {
     OmahaConfig(OmahaConfig),
 
     /// Use this URL.
-    UpdateUrl(url::Url),
+    UpdateUrl(http::Uri),
 
     /// Use the default update package URL "fuchsia-pkg://fuchsia.com/update".
     UseDefault,

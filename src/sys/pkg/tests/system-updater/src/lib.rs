@@ -38,7 +38,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 use zx::Status;
-
 use {
     cobalt_sw_delivery_registry as metrics, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
     fidl_fuchsia_net_http as fhttp, fidl_fuchsia_paver as paver, fidl_fuchsia_pkg as fpkg,
@@ -786,7 +785,7 @@ impl TestEnv {
         options: Options,
         reboot_controller_server_end: Option<ServerEnd<finstaller::RebootControllerMarker>>,
     ) -> Result<UpdateAttempt, UpdateAttemptError> {
-        let url: url::Url = url.parse().unwrap();
+        let url: http::Uri = url.parse().unwrap();
 
         start_update(&url, options, &self.installer_proxy(), reboot_controller_server_end).await
     }

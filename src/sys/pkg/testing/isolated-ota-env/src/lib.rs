@@ -36,7 +36,7 @@ const TEST_REPO_URL: &str = "fuchsia-pkg://integration.test.fuchsia.com";
 
 pub enum OmahaState {
     /// Don't use Omaha for this update, instead use the provided, or default, update URL.
-    Disabled(Option<url::Url>),
+    Disabled(Option<http::Uri>),
     /// Set up an Omaha server automatically.
     Auto(OmahaResponse),
     /// Pass the given OmahaConfig to Omaha.

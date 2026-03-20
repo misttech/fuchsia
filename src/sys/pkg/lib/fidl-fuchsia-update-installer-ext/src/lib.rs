@@ -97,7 +97,7 @@ impl UpdateAttemptMonitor {
 /// Checks if an update can be started and returns the UpdateAttempt containing
 /// the attempt_id and MonitorRequestStream to the client.
 pub async fn start_update(
-    update_url: &url::Url,
+    update_url: &http::Uri,
     options: Options,
     installer_proxy: &InstallerProxy,
     reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,

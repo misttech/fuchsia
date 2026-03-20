@@ -13,8 +13,8 @@ rustc_library("isolated-ota") {
     "//src/lib/fidl/rust/fidl",
     "//src/sys/pkg/lib/isolated-swd",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:http",
     "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:url",
   ]
 
   sources = [ "src/lib.rs" ]

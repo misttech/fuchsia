@@ -11,7 +11,7 @@ use std::fmt;
 #[derive(Debug, PartialEq, Eq)]
 pub enum UpdatePackageUrl {
     /// The pinned fuchsia update package URL, e.g. fuchsia-pkg://fuchsia.example/update/0?hash=...
-    System(url::Url),
+    System(http::Uri),
     /// The pinned package URL for eagerly updated package.
     Package(PinnedAbsolutePackageUrl),
 }

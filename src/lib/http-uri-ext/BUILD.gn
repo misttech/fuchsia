@@ -16,6 +16,8 @@ rustc_library("http-uri-ext") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  test_deps = [ "//third_party/rust_crates:test-case" ]
+
   sources = [ "src/lib.rs" ]
 }
 

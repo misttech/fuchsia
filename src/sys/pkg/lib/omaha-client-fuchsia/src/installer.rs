@@ -155,7 +155,7 @@ where
 {
     async fn perform_install_system_update<'a>(
         &'a mut self,
-        url: &'a url::Url,
+        url: &'a http::Uri,
         install_source: &'a InstallSource,
         observer: Option<&'a dyn ProgressObserver>,
     ) -> Result<(), FuchsiaInstallError> {

@@ -10,7 +10,7 @@ use std::time::{Instant, SystemTime};
 #[derive(PartialEq, Eq, Clone)]
 pub struct Config {
     pub initiator: Initiator,
-    pub update_url: url::Url,
+    pub update_url: http::Uri,
     pub should_write_recovery: bool,
     pub(super) start_time: SystemTime,
     pub(super) start_time_mono: Instant,
@@ -19,7 +19,7 @@ pub struct Config {
 
 impl Config {
     /// Constructs update configuration from url, options and signature.
-    pub fn new(update_url: url::Url, options: Options) -> Self {
+    pub fn new(update_url: http::Uri, options: Options) -> Self {
         let start_time = SystemTime::now();
         let start_time_mono =
             metrics::system_time_to_monotonic_time(start_time).unwrap_or_else(Instant::now);
@@ -127,9 +127,9 @@ mod tests {
             allow_attach_to_existing_attempt: true,
             should_write_recovery: true,
         };
-        let update_url = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
+        let update_url: http::Uri = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 
-        let config = Config::new(update_url, options);
+        let config = Config::new(update_url.clone(), options);
 
         assert_matches::assert_matches!(
             config,
@@ -139,7 +139,7 @@ mod tests {
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
                 ..
-            } if url == "fuchsia-pkg://fuchsia.test/foo".parse().unwrap()
+            } if url == update_url
         );
     }
 }
