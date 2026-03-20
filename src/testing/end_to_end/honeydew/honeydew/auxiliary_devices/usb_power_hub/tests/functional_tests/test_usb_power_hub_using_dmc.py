@@ -9,10 +9,10 @@ needs to be connected to USB power hub in infra and not all fuchsia devices are
 connected to a USB power hub.
 """
 
+import asyncio
 import logging
-import time
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import expects, test_runner
 
 from honeydew.auxiliary_devices.usb_power_hub import (
@@ -23,12 +23,12 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
+class UsbPowerHubUsingDmcTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Mobly test for UsbPowerDmc implementation of UsbPower interface."""
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
         _LOGGER.debug("Instantiating UsbPowerDmc module")
@@ -38,33 +38,33 @@ class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
             )
         )
 
-    def test_usb_power_hub_using_dmc(self) -> None:
+    async def test_usb_power_hub_using_dmc(self) -> None:
         """Test case for UsbPowerHubUsingDmc.power_off and UsbPowerHubUsingDmc.power_on"""
 
         # TODO(https://fxbug.dev/431799077): The USB data connection currently does not drop on
         # Sorrel when the USB is powered off, so this test reboots the dut into fastboot instead.
         # We should go back to testing ths behavior while booted in Fuchsia once the bug is fixed
-        self.dut.fastboot.boot_to_fastboot_mode()
+        await self.dut.fastboot.boot_to_fastboot_mode()
         try:
             self._usb_power_hub.power_off()
             _LOGGER.info("Waiting 10 seconds for the usb to disconnect")
-            time.sleep(10)
+            await asyncio.sleep(10)
             expects.expect_false(
-                self.dut.fastboot.is_in_fastboot_mode(),
+                await self.dut.fastboot.is_in_fastboot_mode(),
                 "Fasboot device is still visible",
             )
         finally:
             self._usb_power_hub.power_on()
-            self.dut.fastboot.wait_for_fastboot_mode()
+            await self.dut.fastboot.wait_for_fastboot_mode()
             try:
                 # TODO(https://fxbug.dev/436414807): The `fastboot reboot` command sometimes
                 # reports an error, despite the command actually succeeding. Once this is fixed,
                 # we can remove the try/except block.
-                self.dut.fastboot.boot_to_fuchsia_mode()
+                await self.dut.fastboot.boot_to_fuchsia_mode()
             except:
-                self.dut.fastboot.wait_for_fuchsia_mode()
-                self.dut.wait_for_online()
-                self.dut.on_device_boot()
+                await self.dut.fastboot.wait_for_fuchsia_mode()
+                await self.dut.wait_for_online()
+                await self.dut.on_device_boot()
 
 
 if __name__ == "__main__":
