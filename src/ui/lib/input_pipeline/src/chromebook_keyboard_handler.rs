@@ -158,7 +158,7 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
             }
             // Pass other events unchanged.
             _ => {
-                if InputEventType::from(&input_event.device_event) == InputEventType::Keyboard {
+                if InputEventType::from(&input_event.device_event) != InputEventType::Keyboard {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
                         std::format!(

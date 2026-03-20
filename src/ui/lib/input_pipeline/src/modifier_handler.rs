@@ -98,7 +98,7 @@ impl UnhandledInputHandler for ModifierHandler {
             // Pass other events through.
             _ => {
                 if InputEventType::from(&unhandled_input_event.device_event)
-                    == InputEventType::Keyboard
+                    != InputEventType::Keyboard
                 {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
@@ -231,7 +231,7 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             // Pass other events through.
             _ => {
                 if InputEventType::from(&unhandled_input_event.device_event)
-                    == InputEventType::Keyboard
+                    != InputEventType::Keyboard
                 {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
