@@ -294,6 +294,10 @@ func ninjaFailureMessage(buildDir string, ninjaStderr string) (string, error) {
 		}
 		msgLines = append(msgLines, fmt.Sprintf("FAILED: [code=%d] %s", f.ExitCode, strings.Join(f.Artifacts, " ")))
 		if f.Output != "" {
+			// Add a blank line to make it easier to distinguish the header
+			// (which can be long and wrapped across multiple lines) from the
+			// output containing the actual error message.
+			msgLines = append(msgLines, "")
 			msgLines = append(msgLines, strings.TrimRight(f.Output, " \n\t\r"))
 		}
 		msgLines = append(msgLines, "\n")

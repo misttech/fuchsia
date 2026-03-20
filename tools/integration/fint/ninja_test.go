@@ -87,7 +87,7 @@ func TestRunNinja(t *testing.T) {
 					}
 				]
 			}`,
-			expectedFailureMessage: "FAILED: [code=1] c.o d.o\noutput line 1\noutput line 2\n",
+			expectedFailureMessage: "FAILED: [code=1] c.o d.o\n\noutput line 1\noutput line 2\n",
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 53672,
 				FinalActions:   53672,
@@ -109,7 +109,7 @@ func TestRunNinja(t *testing.T) {
 					}
 				]
 			}`,
-			expectedFailureMessage: "FAILED: [code=1] c.o d.o\noutput line 1\noutput line 2\n",
+			expectedFailureMessage: "FAILED: [code=1] c.o d.o\n\noutput line 1\noutput line 2\n",
 			expectedActionData: &fintpb.NinjaActionMetrics{
 				InitialActions: 53672,
 				FinalActions:   45678,
@@ -136,7 +136,7 @@ func TestRunNinja(t *testing.T) {
 					}
 				]
 			}`,
-			expectedFailureMessage: "FAILED: [code=1] a.rlib b.rlib\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\n",
+			expectedFailureMessage: "FAILED: [code=1] a.rlib b.rlib\n\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\n",
 		},
 		{
 			name:                   "ninja internal error",
