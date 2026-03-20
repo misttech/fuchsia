@@ -694,6 +694,7 @@ pub struct ObjectStore {
     device_write_ops: AtomicU64,
     logical_read_ops: AtomicU64,
     logical_write_ops: AtomicU64,
+    graveyard_entries: AtomicU64,
 
     // Contains the last object ID and, optionally, a cipher to be used when generating new object
     // IDs.
@@ -743,6 +744,7 @@ impl ObjectStore {
             device_write_ops: AtomicU64::new(0),
             logical_read_ops: AtomicU64::new(0),
             logical_write_ops: AtomicU64::new(0),
+            graveyard_entries: AtomicU64::new(0),
             last_object_id: Mutex::new(last_object_id),
             flush_callback: Mutex::new(None),
         })
@@ -787,6 +789,7 @@ impl ObjectStore {
             device_write_ops: AtomicU64::new(0),
             logical_read_ops: AtomicU64::new(0),
             logical_write_ops: AtomicU64::new(0),
+            graveyard_entries: AtomicU64::new(0),
             last_object_id: Mutex::new(LastObjectId::Unencrypted { id: 0 }),
             flush_callback: Mutex::new(None),
         }
@@ -972,6 +975,7 @@ impl ObjectStore {
         root.record_uint("device_write_ops", self.device_write_ops.load(Ordering::Relaxed));
         root.record_uint("logical_read_ops", self.logical_read_ops.load(Ordering::Relaxed));
         root.record_uint("logical_write_ops", self.logical_write_ops.load(Ordering::Relaxed));
+        root.record_uint("graveyard_entries", self.graveyard_entries.load(Ordering::Relaxed));
         {
             let last_object_id = self.last_object_id.lock();
             root.record_uint("object_id_hi", last_object_id.id() >> 32);
@@ -1789,6 +1793,10 @@ impl ObjectStore {
     /// Returns None if called during journal replay.
     pub fn store_info_handle_object_id(&self) -> Option<u64> {
         self.store_info_handle.get().map(|h| h.object_id())
+    }
+
+    pub fn graveyard_count(&self) -> u64 {
+        self.graveyard_entries.load(Ordering::Relaxed)
     }
 
     /// Called to open a store, before replay of this store's mutations.
@@ -2726,6 +2734,18 @@ impl JournalingObject for ObjectStore {
                             } else {
                                 unreserve_id = item.key.object_id;
                             }
+                        } else if !context.mode.is_replay()
+                            && matches!(
+                                item.key.data,
+                                ObjectKeyData::GraveyardEntry { .. }
+                                    | ObjectKeyData::GraveyardAttributeEntry { .. }
+                            )
+                        {
+                            if matches!(item.value, ObjectValue::Some | ObjectValue::Trim) {
+                                self.graveyard_entries.fetch_add(1, Ordering::Relaxed);
+                            } else if matches!(item.value, ObjectValue::None) {
+                                self.graveyard_entries.fetch_sub(1, Ordering::Relaxed);
+                            }
                         }
                         self.tree.insert(item)?;
                         if unreserve_id != INVALID_OBJECT_ID {
@@ -2734,6 +2754,19 @@ impl JournalingObject for ObjectStore {
                         }
                     }
                     Operation::ReplaceOrInsert => {
+                        if !context.mode.is_replay()
+                            && matches!(
+                                item.key.data,
+                                ObjectKeyData::GraveyardEntry { .. }
+                                    | ObjectKeyData::GraveyardAttributeEntry { .. }
+                            )
+                        {
+                            if matches!(item.value, ObjectValue::Some | ObjectValue::Trim) {
+                                self.graveyard_entries.fetch_add(1, Ordering::Relaxed);
+                            } else if matches!(item.value, ObjectValue::None) {
+                                self.graveyard_entries.fetch_sub(1, Ordering::Relaxed);
+                            }
+                        }
                         self.tree.replace_or_insert(item);
                     }
                     Operation::Merge => {
@@ -2741,6 +2774,19 @@ impl JournalingObject for ObjectStore {
                             let info = &mut self.store_info.lock();
                             let object_count = &mut info.as_mut().unwrap().object_count;
                             *object_count = object_count.saturating_sub(1);
+                        }
+                        if !context.mode.is_replay()
+                            && matches!(
+                                item.key.data,
+                                ObjectKeyData::GraveyardEntry { .. }
+                                    | ObjectKeyData::GraveyardAttributeEntry { .. }
+                            )
+                        {
+                            if matches!(item.value, ObjectValue::Some | ObjectValue::Trim) {
+                                self.graveyard_entries.fetch_add(1, Ordering::Relaxed);
+                            } else if matches!(item.value, ObjectValue::None) {
+                                self.graveyard_entries.fetch_sub(1, Ordering::Relaxed);
+                            }
                         }
                         let lower_bound = item.key.key_for_merge_into();
                         self.tree.merge_into(item, &lower_bound);

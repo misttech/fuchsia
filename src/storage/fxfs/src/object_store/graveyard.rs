@@ -21,6 +21,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 enum ReaperTask {
     None,
@@ -182,6 +183,7 @@ impl Graveyard {
         while let Some(GraveyardEntryInfo { object_id, attribute_id, sequence: _, value }) =
             iter.get()
         {
+            store.graveyard_entries.fetch_add(1, Ordering::Relaxed);
             match value {
                 ObjectValue::Some => {
                     if let Some(attribute_id) = attribute_id {
@@ -205,7 +207,6 @@ impl Graveyard {
         }
         Ok(count)
     }
-
     /// Queues an object for tombstoning.
     pub fn queue_tombstone_object(&self, store_id: u64, object_id: u64) {
         let _ = self.channel.unbounded_send(Message::Tombstone(store_id, object_id, None));
@@ -444,6 +445,33 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
 
+        assert_eq!(root_store.graveyard_count(), 0);
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let handle1 = ObjectStore::create_object(
+            &root_store,
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object failed");
+        let handle2 = ObjectStore::create_object(
+            &root_store,
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object failed");
+        transaction.commit().await.expect("commit failed");
+        let id1 = handle1.object_id();
+        let id2 = handle2.object_id();
+
         // Create and add two objects to the graveyard.
         let mut transaction = fs
             .clone()
@@ -451,9 +479,11 @@ mod tests {
             .await
             .expect("new_transaction failed");
 
-        root_store.add_to_graveyard(&mut transaction, 3);
-        root_store.add_to_graveyard(&mut transaction, 4);
+        root_store.add_to_graveyard(&mut transaction, id1);
+        root_store.add_to_graveyard(&mut transaction, id2);
         transaction.commit().await.expect("commit failed");
+
+        assert_eq!(root_store.graveyard_count(), 2);
 
         // Check that we see the objects we added.
         {
@@ -464,22 +494,14 @@ mod tests {
                 .expect("iter failed");
             assert_matches!(
                 iter.get().expect("missing entry"),
-                GraveyardEntryInfo {
-                    object_id: 3,
-                    attribute_id: None,
-                    value: ObjectValue::Some,
-                    ..
-                }
+                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+                if object_id == id1
             );
             iter.advance().await.expect("advance failed");
             assert_matches!(
                 iter.get().expect("missing entry"),
-                GraveyardEntryInfo {
-                    object_id: 4,
-                    attribute_id: None,
-                    value: ObjectValue::Some,
-                    ..
-                }
+                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+                if object_id == id2
             );
             iter.advance().await.expect("advance failed");
             assert_eq!(iter.get(), None);
@@ -491,8 +513,10 @@ mod tests {
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
-        root_store.remove_from_graveyard(&mut transaction, 4);
+        root_store.remove_from_graveyard(&mut transaction, id2);
         transaction.commit().await.expect("commit failed");
+
+        assert_eq!(root_store.graveyard_count(), 1);
 
         // Check that the graveyard has been updated as expected.
         let layer_set = root_store.tree().layer_set();
@@ -502,10 +526,102 @@ mod tests {
             .expect("iter failed");
         assert_matches!(
             iter.get().expect("missing entry"),
-            GraveyardEntryInfo { object_id: 3, attribute_id: None, value: ObjectValue::Some, .. }
+            GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+            if object_id == id1
         );
         iter.advance().await.expect("advance failed");
         assert_eq!(iter.get(), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_graveyard_count_replay() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let (device, _object_ids) = {
+            let fs = FxFilesystemBuilder::new()
+                .skip_initial_reap(true)
+                .format(true)
+                .open(device)
+                .await
+                .expect("open failed");
+            let root_store = fs.root_store();
+
+            let mut object_ids = Vec::new();
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            let handle1 = ObjectStore::create_object(
+                &root_store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+            )
+            .await
+            .expect("create_object failed");
+            let handle2 = ObjectStore::create_object(
+                &root_store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+            )
+            .await
+            .expect("create_object failed");
+            transaction.commit().await.expect("commit failed");
+            object_ids.push(handle1.object_id());
+            object_ids.push(handle2.object_id());
+
+            // Create and add two objects to the graveyard.
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+
+            root_store.add_to_graveyard(&mut transaction, object_ids[0]);
+            root_store.add_to_graveyard(&mut transaction, object_ids[1]);
+            transaction.commit().await.expect("commit failed");
+
+            assert_eq!(root_store.graveyard_count(), 2);
+            fs.close().await.expect("close failed");
+            (fs.take_device().await, object_ids)
+        };
+        device.reopen(false);
+        let device = {
+            let fs =
+                FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+            let root_store = fs.root_store();
+            // Counter is 0 because initial_reap is not called for read-only mounts.
+            assert_eq!(root_store.graveyard_count(), 0);
+
+            // Now manually run it. This will count and queue (but the reaper isn't running).
+            let count =
+                fs.graveyard().initial_reap(&root_store).await.expect("initial_reap failed");
+            let actual_count = root_store.graveyard_count();
+            assert_eq!(count, 2, "initial_reap found wrong number of items (count={})", count);
+            assert_eq!(
+                actual_count, 2,
+                "graveyard_count returned {} but initial_reap found {}",
+                actual_count, count
+            );
+
+            fs.close().await.expect("close failed");
+            fs.take_device().await
+        };
+        device.reopen(false);
+        {
+            // Now test the full flow where they are automatically reaped.
+            let fs = FxFilesystem::open(device).await.expect("open failed");
+            let root_store = fs.root_store();
+
+            // They might or might not have been reaped yet.
+            // Wait for the reaper to finish.
+            fs.graveyard().wait_for_reap().await;
+
+            // Now the count MUST be 0.
+            assert_eq!(root_store.graveyard_count(), 0);
+            fs.close().await.expect("close failed");
+        }
     }
 
     #[fuchsia::test]
