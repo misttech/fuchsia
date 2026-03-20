@@ -6,11 +6,15 @@
 
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use fuchsia_audio::dai::{DaiFormatSet, DaiFrameFormat, DaiSampleFormat};
-use fuchsia_audio::device::{ClockDomain, GainCapabilities, GainState, PlugEvent, PlugState};
-use fuchsia_audio::format::SampleType;
-use fuchsia_audio::format_set::{ChannelAttributes, ChannelSet, PcmFormatSet};
-use fuchsia_audio::sigproc::{
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc;
+use fuchsia_audio_fdomain::dai::{DaiFormatSet, DaiFrameFormat, DaiSampleFormat};
+use fuchsia_audio_fdomain::device::{
+    ClockDomain, GainCapabilities, GainState, PlugEvent, PlugState,
+};
+use fuchsia_audio_fdomain::format::SampleType;
+use fuchsia_audio_fdomain::format_set::{ChannelAttributes, ChannelSet, PcmFormatSet};
+use fuchsia_audio_fdomain::sigproc::{
     DaiInterconnect, DaiInterconnectElementState, Dynamics, DynamicsBand, DynamicsBandState,
     DynamicsElementState, Element, ElementState, Equalizer, EqualizerBand, EqualizerBandState,
     EqualizerElementState, Gain, GainElementState, GainRange, Topology, TypeSpecificElement,
@@ -19,10 +23,6 @@ use fuchsia_audio::sigproc::{
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
-use {
-    fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc,
-};
 
 /// Serialize an value that can be converted to a string to the string.
 pub fn serialize_tostring<S>(value: &impl ToString, serializer: S) -> Result<S::Ok, S::Error>
@@ -878,14 +878,14 @@ where
 #[serde(remote = "DaiInterconnectElementState")]
 pub struct DaiInterconnectElementStateDef {
     #[serde(with = "SigprocPlugStateDef")]
-    pub plug_state: fuchsia_audio::sigproc::PlugState,
+    pub plug_state: fuchsia_audio_fdomain::sigproc::PlugState,
     pub external_delay_ns: Option<zx_types::zx_duration_t>,
 }
 
 // Mirror type for serialization.
 // This exists to avoid the fuchsia-audio library from depending on serde.
 #[derive(Serialize)]
-#[serde(remote = "fuchsia_audio::sigproc::PlugState")]
+#[serde(remote = "fuchsia_audio_fdomain::sigproc::PlugState")]
 pub struct SigprocPlugStateDef {
     plugged: bool,
     plug_state_time: zx_types::zx_time_t,

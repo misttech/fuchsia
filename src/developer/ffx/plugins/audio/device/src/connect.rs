@@ -3,22 +3,22 @@
 // found in the LICENSE file.
 
 use crate::control::{self as control, DeviceControl};
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_hardware_audio as fhaudio;
+use fdomain_fuchsia_io as fio;
 use ffx_command_error::{FfxContext as _, Result, bug, return_bug};
-use fidl::endpoints::create_proxy;
-use fuchsia_audio::device::Selector;
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_hardware_audio as fhaudio, fidl_fuchsia_io as fio,
-};
+use fuchsia_audio_fdomain::device::Selector;
 
 /// Connect to an instance of a FIDL protocol hosted in `directory` using the given `path`.
 // This is the same as `fuchsia_component::client::connect_to_named_protocol_at_dir_root`, however
 // the `fuchsia_component` library doesn't build on host.
-fn connect_to_named_protocol_at_dir_root<P: fidl::endpoints::ProtocolMarker>(
+fn connect_to_named_protocol_at_dir_root<P: fdomain_client::fidl::ProtocolMarker>(
     directory: &fio::DirectoryProxy,
     path: &str,
 ) -> Result<P::Proxy> {
-    let (proxy, server_end) = create_proxy::<P>();
+    let (proxy, server_end) = directory.domain().create_proxy::<P>();
     directory
         .open(path, fio::Flags::PROTOCOL_SERVICE, &Default::default(), server_end.into_channel())
         .bug_context("Failed to call Directory.Open")?;
@@ -35,7 +35,7 @@ pub fn connect_hw_codec(
         connect_to_named_protocol_at_dir_root::<fhaudio::CodecConnectorMarker>(dev_class, path)
             .bug_context("Failed to connect to CodecConnector")?;
 
-    let (proxy, server_end) = create_proxy::<fhaudio::CodecMarker>();
+    let (proxy, server_end) = dev_class.domain().create_proxy::<fhaudio::CodecMarker>();
     connector_proxy.connect(server_end).bug_context("Failed to call Connect")?;
 
     Ok(proxy)
@@ -59,7 +59,7 @@ pub fn connect_hw_dai(dev_class: &fio::DirectoryProxy, path: &str) -> Result<fha
         connect_to_named_protocol_at_dir_root::<fhaudio::DaiConnectorMarker>(dev_class, path)
             .bug_context("Failed to connect to DaiConnector")?;
 
-    let (proxy, server_end) = create_proxy::<fhaudio::DaiMarker>();
+    let (proxy, server_end) = dev_class.domain().create_proxy::<fhaudio::DaiMarker>();
     connector_proxy.connect(server_end).bug_context("Failed to call Connect")?;
 
     Ok(proxy)
@@ -76,7 +76,7 @@ pub fn connect_hw_streamconfig(
     >(dev_class, path)
     .bug_context("Failed to connect to StreamConfigConnector")?;
 
-    let (proxy, server_end) = create_proxy::<fhaudio::StreamConfigMarker>();
+    let (proxy, server_end) = dev_class.domain().create_proxy::<fhaudio::StreamConfigMarker>();
     connector_proxy.connect(server_end).bug_context("Failed to call Connect")?;
 
     Ok(proxy)
@@ -87,7 +87,7 @@ pub async fn connect_registry_control(
     control_creator: &fadevice::ControlCreatorProxy,
     token_id: fadevice::TokenId,
 ) -> Result<fadevice::ControlProxy> {
-    let (proxy, server_end) = create_proxy::<fadevice::ControlMarker>();
+    let (proxy, server_end) = control_creator.domain().create_proxy::<fadevice::ControlMarker>();
 
     control_creator
         .create(fadevice::ControlCreatorCreateRequest {

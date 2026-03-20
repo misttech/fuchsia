@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_io as fio;
 use ffx_audio_device_args::DeviceCommand;
 use ffx_command_error::{FfxContext as _, Result};
-use fuchsia_audio::Registry;
-use fuchsia_audio::device::{
+use fuchsia_audio_fdomain::Registry;
+use fuchsia_audio_fdomain::device::{
     DevfsSelector, HardwareType as HardwareDeviceType, Info as DeviceInfo, Selector,
     Type as DeviceType,
 };
 use serde::{Serialize, Serializer};
 use std::fmt::Display;
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_io as fio,
-};
 
 /// List of audio devices on the target.
 ///
@@ -223,7 +222,7 @@ pub async fn get_devices(
     }
 
     // Fall back to devfs.
-    let selectors = fuchsia_audio::device::list_devfs(dev_class)
+    let selectors = fuchsia_audio_fdomain::device::list_devfs(dev_class)
         .await
         .bug_context("Failed to list devices in devfs")?;
     Ok(Devices::Devfs(selectors))
@@ -232,8 +231,9 @@ pub async fn get_devices(
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_audio_controller as fac;
+    use fdomain_fuchsia_audio_device as fadevice;
     use test_case::test_case;
-    use {fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice};
     // Separate this to a distinct alias, to clarify when various 'DeviceType's are used.
     use fadevice::DeviceType as AdrDevType;
 

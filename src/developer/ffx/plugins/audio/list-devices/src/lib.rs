@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_io as fio;
 use ffx_audio_device::device_list_untagged;
 use ffx_audio_device::list::{ListResult, get_devices};
 use ffx_audio_listdevices_args::ListDevicesCommand;
 use ffx_optional_moniker::{exposed_dir, optional_moniker};
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
-use fuchsia_audio::Registry;
-use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_io as fio};
+use fuchsia_audio_fdomain::Registry;
 
 #[derive(FfxTool)]
 pub struct ListDevicesTool {

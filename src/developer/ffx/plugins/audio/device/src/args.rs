@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_audio_device as fadevice;
 use ffx_core::ffx_command;
-use fidl_fuchsia_audio_device as fadevice;
-use fuchsia_audio::Format;
-use fuchsia_audio::dai::DaiFormat;
-use fuchsia_audio::device::{Direction, HardwareType};
+use fuchsia_audio_fdomain::Format;
+use fuchsia_audio_fdomain::dai::DaiFormat;
+use fuchsia_audio_fdomain::device::{Direction, HardwareType};
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -287,5 +287,5 @@ fn string_to_enable(value: &str) -> Result<bool, String> {
 }
 
 fn parse_duration(value: &str) -> Result<std::time::Duration, String> {
-    fuchsia_audio::parse_duration(value)
+    fuchsia_audio_fdomain::parse_duration(value)
 }

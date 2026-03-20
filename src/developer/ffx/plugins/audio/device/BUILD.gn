@@ -13,29 +13,30 @@ ffx_plugin("ffx_audio_device") {
   args_with_unit_tests = true
 
   args_deps = [
-    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
+    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust_fdomain",
     "//src/developer/ffx/core:lib",
-    "//src/media/audio/lib/rust",
+    "//src/media/audio/lib/rust:fuchsia-audio_fdomain",
     "//third_party/rust_crates:argh",
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
-    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
-    "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_fdomain",
+    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust_fdomain",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust_fdomain",
+    "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_rust_fdomain",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+    "//sdk/fidl/fuchsia.media:fuchsia.media_rust_fdomain",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/developer/ffx/command/error:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/audio/common:ffx_audio_common",
-    "//src/developer/ffx/plugins/audio/ffx_optional_moniker",
+    "//src/developer/ffx/plugins/audio/common:ffx_audio_common_fdomain",
+    "//src/developer/ffx/plugins/audio/ffx_optional_moniker:ffx_optional_moniker_fdomain",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
-    "//src/media/audio/lib/rust",
+    "//src/media/audio/lib/rust:fuchsia-audio_fdomain",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:base64",
     "//third_party/rust_crates:blocking",
@@ -47,12 +48,10 @@ ffx_plugin("ffx_audio_device") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
-    "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/lib/fdomain/local",
     "//src/lib/fidl/rust/fidl_test_util",
     "//src/lib/fuchsia",
-    "//src/media/audio/lib/rust",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:serde_json",

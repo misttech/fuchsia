@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_hardware_audio as fhaudio;
 use ffx_command_error::{FfxContext, Result, bug, user_error};
-use fuchsia_audio::dai::DaiFormat;
+use fuchsia_audio_fdomain::dai::DaiFormat;
 use zx_status::Status;
-use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_hardware_audio as fhaudio};
 
 #[async_trait]
 pub trait DeviceControl {
@@ -209,9 +210,9 @@ impl DeviceControl for Registry {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_test_util::spawn_stream_handler;
-    use fuchsia_audio::dai::{DaiFrameFormat, DaiFrameFormatStandard, DaiSampleFormat};
-    use fuchsia_audio::format::{BITS_16, BITS_32, SampleSize};
+    use fidl_test_util::fdomain::spawn_stream_handler;
+    use fuchsia_audio_fdomain::dai::{DaiFrameFormat, DaiFrameFormatStandard, DaiSampleFormat};
+    use fuchsia_audio_fdomain::format::{BITS_16, BITS_32, SampleSize};
     use std::sync::{Arc, Mutex};
 
     const TEST_CODEC_START_TIME: zx_types::zx_time_t = 123;
@@ -228,8 +229,8 @@ mod tests {
 
     const TEST_ELEMENT_ID: fadevice::ElementId = 1;
 
-    fn serve_hw_codec() -> fhaudio::CodecProxy {
-        spawn_stream_handler(move |request| async move {
+    fn serve_hw_codec(client: &Arc<fdomain_client::Client>) -> fhaudio::CodecProxy {
+        spawn_stream_handler(client, move |request| async move {
             match request {
                 fhaudio::CodecRequest::SetDaiFormat { format: _, responder } => {
                     responder
@@ -255,8 +256,8 @@ mod tests {
         })
     }
 
-    fn serve_hw_composite() -> fhaudio::CompositeProxy {
-        spawn_stream_handler(move |request| async move {
+    fn serve_hw_composite(client: &Arc<fdomain_client::Client>) -> fhaudio::CompositeProxy {
+        spawn_stream_handler(client, move |request| async move {
             match request {
                 fhaudio::CompositeRequest::SetDaiFormat {
                     processing_element_id: _,
@@ -273,8 +274,8 @@ mod tests {
         })
     }
 
-    fn serve_hw_dai() -> fhaudio::DaiProxy {
-        spawn_stream_handler(move |request| async move {
+    fn serve_hw_dai(client: &Arc<fdomain_client::Client>) -> fhaudio::DaiProxy {
+        spawn_stream_handler(client, move |request| async move {
             match request {
                 fhaudio::DaiRequest::Reset { responder } => {
                     responder.send().unwrap();
@@ -284,8 +285,8 @@ mod tests {
         })
     }
 
-    fn serve_hw_streamconfig() -> fhaudio::StreamConfigProxy {
-        spawn_stream_handler(move |request| async move {
+    fn serve_hw_streamconfig(client: &Arc<fdomain_client::Client>) -> fhaudio::StreamConfigProxy {
+        spawn_stream_handler(client, move |request| async move {
             match request {
                 _ => unimplemented!(),
             }
@@ -298,9 +299,9 @@ mod tests {
         is_codec_started: bool,
     }
 
-    fn serve_registry_control() -> fadevice::ControlProxy {
+    fn serve_registry_control(client: &Arc<fdomain_client::Client>) -> fadevice::ControlProxy {
         let state = Arc::new(Mutex::new(FakeRegistryControlState::default()));
-        spawn_stream_handler(move |request| {
+        spawn_stream_handler(client, move |request| {
             let state = state.clone();
             async move {
                 match request {
@@ -384,39 +385,43 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_set_dai_format() {
-        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec()));
+        let client = fdomain_local::local_client_empty();
+        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec(&client)));
         assert!(codec.set_dai_format(TEST_DAI_FORMAT, None).await.is_ok());
 
-        let composite: Box<dyn DeviceControl> = Box::new(HardwareComposite(serve_hw_composite()));
+        let composite: Box<dyn DeviceControl> =
+            Box::new(HardwareComposite(serve_hw_composite(&client)));
         assert!(composite.set_dai_format(TEST_DAI_FORMAT, Some(TEST_ELEMENT_ID)).await.is_ok());
 
-        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai()));
+        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai(&client)));
         assert!(dai.set_dai_format(TEST_DAI_FORMAT, None).await.is_err());
 
         let streamconfig: Box<dyn DeviceControl> =
-            Box::new(HardwareStreamConfig(serve_hw_streamconfig()));
+            Box::new(HardwareStreamConfig(serve_hw_streamconfig(&client)));
         assert!(streamconfig.set_dai_format(TEST_DAI_FORMAT, None).await.is_err());
 
-        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control()));
+        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control(&client)));
         assert!(registry.set_dai_format(TEST_DAI_FORMAT, Some(TEST_ELEMENT_ID)).await.is_ok());
     }
 
     #[fuchsia::test]
     async fn test_start() {
-        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec()));
+        let client = fdomain_local::local_client_empty();
+        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec(&client)));
         assert_matches!(codec.start().await, Ok(TEST_CODEC_START_TIME));
 
-        let composite: Box<dyn DeviceControl> = Box::new(HardwareComposite(serve_hw_composite()));
+        let composite: Box<dyn DeviceControl> =
+            Box::new(HardwareComposite(serve_hw_composite(&client)));
         assert!(composite.start().await.is_err());
 
-        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai()));
+        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai(&client)));
         assert!(dai.start().await.is_err());
 
         let streamconfig: Box<dyn DeviceControl> =
-            Box::new(HardwareStreamConfig(serve_hw_streamconfig()));
+            Box::new(HardwareStreamConfig(serve_hw_streamconfig(&client)));
         assert!(streamconfig.start().await.is_err());
 
-        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control()));
+        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control(&client)));
         // DAI format must be set before codec is started.
         assert!(registry.set_dai_format(TEST_DAI_FORMAT, Some(TEST_ELEMENT_ID)).await.is_ok());
         assert_matches!(registry.start().await, Ok(TEST_CODEC_START_TIME));
@@ -424,20 +429,22 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop() {
-        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec()));
+        let client = fdomain_local::local_client_empty();
+        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec(&client)));
         assert_matches!(codec.stop().await, Ok(TEST_CODEC_STOP_TIME));
 
-        let composite: Box<dyn DeviceControl> = Box::new(HardwareComposite(serve_hw_composite()));
+        let composite: Box<dyn DeviceControl> =
+            Box::new(HardwareComposite(serve_hw_composite(&client)));
         assert!(composite.stop().await.is_err());
 
-        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai()));
+        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai(&client)));
         assert!(dai.stop().await.is_err());
 
         let streamconfig: Box<dyn DeviceControl> =
-            Box::new(HardwareStreamConfig(serve_hw_streamconfig()));
+            Box::new(HardwareStreamConfig(serve_hw_streamconfig(&client)));
         assert!(streamconfig.stop().await.is_err());
 
-        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control()));
+        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control(&client)));
         // DAI format must be set before codec is started.
         assert!(registry.set_dai_format(TEST_DAI_FORMAT, Some(TEST_ELEMENT_ID)).await.is_ok());
         // Codec must be started before it is stopped.
@@ -447,20 +454,22 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reset() {
-        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec()));
+        let client = fdomain_local::local_client_empty();
+        let codec: Box<dyn DeviceControl> = Box::new(HardwareCodec(serve_hw_codec(&client)));
         assert!(codec.reset().await.is_ok());
 
-        let composite: Box<dyn DeviceControl> = Box::new(HardwareComposite(serve_hw_composite()));
+        let composite: Box<dyn DeviceControl> =
+            Box::new(HardwareComposite(serve_hw_composite(&client)));
         assert!(composite.reset().await.is_ok());
 
-        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai()));
+        let dai: Box<dyn DeviceControl> = Box::new(HardwareDai(serve_hw_dai(&client)));
         assert!(dai.reset().await.is_ok());
 
         let streamconfig: Box<dyn DeviceControl> =
-            Box::new(HardwareStreamConfig(serve_hw_streamconfig()));
+            Box::new(HardwareStreamConfig(serve_hw_streamconfig(&client)));
         assert!(streamconfig.reset().await.is_err());
 
-        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control()));
+        let registry: Box<dyn DeviceControl> = Box::new(Registry(serve_registry_control(&client)));
         assert!(registry.reset().await.is_ok());
     }
 }

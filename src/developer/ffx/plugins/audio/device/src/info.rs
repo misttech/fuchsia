@@ -5,17 +5,22 @@
 use crate::{connect, serde_ext};
 use camino::Utf8PathBuf;
 use fac::{DEFAULT_DAI_INTERCONNECT_ELEMENT_ID, DEFAULT_RING_BUFFER_ELEMENT_ID};
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_hardware_audio as fhaudio;
+use fdomain_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc;
+use fdomain_fuchsia_io as fio;
 use ffx_command_error::{FfxContext as _, Result, bug, user_error};
-use fuchsia_audio::Registry;
-use fuchsia_audio::dai::{
+use fuchsia_audio_fdomain::Registry;
+use fuchsia_audio_fdomain::dai::{
     DaiFormatSet, DaiFrameFormat, DaiFrameFormatClocking, DaiFrameFormatJustification,
 };
-use fuchsia_audio::device::{
+use fuchsia_audio_fdomain::device::{
     ClockDomain, DevfsSelector, GainCapabilities, GainState, Info as DeviceInfo,
     PlugDetectCapabilities, PlugEvent, RegistrySelector, Selector, UniqueInstanceId,
 };
-use fuchsia_audio::format_set::{ChannelAttributes, ChannelSet, PcmFormatSet};
-use fuchsia_audio::sigproc::{
+use fuchsia_audio_fdomain::format_set::{ChannelAttributes, ChannelSet, PcmFormatSet};
+use fuchsia_audio_fdomain::sigproc::{
     DaiInterconnect, DaiInterconnectElementState, Dynamics, DynamicsBand, DynamicsBandState,
     DynamicsElementState, Element, ElementState, Equalizer, EqualizerBand, EqualizerBandState,
     EqualizerElementState, Gain, GainElementState, Topology, TypeSpecificElement,
@@ -29,11 +34,6 @@ use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
 use std::sync::LazyLock;
 use zx_status::Status;
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_hardware_audio as fhaudio,
-    fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc, fidl_fuchsia_io as fio,
-};
 
 // No padding, no borders.
 pub static TABLE_FORMAT_EMPTY: LazyLock<format::TableFormat> =
@@ -1025,7 +1025,7 @@ impl Display for DynamicsBandStateText<'_> {
 }
 
 /// Formatter for signal processing [PlugState].
-struct PlugStateText<'a>(&'a fuchsia_audio::sigproc::PlugState);
+struct PlugStateText<'a>(&'a fuchsia_audio_fdomain::sigproc::PlugState);
 
 impl Display for PlugStateText<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1800,11 +1800,12 @@ pub async fn get_info(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fuchsia_audio::format::SampleType;
-    use fuchsia_audio::sigproc::GainRange;
+    use fdomain_fuchsia_audio_device as fadevice;
+    use fdomain_fuchsia_hardware_audio as fhaudio;
+    use fuchsia_audio_fdomain::format::SampleType;
+    use fuchsia_audio_fdomain::sigproc::GainRange;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-    use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_hardware_audio as fhaudio};
 
     const TOKEN_ID: fadevice::TokenId = 68;
     const SOURCE_DAI_ELEMENT_ID: fhaudio_sigproc::ElementId = 0;
@@ -1997,7 +1998,7 @@ mod test {
                 },
                 state: Some(ElementState {
                     type_specific: Some(TypeSpecificElementState::DaiInterconnect(DaiInterconnectElementState {
-                        plug_state: fuchsia_audio::sigproc::PlugState {
+                        plug_state: fuchsia_audio_fdomain::sigproc::PlugState {
                             plugged: true,
                             plug_state_time: 123456789,
                         },
