@@ -73,6 +73,13 @@ def _get_prebuilt_libraries_base_path(cpu_arch, target_api_level):
     else:
         return "obj/%s" % _get_prebuilt_libraries_dir_name(cpu_arch, target_api_level)
 
+def _get_prebuilt_libraries_ifs_file_dir_path(idk_name, cpu_arch, target_api_level):
+    """Returns the base path in the IDK for prebuilt libraries."""
+    if (target_api_level == "PLATFORM"):
+        return "pkg/%s" % idk_name
+    else:
+        return _get_prebuilt_libraries_base_path(cpu_arch, target_api_level)
+
 def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
     args.add("--output", ctx.outputs.generated_api_file.path)
@@ -214,9 +221,11 @@ def _get_additional_info(ctx, files_map, additional_prebuild_info):
                 fail("Expected IFS file to be named `%s` but got `%s`." %
                      (expected_ifs_name, ifs_source_file.basename))
 
-            # TODO(https://fxbug.dev/417307356): Use the correct destination
-            # path for the unversioned IFS file built at "PLATFORM".
-            ifs_dest = "%s/%s" % (link_lib_dest_dir, ifs_source_file.basename)
+            # The IFS destination is not necessarily under `idk_prebuilt_base`.
+            ifs_dest = "%s/%s" % (
+                _get_prebuilt_libraries_ifs_file_dir_path(ctx.attr.idk_name, cpu_arch, api_level),
+                ifs_source_file.basename,
+            )
             files_map[ifs_dest] = ifs_source_file
             binaries["ifs"] = ifs_dest
 

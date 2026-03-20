@@ -208,7 +208,7 @@ create_test_atom_info(
             '"debug_lib":"arch/x64/debug/libmy_test_shared_library.so",' +
             '"dist_lib":"arch/x64/dist/libmy_test_shared_library.so",' +
             '"dist_path":"lib/libmy_test_shared_library.so",' +
-            '"ifs":"arch/x64/lib/libmy_test_shared_library.ifs",' +
+            '"ifs":"pkg/test_shared_library/libmy_test_shared_library.ifs",' +
             '"link_lib":"arch/x64/lib/libmy_test_shared_library.so"}'
         ),
     },
@@ -226,7 +226,7 @@ create_test_atom_info(
     ],
     atom_files_map_generated_files = {
         "arch/x64/lib/libmy_test_shared_library.so": ":test_shared_library_link_lib_file",
-        "arch/x64/lib/libmy_test_shared_library.ifs": ":test_shared_library_ifs_file",
+        "pkg/test_shared_library/libmy_test_shared_library.ifs": ":test_shared_library_ifs_file",
         "arch/x64/debug/libmy_test_shared_library.so": ":test_shared_library_debug_file",
         "arch/x64/dist/libmy_test_shared_library.so": ":test_shared_library_stripped_file",
     },
