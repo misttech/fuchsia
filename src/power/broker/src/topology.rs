@@ -396,9 +396,15 @@ impl Topology {
     ) -> Vec<Dependency> {
         // We need to inspect the required level of every dependency encountered for any transitive
         // dependencies.
-        let mut dependencies = Vec::<Dependency>::new();
+        let mut dependencies = std::collections::HashSet::<Dependency>::new();
+        let mut visited = std::collections::HashSet::<ElementLevel>::new();
         let mut element_levels_to_inspect = vec![element_level.clone()];
         while let Some(element_level) = element_levels_to_inspect.pop() {
+            if visited.contains(&element_level) {
+                continue;
+            }
+            visited.insert(element_level.clone());
+
             if element_level.level != self.minimum_level(&element_level.element_id) {
                 let mut lower_element_level = element_level.clone();
                 lower_element_level.level = self
@@ -407,10 +413,10 @@ impl Topology {
             }
             for dep in self.direct_dependencies(&element_level) {
                 element_levels_to_inspect.push(dep.requires.clone());
-                dependencies.push(dep);
+                dependencies.insert(dep);
             }
         }
-        dependencies
+        dependencies.into_iter().collect()
     }
 
     /// Elements that have any type of dependency on the provided ElementID are 'invalidated'
