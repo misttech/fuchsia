@@ -36,14 +36,13 @@ class TestBase : public testing::Test {
 
   async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
-  // Waits until `predicate` returns true.
+  // Runs the Driver Runtime foreground dispatcher until a condition is met.
   //
-  // `predicate` will only be evaluated on `loop_`.
+  // `predicate` will only be evaluated on the calling thread.
   //
-  // Returns true if the last evaluation of`predicate` returned true. Returns
-  // false when the predicate can no longer be evaluated, such as when the
-  // loop is destroyed.
-  bool PollUntilOnLoop(fit::function<bool()> predicate, zx::duration poll_interval = zx::msec(10));
+  // The method does not return if `predicate` never returns true. The test will
+  // either time out or run indefinitely.
+  void WaitUntil(fit::function<bool()> predicate);
 
  private:
   async::Loop loop_;

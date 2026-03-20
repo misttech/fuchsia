@@ -13,14 +13,8 @@
 #include <zircon/compiler.h>
 
 #include <memory>
-#include <optional>
 #include <utility>
 
-#include <fbl/auto_lock.h>
-#include <fbl/condition_variable.h>
-#include <fbl/mutex.h>
-
-#include "src/graphics/display/drivers/coordinator/post-display-task.h"
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/fake-display-stack/fake-display-device-config.h"
 #include "src/graphics/display/lib/fake-display-stack/fake-display.h"
@@ -61,68 +55,17 @@ void TestBase::TearDown() {
   loop_.JoinThreads();
 }
 
-bool TestBase::PollUntilOnLoop(fit::function<bool()> predicate, zx::duration poll_interval) {
-  struct PredicateEvalState {
-    // Immutable after construction.
-    fit::function<bool()> predicate __TA_GUARDED(mutex);
-
-    fbl::Mutex mutex;
-
-    // Signaled after `result` has a value.
-    fbl::ConditionVariable signal;
-
-    // nullopt while waiting for the predicate to be evaluated.
-    std::optional<bool> result __TA_GUARDED(mutex);
-  };
-  PredicateEvalState predicate_eval_state = {
-      .predicate = std::move(predicate),
-  };
-
+void TestBase::WaitUntil(fit::function<bool()> predicate) {
   while (true) {
-    auto post_task_state = std::make_unique<DisplayTaskState>();
-
-    {
-      fbl::AutoLock lock(&predicate_eval_state.mutex);
-      predicate_eval_state.result = std::nullopt;
+    if (predicate()) {
+      return;
     }
 
-    // Retaining `predicate_eval_state` by reference is safe because this method
-    // will block on a ConditionVariable::Wait() call, which is only issued at
-    // the end of the task handler.
-    zx::result post_task_result = display::PostTask(
-        std::move(post_task_state), *loop_.dispatcher(), [&predicate_eval_state]() {
-          fbl::AutoLock lock(&predicate_eval_state.mutex);
+    // The predicate may become true after the Coordinator or the
+    // fake-display driver process FIDL requests.
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
 
-          predicate_eval_state.result = predicate_eval_state.predicate();
-
-          // Once `result` is set to true above, PollUntilOnLoop() may return as
-          // soon as it acquires `mutex`. So, `predicate_eval_state` can only be
-          // used while `mutex` remains held.
-          //
-          // This means that we must call ConditionVariable::Signal() while
-          // holding `mutex`.
-          predicate_eval_state.signal.Signal();
-        });
-    if (post_task_result.is_error()) {
-      fdf::error("Failed to post task: {}", post_task_result);
-      return false;
-    }
-
-    {
-      fbl::AutoLock lock(&predicate_eval_state.mutex);
-      while (!predicate_eval_state.result.has_value()) {
-        predicate_eval_state.signal.Wait(&predicate_eval_state.mutex);
-      }
-      if (predicate_eval_state.result.value()) {
-        return true;
-      }
-    }
-
-    zx_status_t sleep_status = zx::nanosleep(zx::deadline_after(poll_interval));
-    if (sleep_status != ZX_OK) {
-      fdf::error("Failed to sleep: {}", zx::make_result(sleep_status));
-      return false;
-    }
+    fake_display_stack_->RunDriverRuntimeLoopUntilIdle();
   }
 }
 

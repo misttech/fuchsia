@@ -57,6 +57,11 @@ class FakeDisplayStack {
   // Must not be called after `SyncShutdown()`.
   void ServeCoordinatorToProcessOutgoingDirectory();
 
+  // Runs the driver framework loop until all pending tasks are completed.
+  //
+  // Must not be called after `SyncShutdown()`.
+  void RunDriverRuntimeLoopUntilIdle();
+
  private:
   bool shutdown_ = false;
 

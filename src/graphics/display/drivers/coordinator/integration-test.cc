@@ -1134,9 +1134,7 @@ class IntegrationTest : public TestBase {
     ZX_ASSERT_MSG(open_coordinator_result.is_ok(), "Failed to open coordinator: %s",
                   open_coordinator_result.status_string());
 
-    bool poll_success =
-        PollUntilOnLoop([&]() { return coordinator_client->state().HasConnectedDisplay(); });
-    ZX_ASSERT_MSG(poll_success, "Loop shut down while waiting for display info");
+    WaitUntil([&]() { return coordinator_client->state().HasConnectedDisplay(); });
 
     return coordinator_client;
   }
@@ -1195,7 +1193,7 @@ TEST_F(IntegrationTest, MaxLayerCountPropagatedToClient) {
   // testing/base.cc).
   static constexpr uint32_t kEngineMaxLayerCount = 1;
 
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return client->state().HasConnectedDisplay(); }));
+  WaitUntil([&]() { return client->state().HasConnectedDisplay(); });
   const TestDisplayInfo& display_info = client->state().GetDisplayInfo();
 
   // Verify that the max_layer_count field we added in Part 1 is correctly
@@ -1205,19 +1203,19 @@ TEST_F(IntegrationTest, MaxLayerCountPropagatedToClient) {
 TEST_F(IntegrationTest, VsyncEventForImageConfig) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kInitialConfigStamp(42);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
 
   // Wait for a VSync acknowledging the displayed configuration.
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 }
@@ -1225,7 +1223,7 @@ TEST_F(IntegrationTest, VsyncEventForImageConfig) {
 TEST_F(IntegrationTest, VsyncEventForImagelessConfig) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1235,13 +1233,13 @@ TEST_F(IntegrationTest, VsyncEventForImagelessConfig) {
   static constexpr display::ConfigStamp kInitialConfigStamp(42);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
 
   // Wait for a VSync acknowledging the displayed configuration.
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 }
@@ -1249,21 +1247,21 @@ TEST_F(IntegrationTest, VsyncEventForImagelessConfig) {
 TEST_F(IntegrationTest, VsyncEventAfterImageLayerConvertsToColorLayer) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kInitialConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   // Wait for a VSync acknowledging the displayed configuration.
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1276,13 +1274,12 @@ TEST_F(IntegrationTest, VsyncEventAfterImageLayerConvertsToColorLayer) {
   static constexpr display::ConfigStamp kSecondConfigStamp(2);
   ASSERT_EQ(initial_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kSecondConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; });
 
   // Wait for a VSync acknowledging the configuration with a layer change.
   ASSERT_EQ(1u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 2; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 2; });
   EXPECT_EQ(kSecondConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(2u, primary_client->state().vsync_count());
 }
@@ -1291,49 +1288,48 @@ TEST_F(IntegrationTest, DisplayOwnershipChangeEvents) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
   EXPECT_FALSE(virtcon_client->state().has_display_ownership());
 
   primary_client.reset();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 }
 
 TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithImageLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kVirtconConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(virtcon_client->ApplyLayers(kVirtconConfigStamp,
                                         virtcon_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp virtcon_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kPrimaryConfigStamp(2);
   ASSERT_EQ(virtcon_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimaryConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; });
 }
 
 TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
       virtcon_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1344,14 +1340,14 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(
       virtcon_client->ApplyLayers(kVirtconConfigStamp, {{.layer_id = virtcon_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp virtcon_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_primary_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1362,48 +1358,46 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
   ASSERT_EQ(virtcon_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(
       primary_client->ApplyLayers(kPrimaryConfigStamp, {{.layer_id = primary_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; });
 }
 
 TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithImageLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kVirtconConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(virtcon_client->ApplyLayers(kVirtconConfigStamp,
                                         virtcon_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp virtcon_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, virtcon_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return virtcon_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kVirtconConfigStamp, virtcon_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kPrimaryConfigStamp(2);
   ASSERT_EQ(virtcon_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimaryConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; });
 
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
   EXPECT_EQ(kVirtconConfigStamp, virtcon_client->state().last_vsync_config_stamp());
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kPrimaryConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1415,7 +1409,7 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
       virtcon_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1426,20 +1420,20 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(
       virtcon_client->ApplyLayers(kVirtconConfigStamp, {{.layer_id = virtcon_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp virtcon_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, virtcon_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return virtcon_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kVirtconConfigStamp, virtcon_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_primary_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1450,15 +1444,14 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
   ASSERT_EQ(virtcon_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(
       primary_client->ApplyLayers(kPrimaryConfigStamp, {{.layer_id = primary_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_driver_config_stamp; });
 
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
   EXPECT_EQ(kVirtconConfigStamp, virtcon_client->state().last_vsync_config_stamp());
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kPrimaryConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1470,28 +1463,28 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   // The Virtcon client does not apply any configuration, so it will never be
   // eligible for VSync events.
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // Display an image.
   static constexpr display::ConfigStamp kPrimary1InitialConfigStamp(2);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimary1InitialConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp primary1_initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kPrimary1InitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1505,9 +1498,8 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   ASSERT_EQ(primary1_initial_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimary1SecondConfigStamp,
                                         {{.layer_id = primary_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop([&]() {
-    return DisplayEngineSubmittedConfigStamp() > primary1_initial_driver_config_stamp;
-  }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() > primary1_initial_driver_config_stamp; });
   const display::DriverConfigStamp primary1_second_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
@@ -1515,13 +1507,13 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   // ownership. The old primary client's config remains applied, because the
   // Virtcon client did not apply any config.
   primary_client.reset();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
   EXPECT_EQ(primary1_second_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
 
   // A new primary client connects.
   primary_client = OpenCoordinatorTestFidlClient(&sysmem_client_, DisplayProviderClient(),
                                                  display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // The VSync must be routed to the client that applied the configuration,
   // which is now disconnected. Nothing should be sent to the new client.
@@ -1532,14 +1524,14 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   ASSERT_EQ(primary1_second_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimary2InitialConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > primary1_second_driver_config_stamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() > primary1_second_driver_config_stamp; });
 
   // Send a VSync using the config the client applied.
   EXPECT_EQ(0u, virtcon_client->state().vsync_count());
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kPrimary2InitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
   EXPECT_EQ(0u, virtcon_client->state().vsync_count());
@@ -1548,7 +1540,7 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
 TEST_F(IntegrationTest, AcknowledgeVsyncAfterQueueFull) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1565,16 +1557,14 @@ TEST_F(IntegrationTest, AcknowledgeVsyncAfterQueueFull) {
     ASSERT_OK(primary_client->ApplyLayers(config_stamp, {{.layer_id = color_layer_id}}));
 
     // Wait until the engine driver receives the new configuration.
-    ASSERT_TRUE(
-        PollUntilOnLoop([&]() { return DisplayEngineSubmittedConfigStamp() != old_driver_stamp; }));
+    WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() != old_driver_stamp; });
     TriggerDisplayEngineVsync();
   }
 
   // Collect the throttled VSync messages and the ack cookie.
   {
     static constexpr uint64_t expected_vsync_count = ClientVsyncQueue::kThrottleWatermark;
-    ASSERT_TRUE(PollUntilOnLoop(
-        [&]() { return (primary_client->state().vsync_count() >= expected_vsync_count); }));
+    WaitUntil([&]() { return (primary_client->state().vsync_count() >= expected_vsync_count); });
     EXPECT_EQ(expected_vsync_count, primary_client->state().vsync_count());
     EXPECT_EQ(display::ConfigStamp(expected_vsync_count),
               primary_client->state().last_vsync_config_stamp());
@@ -1587,8 +1577,7 @@ TEST_F(IntegrationTest, AcknowledgeVsyncAfterQueueFull) {
   {
     static constexpr uint64_t expected_vsync_count =
         ClientVsyncQueue::kThrottleWatermark + ClientVsyncQueue::kThrottleBufferSize;
-    ASSERT_TRUE(PollUntilOnLoop(
-        [&]() { return primary_client->state().vsync_count() >= expected_vsync_count; }));
+    WaitUntil([&]() { return primary_client->state().vsync_count() >= expected_vsync_count; });
     EXPECT_EQ(expected_vsync_count, primary_client->state().vsync_count());
     EXPECT_EQ(display::ConfigStamp(expected_vsync_count),
               primary_client->state().last_vsync_config_stamp());
@@ -1638,26 +1627,26 @@ TEST_F(IntegrationTest, ClampRgb) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   {
     // Clamp RGB to a minimum value
     ASSERT_OK(virtcon_client->SetMinimumRgb(32));
-    ASSERT_TRUE(PollUntilOnLoop([&]() { return FakeDisplayEngine().GetClampRgbValue() == 32; }));
+    WaitUntil([&]() { return FakeDisplayEngine().GetClampRgbValue() == 32; });
   }
 
   // Create a primary client
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
   // Clamp RGB to a new value
   ASSERT_OK(primary_client->SetMinimumRgb(1));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return FakeDisplayEngine().GetClampRgbValue() == 1; }));
+  WaitUntil([&]() { return FakeDisplayEngine().GetClampRgbValue() == 1; });
 
   // Close the primary client, wait for the virtcon client to regain display
   // ownership.
   primary_client.reset(nullptr);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
       virtcon_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1669,8 +1658,8 @@ TEST_F(IntegrationTest, ClampRgb) {
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(virtcon_client->ApplyLayers(kVirtconInitialConfigStamp,
                                         {{.layer_id = virtcon_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
 
   TriggerDisplayEngineVsync();
   // TODO(https://fxbug.dev/388885807): This test is racy. There's no guarantee
@@ -1679,7 +1668,7 @@ TEST_F(IntegrationTest, ClampRgb) {
   // contract.
 
   // make sure clamp value was restored
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return FakeDisplayEngine().GetClampRgbValue() == 32; }));
+  WaitUntil([&]() { return FakeDisplayEngine().GetClampRgbValue() == 32; });
 }
 
 TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
@@ -1687,7 +1676,7 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
   ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
       virtcon_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1698,22 +1687,22 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(virtcon_client->ApplyLayers(kVirtconInitialConfigStamp,
                                         {{.layer_id = virtcon_color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp virtcon_initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // The Virtcon client should receive VSync events while its config is applied.
   // This is the case until the primary client applies a config.
   EXPECT_EQ(0u, primary_client->state().vsync_count());
   ASSERT_EQ(0u, virtcon_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return virtcon_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return virtcon_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kVirtconInitialConfigStamp, virtcon_client->state().last_vsync_config_stamp());
   EXPECT_EQ(0u, primary_client->state().vsync_count());
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
@@ -1723,14 +1712,14 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
   ASSERT_EQ(virtcon_initial_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kPrimaryInitialConfigStamp,
                                         primary_client->CreateFullscreenLayerConfig()));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_initial_driver_config_stamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() > virtcon_initial_driver_config_stamp; });
 
   // Primary client should receive VSync events after applying a config.
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kPrimaryInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
@@ -1756,7 +1745,7 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1767,14 +1756,14 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   static constexpr display::ConfigStamp kInitialConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1795,14 +1784,13 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   ASSERT_EQ(initial_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kNoFence1ConfigStamp,
                                         {{.layer_id = layer1_id, .image_id = image1_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; });
   const display::DriverConfigStamp no_fence1_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(1u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 2; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 2; });
   EXPECT_EQ(kNoFence1ConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(2u, primary_client->state().vsync_count());
 
@@ -1811,14 +1799,13 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   ASSERT_EQ(no_fence1_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kNoFence2ConfigStamp,
                                         {{.layer_id = layer1_id, .image_id = image2_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > no_fence1_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > no_fence1_driver_config_stamp; });
   const display::DriverConfigStamp no_fence2_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(2u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 3; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 3; });
   EXPECT_EQ(kNoFence2ConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(3u, primary_client->state().vsync_count());
 
@@ -1826,12 +1813,11 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   static constexpr display::ConfigStamp kNoImageConfigStamp(4);
   ASSERT_EQ(no_fence2_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kNoImageConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > no_fence2_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > no_fence2_driver_config_stamp; });
 
   ASSERT_EQ(3u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 4; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 4; });
   EXPECT_EQ(kNoImageConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 }
@@ -1855,7 +1841,7 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1866,14 +1852,14 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   static constexpr display::ConfigStamp kInitialConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -1901,14 +1887,13 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   ASSERT_OK(
       primary_client->ApplyLayers(kImageWithoutFenceConfigStamp,
                                   {{.layer_id = layer1_id, .image_id = image_without_fence_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; });
   const display::DriverConfigStamp image_without_fence_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(1u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 2; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 2; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(2u, primary_client->state().vsync_count());
 
@@ -1923,7 +1908,7 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
 
   ASSERT_EQ(2u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 3; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 3; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(3u, primary_client->state().vsync_count());
 
@@ -1933,13 +1918,13 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   // it.
   ASSERT_EQ(image_without_fence_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   image_ready_fence.event.signal(0u, ZX_EVENT_SIGNALED);
-  ASSERT_TRUE(PollUntilOnLoop([&]() {
+  WaitUntil([&]() {
     return DisplayEngineSubmittedConfigStamp() > image_without_fence_driver_config_stamp;
-  }));
+  });
 
   ASSERT_EQ(3u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 4; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 4; });
   EXPECT_EQ(kImageWithFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 }
@@ -1964,7 +1949,7 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
       primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
@@ -1975,14 +1960,14 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   static constexpr display::ConfigStamp kInitialConfigStamp(1);
   ASSERT_EQ(display::kInvalidDriverConfigStamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kInitialConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp initial_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kInitialConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -2010,14 +1995,13 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   ASSERT_OK(
       primary_client->ApplyLayers(kImageWithoutFenceConfigStamp,
                                   {{.layer_id = layer1_id, .image_id = image_without_fence_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; }));
+  WaitUntil([&]() { return DisplayEngineSubmittedConfigStamp() > initial_driver_config_stamp; });
   const display::DriverConfigStamp image_without_fence_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(1u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 2; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 2; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(2u, primary_client->state().vsync_count());
 
@@ -2033,7 +2017,7 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
 
   ASSERT_EQ(2u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 3; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 3; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(3u, primary_client->state().vsync_count());
 
@@ -2043,16 +2027,16 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   static constexpr display::ConfigStamp kNoImageConfigStamp(4);
   ASSERT_EQ(image_without_fence_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   ASSERT_OK(primary_client->ApplyLayers(kNoImageConfigStamp, {{.layer_id = color_layer_id}}));
-  ASSERT_TRUE(PollUntilOnLoop([&]() {
+  WaitUntil([&]() {
     return DisplayEngineSubmittedConfigStamp() > image_without_fence_driver_config_stamp;
-  }));
+  });
 
   // On Vsync, the configuration stamp client receives on Vsync event message
   // will be the latest one applied to the display controller, since the waiting
   // image has been removed from the configuration.
   ASSERT_EQ(3u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 4; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 4; });
   EXPECT_EQ(kNoImageConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 }
@@ -2085,7 +2069,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer1_result = primary_client->CreateFullscreenImageLayer();
   zx::result<display::ImageId> create_image_without_fence_result =
@@ -2121,14 +2105,14 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   ASSERT_OK(
       primary_client->ApplyLayers(kImageWithoutFenceConfigStamp,
                                   {{.layer_id = layer1_id, .image_id = image_without_fence_id}}));
-  ASSERT_TRUE(PollUntilOnLoop(
-      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; }));
+  WaitUntil(
+      [&]() { return DisplayEngineSubmittedConfigStamp() != display::kInvalidDriverConfigStamp; });
   const display::DriverConfigStamp image_without_fence_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(0u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 1; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 1; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(1u, primary_client->state().vsync_count());
 
@@ -2143,7 +2127,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
 
   ASSERT_EQ(1u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 2; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 2; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(2u, primary_client->state().vsync_count());
 
@@ -2158,7 +2142,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
 
   ASSERT_EQ(2u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 3; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 3; });
   EXPECT_EQ(kImageWithoutFenceConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(3u, primary_client->state().vsync_count());
 
@@ -2168,15 +2152,15 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   // VSync must reflect it.
   ASSERT_EQ(image_without_fence_driver_config_stamp, DisplayEngineSubmittedConfigStamp());
   image_ready_fence2.event.signal(0u, ZX_EVENT_SIGNALED);
-  ASSERT_TRUE(PollUntilOnLoop([&]() {
+  WaitUntil([&]() {
     return DisplayEngineSubmittedConfigStamp() > image_without_fence_driver_config_stamp;
-  }));
+  });
   const display::DriverConfigStamp image_with_fence2_driver_config_stamp =
       DisplayEngineSubmittedConfigStamp();
 
   ASSERT_EQ(3u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 4; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 4; });
   EXPECT_EQ(kImageWithFence2ConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(4u, primary_client->state().vsync_count());
 
@@ -2190,7 +2174,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   // pass, due to using a hard-coded timeout.
   {
     zx::time_monotonic deadline = zx::deadline_after(zx::sec(1));
-    PollUntilOnLoop([&]() {
+    WaitUntil([&]() {
       if (zx::clock::get_monotonic() >= deadline)
         return true;
       return DisplayEngineSubmittedConfigStamp() > image_with_fence2_driver_config_stamp;
@@ -2200,7 +2184,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
 
   ASSERT_EQ(4u, primary_client->state().vsync_count());
   TriggerDisplayEngineVsync();
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().vsync_count() >= 5; }));
+  WaitUntil([&]() { return primary_client->state().vsync_count() >= 5; });
   EXPECT_EQ(kImageWithFence2ConfigStamp, primary_client->state().last_vsync_config_stamp());
   EXPECT_EQ(5u, primary_client->state().vsync_count());
 }
@@ -2214,7 +2198,7 @@ TEST_F(IntegrationTest, CheckConfigFullscreenImageLayer) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
   ASSERT_OK(create_layer_result);
@@ -2235,7 +2219,7 @@ TEST_F(IntegrationTest, CheckConfigFullscreenImageLayer) {
 TEST_F(IntegrationTest, CheckConfigLargeLayer) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
   ASSERT_OK(create_layer_result);
@@ -2266,7 +2250,7 @@ TEST_F(IntegrationTest, CheckConfigRepeatedLayer) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
   ASSERT_OK(create_layer_result);
@@ -2287,7 +2271,7 @@ TEST_F(IntegrationTest, SetDisplayLayersTooManyLayersDisconnects) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  ASSERT_TRUE(PollUntilOnLoop([&]() { return primary_client->state().has_display_ownership(); }));
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   ASSERT_EQ(1u, primary_client->state().GetDisplayInfo().max_layer_count)
       << "This test assumes that fake-display is configured to support 1 layer";
