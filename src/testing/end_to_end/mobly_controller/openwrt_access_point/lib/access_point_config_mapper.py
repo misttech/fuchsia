@@ -33,5 +33,6 @@ class AccessPointConfigMapper:
             Security.WPA3: HostapdSecurityMode.WPA3,
             Security.WPA_WPA2: HostapdSecurityMode.WPA_WPA2,
             Security.WPA2_WPA3: HostapdSecurityMode.WPA2_WPA3,
+            Security.WEP: HostapdSecurityMode.WEP,
         }
         return security_map[security]

@@ -10,11 +10,21 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_5G,
     AP_SSID_LENGTH_5G,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
-from mobly.records import TestResultRecord
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 
 # TODO(fxb/68956): Add security protocol check to mixed mode tests when info is
@@ -32,33 +42,26 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
         self.dut = self.get_dut(AssociationMode.POLICY)
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
-
-    def teardown_class(self) -> None:
-        self.dut.disconnect()
-        self.access_point.stop_all_aps()
-        super().teardown_class()
 
     def teardown_test(self) -> None:
         self.dut.disconnect()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
         super().teardown_test()
 
-    def on_fail(self, record: TestResultRecord) -> None:
-        self.dut.disconnect()
-        self.access_point.stop_all_aps()
-        super().on_fail(record)
-
-    def setup_ap(
-        self, security_mode: SecurityMode = SecurityMode.OPEN
-    ) -> tuple[str, str]:
+    def setup_ap(self, security: Security = Security.NONE) -> tuple[str, str]:
         """Sets up an AP using the provided security mode.
 
         Args:
-            security_mode: string, security mode for AP
+            security: Security, security mode for AP
         Returns:
             Tuple, (ssid, password). Returns a password even if for open
                 security, since non-open target securities require a credential
@@ -67,17 +70,29 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
         # Length 13, so it can be used for WEP or WPA
         password = utils.rand_ascii_str(13)
-        security_profile = Security(
-            security_mode=security_mode, password=password
-        )
 
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_5G,
-            ssid=ssid,
-            security=security_profile,
-        )
+        if hasattr(self, "openwrt_ap"):
+            config = AccessPointConfig.generate(
+                band=Band.BAND_5G,
+                ssid=ssid,
+                password=(password if security != Security.NONE else None),
+                security=security,
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
+        else:
+            hostapd_security_mode = ConfigMapper.to_hostapd_security(security)
+
+            security_profile = HostapdSecurity(
+                security_mode=hostapd_security_mode, password=password
+            )
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=AP_DEFAULT_CHANNEL_5G,
+                ssid=ssid,
+                security=security_profile,
+            )
 
         return (ssid, password)
 
@@ -119,35 +134,41 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WEP Security on AP
     def test_reject_wep_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WEP)
+        ssid, _ = self.setup_ap(Security.WEP)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_associate_wep_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WEP)
+        # TODO(b/490162087): Remove this skip once OpenWrt supports WEP security
+        self.skip_if_wep_not_supported()
+        ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Failed to associate.",
         )
 
+    def skip_if_wep_not_supported(self) -> None:
+        if hasattr(self, "openwrt_ap"):
+            raise signals.TestSkip("OpenWrt does not support WEP security")
+
     def test_reject_wep_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WEP)
+        ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_reject_wep_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WEP)
+        ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_reject_wep_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WEP)
+        ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Should not have associated.",
@@ -155,35 +176,35 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WPA Security on AP
     def test_reject_wpa_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WPA)
+        ssid, _ = self.setup_ap(Security.WPA)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA)
+        ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_associate_wpa_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA)
+        ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_reject_wpa_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA)
+        ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_reject_wpa_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA)
+        ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Should not have associated.",
@@ -191,35 +212,35 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WPA2 Security on AP
     def test_reject_wpa2_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WPA2)
+        ssid, _ = self.setup_ap(Security.WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa2_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2)
+        ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_associate_wpa2_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2)
+        ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_associate_wpa2_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2)
+        ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_reject_wpa2_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2)
+        ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Should not have associated.",
@@ -227,35 +248,35 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WPA/WPA2 Security on AP
     def test_reject_wpa_wpa2_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WPA_WPA2)
+        ssid, _ = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa_wpa2_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA_WPA2)
+        ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_associate_wpa_wpa2_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA_WPA2)
+        ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_associate_wpa_wpa2_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA_WPA2)
+        ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_reject_wpa_wpa2_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA_WPA2)
+        ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Should not have associated.",
@@ -263,21 +284,21 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WPA3 Security on AP
     def test_reject_wpa3_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WPA3)
+        ssid, _ = self.setup_ap(Security.WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa3_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA3)
+        ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_associate_wpa3_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA3)
+        ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Expected failure to associate. WPA credentials for WPA3 was "
@@ -287,14 +308,14 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         )
 
     def test_associate_wpa3_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA3)
+        ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_associate_wpa3_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA3)
+        ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Failed to associate.",
@@ -302,21 +323,21 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
 
     # WPA2/WPA3 Security on AP
     def test_reject_wpa2_wpa3_ap_with_open_target_security(self) -> None:
-        ssid, _ = self.setup_ap(SecurityMode.WPA2_WPA3)
+        ssid, _ = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa2_wpa3_ap_with_wep_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2_WPA3)
+        ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
             "Should not have associated.",
         )
 
     def test_associate_wpa2_wpa3_ap_with_wpa_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2_WPA3)
+        ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
             self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
             "Expected failure to associate. WPA credentials for WPA3 was "
@@ -326,14 +347,14 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         )
 
     def test_associate_wpa2_wpa3_ap_with_wpa2_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2_WPA3)
+        ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
             "Failed to associate.",
         )
 
     def test_associate_wpa2_wpa3_ap_with_wpa3_target_security(self) -> None:
-        ssid, password = self.setup_ap(SecurityMode.WPA2_WPA3)
+        ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_true(
             self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
             "Failed to associate.",

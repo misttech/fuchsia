@@ -26,6 +26,7 @@ class Security(enum.StrEnum):
     # Mixed modes
     WPA_WPA2 = "psk-mixed"
     WPA2_WPA3 = "sae-mixed"
+    WEP = "wep"
 
 
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
