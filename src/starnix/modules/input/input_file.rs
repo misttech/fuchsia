@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_inspect::{NumericProperty, Property};
+use fuchsia_inspect::Inspector;
+use futures::FutureExt;
 use starnix_core::fileops_impl_nonseekable;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
@@ -23,6 +24,7 @@ use starnix_uapi::{
 };
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use zerocopy::IntoBytes as _; // for `as_bytes()`
 
 uapi::check_arch_independent_layout! {
@@ -42,80 +44,117 @@ pub struct InputFileStatus {
     /// otherwise starnix ignored events unexpectedly.
     ///
     /// fidl_events_unexpected_count should be 0, if not it hints issues from upstream of ui stack.
-    pub fidl_events_received_count: fuchsia_inspect::UintProperty,
+    pub fidl_events_received_count: AtomicU64,
 
     /// The number of FIDL events ignored to this module’s representation of TouchEvent.
-    pub fidl_events_ignored_count: fuchsia_inspect::UintProperty,
+    pub fidl_events_ignored_count: AtomicU64,
 
     /// The unexpected number of FIDL events reached to this module should be filtered out
     /// earlier in the UI stack.
     /// It maybe unexpected format or unexpected order.
-    pub fidl_events_unexpected_count: fuchsia_inspect::UintProperty,
+    pub fidl_events_unexpected_count: AtomicU64,
 
     /// The number of FIDL events converted to this module’s representation of TouchEvent.
-    pub fidl_events_converted_count: fuchsia_inspect::UintProperty,
+    pub fidl_events_converted_count: AtomicU64,
 
     /// The number of uapi::input_events generated from TouchEvents.
-    pub uapi_events_generated_count: fuchsia_inspect::UintProperty,
+    pub uapi_events_generated_count: AtomicU64,
 
     /// The event time of the last generated uapi::input_event.
-    pub last_generated_uapi_event_timestamp_ns: fuchsia_inspect::IntProperty,
+    pub last_generated_uapi_event_timestamp_ns: AtomicI64,
 
     /// The number of uapi::input_events read from this input file by external process.
-    pub uapi_events_read_count: fuchsia_inspect::UintProperty,
+    pub uapi_events_read_count: AtomicU64,
 
     /// The event time of the last uapi::input_event read by external process.
-    pub last_read_uapi_event_timestamp_ns: fuchsia_inspect::IntProperty,
+    pub last_read_uapi_event_timestamp_ns: AtomicI64,
 }
 
 impl InputFileStatus {
-    fn new(node: &fuchsia_inspect::Node) -> Self {
-        let fidl_events_received_count = node.create_uint("fidl_events_received_count", 0);
-        let fidl_events_ignored_count = node.create_uint("fidl_events_ignored_count", 0);
-        let fidl_events_unexpected_count = node.create_uint("fidl_events_unexpected_count", 0);
-        let fidl_events_converted_count = node.create_uint("fidl_events_converted_count", 0);
-        let uapi_events_generated_count = node.create_uint("uapi_events_generated_count", 0);
-        let last_generated_uapi_event_timestamp_ns =
-            node.create_int("last_generated_uapi_event_timestamp_ns", 0);
-        let uapi_events_read_count = node.create_uint("uapi_events_read_count", 0);
-        let last_read_uapi_event_timestamp_ns =
-            node.create_int("last_read_uapi_event_timestamp_ns", 0);
-        Self {
-            fidl_events_received_count,
-            fidl_events_ignored_count,
-            fidl_events_unexpected_count,
-            fidl_events_converted_count,
-            uapi_events_generated_count,
-            last_generated_uapi_event_timestamp_ns,
-            uapi_events_read_count,
-            last_read_uapi_event_timestamp_ns,
-        }
+    fn new(node: &fuchsia_inspect::Node) -> Arc<Self> {
+        let status = Arc::new(Self {
+            fidl_events_received_count: AtomicU64::new(0),
+            fidl_events_ignored_count: AtomicU64::new(0),
+            fidl_events_unexpected_count: AtomicU64::new(0),
+            fidl_events_converted_count: AtomicU64::new(0),
+            uapi_events_generated_count: AtomicU64::new(0),
+            last_generated_uapi_event_timestamp_ns: AtomicI64::new(0),
+            uapi_events_read_count: AtomicU64::new(0),
+            last_read_uapi_event_timestamp_ns: AtomicI64::new(0),
+        });
+
+        let weak_status = Arc::downgrade(&status);
+        node.record_lazy_values("status", move || {
+            let status = weak_status.upgrade();
+            async move {
+                let inspector = Inspector::default();
+                if let Some(status) = status {
+                    let root = inspector.root();
+                    root.record_uint(
+                        "fidl_events_received_count",
+                        status.fidl_events_received_count.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "fidl_events_ignored_count",
+                        status.fidl_events_ignored_count.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "fidl_events_unexpected_count",
+                        status.fidl_events_unexpected_count.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "fidl_events_converted_count",
+                        status.fidl_events_converted_count.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "uapi_events_generated_count",
+                        status.uapi_events_generated_count.load(Ordering::Relaxed),
+                    );
+                    root.record_int(
+                        "last_generated_uapi_event_timestamp_ns",
+                        status.last_generated_uapi_event_timestamp_ns.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "uapi_events_read_count",
+                        status.uapi_events_read_count.load(Ordering::Relaxed),
+                    );
+                    root.record_int(
+                        "last_read_uapi_event_timestamp_ns",
+                        status.last_read_uapi_event_timestamp_ns.load(Ordering::Relaxed),
+                    );
+                }
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
+        status
     }
 
     pub fn count_received_events(&self, count: u64) {
-        self.fidl_events_received_count.add(count);
+        self.fidl_events_received_count.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn count_ignored_events(&self, count: u64) {
-        self.fidl_events_ignored_count.add(count);
+        self.fidl_events_ignored_count.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn count_unexpected_events(&self, count: u64) {
-        self.fidl_events_unexpected_count.add(count);
+        self.fidl_events_unexpected_count.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn count_converted_events(&self, count: u64) {
-        self.fidl_events_converted_count.add(count);
+        self.fidl_events_converted_count.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn count_generated_events(&self, count: u64, event_time_ns: i64) {
-        self.uapi_events_generated_count.add(count);
-        self.last_generated_uapi_event_timestamp_ns.set(event_time_ns);
+        self.uapi_events_generated_count.fetch_add(count, Ordering::Relaxed);
+        self.last_generated_uapi_event_timestamp_ns.store(event_time_ns, Ordering::Relaxed);
     }
 
     pub fn count_read_events(&self, count: u64, event_time_ns: i64) {
-        self.uapi_events_read_count.add(count);
-        self.last_read_uapi_event_timestamp_ns.set(event_time_ns);
+        self.uapi_events_read_count.fetch_add(count, Ordering::Relaxed);
+        self.last_read_uapi_event_timestamp_ns.store(event_time_ns, Ordering::Relaxed);
     }
 }
 
@@ -306,7 +345,7 @@ impl InputFile {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
             }),
-            inspect_status: node.map(|n| Arc::new(InputFileStatus::new(n))),
+            inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
     }
@@ -338,7 +377,7 @@ impl InputFile {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
             }),
-            inspect_status: node.map(|n| Arc::new(InputFileStatus::new(n))),
+            inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
     }
@@ -370,7 +409,7 @@ impl InputFile {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
             }),
-            inspect_status: node.map(|n| Arc::new(InputFileStatus::new(n))),
+            inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
     }
