@@ -58,6 +58,27 @@ func NewRustCrateReadme(path string) (*Readme, error) {
 		return nil, err
 	}
 	for _, item := range directoryContents {
+		if item.IsDir() && item.Name() == "LICENSES" {
+			licensesDir := filepath.Join(path, "LICENSES")
+			licensesContents, err := ioutil.ReadDir(licensesDir)
+			if err != nil {
+				return nil, err
+			}
+			for _, licenseItem := range licensesContents {
+				if licenseItem.IsDir() {
+					continue
+				}
+				licenseRelPath := filepath.Join("LICENSES", licenseItem.Name())
+				licenseUrl := fmt.Sprintf("%s/LICENSES/%s", url, licenseItem.Name())
+				b.addLicense(licenseRelPath, licenseUrl, singleLicenseFile)
+			}
+			continue
+		}
+
+		if item.IsDir() {
+			continue
+		}
+
 		lower := strings.ToLower(item.Name())
 		// In practice, all license files for rust projects are either named
 		// COPYING or LICENSE
