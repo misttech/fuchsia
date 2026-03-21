@@ -145,7 +145,9 @@ class Stack {
 
   // Requests that all frame information be updated. This can be used to (asynchronously) populate
   // the frames when a Stack has only partial frame information, and it can be used to force an
-  // update from the remote system in case anything changed.
+  // update from the remote system in case anything changed. Note that this will always invoke the
+  // unwinder to fetch the actual stack from the thread. Then we compare that list against our
+  // cached state (unless SyncFrameOptions::force_update is used) to update our internal state.
   //
   // Normally frame info is cached. Setting "force" will unconditionally clear all state. This will
   // invalidate any weak pointers into the stack and could change the frame indices in the
@@ -154,6 +156,11 @@ class Stack {
   // If the stack is destroyed before the frames can be synced, the callback will be issued with an
   // error.
   void SyncFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback);
+
+  // The same as above, but additionally checks |has_all_frames_| first. If true, unwinding is
+  // completely skipped and the callback is issued asynchronously (use
+  // SyncFrameOptions::force_update to override this).
+  void EnsureFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback);
 
   // Provides a new set of frames computed by a backtrace in the debug_agent. In normal operation
   // this is called by the Thread.

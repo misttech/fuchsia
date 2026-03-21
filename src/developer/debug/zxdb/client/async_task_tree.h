@@ -18,6 +18,7 @@
 namespace zxdb {
 
 class Err;
+class Stack;
 
 // Represents a logical tree of async tasks, possibly associated with an executor.
 //
@@ -50,7 +51,6 @@ class AsyncTaskTree {
   class Delegate {
    public:
     virtual ~Delegate() = default;
-
     // Requests that the AsyncTaskTree be provided with a new set of tasks. The implementation
     // should asynchronously request the task information, call AsyncTaskTree::SetTasks(), then
     // issue the callback to indicate completion. The optionally provided |frame| argument to the
@@ -72,7 +72,7 @@ class AsyncTaskTree {
 
   // Requests that all task information be updated. Automatically requests the full stack if it
   // isn't already present.
-  void Sync(Thread* thread, fit::callback<void(const Err&, const Frame* const frame)> callback);
+  void Sync(Stack& stack, fit::callback<void(const Err&, const Frame* frame)> callback);
 
   // Provides a new set of root tasks.
   void SetTasks(std::vector<std::unique_ptr<AsyncTask>> tasks);

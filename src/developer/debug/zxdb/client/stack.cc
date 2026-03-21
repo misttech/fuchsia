@@ -203,10 +203,20 @@ void Stack::SetHideAmbiguousInlineFrameCount(size_t hide_count) {
   hide_ambiguous_inline_frame_count_ = hide_count;
 }
 
-void Stack::SyncFrames(const SyncFrameOptions& options, fit::callback<void(const Err&)> callback) {
-  if (options.force_update)
+void Stack::SyncFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback) {
+  if (opts.force_update)
     force_update_in_progress_ = true;
-  delegate_->SyncFramesForStack(options, std::move(callback));
+  delegate_->SyncFramesForStack(opts, std::move(callback));
+}
+
+void Stack::EnsureFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback) {
+  if (!opts.force_update && has_all_frames()) {
+    debug::MessageLoop::Current()->PostTask(
+        FROM_HERE, [callback = std::move(callback)]() mutable { callback(Err()); });
+    return;
+  }
+
+  SyncFrames(opts, std::move(callback));
 }
 
 void Stack::SetFrames(debug_ipc::ThreadRecord::StackAmount amount,

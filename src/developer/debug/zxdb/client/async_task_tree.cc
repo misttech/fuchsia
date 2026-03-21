@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/client/async_task_tree.h"
 
+#include "src/developer/debug/zxdb/client/stack.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 
 namespace zxdb {
@@ -14,26 +15,20 @@ AsyncTaskTree::~AsyncTaskTree() = default;
 
 fxl::WeakPtr<AsyncTaskTree> AsyncTaskTree::GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
-void AsyncTaskTree::Sync(Thread* thread,
+void AsyncTaskTree::Sync(Stack& stack,
                          fit::callback<void(const Err&, const Frame* frame)> callback) {
-  FX_DCHECK(thread);
-  if (!thread->GetStack().has_all_frames()) {
-    thread->GetStack().SyncFrames(
-        {}, [weak_this = GetWeakPtr(), cb = std::move(callback)](const Err& err) mutable {
-          if (err.has_error()) {
-            cb(err, nullptr);
-            return;
-          } else if (!weak_this) {
-            cb(Err("AsyncTaskTree destroyed while fetching tasks."), nullptr);
-            return;
-          }
+  stack.EnsureFrames({},
+                     [weak_this = GetWeakPtr(), cb = std::move(callback)](const Err& err) mutable {
+                       if (err.has_error()) {
+                         cb(err, nullptr);
+                         return;
+                       } else if (!weak_this) {
+                         cb(Err("AsyncTaskTree destroyed during task fetching"), nullptr);
+                         return;
+                       }
 
-          weak_this->delegate_->SyncAsyncTasks(std::move(cb));
-        });
-  } else {
-    // Stack is already synchronized.
-    delegate_->SyncAsyncTasks(std::move(callback));
-  }
+                       weak_this->delegate_->SyncAsyncTasks(std::move(cb));
+                     });
 }
 
 void AsyncTaskTree::ForEach(fit::function<void(const TaskEntry&)> fn) const {

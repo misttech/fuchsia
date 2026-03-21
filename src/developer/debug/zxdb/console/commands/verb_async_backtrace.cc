@@ -975,19 +975,20 @@ void RunVerbAsyncBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_c
       cmd_context->Output(FormatAsyncTaskTree(tree, symbols, options,
                                               cmd.thread()->GetStack()[0]->GetEvalContext()));
     } else {
-      tree.Sync(cmd.thread(), [weak_thread = cmd.thread()->GetWeakPtr(), cmd_context, options,
-                               symbols](const Err& err, const Frame* frame) mutable {
-        if (err.has_error()) {
-          cmd_context->ReportError(err);
-        } else if (!weak_thread) {
-          cmd_context->ReportError(Err("Thread gone."));
-        } else if (!frame) {
-          cmd_context->ReportError(Err("Executor's stack frame is gone."));
-        } else {
-          cmd_context->Output(FormatAsyncTaskTree(weak_thread->GetAsyncTaskTree(), symbols, options,
-                                                  frame->GetEvalContext()));
-        }
-      });
+      tree.Sync(
+          cmd.thread()->GetStack(), [weak_thread = cmd.thread()->GetWeakPtr(), cmd_context, options,
+                                     symbols](const Err& err, const Frame* frame) mutable {
+            if (err.has_error()) {
+              cmd_context->ReportError(err);
+            } else if (!weak_thread) {
+              cmd_context->ReportError(Err("Thread gone."));
+            } else if (!frame) {
+              cmd_context->ReportError(Err("Executor's stack frame is gone."));
+            } else {
+              cmd_context->Output(FormatAsyncTaskTree(weak_thread->GetAsyncTaskTree(), symbols,
+                                                      options, frame->GetEvalContext()));
+            }
+          });
       return;
     }
   }

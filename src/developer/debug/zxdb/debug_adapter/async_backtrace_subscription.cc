@@ -146,7 +146,8 @@ void AsyncBacktraceSubscription::CollectAndReportAsyncBacktrace(Thread* thread) 
             [](dap::AsyncTaskNode* node) { return &node->children; }),
     });
   });
-  thread->GetAsyncTaskTree().Sync(thread, pending_backtraces_[thread->GetKoid()].callback());
+  thread->GetAsyncTaskTree().Sync(thread->GetStack(),
+                                  pending_backtraces_[thread->GetKoid()].callback());
 }
 
 }  // namespace zxdb
