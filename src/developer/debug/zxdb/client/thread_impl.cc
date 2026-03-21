@@ -713,8 +713,7 @@ void ThreadImpl::DidUpdateStackFrames() {
   }
 }
 
-void ThreadImpl::SyncAsyncTasks(AsyncTaskTree* tree,
-                                fit::callback<void(const Err&, const Frame* frame)> callback) {
+void ThreadImpl::SyncAsyncTasks(fit::callback<void(const Err&, const Frame* frame)> callback) {
   if (stack_.empty()) {
     return callback(Err("No stack frames available to fetch async task tree."), nullptr);
   }
@@ -727,7 +726,7 @@ void ThreadImpl::SyncAsyncTasks(AsyncTaskTree* tree,
     for (auto* provider : providers) {
       if (provider->CanHandle(frame)) {
         provider->GetTasks(
-            frame, [tree_ptr = tree->GetWeakPtr(), weak_frame = frame->GetWeakPtr(),
+            frame, [tree_ptr = async_task_tree_.GetWeakPtr(), weak_frame = frame->GetWeakPtr(),
                     cb = std::move(callback)](
                        const Err& err, std::vector<std::unique_ptr<AsyncTask>> tasks) mutable {
               if (err.has_error()) {

@@ -55,8 +55,7 @@ class MockAsyncTask : public AsyncTask {
 
 class MockAsyncTaskTreeDelegate : public AsyncTaskTree::Delegate {
  public:
-  void SyncAsyncTasks(AsyncTaskTree* tree,
-                      fit::callback<void(const Err&, const Frame* const)> callback) override {
+  void SyncAsyncTasks(fit::callback<void(const Err&, const Frame* const)> callback) override {
     // No-op for testing.
   }
 };

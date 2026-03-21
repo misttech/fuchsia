@@ -56,8 +56,7 @@ class AsyncTaskTree {
     // issue the callback to indicate completion. The optionally provided |frame| argument to the
     // callback is plumbed from callers of |AsyncTaskTree::Sync| so that they may use the correct
     // stack frame's EvalContext.
-    virtual void SyncAsyncTasks(AsyncTaskTree* tree,
-                                fit::callback<void(const Err&, const Frame* frame)> callback) = 0;
+    virtual void SyncAsyncTasks(fit::callback<void(const Err&, const Frame* frame)> callback) = 0;
   };
 
   explicit AsyncTaskTree(Delegate* delegate);

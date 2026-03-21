@@ -87,8 +87,7 @@ class ThreadImpl final : public Thread, public Stack::Delegate, public AsyncTask
   void DidUpdateStackFrames() override;
 
   // AsyncTaskTree::Delegate implementation.
-  void SyncAsyncTasks(AsyncTaskTree* tree,
-                      fit::callback<void(const Err&, const Frame* const frame)> callback) override;
+  void SyncAsyncTasks(fit::callback<void(const Err&, const Frame* frame)> callback) override;
 
   // Helper for when local unwinding using CFI fails (the local unwinder will only try to use CFI).
   // This function is called to perform the unwinding on the target which will have synchronous

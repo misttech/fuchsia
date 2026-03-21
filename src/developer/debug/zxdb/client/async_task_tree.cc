@@ -15,19 +15,24 @@ AsyncTaskTree::~AsyncTaskTree() = default;
 fxl::WeakPtr<AsyncTaskTree> AsyncTaskTree::GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
 void AsyncTaskTree::Sync(Thread* thread,
-                         fit::callback<void(const Err&, const Frame* const frame)> callback) {
+                         fit::callback<void(const Err&, const Frame* frame)> callback) {
   FX_DCHECK(thread);
   if (!thread->GetStack().has_all_frames()) {
-    thread->GetStack().SyncFrames({}, [this, cb = std::move(callback)](const Err& err) mutable {
-      if (err.has_error()) {
-        cb(err, nullptr);
-        return;
-      }
-      delegate_->SyncAsyncTasks(this, std::move(cb));
-    });
+    thread->GetStack().SyncFrames(
+        {}, [weak_this = GetWeakPtr(), cb = std::move(callback)](const Err& err) mutable {
+          if (err.has_error()) {
+            cb(err, nullptr);
+            return;
+          } else if (!weak_this) {
+            cb(Err("AsyncTaskTree destroyed while fetching tasks."), nullptr);
+            return;
+          }
+
+          weak_this->delegate_->SyncAsyncTasks(std::move(cb));
+        });
   } else {
     // Stack is already synchronized.
-    delegate_->SyncAsyncTasks(this, std::move(callback));
+    delegate_->SyncAsyncTasks(std::move(callback));
   }
 }
 

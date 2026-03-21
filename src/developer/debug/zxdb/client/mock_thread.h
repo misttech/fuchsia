@@ -79,8 +79,7 @@ class MockThread : public Thread, public Stack::Delegate, public AsyncTaskTree::
   void DidUpdateStackFrames() override {}
 
   // AsyncTaskTree::Delegate implementation.
-  void SyncAsyncTasks(AsyncTaskTree* tree,
-                      fit::callback<void(const Err&, const Frame* const frame)> callback) override {
+  void SyncAsyncTasks(fit::callback<void(const Err&, const Frame* frame)> callback) override {
     debug::MessageLoop::Current()->PostTask(
         FROM_HERE, [callback = std::move(callback)]() mutable { callback(Err(), nullptr); });
   }
