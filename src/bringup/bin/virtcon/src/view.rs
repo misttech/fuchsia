@@ -14,7 +14,6 @@ use carnelian::scene::scene::{Scene, SceneBuilder, SceneOrder};
 use carnelian::{
     AppSender, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey, input,
 };
-use fidl_fuchsia_hardware_display::VirtconMode;
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMarker, AdminSynchronousProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
@@ -180,12 +179,9 @@ pub struct VirtualConsoleViewAssistant {
     terminals: BTreeMap<u32, (Terminal, TerminalStatus)>,
     font_set: FontSet,
     active_terminal_id: u32,
-    virtcon_mode: VirtconMode,
-    desired_virtcon_mode: VirtconMode,
     owns_display: bool,
     active_pointer_id: Option<input::pointer::PointerId>,
     start_pointer_location: Point,
-    is_primary: bool,
     power_button_press_handler: RepeatedButtonPressHandler,
 }
 
@@ -206,7 +202,6 @@ impl VirtualConsoleViewAssistant {
         round_scene_corners: bool,
         font_size: f32,
         dpi: BTreeSet<u32>,
-        is_primary: bool,
     ) -> Result<ViewAssistantPtr, Error> {
         let cell_size = Size::new(8.0, 16.0);
         let tab_width = MIN_TAB_WIDTH;
@@ -232,8 +227,6 @@ impl VirtualConsoleViewAssistant {
             fallback_fonts.push(font);
         }
         let font_set = FontSet::new(font, bold_font, italic_font, bold_italic_font, fallback_fonts);
-        let virtcon_mode = VirtconMode::Forced; // We always start out in forced mode.
-        let desired_virtcon_mode = VirtconMode::Fallback;
         let owns_display = true;
         let active_pointer_id = None;
         let start_pointer_location = Point::zero();
@@ -253,12 +246,9 @@ impl VirtualConsoleViewAssistant {
             terminals,
             font_set,
             active_terminal_id,
-            virtcon_mode,
-            desired_virtcon_mode,
             owns_display,
             active_pointer_id,
             start_pointer_location,
-            is_primary,
             power_button_press_handler,
         }))
     }
@@ -267,7 +257,7 @@ impl VirtualConsoleViewAssistant {
     fn new_for_test() -> Result<ViewAssistantPtr, Error> {
         let app_sender = AppSender::new_for_testing_purposes_only();
         let dpi: BTreeSet<u32> = [160, 320, 480, 640].iter().cloned().collect();
-        Self::new(&app_sender, Default::default(), ColorScheme::default(), false, 14.0, dpi, true)
+        Self::new(&app_sender, Default::default(), ColorScheme::default(), false, 14.0, dpi)
     }
 
     // Resize all terminals for 'new_size'.
@@ -345,19 +335,6 @@ impl VirtualConsoleViewAssistant {
                 (format!("{}{}{} {}", left, *id, right, t.title()), fg)
             })
             .collect()
-    }
-
-    fn set_desired_virtcon_mode(&mut self, _context: &ViewAssistantContext) -> Result<(), Error> {
-        if self.desired_virtcon_mode != self.virtcon_mode {
-            self.virtcon_mode = self.desired_virtcon_mode;
-            // The primary view currently controls virtcon mode. More advanced
-            // coordination between views to determine virtcon mode can be added
-            // in the future when it becomes a requirement.
-            if self.is_primary {
-                self.app_sender.set_virtcon_mode(self.virtcon_mode);
-            }
-        }
-        Ok(())
     }
 
     fn set_active_terminal(&mut self, id: u32) {
@@ -495,26 +472,15 @@ impl VirtualConsoleViewAssistant {
 
     fn handle_device_control_keyboard_event(
         &mut self,
-        context: &mut ViewAssistantContext,
+        _context: &mut ViewAssistantContext,
         keyboard_event: &input::keyboard::Event,
     ) -> Result<bool, Error> {
         if keyboard_event.phase == input::keyboard::Phase::Pressed {
             if keyboard_event.code_point.is_none() {
-                const HID_USAGE_KEY_ESC: u32 = 0x29;
                 const HID_USAGE_KEY_DELETE: u32 = 0x4c;
 
                 let modifiers = &keyboard_event.modifiers;
                 match keyboard_event.hid_usage {
-                    HID_USAGE_KEY_ESC if modifiers.alt => {
-                        self.desired_virtcon_mode =
-                            if self.desired_virtcon_mode == VirtconMode::Fallback {
-                                VirtconMode::Forced
-                            } else {
-                                VirtconMode::Fallback
-                            };
-                        self.set_desired_virtcon_mode(context)?;
-                        return Ok(true);
-                    }
                     // Provides a CTRL-ALT-DEL reboot sequence.
                     HID_USAGE_KEY_DELETE if modifiers.control && modifiers.alt => {
                         self.trigger_shutdown(ShutdownAction::Reboot)?;
@@ -705,8 +671,6 @@ impl ViewAssistant for VirtualConsoleViewAssistant {
 
         scene_details.scene.render(render_context, ready_event, context)?;
         self.scene_details = Some(scene_details);
-
-        self.set_desired_virtcon_mode(context)?;
 
         Ok(())
     }
