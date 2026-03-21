@@ -263,6 +263,10 @@ impl TouchInjectorHandler {
     }
 
     fn clone_event(event: &fidl_ui_input::TouchButtonsEvent) -> fidl_ui_input::TouchButtonsEvent {
+        // each copy of the event should have a unique trace flow id.
+        let trace_flow_id = fuchsia_trace::Id::random();
+        fuchsia_trace::flow_begin!("input", "dispatch_touch_button_to_listeners", trace_flow_id);
+
         fidl_ui_input::TouchButtonsEvent {
             event_time: event.event_time,
             device_info: event.device_info.clone(),
@@ -270,6 +274,7 @@ impl TouchInjectorHandler {
             wake_lease: event.wake_lease.as_ref().map(|lease| {
                 lease.duplicate(zx::Rights::SAME_RIGHTS).expect("failed to duplicate event pair")
             }),
+            trace_flow_id: Some(trace_flow_id.into()),
             ..Default::default()
         }
     }
@@ -941,7 +946,10 @@ mod tests {
                 event,
                 responder,
             })) => {
-                assert_eq!(event, expected_touch_buttons_event);
+                assert_eq!(event.event_time, expected_touch_buttons_event.event_time);
+                assert_eq!(event.device_info, expected_touch_buttons_event.device_info);
+                assert_eq!(event.pressed_buttons, expected_touch_buttons_event.pressed_buttons);
+                assert!(event.trace_flow_id.is_some());
                 let _ = responder.send();
             }
         );
@@ -1011,7 +1019,10 @@ mod tests {
                 event,
                 responder,
             })) => {
-                assert_eq!(event, expected_touch_buttons_event);
+                assert_eq!(event.event_time, expected_touch_buttons_event.event_time);
+                assert_eq!(event.device_info, expected_touch_buttons_event.device_info);
+                assert_eq!(event.pressed_buttons, expected_touch_buttons_event.pressed_buttons);
+                assert!(event.trace_flow_id.is_some());
                 let _ = responder.send();
             }
         );
@@ -1021,7 +1032,10 @@ mod tests {
                 event,
                 responder,
             })) => {
-                assert_eq!(event, expected_touch_buttons_event);
+                assert_eq!(event.event_time, expected_touch_buttons_event.event_time);
+                assert_eq!(event.device_info, expected_touch_buttons_event.device_info);
+                assert_eq!(event.pressed_buttons, expected_touch_buttons_event.pressed_buttons);
+                assert!(event.trace_flow_id.is_some());
                 let _ = responder.send();
             }
         );
@@ -1421,6 +1435,23 @@ mod tests {
         assert_eq!(event.pressed_buttons, cloned_event.pressed_buttons);
         assert!(event.wake_lease.is_none());
         assert!(cloned_event.wake_lease.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn clone_event_creates_new_trace_id() {
+        let event = fidl_ui_input::TouchButtonsEvent {
+            event_time: Some(zx::MonotonicInstant::from_nanos(1)),
+            device_info: Some(fidl_ui_input::TouchDeviceInfo { id: Some(1), ..Default::default() }),
+            pressed_buttons: Some(vec![fidl_ui_input::TouchButton::Palm]),
+            trace_flow_id: Some(123),
+            ..Default::default()
+        };
+        let cloned_event = TouchInjectorHandler::clone_event(&event);
+        assert_eq!(event.event_time, cloned_event.event_time);
+        assert_eq!(event.device_info, cloned_event.device_info);
+        assert_eq!(event.pressed_buttons, cloned_event.pressed_buttons);
+        assert!(cloned_event.trace_flow_id.is_some());
+        assert_ne!(event.trace_flow_id, cloned_event.trace_flow_id);
     }
 
     #[fuchsia::test]

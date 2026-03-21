@@ -585,6 +585,13 @@ impl InputEventsRelay {
         trace_duration!("input", "starnix_process_touch_button_event");
         match button_event {
             fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } => {
+                if let Some(trace_flow_id) = event.trace_flow_id {
+                    trace_flow_end!(
+                        "input",
+                        "dispatch_touch_button_to_listeners",
+                        trace_flow_id.into()
+                    );
+                }
                 let batch = parse_fidl_touch_button_event(&event, touch_buttons_were_pressed);
 
                 let (converted_events, ignored_events, generated_events) = match batch.events.len()

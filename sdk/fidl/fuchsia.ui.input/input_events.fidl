@@ -243,4 +243,7 @@ type TouchButtonsEvent = resource table {
 
     /// Optional wake lease for power baton passing.
     4: wake_lease zx.Handle:EVENTPAIR;
+
+    /// Optional trace flow ID to connect the event flow.
+    5: trace_flow_id uint64;
 };
