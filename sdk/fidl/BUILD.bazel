@@ -4,9 +4,11 @@
 
 load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
 
-# The lists of FIDL libraries distributed in the partner IDK.
+# The lists of FIDL libraries with categories.
 # Targets must be included if and only if the `fidl()` target specifies:
-# `sdk_category = "partner"`.
+# `category = "<list category>"`.
+#
+# Only libraries in `_partner_idk_*` are distributed in the Fuchsia IDK.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
 
@@ -28,9 +30,19 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: end
 ]
 
+_prebuilt_fidl_libraries_targets_list = [
+    # keep-sorted: begin
+    # keep-sorted: end
+]
+
 _host_tool_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain",
+    # keep-sorted: end
+]
+
+_compat_test_fidl_libraries_targets_list = [
+    # keep-sorted: begin
     # keep-sorted: end
 ]
 
@@ -43,9 +55,11 @@ idk_molecule(
                        _partner_idk_unstable_fidl_libraries_targets_list)
     ],
 )
-# TODO(https://fxbug.dev/428285014): Ensure libraries in
-# `_host_tool_fidl_libraries_targets_list` are built and validated, possibly
-# using something like the GN target "compatibility_tests".
+# TODO(https://fxbug.dev/428285014): Ensure libraries in the following lists are built and
+# validated, possibly using something like the GN target "compatibility_tests":
+#   * `_prebuilt_fidl_libraries_targets_list`
+#   * `_host_tool_fidl_libraries_targets_list`
+#   * `_compat_test_fidl_libraries_targets_list`
 
 # TODO(https://fxbug.dev/428285014): Figure out how to base the allowlists on
 # the same lists used for the molecule. This will help ensure that libraries
@@ -76,10 +90,20 @@ filegroup(
 )
 
 filegroup(
+    name = "prebuilt_fidl_library_allowlist",
+    visibility = [],
+)
+
+filegroup(
     name = "host_tool_fidl_library_allowlist",
     visibility = [
         "//sdk/fidl/fuchsia.fdomain:__pkg__",
     ],
+)
+
+filegroup(
+    name = "compat_test_fidl_library_allowlist",
+    visibility = [],
 )
 
 filegroup(
