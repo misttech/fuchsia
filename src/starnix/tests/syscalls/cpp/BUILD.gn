@@ -256,6 +256,7 @@ syscall_tests_migrated_to_machina = [
   "loop_test",
   "membarrier_test",
   "memfd_test",
+  "netlink_test",
   "overlayfs_test",
   "pidfd_test",
   "pipe_test",
@@ -299,6 +300,11 @@ syscall_tests_migrated_to_machina = [
 
   # go/keep-sorted end
 ]
+
+if (target_cpu == "x64") {
+  # TODO(https://fxbug.dev/42059962): Join this with the normal inclusions.
+  syscall_tests_migrated_to_machina += [ "uinput_test" ]
+}
 
 all_test_names = syscall_tests
 foreach(test_def, syscall_tests_etc) {
