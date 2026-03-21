@@ -9,9 +9,6 @@ use chrono::LocalResult;
 use chrono::prelude::*;
 use fdio::service_connect;
 use fidl::endpoints::create_proxy;
-use fidl_fuchsia_hardware_hrtimer as ffhh;
-use fidl_fuchsia_hardware_rtc as frtc;
-use fidl_fuchsia_io as fio;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_fs::directory;
 use fuchsia_runtime::{UtcDuration, UtcInstant};
@@ -24,6 +21,10 @@ use std::rc::Rc;
 use thiserror::Error;
 use time_persistence::State;
 use time_pretty::format_duration;
+use {
+    fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_hardware_rtc as frtc,
+    fidl_fuchsia_io as fio,
+};
 #[cfg(test)]
 use {fuchsia_sync::Mutex, std::sync::Arc};
 
@@ -413,7 +414,13 @@ impl FakeRtc {
 
     /// Returns the last time set on this clock, or none if the clock has never been set.
     pub fn last_set(&self) -> Option<UtcInstant> {
-        self.last_set.lock().map(|time| time.clone())
+        self.last_set.lock().clone()
+    }
+
+    /// Resets the last set value to None.
+    pub fn reset_last_set(&self) {
+        let mut last_set = self.last_set.lock();
+        *last_set = None;
     }
 }
 

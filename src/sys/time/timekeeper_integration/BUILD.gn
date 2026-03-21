@@ -182,6 +182,10 @@ fuchsia_test_package("faketime-integration-test-root") {
     ]
     log_settings = {
       max_severity = "ERROR"
+
+      # TODO(b/438227765): Check why the time source gets restarted many times
+      # on test infra, but not locally.
+      parallel = 1
     }
   }
 }

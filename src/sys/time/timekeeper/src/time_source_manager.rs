@@ -113,6 +113,7 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PushSourceManager<D, M> {
                         debug!("Sampling will be reattempted until success.");
                         self.record_time_source_failure(TimeSourceError::LaunchFailed);
                         fasync::Timer::new(fasync::BootInstant::after(if self.delays_enabled {
+                            debug!("delaying sample because of stream failure.");
                             RESTART_DELAY
                         } else {
                             // Yield even if no delays are requested.  This ensures that this
@@ -130,13 +131,16 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PushSourceManager<D, M> {
             // back into self for next time if we're successful.
             match self.next_sample_from_stream(&mut event_stream).await {
                 Ok(sample) => {
+                    debug!("got push sample: {sample:?}");
                     self.event_stream.replace(event_stream);
                     return sample;
                 }
                 Err(failure) => {
+                    debug!("got failure: {failure:?}");
                     self.record_time_source_failure(failure);
                     self.last_status = None;
                     if self.delays_enabled {
+                        debug!("delaying sample because of failure.");
                         fasync::Timer::new(fasync::BootInstant::after(RESTART_DELAY)).await;
                     }
                 }
@@ -409,7 +413,9 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PullSourceManager<D, M> {
                                 RESTART_DELAY
                             } else {
                                 if !self.first_time_delay_logged {
-                                    warn!("First time pull sample is delayed, this may affect UTC-sensitive programs");
+                                    warn!(
+                                        "First time pull sample is delayed, this may affect UTC-sensitive programs"
+                                    );
                                     self.first_time_delay_logged = true;
                                 }
                                 RESTART_DELAY_INITIAL

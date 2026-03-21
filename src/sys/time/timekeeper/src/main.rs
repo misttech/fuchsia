@@ -29,16 +29,11 @@ use crate::time_source::{TimeSource, TimeSourceLauncher};
 use crate::time_source_manager::TimeSourceManager;
 use anyhow::{Context as _, Result};
 use chrono::prelude::*;
-use fidl_fuchsia_net_reachability as ffnr;
-use fidl_fuchsia_time as ftime;
-use fidl_fuchsia_time_alarms as fta;
-use fidl_fuchsia_time_external as ffte;
-use fidl_fuchsia_time_test as fftt;
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime::{UtcClock, UtcClockDetails, UtcClockUpdate, UtcDuration, UtcTimeline};
+use futures::SinkExt as _;
 use futures::channel::mpsc;
 use futures::future::{self, OptionFuture};
 use futures::stream::StreamExt as _;
@@ -46,10 +41,15 @@ use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use time_adjust::Command;
 use time_metrics_registry::TimeMetricDimensionExperiment;
 use zx::BootTimeline;
+use {
+    fidl_fuchsia_net_reachability as ffnr, fidl_fuchsia_time as ftime,
+    fidl_fuchsia_time_alarms as fta, fidl_fuchsia_time_external as ffte,
+    fidl_fuchsia_time_test as fftt, fuchsia_async as fasync,
+};
 
 type UtcTransform = time_util::Transform<BootTimeline, UtcTimeline>;
 
@@ -764,10 +764,11 @@ async fn maintain_utc<R: Rtc, D: 'static>(
         .into();
 
     let pte = config.power_topology_integration_enabled();
+    let cmd_send_oneshot = cmd_send.clone();
     let oneshot = Box::pin(async move {
         info!("power_topology_integration_enabled: {}", pte);
         if pte {
-            power_topology_integration::manage(cmd_send)
+            power_topology_integration::manage(cmd_send_oneshot)
                 .await
                 .context("(timekeeper will ignore this error and just turn the integration off)")
                 .map_err(|e| error!("power management integration: {:#}", e))
@@ -775,7 +776,25 @@ async fn maintain_utc<R: Rtc, D: 'static>(
                 .await;
         }
     });
-    future::join3(fut1, fut2, oneshot).await;
+
+    let cmd_send_periodic = cmd_send.clone();
+    let periodic_rtc_update = Box::pin(periodic_rtc_update(cmd_send_periodic));
+
+    future::join4(fut1, fut2, oneshot, periodic_rtc_update).await;
+}
+
+/// The interval at which periodic RTC updates are triggered.
+static PERIODIC_RTC_UPDATE_INTERVAL: LazyLock<zx::BootDuration> =
+    LazyLock::new(|| zx::BootDuration::from_minutes(1000000));
+
+async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>) {
+    loop {
+        fasync::Timer::new(fasync::BootInstant::after(*PERIODIC_RTC_UPDATE_INTERVAL)).await;
+        if let Err(e) = cmd_send.send(Command::UpdateRtc).await {
+            debug!("failed to send UpdateRtc command: {:?}", e);
+            break;
+        }
+    }
 }
 
 // Reexport test config creation to be used in other tests.
@@ -1402,6 +1421,32 @@ mod tests {
             Event::InitializeRtc { outcome: InitializeRtcOutcome::ReadNotAttempted, time: None },
             Event::TimeSourceStatus { role: Role::Primary, status: ftexternal::Status::Network },
         ]);
+    }
+
+    #[fuchsia::test]
+    fn test_periodic_rtc_update() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut fut = pin!(periodic_rtc_update(tx));
+
+        // Let it run until it stalls on the first timer.
+        assert!(executor.run_until_stalled(&mut fut).is_pending());
+
+        // Advance by 10 minutes.
+        executor.set_fake_time(fasync::MonotonicInstant::after(
+            zx::MonotonicDuration::from_minutes(PERIODIC_RTC_UPDATE_INTERVAL.into_minutes()),
+        ));
+        assert!(executor.wake_expired_timers());
+
+        // It should now send the command and then stall on the next timer.
+        assert!(executor.run_until_stalled(&mut fut).is_pending());
+
+        // Check if command was received.
+        let mut rx_fut = pin!(rx.next());
+        match executor.run_until_stalled(&mut rx_fut) {
+            Poll::Ready(Some(Command::UpdateRtc)) => {}
+            _ => panic!("Expected Command::UpdateRtc"),
+        }
     }
 
     #[fuchsia::test]

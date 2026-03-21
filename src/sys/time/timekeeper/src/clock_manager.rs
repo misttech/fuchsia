@@ -757,8 +757,21 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
 
                             responder.send(Ok(())).await.expect("infallible");
                         }
+                        Some(Command::UpdateRtc) => {
+                            if allow_timekeeper_to_update_rtc {
+                                debug!("UpdateRtc command received.");
+                                if let Some(ref estimator) = self.estimator {
+                                    let estimate_transform = estimator.transform();
+                                    self.update_rtc(&estimate_transform).await;
+                                }
+                                // We need to continue backing off sampling after this command.
+                                back_off_deadline = Mi::after(back_off_delay);
+                            } else {
+                                debug!("UpdateRtc command received and ignored.");
+                            }
+                        }
                         None => {
-                            debug!("unexpected `None`");
+                            debug!("unexpected `None` ");
                         }
                     }
                     // If a test signaler is present, acknowledge command receipt.
@@ -1527,6 +1540,61 @@ mod tests {
         // Wait until the signal propagates.
         let ret = executor.run_singlethreaded(async move { test_received.next().await });
         assert_eq!(Some(()), ret);
+    }
+
+    #[fuchsia::test]
+    fn verify_update_rtc_command() {
+        let mut executor = fasync::LocalExecutor::default();
+        let (sample_sender, mut sample_received) = mpsc::channel(1);
+        let (test_sender, mut test_received) = mpsc::channel(1);
+        let (mut s, r) = mpsc::channel(1);
+        let clock = create_clock();
+        let rtc = FakeRtc::valid(BACKSTOP_TIME);
+
+        let rtc_clone = rtc.clone();
+        let _clock_manager_task = fasync::Task::local(async move {
+            let diagnostics = Arc::new(FakeDiagnostics::new());
+            let config = make_test_config();
+            let b = new_state_for_test(true);
+
+            let reference = zx::BootInstant::get();
+            let clock_manager = create_clock_manager(
+                Arc::clone(&clock),
+                vec![Sample::new(
+                    UtcInstant::from_nanos((reference + OFFSET).into_nanos()),
+                    reference,
+                    STD_DEV,
+                )],
+                None,
+                Some(rtc_clone),
+                Arc::clone(&diagnostics),
+                config,
+                Some(test_sender),
+                Some(sample_sender),
+            );
+            // We need an estimator to be initialized for update_rtc to work.
+            // Samples in create_clock_manager aren't processed until maintain_clock starts.
+            clock_manager.maintain_clock(r, b).await;
+        });
+
+        // First, let it process the initial sample so estimator is initialized.
+        let ret = executor.run_singlethreaded(sample_received.next());
+        assert_eq!(Some(()), ret);
+
+        // Clear last set to verify it's set again.
+        rtc.reset_last_set();
+
+        // Signal that RTC update is needed.
+        let _signal_rtc_command = fasync::Task::local(async move {
+            s.send(Command::UpdateRtc).await.unwrap();
+        });
+
+        // Wait until the signal propagates.
+        let ret = executor.run_singlethreaded(test_received.next());
+        assert_eq!(Some(()), ret);
+
+        // Verify that RTC was set.
+        assert!(rtc.last_set().is_some());
     }
 
     #[fuchsia::test]

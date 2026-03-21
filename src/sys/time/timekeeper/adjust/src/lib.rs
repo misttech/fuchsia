@@ -32,6 +32,8 @@ pub enum Command {
         /// If true, we expect that attempting a HTTP request should work.
         http_available: bool,
     },
+    /// Periodic RTC update.
+    UpdateRtc,
 }
 
 /// Serves the "Adjust" FIDL API.
