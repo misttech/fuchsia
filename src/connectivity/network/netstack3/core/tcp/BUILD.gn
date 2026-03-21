@@ -42,6 +42,7 @@ rustc_library_with_features("netstack3-tcp") {
     "//src/lib/replace-with",
     "//third_party/rust_crates:arrayvec",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:cfg-if",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",

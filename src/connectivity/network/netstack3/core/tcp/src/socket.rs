@@ -4640,18 +4640,23 @@ fn destroy_socket<I, CC, BC>(
             }
         };
 
-        // There are a number of races that can happen with attempted socket
-        // destruction, but these should not be possible in tests because
-        // they're singlethreaded.
-        #[cfg(test)]
-        let primary = primary.unwrap_or_else(|| {
-            panic!("deferred destruction not allowed in tests. References={debug_refs:?}")
-        });
-        #[cfg(not(test))]
         let Some(primary) = primary else {
-            return;
+            // There are a number of races that can happen with attempted socket
+            // destruction, but these should not be possible in tests because
+            // they're single-threaded.
+            cfg_if::cfg_if! {
+                if #[cfg(test)] {
+                    panic!("deferred destruction not allowed in tests. \
+                            References={debug_refs:?}");
+                } else {
+                    return;
+                }
+            }
         };
 
+        // `primary` must be dropped while holding the sockets lock. Otherwise a
+        // race between two `destroy_socket` calls may result in
+        // `TcpSocketSetEntry::DeadOnArrival` being left in the socket set.
         let remove_result =
             BC::unwrap_or_notify_with_new_reference_notifier(primary, |state| state);
         match remove_result {
