@@ -5,8 +5,9 @@
 use crate::error::Result;
 use crate::pixel_format::PixelFormat;
 use fidl_fuchsia_hardware_display::{
-    BufferCollectionId as FidlBufferCollectionId, EventId as FidlEventId, ImageId as FidlImageId,
-    Info, LayerId as FidlLayerId,
+    BufferCollectionId as FidlBufferCollectionId, ClientPriority as FidlClientPriority,
+    EventId as FidlEventId, ImageId as FidlImageId, Info, LayerId as FidlLayerId,
+    TEST_UTILITY_CLIENT_PRIORITY_VALUE as FidlTestUtilityClientPriorityValue,
 };
 use fidl_fuchsia_hardware_display_types::{
     AlphaMode, Color as FidlColor, DisplayId as FidlDisplayId, INVALID_DISP_ID,
@@ -129,6 +130,26 @@ impl From<BufferCollectionId> for FidlBufferCollectionId {
         FidlBufferCollectionId { value: buffer_collection_id.0 }
     }
 }
+
+/// Strongly typed wrapper around a client priority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClientPriority(pub u32);
+
+impl From<FidlClientPriority> for ClientPriority {
+    fn from(fidl_client_priority: FidlClientPriority) -> Self {
+        ClientPriority(fidl_client_priority.value)
+    }
+}
+
+impl From<ClientPriority> for FidlClientPriority {
+    fn from(client_priority: ClientPriority) -> Self {
+        FidlClientPriority { value: client_priority.0 }
+    }
+}
+
+/// The priority level used by display test utilities.
+pub const TEST_UTILITY_CLIENT_PRIORITY: ClientPriority =
+    ClientPriority(FidlTestUtilityClientPriorityValue);
 
 /// Enhances the `fuchsia.hardware.display.Info` FIDL struct.
 #[derive(Clone, Debug)]

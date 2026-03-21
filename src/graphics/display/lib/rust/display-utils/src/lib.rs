@@ -30,5 +30,5 @@ pub use config::*;
 pub use controller::{Coordinator, VsyncEvent};
 pub use error::*;
 pub use image::*;
-pub use pixel_format::{get_bytes_per_pixel, PixelFormat};
+pub use pixel_format::{PixelFormat, get_bytes_per_pixel};
 pub use types::*;

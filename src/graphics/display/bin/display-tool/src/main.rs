@@ -4,7 +4,7 @@
 
 use anyhow::Error;
 use argh::FromArgs;
-use display_utils::{Coordinator, DisplayId, PixelFormat};
+use display_utils::{Coordinator, DisplayId, PixelFormat, TEST_UTILITY_CLIENT_PRIORITY};
 use fuchsia_async as fasync;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::select;
@@ -132,7 +132,7 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
     let args: Args = argh::from_env();
-    let coordinator = Coordinator::init().await?;
+    let coordinator = Coordinator::init(TEST_UTILITY_CLIENT_PRIORITY).await?;
 
     let fidl_events_future = coordinator.handle_events().err_into();
     let cmd_future = async {

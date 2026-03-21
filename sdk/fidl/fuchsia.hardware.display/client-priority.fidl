@@ -26,3 +26,6 @@ const VIRTCON_CLIENT_PRIORITY_VALUE ClientPriorityValue = 100;
 
 /// Statically assigned priority level for the primary client.
 const PRIMARY_CLIENT_PRIORITY_VALUE ClientPriorityValue = 200;
+
+/// Statically assigned priority level for test utilities.
+const TEST_UTILITY_CLIENT_PRIORITY_VALUE ClientPriorityValue = 300;

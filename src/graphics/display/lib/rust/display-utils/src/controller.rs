@@ -22,7 +22,9 @@ use zx::{self as zx, HandleBased};
 use crate::INVALID_EVENT_ID;
 use crate::config::{DisplayConfig, LayerConfig};
 use crate::error::{ConfigError, Error, Result};
-use crate::types::{BufferCollectionId, DisplayId, DisplayInfo, Event, EventId, ImageId, LayerId};
+use crate::types::{
+    BufferCollectionId, ClientPriority, DisplayId, DisplayInfo, Event, EventId, ImageId, LayerId,
+};
 
 const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
@@ -79,7 +81,7 @@ impl Coordinator {
     // TODO(https://fxbug.dev/42168593): This will currently result in an error if no displays are present on
     // the system (or if one is not attached within `TIMEOUT`). It wouldn't be neceesary to rely on
     // a timeout if the display driver sent en event with no displays.
-    pub async fn init() -> Result<Coordinator> {
+    pub async fn init(client_priority: ClientPriority) -> Result<Coordinator> {
         let service_proxy = Service::open(display::ServiceMarker)
             .context("failed to open display Service")
             .map_err(Error::DeviceConnectionError)?
@@ -103,9 +105,7 @@ impl Coordinator {
         let payload = display::ProviderOpenCoordinatorRequest {
             coordinator: Some(coordinator_server_end),
             coordinator_listener: Some(coordinator_listener_client_end),
-            priority: Some(display::ClientPriority {
-                value: display::PRIMARY_CLIENT_PRIORITY_VALUE,
-            }),
+            priority: Some(client_priority.into()),
             __source_breaking: fidl::marker::SourceBreaking,
         };
         let () = provider_proxy.open_coordinator(payload).await?.map_err(zx::Status::from_raw)?;
@@ -437,11 +437,13 @@ mod tests {
     use anyhow::{Context, Result, format_err};
     use assert_matches::assert_matches;
     use display_mocks::{MockCoordinator, create_proxy_and_mock};
-    use fidl_fuchsia_hardware_display as display;
-    use fidl_fuchsia_hardware_display_types as display_types;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
     use futures::{FutureExt, StreamExt, pin_mut, select};
+    use {
+        fidl_fuchsia_hardware_display as display,
+        fidl_fuchsia_hardware_display_types as display_types,
+    };
 
     async fn init_with_proxy_and_listener_requests(
         coordinator_proxy: display::CoordinatorProxy,
@@ -469,7 +471,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_init_fails_with_no_device_dir() {
-        let result = Coordinator::init().await;
+        let result = Coordinator::init(crate::types::ClientPriority(300)).await;
         assert_matches!(result, Err(_));
     }
 
