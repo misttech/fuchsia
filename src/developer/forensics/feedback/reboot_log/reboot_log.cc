@@ -135,6 +135,12 @@ void ExtractZirconRebootInfo(const std::string& path, HwShutdownReason* out_hw_r
     return;
   }
 
+  // From //zircon/kernel/platform/mapped_crashlog.cc
+  if (lines[1] ==
+      "WARNING - Could not recover crashlog from RAM. Only HW reboot reason is available.") {
+    return;
+  }
+
   *out_zircon_reason = ExtractZirconShutdownReason(lines[1]);
   if (*out_zircon_reason == ZirconShutdownReason::kNotParseable) {
     return;

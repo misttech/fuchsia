@@ -189,6 +189,13 @@ INSTANTIATE_TEST_SUITE_P(
             "COLD",
         },
         {
+            "ColdWithHwReasonAndWarning",
+            "HW REBOOT REASON (COLD BOOT)\n\n"
+            "WARNING - Could not recover crashlog from RAM. Only HW reboot reason is available.",
+            std::nullopt,
+            "COLD",
+        },
+        {
             "KernelPanic",
             "HW REBOOT REASON (UNKNOWN)\n\n"
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
