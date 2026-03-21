@@ -8,15 +8,26 @@
 # features for the test to pass, or a temporary exclusion because a
 # bug is causing the test to fail too often.
 
+# These tests run as a blocking tryjob against every single CL anywhere
+# in the tree. Therefore, we need to be extremely conservative with
+# the tests we choose to run here, ensuring they give us sufficient
+# signal for the amount of testbed load they'll require.
+# Consider instead putting your test in `tests_for_wlan_cq`
 wlancfg_tests_for_general_cq = [
   "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
 ]
 
-# Only tests which do not interact with an AP or SoftAP can be run
-# without a shield box. This distinction only matters for general
-# CQ, where capacity is lower.
+# Only tests which do not interact with a AP or SoftAP can be run
+# without a shield box. These tests can run against any DUT in
+# the infra pool of devices, which are much less capacity-limited
+# than the WLAN-specific shielded testbeds.
 wlancfg_tests_for_general_cq_no_shield_box = []
 
+# These tests run in blocking CI (~once per hour) as well as a blocking
+# tryjob on any CL with "wlan" in a file path. We should strive for a
+# representative sample of tests here for all our functionality, but
+# we should optimize for maximum bang for our buck (e.g. add a
+# reboot test here, but only for wpa2, not for every single security type).
 wlancfg_tests_for_wlan_cq = [
   "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
   "//src/connectivity/wlan/tests/wlancfg:suggest_ap_mac_address_test",
@@ -25,4 +36,8 @@ wlancfg_tests_for_wlan_cq = [
   "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
 ]
 
+# If you're writing a new test, add it to FYI first until it has >200
+# passing runs. Tests in FYI don't cause any alerting if they break,
+# so having the test here doesn't provide much of a safety net. Consider
+# moving it to one of the CQ groups above.
 wlancfg_tests_for_fyi = []
