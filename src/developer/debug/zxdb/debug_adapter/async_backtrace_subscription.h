@@ -17,6 +17,10 @@
 namespace dap {
 
 struct AsyncTaskNode {
+  // `id` is omitted (nullopt) if the task doesn't have an ID (i.e., `GetId()` == 0).
+  // TODO(https://fxbug.dev/494811949): Make this field required once `AsyncTask` can generate
+  // synthetic stable IDs when the real ones aren't available.
+  optional<string> id;
   string name;
   optional<string> file;
   optional<integer> line;

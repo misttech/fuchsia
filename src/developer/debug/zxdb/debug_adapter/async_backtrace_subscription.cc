@@ -13,12 +13,14 @@
 #include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
 #include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/common/string_util.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 
 namespace dap {
 
-DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncTaskNode, "", DAP_FIELD(name, "name"), DAP_FIELD(file, "file"),
-                              DAP_FIELD(line, "line"), DAP_FIELD(children, "children"))
+DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncTaskNode, "", DAP_FIELD(id, "id"), DAP_FIELD(name, "name"),
+                              DAP_FIELD(file, "file"), DAP_FIELD(line, "line"),
+                              DAP_FIELD(children, "children"))
 
 DAP_IMPLEMENT_STRUCT_TYPEINFO(AsyncBacktraceUpdate, "vscode-fuchsia.updateAsyncBacktrace",
                               DAP_FIELD(id, "id"), DAP_FIELD(name, "name"),
@@ -126,6 +128,9 @@ void AsyncBacktraceSubscription::CollectAndReportAsyncBacktrace(Thread* thread) 
         .name = weak_thread->GetName(),
         .tasks = weak_thread->GetAsyncTaskTree().Map<dap::AsyncTaskNode>(
             [&file_provider](const zxdb::AsyncTask& task, dap::AsyncTaskNode* node) {
+              if (uint64_t task_id = task.GetId(); task_id != 0) {
+                node->id = zxdb::to_hex_string(task_id);
+              }
               node->name = task.GetIdentifier().GetFullName();
               const zxdb::Location& location = task.GetLocation();
               if (location.file_line().is_valid()) {

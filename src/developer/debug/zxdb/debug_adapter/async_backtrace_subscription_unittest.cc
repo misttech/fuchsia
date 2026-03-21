@@ -39,10 +39,10 @@ class AsyncBacktraceSubscriptionTest : public DebugAdapterContextTest {
 
 class FakeAsyncTask : public AsyncTask {
  public:
-  FakeAsyncTask(Session* session, std::string name, Location loc = Location())
-      : AsyncTask(session), name_(std::move(name)), loc_(std::move(loc)) {}
+  FakeAsyncTask(Session* session, uint64_t id, std::string name, Location loc = Location())
+      : AsyncTask(session), id_(id), name_(std::move(name)), loc_(std::move(loc)) {}
 
-  uint64_t GetId() const override { return 1; }
+  uint64_t GetId() const override { return id_; }
   Type GetType() const override { return Type::kFuture; }
   const Location& GetLocation() const override { return loc_; }
   const Identifier& GetIdentifier() const override {
@@ -64,6 +64,7 @@ class FakeAsyncTask : public AsyncTask {
   void AddChild(std::unique_ptr<FakeAsyncTask> child) { children_.push_back(std::move(child)); }
 
  private:
+  uint64_t id_;
   std::string name_;
   std::vector<std::unique_ptr<FakeAsyncTask>> children_;
   Location loc_;
@@ -83,11 +84,13 @@ class FakeAsyncTaskProvider : public AsyncTaskProvider {
       fit::callback<void(const Err&, std::vector<std::unique_ptr<AsyncTask>>)> cb) override {
     std::vector<std::unique_ptr<AsyncTask>> tasks;
     Location loc(0x1234, FileLine(fake_file_path_, 42), 0, SymbolContext::ForRelativeAddresses());
-    auto root = std::make_unique<FakeAsyncTask>(frame->session(), "root", std::move(loc));
-    auto child = std::make_unique<FakeAsyncTask>(frame->session(), "child");
-    child->AddChild(std::make_unique<FakeAsyncTask>(frame->session(), "grandchild"));
+    auto root = std::make_unique<FakeAsyncTask>(frame->session(), 1, "root", std::move(loc));
+    auto child = std::make_unique<FakeAsyncTask>(frame->session(), 2, "child");
+    child->AddChild(std::make_unique<FakeAsyncTask>(frame->session(), 3, "grandchild"));
     root->AddChild(std::move(child));
     tasks.push_back(std::move(root));
+    auto zero_id_task = std::make_unique<FakeAsyncTask>(frame->session(), 0, "zero_id_task");
+    tasks.push_back(std::move(zero_id_task));
     cb(Err(), std::move(tasks));
   }
 
@@ -173,8 +176,13 @@ TEST_F(AsyncBacktraceSubscriptionTest, SingleThreadLifecycle) {
   EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
   EXPECT_EQ(updates[0].name, "test 19028730");
   EXPECT_TRUE(updates[0].tasks.has_value());
-  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value().size(), 2u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x1");
   EXPECT_EQ(updates[0].tasks.value()[0].name, "root");
+
+  EXPECT_FALSE(updates[0].tasks.value()[1].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[1].name, "zero_id_task");
 
   updates.clear();
   thread->Continue(false);
@@ -258,13 +266,22 @@ TEST_F(AsyncBacktraceSubscriptionTest, NestedAsyncTaskStructure) {
   EXPECT_EQ(updates[0].id, static_cast<double>(kThreadKoid));
   EXPECT_EQ(updates[0].name, "test 19028730");
   EXPECT_TRUE(updates[0].tasks.has_value());
-  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  EXPECT_EQ(updates[0].tasks.value().size(), 2u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x1");
   EXPECT_EQ(updates[0].tasks.value()[0].name, "root");
   EXPECT_EQ(updates[0].tasks.value()[0].children.size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].children[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].id.value(), "0x2");
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].name, "child");
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children.size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].children[0].children[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].id.value(), "0x3");
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].name, "grandchild");
   EXPECT_EQ(updates[0].tasks.value()[0].children[0].children[0].children.size(), 0u);
+
+  EXPECT_FALSE(updates[0].tasks.value()[1].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[1].name, "zero_id_task");
 
   // Verify that the file and line fields are correctly handled.
   EXPECT_TRUE(updates[0].tasks.value()[0].file.has_value());
@@ -321,7 +338,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {
   // Execute the first callback. It shouldn't emit an update because it was cancelled.
   auto cb1 = std::move(provider_ptr->callbacks_[0]);
   std::vector<std::unique_ptr<AsyncTask>> tasks1;
-  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, "task_1"));
+  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, 10, "task_1"));
   cb1.cb(Err(), std::move(tasks1));
 
   context().OnStreamReadable();
@@ -333,7 +350,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {
   // Execute the second callback. It should emit an update.
   auto cb2 = std::move(provider_ptr->callbacks_[1]);
   std::vector<std::unique_ptr<AsyncTask>> tasks2;
-  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, "task_2"));
+  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, 11, "task_2"));
   cb2.cb(Err(), std::move(tasks2));
 
   context().OnStreamReadable();
@@ -343,6 +360,8 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {
   ASSERT_EQ(updates.size(), 1u);
   EXPECT_TRUE(updates[0].tasks.has_value());
   EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0xb");
   EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
 }
 
@@ -399,7 +418,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   // `ThreadObserver::OnThreadStopped` event is for a different thread.
   auto cb1 = std::move(provider_ptr->callbacks_[0]);
   std::vector<std::unique_ptr<AsyncTask>> tasks1;
-  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, "task_1"));
+  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, 101, "task_1"));
   cb1.cb(Err(), std::move(tasks1));
 
   context().OnStreamReadable();
@@ -409,6 +428,8 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   ASSERT_EQ(updates.size(), 1u);
   EXPECT_TRUE(updates[0].tasks.has_value());
   EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x65");
   EXPECT_EQ(updates[0].tasks.value()[0].name, "task_1");
 
   updates.clear();
@@ -416,7 +437,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   // Execute the second callback and expect an update.
   auto cb2 = std::move(provider_ptr->callbacks_[1]);
   std::vector<std::unique_ptr<AsyncTask>> tasks2;
-  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, "task_2"));
+  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, 102, "task_2"));
   cb2.cb(Err(), std::move(tasks2));
 
   context().OnStreamReadable();
@@ -426,6 +447,8 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   ASSERT_EQ(updates.size(), 1u);
   EXPECT_TRUE(updates[0].tasks.has_value());
   EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x66");
   EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
 }
 
