@@ -90,5 +90,5 @@ Run the following command and ensure it returns successfully, fix any build
 errors that arise:
 
 ```bash
-fx set fuchsia.x64 --with '//bundles/buildbot/core' --with '//bundles/tests' && fx build
+fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests' && fx build
 ```
