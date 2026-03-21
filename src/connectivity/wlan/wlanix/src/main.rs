@@ -6,22 +6,14 @@ use crate::security::Credential;
 use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_power_system as fsystem;
-use fidl_fuchsia_wlan_device_service as fidl_device_service;
-use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
-use fidl_fuchsia_wlan_internal as fidl_internal;
-use fidl_fuchsia_wlan_sme as fidl_sme;
-use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
     WifiLegacyHalResetTxPowerScenarioResponder, WifiLegacyHalSelectTxPowerScenarioRequest,
     WifiLegacyHalSelectTxPowerScenarioResponder, WifiLegacyHalStatus,
 };
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
-use fuchsia_trace_provider as trace_provider;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
@@ -33,7 +25,12 @@ use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
-
+use {
+    fidl_fuchsia_power_system as fsystem, fidl_fuchsia_wlan_device_service as fidl_device_service,
+    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
+    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
+    fuchsia_async as fasync, fuchsia_trace_provider as trace_provider,
+};
 mod bss_scorer;
 mod default_drop;
 mod ifaces;
@@ -424,8 +421,41 @@ async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
         }
         fidl_wlanix::WifiChipRequest::TriggerSubsystemRestart { responder } => {
             info!("fidl_wlanix::WifiChipRequest::TriggerSubsystemRestart");
-            telemetry_sender.send(TelemetryEvent::RecoveryEvent { result: Ok(()) });
-            responder.send(Ok(())).context("send TriggerSubsystemRestart response")?;
+
+            // Request a PHY reset for the specified ID.
+            let result = iface_manager.reset_phy(chip_id).await;
+
+            // Notify telemetry that the reset has been triggered.
+            telemetry_sender.send(TelemetryEvent::RecoveryEvent {
+                result: if result.is_ok() { Ok(()) } else { Err(()) },
+            });
+
+            // Notify listeners of the reset if it was successful.
+            if result.is_ok() {
+                let mut state_lock = state.lock();
+                maybe_run_callback(
+                    "WifiEventCallback::OnSubsystemRestart",
+                    |callback_proxy| {
+                        callback_proxy.on_subsystem_restart(
+                            fidl_wlanix::WifiEventCallbackOnSubsystemRestartRequest {
+                                status: Some(zx::Status::OK.into_raw()),
+                                ..Default::default()
+                            },
+                        )
+                    },
+                    &mut state_lock.callback,
+                );
+            } else {
+                warn!("Reset failed on PHY {}", chip_id);
+            }
+
+            // Send the result of the reset to the caller.
+            responder
+                .send(result.map_err(|e| match e.downcast_ref::<zx::Status>() {
+                    Some(status) => status.into_raw(),
+                    None => zx::Status::INTERNAL.into_raw(),
+                }))
+                .context("send TriggerSubsystemRestart response")?;
         }
         fidl_wlanix::WifiChipRequest::ResetTxPowerScenario { responder } => {
             if let Err(e) = iface_manager.reset_tx_power_scenario(chip_id).await {
@@ -2612,21 +2642,23 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ifaces::test_utils::{
+        ClientIfaceCall, FAKE_IFACE_RESPONSE, IfaceManagerCall, TestIfaceManager,
+    };
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
-    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
-    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_wlanix::Nl80211Message;
     use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
     use ieee80211::Ssid;
-    use ifaces::test_utils::{ClientIfaceCall, FAKE_IFACE_RESPONSE, TestIfaceManager};
     use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
-
+    use {
+        fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
+    };
     const CHIP_ID: u32 = 1;
     const FAKE_IFACE_NAME: &str = "fake-iface-name";
 
@@ -3244,18 +3276,97 @@ mod tests {
     fn test_wifi_chip_trigger_subsystem_restart() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
+        // Register a callback to be notified of the reset.
+        let (callback_client, mut callback_stream) =
+            create_request_stream::<fidl_wlanix::WifiEventCallbackMarker>();
+        assert_matches!(
+            test_helper.wifi_proxy.register_event_callback(
+                fidl_wlanix::WifiRegisterEventCallbackRequest {
+                    callback: Some(callback_client),
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Trigger a PHY reset.
         let request_fut = test_helper.wifi_chip_proxy.trigger_subsystem_restart();
         let mut request_fut = pin!(request_fut);
         assert_matches!(test_helper.exec.run_until_stalled(&mut request_fut), Poll::Pending);
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Verify the reset was successful.
         let response = assert_matches!(
             test_helper.exec.run_until_stalled(&mut request_fut),
             Poll::Ready(Ok(response)) => response);
         assert_matches!(response, Ok(()));
 
+        // Verify that the telemetry event was sent.
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::RecoveryEvent { result: Ok(()) }))
+        );
+
+        // Verify that the PHY reset was called.
+        let iface_calls = test_helper.iface_manager.calls.lock();
+        assert_matches!(iface_calls.last().unwrap(), IfaceManagerCall::ResetPhy(id) => assert_eq!(*id, CHIP_ID as u16));
+
+        // Verify that OnSubsystemRestart callback was called.
+        let callback_event = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut callback_stream.next()),
+            Poll::Ready(Some(Ok(req))) => req
+        );
+        assert_matches!(
+            callback_event,
+            fidl_wlanix::WifiEventCallbackRequest::OnSubsystemRestart { payload, .. } => {
+                assert_eq!(payload.status, Some(zx::sys::ZX_OK));
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_chip_trigger_subsystem_restart_failure() {
+        // Setup the test to fail the PHY reset request.
+        let (mut test_helper, mut test_fut) =
+            setup_wifi_test_with_iface_manager(TestIfaceManager::new().mock_reset_phy_failure());
+
+        // Register a callback to be notified of the reset.
+        let (callback_client, mut callback_stream) =
+            create_request_stream::<fidl_wlanix::WifiEventCallbackMarker>();
+        assert_matches!(
+            test_helper.wifi_proxy.register_event_callback(
+                fidl_wlanix::WifiRegisterEventCallbackRequest {
+                    callback: Some(callback_client),
+                    ..Default::default()
+                }
+            ),
+            Ok(())
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Trigger a PHY reset.
+        let request_fut = test_helper.wifi_chip_proxy.trigger_subsystem_restart();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Verify the caller is notified of the error.
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(response)) => response);
+        assert_matches!(response, Err(status) if status == zx::Status::INTERNAL.into_raw());
+
+        // Verify that the telemetry event was sent.
+        assert_matches!(
+            test_helper.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::RecoveryEvent { result: Err(()) }))
+        );
+
+        // Verify that OnSubsystemRestart callback was not called.
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut callback_stream.next()),
+            Poll::Pending
         );
     }
 
