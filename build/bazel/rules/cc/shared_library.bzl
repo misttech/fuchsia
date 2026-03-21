@@ -2,10 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@rules_cc//cc:defs.bzl", "cc_import")
+load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 """Shared library rules for Fuchsia."""
+
+def _to_clang_cpu(cpu):
+    if cpu == "arm64":
+        return "aarch64"
+    elif cpu == "riscv64":
+        return "riscv64"
+    elif cpu == "x64":
+        return "x86_64"
+    else:
+        fail("Unknown CPU: %s" % cpu)
 
 def _get_stripped_ifs_file_impl(ctx):
     ifs_file = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].stripped_ifs_file
@@ -50,7 +62,7 @@ def _generate_link_stubs_for_shared_library_impl(ctx):
         executable = ctx.executable._llvm_ifs,
         arguments = [args],
         mnemonic = "LlvmIfs",
-        progress_message = "Generating link stubs for %{label}",
+        progress_message = "Generating link stub and IFS file for %{label}",
     )
 
     strip_args = ctx.actions.args()
@@ -181,6 +193,7 @@ generate_companion_files_for_shared_library = macro(
         ),
         "testonly": attr.bool(
             doc = "Standard meaning.",
+            default = False,
             configurable = False,
         ),
     },
@@ -261,6 +274,114 @@ file (usually named `[lib]${library_name}.ifs`), run the build, then run the
             doc = "Usual Bazel meaning.",
             default = False,
             configurable = False,
+        ),
+    },
+)
+
+def _link_stub_from_ifs_file_impl(ctx):
+    ifs_file = ctx.file.ifs_file
+    link_stub_file_name = ctx.attr.stub_name + ".so" if ctx.attr.stub_name else (
+        ifs_file.basename.removesuffix(ifs_file.extension) + "so"
+    )
+
+    link_stub_output = ctx.actions.declare_file(link_stub_file_name)
+
+    current_cpu = ctx.attr._current_platform[CurrentPlatformInfo].cpu
+    clang_cpu = _to_clang_cpu(current_cpu)
+
+    args = ctx.actions.args()
+    args.add("--input-format=IFS")
+    args.add("--target=%s-fuchsia" % clang_cpu)
+    args.add("--write-if-changed")
+    args.add("--output-elf", link_stub_output)
+    args.add(ifs_file)
+
+    ctx.actions.run(
+        inputs = [ifs_file],
+        outputs = [link_stub_output],
+        executable = ctx.executable._llvm_ifs,
+        arguments = [args],
+        mnemonic = "LlvmIfs",
+        progress_message = "Generating link stub for %{label}",
+    )
+
+    return [DefaultInfo(files = depset([link_stub_output]))]
+
+link_stub_from_ifs_file = rule(
+    doc = "Generates link stub `.so` file from an `.ifs` file." +
+          "The stub file will have the same base name as the `.ifs` file." +
+          "The file is not usable with Bazel cc rules/macros." +
+          "For that, use cc_link_stub_from_ifs_file().",
+    implementation = _link_stub_from_ifs_file_impl,
+    attrs = {
+        "ifs_file": attr.label(
+            doc = "The `.ifs` file from which to create the link stub.",
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "stub_name": attr.string(
+            doc = "The base name of the stub file. `.so` will be appended." +
+                  "If not specified, the base name of the `.ifs` file will be used.",
+            mandatory = False,
+        ),
+        "_llvm_ifs": attr.label(
+            default = "@prebuilt_clang//:bin/llvm-ifs",
+            executable = True,
+            allow_single_file = True,
+            cfg = "exec",
+        ),
+        "_current_platform": attr.label(
+            providers = [CurrentPlatformInfo],
+            default = "@//build/bazel:current_platform",
+        ),
+    },
+)
+
+def _cc_link_stub_from_ifs_file_impl(
+        name,
+        deps,
+        system_provided,
+        target_compatible_with,
+        testonly,
+        visibility,
+        **kwargs):
+    stub_rule_name = name + ".link_stub"
+    link_stub_from_ifs_file(
+        name = stub_rule_name,
+        target_compatible_with = target_compatible_with,
+        testonly = testonly,
+        visibility = visibility,
+        **kwargs
+    )
+
+    cc_import(
+        name = name,
+        deps = deps,
+        shared_library = stub_rule_name if not system_provided else None,
+        interface_library = stub_rule_name if system_provided else None,
+        system_provided = system_provided,
+        target_compatible_with = target_compatible_with,
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+cc_link_stub_from_ifs_file = macro(
+    doc = "Generates link stub `.so` file from an `.ifs` file and imports it for use in cc rules." +
+          "The stub file will have the same base name as the `.ifs` file.",
+    inherit_attrs = link_stub_from_ifs_file,
+    implementation = _cc_link_stub_from_ifs_file_impl,
+    attrs = {
+        "deps": attr.label_list(
+            doc = "Standard meaning.",
+            default = [],
+        ),
+        "system_provided": attr.bool(
+            doc = "See `cc_import()`.",
+            default = False,
+        ),
+        "target_compatible_with": attr.label_list(
+            doc = "Standard meaning.",
+            default = [],
         ),
     },
 )

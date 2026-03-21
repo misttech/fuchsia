@@ -2,27 +2,50 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Defines the zircon library for the current configuration."""
+
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_noop_atom")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:shared_library.bzl", "cc_link_stub_from_ifs_file")
+
+# Note: The definitions here are less complex than in the BUILD.gn, which
+# supports kernel-specific requirements that do not apply to the Bazel graph.
 
 # LINT.IfChange
 
-# The vDSO ABI is provided at link time by a stub.  The actual runtime image
-# comes from the kernel and is not part of the build or SDK for userland at
-# all.  The kernel's internal build of the vDSO verifies that the ABI matches.
-# TODO(https://fxbug.dev/457449319): Implement using ifs_shared_library() when
-# available and use that for Fuchsia and these two for host.
-# TODO(https://fxbug.dev/456186319): When adding support for building
-# Zircon, only use the ifs_shared_library() implementation when
-# `is_fuchsia && toolchain_base_environment != "kernel"`.
+# Provides the proper definition for the zircon library for the current configuration.
 cc_library(
     name = "zircon",
     visibility = ["//visibility:public"],
+    deps = select({
+        "@platforms//os:fuchsia": [":libzircon_link_stub"],
+        # References from other environments only get the headers.  This
+        # makes it easy to have "//src/zircon/lib/zircon" deps in common
+        # libraries that need to link against it in Fuchsia userland but that in
+        # other contexts are just using the headers.
+        "//conditions:default": [":headers"],
+    }),
+)
+
+# The definition of zircon for (non-kernel) Fuchsia targets.
+#
+# The vDSO ABI is provided at link time by a stub.  The actual runtime image
+# comes from the kernel and is not part of the build or SDK for userland at
+# all.  The kernel's internal build of the vDSO verifies that the ABI matches.
+cc_link_stub_from_ifs_file(
+    name = "libzircon_link_stub",
+    ifs_file = "zircon.ifs",
+    stub_name = "libzircon",
+    system_provided = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:private"],
     deps = [":headers"],
 )
 
 cc_library(
     name = "zircon.as-needed",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//visibility:public"],
     deps = [":headers"],
 )
@@ -38,8 +61,6 @@ cc_library(
            }) +
            select({
                "@platforms//os:fuchsia": [],
-               # TODO(https://fxbug.dev/456186319): When adding support for
-               # building Zircon, also select `[]` when `!is_fuchsia && is_kernel`.
                "//conditions:default": ["//zircon/system/public"],
            }),
 )
@@ -64,8 +85,5 @@ idk_noop_atom(
     stable = True,
     visibility = ["//visibility:public"],
 )
-
-# TODO(https://fxbug.dev/457449319): Implement the metadata in the GN
-# "hermetic_source_set-underscores-rewrite" target if necessary.
 
 # LINT.ThenChange(BUILD.gn)
