@@ -1002,6 +1002,12 @@ build_idk_combinations(
         # ":test_molecule",
         # ":test_executable",
 
+        # A shared library that exercises use of the API level-specific golden IFS files.
+        # The test shared libraries do not have such golden files.
+        # TODO(https://fxbug.dev/443766378): Fix the sysroot headers not found
+        # error and uncomment.
+        # "//sdk/lib/async-default:async-default_idk",
+
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
         ":test-source-library",

@@ -33,3 +33,52 @@ string_flag(
         "//build/bazel/rules/fidl:__subpackages__",
     ],
 )
+
+# Configuration settings for each IDK buildable API level.
+# These should only be used by IDK atom rules. In particular, theyy should not
+# be used to condition IDK source files as these must be consistent for all
+# API levels.
+# TODO(https://fxbug.dev/490506836): Automatically generate these config_setting
+# targets from the list of IDK buildable API levels.
+
+_api_level_condition_visibility = [
+    # The location where `verify_public_symbols()` is defined - see
+    # https://fxbug.dev/491244314.
+    "//build/bazel/rules/cc:__subpackages__",
+]
+
+config_setting(
+    name = "is_api_level_PLATFORM",
+    flag_values = {"//build/bazel:fuchsia_api_level": "PLATFORM"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_27",
+    flag_values = {"//build/bazel:fuchsia_api_level": "27"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_28",
+    flag_values = {"//build/bazel:fuchsia_api_level": "28"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_29",
+    flag_values = {"//build/bazel:fuchsia_api_level": "29"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_30",
+    flag_values = {"//build/bazel:fuchsia_api_level": "30"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_NEXT",
+    flag_values = {"//build/bazel:fuchsia_api_level": "NEXT"},
+    visibility = _api_level_condition_visibility,
+)

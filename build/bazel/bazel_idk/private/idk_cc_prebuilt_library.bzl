@@ -25,6 +25,7 @@ load(
     "get_allowlist_target",
     "get_api_file_path",
     "get_atom_visibility",
+    "get_golden_file",
     "get_idk_deps",
     "json_encode_dict_values",
     "select_for_fuchsia",
@@ -588,7 +589,6 @@ not have a stable ABI. Can be either "none" or "static".""",
         "ifs_golden_file": attr.label(
             doc = "The golden IFS file for shared libraries only. Set by the wrapper macro.",
             mandatory = False,
-            configurable = False,
         ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
         "friend": attr.string_list(
@@ -630,7 +630,6 @@ Will be appended to "lib" to generate the library file name. Must not begin with
         "ifs_golden_file": attr.label(
             doc = "The golden IFS file for shared libraries. Set by the wrapper macro.",
             mandatory = True,
-            configurable = False,
         ),
     },
     implementation = _idk_cc_shared_library_impl,
@@ -657,8 +656,7 @@ def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output
         output_name = output_name,
         atom_type = atom_type,
         allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
-        # TODO(https://fxbug.dev/417307356): Support API level-specific golden files.
-        ifs_golden_file = _get_ifs_golden_file_name(output_name),
+        ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
 
@@ -798,8 +796,7 @@ def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, out
         output_name = output_name,
         atom_type = atom_type,
         allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
-        # TODO(https://fxbug.dev/417307356): Support API level-specific golden files.
-        ifs_golden_file = _get_ifs_golden_file_name(output_name),
+        ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
 

@@ -228,7 +228,7 @@ def _verify_public_symbols_impl(
     verify_golden_files(
         name = name,
         candidate_files = [ifs_file_target_name],
-        golden_files = [reference],
+        golden_file = reference,
         message = "ABI has changed! In library {}".format(library_name),
         testonly = testonly,
         visibility = visibility,
@@ -251,7 +251,6 @@ file (usually named `[lib]${library_name}.ifs`), run the build, then run the
             doc = "The checked-in reference IFS file.",
             mandatory = True,
             allow_single_file = True,
-            configurable = False,
         ),
         "library_name": attr.string(
             doc = "A human-readable library name for debugging purposes.",

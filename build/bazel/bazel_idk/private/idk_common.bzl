@@ -5,6 +5,7 @@
 """Common functions for IDK macros."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels")
 
 visibility(["//build/bazel/rules/fidl/..."])
 
@@ -144,3 +145,57 @@ def get_api_file_path(idk_name, stable, api_file_path):
         if api_file_path != None:
             fail("`api_file_path` must only be specified for stable IDK atoms.")
         return None
+
+def _get_golden_file_path_for_api_level(golden_file_name, api_level):
+    """Returns the path to the specified golden file for the specified API level.
+
+    The paths are in the format of absolute labels (with leading slashes and a
+    colon) except for the "PLATFORM" API level where the path is just a file name.
+
+    Args:
+        golden_file_name: The name of the golden file in each API level.
+        api_level: The API level for which to get the golden file path.
+
+    Returns:
+        The path to the golden file for the specified API level.
+    """
+    if api_level == "PLATFORM":
+        return golden_file_name
+    else:
+        return "//sdk/history/" + api_level + ":" + golden_file_name
+
+def _get_api_level_condition(api_level):
+    """Returns the label for the condition that is true when the current API level is `api_level`.
+
+    Args:
+        api_level: The API level for which to get the condition.
+
+    Returns:
+        The label for the condition that is true when the current API level is `api_level`.
+    """
+    return "//build/bazel:is_api_level_" + api_level
+
+def get_golden_file(golden_file_name, support_platform = False):
+    """Returns a `select()` statement for the golden file for the current API level.
+
+    The `select()` statement maps each API level to the label for the
+    `golden_file_name` file at each IDK buildable API level.
+
+    Args:
+        golden_file_name: The name of the golden file in each API level.
+        support_platform: Whether to include an entry for the "PLATFORM" API
+            level in the `select()` statement. If True, the file is assumed to
+            be located in the same directory as the `BUILD.bazel` file.
+
+    Returns:
+        A `select()` statement for the golden file for the current API level.
+    """
+    api_levels = list(idk_buildable_api_levels)
+    if support_platform:
+        api_levels.append("PLATFORM")
+
+    level_map = {}
+    for api_level in api_levels:
+        level_map[_get_api_level_condition(api_level)] = _get_golden_file_path_for_api_level(golden_file_name, api_level)
+
+    return select(level_map)

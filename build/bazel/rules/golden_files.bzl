@@ -8,8 +8,12 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "update_goldens")
 
 def _verify_golden_files_impl(ctx):
-    if len(ctx.attr.candidate_files) != len(ctx.attr.golden_files):
-        fail("`candidate_files` and `golden_filess` must be specified together and be the same length.")
+    if int(bool(ctx.attr.golden_file)) + int(bool(ctx.attr.golden_files)) + int(bool(ctx.attr.comparison_manifest)) != 1:
+        fail("Exactly one of `golden_file`, `golden_files`, or `comparison_manifest` must be specified.")
+    if ctx.attr.golden_file and len(ctx.attr.candidate_files) != 1:
+        fail("`candidate_files` must have one entry when `golden_file` is specified.")
+    if ctx.attr.golden_files and len(ctx.attr.candidate_files) != len(ctx.attr.golden_files):
+        fail("`candidate_files` and `golden_files` must be the same length.")
     if bool(ctx.attr.candidate_files) == bool(ctx.attr.comparison_manifest):
         fail("Exactly one of `candidate_files` or `comparison_manifest` must be specified.")
     if ctx.attr.comparison_manifest and ctx.attr.formatter_executable:
@@ -65,7 +69,10 @@ def _verify_golden_files_impl(ctx):
 
         processed_comparisons_for_json = []
         for i, candidate_file in enumerate(ctx.files.candidate_files):
-            golden_file = ctx.files.golden_files[i]
+            if ctx.attr.golden_file:
+                golden_file = ctx.file.golden_file
+            else:
+                golden_file = ctx.files.golden_files[i]
             verify_inputs.append(candidate_file)
             verify_inputs.append(golden_file)
 
@@ -174,17 +181,24 @@ verify_golden_files = rule(
         # behavior similar to that in GN when the golden file does not exist.
         # This may require wrapping this rule in a macro and detecting this
         # before invoking the rule.
+        "golden_file": attr.label(
+            doc = "Golden file label against which to check `candidate_files`. " +
+                  "`candidate_files` must contain exactly one entry. " +
+                  "Mutually exclusive with `golden_files` and `comparison_manifest`.",
+            allow_single_file = True,
+            mandatory = False,
+        ),
         "golden_files": attr.label_list(
             doc = "List of golden file labels against which to check `candidate_files`. " +
                   "Must be the same length as `candidate_files`. " +
                   "Each file in the list corresponds to the golden file at the same index in `candidate_files`." +
-                  "Mutually exclusive with `comparison_manifest`.",
+                  "Mutually exclusive with `golden_file` and `comparison_manifest`.",
             allow_files = True,
             mandatory = False,
         ),
         "comparison_manifest": attr.label(
             doc = "Label pointing to a JSON file describing the comparisons. " +
-                  "Mutually exclusive with `candidate_files` and `golden_files`.",
+                  "Mutually exclusive with `candidate_files`, `golden_file`, and `golden_files`.",
             allow_single_file = True,
             mandatory = False,
         ),
