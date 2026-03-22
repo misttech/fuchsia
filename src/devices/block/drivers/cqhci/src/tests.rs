@@ -11,12 +11,8 @@ use fdf_component::testing::harness::{DriverUnderTest, TestHarness};
 use fdf_component::{ServiceInstance, ServiceOffer};
 use fdf_fidl::{DriverChannel, FidlExecutor};
 use fidl_fuchsia_hardware_block_volume::{self as fvolume};
-use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, CqhciHostInfo, EmmcPartitionId};
-use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc::{SdmmcHostCap, SdmmcHostInfo};
-use fidl_next_fuchsia_mem as fmem;
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
@@ -31,6 +27,10 @@ use sdmmc_spec::{
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use zx::HandleBased as _;
+use {
+    fidl_fuchsia_storage_block as fblock, fidl_next_fuchsia_hardware_rpmb as rpmb,
+    fidl_next_fuchsia_mem as fmem, fuchsia_async as fasync,
+};
 
 struct MockRpmbServer {
     /// A stream which receives a new channel end each time an RPMB request is made.
@@ -1045,4 +1045,75 @@ async fn test_shutdown_with_blocked_transfers() {
     started_driver.stop_driver().await;
 
     futures::future::join_all(tasks).await;
+}
+
+#[fuchsia::test]
+async fn test_flush_while_queue_not_empty() {
+    let (task_tx, mut task_rx) = mpsc::unbounded();
+    let (mut harness, scope, _handles) = setup(Some(Box::new(move |transfer_op| {
+        let _ = task_tx.unbounded_send(match transfer_op {
+            SubmittedTaskForTesting::Transfer(_, _) => "transfer",
+            SubmittedTaskForTesting::DirectCmd => "dcmd",
+        });
+    })));
+
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    // Wait for the tasks submitted during initialization (enabling barriers).
+    // do_switch executes two DCMDs: Switch and SendStatus.
+    assert_eq!(task_rx.next().await, Some("dcmd"));
+    assert_eq!(task_rx.next().await, Some("dcmd"));
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    // Perform a dummy read to ensure the partition is switched and avoid DCMDs during the test.
+    {
+        let mut buf = vec![0u8; 512];
+        block_client
+            .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+            .await
+            .expect("placeholder read failed");
+        // Consume partition switch (2 DCMDs) and the transfer (1).
+        assert_eq!(task_rx.next().await, Some("dcmd"));
+        assert_eq!(task_rx.next().await, Some("dcmd"));
+        assert_eq!(task_rx.next().await, Some("transfer"));
+    }
+
+    let task_handler = FakeCqhciHost::global().task_handler.clone();
+
+    // Stall requests so they don't complete.
+    task_handler.stall(true);
+
+    // Submit a read request.
+    let read_fut = scope.spawn(async move {
+        let mut buf = vec![0u8; 512];
+        block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await.expect("read failed");
+    });
+
+    // Wait for the transfer to be submitted to hardware.
+    assert_eq!(task_rx.next().await, Some("transfer"));
+
+    // Submit a flush request.
+    let block_client_clone = connect_block_client(&started_driver, "user").await;
+    let flush_fut = scope.spawn(async move {
+        block_client_clone.flush().await.expect("flush failed");
+    });
+
+    // The flush should be blocked and not yet submitted as a DCMD.
+    // We wait a bit to give it a chance to be submitted if it were not blocked.
+    fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+    // Check if anything else was submitted (it shouldn't be).
+    assert!(task_rx.try_next().is_err());
+
+    // Unblock the task handler.
+    task_handler.stall(false);
+
+    // Now we expect the DCMD for the flush to be submitted.
+    // flush executes two DCMDs: Switch and SendStatus.
+    assert_eq!(task_rx.next().await, Some("dcmd"));
+    assert_eq!(task_rx.next().await, Some("dcmd"));
+
+    futures::join!(read_fut, flush_fut);
+
+    started_driver.stop_driver().await;
 }

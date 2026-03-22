@@ -12,11 +12,7 @@ use async_trait::async_trait;
 use block_server::RequestId;
 use event_listener::{Event, IntoNotification as _, Listener as _};
 use fdf_fidl::DriverChannel;
-use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
-use fidl_next_fuchsia_hardware_rpmb as rpmb;
-use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
-use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use log::{debug, error, info, trace, warn};
 use mmio::Mmio;
@@ -47,6 +43,10 @@ use sdmmc_spec::{
     SdhciInterruptStatusRegister,
 };
 use zx::HandleBased as _;
+use {
+    fidl_fuchsia_storage_block as fblock, fidl_next_fuchsia_hardware_rpmb as rpmb,
+    fidl_next_fuchsia_hardware_sdmmc as sdmmc, fuchsia_async as fasync,
+};
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
 use crate::transfer_manager::{Transfer, TransferManager, TransferOptions, TransferSlot};
@@ -645,8 +645,7 @@ impl AsyncTaskInner {
             AsyncTaskInner::Shutdown => false,
             AsyncTaskInner::SwitchAndSubmit(_) => true,
             AsyncTaskInner::RpmbRequest(_) => true,
-            // Flushes do not need to block data transfers.
-            AsyncTaskInner::Flush(_) => false,
+            AsyncTaskInner::Flush(_) => true,
             // TODO(https://fxbug.dev/490482696): The spec suggests that we should be able to
             // implement TRIM without blocking submission of new tasks, by instead HALTing the queue
             // while the DMS runs.  This may be slightly more efficient.
@@ -662,8 +661,8 @@ impl AsyncTaskInner {
 /// Only one of this struct may exist at any time, so the caller has unique access to modify the
 /// state of the command queue while holding this struct.
 ///
-/// Note that the guard may or may not block data transfers, as some async tasks (e.g. Flush) may
-/// proceed without draining in-flight data transfers.  See [`AsyncTask::should_block_transfers`].
+/// Note that the guard may or may not block data transfers, as some async tasks may proceed without
+/// draining in-flight data transfers.  See [`AsyncTask::should_block_transfers`].
 ///
 /// This guard serves two purposes:
 ///
@@ -838,6 +837,10 @@ impl CommandQueueExcl {
                 if inner.state.should_fail_tasks() {
                     return Err(zx::Status::UNAVAILABLE);
                 }
+
+                // The queue must be empty for CMD6 (see JESD84-B51B 6.6.39.1).
+                assert!(command != MmcCommand::Switch || inner.pending_tasks.is_empty());
+
                 match &mut dcmd {
                     Some(_) if inner.pending_tasks.dcmd_status.is_some() => {
                         // The command is complete, check its status.
