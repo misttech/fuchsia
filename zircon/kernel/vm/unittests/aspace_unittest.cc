@@ -2878,6 +2878,45 @@ static bool address_region_enumerator_test() {
     // Subtree was deleted and the new one will not be yielded.
     EXPECT_FALSE(enumerator.next().has_value());
   }
+  // Nested mapping enumeration.
+  {
+    EnumeratorTestHelper<VmAddressRegionEnumeratorType::MappingsOnly> test;
+    ASSERT_OK(test.Init(aspace));
+    EXPECT_OK(test.AddRegions({{false, 0, 1000},
+                               {false, 0, 100},
+                               {false, 100, 200},
+                               {false, 200, 300},
+                               {true, 10, 20},
+                               {true, 110, 120},
+                               {true, 210, 220}}));
+    Guard<CriticalMutex> guard{test.lock()};
+    // Attempt to query for each mapping using its exact location.
+    for (const auto& probe : {10u, 110u, 210u}) {
+      auto enumerator = test.Enumerator(probe, probe + 5);
+      AssertHeld(enumerator.lock_ref());
+      // The enumerator will accurately yield only this mapping.
+      // Furthermore, because mappings and VMARs are sorted, the enumerator naturally
+      // short-circuits as soon as `itr_->base() >= max_addr_` without iterating the rest of the
+      // tree.
+      EXPECT_TRUE(test.ExpectRegions(enumerator, {{true, probe, probe + 10}}));
+      EXPECT_FALSE(enumerator.next().has_value());
+    }
+  }
+  // Sub-VMAR entirely below min_addr_ is skipped.
+  {
+    EnumeratorTestHelper<VmAddressRegionEnumeratorType::MappingsOnly> test;
+    ASSERT_OK(test.Init(aspace));
+    EXPECT_OK(
+        test.AddRegions({{false, 0, 100}, {true, 10, 20}, {false, 100, 200}, {true, 110, 120}}));
+    Guard<CriticalMutex> guard{test.lock()};
+    // Querying starting at 105. This should skip descending into the first sub-VMAR (0..100)
+    // because all its children are < min_addr_, and correctly fall through to traverse the next
+    // sibling VMAR.
+    auto enumerator = test.Enumerator(105, 120);
+    AssertHeld(enumerator.lock_ref());
+    EXPECT_TRUE(test.ExpectRegions(enumerator, {{true, 110, 120}}));
+    EXPECT_FALSE(enumerator.next().has_value());
+  }
 
   EXPECT_OK(aspace->Destroy());
 

@@ -90,20 +90,23 @@ class VmAddressRegionEnumerator {
       if (auto* mapping = curr->as_vm_mapping_ptr(); mapping) {
         DEBUG_ASSERT(mapping != nullptr);
         AssertHeld(mapping->lock_ref());
-        // If the mapping is entirely before |min_addr| or entirely after |max_addr| do not run
-        // on_mapping. This can happen when a vmar contains min_addr but has mappings entirely
-        // below it, for example.
-        if ((mapping->base() < min_addr_ && mapping->base() + mapping->size() <= min_addr_) ||
-            mapping->base() > max_addr_) {
-          continue;
+        // If the mapping is entirely before |min_addr|, do not run on_mapping.
+        // This can happen when a vmar contains min_addr but has mappings entirely below it.
+        // (Base addresses above max_addr_ are strictly handled by the short-circuit earlier in the
+        // loop)
+        if (mapping->base() < min_addr_ && mapping->base() + mapping->size() <= min_addr_) {
+          // Mapping is out of bounds below our range, do not yield it. We do not `continue` here,
+          // as we must fall through to the ascending logic below in case this was the last child.
+        } else {
+          // The const_cast here allows for returning a pointer with the same constness as the
+          // originally provided VmAddressRegion, but allowing for the fact that we use a
+          // const_iterator for traversal. This is safe since we have a non-const references to the
+          // tree, and we are allowed to manipulate the underlying objects, however since we do not
+          // hold the region_lock_ we cannot manipulate the subregion_ tree itself, hence we have to
+          // use const_iterator.
+          ret = NextResult{const_cast<maybe_const<VmMapping*>>(mapping), depth_};
         }
-        // The const_cast here allows for returning a pointer with the same constness as the
-        // originally provided VmAddressRegion, but allowing for the fact that we use a
-        // const_iterator for traversal. This is safe since we have a non-const references to the
-        // tree, and we are allowed to manipulate the underlying objects, however since we do not
-        // hold the region_lock_ we cannot manipulate the subregion_ tree itself, hence we have to
-        // use const_iterator.
-        ret = NextResult{const_cast<maybe_const<VmMapping*>>(mapping), depth_};
+
       } else {
         auto* vmar = curr->as_vm_address_region_ptr();
         DEBUG_ASSERT(vmar != nullptr);
@@ -118,9 +121,16 @@ class VmAddressRegionEnumerator {
         }
         if (!vmar->subregions_locked().IsEmpty()) {
           // If the sub-VMAR is not empty, iterate through its children.
-          itr_ = vmar->subregions_locked().begin();
-          depth_++;
-          continue;
+          // Optimization: skip children entirely below min_addr_.
+          auto next_itr = vmar->subregions_locked().IncludeOrHigher(min_addr_);
+          if (next_itr.IsValid()) {
+            itr_ = next_itr;
+            depth_++;
+            continue;
+          }
+          // If next_itr is invalid, all children in this sub-VMAR are < min_addr_.
+          // We do not descend. Instead, we fall through to the ascending logic below
+          // to correctly advance to the next sibling of this sub-VMAR.
         }
       }
       if (depth_ > kStartDepth && !itr_.IsValid()) {
