@@ -14,19 +14,23 @@ When modifying a versioned structure, follow this standard procedure (the "versi
 1.  **Bump `LATEST_VERSION`**: Update the `LATEST_VERSION` constant in [types.rs](src/storage/fxfs/src/serialized_types/types.rs).
 2.  **Version the Structure**:
     - Copy the existing `FooV(N)` to `FooV(LATEST_VERSION)` (e.g., `FooV53` to `FooV55`).
-    - **Clean the Legacy Type**: Remove extraneous traits (`Debug`, `Eq`, `PartialEq`, `TypeFingerprint`, `Versioned`) and documentation comments from the older version (`FooV(N)`).
+    - **Clean the Legacy Type**: Remove extraneous traits (`Debug`, `Eq`, `PartialEq`, `TypeFingerprint`, `Versioned`) from the older version (`FooV(N)`).
+    - **Strip Documentation**: As per convention, explicitly strip **all** documentation comments (`///`) from the older struct `FooV(N)` and its fields. Only the latest version should retain documentation.
     - **Visibility**: Remove `pub` from the legacy type's fields and from the type itself in almost all cases. Nothing should use them except for the deserialization `into()` chains (which are defined in the same module) and other legacy version structs.
     - **Methods**: Methods should **always** remain on the unversioned type alias (e.g., `impl Foo { ... }`). Do not leave methods on the legacy struct (e.g., `impl FooV(N) { ... }`) unless a method is explicitly ONLY used for performing the data migration itself.
-    - **Follow File Conventions**: If the project convention stores older versions in a separate file (e.g., `legacy.rs` or `old.rs`), move the older structure there to keep the primary source file concise.
+    - **Use Unversioned Aliases**: Never use versioned typenames (e.g., `ObjectKeyV54`) outside of type or struct definitions. The philosophy is to remain unintrusive to normal code. Functional code and general tests should **always** use the unversioned alias (e.g., `ObjectKey`). Only explicitly use versioned names in tests when specifically testing a versioning-related scenario. However, you must ALWAYS use versioned types when defining other structs to prevent the internal layout from fundamentally changing underneath you.
     - **Item Aggregations (`ObjectItem` / `Item` / `ItemRef`)**: When versioning aggregations that compose separate structs like `Item<K, V>`, ensure you define the legacy item tuple correctly using the corresponding legacy component types (e.g., `pub(crate) type ObjectItemV50 = Item<ObjectKeyV43, ObjectValueV50>;`).
 
 3.  **Implement Migration**:
-    - **Prefer the `#[derive(Migrate)]` macro** over an explicit `impl From` wherever possible. For trivial type changes, it creates significantly less code bloat.
-    - The macro requires identical field names and relies on `Into` implementations for child structures. When the macro is insufficient (e.g., fields are dropped or semantics materially altered), fall back to manually defining: `impl From<FooV(N)> for FooV(LATEST_VERSION)`.
+    - **Prefer the `#[derive(Migrate)]` macro** over an explicit `impl From` wherever possible. For structurally identical types, it generates the `From<FooV(N)> for FooV(LATEST_VERSION)` boilerplate automatically by using `.into()` recursively on child structures.
+    - **Avoid Trait Conflicts (`E0119`)**: Do NOT write a manual `impl From<Old> for New` if the `Old` structure is annotated with `#[derive(Migrate)]` and `#[migrate_to_version(New)]` unless its variants drastically differ. Wait to see if the macro handles it first.
+    - **The `#[migrate_nodefault]` Attribute**: If `Old` has identical field names/variants to `New` but you do *not* want the `Migrate` macro to automatically use `Default::default()` to fill in any missing or mismatched fields, you **must** apply `#[migrate_nodefault]` to the `Old` struct/enum. This ensures exact mapping and avoids confusing `Default is not implemented` errors.
+    - When the macro is truly insufficient (e.g., dropping fields or fundamentally altering semantics), drop `#[derive(Migrate)]` and manually define `impl From<FooV(N)> for FooV(LATEST_VERSION)`.
 
 4.  **Handle Cascading Updates**:
     - If a parent structure `Bar` contains `Foo`, then `Bar` must also be versioned (e.g., to `BarV55`) to reference the new `FooV55`.
     - Apply this same process recursively up the structure hierarchy.
+    - **Rust 2024 Implicit Borrowing Rules**: When updating match patterns (e.g., `let ObjectValue::Object { ... } = &mut mutation.value`), do **not** use `ref mut` bindings on internal fields. The compiler enforces implicit borrowing on reference patterns, and using `ref mut` will result in `cannot explicitly borrow within an implicitly-borrowing pattern` errors.
 5.  **Update Type Mappings**:
     - Add the new version mapping to the `versioned_types!` macro in [types.rs](src/storage/fxfs/src/serialized_types/types.rs).
 6.  **Verify via Type Fingerprints**:
