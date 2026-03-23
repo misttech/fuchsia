@@ -97,9 +97,9 @@ pub(super) type SimpleArray<T> = Array<le::U32, T>;
 
 impl<T: Validate> Validate for SimpleArray<T> {
     type Error = <T as Validate>::Error;
-
-    /// Defers to `self.data` for validation. `self.data` has access to all information, including
-    /// size stored in `self.metadata`.
+    /// Default implementation of `Validate` for `SimpleArray<T>`, validating individual T
+    /// objects. It assumes no internal constraints between the objects.
+    /// Override this function for types with more complex validation requirements.
     fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         self.data.validate(context)
     }
@@ -126,18 +126,16 @@ impl Counted for le::U32 {
     }
 }
 
-pub(super) type ConditionalNodes = Vec<ConditionalNode>;
-
-impl Validate for ConditionalNodes {
+impl Validate for ConditionalNode {
     type Error = anyhow::Error;
 
-    /// TODO: Validate internal consistency between consecutive [`ConditionalNode`] instances.
+    // TODO: Validate [`ConditionalNodeMetadata`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
 
-array_type!(ConditionalNodeItems, ConditionalNodeMetadata, Vec<ConditionalNodeDatum>);
+array_type!(ConditionalNodeItems, ConditionalNodeMetadata, ConditionalNodeDatum);
 
 array_type_validate_deref_both!(ConditionalNodeItems);
 
@@ -158,14 +156,14 @@ impl ValidateArray<ConditionalNodeMetadata, ConditionalNodeDatum> for Conditiona
 #[derive(Debug, PartialEq)]
 pub(super) struct ConditionalNode {
     items: ConditionalNodeItems,
-    true_list: SimpleArray<AccessVectorRules>,
-    false_list: SimpleArray<AccessVectorRules>,
+    true_list: SimpleArray<AccessVectorRule>,
+    false_list: SimpleArray<AccessVectorRule>,
 }
 
 impl Parse for ConditionalNode
 where
     ConditionalNodeItems: Parse,
-    SimpleArray<AccessVectorRules>: Parse,
+    SimpleArray<AccessVectorRule>: Parse,
 {
     type Error = anyhow::Error;
 
@@ -176,11 +174,11 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node items")?;
 
-        let (true_list, tail) = SimpleArray::<AccessVectorRules>::parse(tail)
+        let (true_list, tail) = SimpleArray::<AccessVectorRule>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node true list")?;
 
-        let (false_list, tail) = SimpleArray::<AccessVectorRules>::parse(tail)
+        let (false_list, tail) = SimpleArray::<AccessVectorRule>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node false list")?;
 
@@ -217,7 +215,7 @@ pub(super) struct ConditionalNodeDatum {
     boolean: le::U32,
 }
 
-impl Validate for [ConditionalNodeDatum] {
+impl Validate for ConditionalNodeDatum {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`ConditionalNodeDatum`].
@@ -226,27 +224,14 @@ impl Validate for [ConditionalNodeDatum] {
     }
 }
 
-/// The list of access control rules defined by policy statements of the
+/// An access control rule defined by a policy statement of one of the
 /// following kinds:
 /// - `allow`, `dontaudit`, `auditallow`, and `neverallow`, which specify
 ///   an access vector describing a permission set.
 /// - `allowxperm`, `auditallowxperm`, `dontaudit`, which specify a set
 ///   of extended permissions.
-/// - `type_transition`, `type_change`, and `type_member', which include
+/// - `type_transition`, `type_change`, and `type_member`, which include
 ///   a type id describing a permitted new type.
-pub(super) type AccessVectorRules = Vec<AccessVectorRule>;
-
-impl Validate for AccessVectorRules {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for access_vector_rule in self {
-            access_vector_rule.validate(context)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct AccessVectorRule {
     metadata: AccessVectorRuleMetadata,
@@ -470,7 +455,7 @@ impl std::ops::SubAssign<&Self> for XpermsBitmap {
     }
 }
 
-array_type!(RoleTransitions, le::U32, Vec<RoleTransition>);
+array_type!(RoleTransitions, le::U32, RoleTransition);
 
 array_type_validate_deref_both!(RoleTransitions);
 
@@ -479,11 +464,11 @@ impl ValidateArray<le::U32, RoleTransition> for RoleTransitions {
 
     /// [`RoleTransitions`] have no additional metadata (beyond length encoding).
     fn validate_array(
-        context: &PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &le::U32,
-        items: &[RoleTransition],
+        _items: &[RoleTransition],
     ) -> Result<(), Self::Error> {
-        items.validate(context)
+        Ok(())
     }
 }
 
@@ -514,25 +499,19 @@ impl RoleTransition {
     }
 }
 
-impl Validate for [RoleTransition] {
+impl Validate for RoleTransition {
     type Error = anyhow::Error;
 
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for role_transition in self {
-            NonZeroU32::new(role_transition.role.get())
-                .ok_or(ValidateError::NonOptionalIdIsZero)?;
-            NonZeroU32::new(role_transition.role_type.get())
-                .ok_or(ValidateError::NonOptionalIdIsZero)?;
-            NonZeroU32::new(role_transition.tclass.get())
-                .ok_or(ValidateError::NonOptionalIdIsZero)?;
-            NonZeroU32::new(role_transition.new_role.get())
-                .ok_or(ValidateError::NonOptionalIdIsZero)?;
-        }
+        NonZeroU32::new(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        NonZeroU32::new(self.role_type.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        NonZeroU32::new(self.tclass.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        NonZeroU32::new(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
 
-array_type!(RoleAllows, le::U32, Vec<RoleAllow>);
+array_type!(RoleAllows, le::U32, RoleAllow);
 
 array_type_validate_deref_both!(RoleAllows);
 
@@ -541,11 +520,11 @@ impl ValidateArray<le::U32, RoleAllow> for RoleAllows {
 
     /// [`RoleAllows`] have no additional metadata (beyond length encoding).
     fn validate_array(
-        context: &PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &le::U32,
-        items: &[RoleAllow],
+        _items: &[RoleAllow],
     ) -> Result<(), Self::Error> {
-        items.validate(context)
+        Ok(())
     }
 }
 
@@ -566,22 +545,20 @@ impl RoleAllow {
     }
 }
 
-impl Validate for [RoleAllow] {
+impl Validate for RoleAllow {
     type Error = anyhow::Error;
 
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for rule in self {
-            NonZeroU32::new(rule.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-            NonZeroU32::new(rule.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        }
+        NonZeroU32::new(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        NonZeroU32::new(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub(super) enum FilenameTransitionList {
-    PolicyVersionGeq33(SimpleArray<FilenameTransitions>),
-    PolicyVersionLeq32(SimpleArray<DeprecatedFilenameTransitions>),
+    PolicyVersionGeq33(SimpleArray<FilenameTransition>),
+    PolicyVersionLeq32(SimpleArray<DeprecatedFilenameTransition>),
 }
 
 impl Validate for FilenameTransitionList {
@@ -599,12 +576,8 @@ impl Validate for FilenameTransitionList {
     }
 }
 
-pub(super) type FilenameTransitions = Vec<FilenameTransition>;
-
-impl Validate for FilenameTransitions {
+impl Validate for FilenameTransition {
     type Error = anyhow::Error;
-
-    /// TODO: Validate sequence of [`FilenameTransition`] objects.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -612,10 +585,10 @@ impl Validate for FilenameTransitions {
 
 #[derive(Debug, PartialEq)]
 pub(super) struct FilenameTransition {
-    filename: SimpleArray<Vec<u8>>,
+    filename: SimpleArray<u8>,
     transition_type: le::U32,
     transition_class: le::U32,
-    items: SimpleArray<FilenameTransitionItems>,
+    items: SimpleArray<FilenameTransitionItem>,
 }
 
 impl FilenameTransition {
@@ -638,15 +611,15 @@ impl FilenameTransition {
 
 impl Parse for FilenameTransition
 where
-    SimpleArray<Vec<u8>>: Parse,
-    SimpleArray<FilenameTransitionItems>: Parse,
+    SimpleArray<u8>: Parse,
+    SimpleArray<FilenameTransitionItem>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (filename, tail) = SimpleArray::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for filename transition")?;
 
@@ -654,15 +627,13 @@ where
 
         let (transition_class, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
-        let (items, tail) = SimpleArray::<FilenameTransitionItems>::parse(tail)
+        let (items, tail) = SimpleArray::<FilenameTransitionItem>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing items for filename transition")?;
 
         Ok((Self { filename, transition_type, transition_class, items }, tail))
     }
 }
-
-pub(super) type FilenameTransitionItems = Vec<FilenameTransitionItem>;
 
 #[derive(Debug, PartialEq)]
 pub(super) struct FilenameTransitionItem {
@@ -699,12 +670,8 @@ where
     }
 }
 
-pub(super) type DeprecatedFilenameTransitions = Vec<DeprecatedFilenameTransition>;
-
-impl Validate for DeprecatedFilenameTransitions {
+impl Validate for DeprecatedFilenameTransition {
     type Error = anyhow::Error;
-
-    /// TODO: Validate sequence of [`DeprecatedFilenameTransition`] objects.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -712,7 +679,7 @@ impl Validate for DeprecatedFilenameTransitions {
 
 #[derive(Debug, PartialEq)]
 pub(super) struct DeprecatedFilenameTransition {
-    filename: SimpleArray<Vec<u8>>,
+    filename: SimpleArray<u8>,
     metadata: DeprecatedFilenameTransitionMetadata,
 }
 
@@ -740,14 +707,14 @@ impl DeprecatedFilenameTransition {
 
 impl Parse for DeprecatedFilenameTransition
 where
-    SimpleArray<Vec<u8>>: Parse,
+    SimpleArray<u8>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (filename, tail) = SimpleArray::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for deprecated filename transition")?;
 
@@ -766,15 +733,12 @@ pub(super) struct DeprecatedFilenameTransitionMetadata {
     out_type: le::U32,
 }
 
-pub(super) type InitialSids = Vec<InitialSid>;
-
-impl Validate for InitialSids {
+impl Validate for SimpleArray<InitialSid> {
     type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`InitialSid`] objects.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         for initial_sid in crate::InitialSid::all_variants() {
-            self.iter()
+            self.data
+                .iter()
                 .find(|initial| initial.id().get() == *initial_sid as u32)
                 .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
         }
@@ -869,9 +833,7 @@ pub(super) struct ContextMetadata {
     context_type: le::U32,
 }
 
-pub(super) type NamedContextPairs = Vec<NamedContextPair>;
-
-impl Validate for NamedContextPairs {
+impl Validate for NamedContextPair {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`NamedContextPairs`] objects.
@@ -885,14 +847,14 @@ impl Validate for NamedContextPairs {
 
 #[derive(Debug, PartialEq)]
 pub(super) struct NamedContextPair {
-    name: SimpleArray<Vec<u8>>,
+    name: SimpleArray<u8>,
     context1: Context,
     context2: Context,
 }
 
 impl Parse for NamedContextPair
 where
-    SimpleArray<Vec<u8>>: Parse,
+    SimpleArray<u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -916,9 +878,7 @@ where
     }
 }
 
-pub(super) type Ports = Vec<Port>;
-
-impl Validate for Ports {
+impl Validate for Port {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`Ports`] objects.
@@ -961,9 +921,7 @@ pub(super) struct PortMetadata {
     high_port: le::U32,
 }
 
-pub(super) type Nodes = Vec<Node>;
-
-impl Validate for Nodes {
+impl Validate for Node {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`Node`] objects.
@@ -1000,31 +958,9 @@ where
     }
 }
 
-impl Validate for Node {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency between fields of [`Node`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-pub(super) type FsUses = Vec<FsUse>;
-
-impl Validate for FsUses {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for fs_use in self {
-            fs_use.validate(context)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct FsUse {
-    behavior_and_name: Array<FsUseMetadata, Vec<u8>>,
+    behavior_and_name: Array<FsUseMetadata, u8>,
     context: Context,
 }
 
@@ -1044,7 +980,7 @@ impl FsUse {
 
 impl Parse for FsUse
 where
-    Array<FsUseMetadata, Vec<u8>>: Parse,
+    Array<FsUseMetadata, u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -1052,7 +988,7 @@ where
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (behavior_and_name, tail) = Array::<FsUseMetadata, Vec<u8>>::parse(tail)
+        let (behavior_and_name, tail) = Array::<FsUseMetadata, u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing fs use metadata")?;
 
@@ -1111,9 +1047,7 @@ impl TryFrom<le::U32> for FsUseType {
     }
 }
 
-pub(super) type IPv6Nodes = Vec<IPv6Node>;
-
-impl Validate for IPv6Nodes {
+impl Validate for IPv6Node {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`IPv6Node`] objects.
@@ -1150,9 +1084,7 @@ where
     }
 }
 
-pub(super) type InfinitiBandPartitionKeys = Vec<InfinitiBandPartitionKey>;
-
-impl Validate for InfinitiBandPartitionKeys {
+impl Validate for InfinitiBandPartitionKey {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`InfinitiBandPartitionKey`] objects.
@@ -1189,18 +1121,7 @@ where
     }
 }
 
-impl Validate for InfinitiBandPartitionKey {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency between fields of [`InfinitiBandPartitionKey`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-pub(super) type InfinitiBandEndPorts = Vec<InfinitiBandEndPort>;
-
-impl Validate for InfinitiBandEndPorts {
+impl Validate for InfinitiBandEndPort {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of [`InfinitiBandEndPort`] objects.
@@ -1211,13 +1132,13 @@ impl Validate for InfinitiBandEndPorts {
 
 #[derive(Debug, PartialEq)]
 pub(super) struct InfinitiBandEndPort {
-    port_and_name: Array<InfinitiBandEndPortMetadata, Vec<u8>>,
+    port_and_name: Array<InfinitiBandEndPortMetadata, u8>,
     context: Context,
 }
 
 impl Parse for InfinitiBandEndPort
 where
-    Array<InfinitiBandEndPortMetadata, Vec<u8>>: Parse,
+    Array<InfinitiBandEndPortMetadata, u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -1225,7 +1146,7 @@ where
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (port_and_name, tail) = Array::<InfinitiBandEndPortMetadata, Vec<u8>>::parse(tail)
+        let (port_and_name, tail) = Array::<InfinitiBandEndPortMetadata, u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing infiniti band end port metadata")?;
 
@@ -1250,9 +1171,7 @@ impl Counted for InfinitiBandEndPortMetadata {
     }
 }
 
-pub(super) type GenericFsContexts = Vec<GenericFsContext>;
-
-impl Validate for GenericFsContexts {
+impl Validate for GenericFsContext {
     type Error = anyhow::Error;
 
     /// TODO: Validate sequence of  [`GenericFsContext`] objects.
@@ -1266,9 +1185,9 @@ impl Validate for GenericFsContexts {
 #[derive(Debug, PartialEq)]
 pub(super) struct GenericFsContext {
     /// The filesystem type.
-    fs_type: SimpleArray<Vec<u8>>,
+    fs_type: SimpleArray<u8>,
     /// The set of contexts defined for this filesystem.
-    contexts: SimpleArray<FsContexts>,
+    contexts: SimpleArray<FsContext>,
 }
 
 impl GenericFsContext {
@@ -1283,19 +1202,19 @@ impl GenericFsContext {
 
 impl Parse for GenericFsContext
 where
-    SimpleArray<Vec<u8>>: Parse,
-    SimpleArray<FsContexts>: Parse,
+    SimpleArray<u8>: Parse,
+    SimpleArray<FsContext>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (fs_type, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (fs_type, tail) = SimpleArray::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing generic filesystem context name")?;
 
-        let (contexts, tail) = SimpleArray::<FsContexts>::parse(tail)
+        let (contexts, tail) = SimpleArray::<FsContext>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing generic filesystem contexts")?;
 
@@ -1309,7 +1228,7 @@ pub(super) type FsContexts = Vec<FsContext>;
 pub(super) struct FsContext {
     /// The partial path, relative to the root of the filesystem. The partial path can only be set for
     /// virtual filesystems, like `proc/`. Otherwise, this must be `/`
-    partial_path: SimpleArray<Vec<u8>>,
+    partial_path: SimpleArray<u8>,
     /// Optional. When provided, the context will only be applied to files of this type. Allowed files
     /// types are: blk_file, chr_file, dir, fifo_file, lnk_file, sock_file, file. When set to 0, the
     /// context applies to all file types.
@@ -1334,7 +1253,7 @@ impl FsContext {
 
 impl Parse for FsContext
 where
-    SimpleArray<Vec<u8>>: Parse,
+    SimpleArray<u8>: Parse,
     Context: Parse,
 {
     type Error = anyhow::Error;
@@ -1342,7 +1261,7 @@ where
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (partial_path, tail) = SimpleArray::<Vec<u8>>::parse(tail)
+        let (partial_path, tail) = SimpleArray::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filesystem context partial path")?;
 
@@ -1356,17 +1275,11 @@ where
     }
 }
 
-pub(super) type RangeTransitions = Vec<RangeTransition>;
-
-impl Validate for RangeTransitions {
+impl Validate for RangeTransition {
     type Error = anyhow::Error;
-
-    /// TODO: Validate sequence of [`RangeTransition`] objects.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for range_transition in self {
-            if range_transition.metadata.target_class.get() == 0 {
-                return Err(ValidateError::NonOptionalIdIsZero.into());
-            }
+        if self.metadata.target_class.get() == 0 {
+            return Err(ValidateError::NonOptionalIdIsZero.into());
         }
         Ok(())
     }

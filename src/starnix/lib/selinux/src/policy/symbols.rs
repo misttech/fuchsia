@@ -157,10 +157,10 @@ const TYPE_PROPERTIES_ATTRIBUTE: u32 = 3;
 /// [`SymbolList`] is an [`Array`] of items with the count of items determined by [`Metadata`] as
 /// [`Counted`].
 #[derive(Debug, PartialEq)]
-pub(super) struct SymbolList<T>(Array<Metadata, Vec<T>>);
+pub(super) struct SymbolList<T>(Array<Metadata, T>);
 
 impl<T> Deref for SymbolList<T> {
-    type Target = Array<Metadata, Vec<T>>;
+    type Target = Array<Metadata, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -168,24 +168,20 @@ impl<T> Deref for SymbolList<T> {
 }
 
 impl<T: Parse> Parse for SymbolList<T> {
-    type Error = <Array<Metadata, Vec<T>> as Parse>::Error;
+    type Error = <Array<Metadata, T> as Parse>::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let (array, tail) = Array::<Metadata, Vec<T>>::parse(bytes)?;
+        let (array, tail) = Array::<Metadata, T>::parse(bytes)?;
         Ok((Self(array), tail))
     }
 }
 
-impl<T> Validate for SymbolList<T>
-where
-    [T]: Validate,
-{
+impl<T: Validate> Validate for SymbolList<T> {
     type Error = anyhow::Error;
 
-    /// [`SymbolList`] has no internal constraints beyond those imposed by [`Array`].
     fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        self.metadata.validate(context).map_err(Into::<anyhow::Error>::into)?;
-        self.data.as_slice().validate(context).map_err(Into::<anyhow::Error>::into)?;
+        self.0.metadata.validate(context)?;
+        self.0.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
 
         Ok(())
     }
@@ -224,17 +220,7 @@ impl Validate for Metadata {
     }
 }
 
-impl Validate for [CommonSymbol] {
-    type Error = <CommonSymbol as Validate>::Error;
-
-    /// [`CommonSymbols`] have no internal constraints beyond those imposed by individual
-    /// [`CommonSymbol`] objects.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(CommonSymbol, CommonSymbolMetadata, Permissions);
+array_type!(CommonSymbol, CommonSymbolMetadata, Permission);
 
 array_type_validate_deref_none_data_vec!(CommonSymbol);
 
@@ -276,7 +262,7 @@ impl ValidateArray<CommonSymbolMetadata, Permission> for CommonSymbol {
     }
 }
 
-array_type!(CommonSymbolMetadata, CommonSymbolStaticMetadata, Vec<u8>);
+array_type!(CommonSymbolMetadata, CommonSymbolStaticMetadata, u8);
 
 array_type_validate_deref_both!(CommonSymbolMetadata);
 
@@ -335,17 +321,7 @@ impl Counted for CommonSymbolStaticMetadata {
 /// [`Permissions`] is a dynamically allocated slice (that is, [`Vec`]) of [`Permission`].
 pub(super) type Permissions = Vec<Permission>;
 
-impl Validate for Permissions {
-    type Error = anyhow::Error;
-
-    /// [`Permissions`] have no internal constraints beyond those imposed by individual
-    /// [`Permission`] objects.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(Permission, PermissionMetadata, Vec<u8>);
+array_type!(Permission, PermissionMetadata, u8);
 
 array_type_validate_deref_both!(Permission);
 
@@ -405,19 +381,6 @@ impl Validate for PermissionMetadata {
     }
 }
 
-/// The list of [`Constraints`] associated with a class.
-pub(super) type Constraints = Vec<Constraint>;
-
-impl Validate for Constraints {
-    type Error = anyhow::Error;
-
-    /// [`Constraints`] has no internal constraints beyond those imposed by individual
-    /// [`Constraint`] objects.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 /// A set of permissions and a boolean expression giving a constraint on those
 /// permissions, for a particular class. Corresponds to a single `constrain` or
 /// `mlsconstrain` statement in policy language.
@@ -452,9 +415,16 @@ impl Parse for Constraint {
     }
 }
 
+impl Validate for Constraint {
+    type Error = anyhow::Error;
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 // A [`ConstraintExpr`] describes a constraint expression, represented as a
 // postfix-ordered list of terms.
-array_type!(ConstraintExpr, ConstraintTermCount, ConstraintTerms);
+array_type!(ConstraintExpr, ConstraintTermCount, ConstraintTerm);
 
 array_type_validate_deref_metadata_data_vec!(ConstraintExpr);
 
@@ -505,26 +475,12 @@ impl Validate for ConstraintTermCount {
     }
 }
 
-impl Validate for ConstraintTerms {
-    type Error = anyhow::Error;
-
-    /// [`ConstraintTerms`] have no internal constraints beyond those imposed by
-    /// individual [`ConstraintTerm`] objects. The `ParsedPolicy::validate()`
-    /// function separately validates that the constraint expression is
-    /// well-formed.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct ConstraintTerm {
     metadata: ConstraintTermMetadata,
     names: Option<ExtensibleBitmap>,
     names_type_set: Option<TypeSet>,
 }
-
-pub(super) type ConstraintTerms = Vec<ConstraintTerm>;
 
 impl Parse for ConstraintTerm {
     type Error = anyhow::Error;
@@ -548,6 +504,13 @@ impl Parse for ConstraintTerm {
         };
 
         Ok((Self { metadata, names, names_type_set }, tail))
+    }
+}
+
+impl Validate for ConstraintTerm {
+    type Error = anyhow::Error;
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -888,7 +851,7 @@ impl From<u32> for ClassDefaultRange {
     }
 }
 
-array_type!(ClassValidateTransitions, ClassValidateTransitionsCount, ConstraintTerms);
+array_type!(ClassValidateTransitions, ClassValidateTransitionsCount, ConstraintTerm);
 
 array_type_validate_deref_metadata_data_vec!(ClassValidateTransitions);
 
@@ -924,14 +887,13 @@ impl Validate for ClassValidateTransitionsCount {
     }
 }
 
-array_type!(ClassConstraints, ClassPermissions, Constraints);
+array_type!(ClassConstraints, ClassPermissions, Constraint);
 
 array_type_validate_deref_none_data_vec!(ClassConstraints);
 
 impl ValidateArray<ClassPermissions, Constraint> for ClassConstraints {
     type Error = anyhow::Error;
 
-    /// [`ClassConstraints`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
         _context: &PolicyValidationContext,
         _metadata: &ClassPermissions,
@@ -941,7 +903,7 @@ impl ValidateArray<ClassPermissions, Constraint> for ClassConstraints {
     }
 }
 
-array_type!(ClassPermissions, ClassCommonKey, Permissions);
+array_type!(ClassPermissions, ClassCommonKey, Permission);
 
 array_type_validate_deref_none_data_vec!(ClassPermissions);
 
@@ -965,7 +927,7 @@ impl Counted for ClassPermissions {
     }
 }
 
-array_type!(ClassCommonKey, ClassKey, Vec<u8>);
+array_type!(ClassCommonKey, ClassKey, u8);
 
 array_type_validate_deref_data!(ClassCommonKey);
 
@@ -989,7 +951,7 @@ impl Counted for ClassCommonKey {
     }
 }
 
-array_type!(ClassKey, ClassMetadata, Vec<u8>);
+array_type!(ClassKey, ClassMetadata, u8);
 
 array_type_validate_deref_both!(ClassKey);
 
@@ -1133,10 +1095,10 @@ impl Validate for ClassIndex {
     }
 }
 
-impl Validate for [Role] {
+impl Validate for Role {
     type Error = anyhow::Error;
 
-    /// TODO: Validate internal consistency between consecutive [`Role`] instances.
+    /// TODO: Validate [`Role`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -1185,7 +1147,7 @@ impl Parse for Role {
     }
 }
 
-array_type!(RoleMetadata, RoleStaticMetadata, Vec<u8>);
+array_type!(RoleMetadata, RoleStaticMetadata, u8);
 
 array_type_validate_deref_both!(RoleMetadata);
 
@@ -1226,7 +1188,7 @@ impl Validate for RoleStaticMetadata {
     }
 }
 
-array_type!(Type, TypeMetadata, Vec<u8>);
+array_type!(Type, TypeMetadata, u8);
 
 array_type_validate_deref_both!(Type);
 
@@ -1479,10 +1441,10 @@ impl Validate for TypeIndex {
     }
 }
 
-impl Validate for [User] {
+impl Validate for User {
     type Error = anyhow::Error;
 
-    /// TODO: Validate internal consistency between consecutive [`User`] instances.
+    /// TODO: Validate [`User`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -1537,7 +1499,7 @@ impl Parse for User {
     }
 }
 
-array_type!(UserData, UserMetadata, Vec<u8>);
+array_type!(UserData, UserMetadata, u8);
 
 array_type_validate_deref_both!(UserData);
 
@@ -1680,16 +1642,7 @@ impl Parse for MlsRange {
     }
 }
 
-impl Validate for [ConditionalBoolean] {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`ConditionalBoolean`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-array_type!(ConditionalBoolean, ConditionalBooleanMetadata, Vec<u8>);
+array_type!(ConditionalBoolean, ConditionalBooleanMetadata, u8);
 
 array_type_validate_deref_both!(ConditionalBoolean);
 
@@ -1739,15 +1692,6 @@ impl Validate for ConditionalBooleanMetadata {
     }
 }
 
-impl Validate for [Sensitivity] {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`Sensitivity`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct Sensitivity {
     metadata: SensitivityMetadata,
@@ -1792,7 +1736,7 @@ impl Validate for Sensitivity {
     }
 }
 
-array_type!(SensitivityMetadata, SensitivityStaticMetadata, Vec<u8>);
+array_type!(SensitivityMetadata, SensitivityStaticMetadata, u8);
 
 array_type_validate_deref_both!(SensitivityMetadata);
 
@@ -1833,7 +1777,7 @@ impl Validate for SensitivityStaticMetadata {
     }
 }
 
-array_type!(Category, CategoryMetadata, Vec<u8>);
+array_type!(Category, CategoryMetadata, u8);
 
 array_type_validate_deref_both!(Category);
 

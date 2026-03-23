@@ -18,7 +18,7 @@ pub(super) const MAX_BITMAP_ITEMS: u32 = 0x40;
 /// Fixed expectation for number of bits per [`MapItem`] in every [`ExtensibleBitmap`].
 pub(super) const MAP_NODE_BITS: u32 = 8 * std::mem::size_of::<u64>() as u32;
 
-array_type!(ExtensibleBitmap, Metadata, Vec<MapItem>);
+array_type!(ExtensibleBitmap, Metadata, MapItem);
 
 array_type_validate_deref_both!(ExtensibleBitmap);
 
@@ -145,18 +145,6 @@ impl Iterator for ExtensibleBitmapSpansIterator<'_> {
     }
 }
 
-impl Validate for Vec<ExtensibleBitmap> {
-    type Error = <ExtensibleBitmap as Validate>::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        for extensible_bitmap in self {
-            extensible_bitmap.validate(context)?;
-        }
-
-        Ok(())
-    }
-}
-
 impl Validate for Metadata {
     type Error = ValidateError;
 
@@ -227,7 +215,7 @@ pub(super) struct MapItem {
     map: le::U64,
 }
 
-impl Validate for [MapItem] {
+impl Validate for MapItem {
     type Error = anyhow::Error;
 
     /// All [`MapItem`] validation requires access to [`Metadata`]; validation performed in

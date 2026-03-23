@@ -561,20 +561,6 @@ pub trait Parse: Sized {
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error>;
 }
 
-/// Parse a data as a slice of inner data structures from a prefix of a [`ByteSlice`].
-pub(super) trait ParseSlice: Sized {
-    /// The type of error that may be returned from `parse()`, usually [`ParseError`] or
-    /// [`anyhow::Error`].
-    type Error: Into<anyhow::Error>;
-
-    /// Parses a `Self` as `count` of internal itemsfrom `bytes`, returning the `Self` and trailing
-    /// bytes, or an error if bytes corresponding to a `Self` are malformed.
-    fn parse_slice<'a>(
-        bytes: PolicyCursor<'a>,
-        count: usize,
-    ) -> Result<(Self, PolicyCursor<'a>), Self::Error>;
-}
-
 /// Context for validating a parsed policy.
 pub(super) struct PolicyValidationContext {
     /// The policy data that is being validated.
@@ -622,6 +608,17 @@ impl<T: Validate> Validate for Option<T> {
     }
 }
 
+impl<T: Validate> Validate for Vec<T> {
+    type Error = <T as Validate>::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        for item in self {
+            item.validate(context)?;
+        }
+        Ok(())
+    }
+}
+
 impl Validate for le::U32 {
     type Error = anyhow::Error;
 
@@ -642,16 +639,6 @@ impl Validate for u8 {
     }
 }
 
-impl Validate for [u8] {
-    type Error = anyhow::Error;
-
-    /// Using a raw `[u8]` implies no additional constraints on its value. To operate with
-    /// constraints, define a `struct T([u8]);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 impl<B: SplitByteSlice, T: Validate + FromBytes + KnownLayout + Immutable> Validate for Ref<B, T> {
     type Error = <T as Validate>::Error;
 
@@ -666,15 +653,14 @@ impl<B: SplitByteSlice, T: Counted + FromBytes + KnownLayout + Immutable> Counte
     }
 }
 
-/// A length-encoded array that contains metadata in `M` and a slice of data items internally
-/// managed by `D`.
+/// A length-encoded array that contains metadata of type `M` and a vector of data items of type `T`.
 #[derive(Clone, Debug, PartialEq)]
-struct Array<M, D> {
+struct Array<M, T> {
     metadata: M,
-    data: D,
+    data: Vec<T>,
 }
 
-impl<M: Counted + Parse, D: ParseSlice> Parse for Array<M, D> {
+impl<M: Counted + Parse, T: Parse> Parse for Array<M, T> {
     /// [`Array`] abstracts over two types (`M` and `D`) that may have different [`Parse::Error`]
     /// types. Unify error return type via [`anyhow::Error`].
     type Error = anyhow::Error;
@@ -685,8 +671,15 @@ impl<M: Counted + Parse, D: ParseSlice> Parse for Array<M, D> {
 
         let (metadata, tail) = M::parse(tail).map_err(Into::<anyhow::Error>::into)?;
 
-        let (data, tail) =
-            D::parse_slice(tail, metadata.count() as usize).map_err(Into::<anyhow::Error>::into)?;
+        let count = metadata.count() as usize;
+        let mut data = Vec::with_capacity(count);
+        let mut cur_tail = tail;
+        for _ in 0..count {
+            let (item, next_tail) = T::parse(cur_tail).map_err(Into::<anyhow::Error>::into)?;
+            data.push(item);
+            cur_tail = next_tail;
+        }
+        let tail = cur_tail;
 
         let array = Self { metadata, data };
 
@@ -758,10 +751,10 @@ macro_rules! array_type_validate_deref_both {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
-                let items = &self.data;
-                items.validate(context)?;
+                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
 
-                Self::validate_array(context, metadata, items).map_err(Into::<anyhow::Error>::into)
+                Self::validate_array(context, metadata, &self.data)
+                    .map_err(Into::<anyhow::Error>::into)
             }
         }
     };
@@ -778,10 +771,9 @@ macro_rules! array_type_validate_deref_data {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
-                let items = &self.data;
-                items.validate(context)?;
+                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
 
-                Self::validate_array(context, metadata, items)
+                Self::validate_array(context, metadata, &self.data)
             }
         }
     };
@@ -798,10 +790,9 @@ macro_rules! array_type_validate_deref_metadata_data_vec {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
-                let items = &self.data;
-                items.validate(context)?;
+                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
 
-                Self::validate_array(context, metadata, items.as_slice())
+                Self::validate_array(context, metadata, self.data.as_slice())
             }
         }
     };
@@ -818,39 +809,15 @@ macro_rules! array_type_validate_deref_none_data_vec {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
-                let items = &self.data;
-                items.validate(context)?;
+                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
 
-                Self::validate_array(context, metadata, items.as_slice())
+                Self::validate_array(context, metadata, self.data.as_slice())
             }
         }
     };
 }
 
 pub(super) use array_type_validate_deref_none_data_vec;
-
-impl<T: Parse> ParseSlice for Vec<T> {
-    /// `Vec<T>` may return a [`ParseError`] internally, or `<T as Parse>::Error`. Unify error
-    /// return type via [`anyhow::Error`].
-    type Error = anyhow::Error;
-
-    /// Parses `Vec<T>` by parsing individual `T` instances, then validating them.
-    fn parse_slice<'a>(
-        bytes: PolicyCursor<'a>,
-        count: usize,
-    ) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let mut slice = Vec::with_capacity(count);
-        let mut tail = bytes;
-
-        for _ in 0..count {
-            let (item, next_tail) = T::parse(tail).map_err(Into::<anyhow::Error>::into)?;
-            slice.push(item);
-            tail = next_tail;
-        }
-
-        Ok((slice, tail))
-    }
-}
 
 #[cfg(test)]
 pub(super) mod testing {

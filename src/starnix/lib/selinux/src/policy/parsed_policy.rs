@@ -6,11 +6,11 @@ use super::arrays::{
     ACCESS_VECTOR_RULE_TYPE_ALLOW, ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
     ACCESS_VECTOR_RULE_TYPE_AUDITALLOW, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
     ACCESS_VECTOR_RULE_TYPE_DONTAUDIT, ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, AccessVectorRule,
-    AccessVectorRuleMetadata, ConditionalNodes, Context, DeprecatedFilenameTransitions,
-    ExtendedPermissions, FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts,
-    IPv6Nodes, InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
-    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPairs, Nodes, Ports,
-    RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
+    AccessVectorRuleMetadata, ConditionalNode, Context, DeprecatedFilenameTransition,
+    ExtendedPermissions, FilenameTransition, FilenameTransitionList, FsUse, GenericFsContext,
+    IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid,
+    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
+    RangeTransition, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
     XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
     XpermsBitmap,
 };
@@ -80,25 +80,25 @@ pub struct ParsedPolicy {
     categories: CategoryIndex,
     /// The set of access vector rules referenced by this policy.
     access_vector_rules: HashedArrayView<AccessVectorRule>,
-    conditional_lists: SimpleArray<ConditionalNodes>,
+    conditional_lists: SimpleArray<ConditionalNode>,
     /// The set of role transitions to apply when instantiating new objects.
     role_transitions: RoleTransitions,
     /// The set of role transitions allowed by policy.
     role_allowlist: RoleAllows,
     filename_transition_list: FilenameTransitionList,
-    initial_sids: SimpleArray<InitialSids>,
-    filesystems: SimpleArray<NamedContextPairs>,
-    ports: SimpleArray<Ports>,
-    network_interfaces: SimpleArray<NamedContextPairs>,
-    nodes: SimpleArray<Nodes>,
-    fs_uses: SimpleArray<FsUses>,
-    ipv6_nodes: SimpleArray<IPv6Nodes>,
-    infinitiband_partition_keys: Option<SimpleArray<InfinitiBandPartitionKeys>>,
-    infinitiband_end_ports: Option<SimpleArray<InfinitiBandEndPorts>>,
+    initial_sids: SimpleArray<InitialSid>,
+    filesystems: SimpleArray<NamedContextPair>,
+    ports: SimpleArray<Port>,
+    network_interfaces: SimpleArray<NamedContextPair>,
+    nodes: SimpleArray<Node>,
+    fs_uses: SimpleArray<FsUse>,
+    ipv6_nodes: SimpleArray<IPv6Node>,
+    infinitiband_partition_keys: Option<SimpleArray<InfinitiBandPartitionKey>>,
+    infinitiband_end_ports: Option<SimpleArray<InfinitiBandEndPort>>,
     /// A set of labeling statements to apply to given filesystems and/or their subdirectories.
     /// Corresponds to the `genfscon` labeling statement in the policy.
-    generic_fs_contexts: SimpleArray<GenericFsContexts>,
-    range_transitions: SimpleArray<RangeTransitions>,
+    generic_fs_contexts: SimpleArray<GenericFsContext>,
+    range_transitions: SimpleArray<RangeTransition>,
     /// Extensible bitmaps that encode associations between types and attributes.
     attribute_maps: Vec<ExtensibleBitmap>,
 }
@@ -435,11 +435,11 @@ impl ParsedPolicy {
         &self.conditional_booleans.data
     }
 
-    pub(super) fn fs_uses(&self) -> &FsUses {
+    pub(super) fn fs_uses(&self) -> &[FsUse] {
         &self.fs_uses.data
     }
 
-    pub(super) fn generic_fs_contexts(&self) -> &GenericFsContexts {
+    pub(super) fn generic_fs_contexts(&self) -> &[GenericFsContext] {
         &self.generic_fs_contexts.data
     }
 
@@ -451,7 +451,7 @@ impl ParsedPolicy {
         &self.role_transitions.data
     }
 
-    pub(super) fn range_transitions(&self) -> &RangeTransitions {
+    pub(super) fn range_transitions(&self) -> &[RangeTransition] {
         &self.range_transitions.data
     }
 
@@ -638,7 +638,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing access vector rules")?;
 
-    let (conditional_lists, tail) = SimpleArray::<ConditionalNodes>::parse(tail)
+    let (conditional_lists, tail) = SimpleArray::<ConditionalNode>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing conditional lists")?;
 
@@ -651,53 +651,53 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .context("parsing role allow rules")?;
 
     let (filename_transition_list, tail) = if policy_version_value >= 33 {
-        let (filename_transition_list, tail) = SimpleArray::<FilenameTransitions>::parse(tail)
+        let (filename_transition_list, tail) = SimpleArray::<FilenameTransition>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing standard filename transitions")?;
         (FilenameTransitionList::PolicyVersionGeq33(filename_transition_list), tail)
     } else {
         let (filename_transition_list, tail) =
-            SimpleArray::<DeprecatedFilenameTransitions>::parse(tail)
+            SimpleArray::<DeprecatedFilenameTransition>::parse(tail)
                 .map_err(Into::<anyhow::Error>::into)
                 .context("parsing deprecated filename transitions")?;
         (FilenameTransitionList::PolicyVersionLeq32(filename_transition_list), tail)
     };
 
-    let (initial_sids, tail) = SimpleArray::<InitialSids>::parse(tail)
+    let (initial_sids, tail) = SimpleArray::<InitialSid>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing initial sids")?;
 
-    let (filesystems, tail) = SimpleArray::<NamedContextPairs>::parse(tail)
+    let (filesystems, tail) = SimpleArray::<NamedContextPair>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing filesystem contexts")?;
 
-    let (ports, tail) = SimpleArray::<Ports>::parse(tail)
+    let (ports, tail) = SimpleArray::<Port>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing ports")?;
 
-    let (network_interfaces, tail) = SimpleArray::<NamedContextPairs>::parse(tail)
+    let (network_interfaces, tail) = SimpleArray::<NamedContextPair>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing network interfaces")?;
 
-    let (nodes, tail) = SimpleArray::<Nodes>::parse(tail)
+    let (nodes, tail) = SimpleArray::<Node>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing nodes")?;
 
-    let (fs_uses, tail) = SimpleArray::<FsUses>::parse(tail)
+    let (fs_uses, tail) = SimpleArray::<FsUse>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing fs uses")?;
 
-    let (ipv6_nodes, tail) = SimpleArray::<IPv6Nodes>::parse(tail)
+    let (ipv6_nodes, tail) = SimpleArray::<IPv6Node>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing ipv6 nodes")?;
 
     let (infinitiband_partition_keys, infinitiband_end_ports, tail) =
         if policy_version_value >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
             let (infinity_band_partition_keys, tail) =
-                SimpleArray::<InfinitiBandPartitionKeys>::parse(tail)
+                SimpleArray::<InfinitiBandPartitionKey>::parse(tail)
                     .map_err(Into::<anyhow::Error>::into)
                     .context("parsing infiniti band partition keys")?;
-            let (infinitiband_end_ports, tail) = SimpleArray::<InfinitiBandEndPorts>::parse(tail)
+            let (infinitiband_end_ports, tail) = SimpleArray::<InfinitiBandEndPort>::parse(tail)
                 .map_err(Into::<anyhow::Error>::into)
                 .context("parsing infiniti band end ports")?;
             (Some(infinity_band_partition_keys), Some(infinitiband_end_ports), tail)
@@ -705,11 +705,11 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
             (None, None, tail)
         };
 
-    let (generic_fs_contexts, tail) = SimpleArray::<GenericFsContexts>::parse(tail)
+    let (generic_fs_contexts, tail) = SimpleArray::<GenericFsContext>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing generic filesystem contexts")?;
 
-    let (range_transitions, tail) = SimpleArray::<RangeTransitions>::parse(tail)
+    let (range_transitions, tail) = SimpleArray::<RangeTransition>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing range transitions")?;
 

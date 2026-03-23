@@ -42,7 +42,7 @@ impl Validate for Magic {
     }
 }
 
-array_type!(Signature, SignatureMetadata, Vec<u8>);
+array_type!(Signature, SignatureMetadata, u8);
 
 array_type_validate_deref_both!(Signature);
 
