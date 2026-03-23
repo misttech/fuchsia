@@ -211,3 +211,10 @@ class FuchsiaBaseTest(fuchsia_base_test_init.AsyncFuchsiaBaseTest):
             fuchsia_async_extension.get_loop().run_until_complete(
                 super()._log_message_to_devices(message, level)
             )
+
+    def register_controller(  # type: ignore
+        self, module: Any, required: bool = True, min_number: int = 1
+    ) -> list[Any]:
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            super().register_controller(module, required, min_number)
+        )

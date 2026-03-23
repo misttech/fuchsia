@@ -220,7 +220,10 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        res = self.register_controller(fuchsia_device_mobly_controller)
+        res = AsyncFuchsiaBaseTest.register_controller(
+            self,
+            fuchsia_device_mobly_controller,
+        )
         if inspect.isawaitable(res):
             fuchsia_devices_sync = await res
         else:
