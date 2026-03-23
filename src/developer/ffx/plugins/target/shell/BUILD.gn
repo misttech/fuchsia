@@ -11,11 +11,11 @@ ffx_plugin("ffx_target_shell") {
   version = "0.1.0"
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.developer.console:fuchsia.developer.console_rust",
+    "//sdk/fidl/fuchsia.developer.console:fuchsia.developer.console_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/client",
     "//src/sys/lib/socket-to-stdio",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",

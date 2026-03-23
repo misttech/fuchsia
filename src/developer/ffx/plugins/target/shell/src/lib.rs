@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_client::fidl::Proxy as _;
+use fdomain_fuchsia_developer_console as fconsole;
 use ffx_target_shell_args::ShellCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl::endpoints::ProxyHasDomain as _;
-use fidl_fuchsia_developer_console as fconsole;
 use futures::{FutureExt as _, TryFutureExt as _};
 use socket_to_stdio::Stdout;
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(FfxTool)]
 pub struct ShellTool {
@@ -46,7 +46,9 @@ impl FfxMain for ShellTool {
         let stdio = async move {
             let stdout = if interactive { Stdout::raw()? } else { Stdout::buffered() };
             #[allow(clippy::large_futures)]
-            socket_to_stdio::connect_socket_to_stdio(client, stdout).map_err(|e| fho::bug!(e)).await
+            socket_to_stdio::connect_fdomain_socket_to_stdio(client, stdout)
+                .map_err(|e| fho::bug!(e))
+                .await
         };
         let launch = launcher.launch(options).map(|r| match r {
             Ok(Ok(r)) => Ok(r),
