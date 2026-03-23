@@ -305,23 +305,24 @@ zx_status_t UsbPeripheral::AllocStringDescLocked(std::optional<size_t> function_
   return ZX_OK;
 }
 
-zx_status_t UsbPeripheral::ValidateFunction(size_t function_index, void* descriptors, size_t length,
-                                            uint8_t* out_num_interfaces) {
+zx::result<uint8_t> UsbPeripheral::ValidateFunction(size_t function_index, void* descriptors,
+                                                    size_t length) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
   auto* intf_desc = static_cast<usb_interface_descriptor_t*>(descriptors);
+  uint8_t num_interfaces = 0;
   if (intf_desc->b_descriptor_type == USB_DT_INTERFACE) {
     if (intf_desc->b_length != sizeof(usb_interface_descriptor_t)) {
       fdf::error("{}: interface descriptor is invalid", __func__);
-      return ZX_ERR_INVALID_ARGS;
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
   } else if (intf_desc->b_descriptor_type == USB_DT_INTERFACE_ASSOCIATION) {
     if (intf_desc->b_length != sizeof(usb_interface_assoc_descriptor_t)) {
       fdf::error("{}: interface association descriptor is invalid", __func__);
-      return ZX_ERR_INVALID_ARGS;
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
   } else {
     fdf::error("{}: first descriptor not an interface descriptor", __func__);
-    return ZX_ERR_INVALID_ARGS;
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto* end =
@@ -338,13 +339,13 @@ zx_status_t UsbPeripheral::ValidateFunction(size_t function_index, void* descrip
       if (desc->b_interface_number >= std::size(interface_map) ||
           interface_map[desc->b_interface_number] != function_index) {
         fdf::error("Function does not exist at interface number {}", desc->b_interface_number);
-        return ZX_ERR_INVALID_ARGS;
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
       if (desc->b_alternate_setting == 0) {
-        if (*out_num_interfaces == UINT8_MAX) {
-          return ZX_ERR_INVALID_ARGS;
+        if (num_interfaces == UINT8_MAX) {
+          return zx::error(ZX_ERR_INVALID_ARGS);
         }
-        (*out_num_interfaces)++;
+        num_interfaces++;
       }
     } else if (header->b_descriptor_type == USB_DT_ENDPOINT) {
       auto* desc = reinterpret_cast<const usb_endpoint_descriptor_t*>(header);
@@ -352,19 +353,19 @@ zx_status_t UsbPeripheral::ValidateFunction(size_t function_index, void* descrip
       if (index == 0 || index >= std::size(endpoint_map_) ||
           endpoint_map_[index] != function_index) {
         fdf::error("Bad endpoint address {:#x}", desc->b_endpoint_address);
-        return ZX_ERR_INVALID_ARGS;
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
     }
 
     if (header->b_length == 0) {
       fdf::error("usb_func_set_interface: zero length descriptor");
-      return ZX_ERR_INVALID_ARGS;
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
     header = reinterpret_cast<const usb_descriptor_header_t*>(
         reinterpret_cast<const uint8_t*>(header) + header->b_length);
   }
 
-  return ZX_OK;
+  return zx::ok(num_interfaces);
 }
 
 bool UsbPeripheral::AllFunctionsRegistered() const {

@@ -124,8 +124,9 @@ class UsbPeripheral : public fdf::DriverBase,
                               SetStateChangeListenerCompleter::Sync& completer) override;
 
   zx_status_t SetDeviceDescriptor(DeviceDescriptor desc);
-  zx_status_t ValidateFunction(size_t function_index, void* descriptors, size_t length,
-                               uint8_t* out_num_interfaces);
+  // Validates a function and returns the number of interfaces it uses on
+  // success.
+  zx::result<uint8_t> ValidateFunction(size_t function_index, void* descriptors, size_t length);
   zx_status_t FunctionRegistered();
   void FunctionCleared();
 

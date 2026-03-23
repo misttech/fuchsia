@@ -160,15 +160,15 @@ zx_status_t UsbFunction::UsbFunctionSetInterface(
     delete[] descriptors;
     return ZX_ERR_INTERNAL;
   }
-  num_interfaces_ = 0;
 
-  auto status = peripheral_->ValidateFunction(index_, descriptors, length, &num_interfaces_);
-  if (status != ZX_OK) {
+  zx::result<uint8_t> validate_result = peripheral_->ValidateFunction(index_, descriptors, length);
+  if (validate_result.is_error()) {
     fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}",
-               zx_status_get_string(status));
+               validate_result.status_string());
     delete[] descriptors;
-    return status;
+    return validate_result.error_value();
   }
+  num_interfaces_ = validate_result.value();
 
   descriptors_.reset(descriptors, length);
   return peripheral_->FunctionRegistered();
@@ -382,18 +382,19 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   memcpy(descriptors, request.configuration().data(), length);
   num_interfaces_ = 0;
 
-  zx_status_t status = peripheral_->ValidateFunction(index_, descriptors, length, &num_interfaces_);
-  if (status != ZX_OK) {
+  zx::result validate_result = peripheral_->ValidateFunction(index_, descriptors, length);
+  if (validate_result.is_error()) {
     fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}",
-               zx_status_get_string(status));
+               validate_result.status_string());
     delete[] descriptors;
-    completer.Reply(fit::as_error(status));
+    completer.Reply(fit::as_error(validate_result.error_value()));
     return;
   }
+  num_interfaces_ = validate_result.value();
 
   descriptors_.reset(descriptors, length);
   function_intf_fidl_.Bind(std::move(request.iface()));
-  status = peripheral_->FunctionRegistered();
+  zx_status_t status = peripheral_->FunctionRegistered();
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
     fdf::error("FunctionRegistered failed: {}", zx_status_get_string(status));
