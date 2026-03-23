@@ -867,6 +867,7 @@ mod tests {
     use super::*;
     use fidl::endpoints::{ControlHandle, RequestStream};
     use fuchsia_async as fasync;
+    use fuchsia_sync::{Condvar, Mutex};
     use futures::StreamExt;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1302,14 +1303,22 @@ mod tests {
     #[fuchsia::test]
     async fn test_open_pipelined_peer_closed() {
         let (client, stream) = fidl::endpoints::create_request_stream::<fio::DirectoryMarker>();
+        let pair = Arc::new((Mutex::new(false), Condvar::new()));
 
-        fn serve_mock_directory_close_early(mut stream: fio::DirectoryRequestStream) {
+        fn serve_mock_directory_close_early(
+            mut stream: fio::DirectoryRequestStream,
+            pair: Arc<(Mutex<bool>, Condvar)>,
+        ) {
             fasync::Task::spawn(async move {
                 if let Some(Ok(request)) = stream.next().await {
                     match request {
                         fio::DirectoryRequest::Open { object, .. } => {
                             // We just drop the object (the server_end of the channel), closing it.
                             drop(object);
+                            let (lock, cvar) = &*pair;
+                            let mut closed = lock.lock();
+                            *closed = true;
+                            cvar.notify_one();
                         }
                         _ => {}
                     }
@@ -1318,14 +1327,21 @@ mod tests {
             .detach();
         }
 
-        serve_mock_directory_close_early(stream);
+        serve_mock_directory_close_early(stream, pair.clone());
 
         let io = RemoteIo::new(client.into_channel().into());
         fasync::unblock(move || {
             // Give the server time to drop the channel before the second open
-            // We can't easily yield from synchronous code, but we can sleep.
-            let _guard = hook(Box::new(|| {
-                std::thread::sleep(std::time::Duration::from_millis(100));
+            let mut count = 0;
+            let _guard = hook(Box::new(move || {
+                if count > 0 {
+                    let (lock, cvar) = &*pair;
+                    let mut closed = lock.lock();
+                    while !*closed {
+                        cvar.wait(&mut closed);
+                    }
+                }
+                count += 1;
             }));
             let results = io.open_pipelined(
                 &["path1", "path2"],
