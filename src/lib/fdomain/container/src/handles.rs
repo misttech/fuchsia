@@ -170,7 +170,7 @@ impl HandleType for fidl::Channel {
                 if handles.iter().any(|x| x.result != fidl::Status::OK) {
                     Some(Err(proto::WriteChannelError::OpErrors(
                         handles
-                            .into_iter()
+                            .iter_mut()
                             .map(|x| {
                                 Result::from(x.result)
                                     .err()
