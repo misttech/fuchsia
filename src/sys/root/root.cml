@@ -269,7 +269,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.power.topology.test.SystemActivityControl" ],
+            protocol: [
+                "fuchsia.power.battery.BatteryManager",
+                "fuchsia.power.topology.test.SystemActivityControl",
+            ],
             from: "#core",
             to: "#bootstrap",
             dependency: "weak",

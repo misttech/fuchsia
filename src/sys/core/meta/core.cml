@@ -893,5 +893,10 @@
             from: "#system-activity-governor-controller",
             source_availability: "unknown",
         },
+        {
+            protocol: [ "fuchsia.power.battery.BatteryManager" ],
+            from: "#battery_manager",
+            source_availability: "unknown",
+        },
     ],
 }

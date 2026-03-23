@@ -24,14 +24,18 @@ use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
 use event_listener::Event;
 use fuchsia_async as fasync;
+use fuchsia_async::condition::Condition;
 use fuchsia_inspect::{Inspector, LazyNode, NumericProperty as _, UintProperty};
 use fuchsia_sync::Mutex;
-use futures::FutureExt;
+use futures::{FutureExt, Stream};
 use fxfs_crypto::Crypt;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use static_assertions::const_assert;
+use std::pin::pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use std::task::Poll;
+use std::time::{Duration, Instant};
 use storage_device::{Device, DeviceHolder};
 
 pub const MIN_BLOCK_SIZE: u64 = 4096;
@@ -44,20 +48,33 @@ pub const MAX_BLOCK_SIZE: u64 = u16::MAX as u64 + 1;
 pub const MAX_FILE_SIZE: u64 = i64::MAX as u64 - 4095;
 const_assert!(9223372036854771712 == MAX_FILE_SIZE);
 
+use futures::stream::StreamExt;
+
 // The maximum number of transactions that can be in-flight at any time.
 const MAX_IN_FLIGHT_TRANSACTIONS: u64 = 4;
 
 // Start trimming 1 hour after boot.  The idea here is to wait until the initial flurry of
 // activity during boot is finished.  This is a rough heuristic and may need to change later if
 // performance is affected.
-const TRIM_AFTER_BOOT_TIMER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+const TRIM_AFTER_BOOT_TIMER: Duration = Duration::from_secs(60 * 60);
 
 // After the initial trim, perform another trim every 24 hours.
-const TRIM_INTERVAL_TIMER: std::time::Duration = std::time::Duration::from_secs(60 * 60 * 24);
+const TRIM_INTERVAL_TIMER: Duration = Duration::from_secs(60 * 60 * 24);
 
 /// How often to clean the transfer buffer.
 // TODO(https://fxbug.dev/489725256) Configure the task to run when fxfs is idle.
-const CLEAN_TRANSFER_BUFFER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const CLEAN_TRANSFER_BUFFER_INTERVAL: Duration = Duration::from_secs(60);
+
+#[cfg(target_os = "fuchsia")]
+pub type WakeLease = zx::NullableHandle;
+
+#[cfg(not(target_os = "fuchsia"))]
+pub type WakeLease = fasync::emulated_handle::Handle;
+
+pub trait PowerManager: Send + Sync {
+    /// Returns a stream of battery status changes (true if using battery).
+    fn watch_battery(self: Arc<Self>) -> futures::stream::BoxStream<'static, (bool, WakeLease)>;
+}
 
 /// Holds information on an Fxfs Filesystem
 pub struct Info {
@@ -95,7 +112,7 @@ pub struct Options {
     // trim.  The second is the interval to repeat trimming thereafter.  If set to None, no trimming
     // is done.
     // Default values are (5 minutes, 24 hours).
-    pub trim_config: Option<(std::time::Duration, std::time::Duration)>,
+    pub trim_config: Option<(Duration, Duration)>,
 
     // If set, journal will not be used for writes. The user must call 'close' when finished.
     // The provided superblock instance will be written upon close().
@@ -114,6 +131,12 @@ pub struct Options {
     // journal. The journal will use barriers to enforce proper ordering between data and metadata
     // writes. Must be true if `inline_crypto_enabled` is true.
     pub barriers_enabled: bool,
+
+    /// If set, this will be used to check for charger status before trimming.
+    pub power_manager: Option<Arc<dyn PowerManager>>,
+
+    /// How long to wait after being placed on a charger before starting a trim.
+    pub trim_charger_wait: Duration,
 }
 
 impl Default for Options {
@@ -128,6 +151,8 @@ impl Default for Options {
             image_builder_mode: None,
             inline_crypto_enabled: false,
             barriers_enabled: false,
+            power_manager: None,
+            trim_charger_wait: Duration::from_secs(10),
         }
     }
 }
@@ -356,11 +381,18 @@ impl FxFilesystemBuilder {
         self
     }
 
-    pub fn trim_config(
-        mut self,
-        delay_and_interval: Option<(std::time::Duration, std::time::Duration)>,
-    ) -> Self {
+    pub fn trim_config(mut self, delay_and_interval: Option<(Duration, Duration)>) -> Self {
         self.options.trim_config = delay_and_interval;
+        self
+    }
+
+    pub fn power_manager(mut self, power_manager: Arc<dyn PowerManager>) -> Self {
+        self.options.power_manager = Some(power_manager);
+        self
+    }
+
+    pub fn trim_charger_wait(mut self, wait: Duration) -> Self {
+        self.options.trim_charger_wait = wait;
         self
     }
 
@@ -425,10 +457,8 @@ impl FxFilesystemBuilder {
                 commit_mutex: futures::lock::Mutex::new(()),
                 lock_manager: LockManager::new(),
                 flush_task: Mutex::new(None),
-                trim_task: Mutex::new(None),
-                clean_transfer_buffer_task: Mutex::new(None),
+                background_tasks: fasync::Scope::new(),
                 closed: AtomicBool::new(true),
-                shutdown_event: Event::new(),
                 trace: self.trace,
                 graveyard: Graveyard::new(objects.clone()),
                 completed_transactions: metrics::detail().create_uint("completed_transactions", 0),
@@ -515,8 +545,8 @@ impl FxFilesystemBuilder {
             // Start the background tasks.
             filesystem.graveyard.clone().reap_async();
 
-            if let Some((delay, interval)) = filesystem.options.trim_config.clone() {
-                filesystem.start_trim_task(delay, interval);
+            if filesystem.options.trim_config.is_some() {
+                filesystem.start_trim_task();
             }
             filesystem.start_clean_transfer_buffer_task();
         }
@@ -532,11 +562,9 @@ pub struct FxFilesystem {
     commit_mutex: futures::lock::Mutex<()>,
     lock_manager: LockManager,
     flush_task: Mutex<Option<fasync::Task<()>>>,
-    trim_task: Mutex<Option<fasync::Task<()>>>,
-    clean_transfer_buffer_task: Mutex<Option<fasync::Task<()>>>,
+    background_tasks: fasync::Scope,
     closed: AtomicBool,
     // An event that is signalled when the filesystem starts to shut down.
-    shutdown_event: Event,
     trace: bool,
     graveyard: Arc<Graveyard>,
     completed_transactions: UintProperty,
@@ -578,16 +606,8 @@ impl FxFilesystem {
             self.journal().force_compact().await?;
         }
         assert_eq!(self.closed.swap(true, Ordering::SeqCst), false);
-        self.shutdown_event.notify(usize::MAX);
         debug_assert_not_too_long!(self.graveyard.wait_for_reap());
-        let trim_task = self.trim_task.lock().take();
-        if let Some(task) = trim_task {
-            debug_assert_not_too_long!(task);
-        }
-        let clean_transfer_buffer_task = self.clean_transfer_buffer_task.lock().take();
-        if let Some(task) = clean_transfer_buffer_task {
-            debug_assert_not_too_long!(task);
-        }
+        debug_assert_not_too_long!(self.background_tasks.clone().cancel());
         self.journal.stop_compactions().await;
         let sync_status =
             if self.journal().image_builder_mode().is_some() || self.options().read_only {
@@ -785,18 +805,102 @@ impl FxFilesystem {
         }
     }
 
+    fn start_trim_task(self: &Arc<Self>) {
+        if !self.device.supports_trim() {
+            info!("Device does not support trim; not scheduling trimming");
+            return;
+        }
+        let this = self.clone();
+        self.background_tasks
+            .spawn(this.trim_task().trace(trace_future_args!("Filesystem::trim_task")));
+    }
+
+    async fn trim_task(self: Arc<Self>) {
+        // This task will be cancelled when the filesystem is closed.
+        let Some((mut next_timer, _)) = self.options.trim_config else { return };
+        loop {
+            fasync::Timer::new(next_timer.clone()).await;
+
+            // The timer has fired indicating a trim is now due.  If we have a power manager, we
+            // now check to see if there's an external power source.
+            let start = Instant::now();
+            let result = if let Some(pm) = &self.options.power_manager {
+                let mut watcher = pm.clone().watch_battery();
+
+                // The pauser starts paused.
+                let pauser = Pauser::new(self.options.trim_charger_wait);
+
+                let mut pause_future = pin!(
+                    async {
+                        let mut wake_lease = WakeLease::invalid();
+                        loop {
+                            let Some((using_battery, new_lease)) = watcher.next_latest().await
+                            else {
+                                // If we lose the connection to the watcher, unpause and do not
+                                // worry about monitoring the power source.
+                                pauser.set_pause(false);
+                                drop(wake_lease); // Silence the compiler warnings.
+                                return;
+                            };
+
+                            // Pause if the device is using battery.
+                            pauser.set_pause(using_battery);
+
+                            // Hold onto a wake lease if we are using an external power source (and
+                            // we are therefore unpaused).
+                            if using_battery {
+                                wake_lease = WakeLease::invalid();
+                            } else if !new_lease.is_invalid() {
+                                wake_lease = new_lease;
+                            }
+                        }
+                    }
+                    .fuse()
+                );
+
+                let mut do_trim = pin!(self.do_trim(Some(&pauser)).fuse());
+
+                loop {
+                    futures::select! {
+                        _ = pause_future => {}
+                        result = do_trim => break result,
+                    }
+                }
+
+                // Now that trim has completed, we don't need to watch the power source any more, so
+                // we just drop the pauser and the future monitoring the power source.
+            } else {
+                self.do_trim(None).await
+            };
+
+            let duration = start.elapsed();
+            match result {
+                Ok(bytes_trimmed) => info!(
+                    "Trimmed {bytes_trimmed} bytes in {duration:?}.  Next trim in \
+                     {next_timer:?}",
+                ),
+                Err(error) => error!(error:?; "Failed to trim"),
+            }
+
+            let Some((_, interval)) = self.options.trim_config else { return };
+            next_timer = interval;
+            if next_timer.is_zero() {
+                fasync::yield_now().await;
+            }
+        }
+    }
+
     // Returns the number of bytes trimmed.
-    async fn do_trim(&self) -> Result<usize, Error> {
+    async fn do_trim(&self, pauser: Option<&Pauser>) -> Result<usize, Error> {
         const MAX_EXTENTS_PER_BATCH: usize = 8;
         const MAX_EXTENT_SIZE: usize = 256 * 1024;
         let mut offset = 0;
         let mut bytes_trimmed = 0;
         loop {
-            if self.closed.load(Ordering::Relaxed) {
-                info!("Filesystem is closed, nothing to trim");
-                return Ok(bytes_trimmed);
-            }
             let allocator = self.allocator();
+            if let Some(pauser) = pauser {
+                pauser.maybe_pause().await;
+            }
             let trimmable_extents =
                 allocator.take_for_trimming(offset, MAX_EXTENT_SIZE, MAX_EXTENTS_PER_BATCH).await?;
             for device_range in trimmable_extents.extents() {
@@ -812,68 +916,17 @@ impl FxFilesystem {
         Ok(bytes_trimmed)
     }
 
-    fn start_trim_task(
-        self: &Arc<Self>,
-        delay: std::time::Duration,
-        interval: std::time::Duration,
-    ) {
-        if !self.device.supports_trim() {
-            info!("Device does not support trim; not scheduling trimming");
-            return;
-        }
-        let this = self.clone();
-        let mut next_timer = delay;
-        *self.trim_task.lock() = Some(fasync::Task::spawn(
-            async move {
-                loop {
-                    let shutdown_listener = this.shutdown_event.listen();
-                    // Note that we need to check if the filesystem was closed after we start
-                    // listening to the shutdown event, but before we start waiting on `timer`,
-                    // because otherwise we might start listening on `shutdown_event` *after* the
-                    // event was signaled, and so `shutdown_listener` will never fire, and this
-                    // task will get stuck until `timer` expires.
-                    if this.closed.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    futures::select!(
-                        () = fasync::Timer::new(next_timer.clone()).fuse() => {},
-                        () = shutdown_listener.fuse() => return,
-                    );
-                    let start_time = std::time::Instant::now();
-                    let res = this.do_trim().await;
-                    let duration = std::time::Instant::now() - start_time;
-                    next_timer = interval.clone();
-                    match res {
-                        Ok(bytes_trimmed) => info!(
-                            "Trimmed {bytes_trimmed} bytes in {duration:?}.  Next trim in \
-                            {next_timer:?}",
-                        ),
-                        Err(e) => error!(e:?; "Failed to trim"),
-                    }
-                }
-            }
-            .trace(trace_future_args!("Filesystem::trim_task")),
-        ));
-    }
-
     fn start_clean_transfer_buffer_task(self: &Arc<Self>) {
         let this = self.clone();
-        *self.clean_transfer_buffer_task.lock() = Some(fasync::Task::spawn(
+        self.background_tasks.spawn(
             async move {
                 loop {
-                    let shutdown_listener = this.shutdown_event.listen();
-                    if this.closed.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    futures::select!(
-                        () = fasync::Timer::new(CLEAN_TRANSFER_BUFFER_INTERVAL).fuse() => {},
-                        () = shutdown_listener.fuse() => return,
-                    );
+                    fasync::Timer::new(CLEAN_TRANSFER_BUFFER_INTERVAL).await;
                     this.device().clean_transfer_buffer();
                 }
             }
             .trace(trace_future_args!("Filesystem::clean_transfer_buffer_task")),
-        ));
+        );
     }
 
     pub(crate) async fn reservation_for_transaction<'a>(
@@ -1078,6 +1131,57 @@ impl FsckAfterEveryTransaction {
     }
 }
 
+struct Pauser {
+    pause: Condition<bool>,
+    bounce_delay: Duration,
+}
+
+impl Pauser {
+    /// Returns a new Pauser which starts paused.
+    fn new(bounce_delay: Duration) -> Self {
+        Self { pause: Condition::new(true), bounce_delay }
+    }
+
+    async fn maybe_pause(&self) {
+        loop {
+            if !*self.pause.lock() {
+                return;
+            }
+            self.pause.when(|p| if *p { Poll::Pending } else { Poll::Ready(()) }).await;
+            fasync::Timer::new(self.bounce_delay).await;
+        }
+    }
+
+    fn set_pause(&self, v: bool) {
+        let mut guard = self.pause.lock();
+        if *guard == v {
+            return;
+        }
+        *guard = v;
+        for waker in guard.drain_wakers() {
+            waker.wake();
+        }
+    }
+}
+
+trait NextLatest: Stream + Unpin {
+    /// Gets the next item from the stream, but if multiple items are ready, returns the latest.
+    async fn next_latest(&mut self) -> Option<Self::Item> {
+        let Some(mut next) = self.next().await else { return None };
+
+        // Coalesce with any subsequent items that are ready.
+        loop {
+            match self.next().now_or_never() {
+                None => return Some(next),
+                Some(None) => return None,
+                Some(Some(n)) => next = n,
+            }
+        }
+    }
+}
+
+impl<T: ?Sized + Unpin> NextLatest for T where T: Stream {}
+
 #[cfg(test)]
 mod tests {
     use super::{FxFilesystem, FxFilesystemBuilder, FxfsError, SyncOptions};
@@ -1105,7 +1209,7 @@ mod tests {
     use rustc_hash::FxHashMap as HashMap;
     use std::ops::Range;
     use std::sync::Arc;
-    use std::sync::atomic::{self, AtomicU32};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::{self, FakeDevice};
@@ -1751,7 +1855,7 @@ mod tests {
 
         impl fake_device::Observer for Observer {
             fn barrier(&self) {
-                self.0.fetch_add(1, atomic::Ordering::Relaxed);
+                self.0.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -1791,7 +1895,7 @@ mod tests {
             .open(device)
             .await
             .expect("new filesystem failed");
-        let expected_barrier_count = barrier_count.load(atomic::Ordering::Relaxed);
+        let expected_barrier_count = barrier_count.load(Ordering::Relaxed);
 
         let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_vol
@@ -1831,7 +1935,7 @@ mod tests {
         // Unmount the filesystem to ensure that the journal flushes.
         fs.close().await.expect("close failed");
         // Ensure that no barriers were emitted while creating files, as no data was written.
-        assert_eq!(expected_barrier_count, barrier_count.load(atomic::Ordering::Relaxed));
+        assert_eq!(expected_barrier_count, barrier_count.load(Ordering::Relaxed));
     }
 
     #[fuchsia::test]
@@ -1842,7 +1946,7 @@ mod tests {
 
         impl fake_device::Observer for Observer {
             fn barrier(&self) {
-                self.0.fetch_add(1, atomic::Ordering::Relaxed);
+                self.0.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -1882,7 +1986,7 @@ mod tests {
             .open(device)
             .await
             .expect("new filesystem failed");
-        let expected_barrier_count = barrier_count.load(atomic::Ordering::Relaxed);
+        let expected_barrier_count = barrier_count.load(Ordering::Relaxed);
 
         let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_vol
@@ -1927,7 +2031,7 @@ mod tests {
         // Unmount the filesystem to ensure that the journal flushes.
         fs.close().await.expect("close failed");
         // Ensure that a barrier was emitted while writing to the file.
-        assert!(expected_barrier_count < barrier_count.load(atomic::Ordering::Relaxed));
+        assert!(expected_barrier_count < barrier_count.load(Ordering::Relaxed));
     }
 
     #[test_case(true; "fail when original filesystem has barriers enabled")]
@@ -2268,5 +2372,238 @@ mod tests {
         device.read(other_sb.first_extent().start, buf.as_mut()).await.expect("read other_sb");
         // Expecting all zeros for `other_sb`
         assert_eq!(buf.as_slice(), &[0; 4096], "other_sb should be zeroed");
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_trim_with_power_manager() {
+        use anyhow::Error;
+        use async_trait::async_trait;
+        use fuchsia_async::TestExecutor;
+        use futures::StreamExt;
+        use zx::HandleBased;
+
+        TestExecutor::advance_to(fasync::MonotonicInstant::ZERO).await;
+
+        #[derive(Default)]
+        struct MockPowerManager {
+            on_battery: Mutex<bool>,
+            event: event_listener::Event,
+            wake_lease: Mutex<Option<zx::EventPair>>,
+        }
+
+        impl MockPowerManager {
+            fn set_on_battery(&self, v: bool) {
+                *self.on_battery.lock() = v;
+                self.event.notify(usize::MAX);
+            }
+
+            fn is_lease_held(&self) -> bool {
+                self.wake_lease.lock().as_ref().is_some_and(|handle| {
+                    handle
+                        .wait_one(
+                            zx::Signals::EVENTPAIR_PEER_CLOSED,
+                            zx::MonotonicInstant::INFINITE_PAST,
+                        )
+                        .is_err()
+                })
+            }
+        }
+
+        impl super::PowerManager for MockPowerManager {
+            fn watch_battery(
+                self: Arc<Self>,
+            ) -> futures::stream::BoxStream<'static, (bool, super::WakeLease)> {
+                futures::stream::unfold(true, move |first| {
+                    let this = self.clone();
+                    async move {
+                        if !first {
+                            this.event.listen().await;
+                        }
+                        let val = *this.on_battery.lock();
+                        let handle = if val {
+                            zx::NullableHandle::invalid()
+                        } else {
+                            let (h1, h2) = zx::EventPair::create();
+                            *this.wake_lease.lock() = Some(h2);
+                            // SAFETY: It's clear the handle is valid.
+                            h1.into_handle()
+                        };
+                        Some(((val, handle), false))
+                    }
+                })
+                .boxed()
+            }
+        }
+
+        let trim_count = Arc::new(AtomicU32::new(0));
+
+        struct TrimTrackingDevice {
+            inner: DeviceHolder,
+            trim_count: Arc<AtomicU32>,
+            power_manager: Arc<MockPowerManager>,
+        }
+
+        #[async_trait]
+        impl storage_device::Device for TrimTrackingDevice {
+            fn allocate_buffer(&self, size: usize) -> storage_device::buffer::BufferFuture<'_> {
+                self.inner.allocate_buffer(size)
+            }
+            fn block_size(&self) -> u32 {
+                self.inner.block_size()
+            }
+            fn block_count(&self) -> u64 {
+                self.inner.block_count()
+            }
+            async fn read_with_opts(
+                &self,
+                offset: u64,
+                buffer: storage_device::buffer::MutableBufferRef<'_>,
+                opts: storage_device::ReadOptions,
+            ) -> Result<(), Error> {
+                self.inner.read_with_opts(offset, buffer, opts).await
+            }
+            async fn write_with_opts(
+                &self,
+                offset: u64,
+                buffer: storage_device::buffer::BufferRef<'_>,
+                opts: storage_device::WriteOptions,
+            ) -> Result<(), Error> {
+                self.inner.write_with_opts(offset, buffer, opts).await
+            }
+            async fn trim(&self, range: std::ops::Range<u64>) -> Result<(), Error> {
+                assert!(self.power_manager.is_lease_held());
+                self.trim_count.fetch_add(1, Ordering::SeqCst);
+                self.inner.trim(range).await
+            }
+            async fn flush(&self) -> Result<(), Error> {
+                self.inner.flush().await
+            }
+            async fn close(&self) -> Result<(), Error> {
+                self.inner.close().await
+            }
+            fn barrier(&self) {
+                self.inner.barrier()
+            }
+            fn supports_trim(&self) -> bool {
+                true
+            }
+            fn is_read_only(&self) -> bool {
+                self.inner.is_read_only()
+            }
+            fn snapshot(&self) -> Result<DeviceHolder, Error> {
+                Ok(DeviceHolder::new(TrimTrackingDevice {
+                    inner: self.inner.snapshot()?,
+                    trim_count: self.trim_count.clone(),
+                    power_manager: self.power_manager.clone(),
+                }))
+            }
+            fn reopen(&self, read_only: bool) {
+                self.inner.reopen(read_only)
+            }
+        }
+
+        let pm = Arc::new(MockPowerManager::default());
+
+        // Start on battery.
+        pm.set_on_battery(true);
+
+        let fake_device = FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE);
+        let device = DeviceHolder::new(TrimTrackingDevice {
+            inner: DeviceHolder::new(fake_device),
+            trim_count: trim_count.clone(),
+            power_manager: pm.clone(),
+        });
+
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .power_manager(pm.clone())
+            .trim_config(Some((Duration::ZERO, Duration::from_millis(100))))
+            .trim_charger_wait(Duration::from_millis(10))
+            .open(device)
+            .await
+            .expect("open failed");
+
+        // Initially on battery, so no trim should happen.
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(
+            Duration::from_millis(500).into(),
+        ))
+        .await;
+        let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
+
+        assert_eq!(trim_count.load(Ordering::SeqCst), 0);
+
+        // Make some things to trim.
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let handle = root_directory
+                .create_child_file(&mut transaction, "test")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            handle.allocate(0..4096).await.expect("allocate failed");
+            // Now delete it to make it trimmable.
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(root_store.store_object_id(), root_directory.object_id()),
+                        LockKey::object(root_store.store_object_id(), handle.object_id()),
+                    ],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            replace_child(&mut transaction, None, (&root_directory, "test"))
+                .await
+                .expect("delete failed");
+            transaction.commit().await.expect("commit failed");
+            fs.root_store()
+                .tombstone_object(handle.object_id(), Options::default())
+                .await
+                .expect("tombstone failed");
+        }
+
+        // Put on external power source.
+        pm.set_on_battery(false);
+
+        // Trim should start after 10ms.
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(Duration::from_millis(10).into()))
+            .await;
+
+        let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
+
+        assert!(trim_count.load(Ordering::SeqCst) > 0);
+
+        // Reset trim count and take off charger.
+        trim_count.store(0, Ordering::SeqCst);
+        pm.set_on_battery(true);
+
+        // Wait and ensure no more trims.
+        TestExecutor::advance_to(fasync::MonotonicInstant::after(
+            Duration::from_millis(500).into(),
+        ))
+        .await;
+
+        let _ = TestExecutor::poll_until_stalled(std::future::pending::<()>()).await;
+
+        assert_eq!(trim_count.load(Ordering::SeqCst), 0);
+
+        fs.close().await.expect("close failed");
     }
 }

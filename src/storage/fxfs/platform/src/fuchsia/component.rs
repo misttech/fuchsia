@@ -5,6 +5,7 @@
 use crate::fuchsia::debug::{FxfsDebug, handle_debug_request};
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::memory_pressure::MemoryPressureMonitor;
+use crate::fuchsia::power::FuchsiaPowerManager;
 use crate::fuchsia::volume::MemoryPressureConfig;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Context, Error, bail};
@@ -303,6 +304,7 @@ impl Component {
             .read_only(options.read_only.unwrap_or(false))
             .inline_crypto_enabled(options.inline_crypto_enabled.unwrap_or(false))
             .barriers_enabled(options.barriers_enabled.unwrap_or(false))
+            .power_manager(FuchsiaPowerManager::new())
             .open(DeviceHolder::new(
                 BlockDevice::new(client, options.read_only.unwrap_or(false)).await?,
             ))

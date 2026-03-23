@@ -62,6 +62,9 @@ impl MonotonicInstant {
     /// The minimum time.
     pub const INFINITE_PAST: MonotonicInstant =
         MonotonicInstant(zx::MonotonicInstant::INFINITE_PAST);
+
+    /// The epoch.
+    pub const ZERO: MonotonicInstant = MonotonicInstant(zx::MonotonicInstant::ZERO);
 }
 
 impl From<zx::MonotonicInstant> for MonotonicInstant {

@@ -150,6 +150,12 @@
             availability: "optional",
             target_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.power.battery.BatteryManager",
+            from: "parent",
+            to: "#fshost",
+            availability: "optional",
+        },
     ],
     expose: [
         {

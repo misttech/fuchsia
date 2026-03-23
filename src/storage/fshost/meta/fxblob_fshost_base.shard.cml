@@ -75,6 +75,7 @@
         {
             protocol: [
                 "fuchsia.memorypressure.Provider",
+                "fuchsia.power.battery.BatteryManager",
                 "fuchsia.scheduler.RoleManager",
             ],
             from: "parent",

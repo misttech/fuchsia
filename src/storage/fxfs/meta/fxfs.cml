@@ -47,6 +47,7 @@
                 "fuchsia.feedback.CrashReporter",
                 "fuchsia.memory.attribution.PageRefaultSink",
                 "fuchsia.memorypressure.Provider",
+                "fuchsia.power.battery.BatteryManager",
                 "fuchsia.scheduler.RoleManager",
             ],
             availability: "optional",
