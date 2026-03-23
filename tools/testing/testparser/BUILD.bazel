@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "testparser",
+    srcs = [
+        "googletest.go",
+        "testparser.go",
+        "trftest.go",
+        "vulkanctstest.go",
+        "zircon_utest.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/testing/testparser",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/connectivity/network/testing/conformance/parseoutput",
+        "//tools/build",
+        "//tools/testing/runtests",
+    ],
+)
+
+go_library(
+    name = "main",
+    srcs = [
+        "cmd/main.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/testing/testparser/main",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":testparser",
+    ],
+)

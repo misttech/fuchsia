@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "repo",
+    srcs = [
+        "add.go",
+        "config.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/src/sys/pkg/lib/repo",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/golibs:github.com/pkg/sftp",
+        "//third_party/golibs:github.com/theupdateframework/go-tuf",
+        "//third_party/golibs:github.com/theupdateframework/go-tuf/data",
+        "//third_party/golibs:golang.org/x/crypto/ssh",
+        "//tools/lib/logger",
+        "//tools/lib/retry",
+        "//tools/net/sshutil",
+    ],
+)

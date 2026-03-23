@@ -1,0 +1,131 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "botanist_lib",
+    srcs = [
+        "common.go",
+        "pkg.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/botanist",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":repo",
+        "//tools/build",
+        "//tools/lib/logger",
+        "//tools/lib/osmisc",
+        "//tools/lib/retry",
+        "//tools/lib/streams",
+        "//tools/lib/subprocess",
+        "//tools/net/netboot",
+        "//tools/net/tftp",
+    ],
+)
+
+go_library(
+    name = "repo",
+    srcs = [
+        "repo/config.go",
+        "repo/repo.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/botanist/repo",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/sys/pkg/lib/repo",
+        "//third_party/golibs:github.com/theupdateframework/go-tuf",
+        "//third_party/golibs:github.com/theupdateframework/go-tuf/data",
+    ],
+)
+
+go_library(
+    name = "targets",
+    srcs = [
+        "targets/auxiliary.go",
+        "targets/device.go",
+        "targets/emulator.go",
+        "targets/errors.go",
+        "targets/gce.go",
+        "targets/ip.go",
+        "targets/target.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/botanist/targets",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":botanist_lib",
+        ":constants",
+        "//src/sys/pkg/lib/repo",
+        "//third_party/golibs:github.com/creack/pty",
+        "//third_party/golibs:github.com/kr/pretty",
+        "//third_party/golibs:golang.org/x/crypto/ssh",
+        "//third_party/golibs:golang.org/x/sync/errgroup",
+        "//tools/build",
+        "//tools/lib/ffxutil",
+        "//tools/lib/iomisc",
+        "//tools/lib/jsonutil",
+        "//tools/lib/logger",
+        "//tools/lib/osmisc",
+        "//tools/lib/retry",
+        "//tools/lib/serial",
+        "//tools/lib/serial:constants",
+        "//tools/lib/subprocess",
+        "//tools/lib/syslog",
+        "//tools/net/mdns",
+        "//tools/net/netboot",
+        "//tools/net/netutil",
+        "//tools/net/sshutil",
+        "//tools/net/tftp",
+        "//tools/testing/testrunner:constants",
+    ],
+)
+
+go_library(
+    name = "main",
+    srcs = [
+        "cmd/main.go",
+        "cmd/run.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/botanist/main",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":botanist_lib",
+        ":constants",
+        ":targets",
+        "//third_party/golibs:github.com/google/subcommands",
+        "//third_party/golibs:golang.org/x/sync/errgroup",
+        "//tools/lib/color",
+        "//tools/lib/environment",
+        "//tools/lib/ffxutil",
+        "//tools/lib/flagmisc",
+        "//tools/lib/jsonutil",
+        "//tools/lib/logger",
+        "//tools/lib/osmisc",
+        "//tools/lib/retry",
+        "//tools/lib/serial",
+        "//tools/lib/streams",
+        "//tools/lib/subprocess",
+        "//tools/lib/syslog",
+        "//tools/net/sshutil",
+        "//tools/testing/runtests",
+        "//tools/testing/testrunner:constants",
+        "//tools/testing/testrunner:lib",
+    ],
+)
+
+go_library(
+    name = "constants",
+    srcs = [
+        "constants/constants.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/botanist/constants",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+)

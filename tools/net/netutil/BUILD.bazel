@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "netutil",
+    srcs = [
+        "netutil.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/net/netutil",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        "//tools/lib/retry",
+        "//tools/net/netboot",
+    ],
+)
+
+go_library(
+    name = "constants",
+    srcs = [
+        "constants/constants.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/net/netutil/constants",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+)

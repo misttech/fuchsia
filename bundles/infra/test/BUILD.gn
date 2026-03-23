@@ -31,7 +31,7 @@ group("linux_x64_tools") {
   # Tools that are needed on Linux x64, regardless of the current host.
   _linux_x64_only_tools = [
     "//src/diagnostics/triage:triage_bin",
-    "//tools/debug/covargs",
+    "//build/bazel/host:bazel_root_host_tools.covargs",
     "//tools/testing/resultdb",
     "//tools/testing/tefmocheck",
   ]

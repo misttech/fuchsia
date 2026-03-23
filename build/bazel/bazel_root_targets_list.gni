@@ -31,6 +31,36 @@ declare_args() {
   #       to the `fx host-tool <ninja_name>` command.
   #
   default_bazel_root_host_targets = sdk_host_tool_bazel_targets + [
+                                      {
+                                        bazel_label = "//tools/go_test_parser:go_test_parser"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
+                                            ninja = "go_test_parser"
+                                          },
+                                        ]
+                                      },
+                                      {
+                                        bazel_label =
+                                            "//tools/debug/covargs:covargs"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
+                                            ninja = "covargs"
+                                          },
+                                        ]
+                                      },
+                                      {
+                                        bazel_label =
+                                            "//tools/debug/symbolize:symbolize"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/symbolize_/symbolize"
+                                            ninja = "symbolize"
+                                          },
+                                        ]
+                                      },
+
                                       # First, a target that verifies that the host toolchains
                                       # work properly, i.e. can compile and link C++ and Rust binaries properly.
                                       {
