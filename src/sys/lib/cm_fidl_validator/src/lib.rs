@@ -1712,7 +1712,7 @@ impl<'a> ValidationContext<'a> {
     fn validate_expose_group(&mut self, exposes: &'a [fdecl::Expose]) {
         let mut expose_groups: HashMap<_, Vec<fdecl::ExposeService>> = HashMap::new();
         let service_exposes = exposes
-            .into_iter()
+            .iter()
             .filter_map(|o| if let fdecl::Expose::Service(s) = o { Some(s) } else { None });
         for expose in service_exposes {
             let key = Self::make_group_key(expose.target_name.as_ref(), expose.target.as_ref());
@@ -1980,7 +1980,7 @@ impl<'a> ValidationContext<'a> {
     fn validate_offer_group(&mut self, offers: &'a [fdecl::Offer], offer_type: OfferType) {
         let mut offer_groups: HashMap<_, Vec<fdecl::OfferService>> = HashMap::new();
         let service_offers = offers
-            .into_iter()
+            .iter()
             .filter_map(|o| if let fdecl::Offer::Service(s) = o { Some(s) } else { None });
         for offer in service_offers {
             let key = Self::make_group_key(offer.target_name.as_ref(), offer.target.as_ref());

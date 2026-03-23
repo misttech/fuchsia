@@ -2157,7 +2157,7 @@ async fn verify_service_route(
     let target_moniker: Moniker = target_moniker.try_into().unwrap();
     let agg_moniker: Moniker = agg_moniker.try_into().unwrap();
     let child_monikers: Vec<_> =
-        child_monikers.into_iter().map(|m| ChildName::parse(m).unwrap()).collect();
+        child_monikers.iter().map(|m| ChildName::parse(m).unwrap()).collect();
 
     // Test routing directly.
     let root = test.model.root();

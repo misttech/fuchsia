@@ -25,9 +25,7 @@ impl Moniker {
         if path.is_empty() {
             Self::root()
         } else {
-            Self {
-                rep: path.into_iter().map(|s| s.as_ref()).collect::<Box<[&str]>>().join("/").into(),
-            }
+            Self { rep: path.iter().map(|s| s.as_ref()).collect::<Box<[&str]>>().join("/").into() }
         }
     }
 
@@ -40,12 +38,7 @@ impl Moniker {
             Self::root()
         } else {
             Self {
-                rep: path
-                    .into_iter()
-                    .map(|s| (*s).as_ref())
-                    .collect::<Box<[&str]>>()
-                    .join("/")
-                    .into(),
+                rep: path.iter().map(|s| (*s).as_ref()).collect::<Box<[&str]>>().join("/").into(),
             }
         }
     }
@@ -63,7 +56,7 @@ impl Moniker {
             return Ok(Self::root());
         }
         let path = path
-            .into_iter()
+            .iter()
             .map(|n| {
                 let _ = BorrowedChildName::parse(n.as_ref())?;
                 Ok(n.as_ref())

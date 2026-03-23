@@ -228,7 +228,7 @@ pub async fn run_test_manager_query_server(
                                                 responder
                                                     .send(
                                                         &names
-                                                            .into_iter()
+                                                            .iter()
                                                             .map(|s| ftest_manager::Case {
                                                                 name: Some(s.into()),
                                                                 ..Default::default()
@@ -443,7 +443,7 @@ async fn drain_test_case_names(
                     responder
                         .send(
                             &names
-                                .into_iter()
+                                .iter()
                                 .map(|s| ftest_manager::TestCase {
                                     name: Some(s.into()),
                                     ..Default::default()
