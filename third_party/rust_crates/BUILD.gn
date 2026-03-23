@@ -19852,15 +19852,15 @@ rustc_library("trust-dns-proto-v0_22_0") {
 license("trust-dns-resolver-v0_22_0.license") {
   public_package_name = "trust_dns_resolver"
   license_files = [
-    "//third_party/rust_crates/vendor/trust-dns-resolver-0.22.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/trust-dns-resolver-0.22.0/LICENSE-MIT",
+    "//third_party/rust_crates/forks/trust-dns-resolver-0.22.0/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/trust-dns-resolver-0.22.0/LICENSE-MIT",
   ]
 }
 
 rustc_library("trust-dns-resolver-v0_22_0") {
   crate_name = "trust_dns_resolver"
   source_root =
-      "//third_party/rust_crates/vendor/trust-dns-resolver-0.22.0/src/lib.rs"
+      "//third_party/rust_crates/forks/trust-dns-resolver-0.22.0/src/lib.rs"
   output_name = "trust_dns_resolver-22c9d5f1801e7ebf"
   edition = "2018"
   disable_clippy = true
