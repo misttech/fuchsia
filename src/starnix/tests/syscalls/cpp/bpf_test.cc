@@ -620,16 +620,16 @@ TEST_F(BpfMapTest, FreezeMmapInteraction) {
   EXPECT_EQ(bpf(BPF_MAP_FREEZE, &attr), 0) << strerror(errno);
 
   // 3. Try to mmap the frozen map. Should fail with EPERM.
-  EXPECT_EQ(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,
-                                          MAP_SHARED, mappable_map_fd.get(), 0)
-                .error_value(),
-            EPERM);
+  auto mmap_rw_result = test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, mappable_map_fd.get(), 0);
+  ASSERT_TRUE(mmap_rw_result.is_error());
+  EXPECT_EQ(mmap_rw_result.error_value(), EPERM);
 
   // Also check read-only mmap
-  EXPECT_EQ(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ, MAP_SHARED,
-                                          mappable_map_fd.get(), 0)
-                .error_value(),
-            EPERM);
+  auto mmap_ro_result = test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ, MAP_SHARED,
+                                                      mappable_map_fd.get(), 0);
+  ASSERT_TRUE(mmap_ro_result.is_error());
+  EXPECT_EQ(mmap_ro_result.error_value(), EPERM);
 }
 
 TEST_F(BpfMapTest, LockTest) {
@@ -750,10 +750,10 @@ TEST_F(BpfMapTest, MMapRingBufTest) {
                                             MAP_SHARED, ringbuf_fd(), 0)
                   .is_ok());
   // Cannot mmap the second page of the ringbuffer R/W
-  ASSERT_EQ(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,
-                                          MAP_SHARED, ringbuf_fd(), getpagesize())
-                .error_value(),
-            EPERM);
+  auto mmap_2nd_page_rw_result = test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), getpagesize());
+  ASSERT_TRUE(mmap_2nd_page_rw_result.is_error());
+  EXPECT_EQ(mmap_2nd_page_rw_result.error_value(), EPERM);
   // Cannot mmap the second page, 3rd and 4th page RO
   for (int i = 0; i < 3; ++i) {
     ASSERT_TRUE(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ, MAP_SHARED,
@@ -765,10 +765,10 @@ TEST_F(BpfMapTest, MMapRingBufTest) {
                                             ringbuf_fd(), 0)
                   .is_ok());
   // Cannot mmap 5 pages.
-  ASSERT_EQ(test_helper::ScopedMMap::MMap(nullptr, 5 * getpagesize(), PROT_READ, MAP_SHARED,
-                                          ringbuf_fd(), 0)
-                .error_value(),
-            EINVAL);
+  auto mmap_5_pages_ro_result = test_helper::ScopedMMap::MMap(nullptr, 5 * getpagesize(), PROT_READ,
+                                                              MAP_SHARED, ringbuf_fd(), 0);
+  ASSERT_TRUE(mmap_5_pages_ro_result.is_error());
+  EXPECT_EQ(mmap_5_pages_ro_result.error_value(), EINVAL);
 }
 
 TEST_F(BpfMapTest, WriteRingBufTest) {

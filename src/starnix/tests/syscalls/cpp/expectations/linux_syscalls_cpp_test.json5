@@ -68,16 +68,11 @@
                 "BinderWithoutSE*",
 
                 // TODO(https://fxbug.dev/437183123)
-                "BpfMapTest.*",
-                "BpfIdTest.ProgIds",
-                "BpfIdTest.MapIds",
-                "BpfTest.HashMapZeroKeySize",
-                "BpfTest.ArraySizeZero",
-                "BpfTest.HashMapSizeZero",
-                "BpfTest.ArraySizeOverflow",
-                "BpfCgroupTest.BlockConnect",
-                "BpfCgroupTest.BlockBind",
-                "BpfCgroupTest.ProgFdEpoll",
+                "BpfMapTest.MapReadOnly",
+                "BpfMapTest.RingBufferWrapAround",
+                "BpfMapTest.GetObjFile",
+                "BpfMapTest.FreezeMmapInteraction",
+                "BpfMapTest.PinAccessCheck",
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
