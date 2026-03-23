@@ -76,6 +76,7 @@ fuchsia_cc_driver("leaf-driver") {
     "//sdk/lib/driver/runtime:driver_runtime",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/fidl/contrib/fpromise",
   ]
 }
 
