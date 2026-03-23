@@ -24,6 +24,7 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::str::FromStr as _;
 use std::sync::Arc;
+use trust_dns_proto::error::ProtoErrorKind;
 use trust_dns_proto::op::ResponseCode;
 use trust_dns_proto::rr::domain::IntoName;
 use trust_dns_proto::rr::{RData, RecordType};
@@ -161,22 +162,38 @@ impl NoRecordsFoundStats {
     }
 }
 
+/// A type that handles counting the number of occurrences of the name of an
+/// enum variant without any of the contents of that enum. See
+/// [`enum_variant_string`] for more information on that process.
+///
+/// This is for privacy purposes; in some cases it's not possible to know a
+/// priori whether a particular enum variant includes user data such as
+/// hostnames.
 #[derive(Default, Debug, PartialEq)]
-struct UnhandledResolveErrorKindStats {
-    resolve_error_kind_counts: HashMap<String, u64>,
-}
+struct GenericErrorKindStats(HashMap<String, u64>);
 
-impl UnhandledResolveErrorKindStats {
+impl GenericErrorKindStats {
     /// Increments the counter for the given error kind. Returns a string
     /// containing the name of that kind so the caller doesn't have to perform
     /// the processing if they want to log it.
-    fn increment(&mut self, resolve_error_kind: &ResolveErrorKind) -> String {
-        let Self { resolve_error_kind_counts } = self;
-        let truncated_debug = enum_variant_string(resolve_error_kind);
-        let count = resolve_error_kind_counts.entry(truncated_debug.clone()).or_insert(0);
+    fn increment(&mut self, error_kind: &impl std::fmt::Debug) -> String {
+        let Self(counts) = self;
+        let truncated_debug = enum_variant_string(error_kind);
+        let count = counts.entry(truncated_debug.clone()).or_insert(0);
         *count += 1;
 
         truncated_debug
+    }
+}
+
+#[derive(Default, Debug, PartialEq)]
+struct IoErrorStats(HashMap<std::io::ErrorKind, u64>);
+
+impl IoErrorStats {
+    /// Increments the counter for the given IO error kind.
+    fn increment(&mut self, error_kind: std::io::ErrorKind) {
+        let Self(counts) = self;
+        *counts.entry(error_kind).or_insert(0) += 1;
     }
 }
 
@@ -188,10 +205,10 @@ struct FailureStats {
     message: u64,
     no_connections: u64,
     no_records_found: NoRecordsFoundStats,
-    io: u64,
-    proto: u64,
+    io: IoErrorStats,
+    proto: GenericErrorKindStats,
     timeout: u64,
-    unhandled_resolve_error_kind: UnhandledResolveErrorKindStats,
+    unhandled_resolve_error_kind: GenericErrorKindStats,
 }
 
 impl FailureStats {
@@ -223,14 +240,14 @@ impl FailureStats {
                 response_code,
                 trusted: _,
             } => no_records_found.increment(response_code),
-            ResolveErrorKind::Io(error) => {
-                let _: &std::io::Error = error;
-                *io += 1
-            }
-            ResolveErrorKind::Proto(error) => {
-                let _: &trust_dns_proto::error::ProtoError = error;
-                *proto += 1
-            }
+            ResolveErrorKind::Io(error) => io.increment(error.kind()),
+
+            ResolveErrorKind::Proto(error) => match error.kind() {
+                ProtoErrorKind::Io(error) => io.increment(error.kind()),
+                _ => {
+                    let _ = proto.increment(error.kind());
+                }
+            },
             ResolveErrorKind::Timeout => *timeout += 1,
             // ResolveErrorKind is marked #[non_exhaustive] in trust-dns:
             // https://github.com/bluejekyll/trust-dns/blob/v0.21.0-alpha.1/crates/resolver/src/error.rs#L29
@@ -1146,19 +1163,27 @@ fn add_query_stats_inspect(
                     no_records_found: NoRecordsFoundStats {
                         response_code_counts,
                     },
-                    io,
-                    proto,
+                    io: IoErrorStats( io_error_counts ),
+                    proto: GenericErrorKindStats(proto),
                     timeout,
-                    unhandled_resolve_error_kind: UnhandledResolveErrorKindStats {
-                        resolve_error_kind_counts,
-                    },
+                    unhandled_resolve_error_kind: GenericErrorKindStats(unhandled_resolve_error_kind),
                 } = failure_stats;
                 let errors = child.create_child("errors");
                 errors.record_uint("Message", *message);
                 errors.record_uint("NoConnections", *no_connections);
-                errors.record_uint("Io", *io);
-                errors.record_uint("Proto", *proto);
                 errors.record_uint("Timeout", *timeout);
+
+                let io_error_codes = errors.create_child("IoErrorCounts");
+                for (kind, count) in io_error_counts {
+                    io_error_codes.record_uint(format!("{kind:?}"), *count);
+                }
+                errors.record(io_error_codes);
+
+                let proto_error_codes = errors.create_child("ProtoErrorCounts");
+                for (kind, count) in proto {
+                    proto_error_codes.record_uint(kind, *count);
+                }
+                errors.record(proto_error_codes);
 
                 let no_records_found_response_codes =
                     errors.create_child("NoRecordsFoundResponseCodeCounts");
@@ -1172,7 +1197,7 @@ fn add_query_stats_inspect(
 
                 let unhandled_resolve_error_kinds =
                     errors.create_child("UnhandledResolveErrorKindCounts");
-                for (error_kind, count) in resolve_error_kind_counts {
+                for (error_kind, count) in unhandled_resolve_error_kind {
                     unhandled_resolve_error_kinds.record_uint(error_kind, *count);
                 }
                 errors.record(unhandled_resolve_error_kinds);
@@ -2029,7 +2054,7 @@ mod tests {
     #[test]
     fn test_unhandled_resolve_error_kind_stats() {
         use ResolveErrorKind::{Msg, Timeout};
-        let mut unhandled_resolve_error_kind_stats = UnhandledResolveErrorKindStats::default();
+        let mut unhandled_resolve_error_kind_stats = GenericErrorKindStats::default();
         assert_eq!(
             unhandled_resolve_error_kind_stats.increment(&Msg(String::from("abcdefgh"))),
             "Msg"
@@ -2041,10 +2066,7 @@ mod tests {
         assert_eq!(unhandled_resolve_error_kind_stats.increment(&Timeout), "Timeout");
         assert_eq!(
             unhandled_resolve_error_kind_stats,
-            UnhandledResolveErrorKindStats {
-                resolve_error_kind_counts: [(String::from("Msg"), 2), (String::from("Timeout"), 1)]
-                    .into()
-            }
+            GenericErrorKindStats([(String::from("Msg"), 2), (String::from("Timeout"), 1)].into())
         )
     }
 
@@ -2103,8 +2125,8 @@ mod tests {
                         NoRecordsFoundResponseCodeCounts: {
                             NoError: 1u64,
                         },
-                        Io: 0u64,
-                        Proto: 0u64,
+                        IoErrorCounts: {},
+                        ProtoErrorCounts: {},
                         Timeout: 0u64,
                         UnhandledResolveErrorKindCounts: {},
                     },
@@ -2177,8 +2199,8 @@ mod tests {
                     Message: 0u64,
                     NoConnections: 0u64,
                     NoRecordsFoundResponseCodeCounts: {},
-                    Io: 0u64,
-                    Proto: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
                     Timeout: 0u64,
                     UnhandledResolveErrorKindCounts: {},
                 },
@@ -2228,8 +2250,8 @@ mod tests {
                         Message: 0u64,
                         NoConnections: 0u64,
                         NoRecordsFoundResponseCodeCounts: {},
-                        Io: 0u64,
-                        Proto: 0u64,
+                        IoErrorCounts: {},
+                        ProtoErrorCounts: {},
                         Timeout: FAILED_QUERY_COUNT,
                         UnhandledResolveErrorKindCounts: {},
                     },
@@ -2294,8 +2316,8 @@ mod tests {
                           "Unknown(4096)": FAILED_QUERY_COUNT,
                           "Unknown(4097)": FAILED_QUERY_COUNT,
                         },
-                        Io: 0u64,
-                        Proto: 0u64,
+                        IoErrorCounts: {},
+                        ProtoErrorCounts: {},
                         Timeout: 0u64,
                         UnhandledResolveErrorKindCounts: {},
                     },
@@ -2353,8 +2375,8 @@ mod tests {
                         Message: 0u64,
                         NoConnections: 0u64,
                         NoRecordsFoundResponseCodeCounts: {},
-                        Io: 0u64,
-                        Proto: 0u64,
+                        IoErrorCounts: {},
+                        ProtoErrorCounts: {},
                         Timeout: 0u64,
                         UnhandledResolveErrorKindCounts: {},
                     },
@@ -2404,8 +2426,8 @@ mod tests {
                     Message: 0u64,
                     NoConnections: 0u64,
                     NoRecordsFoundResponseCodeCounts: {},
-                    Io: 0u64,
-                    Proto: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
                     Timeout: 0u64,
                     UnhandledResolveErrorKindCounts: {},
                 },
@@ -2558,7 +2580,7 @@ mod tests {
                     no_records_found: NoRecordsFoundStats {
                         response_code_counts: [(ResponseCode::Refused.into(), 1)].into(),
                     },
-                    io: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
                     ..Default::default()
                 },
             ),
@@ -2569,8 +2591,8 @@ mod tests {
                     no_records_found: NoRecordsFoundStats {
                         response_code_counts: [(ResponseCode::Refused.into(), 1)].into(),
                     },
-                    io: 1,
-                    proto: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
                     ..Default::default()
                 },
             ),
@@ -2582,8 +2604,8 @@ mod tests {
                     no_records_found: NoRecordsFoundStats {
                         response_code_counts: [(ResponseCode::Refused.into(), 1)].into(),
                     },
-                    io: 1,
-                    proto: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
                     ..Default::default()
                 },
             ),
@@ -2595,8 +2617,8 @@ mod tests {
                     no_records_found: NoRecordsFoundStats {
                         response_code_counts: [(ResponseCode::Refused.into(), 1)].into(),
                     },
-                    io: 1,
-                    proto: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
                     timeout: 1,
                     unhandled_resolve_error_kind: Default::default(),
                 },
@@ -2619,8 +2641,8 @@ mod tests {
                         ]
                         .into(),
                     },
-                    io: 1,
-                    proto: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
                     timeout: 1,
                     unhandled_resolve_error_kind: Default::default(),
                 },
@@ -2643,8 +2665,35 @@ mod tests {
                         ]
                         .into(),
                     },
-                    io: 1,
-                    proto: 1,
+                    io: IoErrorStats([(std::io::ErrorKind::NotFound, 1)].into()),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
+                    timeout: 1,
+                    unhandled_resolve_error_kind: Default::default(),
+                },
+            ),
+            (
+                ResolveErrorKind::Proto(ProtoError::from(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    anyhow!("foo"),
+                ))),
+                FailureStats {
+                    message: 2,
+                    no_connections: 1,
+                    no_records_found: NoRecordsFoundStats {
+                        response_code_counts: [
+                            (ResponseCode::NXDomain.into(), 2),
+                            (ResponseCode::Refused.into(), 1),
+                        ]
+                        .into(),
+                    },
+                    io: IoErrorStats(
+                        [
+                            (std::io::ErrorKind::NotFound, 1),
+                            (std::io::ErrorKind::ConnectionAborted, 1),
+                        ]
+                        .into(),
+                    ),
+                    proto: GenericErrorKindStats([(String::from("Message"), 1)].into()),
                     timeout: 1,
                     unhandled_resolve_error_kind: Default::default(),
                 },
