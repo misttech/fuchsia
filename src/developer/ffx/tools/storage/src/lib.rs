@@ -5,7 +5,7 @@ use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, deferred};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 mod fxfs;
 
@@ -28,7 +28,7 @@ pub struct StorageTool {
     cmd: StorageCommand,
 
     #[with(deferred(moniker("/bootstrap/fshost/fxfs")))]
-    fxfs_proxy: fho::Deferred<fidl_fuchsia_fxfs::DebugProxy>,
+    fxfs_proxy: fho::Deferred<fdomain_fuchsia_fxfs::DebugProxy>,
 }
 
 #[async_trait(?Send)]
