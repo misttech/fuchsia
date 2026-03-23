@@ -34,63 +34,18 @@ pub trait Config: Sized {
     fn record_inspect(&self, inspector_node: &Node);
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Failed to read the content size of the VMO.
-    GettingContentSize(zx::Status),
-    /// Failed to read the content of the VMO.
-    ReadingConfigBytes(zx::Status),
-    /// The VMO was too small for this config library.
+    #[error("Failed to get content size of VMO")]
+    GettingContentSize(#[source] zx::Status),
+    #[error("Failed to read content of VMO")]
+    ReadingConfigBytes(#[source] zx::Status),
+    #[error("VMO is too small for this config library")]
     TooFewBytes,
-    /// The VMO's config ABI checksum did not match this library's.
+    #[error(
+        "ABI checksum mismatch, expected library checksum {expected_checksum:?}, got {observed_checksum:?}"
+    )]
     ChecksumMismatch { expected_checksum: Vec<u8>, observed_checksum: Vec<u8> },
-    /// Failed to parse the non-checksum bytes of the VMO as this library's FIDL type.
-    Unpersist(fidl::Error),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::GettingContentSize(status) => {
-                write!(f, "Failed to get content size: {status}")
-            }
-            Self::ReadingConfigBytes(status) => {
-                write!(f, "Failed to read VMO content: {status}")
-            }
-            Self::TooFewBytes => {
-                write!(f, "VMO content is not large enough for this config library.")
-            }
-            Self::ChecksumMismatch { expected_checksum, observed_checksum } => {
-                write!(
-                    f,
-                    "ABI checksum mismatch, expected {:?}, got {:?}",
-                    expected_checksum, observed_checksum,
-                )
-            }
-            Self::Unpersist(fidl_error) => {
-                write!(f, "Failed to parse contents of config VMO: {fidl_error}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    #[allow(unused_parens, reason = "rustfmt errors without parens here")]
-    fn source(&self) -> Option<(&'_ (dyn std::error::Error + 'static))> {
-        match self {
-            Self::GettingContentSize(status) | Self::ReadingConfigBytes(status) => Some(status),
-            Self::TooFewBytes => None,
-            Self::ChecksumMismatch { .. } => None,
-            Self::Unpersist(fidl_error) => Some(fidl_error),
-        }
-    }
-    fn description(&self) -> &str {
-        match self {
-            Self::GettingContentSize(_) => "getting content size",
-            Self::ReadingConfigBytes(_) => "reading VMO contents",
-            Self::TooFewBytes => "VMO contents too small",
-            Self::ChecksumMismatch { .. } => "ABI checksum mismatch",
-            Self::Unpersist(_) => "FIDL parsing error",
-        }
-    }
+    #[error("Failed to unpersist the non-checksum bytes of the VMO as this library's FIDL type")]
+    Unpersist(#[source] fidl::Error),
 }

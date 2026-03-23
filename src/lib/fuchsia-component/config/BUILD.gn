@@ -16,5 +16,6 @@ rustc_library("config") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:thiserror",
   ]
 }
