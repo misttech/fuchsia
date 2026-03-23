@@ -82,7 +82,7 @@ fn peers_diff(
     let removed: HashSet<_> = prev.keys().filter(|id| !new.contains_key(id)).cloned().collect();
     // Updated - those items which are not present in same configuration in the prev set
     let updated = new
-        .into_iter()
+        .iter()
         .filter(|(id, p)| !(prev.get(id) == Some(p)))
         .map(|(id, p)| (*id, p.clone()))
         .collect();

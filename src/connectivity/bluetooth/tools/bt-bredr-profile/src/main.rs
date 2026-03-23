@@ -4,7 +4,7 @@
 
 #![recursion_limit = "256"]
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use bt_rfcomm::ServerChannel;
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_bluetooth::{ChannelMode, ChannelParameters, SecurityRequirements};
@@ -13,10 +13,10 @@ use fidl_fuchsia_bluetooth_rfcomm_test::RfcommTestMarker;
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{PeerId, Uuid};
 use fuchsia_component::client::connect_to_protocol;
-use futures::channel::mpsc::{channel, SendError};
+use futures::channel::mpsc::{SendError, channel};
 use futures::channel::oneshot;
 use futures::lock::Mutex;
-use futures::{select, FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt, select};
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, Editor};
 use std::sync::Arc;
@@ -407,7 +407,7 @@ fn parse_cmd(line: String) -> Result<ParsedCmd, Error> {
     match components.split_first() {
         Some((raw_cmd, args)) => match raw_cmd.parse() {
             Ok(cmd) => {
-                let args = args.into_iter().map(|s| s.to_string()).collect();
+                let args = args.iter().map(|s| s.to_string()).collect();
                 Ok(ParsedCmd::Valid(cmd, args))
             }
             Err(_) => Err(anyhow!("\"{}\" is not a valid command", raw_cmd)),

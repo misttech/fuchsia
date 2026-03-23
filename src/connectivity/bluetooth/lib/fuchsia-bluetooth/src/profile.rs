@@ -314,7 +314,7 @@ impl TryFrom<&fidl_bredr::DataElement> for DataElement {
             fDataElement::B(b) => DataElement::Bool(*b),
             fDataElement::Sequence(x) => {
                 let mapped = x
-                    .into_iter()
+                    .iter()
                     .filter_map(|opt| {
                         opt.as_ref().map(|t| match DataElement::try_from(&**t) {
                             Ok(elem) => Ok(Box::new(elem)),
@@ -326,7 +326,7 @@ impl TryFrom<&fidl_bredr::DataElement> for DataElement {
             }
             fDataElement::Alternatives(x) => {
                 let mapped = x
-                    .into_iter()
+                    .iter()
                     .filter_map(|opt| {
                         opt.as_ref().map(|t| match DataElement::try_from(&**t) {
                             Ok(elem) => Ok(Box::new(elem)),
@@ -359,17 +359,13 @@ impl From<&DataElement> for fidl_bredr::DataElement {
             DataElement::Uuid(uuid) => fDataElement::Uuid(uuid.clone()),
             DataElement::Bool(b) => fDataElement::B(*b),
             DataElement::Sequence(x) => {
-                let mapped = x
-                    .into_iter()
-                    .map(|t| Some(Box::new(fDataElement::from(&**t))))
-                    .collect::<Vec<_>>();
+                let mapped =
+                    x.iter().map(|t| Some(Box::new(fDataElement::from(&**t)))).collect::<Vec<_>>();
                 fDataElement::Sequence(mapped)
             }
             DataElement::Alternatives(x) => {
-                let mapped = x
-                    .into_iter()
-                    .map(|t| Some(Box::new(fDataElement::from(&**t))))
-                    .collect::<Vec<_>>();
+                let mapped =
+                    x.iter().map(|t| Some(Box::new(fDataElement::from(&**t)))).collect::<Vec<_>>();
                 fDataElement::Alternatives(mapped)
             }
         }
@@ -436,7 +432,7 @@ impl TryFrom<&fidl_bredr::ProtocolDescriptor> for ProtocolDescriptor {
         };
         let params = src.params.as_ref().map_or(Ok(vec![]), |elems| {
             elems
-                .into_iter()
+                .iter()
                 .map(|elem| DataElement::try_from(elem))
                 .collect::<Result<Vec<DataElement>, Error>>()
         })?;
@@ -636,32 +632,33 @@ impl TryFrom<&fidl_bredr::ServiceDefinition> for ServiceDefinition {
 
         let protocol_descriptor_list: Vec<ProtocolDescriptor> =
             src.protocol_descriptor_list.as_ref().map_or(Ok(vec![]), |p| {
-                p.into_iter()
+                p.iter()
                     .map(|d| ProtocolDescriptor::try_from(d))
                     .collect::<Result<Vec<ProtocolDescriptor>, Error>>()
             })?;
         let additional_protocol_descriptor_lists: Vec<Vec<ProtocolDescriptor>> =
             src.additional_protocol_descriptor_lists.as_ref().map_or(Ok(vec![]), |desc_lists| {
                 desc_lists
-                    .into_iter()
+                    .iter()
                     .map(|desc_list| {
-                        desc_list
-                            .into_iter()
-                            .map(|d| ProtocolDescriptor::try_from(d))
-                            .collect::<Result<Vec<ProtocolDescriptor>, Error>>()
+                        desc_list.iter().map(|d| ProtocolDescriptor::try_from(d)).collect::<Result<
+                            Vec<ProtocolDescriptor>,
+                            Error,
+                        >>(
+                        )
                     })
                     .collect::<Result<Vec<Vec<ProtocolDescriptor>>, Error>>()
             })?;
         let profile_descriptors: Vec<fidl_bredr::ProfileDescriptor> =
             src.profile_descriptors.clone().unwrap_or(vec![]);
-        let information: Result<Vec<Information>, Error> =
-            src.information.as_ref().map_or(Ok(vec![]), |infos| {
-                infos.into_iter().map(|i| Information::try_from(i)).collect()
-            });
+        let information: Result<Vec<Information>, Error> = src
+            .information
+            .as_ref()
+            .map_or(Ok(vec![]), |infos| infos.iter().map(|i| Information::try_from(i)).collect());
         let additional_attributes: Vec<Attribute> =
             src.additional_attributes.as_ref().map_or(Ok(vec![]), |attrs| {
                 attrs
-                    .into_iter()
+                    .iter()
                     .map(|a| Attribute::try_from(a))
                     .collect::<Result<Vec<Attribute>, Error>>()
             })?;
@@ -695,7 +692,7 @@ impl TryFrom<&ServiceDefinition> for fidl_bredr::ServiceDefinition {
             .additional_protocol_descriptor_lists
             .iter()
             .map(|desc_list| {
-                desc_list.into_iter().map(|d| fidl_bredr::ProtocolDescriptor::from(d)).collect()
+                desc_list.iter().map(|d| fidl_bredr::ProtocolDescriptor::from(d)).collect()
             })
             .collect();
         let profile_descriptors: Vec<fidl_bredr::ProfileDescriptor> =

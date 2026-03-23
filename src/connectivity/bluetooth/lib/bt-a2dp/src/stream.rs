@@ -602,7 +602,7 @@ pub(crate) mod tests {
         let codec_capability = compatible[0]
             .endpoint()
             .capabilities()
-            .into_iter()
+            .iter()
             .find(|x| x.category() == avdtp::ServiceCategory::MediaCodec)
             .expect("should have a codec");
         assert_eq!(

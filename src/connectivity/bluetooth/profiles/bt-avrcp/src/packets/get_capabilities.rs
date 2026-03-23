@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use packet_encoding::{decodable_enum, Decodable, Encodable};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 
 use crate::packets::{
     AvcCommandType, Error, PacketResult, PduId, VendorCommand, VendorDependentPdu,
@@ -101,7 +101,7 @@ impl GetCapabilitiesResponse {
     }
 
     pub fn new_events(event_ids: &[u8]) -> GetCapabilitiesResponse {
-        let capabilities = event_ids.into_iter().map(|id| Capability::EventId(*id)).collect();
+        let capabilities = event_ids.iter().map(|id| Capability::EventId(*id)).collect();
         GetCapabilitiesResponse {
             capability_id: GetCapabilitiesCapabilityId::EventsId,
             capabilities,
@@ -256,25 +256,29 @@ mod tests {
     #[test]
     /// Test GetCapabilitiesResponse company decoding
     fn test_get_capabilities_response_company_decode() {
-        assert!(GetCapabilitiesResponse::decode(&[
-            0x02, // company_id
-            0x02, // len
-            0x00, 0x19, 0x58, // BT_SIG Company ID
-            0xff, 0xff, 0xff, // random
-        ])
-        .unwrap()
-        .has_bt_sig_company());
+        assert!(
+            GetCapabilitiesResponse::decode(&[
+                0x02, // company_id
+                0x02, // len
+                0x00, 0x19, 0x58, // BT_SIG Company ID
+                0xff, 0xff, 0xff, // random
+            ])
+            .unwrap()
+            .has_bt_sig_company()
+        );
     }
 
     #[test]
     /// Test GetCapabilitiesResponse bad company decoding
     fn test_get_capabilities_response_company_decode_bad() {
-        assert!(GetCapabilitiesResponse::decode(&[
-            0x02, // company_id
-            0x02, // len
-            0x00, 0x19,
-        ])
-        .is_err());
+        assert!(
+            GetCapabilitiesResponse::decode(&[
+                0x02, // company_id
+                0x02, // len
+                0x00, 0x19,
+            ])
+            .is_err()
+        );
     }
 
     #[test]
@@ -325,12 +329,14 @@ mod tests {
     #[test]
     /// Test GetCapabilitiesResponse bad decode
     fn test_get_capabilities_response_decode_bad() {
-        assert!(GetCapabilitiesResponse::decode(&[
-            0x01, // bad id
-            0xff, // bad len
-            0x01, 0x02, // two params
-        ])
-        .is_err());
+        assert!(
+            GetCapabilitiesResponse::decode(&[
+                0x01, // bad id
+                0xff, // bad len
+                0x01, 0x02, // two params
+            ])
+            .is_err()
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_helpers::hanging_get::asynchronous as hanging_get;
 use fidl_fuchsia_bluetooth_sys::{self as sys, HostWatcherRequest, HostWatcherRequestStream};
 use fuchsia_bluetooth::types::host_info::HostInfo;
@@ -45,7 +45,7 @@ async fn handler(
 
 // Written as a free function in order to match the signature of the HangingGet
 pub fn observe_hosts(new_hosts: &Vec<HostInfo>, responder: sys::HostWatcherWatchResponder) -> bool {
-    let hosts: Vec<_> = new_hosts.into_iter().map(|host| sys::HostInfo::from(host)).collect();
+    let hosts: Vec<_> = new_hosts.iter().map(|host| sys::HostInfo::from(host)).collect();
     if let Err(err) = responder.send(&hosts) {
         warn!("Unable to respond to host_watcher watch hanging get: {:?}", err);
     }
