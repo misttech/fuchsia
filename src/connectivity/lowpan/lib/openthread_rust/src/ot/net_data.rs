@@ -21,6 +21,20 @@ impl<T: ?Sized + NetData> Iterator for OnMeshPrefixIterator<'_, T> {
     }
 }
 
+/// Iterator type for external routes in network data.
+#[allow(missing_debug_implementations)]
+pub struct ExternalRouteIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otNetworkDataIterator,
+}
+
+impl<T: ?Sized + NetData> Iterator for ExternalRouteIterator<'_, T> {
+    type Item = ExternalRouteConfig;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.ot_instance.iter_next_external_route(&mut self.ot_iter)
+    }
+}
+
 /// Methods from the [OpenThread "NetData" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-thread-general
@@ -52,9 +66,20 @@ pub trait NetData {
         ot_iter: &mut otNetworkDataIterator,
     ) -> Option<BorderRouterConfig>;
 
+    /// Functional equivalent of [`otsys::otNetDataGetNextRoute`](crate::otsys::otNetDataGetNextRoute).
+    fn iter_next_external_route(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<ExternalRouteConfig>;
+
     /// Returns an iterator for iterating over on-mesh prefixes.
     fn iter_on_mesh_prefixes(&self) -> OnMeshPrefixIterator<'_, Self> {
         OnMeshPrefixIterator { ot_instance: self, ot_iter: OT_NETWORK_DATA_ITERATOR_INIT }
+    }
+
+    /// Returns an iterator for iterating over external routes.
+    fn iter_external_routes(&self) -> ExternalRouteIterator<'_, Self> {
+        ExternalRouteIterator { ot_instance: self, ot_iter: OT_NETWORK_DATA_ITERATOR_INIT }
     }
 }
 
@@ -76,6 +101,13 @@ impl<T: NetData + Boxable> NetData for ot::Box<T> {
         ot_iter: &mut otNetworkDataIterator,
     ) -> Option<BorderRouterConfig> {
         self.as_ref().iter_next_on_mesh_prefix(ot_iter)
+    }
+
+    fn iter_next_external_route(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<ExternalRouteConfig> {
+        self.as_ref().iter_next_external_route(ot_iter)
     }
 }
 
@@ -113,6 +145,24 @@ impl NetData for Instance {
                 Error::NotFound => None,
                 Error::None => Some(ret),
                 err => panic!("Unexpected error from otNetDataGetNextOnMeshPrefix: {err:?}"),
+            }
+        }
+    }
+
+    fn iter_next_external_route(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<ExternalRouteConfig> {
+        unsafe {
+            let mut ret = ExternalRouteConfig::default();
+            match Error::from(otNetDataGetNextRoute(
+                self.as_ot_ptr(),
+                ot_iter as *mut otNetworkDataIterator,
+                ret.as_ot_mut_ptr(),
+            )) {
+                Error::NotFound => None,
+                Error::None => Some(ret),
+                err => panic!("Unexpected error from otNetDataGetNextRoute: {err:?}"),
             }
         }
     }

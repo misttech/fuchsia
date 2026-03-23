@@ -1352,6 +1352,20 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let external_routes = ot
+            .iter_external_routes()
+            .take(32) // Limit the number of routers to 32 per the FIDL definition.
+            .map(|route| fidl_fuchsia_lowpan_experimental::ExternalRouteConfig {
+                prefix: Some(route.prefix().to_string()),
+                rloc16: Some(route.rloc16()),
+                preference: Some(route.route_preference() as i8),
+                nat64: Some(route.is_nat64()),
+                stable: Some(route.is_stable()),
+                next_hop_is_this_device: Some(route.is_next_hop_this_device()),
+                adv_pio: Some(route.is_adv_pio()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1415,6 +1429,7 @@ where
             router_info: Some(router_info),
             network_data: Some(fidl_fuchsia_lowpan_experimental::NetworkData {
                 on_mesh_prefixes: Some(on_mesh_prefixes),
+                external_routes: Some(external_routes),
                 ..Default::default()
             }),
             ..Default::default()

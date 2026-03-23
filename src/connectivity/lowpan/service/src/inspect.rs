@@ -1865,6 +1865,56 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.external_routes {
+                                        net_data_child.record_child(
+                                            "external_routes",
+                                            |external_routes_child| {
+                                                for (index, config) in y.iter().enumerate() {
+                                                    external_routes_child.record_child(
+                                                        format!("route_{}", index),
+                                                        |route_node| {
+                                                            if let Some(z) = &config.prefix {
+                                                                route_node.record_string(
+                                                                    "prefix",
+                                                                    z,
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.preference {
+                                                                route_node.record_int(
+                                                                    "preference",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.nat64 {
+                                                                route_node.record_bool(
+                                                                    "nat64",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.stable {
+                                                                route_node.record_bool(
+                                                                    "stable",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.next_hop_is_this_device {
+                                                                route_node.record_bool(
+                                                                    "next_hop_is_this_device",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.adv_pio {
+                                                                route_node.record_bool(
+                                                                    "adv_pio",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }

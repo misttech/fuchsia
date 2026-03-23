@@ -56,8 +56,12 @@ impl ExternalRouteConfig {
     }
 
     /// Returns the route preference.
+    /// Since mPreference remains an unsigned value after conversion from otExternalRouteConfig
+    /// (see binding.rs), so explicitly sign-extend it from a u32 to an i32 here to ensure the
+    /// expected values of -1, 0, or 1.
     pub fn route_preference(&self) -> RoutePreference {
-        RoutePreference::from_i32(self.0.mPreference()).expect("Invalid route preference")
+        RoutePreference::from_i32((self.0.mPreference() << 30) >> 30)
+            .expect("Invalid route preference")
     }
 
     /// Sets the route preference.
@@ -78,5 +82,15 @@ impl ExternalRouteConfig {
     /// Returns true if the next hop for this route is this device.
     pub fn is_next_hop_this_device(&self) -> bool {
         self.0.mNextHopIsThisDevice()
+    }
+
+    /// Returns whether this is a NAT64 prefix.
+    pub fn is_nat64(&self) -> bool {
+        self.0.mNat64()
+    }
+
+    /// Returns whether or not BR is advertising a ULA prefix in PIO (AP flag).
+    pub fn is_adv_pio(&self) -> bool {
+        self.0.mAdvPio()
     }
 }
