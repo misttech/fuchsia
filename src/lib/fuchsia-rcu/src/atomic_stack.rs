@@ -42,11 +42,14 @@ impl<T: Send + Sync> AtomicStack<T> {
         // SAFETY: The node pointer is valid for mutable access until we drop the node.
         let node = unsafe { &mut *node_ptr };
         loop {
-            let head = self.head.load(Ordering::Acquire);
+            let head = self.head.load(Ordering::Relaxed);
             node.next = head;
+            // This uses Release ordering to synchronize with the Acquire in `take_head`.  We need
+            // all writes to the element prior to here to be visible in another thread that takes
+            // the stack.
             if self
                 .head
-                .compare_exchange(head, node_ptr, Ordering::AcqRel, Ordering::Relaxed)
+                .compare_exchange(head, node_ptr, Ordering::Release, Ordering::Relaxed)
                 .is_ok()
             {
                 break;
@@ -58,16 +61,7 @@ impl<T: Send + Sync> AtomicStack<T> {
     ///
     /// This function empties the stack. The caller takes ownership of the returned nodes.
     fn take_head(&self) -> *mut Node<T> {
-        loop {
-            let head = self.head.load(Ordering::Acquire);
-            if self
-                .head
-                .compare_exchange(head, ptr::null_mut(), Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-            {
-                return head;
-            }
-        }
+        self.head.swap(std::ptr::null_mut(), Ordering::Acquire)
     }
 
     /// Takes the contents of the stack and returns them as an iterator.
