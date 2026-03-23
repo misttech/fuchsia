@@ -73,7 +73,7 @@ fn verify_component_resolvers(
     let mut deps = HashSet::new();
 
     for (query, allowed_monikers) in allowlist.iter() {
-        let allowed_monikers: HashSet<&Moniker> = allowed_monikers.into_iter().collect();
+        let allowed_monikers: HashSet<&Moniker> = allowed_monikers.iter().collect();
 
         let response = scrutiny
             .query(query.scheme.clone(), query.moniker.clone(), query.protocol.clone())

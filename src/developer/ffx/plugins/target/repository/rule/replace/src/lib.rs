@@ -82,7 +82,7 @@ impl ReplaceTool {
             async move {
                 transaction.reset_all()?;
                 // add() inserts rules as highest priority, hence reverse iterate
-                for rule in rules.into_iter().rev() {
+                for rule in rules.iter().rev() {
                     let () = transaction.add(rule.clone()).await?;
                 }
                 Ok(transaction)

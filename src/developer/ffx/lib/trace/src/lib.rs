@@ -87,7 +87,7 @@ pub fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<String>>
     let mut group_names: Vec<String> = all_groups
         .as_array()
         .unwrap()
-        .into_iter()
+        .iter()
         .flat_map(|subgroups| subgroups.as_object().unwrap())
         .map(|(group_name, _)| group_name)
         .cloned()

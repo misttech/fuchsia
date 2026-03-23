@@ -295,7 +295,7 @@ impl LibraryCommand {
             Self::ChannelWrite { lib, channel, buf, handles, responder } => {
                 let mut fdomain_handles = Vec::new();
                 let mut state = lib.fdomain_state().await;
-                for hdl in handles.into_iter() {
+                for hdl in handles.iter() {
                     let fd_hdl = match state.take_handle(*hdl) {
                         Ok(h) => h,
                         Err(e) => {

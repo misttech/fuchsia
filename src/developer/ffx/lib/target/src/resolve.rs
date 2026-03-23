@@ -583,7 +583,7 @@ fn choose_address_from_addresses(
     }
     Some(
         addresses
-            .into_iter()
+            .iter()
             .cloned()
             .min_by(sort_addrs)
             .expect("Address list mysteriously became empty!"),
