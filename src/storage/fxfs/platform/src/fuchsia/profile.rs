@@ -611,11 +611,14 @@ impl<T: RecordedVolume> ReplayState<T> {
 
     fn page_in_thread(queue: async_channel::Receiver<Request<T::NodeType>>) {
         while let Ok(request) = queue.recv_blocking() {
-            let _ = request.file.vmo().op_range(
+            let res = request.file.vmo().op_range(
                 zx::VmoOp::PREFETCH,
                 request.offset,
                 zx::system_get_page_size() as u64,
             );
+            if let Err(e) = res {
+                warn!("Failed to prefetch page: {:?}", e);
+            }
             // If the volume is shutdown, the sender will be dropped.
             if queue.sender_count() == 0 {
                 return;
