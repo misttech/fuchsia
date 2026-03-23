@@ -32,10 +32,24 @@ pub enum Error {
     #[error("Zircon error: {}", .0)]
     ZxError(#[from] zx_status::Status),
     #[error("FIDL error: {}", .0)]
-    FidlError(#[from] ::fidl::Error),
+    FidlError(#[from] fidl::Error),
     #[cfg(feature = "fdomain")]
     #[error("FDomain error: {}", .0)]
     FDomainError(#[from] fdomain_client::Error),
     #[error("Collector error: {:?}", .0)]
     CollectorError(fheapdump_client::CollectorError),
+}
+
+// Helper functions used by various tests in this crate.
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    #[cfg(feature = "fdomain")]
+    pub fn create_client() -> std::sync::Arc<fdomain_client::Client> {
+        fdomain_local::local_client_empty()
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    pub fn create_client() -> fidl::endpoints::ZirconClient {
+        fidl::endpoints::ZirconClient
+    }
 }

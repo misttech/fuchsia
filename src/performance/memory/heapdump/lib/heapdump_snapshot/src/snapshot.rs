@@ -346,6 +346,7 @@ impl Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::create_client;
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use test_case::test_case;
@@ -381,10 +382,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -401,10 +399,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_one_batch() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -544,10 +539,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_two_batches() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -704,10 +696,7 @@ mod tests {
     async fn test_allocation_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::Allocation),
     ) -> Result<Snapshot, Error> {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -762,10 +751,7 @@ mod tests {
     async fn test_thread_info_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ThreadInfo),
     ) -> Result<Snapshot, Error> {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -804,10 +790,7 @@ mod tests {
     async fn test_stack_trace_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::StackTrace),
     ) -> Result<Snapshot, Error> {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -849,10 +832,7 @@ mod tests {
     async fn test_executable_region_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ExecutableRegion),
     ) -> Result<Snapshot, Error> {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -892,10 +872,7 @@ mod tests {
     async fn test_block_contents_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::BlockContents),
     ) -> Result<Snapshot, Error> {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -945,10 +922,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_conflicting_allocations() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -998,10 +972,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_conflicting_executable_regions() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1046,10 +1017,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_block_contents_wrong_size() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1097,10 +1065,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty_stack_trace() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1145,10 +1110,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_chunked_stack_trace() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1203,10 +1165,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_empty_block_contents() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1256,10 +1215,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_chunked_block_contents() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1323,10 +1279,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_missing_end_of_stream() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
@@ -1364,10 +1317,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_multi_contents() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));
@@ -1427,10 +1377,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_multi_missing_end_of_stream() {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_multi_from(receiver_stream));

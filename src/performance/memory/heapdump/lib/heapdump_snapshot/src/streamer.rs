@@ -85,6 +85,7 @@ impl<'a> Streamer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::create_client;
     use fuchsia_async as fasync;
     use maplit::hashmap;
     use std::collections::HashMap;
@@ -124,10 +125,7 @@ mod tests {
     #[test_case(generate_one_million_allocations_hashmap() ; "one million")]
     #[fasync::run_singlethreaded(test)]
     async fn test_streamer(allocations: HashMap<u64, u64>) {
-        #[cfg(feature = "fdomain")]
-        let client = fdomain_local::local_client_empty();
-        #[cfg(not(feature = "fdomain"))]
-        let client = fidl::endpoints::ZirconClient;
+        let client = create_client();
         let (mut receiver_proxy, receiver_stream) =
             client.create_proxy_and_stream::<fheapdump_client::SnapshotReceiverMarker>();
         let receive_worker = fasync::Task::local(Snapshot::receive_single_from(receiver_stream));
