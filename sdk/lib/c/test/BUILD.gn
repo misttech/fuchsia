@@ -53,7 +53,10 @@ boot_test_specs = {
   environments += kernel_test_environments
 }
 
-libc_component_tests = [ "../dlfcn:dlfcn-abi-tests" ]
+libc_component_tests = [
+  "../dlfcn:dlfcn-abi-tests",
+  "../scudo:scudo-unittests",
+]
 libc_test_manifests = []
 
 source_set("safe-zero-construction") {

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/zircon/levels.gni")
+import("//build/test.gni")
 import("../libc.gni")
 
 group("scudo") {
@@ -241,8 +242,30 @@ config("gwp-asan-common-config") {
   include_dirs = [ "${gwp_asan}/.." ]
 }
 
-# This is included in libc-unittests and standalone core-tests.
-libc_test("unittests") {
+# This rolls up into libc-unittests, but the scudo unit tests are separate.
+group("unittests") {
+  testonly = true
+  deps = []
+
+  # The public API tests both assume Scudo's behavior rather than purely kosher
+  # standard behavior and they include testing error cases.  The instrumented
+  # runtimes' allocators often make error cases or dubiously kosher uses fatal.
+  if (!variant_replaces_allocator) {
+    deps += [ ":wrapper-tests" ]
+  }
+}
+
+# The full Scudo test suite is kept out of libc-unittests because it is so
+# large and slow.  It's a separate component run in parallel, and does not get
+# included in the standalone libc-unittests.
+test("scudo-unittests") {
+  deps = [
+    ":unittests.gwp_asan",
+    ":unittests.scudo",
+  ]
+}
+
+libc_test("unittests.scudo") {
   forward_variables_from(scudo_common_vars, "*")
 
   sources = [
@@ -269,17 +292,7 @@ libc_test("unittests") {
     "tests/vector_test.cpp",
   ]
 
-  deps += [
-    ":gwp_asan-unittests",
-    ":scudo-allocator.testonly",
-  ]
-
-  # The public API tests both assume Scudo's behavior rather than purely kosher
-  # standard behavior and they include testing error cases.  The instrumented
-  # runtimes' allocators often make error cases or dubiously kosher uses fatal.
-  if (!variant_replaces_allocator) {
-    deps += [ ":wrapper-tests" ]
-  }
+  deps += [ ":scudo-allocator.testonly" ]
 
   # scudo_unit_test_main.cpp needs to define __scudo_default_options() but
   # can't use <sanitizer/scudo_interface.h> since it's not in the slice repo.
@@ -296,9 +309,11 @@ libc_test("wrapper-tests") {
     # TODO(https://fxbug.dev/42082846): see src/wrappers_cpp.cpp inclusion above.
     #"tests/wrappers_cpp_test.cpp",
   ]
+
+  deps += [ ":scudo-allocator.testonly" ]
 }
 
-libc_test("gwp_asan-unittests") {
+libc_test("unittests.gwp_asan") {
   forward_variables_from(gwp_asan_common_vars, "*")
 
   sources = [
