@@ -6,7 +6,7 @@ use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
 #[cfg(test)]
 use crate::backend_test::BackendController;
 use crate::wire;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;
 use std::cell::RefCell;
@@ -91,7 +91,7 @@ impl BlockBackend for MemoryBackend {
         _trace_id: ftrace::Id,
     ) -> Result<(), Error> {
         let mut offset = request.sector.to_bytes().unwrap() as usize;
-        for range in request.ranges.into_iter() {
+        for range in request.ranges.iter() {
             let top = offset.checked_add(range.len()).unwrap();
             if top > self.0.borrow().len() {
                 return Err(anyhow!(
@@ -119,7 +119,7 @@ impl BlockBackend for MemoryBackend {
         _trace_id: ftrace::Id,
     ) -> Result<(), Error> {
         let mut offset = request.sector.to_bytes().unwrap() as usize;
-        for range in request.ranges.into_iter() {
+        for range in request.ranges.iter() {
             let top = offset.checked_add(range.len()).unwrap();
             if top > self.0.borrow().len() {
                 return Err(anyhow!(
