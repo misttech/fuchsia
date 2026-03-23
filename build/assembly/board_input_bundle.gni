@@ -50,6 +50,13 @@ import("//build/python/python_action.gni")
 #    like:
 #      "no dependency provides the input <package_name>/package_manifest.json"
 #
+#  bootfs_or_base_packages
+#    [list, GN labels] A list of GN labels of fuchsia_package targets to include
+#    in the bootfs_or_base package set, which means the package will go in the
+#    base package set if the product has it, or bootfs if not. Products with the
+#    `standard` or `utility` feature set have base packages while `embeddable`
+#    or `bootstrap` do not.
+#
 #  kernel_cmdline (optional: default: [])
 #    [list of strings] Kernel cmdline arguments.
 #
@@ -240,6 +247,7 @@ template("board_input_bundle") {
           [
             "base_packages",
             "bootfs_packages",
+            "bootfs_or_base_packages",
           ]) {
     if (defined(invoker[package_set])) {
       # The list of package manifest files, for validating that the package

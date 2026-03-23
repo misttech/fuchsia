@@ -142,6 +142,16 @@ def _fuchsia_board_input_bundle_impl(ctx):
         creation_inputs += dep[FuchsiaPackageInfo].files
         build_id_dirs += dep[FuchsiaPackageInfo].build_id_dirs
 
+    for dep in ctx.attr.bootfs_or_base_packages:
+        creation_args.extend(
+            [
+                "--bootfs-or-base-packages",
+                dep[FuchsiaPackageInfo].package_manifest.path,
+            ],
+        )
+        creation_inputs += dep[FuchsiaPackageInfo].files
+        build_id_dirs += dep[FuchsiaPackageInfo].build_id_dirs
+
     # Create Board Input Bundle
     board_input_bundle_dir = ctx.actions.declare_directory(ctx.label.name)
     args = [
@@ -204,6 +214,11 @@ fuchsia_board_input_bundle = rule(
         ),
         "bootfs_packages": attr.label_list(
             doc = "Bootfs packages to include in board.",
+            providers = [FuchsiaPackageInfo],
+            default = [],
+        ),
+        "bootfs_or_base_packages": attr.label_list(
+            doc = "Bootfs-or-base packages to include in board.",
             providers = [FuchsiaPackageInfo],
             default = [],
         ),

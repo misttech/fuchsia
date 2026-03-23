@@ -426,6 +426,12 @@ impl ImageAssemblyConfigBuilder {
         }
 
         for PackageDetails { package, set } in bundle.packages {
+            let set = match (bootstrap_only, set) {
+                (true, PackageSet::BootfsOrBase) => PackageSet::Bootfs,
+                (false, PackageSet::BootfsOrBase) => PackageSet::Base,
+                (_, set) => set,
+            };
+
             // Always add the package if bootfs, and only add non-bootfs packages
             // if this is not a bootstrap_only build.
             if set == PackageSet::Bootfs || !bootstrap_only {
@@ -594,6 +600,17 @@ impl ImageAssemblyConfigBuilder {
                 (&PackageSet::Bootfs, _, _, _, _) => PackageSet::Bootfs,
                 // System packages are always system packages
                 (&PackageSet::System, _, _, _, _) => PackageSet::System,
+
+                (&PackageSet::BootfsOrBase, _, _, FilesystemImageMode::NoImage, _) => {
+                    PackageSet::Bootfs
+                }
+                (
+                    &PackageSet::BootfsOrBase,
+                    _,
+                    _,
+                    FilesystemImageMode::Partition | FilesystemImageMode::Ramdisk,
+                    _,
+                ) => PackageSet::Base,
 
                 // When the all_packages_in_base developer override option is
                 // enabled, that takes precedence over all the rest on eng and userdebug
@@ -1612,7 +1629,18 @@ mod tests {
         manifest_path.into()
     }
 
-    fn make_test_assembly_bundle(outdir: &Utf8Path, bundle_path: &Utf8Path) -> AssemblyInputBundle {
+    fn make_test_assembly_bundle_with_base(
+        outdir: &Utf8Path,
+        bundle_path: &Utf8Path,
+    ) -> AssemblyInputBundle {
+        make_test_assembly_bundle(outdir, bundle_path, true /* include_base */)
+    }
+
+    fn make_test_assembly_bundle(
+        outdir: &Utf8Path,
+        bundle_path: &Utf8Path,
+        include_base: bool,
+    ) -> AssemblyInputBundle {
         let test_file_path = outdir.join("bootfs_files_package");
         let mut test_file = File::create(&test_file_path).unwrap();
         let builder = PackageManifestBuilder::new(MetaPackage::from_name_and_variant_zero(
@@ -1633,19 +1661,18 @@ mod tests {
 
         let write_empty_bundle_pkg =
             |name: &str| write_empty_pkg(bundle_path, name, None).to_string().into();
-        AssemblyInputBundle {
-            allowed_in: Default::default(),
-            scrutiny_required: Default::default(),
-            auto_include_in: Default::default(),
-            experimental: false,
-            kernel: Some(PartialKernelConfig {
-                path: Some("kernel/path".into()),
-                args: vec!["kernel_arg0".into()],
-            }),
-            qemu_kernel: Some("path/to/qemu/kernel".into()),
-            boot_args: vec![],
-            bootfs_files: vec![],
-            packages: vec![
+        let mut packages = vec![
+            PackageDetails {
+                package: write_empty_bundle_pkg("bootfs_package0"),
+                set: PackageSet::Bootfs,
+            },
+            PackageDetails {
+                package: write_empty_bundle_pkg("bootfs_or_base_package0"),
+                set: PackageSet::BootfsOrBase,
+            },
+        ];
+        if include_base {
+            packages.extend(vec![
                 PackageDetails {
                     package: write_empty_bundle_pkg("base_package0"),
                     set: PackageSet::Base,
@@ -1659,14 +1686,25 @@ mod tests {
                     set: assembly_config_schema::PackageSet::Flexible,
                 },
                 PackageDetails {
-                    package: write_empty_bundle_pkg("bootfs_package0"),
-                    set: PackageSet::Bootfs,
-                },
-                PackageDetails {
                     package: write_empty_bundle_pkg("sys_package0"),
                     set: PackageSet::System,
                 },
-            ],
+            ]);
+        }
+
+        AssemblyInputBundle {
+            allowed_in: Default::default(),
+            scrutiny_required: Default::default(),
+            auto_include_in: Default::default(),
+            experimental: false,
+            kernel: Some(PartialKernelConfig {
+                path: Some("kernel/path".into()),
+                args: vec!["kernel_arg0".into()],
+            }),
+            qemu_kernel: Some("path/to/qemu/kernel".into()),
+            boot_args: vec![],
+            bootfs_files: vec![],
+            packages,
             drivers: Vec::default(),
             config_data: BTreeMap::default(),
             blobs: Vec::default(),
@@ -1754,7 +1792,7 @@ mod tests {
         builder
             .add_parsed_bundle(
                 &vars.outdir,
-                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+                make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path),
             )
             .unwrap();
         let (result, _) =
@@ -1764,6 +1802,7 @@ mod tests {
             result.base,
             vec![
                 vars.bundle_path.join("base_package0"),
+                vars.bundle_path.join("bootfs_or_base_package0"),
                 vars.outdir.join("config_data/package_manifest.json")
             ]
         );
@@ -1815,7 +1854,7 @@ mod tests {
         builder
             .add_parsed_bundle(
                 &vars.outdir,
-                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+                make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path),
             )
             .unwrap();
         let (result, _) =
@@ -1825,6 +1864,7 @@ mod tests {
             result.base,
             vec![
                 vars.bundle_path.join("base_package0"),
+                vars.bundle_path.join("bootfs_or_base_package0"),
                 vars.bundle_path.join("flexible_package0"),
                 vars.outdir.join("config_data/package_manifest.json")
             ]
@@ -1871,7 +1911,7 @@ mod tests {
         builder
             .add_parsed_bundle(
                 &vars.outdir,
-                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+                make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path),
             )
             .unwrap();
         let (result, _) =
@@ -1881,6 +1921,7 @@ mod tests {
             result.base,
             vec![
                 vars.bundle_path.join("base_package0"),
+                vars.bundle_path.join("bootfs_or_base_package0"),
                 vars.bundle_path.join("flexible_package0"),
                 vars.outdir.join("config_data/package_manifest.json")
             ]
@@ -1890,6 +1931,60 @@ mod tests {
         assert_eq!(
             result.bootfs_packages,
             vec![
+                vars.bundle_path.join("bootfs_package0"),
+                vars.outdir.join("config/package_manifest.json"),
+            ]
+        );
+        assert!(result.boot_args.is_empty());
+        assert_eq!(
+            result
+                .bootfs_files
+                .iter()
+                .map(|f| f.destination.to_owned())
+                .sorted()
+                .collect::<Vec<_>>(),
+            vec!["dest/file/path".to_string()],
+        );
+
+        assert_eq!(result.kernel.path, vars.outdir.join("kernel/path"));
+        assert_eq!(result.kernel.args, vec!("kernel_arg0".to_string()));
+        assert_eq!(result.qemu_kernel, vars.outdir.join("path/to/qemu/kernel"));
+    }
+
+    #[test]
+    fn test_builder_no_image() {
+        let vars = TempdirPathsForTest::new();
+        let tools = FakeToolProvider::default();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(
+            BuildType::UserDebug,
+            FeatureSetLevel::Standard,
+            "my_board".into(),
+            None::<Utf8PathBuf>,
+            FilesystemImageMode::NoImage,
+            AssemblyMode::default(),
+            SystemReleaseInfo::new_for_testing(),
+        );
+        builder
+            .add_parsed_bundle(
+                &vars.outdir,
+                make_test_assembly_bundle(
+                    &vars.outdir,
+                    &vars.bundle_path,
+                    false, /* !include_base */
+                ),
+            )
+            .unwrap();
+        let (result, _) =
+            builder.build_and_validate(&vars.outdir, &tools, ValidationMode::On).unwrap();
+
+        assert!(result.base.is_empty());
+        assert!(result.cache.is_empty());
+        assert!(result.system.is_empty());
+        assert_eq!(
+            result.bootfs_packages,
+            vec![
+                vars.bundle_path.join("bootfs_or_base_package0"),
                 vars.bundle_path.join("bootfs_package0"),
                 vars.outdir.join("config/package_manifest.json"),
             ]
@@ -1959,7 +2054,7 @@ mod tests {
         let tools = FakeToolProvider::default();
 
         // Create an assembly bundle and add a config_data entry to it.
-        let mut bundle = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
+        let mut bundle = make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path);
 
         bundle.config_data.insert(
             vars.config_data_target_package_name.clone(),
@@ -2001,7 +2096,7 @@ mod tests {
             vars.outdir.join("config_data").join("package_manifest.json");
 
         // Validate that the base package set contains config_data.
-        assert_eq!(result.base.len(), 2);
+        assert_eq!(result.base.len(), 3);
         assert!(result.base.contains(&vars.bundle_path.join("base_package0")));
         assert!(result.base.contains(&expected_config_data_manifest_path));
 
@@ -2053,7 +2148,7 @@ mod tests {
         let vars = TempdirPathsForTest::new();
         let tools = FakeToolProvider::default();
 
-        let bundle = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
+        let bundle = make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path);
         let mut builder = setup_builder(&vars, vec![bundle]);
 
         let destination = PackageSetDestination::Blob(PackageDestination::ForTest);
@@ -2079,7 +2174,7 @@ mod tests {
         let vars = TempdirPathsForTest::new();
         let tools = FakeToolProvider::default();
 
-        let bundle = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
+        let bundle = make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path);
         let mut builder = setup_builder(&vars, vec![bundle]);
 
         let destination = PackageSetDestination::Boot(BootfsPackageDestination::ForTest);
@@ -2106,7 +2201,7 @@ mod tests {
         let tools = FakeToolProvider::default();
 
         // Make an assembly input bundle with Shell Commands in it
-        let mut bundle = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
+        let mut bundle = make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path);
         bundle.shell_commands.insert(
             "package1".to_string(),
             BTreeSet::from([
@@ -2124,7 +2219,7 @@ mod tests {
             vars.outdir.join("pkg-shell-commands").join("package_manifest.json");
 
         // Validate that the base package set contains shell_commands.
-        assert_eq!(result.base.len(), 3);
+        assert_eq!(result.base.len(), 4);
         assert!(result.base.contains(&expected_manifest_path));
     }
 
@@ -2240,7 +2335,7 @@ mod tests {
         let bundle2_path = vars.outdir.join("bundle2");
 
         // Create 2 assembly bundle and add a config_data entry to it.
-        let mut bundle1 = make_test_assembly_bundle(&vars.outdir, &vars.bundle_path);
+        let mut bundle1 = make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path);
         bundle1.packages_to_compile.push(CompiledPackageDefinition {
             name: CompiledPackageDestination::Test(ForTest),
             components: vec![
@@ -2375,7 +2470,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = Utf8Path::from_path(temp.path()).unwrap();
 
-        let mut aib = make_test_assembly_bundle(root, root);
+        let mut aib = make_test_assembly_bundle_with_base(root, root);
         duplicate_first(&mut aib.packages);
 
         let mut builder = ImageAssemblyConfigBuilder::new(
@@ -2399,7 +2494,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let outdir = Utf8Path::from_path(tmp.path()).unwrap();
 
-        let mut aib = make_test_assembly_bundle(outdir, outdir);
+        let mut aib = make_test_assembly_bundle_with_base(outdir, outdir);
         let mut second_aib = AssemblyInputBundle::default();
 
         let first_list = (accessor)(&mut aib);
@@ -2554,7 +2649,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let root = Utf8Path::from_path(temp.path()).unwrap();
 
-        let mut first_aib = make_test_assembly_bundle(root, root);
+        let mut first_aib = make_test_assembly_bundle_with_base(root, root);
         let mut second_aib = AssemblyInputBundle::default();
 
         // Write the config data files.
@@ -2646,7 +2741,7 @@ mod tests {
         builder
             .add_parsed_bundle(
                 &vars.outdir,
-                make_test_assembly_bundle(&vars.outdir, &vars.bundle_path),
+                make_test_assembly_bundle_with_base(&vars.outdir, &vars.bundle_path),
             )
             .unwrap();
 

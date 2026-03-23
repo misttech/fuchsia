@@ -87,6 +87,11 @@ def create_bundle(args: argparse.Namespace) -> None:
     if args.bootfs_pkg_list:
         add_pkg_list_from_file(aib_creator, args.bootfs_pkg_list, "bootfs")
 
+    if args.bootfs_or_base_pkg_list:
+        add_pkg_list_from_file(
+            aib_creator, args.bootfs_or_base_pkg_list, "bootfs_or_base"
+        )
+
     if args.on_demand_pkg_list:
         add_pkg_list_from_file(
             aib_creator, args.on_demand_pkg_list, "on_demand"
@@ -498,6 +503,11 @@ def main() -> int:
         "--bootfs-pkg-list",
         type=argparse.FileType("r"),
         help="Path to a json list of package manifests for the 'bootfs' package set",
+    )
+    bundle_creation_parser.add_argument(
+        "--bootfs-or-base-pkg-list",
+        type=argparse.FileType("r"),
+        help="Path to a json list of package manifests for the 'bootfs-or-base' package set",
     )
     bundle_creation_parser.add_argument(
         "--on-demand-pkg-list",

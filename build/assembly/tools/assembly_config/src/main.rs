@@ -241,6 +241,10 @@ struct BoardInputBundleArgs {
     #[argh(option)]
     bootfs_packages: Vec<Utf8PathBuf>,
 
+    /// the paths to package manifests for all packages to add to the bootfs-or-base package set.
+    #[argh(option)]
+    bootfs_or_base_packages: Vec<Utf8PathBuf>,
+
     /// cpu-manager configuration
     #[argh(option)]
     cpu_manager_config: Option<Utf8PathBuf>,

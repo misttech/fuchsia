@@ -22,6 +22,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         drivers,
         base_packages,
         bootfs_packages,
+        bootfs_or_base_packages,
         energy_model_config,
         kernel_boot_args,
         power_manager_config,
@@ -55,9 +56,11 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
 
     // Collect the packages.
     let mut packages = vec![];
-    for (pkg_set, pkgs) in
-        [(PackageSet::Base, base_packages), (PackageSet::Bootfs, bootfs_packages)]
-    {
+    for (pkg_set, pkgs) in [
+        (PackageSet::Base, base_packages),
+        (PackageSet::Bootfs, bootfs_packages),
+        (PackageSet::BootfsOrBase, bootfs_or_base_packages),
+    ] {
         for package_manifest_path in pkgs {
             packages.push(PackageDetails {
                 package: package_manifest_path.into(),

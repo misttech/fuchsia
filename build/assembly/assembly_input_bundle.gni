@@ -68,6 +68,18 @@ import("//tools/cmc/build/restricted_features.gni")
 #    like:
 #      "no dependency provides the input <package_name>/package_manifest.json"
 #
+#  bootfs_or_base_packages
+#    [list, GN labels] A list of GN labels of fuchsia_package targets to include
+#    in the bootfs_or_base package set, which means the package will go in the
+#    base package set if the product has it, or bootfs if not. Products with the
+#    `standard` or `utility` feature set have base packages while `embeddable`
+#    or `bootstrap` do not.
+#
+#    Note: These are direct labels for specific targets, not deps to walk for
+#    metadata.  If the target isn't a package target, it will cause an error
+#    like:
+#      "no dependency provides the input <package_name>/package_manifest.json"
+#
 #   drivers [optional]
 #     [list, GN scopes] A list of GN scopes that hold the driver packages to
 #     include in the assembly input bundle. The scope must have a `package_target`
@@ -561,6 +573,16 @@ template("assembly_input_bundle") {
         ]
       }
     }
+    bootfs_or_base = []
+    if (defined(invoker.bootfs_or_base_packages)) {
+      foreach(_target, invoker.bootfs_or_base_packages) {
+        bootfs_or_base += [
+          {
+            package_target = _target
+          },
+        ]
+      }
+    }
     on_demand = []
     if (defined(invoker.on_demand)) {
       foreach(_target, invoker.on_demand) {
@@ -588,6 +610,7 @@ template("assembly_input_bundle") {
             "flexible",
             "system",
             "bootfs",
+            "bootfs-or-base",
             "on-demand",
             "drivers",
           ]) {
