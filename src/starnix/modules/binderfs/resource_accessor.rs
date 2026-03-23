@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, zx};
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_starnix_binder as fbinder;
+use zx;
 
 use starnix_core::device::mem::new_null_file;
 use starnix_core::fs::fuchsia::new_remote_file;
@@ -102,6 +104,18 @@ impl<'b> RemoteMemoryAccessor<'b> {
     fn map_fidl_posix_errno(e: fposix::Errno) -> Errno {
         errno_from_code!(e.into_primitive() as i16)
     }
+
+    // Remove top bits to safely handle HWASAN tagged addresses (top byte ignore on Aarch64).
+    fn untag_address(&self, addr: UserAddress) -> zx::sys::zx_vaddr_t {
+        #[cfg(target_arch = "aarch64")]
+        {
+            (addr.ptr() as u64 & 0x00FF_FFFF_FFFF_FFFF) as zx::sys::zx_vaddr_t
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            addr.ptr()
+        }
+    }
 }
 
 // The maximal size of buffers that zircon supports for process_{read|write}_memory.
@@ -113,7 +127,7 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
         addr: UserAddress,
         mut unread_bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        let mut addr = addr.ptr();
+        let mut addr = self.untag_address(addr);
         let unread_bytes_ptr = unread_bytes.as_mut_ptr();
         let unread_bytes_len = unread_bytes.len();
         while !unread_bytes.is_empty() {
@@ -172,6 +186,9 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
         if bytes.is_empty() {
             return Ok(0);
         }
+
+        let untagged_addr = self.untag_address(addr) as u64;
+
         // Writes are returned through ioctl, if there is space.
         let mut ioctl_writes = self.remote_ioctl.ioctl_writes.take();
         if ioctl_writes.len() < fbinder::MAX_IOCTL_WRITE_COUNT as usize {
@@ -182,7 +199,7 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
             });
             let offset = last.offset + last.length;
             ioctl_writes.push(fbinder::IoctlWrite {
-                address: addr.ptr() as u64,
+                address: untagged_addr,
                 offset,
                 length: bytes.len() as u64,
             });
@@ -194,7 +211,7 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
         // Otherwise use ProcessAccessor to write to the process.
         if bytes.len() <= fbinder::MAX_WRITE_BYTES as usize {
             self.remote_resource_accessor.process_accessor.write_bytes(
-                addr.ptr() as u64,
+                untagged_addr,
                 bytes,
                 zx::MonotonicInstant::INFINITE,
             )
@@ -206,7 +223,7 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
             vmo.write(bytes, 0).map_err(|_| errno!(EFAULT))?;
             vmo.set_content_size(&(bytes.len() as u64)).map_err(|_| errno!(EINVAL))?;
             self.remote_resource_accessor.process_accessor.write_memory(
-                addr.ptr() as u64,
+                untagged_addr,
                 vmo,
                 zx::MonotonicInstant::INFINITE,
             )
