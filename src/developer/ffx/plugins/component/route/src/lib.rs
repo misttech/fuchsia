@@ -5,12 +5,13 @@
 use async_trait::async_trait;
 use component_debug::cli;
 use component_debug::route::RouteReport;
+use component_debug_fdomain as component_debug;
 use errors::ffx_error;
 use ffx_component::rcs;
 use ffx_component_route_args::RouteCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct RouteTool {
@@ -26,8 +27,8 @@ impl FfxMain for RouteTool {
     type Writer = MachineWriter<Vec<RouteReport>>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = rcs::connect_to_realm_query(&self.rcs).await?;
-        let route_validator = rcs::connect_to_route_validator(&self.rcs).await?;
+        let realm_query = rcs::connect_to_realm_query_f(&self.rcs).await?;
+        let route_validator = rcs::connect_to_route_validator_f(&self.rcs).await?;
 
         // All errors from component_debug library are user-visible.
         if writer.is_machine() {
