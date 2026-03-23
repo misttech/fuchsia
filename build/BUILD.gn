@@ -52,6 +52,8 @@ if (is_host) {
       "//build/tools/tarmaker:verify_bazel2gn",
       "//examples/fidl/fuchsia.examples.docs:verify_bazel2gn",
       "//sdk/fidl/fuchsia.accessibility.gesture:verify_bazel2gn",
+      "//sdk/fidl/fuchsia.audio.effects:verify_bazel2gn",
+      "//sdk/fidl/fuchsia.bluetooth.a2dp:verify_bazel2gn",
       "//sdk/fidl/fuchsia.fdomain:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.display.engine:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.display.types:verify_bazel2gn",
