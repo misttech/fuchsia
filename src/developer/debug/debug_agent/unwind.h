@@ -5,9 +5,11 @@
 #ifndef SRC_DEVELOPER_DEBUG_DEBUG_AGENT_UNWIND_H_
 #define SRC_DEVELOPER_DEBUG_DEBUG_AGENT_UNWIND_H_
 
+#include <optional>
 #include <vector>
 
 #include "src/developer/debug/ipc/records.h"
+#include "src/lib/unwinder/frame.h"
 
 namespace unwinder {
 class Error;
@@ -26,7 +28,8 @@ class ThreadHandle;
 // successfully identified final stack frame.
 unwinder::Error UnwindStack(const ProcessHandle& process, const ModuleList& modules,
                             const ThreadHandle& thread, const GeneralRegisters& regs,
-                            size_t max_depth, std::vector<debug_ipc::StackFrame>* stack);
+                            size_t max_depth, std::vector<debug_ipc::StackFrame>* stack,
+                            std::optional<unwinder::Frame::Trust> forced_unwinder = std::nullopt);
 
 }  // namespace debug_agent
 

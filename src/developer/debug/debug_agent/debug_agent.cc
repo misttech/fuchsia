@@ -31,6 +31,7 @@
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/ipc/unwinder_support.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/status.h"
 #include "src/developer/debug/shared/string_util.h"
@@ -469,7 +470,12 @@ void DebugAgent::OnSysInfo(const debug_ipc::SysInfoRequest& request,
 void DebugAgent::OnThreadStatus(const debug_ipc::ThreadStatusRequest& request,
                                 debug_ipc::ThreadStatusReply* reply) {
   if (DebuggedThread* thread = GetDebuggedThread(request.id)) {
-    reply->record = thread->GetThreadRecord(debug_ipc::ThreadRecord::StackAmount::kFull);
+    std::optional<unwinder::Frame::Trust> forced_unwinder = std::nullopt;
+    if (request.forced_unwinder) {
+      forced_unwinder = debug_ipc::ConvertTrust(*request.forced_unwinder);
+    }
+    reply->record = thread->GetThreadRecord(debug_ipc::ThreadRecord::StackAmount::kFull,
+                                            std::nullopt, forced_unwinder);
   } else {
     // When the thread is not found the thread record is set to "dead".
     reply->record.id = request.id;

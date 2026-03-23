@@ -11,8 +11,30 @@
 
 namespace debug_ipc {
 
-namespace {
-StackFrame::Trust ConvertTrust(unwinder::Frame::Trust unwinder_trust) {
+unwinder::Frame::Trust ConvertTrust(debug_ipc::StackFrame::Trust trust) {
+  switch (trust) {
+    case StackFrame::Trust::kScan:
+      return unwinder::Frame::Trust::kScan;
+    case StackFrame::Trust::kSCS:
+      return unwinder::Frame::Trust::kSCS;
+    case StackFrame::Trust::kSigReturn:
+      return unwinder::Frame::Trust::kSigReturn;
+    case StackFrame::Trust::kFP:
+      return unwinder::Frame::Trust::kFP;
+    case StackFrame::Trust::kPLT:
+      return unwinder::Frame::Trust::kPLT;
+    case StackFrame::Trust::kArmEhAbi:
+      return unwinder::Frame::Trust::kArmEhAbi;
+    case StackFrame::Trust::kCFI:
+      return unwinder::Frame::Trust::kCFI;
+    case StackFrame::Trust::kContext:
+      return unwinder::Frame::Trust::kContext;
+    default:
+      return unwinder::Frame::Trust::kScan;  // Fallback
+  }
+}
+
+debug_ipc::StackFrame::Trust ConvertTrust(unwinder::Frame::Trust unwinder_trust) {
   switch (unwinder_trust) {
     case unwinder::Frame::Trust::kScan:
       return StackFrame::Trust::kScan;
@@ -34,7 +56,6 @@ StackFrame::Trust ConvertTrust(unwinder::Frame::Trust unwinder_trust) {
       return StackFrame::Trust::kUnknown;
   }
 }
-}  // namespace
 
 unwinder::Registers ConvertRegisters(debug::Arch arch,
                                      const std::vector<debug::RegisterValue>& regs) {

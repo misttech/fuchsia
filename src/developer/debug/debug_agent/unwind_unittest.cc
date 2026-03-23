@@ -15,6 +15,8 @@
 #include "src/developer/debug/debug_agent/module_list.h"
 #include "src/developer/debug/debug_agent/zircon_process_handle.h"
 #include "src/developer/debug/debug_agent/zircon_thread_handle.h"
+#include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/ipc/unwinder_support.h"
 #include "src/lib/unwinder/error.h"
 
 namespace debug_agent {
@@ -101,7 +103,8 @@ bool FrameHasThreadRegisters(const debug_ipc::StackFrame& frame) {
 #endif
 }
 
-void DoUnwindTest() {
+void DoUnwindTest(std::optional<unwinder::Frame::Trust> trust,
+                  size_t minimum_expected_registers = 8) {
   zx::process handle;
   zx::process::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &handle);
   ZirconProcessHandle process(std::move(handle));
@@ -128,7 +131,8 @@ void DoUnwindTest() {
     modules.Update(process);
 
     // Do the unwinding.
-    EXPECT_TRUE(UnwindStack(process, modules, *data.thread, *regs, 16, &stack).ok());
+    auto err = UnwindStack(process, modules, *data.thread, *regs, 16, &stack, trust);
+    EXPECT_TRUE(err.ok()) << err.msg();
 
     data.backtrace_done = true;
   }
@@ -145,7 +149,7 @@ void DoUnwindTest() {
   // Don't check the bottom stack frame because it sometimes has weird initial state.
   for (size_t i = 0; i < stack.size() - 1; i++) {
     EXPECT_TRUE(stack[i].ip != 0);
-    EXPECT_TRUE(stack[i].regs.size() >= 8)
+    EXPECT_TRUE(stack[i].regs.size() >= minimum_expected_registers)
         << "Only got " << stack[i].regs.size() << " regs for frame " << i;
 
     // Each stack frame should have the thread-specific registers that don't change across frames.
@@ -158,6 +162,17 @@ void DoUnwindTest() {
 
 }  // namespace
 
-TEST(Unwind, Unwind) { DoUnwindTest(); }
+TEST(Unwind, HybridUnwind) { DoUnwindTest(std::nullopt); }
 
+TEST(Unwind, CfiUnwind) { DoUnwindTest(unwinder::Frame::Trust::kCFI); }
+
+// TODO(https://fxbug.dev/493283410): Re-enable this test after fixing the FP unwinder's exit
+// condition.
+// Frame Pointer unwinding will restore PC, SP, and FP.
+// TEST(Unwind, FpUnwind) { DoUnwindTest(unwinder::Frame::Trust::kFP, 3); }
+
+#if defined(__aarch64__)
+// Shadow call stack only restores PC.
+TEST(Unwind, SCSUnwind) { DoUnwindTest(unwinder::Frame::Trust::kSCS, 1); }
+#endif
 }  // namespace debug_agent

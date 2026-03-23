@@ -461,7 +461,8 @@ TickTimePoint DebuggedThread::DefaultSuspendDeadline() {
 // Note that everything in this function is racy because the thread state can change at any time,
 // even while processing an exception (an external program can kill it out from under us).
 debug_ipc::ThreadRecord DebuggedThread::GetThreadRecord(
-    debug_ipc::ThreadRecord::StackAmount stack_amount, std::optional<GeneralRegisters> regs) const {
+    debug_ipc::ThreadRecord::StackAmount stack_amount, std::optional<GeneralRegisters> regs,
+    std::optional<unwinder::Frame::Trust> forced_unwinder) const {
   debug_ipc::ThreadRecord record = thread_handle_->GetThreadRecord(process_->koid());
 
   // Unwind the stack if requested. This requires the registers which are available when suspended
@@ -484,7 +485,7 @@ debug_ipc::ThreadRecord DebuggedThread::GetThreadRecord(
           stack_amount == debug_ipc::ThreadRecord::StackAmount::kMinimal ? 2 : 256;
 
       auto err = UnwindStack(process_->process_handle(), process_->module_list(), thread_handle(),
-                             *regs, max_stack_depth, &record.frames);
+                             *regs, max_stack_depth, &record.frames, forced_unwinder);
       if (err.has_err()) {
         DEBUG_LOG(Thread) << ThreadPreamble(this) << "Unwinder aborted: " << err.msg();
       }

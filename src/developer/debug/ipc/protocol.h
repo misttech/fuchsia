@@ -35,7 +35,7 @@ namespace debug_ipc {
 // CURRENT_SUPPORTED_API_LEVEL is equal to the numbered API level currently represented by "NEXT".
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 77;
+constexpr uint32_t kCurrentProtocolVersion = 78;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------
@@ -462,7 +462,15 @@ struct SysInfoReply {
 struct ThreadStatusRequest {
   ProcessThreadId id;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | id; }
+  // If set, the agent will use only the specified unwinder implementation for the backtrace.
+  std::optional<StackFrame::Trust> forced_unwinder = std::nullopt;
+
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | id;
+    if (ver >= 78) {
+      ser | forced_unwinder;
+    }
+  }
 };
 struct ThreadStatusReply {
   ThreadRecord record;

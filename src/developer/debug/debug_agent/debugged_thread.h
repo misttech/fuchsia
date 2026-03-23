@@ -15,6 +15,7 @@
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
+#include "src/lib/unwinder/frame.h"
 
 namespace debug_agent {
 
@@ -102,7 +103,8 @@ class DebuggedThread {
   // already requested registers).
   debug_ipc::ThreadRecord GetThreadRecord(
       debug_ipc::ThreadRecord::StackAmount stack_amount,
-      std::optional<GeneralRegisters> regs = std::nullopt) const;
+      std::optional<GeneralRegisters> regs = std::nullopt,
+      std::optional<unwinder::Frame::Trust> forced_unwinder = std::nullopt) const;
 
   // Register reading and writing. The "write" command also returns the contents of the register
   // categories written do.

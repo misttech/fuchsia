@@ -7,9 +7,9 @@
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/arch.h"
+#include "src/lib/unwinder/frame.h"
 
 namespace unwinder {
-struct Frame;
 class Registers;
 }  // namespace unwinder
 
@@ -19,6 +19,9 @@ unwinder::Registers ConvertRegisters(debug::Arch arch,
                                      const std::vector<debug::RegisterValue>& regs);
 
 std::vector<debug_ipc::StackFrame> ConvertFrames(const std::vector<unwinder::Frame>& frames);
+
+unwinder::Frame::Trust ConvertTrust(debug_ipc::StackFrame::Trust trust);
+debug_ipc::StackFrame::Trust ConvertTrust(unwinder::Frame::Trust trust);
 
 }  // namespace debug_ipc
 
