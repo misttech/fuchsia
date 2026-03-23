@@ -36,8 +36,8 @@ wlancfg_tests_for_wlan_cq = [
   "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
 ]
 
-# If you're writing a new test, add it to FYI first until it has >200
-# passing runs. Tests in FYI don't cause any alerting if they break,
-# so having the test here doesn't provide much of a safety net. Consider
-# moving it to one of the CQ groups above.
+# If you're writing a new test, add it to FYI first until it has a sufficient
+# number of passing runs (either here in FYI or via `fx test-remote`). Tests in
+# FYI don't cause any alerting if they break, so having the test here doesn't
+# provide much of a safety net. Consider moving it to one of the CQ groups above.
 wlancfg_tests_for_fyi = []

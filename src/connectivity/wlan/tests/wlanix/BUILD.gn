@@ -149,10 +149,10 @@ group("tests_for_wlan_cq") {
   public_deps = [ ":apf_test" ]
 }
 
-# If you're writing a new test, add it to FYI first until it has >200
-# passing runs. Tests in FYI don't cause any alerting if they break,
-# so having the test here doesn't provide much of a safety net. Consider
-# moving it to one of the CQ groups above.
+# If you're writing a new test, add it to FYI first until it has a sufficient
+# number of passing runs (either here in FYI or via `fx test-remote`). Tests in
+# FYI don't cause any alerting if they break, so having the test here doesn't
+# provide much of a safety net. Consider moving it to one of the CQ groups above.
 group("tests_for_fyi") {
   testonly = true
   public_deps = [ ":create_client_iface_benchmark_test" ]

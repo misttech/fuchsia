@@ -126,23 +126,21 @@ group("tests_host") {
 
 group("tests_for_general_cq") {
   testonly = true
-  public_deps = core_tests_for_general_cq
+  public_deps = core_tests_for_general_cq  # Edit in test_lists.gni
 }
 
-# Only tests which do not interact with an AP or SoftAP can be run
-# without a shield box. This distinction only matters for general
-# CQ, where capacity is lower.
 group("tests_for_general_cq_no_shield_box") {
   testonly = true
-  public_deps = core_tests_for_general_cq_no_shield_box
+  public_deps =
+      core_tests_for_general_cq_no_shield_box  # Edit in test_lists.gni
 }
 
 group("tests_for_wlan_cq") {
   testonly = true
-  public_deps = core_tests_for_wlan_cq
+  public_deps = core_tests_for_wlan_cq  # Edit in test_lists.gni
 }
 
 group("tests_for_fyi") {
   testonly = true
-  public_deps = core_tests_for_fyi
+  public_deps = core_tests_for_fyi  # Edit in test_lists.gni
 }
