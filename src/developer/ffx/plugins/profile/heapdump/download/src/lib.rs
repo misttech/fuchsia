@@ -5,11 +5,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_error;
-use ffx_config::EnvironmentContext;
-
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
-use ffx_profile_heapdump_common_fdomain::{
+use ffx_config::EnvironmentContext;
+use ffx_profile_heapdump_common::{
     PProfProfileBuilder, check_snapshot_error, connect_to_collector,
 };
 use ffx_profile_heapdump_download_args::DownloadCommand;

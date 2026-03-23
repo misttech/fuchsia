@@ -5,14 +5,9 @@
 use anyhow::{Context, Result};
 use ffx_config::EnvironmentContext;
 
-#[cfg(not(feature = "fdomain"))]
-use heapdump_snapshot as snapshot_lib;
-#[cfg(feature = "fdomain")]
-use heapdump_snapshot_fdomain as snapshot_lib;
-
+use heapdump_snapshot_fdomain::{ExecutableRegion, Snapshot};
 use itertools::Itertools;
 use prost::Message;
-use snapshot_lib::{Allocation, ExecutableRegion, Snapshot};
 use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 use std::io::Write;
@@ -242,7 +237,6 @@ impl<'c> PProfProfileBuilder<'c> {
                     ..Default::default()
                 });
                 if let Some(timestamp) = &info.timestamp {
-                    let timestamp: &::fidl::MonotonicInstant = timestamp;
                     label.push(pprof::Label {
                         key: self.st.intern("timestamp"),
                         num: timestamp.into_nanos(),
@@ -274,12 +268,8 @@ impl<'c> PProfProfileBuilder<'c> {
 
             for (location_ids, allocations_info) in grouped_allocations {
                 // Compute totals and cast into pprof-friendly types.
-                let size =
-                    allocations_info.iter().map(|alloc: &&Allocation| alloc.size).sum::<u64>()
-                        as i64;
-                let count =
-                    allocations_info.iter().map(|alloc: &&Allocation| alloc.count).sum::<u64>()
-                        as i64;
+                let size = allocations_info.iter().map(|alloc| alloc.size).sum::<u64>() as i64;
+                let count = allocations_info.iter().map(|alloc| alloc.count).sum::<u64>() as i64;
 
                 self.pprof.sample.push(pprof::Sample {
                     location_id: location_ids,
@@ -369,9 +359,10 @@ impl<'c> PProfProfileBuilder<'c> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl::MonotonicInstant;
+    use heapdump_snapshot_fdomain::{Allocation, ExecutableRegion, StackTrace, ThreadInfo};
     use itertools::MinMaxResult::MinMax;
     use maplit::hashmap;
-    use snapshot_lib::{Allocation, ExecutableRegion, StackTrace, ThreadInfo};
     use std::io::{Read, Seek};
     use std::rc::Rc;
     use test_case::test_case;
@@ -408,21 +399,18 @@ mod tests {
     const ALLOC_1_COUNT: u64 = 1;
     const ALLOC_1_THREAD_KOID: u64 = 1234;
     const ALLOC_1_THREAD_NAME: &str = "thread-1";
-    const ALLOC_1_TIMESTAMP: ::fidl::MonotonicInstant =
-        ::fidl::MonotonicInstant::from_nanos(8777777777778);
+    const ALLOC_1_TIMESTAMP: MonotonicInstant = MonotonicInstant::from_nanos(8777777777778);
     const ALLOC_2_ADDRESS: u64 = 0x624000;
     const ALLOC_2_SIZE: i64 = 0x30;
     const ALLOC_2_COUNT: u64 = 1;
     const ALLOC_2_THREAD_KOID: u64 = 5678;
     const ALLOC_2_THREAD_NAME: &str = "thread-2";
-    const ALLOC_2_TIMESTAMP: ::fidl::MonotonicInstant =
-        ::fidl::MonotonicInstant::from_nanos(9333333333333);
+    const ALLOC_2_TIMESTAMP: MonotonicInstant = MonotonicInstant::from_nanos(9333333333333);
     const ALLOC_3_SIZE: i64 = 0xC000;
     const ALLOC_3_COUNT: u64 = 3;
     const ALLOC_3_THREAD_KOID: u64 = 9999;
     const ALLOC_3_THREAD_NAME: &str = "thread-3";
-    const ALLOC_3_TIMESTAMP: ::fidl::MonotonicInstant =
-        ::fidl::MonotonicInstant::from_nanos(9876543211111);
+    const ALLOC_3_TIMESTAMP: MonotonicInstant = MonotonicInstant::from_nanos(9876543211111);
 
     const EXTRA_LABEL_KEY: &str = "extralabel";
     const EXTRA_LABEL_VALUE_1: i64 = 123;

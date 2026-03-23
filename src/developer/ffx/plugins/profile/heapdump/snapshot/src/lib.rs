@@ -8,7 +8,7 @@ use errors::{ffx_bail, ffx_error};
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
 use ffx_config::EnvironmentContext;
-use ffx_profile_heapdump_common_fdomain::{
+use ffx_profile_heapdump_common::{
     LabelValue, PProfProfileBuilder, build_process_selector, check_snapshot_error,
     connect_to_collector,
 };

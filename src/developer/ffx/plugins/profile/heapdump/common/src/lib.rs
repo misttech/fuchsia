@@ -3,19 +3,7 @@
 // found in the LICENSE file.
 
 use errors::{ffx_bail, ffx_error};
-use flex_fuchsia_memory_heapdump_client as fheapdump_client;
-
-#[cfg(not(feature = "fdomain"))]
-use heapdump_snapshot as snapshot_lib;
-#[cfg(feature = "fdomain")]
-use heapdump_snapshot_fdomain as snapshot_lib;
-
-#[cfg(feature = "fdomain")]
-use component_debug_fdomain as _;
-#[cfg(feature = "fdomain")]
-use heapdump_snapshot_fdomain as _;
-#[cfg(feature = "fdomain")]
-use rcs_fdomain as _;
+use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
 
 mod pprof;
 pub use crate::pprof::{LabelValue, PProfProfileBuilder};
@@ -71,11 +59,14 @@ pub fn prettify_collector_error(error: fheapdump_client::CollectorError) -> anyh
     .into()
 }
 
-/// Converts a Result potentially containing heapdump_snapshot::Error into a user-friendly error.
+/// Converts a Result potentially containing heapdump_snapshot_fdomain::Error
+/// into a user-friendly error.
 ///
 /// The returned error is meant to be returned by the ffx plugin's main function.
-pub fn check_snapshot_error<T>(value: Result<T, snapshot_lib::Error>) -> anyhow::Result<T> {
-    if let Err(snapshot_lib::Error::CollectorError(error)) = value {
+pub fn check_snapshot_error<T>(
+    value: Result<T, heapdump_snapshot_fdomain::Error>,
+) -> anyhow::Result<T> {
+    if let Err(heapdump_snapshot_fdomain::Error::CollectorError(error)) = value {
         Err(prettify_collector_error(error))
     } else {
         Ok(value?)

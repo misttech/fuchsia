@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
-use ffx_profile_heapdump_common_fdomain::{
+use ffx_profile_heapdump_common::{
     build_process_selector, connect_to_collector, prettify_collector_error,
 };
 use ffx_profile_heapdump_list_args::ListCommand;

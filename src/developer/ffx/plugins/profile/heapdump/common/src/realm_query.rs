@@ -3,24 +3,15 @@
 // found in the LICENSE file.
 
 use cm_rust::CapabilityDecl;
-use flex_client::ProxyHasDomain;
-use flex_client::fidl::DiscoverableProtocolMarker;
-
-#[cfg(not(feature = "fdomain"))]
-use component_debug as flex_component_debug;
-#[cfg(feature = "fdomain")]
-use component_debug_fdomain as flex_component_debug;
-
-#[cfg(not(feature = "fdomain"))]
-use rcs;
-#[cfg(feature = "fdomain")]
-use rcs_fdomain as rcs;
-
+use component_debug::capability::{RouteSegment, get_all_route_segments};
 use errors::{ffx_bail, ffx_error};
-use flex_component_debug::capability::{RouteSegment, get_all_route_segments};
-use flex_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use flex_fuchsia_memory_heapdump_client as fheapdump_client;
-use flex_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
+use {
+    component_debug_fdomain as component_debug,
+    fdomain_fuchsia_memory_heapdump_client as fheapdump_client, rcs_fdomain as rcs,
+};
 
 const COLLECTOR_CAPABILITY: &str = fheapdump_client::CollectorMarker::PROTOCOL_NAME;
 
@@ -78,7 +69,7 @@ pub async fn connect_to_collector(
             &moniker,
             OpenDirType::ExposedDir,
             fheapdump_client::CollectorMarker::PROTOCOL_NAME,
-            server.into_channel(),
+            server.into_channel().into(),
         )
         .await?
         .map_err(|err| {

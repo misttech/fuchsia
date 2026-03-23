@@ -4,77 +4,39 @@
 
 import("//build/rust/rustc_library.gni")
 
-template("ffx_profile_heapdump_common_lib") {
-  rustc_library(target_name) {
-    edition = "2024"
-    with_unit_tests = true
+rustc_library("ffx_profile_heapdump_common") {
+  edition = "2024"
+  with_unit_tests = true
 
-    deps = [
-      "//src/developer/ffx/config:lib",
-      "//src/developer/ffx/lib/errors:lib",
-      "//src/developer/ffx/lib/symbolize",
-      "//src/lib/fidl/rust/fidl",
-      "//src/performance/memory/pprof",
-      "//src/sys/lib/cm_rust",
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:itertools",
-      "//third_party/rust_crates:prost",
-    ]
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
-    }
-
-    features = []
-    if (defined(invoker.features)) {
-      features += invoker.features
-    }
-
-    test_deps = [
-      "//third_party/rust_crates:hex",
-      "//third_party/rust_crates:maplit",
-      "//third_party/rust_crates:tempfile",
-      "//third_party/rust_crates:test-case",
-    ]
-
-    sources = [
-      "src/lib.rs",
-      "src/pprof.rs",
-      "src/realm_query.rs",
-    ]
-  }
-}
-
-ffx_profile_heapdump_common_lib("ffx_profile_heapdump_common") {
   deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_flex",
-    "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client_rust_flex",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_flex",
-    "//src/developer/ffx/lib/rcs:lib",
-    "//src/lib/fdomain/client:flex_fidl",
-    "//src/performance/memory/heapdump/lib/heapdump_snapshot",
-    "//src/sys/lib/component_debug",
-  ]
-}
-
-ffx_profile_heapdump_common_lib("ffx_profile_heapdump_common_fdomain") {
-  deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain_flex",
-    "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client_rust_fdomain_flex",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain_flex",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client_rust_fdomain",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
+    "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/rcs:lib_fdomain",
-    "//src/lib/fdomain/client:flex_fdomain",
+    "//src/developer/ffx/lib/symbolize",
+    "//src/lib/fdomain/client",
     "//src/performance/memory/heapdump/lib/heapdump_snapshot:heapdump_snapshot_fdomain",
+    "//src/performance/memory/pprof",
+    "//src/sys/lib/cm_rust",
     "//src/sys/lib/component_debug:component_debug_fdomain",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:itertools",
+    "//third_party/rust_crates:prost",
   ]
-  features = [ "fdomain" ]
-}
 
-group("tests") {
-  testonly = true
-  if (is_host) {
-    deps = [
-      ":ffx_profile_heapdump_common_fdomain_test",
-      ":ffx_profile_heapdump_common_test",
-    ]
-  }
+  test_deps = [
+    "//src/lib/fidl/rust/fidl",
+    "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:maplit",
+    "//third_party/rust_crates:tempfile",
+    "//third_party/rust_crates:test-case",
+  ]
+
+  sources = [
+    "src/lib.rs",
+    "src/pprof.rs",
+    "src/realm_query.rs",
+  ]
 }
