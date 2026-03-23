@@ -9,6 +9,10 @@ use chrono::{Duration, Utc};
 use discovery::query::TargetInfoQuery;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use errors::ffx_bail;
+use fdomain_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
+use fdomain_fuchsia_hwinfo::DeviceProxy;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::FASTBOOT_FILE_PATH;
 use ffx_fastboot::common::from_manifest;
@@ -23,10 +27,6 @@ use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
-};
-use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
 use gcs::client::{Client, ProgressResponse};
 use pbms::{AuthFlowChoice, handle_new_access_token};
@@ -36,7 +36,7 @@ use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use structured_ui::{Interface, TextUi};
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use tempfile::TempDir;
 use termion::{color, style};
 use tokio::sync::mpsc;
