@@ -26,7 +26,7 @@ ffx_plugin("ffx_audio_record") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/audio/common:ffx_audio_common_fdomain",
+    "//src/developer/ffx/plugins/audio/common:ffx_audio_common",
     "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",

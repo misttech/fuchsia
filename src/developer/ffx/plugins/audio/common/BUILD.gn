@@ -4,25 +4,24 @@
 
 import("//build/rust/rustc_library.gni")
 
-template("ffx_audio_common_lib") {
-  rustc_library(target_name) {
+if (is_host) {
+  rustc_library("ffx_audio_common") {
     version = "0.1.0"
     edition = "2024"
+    with_unit_tests = true
 
     deps = [
-             "//src/developer/ffx/lib/target/holders:lib",
-             "//src/developer/ffx/lib/timeout:lib",
-             "//src/lib/fuchsia-async",
-             "//third_party/rust_crates:anyhow",
-             "//third_party/rust_crates:blocking",
-             "//third_party/rust_crates:futures",
-             "//third_party/rust_crates:serde",
-           ] + invoker.deps
-
-    features = []
-    if (defined(invoker.features)) {
-      features += invoker.features
-    }
+      "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_fdomain",
+      "//src/developer/ffx/lib/target/holders:lib",
+      "//src/developer/ffx/lib/timeout:lib",
+      "//src/lib/fdomain/client",
+      "//src/lib/fuchsia-async",
+      "//src/media/audio/lib/rust:fuchsia-audio_fdomain",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:blocking",
+      "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:serde",
+    ]
     sources = [ "src/lib.rs" ]
 
     ## Uncomment this line, to enable all lints during local development.
@@ -30,20 +29,9 @@ template("ffx_audio_common_lib") {
   }
 }
 
-ffx_audio_common_lib("ffx_audio_common") {
-  deps = [
-    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_flex",
-    "//src/lib/fdomain/client:flex_fidl",
-    "//src/media/audio/lib/rust:fuchsia-audio",
-  ]
-}
-
-ffx_audio_common_lib("ffx_audio_common_fdomain") {
-  deps = [
-    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_fdomain_flex",
-    "//src/lib/fdomain/client",
-    "//src/lib/fdomain/client:flex_fdomain",
-    "//src/media/audio/lib/rust:fuchsia-audio_fdomain",
-  ]
-  features = [ "fdomain" ]
+group("tests") {
+  testonly = true
+  if (is_host) {
+    deps = [ ":ffx_audio_common_test" ]
+  }
 }

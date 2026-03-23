@@ -11,11 +11,6 @@ use blocking::Unblock;
 use fac::DEFAULT_RING_BUFFER_ELEMENT_ID;
 use fdomain_client::HandleBased;
 use fdomain_client::fidl::{Proxy, ServerEnd};
-use fdomain_fuchsia_audio_controller as fac;
-use fdomain_fuchsia_audio_device as fadevice;
-use fdomain_fuchsia_hardware_audio as fhaudio;
-use fdomain_fuchsia_io as fio;
-use fdomain_fuchsia_media as fmedia;
 use ffx_audio_device_args::{DeviceCommand, RecordCommand, SetCommand, SetSubCommand, SubCommand};
 use ffx_command_error::{Result, user_error};
 use ffx_optional_moniker::{exposed_dir, optional_moniker};
@@ -28,6 +23,11 @@ use serde::Serialize;
 use std::io::{Read, Write};
 use target_holders::fdomain::moniker;
 use zx_status::Status;
+use {
+    fdomain_fuchsia_audio_controller as fac, fdomain_fuchsia_audio_device as fadevice,
+    fdomain_fuchsia_hardware_audio as fhaudio, fdomain_fuchsia_io as fio,
+    fdomain_fuchsia_media as fmedia,
+};
 
 mod connect;
 mod control;
@@ -40,8 +40,8 @@ use list::QueryExt;
 
 #[derive(Debug, Serialize)]
 pub enum DeviceResult {
-    Play(Box<ffx_audio_common_fdomain::PlayResult>),
-    Record(Box<ffx_audio_common_fdomain::RecordResult>),
+    Play(Box<ffx_audio_common::PlayResult>),
+    Record(Box<ffx_audio_common::RecordResult>),
     Info(Box<info::InfoResult>),
     List(Box<list::ListResult>),
 }
@@ -133,9 +133,9 @@ impl FfxMain for DeviceTool {
                 let (cancel_proxy, cancel_server) =
                     self.record_controller.domain().create_proxy::<fac::RecordCancelerMarker>();
 
-                let keypress_waiter = ffx_audio_common_fdomain::cancel_on_keypress(
+                let keypress_waiter = ffx_audio_common::cancel_on_keypress(
                     cancel_proxy,
-                    ffx_audio_common_fdomain::get_stdin_waiter().fuse(),
+                    ffx_audio_common::get_stdin_waiter().fuse(),
                 );
                 let output_result_writer = writer.stderr();
 
@@ -259,8 +259,7 @@ async fn device_play(
     };
 
     let result =
-        ffx_audio_common_fdomain::play(request, player_controller, play_local, input_reader)
-            .await?;
+        ffx_audio_common::play(request, player_controller, play_local, input_reader).await?;
     let bytes_processed = result.bytes_processed;
     let value = DeviceResult::Play(Box::new(result));
 
@@ -305,7 +304,7 @@ where
         ..Default::default()
     };
 
-    let result = ffx_audio_common_fdomain::record(
+    let result = ffx_audio_common::record(
         recorder,
         request,
         record_local,
@@ -314,7 +313,7 @@ where
     )
     .await;
 
-    let message = ffx_audio_common_fdomain::format_record_result(result);
+    let message = ffx_audio_common::format_record_result(result);
 
     writeln!(output_error_writer, "{}", message).bug_context("Failed to write result")?;
 
@@ -377,7 +376,7 @@ async fn device_set(
 mod tests {
     use super::*;
     use fdomain_fuchsia_audio_controller as fac;
-    use ffx_audio_common_fdomain::tests::SINE_WAV;
+    use ffx_audio_common::tests::SINE_WAV;
     use ffx_writer::{SimpleWriter, TestBuffer, TestBuffers};
     use fuchsia_audio_fdomain::Format;
     use fuchsia_audio_fdomain::device::DevfsSelector;
@@ -389,7 +388,7 @@ mod tests {
     #[fuchsia::test]
     pub async fn test_play_success() -> Result<()> {
         let client = fdomain_local::local_client_empty();
-        let audio_player = ffx_audio_common_fdomain::tests::fake_audio_player(client.clone());
+        let audio_player = ffx_audio_common::tests::fake_audio_player(client.clone());
 
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<DeviceResult> = MachineWriter::new_test(None, &test_buffers);
@@ -406,7 +405,7 @@ mod tests {
         let async_play_local =
             play_local.duplicate_handle(fidl::Rights::SAME_RIGHTS).await.unwrap();
 
-        async_play_local.write_all(ffx_audio_common_fdomain::tests::WAV_HEADER_EXT).await.unwrap();
+        async_play_local.write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
 
         device_play(
             audio_player,
@@ -415,7 +414,7 @@ mod tests {
             ring_buffer_active_channels_bitmask,
             play_local,
             play_remote,
-            Box::new(&ffx_audio_common_fdomain::tests::WAV_HEADER_EXT[..]),
+            Box::new(&ffx_audio_common::tests::WAV_HEADER_EXT[..]),
             writer,
         )
         .await
@@ -432,7 +431,7 @@ mod tests {
     #[fuchsia::test]
     pub async fn test_play_from_file_success() -> Result<()> {
         let client = fdomain_local::local_client_empty();
-        let audio_player = ffx_audio_common_fdomain::tests::fake_audio_player(client.clone());
+        let audio_player = ffx_audio_common::tests::fake_audio_player(client.clone());
 
         let test_buffers = TestBuffers::default();
         let writer: MachineWriter<DeviceResult> = MachineWriter::new_test(None, &test_buffers);
@@ -445,7 +444,7 @@ mod tests {
         // Create valid WAV file.
         fs::File::create(&test_wav_path)
             .unwrap()
-            .write_all(ffx_audio_common_fdomain::tests::SINE_WAV)
+            .write_all(ffx_audio_common::tests::SINE_WAV)
             .unwrap();
         fs::set_permissions(&test_wav_path, fs::Permissions::from_mode(0o770)).unwrap();
 
@@ -489,7 +488,7 @@ mod tests {
         // Test without sending a cancel message. Still set up the canceling proxy and server,
         // but never send the message from proxy to daemon to cancel. Test daemon should
         // exit after duration (real daemon exits after sending all duration amount of packets).
-        let controller = ffx_audio_common_fdomain::tests::fake_audio_recorder(client);
+        let controller = ffx_audio_common::tests::fake_audio_recorder(client);
         let test_buffers = TestBuffers::default();
         let mut result_writer: SimpleWriter = SimpleWriter::new_test(&test_buffers);
 
@@ -514,10 +513,8 @@ mod tests {
         let test_stdout = TestBuffer::default();
 
         // Pass a future that will never complete as an input waiter.
-        let keypress_waiter = ffx_audio_common_fdomain::cancel_on_keypress(
-            cancel_proxy,
-            futures::future::pending().fuse(),
-        );
+        let keypress_waiter =
+            ffx_audio_common::cancel_on_keypress(cancel_proxy, futures::future::pending().fuse());
 
         let _res = device_record(
             controller,
@@ -545,7 +542,7 @@ mod tests {
     #[fuchsia::test]
     pub async fn test_record_immediate_cancel() -> Result<()> {
         let client = fdomain_local::local_client_empty();
-        let controller = ffx_audio_common_fdomain::tests::fake_audio_recorder(client);
+        let controller = ffx_audio_common::tests::fake_audio_recorder(client);
         let test_buffers = TestBuffers::default();
         let mut result_writer: SimpleWriter = SimpleWriter::new_test(&test_buffers);
 
@@ -571,10 +568,8 @@ mod tests {
 
         // Test canceler signaling. Not concerned with how much data gets back through socket.
         // Test failing is never finishing execution before timeout.
-        let keypress_waiter = ffx_audio_common_fdomain::cancel_on_keypress(
-            cancel_proxy,
-            futures::future::ready(Ok(())),
-        );
+        let keypress_waiter =
+            ffx_audio_common::cancel_on_keypress(cancel_proxy, futures::future::ready(Ok(())));
 
         let _res = device_record(
             controller,
