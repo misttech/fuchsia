@@ -52,6 +52,11 @@
                 // TODO(https://fxbug.dev/297440106)
                 // TODO(https://fxbug.dev/365540067)
                 "ZombieProcTest.*",
+
+                // TODO(https://fxbug.dev/481369533): Fix MS_RDONLY behaviour for bind remounting.
+                "MountTest.RemountBindReadOnlyFlagInheritance",
+                "MountTest.RemountReadOnlyToReadWriteIgnored",
+                "ProcMountsTest.RemountBindReadonlyFlagInheritance",
             ],
         },
         {

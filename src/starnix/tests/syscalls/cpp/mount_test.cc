@@ -5,9 +5,13 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <ftw.h>
+#include <lib/stdcompat/string_view.h>
+#include <mntent.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/statfs.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -326,6 +330,125 @@ TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
   ASSERT_EQ(expected_contents, observed_contents);
 }
 
+TEST_F(MountTest, RemountReadOnlyToReadWriteIgnored) {
+  // Create a tmpfs mount with a readonly superblock, and verify the reported mount flags.
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", MS_RDONLY, nullptr), SyscallSucceeds());
+  struct statfs64 fs_stat{};
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  ASSERT_TRUE(fs_stat.f_flags & ST_RDONLY);
+
+  // Attempt to bind remount as read-write, which will succeed without actually removing the
+  // read-only mount flag.
+  ASSERT_THAT(mount(nullptr, dir.c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+}
+
+TEST_F(MountTest, RemountReadWriteToReadOnly) {
+  // Create a tmpfs mount with a read-write superblock, and verify the reported mount flags.
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+  struct statfs64 fs_stat{};
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  ASSERT_FALSE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remount read-only and verify the reported mount flags.
+  ASSERT_THAT(mount(nullptr, dir.c_str(), nullptr, MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remount back to read-write and verify the reported flags.
+  ASSERT_THAT(mount(nullptr, dir.c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_FALSE(fs_stat.f_flags & ST_RDONLY);
+}
+
+TEST_F(MountTest, RemountBindReadOnlyFlagInheritance) {
+  // To validate propagation and inheritance of the `MS_RDONLY` flag between base and bind mounts
+  // we create:
+  //   base - A tmpfs instance created with an initially read-only superblock.
+  //   bind1 & bind2 - Bind mounts created from "base" directly.
+  //   sub_bind1 - Bind mount created from "bind1".
+
+  ASSERT_SUCCESS(MakeDir("base"));
+  auto base_dir = TestPath("base");
+  ASSERT_THAT(mount(nullptr, base_dir.c_str(), "tmpfs", MS_RDONLY, nullptr), SyscallSucceeds());
+
+  ASSERT_SUCCESS(MakeDir("bind1"));
+  auto bind1_dir = TestPath("bind1");
+  ASSERT_THAT(mount(base_dir.c_str(), bind1_dir.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  ASSERT_SUCCESS(MakeDir("sub_bind1"));
+  auto sub_bind1_dir = TestPath("sub_bind1");
+  ASSERT_THAT(mount(bind1_dir.c_str(), sub_bind1_dir.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  ASSERT_SUCCESS(MakeDir("bind2"));
+  auto bind2_dir = TestPath("bind2");
+  ASSERT_THAT(mount(base_dir.c_str(), bind2_dir.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  // Verify the initial states of all the mounts.
+  struct statfs64 fs_stat{};
+  ASSERT_THAT(statfs64(base_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(sub_bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind2_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remounting "bind2" read-write will succeed, but have no visible effect because the superblock
+  // is still read-write.
+  ASSERT_THAT(mount(nullptr, bind2_dir.c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(bind2_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remount "base" read-write and verify that this only affects "bind2", because we just cleared
+  // the `MS_RDONLY` bit associated with that bind mount, and now the superblock is also read-write.
+  // "sub_bind1" and "bind2" remaining read-only, having inherited `MS_RDONLY` at creation.
+  ASSERT_THAT(mount(nullptr, base_dir.c_str(), nullptr, MS_REMOUNT, nullptr), SyscallSucceeds());
+  ASSERT_THAT(statfs64(base_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_FALSE(fs_stat.f_flags & ST_RDONLY);
+
+  ASSERT_THAT(statfs64(base_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_FALSE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(sub_bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind2_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_FALSE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remounting "sub_bind1" read-write will succeed, even though "bind1", from which it was created
+  // is still read-only, because it only inherits the superblock state.
+  ASSERT_THAT(mount(nullptr, sub_bind1_dir.c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(sub_bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_FALSE(fs_stat.f_flags & ST_RDONLY);
+
+  // Remount the base filesystem read-only, and verify that all mounts are now read-only
+  ASSERT_THAT(mount(nullptr, base_dir.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs64(base_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(sub_bind1_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+  ASSERT_THAT(statfs64(bind2_dir.c_str(), &fs_stat), SyscallSucceeds());
+  EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
+}
+
 // Test that we can successfully mount ext4 images backed files in an fs that returns resizable
 // VMOs.
 TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
@@ -533,6 +656,19 @@ class ProcMountsTest : public ProcTestBase {
     }
     return ret;
   }
+
+  std::string MountOptionsFor(std::string_view mount_path) {
+    FILE *mounts = setmntent("/proc/mounts", "r");
+    std::string result;
+    for (struct mntent *entry = 0; (entry = getmntent(mounts));) {
+      if (mount_path == entry->mnt_dir) {
+        result = entry->mnt_opts;
+        break;
+      }
+    }
+    endmntent(mounts);
+    return result;
+  }
 };
 
 TEST_F(ProcMountsTest, Basic) {
@@ -571,6 +707,37 @@ TEST_F(ProcMountsTest, MountAdded) {
   temp_dir.reset();
 
   EXPECT_THAT(read_mounts(), UnorderedElementsAreArray(before_mounts));
+}
+
+TEST_F(ProcMountsTest, RemountBindReadonlyFlagInheritance) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  test_helper::ScopedTempDir base;
+  ASSERT_THAT(mount(nullptr, base.path().c_str(), "tmpfs", MS_RDONLY, nullptr), SyscallSucceeds());
+
+  test_helper::ScopedTempDir bind;
+  ASSERT_THAT(mount(base.path().c_str(), bind.path().c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  // Verify that both base and bind mounts are read-only initially.
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(base.path()), "ro"));
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(bind.path()), "ro"));
+
+  // Remount "bind" read-write and verify that that has no effect on the flags reported.
+  ASSERT_THAT(mount(nullptr, bind.path().c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+
+  // Verify that both base and bind mounts are still reported as read-only.
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(base.path()), "ro"));
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(bind.path()), "ro"));
+
+  // Remount "base" read-write and verify that both mounts are now read-write.
+  ASSERT_THAT(mount(nullptr, base.path().c_str(), nullptr, MS_REMOUNT, nullptr), SyscallSucceeds());
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(base.path()), "rw"));
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(bind.path()), "rw"));
 }
 
 }  // namespace
