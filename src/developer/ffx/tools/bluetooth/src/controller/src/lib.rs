@@ -4,9 +4,9 @@
 
 use ::async_trait::async_trait;
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
+use fdomain_fuchsia_bluetooth_affordances::HostControllerProxy;
 use ffx_writer::{SimpleWriter, ToolIO as _};
-use fidl_fuchsia_bluetooth_affordances::HostControllerProxy;
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 use ffx_bluetooth_controller_args::{ControllerCommand, ControllerSubCommand};
 

@@ -11,9 +11,9 @@ ffx_plugin("ffx_bluetooth_peer") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
-    "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",
-    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust_fdomain",
+    "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust_fdomain",
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust_fdomain",
     "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",

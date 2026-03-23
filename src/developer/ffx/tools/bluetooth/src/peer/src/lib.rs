@@ -4,16 +4,16 @@
 
 use ::async_trait::async_trait;
 use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Transport};
-use ::fho::{AvailabilityFlag, Error, FfxMain, FfxTool, Result};
+use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
+use fdomain_fuchsia_bluetooth::PeerId as FidlPeerId;
+use fdomain_fuchsia_bluetooth_affordances::PeerControllerProxy;
+use fdomain_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
 use ffx_bluetooth_common::PeerIdOrAddr;
 use ffx_writer::{SimpleWriter, ToolIO as _};
-use fidl_fuchsia_bluetooth::PeerId as FidlPeerId;
-use fidl_fuchsia_bluetooth_affordances::PeerControllerProxy;
-use fidl_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use prettytable::{Row, Table, cell, format, row};
 use std::cmp::Ordering;
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]
@@ -202,7 +202,7 @@ impl PeerTool {
             })?)
     }
 
-    async fn pair(&self, id: PeerId, options: PairingOptions) -> Result<(), Error> {
+    async fn pair(&self, id: PeerId, options: PairingOptions) -> Result<(), fho::Error> {
         let fidl_peer_id: FidlPeerId = id.into();
         Ok(self
             .peer_controller
@@ -303,7 +303,7 @@ mod tests {
     use ffx_bluetooth_common::{BdAddr, PeerIdOrAddr};
     use fuchsia_bluetooth::types::Address;
     use regex::Regex;
-    use {fidl_fuchsia_bluetooth as fbt, fidl_fuchsia_bluetooth_sys as fsys};
+    use {fdomain_fuchsia_bluetooth as fbt, fdomain_fuchsia_bluetooth_sys as fsys};
 
     fn named_peer(id: PeerId, address: Address, name: Option<String>) -> Peer {
         Peer {
