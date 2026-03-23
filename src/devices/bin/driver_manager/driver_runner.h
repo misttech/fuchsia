@@ -129,6 +129,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   // fidl::WireServer<fuchsia_driver_token::Debug>
   void LogStackTrace(LogStackTraceRequestView request,
                      LogStackTraceCompleter::Sync& completer) override;
+  void GetHostKoid(GetHostKoidRequestView request, GetHostKoidCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_token::Debug> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 

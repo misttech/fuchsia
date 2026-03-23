@@ -90,6 +90,10 @@ class FakeDriverHost : public DriverHost {
 
   zx::result<uint64_t> GetProcessKoid() const override { return zx::error(ZX_ERR_NOT_SUPPORTED); }
 
+  void GetProcessKoidAsync(fit::callback<void(zx::result<uint64_t>)> cb) const override {
+    cb(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
   void CloseDriver(std::string node_name) {
     drivers_[node_name].Close(ZX_OK);
     clients_[node_name].reset();

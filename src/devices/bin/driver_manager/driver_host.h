@@ -91,6 +91,8 @@ class DriverHost {
 
   virtual zx::result<uint64_t> GetProcessKoid() const = 0;
 
+  virtual void GetProcessKoidAsync(fit::callback<void(zx::result<uint64_t>)> cb) const = 0;
+
   virtual bool IsDynamicLinkingEnabled() const { return false; }
 
   virtual void TriggerStackTrace() const {}
@@ -129,6 +131,7 @@ class DriverHostComponent final
 
   zx::result<uint64_t> GetMainThreadKoid() const override;
   zx::result<uint64_t> GetProcessKoid() const override;
+  void GetProcessKoidAsync(fit::callback<void(zx::result<uint64_t>)> cb) const override;
   zx::result<uint64_t> GetJobKoid() const;
 
   void TriggerStackTrace() const override;

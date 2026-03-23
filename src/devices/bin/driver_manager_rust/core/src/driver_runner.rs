@@ -17,8 +17,20 @@ use driver_manager_shutdown::NodeRemovalTracker;
 use driver_manager_types::{Collection, to_bind_rule2, to_property2};
 use driver_manager_utils::DictionaryUtil;
 use fidl::endpoints::{ServerEnd, create_endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_driver_crash as fcrash;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_driver_index as fdi;
+use fidl_fuchsia_driver_token as fdt;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
 use futures::channel::oneshot;
@@ -30,14 +42,6 @@ use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_driver_crash as fcrash,
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_host as fdh, fidl_fuchsia_driver_index as fdi,
-    fidl_fuchsia_driver_token as fdt, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    fuchsia_inspect as inspect,
-};
 
 pub struct DriverRunner {
     pub(crate) driver_index: fdi::DriverIndexProxy,
@@ -450,6 +454,13 @@ impl DriverRunner {
                             Err(status) => responder.send(Err(status.into_raw())),
                         };
                     }
+                    fdt::DebugRequest::GetHostKoid { node_token, responder } => {
+                        let result = this.get_host_koid(node_token).await;
+                        let _ = match result {
+                            Ok(host_koid) => responder.send(Ok(host_koid.raw_koid())),
+                            Err(status) => responder.send(Err(status.into_raw())),
+                        };
+                    }
                     fdt::DebugRequest::_UnknownMethod { ordinal, .. } => {
                         warn!("Unknown Debug request: {}", ordinal);
                     }
@@ -465,6 +476,20 @@ impl DriverRunner {
             if let Some(host) = node.driver_host() {
                 host.trigger_stack_trace();
                 Ok(())
+            } else {
+                Err(zx::Status::NOT_FOUND)
+            }
+        } else {
+            Err(zx::Status::NOT_FOUND)
+        }
+    }
+
+    async fn get_host_koid(&self, node_token: zx::Event) -> Result<zx::Koid, zx::Status> {
+        let token_koid = node_token.basic_info()?.koid;
+        let node = self.find_node_by_token_koid(token_koid).await;
+        if let Some(node) = node {
+            if let Some(host) = node.driver_host() {
+                host.get_process_koid().await
             } else {
                 Err(zx::Status::NOT_FOUND)
             }
@@ -964,6 +989,60 @@ mod tests {
         // Call with a random token should return NOT_FOUND.
         let random_token = zx::Event::create();
         let result = driver_runner.log_stack_trace(random_token).await;
+        assert_eq!(result, Err(zx::Status::NOT_FOUND));
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_get_host_koid() {
+        let (realm, _) = fidl::endpoints::create_proxy::<fcomponent::RealmMarker>();
+        let (introspector, _) = fidl::endpoints::create_proxy::<fcomponent::IntrospectorMarker>();
+        let (driver_index, _) = fidl::endpoints::create_proxy::<fdi::DriverIndexMarker>();
+        let (capability_store, _) =
+            fidl::endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
+        let (loader_service_factory, _) = mpsc::unbounded();
+
+        let driver_runner = DriverRunner::new(
+            realm,
+            introspector,
+            DictionaryUtil::new(capability_store),
+            driver_index,
+            loader_service_factory,
+            false,
+            OfferInjector::new(crate::offer_injection::PowerOffersConfig {
+                power_inject_offer: false,
+                power_suspend_enabled: false,
+            }),
+            Devfs::new(mpsc::unbounded().0),
+        );
+
+        let node_manager = Box::new(MockNodeManager);
+        let node = Node::new("test_node", Rc::downgrade(&driver_runner.root_node), node_manager);
+        let host = Rc::new(MockDriverHost::new());
+        node.set_host(host.clone());
+
+        let token = zx::Event::create();
+        let token_remote = token.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let koid = token.koid().unwrap();
+
+        node.set_state_for_testing(driver_manager_node::types::NodeState::DriverComponent(
+            driver_manager_node::types::DriverComponent::new(
+                "url".to_string(),
+                token_remote,
+                koid,
+                None,
+                None,
+                None,
+                driver_manager_node::types::DriverState::Running,
+            ),
+        ));
+
+        driver_runner.root_node.add_child_to_children_for_testing(node);
+
+        let result = driver_runner.get_host_koid(token).await;
+        assert_eq!(result, Ok(zx::Koid::from_raw(0)));
+
+        let random_token = zx::Event::create();
+        let result = driver_runner.get_host_koid(random_token).await;
         assert_eq!(result, Err(zx::Status::NOT_FOUND));
     }
 }

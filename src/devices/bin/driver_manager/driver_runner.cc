@@ -468,6 +468,55 @@ void DriverRunner::LogStackTrace(LogStackTraceRequestView request,
   completer.ReplySuccess();
 }
 
+void DriverRunner::GetHostKoid(GetHostKoidRequestView request,
+                               GetHostKoidCompleter::Sync& completer) {
+  const zx_koid_t node_token_koid = GetKoid(request->node_token);
+  if (node_token_koid == ZX_KOID_INVALID) {
+    fdf_log::error("provided node token is not valid");
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  std::shared_ptr<const Node> node = nullptr;
+  PerformBFS(
+      root_node_,
+      [&node, node_token_koid](const std::shared_ptr<driver_manager::Node>& current) -> bool {
+        if (node != nullptr) {
+          // Already found it.
+          return false;
+        }
+        std::optional current_koid = current->token_koid();
+        if (current_koid && current_koid.value() == node_token_koid) {
+          node = current;
+          return false;
+        }
+        return true;
+      });
+  if (node == nullptr) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    fdf_log::warn("no such node: node_token_koid={}", node_token_koid);
+    return;
+  }
+  const DriverHost* host = node->driver_host();
+  if (host == nullptr) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    fdf_log::warn("node has no host: node_token_koid={}", node_token_koid);
+    return;
+  }
+
+  host->GetProcessKoidAsync([completer = completer.ToAsync(),
+                             node_token_koid](zx::result<uint64_t> host_koid_res) mutable {
+    if (host_koid_res.is_error()) {
+      completer.ReplyError(host_koid_res.status_value());
+      fdf_log::warn("node host has no koid: node_token_koid={}, status={}", node_token_koid,
+                    host_koid_res.status_string());
+      return;
+    }
+
+    completer.ReplySuccess(host_koid_res.value());
+  });
+}
+
 void DriverRunner::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_token::Debug> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {

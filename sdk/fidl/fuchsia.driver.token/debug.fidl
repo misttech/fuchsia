@@ -13,4 +13,12 @@ open protocol Debug {
     flexible LogStackTrace(resource struct {
         node_token zx.Handle:EVENT;
     }) -> () error zx.Status;
+
+    /// Returns the KOID of the host process for the node uniquely identified
+    /// by `node_token`.
+    flexible GetHostKoid(resource struct {
+        node_token zx.Handle:EVENT;
+    }) -> (struct {
+        host_koid uint64;
+    }) error zx.Status;
 };

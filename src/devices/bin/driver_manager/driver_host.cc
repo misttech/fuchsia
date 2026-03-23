@@ -370,6 +370,34 @@ zx::result<uint64_t> DriverHostComponent::GetProcessKoid() const {
   return zx::ok(result->process_koid());
 }
 
+void DriverHostComponent::GetProcessKoidAsync(fit::callback<void(zx::result<uint64_t>)> cb) const {
+  if (process_info_) {
+    cb(zx::ok(process_info_->process_koid()));
+    return;
+  }
+
+  if (!(*server_connected_)) {
+    cb(zx::error(ZX_ERR_SHOULD_WAIT));
+    return;
+  }
+
+  driver_host_->GetProcessInfo().Then(
+      [this,
+       cb = std::move(cb)](fidl::WireUnownedResult<fuchsia_driver_host::DriverHost::GetProcessInfo>&
+                               result) mutable {
+        if (!result.ok()) {
+          cb(zx::error(result.status()));
+          return;
+        }
+        if (result->is_error()) {
+          cb(zx::error(result->error_value()));
+          return;
+        }
+        process_info_ = fidl::ToNatural(*result->value());
+        cb(zx::ok(process_info_->process_koid()));
+      });
+}
+
 void DriverHostComponent::TriggerStackTrace() const {
   if (!(*server_connected_)) {
     return;

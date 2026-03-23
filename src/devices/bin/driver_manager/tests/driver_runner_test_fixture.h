@@ -324,11 +324,20 @@ class TestDriverHost : public fidl::testing::TestBase<fdh::DriverHost> {
 
   void SetStartHandler(StartHandler start_handler) { start_handler_ = std::move(start_handler); }
 
+  void GetProcessInfo(GetProcessInfoCompleter::Sync& completer) override {
+    completer.Reply(zx::ok(fdh::ProcessInfo({
+        .job_koid = 1336,
+        .process_koid = process_koid_,
+        .main_thread_koid = 1338,
+    })));
+  }
+
   void TriggerStackTrace(TriggerStackTraceCompleter::Sync& completer) override {
     stack_trace_triggered_ = true;
   }
 
   bool stack_trace_triggered() const { return stack_trace_triggered_; }
+  uint64_t process_koid() const { return process_koid_; }
 
  private:
   void Start(StartRequest& request, StartCompleter::Sync& completer) override {
@@ -345,6 +354,7 @@ class TestDriverHost : public fidl::testing::TestBase<fdh::DriverHost> {
 
   StartHandler start_handler_;
   bool stack_trace_triggered_ = false;
+  uint64_t process_koid_ = 1337;
 };
 
 // Calls the driver host runner's component Start implementation.
