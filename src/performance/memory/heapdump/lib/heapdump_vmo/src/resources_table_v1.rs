@@ -117,7 +117,7 @@ impl ResourcesTableWriter {
 
     /// This is the hash function for stack traces.
     fn compute_bucket_index(compressed_stack_trace: &[u8]) -> usize {
-        let tmp = crc::crc32::checksum_ieee(compressed_stack_trace);
+        let tmp = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(compressed_stack_trace);
         tmp as usize % NUM_STACK_BUCKETS
     }
 

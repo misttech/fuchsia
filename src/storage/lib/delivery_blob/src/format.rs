@@ -9,7 +9,7 @@
 //! delivery blob type **must** be backwards compatible, or a new type must be used.
 
 use bitflags::bitflags;
-use crc::Hasher32 as _;
+
 use static_assertions::const_assert_eq;
 use zerocopy::byteorder::{LE, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
@@ -110,9 +110,10 @@ impl SerializedType1Blob {
     pub fn checksum(&self) -> u32 {
         // Create a copy of the serialized blob but with the checksum zeroed.
         let header = Self { checksum: 0.into(), ..*self };
-        let mut digest = crc::crc32::Digest::new(crc::crc32::IEEE);
-        digest.write(header.as_bytes());
-        digest.sum32()
+        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+        let mut digest = crc_algo.digest();
+        digest.update(header.as_bytes());
+        digest.finalize()
     }
 
     /// Decode and verify this serialized Type 1 delivery blob.

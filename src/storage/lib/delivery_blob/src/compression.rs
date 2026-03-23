@@ -6,7 +6,6 @@
 //! [`ChunkedArchive`] and serializing/writing it. An archive's header can be verified and seek
 //! table decoded using [`decode_archive`].
 
-use crc::Hasher32;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::ops::Range;
@@ -291,15 +290,15 @@ impl ChunkedArchiveHeader {
 
     /// Calculate the checksum of the header + all seek table entries.
     fn checksum(&self, entries: &[SeekTableEntry]) -> u32 {
-        let mut first_crc = crc::crc32::Digest::new(crc::crc32::IEEE);
-        first_crc.write(&self.as_bytes()[..Self::CHUNKED_ARCHIVE_CHECKSUM_OFFSET]);
-        let mut crc = crc::crc32::Digest::new_with_initial(crc::crc32::IEEE, first_crc.sum32());
-        crc.write(
+        let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+        let mut digest = crc_algo.digest();
+        digest.update(&self.as_bytes()[..Self::CHUNKED_ARCHIVE_CHECKSUM_OFFSET]);
+        digest.update(
             &self.as_bytes()
                 [Self::CHUNKED_ARCHIVE_CHECKSUM_OFFSET + self.checksum.as_bytes().len()..],
         );
-        crc.write(entries.as_bytes());
-        crc.sum32()
+        digest.update(entries.as_bytes());
+        digest.finalize()
     }
 
     /// Calculate the total header length of an archive *including* all seek table entries.

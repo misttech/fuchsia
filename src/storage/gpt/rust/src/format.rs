@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow, ensure};
-use crc::Hasher32 as _;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const MAX_PARTITION_ENTRIES: u32 = 128;
@@ -87,12 +86,14 @@ impl Header {
     pub fn compute_checksum(&self) -> u32 {
         let mut header_copy = self.clone();
         header_copy.crc32 = 0;
-        crc::crc32::checksum_ieee(&header_copy.as_bytes()[..GPT_HEADER_SIZE])
+        crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC)
+            .checksum(&header_copy.as_bytes()[..GPT_HEADER_SIZE])
     }
 
     fn update_checksum(&mut self) {
         self.crc32 = 0;
-        let crc = crc::crc32::checksum_ieee(&self.as_bytes()[..GPT_HEADER_SIZE]);
+        let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC)
+            .checksum(&self.as_bytes()[..GPT_HEADER_SIZE]);
         self.crc32 = crc;
     }
 
@@ -218,7 +219,8 @@ pub fn serialize_partition_table(
     num_blocks: u64,
     entries: &[PartitionTableEntry],
 ) -> Result<Vec<u8>, FormatError> {
-    let mut digest = crc::crc32::Digest::new(crc::crc32::IEEE);
+    let crc_algo = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+    let mut digest = crc_algo.digest();
     let partition_table_len = header.part_size as usize * entries.len();
     let partition_table_len = partition_table_len
         .checked_next_multiple_of(block_size)
@@ -244,7 +246,7 @@ pub fn serialize_partition_table(
             used_ranges.push(entry.first_lba..entry.last_lba + 1);
             partition_table_view[..part_raw.len()].copy_from_slice(part_raw);
         }
-        digest.write(part_raw);
+        digest.update(part_raw);
         partition_table_view = &mut partition_table_view[part_size..];
     }
     used_ranges.sort_by_key(|range| range.start);
@@ -256,7 +258,7 @@ pub fn serialize_partition_table(
     header.first_usable = first_usable;
     header.last_usable = last_usable;
     header.num_parts = entries.len() as u32;
-    header.crc32_parts = digest.sum32();
+    header.crc32_parts = digest.finalize();
     header.crc32 = header.compute_checksum();
     Ok(partition_table)
 }

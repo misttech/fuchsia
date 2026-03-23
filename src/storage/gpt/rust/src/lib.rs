@@ -158,7 +158,8 @@ async fn load_metadata(
                     partition_table_size, partition_table_offset
                 )
             })?;
-        let crc = crc::crc32::checksum_ieee(&partition_table_blocks[..partition_table_size]);
+        let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC)
+            .checksum(&partition_table_blocks[..partition_table_size]);
         anyhow::ensure!(header.crc32_parts == crc, "Invalid partition table checksum");
 
         for i in 0..header.num_parts as usize {

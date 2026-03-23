@@ -559,14 +559,14 @@ alias(
 )
 
 alias(
-    name = "crc-1.8.1",
-    actual = "//third_party/rust_crates/vendor/crc-1.8.1:crc",
+    name = "crc-3.4.0",
+    actual = "//third_party/rust_crates/vendor/crc-3.4.0:crc",
     tags = ["manual"],
 )
 
 alias(
     name = "crc",
-    actual = "//third_party/rust_crates/vendor/crc-1.8.1:crc",
+    actual = "//third_party/rust_crates/vendor/crc-3.4.0:crc",
     tags = ["manual"],
 )
 

@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use assembled_system::Image;
 use assembly_partitions_config::{Partition, PartitionsConfig, Slot};
 use byteorder::{BigEndian, WriteBytesExt};
 use camino::{Utf8Path, Utf8PathBuf};
-use crc::crc32;
 use fatfs::{FsOptions, NullTimeProvider, OemCpConverter, TimeProvider};
 use gpt::partition_types::{OperatingSystem, Type as PartType};
 use gpt::{DiskDevice, GptDisk};
@@ -857,7 +856,9 @@ fn write_abr(disk: &mut File, offset: u64, boot_part: BootPart) -> Result<(), Er
 
     disk.seek(SeekFrom::Start(offset))?;
     disk.write_all(data.as_bytes())?;
-    disk.write_u32::<BigEndian>(crc32::checksum_ieee(data.as_bytes()))?;
+    disk.write_u32::<BigEndian>(
+        crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data.as_bytes()),
+    )?;
     Ok(())
 }
 
@@ -1194,9 +1195,13 @@ mod tests {
         // Make sure the partition contains our expected contents.
         let file = File::open(&image_path).unwrap();
         let mut buffer = [0u8; 19];
-        assert!(file
-            .read_exact_at(&mut buffer, partition.bytes_start(*disk.logical_block_size()).unwrap())
-            .is_ok());
+        assert!(
+            file.read_exact_at(
+                &mut buffer,
+                partition.bytes_start(*disk.logical_block_size()).unwrap()
+            )
+            .is_ok()
+        );
         assert_eq!(&buffer, b"boot_mode=fastboot\0");
     }
 

@@ -232,7 +232,7 @@ group("cpio") {
 }
 
 group("crc") {
-  public_deps = [ ":crc-v1_8_1" ]
+  public_deps = [ ":crc-v3_4_0" ]
 }
 
 group("criterion") {
@@ -4647,6 +4647,39 @@ rustc_library("crc-v1_8_1") {
   applicable_licenses = [ ":crc-v1_8_1.license" ]
 }
 
+license("crc-v3_4_0.license") {
+  public_package_name = "crc"
+  license_files = [
+    "//third_party/rust_crates/vendor/crc-3.4.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crc-3.4.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("crc-v3_4_0") {
+  crate_name = "crc"
+  source_root = "//third_party/rust_crates/vendor/crc-3.4.0/src/lib.rs"
+  output_name = "crc-4f0483eed9d014c4"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":crc-catalog-v2_4_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=4f0483eed9d014c4",
+    "-Cextra-filename=-4f0483eed9d014c4",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":crc-v3_4_0.license" ]
+}
+
 license("crc32fast-v1_2_0.license") {
   public_package_name = "crc32fast"
   license_files = [
@@ -4681,6 +4714,35 @@ rustc_library("crc32fast-v1_2_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":crc32fast-v1_2_0.license" ]
+}
+
+license("crc-catalog-v2_4_0.license") {
+  public_package_name = "crc_catalog"
+  license_files = [ "//third_party/rust_crates/vendor/crc-catalog-2.4.0/LICENSES/Apache-2.0.txt" ]
+}
+
+rustc_library("crc-catalog-v2_4_0") {
+  crate_name = "crc_catalog"
+  source_root = "//third_party/rust_crates/vendor/crc-catalog-2.4.0/src/lib.rs"
+  output_name = "crc_catalog-67c01b0f581f8b64"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=67c01b0f581f8b64",
+    "-Cextra-filename=-67c01b0f581f8b64",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":crc-catalog-v2_4_0.license" ]
 }
 
 license("criterion-v0_2_11.license") {

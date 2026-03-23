@@ -87,7 +87,7 @@ cipher = "0.4.4"
 clap = { version = "4.6.0", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }
 cmac = "0.7.2"
 cpio = "0.4.1"
-crc = "1.8.1"
+crc = "3.4.0"
 criterion = { version = "0.2", default-features = false }
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.15"
@@ -579,6 +579,9 @@ rustflags = ["-lframework=CoreFoundation"]
 
 [gn.package.crc."1.8.1"]
 env_vars = ["OUT_DIR=../../../compat/crc"]
+
+[gn.package.crc-catalog."2.4.0"]
+license_files = ["LICENSES/Apache-2.0.txt"]
 
 [gn.package.crc32fast."1.2.0"]
 rustflags = ["--cfg=crc32fast_stdarchx86"]

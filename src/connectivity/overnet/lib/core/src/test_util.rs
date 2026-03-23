@@ -32,7 +32,8 @@ impl NodeIdGenerator {
     /// Create a new generator; uses the test name as salt for the node id's generated.
     pub fn new(test_name: &'static str, run: usize) -> NodeIdGenerator {
         NodeIdGenerator {
-            test_id: crc::crc16::checksum_x25(test_name.as_bytes()) as u64,
+            test_id: crc::Crc::<u16>::new(&crc::CRC_16_IBM_SDLC).checksum(test_name.as_bytes())
+                as u64,
             test_name,
             run: run as u64,
             n: 1,
