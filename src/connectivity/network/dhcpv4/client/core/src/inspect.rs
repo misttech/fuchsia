@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use diagnostics_traits::{InspectableValue, Inspector};
 
-use crate::parse::{IncomingResponseToRequestErrorCounters, SelectingIncomingMessageErrorCounters};
+use crate::parse::{
+    IncomingResponseToRequestErrorCounters, SelectingIncomingMessageErrorCounters, SoftParseErrors,
+};
 
 /// An incrementing counter.
 #[derive(Default, Debug)]
@@ -68,6 +70,9 @@ pub(crate) struct MessagingRelatedCounters {
     /// A counter for each time the client received a DHCPACK that omitted the
     /// IP Address Lease Time option.
     pub(crate) recv_ack_no_addr_lease_time: Counter,
+    /// A counter for each time the client received a DHCP message that
+    /// contained an illegal option.
+    pub(crate) recv_illegal_option: Counter,
 }
 
 impl MessagingRelatedCounters {
@@ -82,6 +87,7 @@ impl MessagingRelatedCounters {
             recv_wrong_chaddr,
             recv_failed_dhcp_parse,
             recv_ack_no_addr_lease_time,
+            recv_illegal_option,
         } = self;
         inspector.record_inspectable_value("SendMessage", send_message);
         inspector.record_inspectable_value("RecvMessage", recv_message);
@@ -98,6 +104,14 @@ impl MessagingRelatedCounters {
         inspector.record_inspectable_value("RecvWrongChaddr", recv_wrong_chaddr);
         inspector.record_inspectable_value("RecvFailedDhcpParse", recv_failed_dhcp_parse);
         inspector.record_inspectable_value("NoLeaseTime", recv_ack_no_addr_lease_time);
+        inspector.record_inspectable_value("IllegallyIncludedOption", recv_illegal_option);
+    }
+
+    pub(crate) fn increment_soft_errors(&self, soft_errors: SoftParseErrors) {
+        let SoftParseErrors { illegal_option } = soft_errors;
+        if illegal_option {
+            self.recv_illegal_option.increment()
+        }
     }
 }
 

@@ -142,8 +142,6 @@ pub(crate) enum CommonIncomingMessageError {
     UnspecifiedServerIdentifier,
     #[error("missing: {0}")]
     BuilderMissingField(&'static str),
-    #[error("option's inclusion violates protocol: {0:?}")]
-    IllegallyIncludedOption(dhcp_protocol::OptionCode),
 }
 
 impl From<derive_builder::UninitializedFieldError> for CommonIncomingMessageError {
@@ -165,45 +163,35 @@ pub(crate) struct CommonIncomingMessageErrorCounters {
     /// The parser was unable to populate a required field while consuming the
     /// message.
     pub(crate) parser_missing_field: Counter,
-    /// The incoming message included an option that was illegal to include
-    /// according to spec.
-    pub(crate) illegally_included_option: Counter,
 }
 
 impl CommonIncomingMessageErrorCounters {
     /// Records the counters.
     fn record(&self, inspector: &mut impl Inspector) {
-        let Self {
-            not_boot_reply,
-            unspecified_server_identifier,
-            parser_missing_field,
-            illegally_included_option,
-        } = self;
+        let Self { not_boot_reply, unspecified_server_identifier, parser_missing_field } = self;
         inspector.record_usize("NotBootReply", not_boot_reply.load());
         inspector.record_usize("UnspecifiedServerIdentifier", unspecified_server_identifier.load());
         inspector.record_usize("ParserMissingField", parser_missing_field.load());
-        inspector.record_usize("IllegallyIncludedOption", illegally_included_option.load());
     }
 
     /// Increments the counter corresponding to the error.
     fn increment(&self, error: &CommonIncomingMessageError) {
-        let Self {
-            not_boot_reply,
-            unspecified_server_identifier,
-            parser_missing_field,
-            illegally_included_option,
-        } = self;
+        let Self { not_boot_reply, unspecified_server_identifier, parser_missing_field } = self;
         match error {
             CommonIncomingMessageError::NotBootReply(_) => not_boot_reply.increment(),
             CommonIncomingMessageError::UnspecifiedServerIdentifier => {
                 unspecified_server_identifier.increment()
             }
             CommonIncomingMessageError::BuilderMissingField(_) => parser_missing_field.increment(),
-            CommonIncomingMessageError::IllegallyIncludedOption(_) => {
-                illegally_included_option.increment()
-            }
         }
     }
+}
+
+/// The set of recoverable errors that were encountered during parsing.
+#[derive(Debug, Default)]
+pub(crate) struct SoftParseErrors {
+    /// The message included an illegal option.
+    pub(crate) illegal_option: bool,
 }
 
 impl CommonIncomingMessageFieldsBuilder {
@@ -379,7 +367,7 @@ fn collect_common_fields<T: Copy>(
         file: _,
         options,
     }: dhcp_protocol::Message,
-) -> Result<CommonIncomingMessageFields, CommonIncomingMessageError> {
+) -> Result<(CommonIncomingMessageFields, SoftParseErrors), CommonIncomingMessageError> {
     use dhcp_protocol::DhcpOption;
 
     match op {
@@ -391,6 +379,8 @@ fn collect_common_fields<T: Copy>(
 
     let mut builder = CommonIncomingMessageFieldsBuilder::default();
     builder.yiaddr(yiaddr);
+
+    let mut soft_errors = SoftParseErrors::default();
 
     for option in options {
         let code = option.code();
@@ -453,7 +443,12 @@ fn collect_common_fields<T: Copy>(
             DhcpOption::ParameterRequestList(_)
             | DhcpOption::RequestedIpAddress(_)
             | DhcpOption::MaxDhcpMessageSize(_) => {
-                return Err(CommonIncomingMessageError::IllegallyIncludedOption(option.code()));
+                // Per the RFC citation above, a DHCP server MUST NOT include
+                // these options in any of it's messages. However, for the
+                // sake of robustness, our client will ignore these options and
+                // continue parsing the rest of the message.
+                soft_errors.illegal_option = true;
+                log::warn!("ignoring illegal DHCP option {option:?}");
             }
             DhcpOption::Pad()
             | DhcpOption::End()
@@ -527,7 +522,7 @@ fn collect_common_fields<T: Copy>(
             builder.add_requested_parameter(option);
         }
     }
-    builder.build()
+    Ok((builder.build()?, soft_errors))
 }
 
 /// Returns whether the option is allowed to be specified multiple times.
@@ -700,7 +695,8 @@ impl SelectingIncomingMessageErrorCounters {
 pub(crate) fn fields_to_retain_from_selecting(
     requested_parameters: &OptionCodeMap<OptionRequested>,
     message: dhcp_protocol::Message,
-) -> Result<FieldsFromOfferToUseInRequest, SelectingIncomingMessageError> {
+) -> Result<(FieldsFromOfferToUseInRequest, SoftParseErrors), SelectingIncomingMessageError> {
+    let (common_fields, soft_errors) = collect_common_fields(requested_parameters, message)?;
     let CommonIncomingMessageFields {
         message_type,
         server_identifier,
@@ -712,7 +708,7 @@ pub(crate) fn fields_to_retain_from_selecting(
         seen_option_codes,
         message: _,
         client_identifier: _,
-    } = collect_common_fields(requested_parameters, message)?;
+    } = common_fields;
 
     match message_type {
         dhcp_protocol::MessageType::DHCPOFFER => (),
@@ -733,12 +729,13 @@ pub(crate) fn fields_to_retain_from_selecting(
         return Err(SelectingIncomingMessageError::MissingRequiredOption(missing_option_code));
     }
 
-    Ok(FieldsFromOfferToUseInRequest {
+    let offer_fields = FieldsFromOfferToUseInRequest {
         server_identifier: server_identifier
             .ok_or(SelectingIncomingMessageError::NoServerIdentifier)?,
         ip_address_lease_time_secs,
         ip_address_to_request: yiaddr.ok_or(SelectingIncomingMessageError::UnspecifiedYiaddr)?,
-    })
+    };
+    Ok((offer_fields, soft_errors))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -897,16 +894,20 @@ pub(crate) fn fields_to_retain_from_response_to_request(
     requested_parameters: &OptionCodeMap<OptionRequested>,
     message: dhcp_protocol::Message,
 ) -> Result<
-    IncomingResponseToRequest<
-        // Strictly according to RFC 2131, the Server Identifier MUST be included in
-        // the DHCPACK. However, we've observed DHCP servers in the field fail to
-        // set the Server Identifier, instead expecting the client to remember it
-        // from the DHCPOFFER (https://fxbug.dev/42064504). Thus, we treat Server
-        // Identifier as optional for DHCPACK.
-        Option<net_types::SpecifiedAddr<net_types::ip::Ipv4Addr>>,
-    >,
+    (
+        IncomingResponseToRequest<
+            // Strictly according to RFC 2131, the Server Identifier MUST be included in
+            // the DHCPACK. However, we've observed DHCP servers in the field fail to
+            // set the Server Identifier, instead expecting the client to remember it
+            // from the DHCPOFFER (https://fxbug.dev/42064504). Thus, we treat Server
+            // Identifier as optional for DHCPACK.
+            Option<net_types::SpecifiedAddr<net_types::ip::Ipv4Addr>>,
+        >,
+        SoftParseErrors,
+    ),
     IncomingResponseToRequestError,
 > {
+    let (common_fields, soft_errors) = collect_common_fields(requested_parameters, message)?;
     let CommonIncomingMessageFields {
         message_type,
         server_identifier,
@@ -918,7 +919,7 @@ pub(crate) fn fields_to_retain_from_response_to_request(
         seen_option_codes,
         message,
         client_identifier,
-    } = collect_common_fields(requested_parameters, message)?;
+    } = common_fields;
 
     match message_type {
         dhcp_protocol::MessageType::DHCPACK => {
@@ -932,22 +933,24 @@ pub(crate) fn fields_to_retain_from_response_to_request(
                     missing_option_code,
                 ));
             }
-            Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
+            let ack = IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
                 yiaddr: yiaddr.ok_or(IncomingResponseToRequestError::UnspecifiedYiaddr)?,
                 server_identifier,
                 ip_address_lease_time_secs: ip_address_lease_time_secs,
                 renewal_time_value_secs,
                 rebinding_time_value_secs,
                 parameters,
-            }))
+            });
+            Ok((ack, soft_errors))
         }
         dhcp_protocol::MessageType::DHCPNAK => {
-            Ok(IncomingResponseToRequest::Nak(FieldsToRetainFromNak {
+            let nak = IncomingResponseToRequest::Nak(FieldsToRetainFromNak {
                 server_identifier: server_identifier
                     .ok_or(IncomingResponseToRequestError::NoServerIdentifier)?,
                 message,
                 client_identifier,
-            }))
+            });
+            Ok((nak, soft_errors))
         }
         dhcp_protocol::MessageType::DHCPDISCOVER
         | dhcp_protocol::MessageType::DHCPOFFER
@@ -1093,6 +1096,7 @@ mod test {
         subnet_mask: Option<PrefixLength<Ipv4>>,
         lease_length_secs: Option<u32>,
         include_duplicate_option: bool,
+        include_illegal_option: bool,
     }
 
     const SERVER_IP: Ipv4Addr = std_ip_v4!("192.168.1.1");
@@ -1109,6 +1113,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(FieldsFromOfferToUseInRequest {
         server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
             .try_into()
@@ -1126,6 +1131,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(FieldsFromOfferToUseInRequest {
         server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
             .try_into()
@@ -1143,6 +1149,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::CommonError(
         CommonIncomingMessageError::UnspecifiedServerIdentifier,
     )); "rejects offer with unspecified server identifier")]
@@ -1154,6 +1161,7 @@ mod test {
         subnet_mask: None,
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::MissingRequiredOption(
         dhcp_protocol::OptionCode::SubnetMask,
     )); "rejects offer without required subnet mask")]
@@ -1165,6 +1173,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::NoServerIdentifier); "rejects offer with no server identifier option")]
     #[test_case(VaryingOfferFields {
         op: dhcp_protocol::OpCode::BOOTREPLY,
@@ -1174,6 +1183,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::UnspecifiedYiaddr) ; "rejects offer with unspecified yiaddr")]
     #[test_case(VaryingOfferFields {
         op: dhcp_protocol::OpCode::BOOTREQUEST,
@@ -1183,6 +1193,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::CommonError(
         CommonIncomingMessageError::NotBootReply(dhcp_protocol::OpCode::BOOTREQUEST),
     )); "rejects offer that isn't a bootreply")]
@@ -1194,6 +1205,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(
         SelectingIncomingMessageError::NotDhcpOffer(dhcp_protocol::MessageType::DHCPACK),
     ); "rejects offer with wrong DHCP message type")]
@@ -1205,6 +1217,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(SelectingIncomingMessageError::CommonError(
         CommonIncomingMessageError::BuilderMissingField("message_type"),
     )); "rejects offer with no DHCP message type option")]
@@ -1216,6 +1229,7 @@ mod test {
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: Some(LEASE_LENGTH_SECS),
         include_duplicate_option: true,
+        include_illegal_option: false,
     } => Ok(FieldsFromOfferToUseInRequest {
         server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
             .try_into()
@@ -1225,6 +1239,24 @@ mod test {
             .try_into()
             .expect("should be specified"),
     }); "accepts good offer with duplicate options")]
+    #[test_case(VaryingOfferFields {
+        op: dhcp_protocol::OpCode::BOOTREPLY,
+        yiaddr: YIADDR,
+        message_type: Some(dhcp_protocol::MessageType::DHCPOFFER),
+        server_identifier: Some(SERVER_IP),
+        subnet_mask: Some(TEST_SUBNET_MASK),
+        lease_length_secs: Some(LEASE_LENGTH_SECS),
+        include_duplicate_option: false,
+        include_illegal_option: true,
+    } => Ok(FieldsFromOfferToUseInRequest {
+        server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+            .try_into()
+            .expect("should be specified"),
+        ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
+        ip_address_to_request: net_types::ip::Ipv4Addr::from(YIADDR)
+            .try_into()
+            .expect("should be specified"),
+    }); "accepts good offer with illegal option")]
     fn fields_from_offer_to_use_in_request(
         offer_fields: VaryingOfferFields,
     ) -> Result<FieldsFromOfferToUseInRequest, SelectingIncomingMessageError> {
@@ -1239,6 +1271,7 @@ mod test {
             subnet_mask,
             lease_length_secs,
             include_duplicate_option,
+            include_illegal_option,
         } = offer_fields;
 
         let message = dhcp_protocol::Message {
@@ -1268,6 +1301,12 @@ mod test {
                         .into_iter()
                         .flatten(),
                 )
+                .chain(
+                    include_illegal_option
+                        // It's illegal for the DHCP server to provide the
+                        // "Requested IP Address" option in any of its messages.
+                        .then_some(dhcp_protocol::DhcpOption::RequestedIpAddress(SERVER_IP)),
+                )
                 .collect(),
         };
 
@@ -1276,6 +1315,11 @@ mod test {
                 .collect(),
             message,
         )
+        .map(|(fields, soft_errors)| {
+            let SoftParseErrors { illegal_option } = soft_errors;
+            assert_eq!(illegal_option, include_illegal_option);
+            fields
+        })
     }
 
     struct VaryingReplyToRequestFields {
@@ -1289,6 +1333,7 @@ mod test {
         rebinding_time_secs: Option<u32>,
         message: Option<String>,
         include_duplicate_option: bool,
+        include_illegal_option: bool,
     }
 
     const DOMAIN_NAME: &str = "example.com";
@@ -1308,6 +1353,7 @@ mod test {
             rebinding_time_secs: None,
             message: None,
             include_duplicate_option: false,
+            include_illegal_option: false,
         } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
             yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
                 .try_into()
@@ -1336,6 +1382,7 @@ mod test {
         rebinding_time_secs: None,
         message: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
         yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
             .try_into()
@@ -1360,6 +1407,7 @@ mod test {
         rebinding_time_secs: Some(REBINDING_TIME_SECS),
         message: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
         yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
             .try_into()
@@ -1388,6 +1436,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(IncomingResponseToRequest::Nak(FieldsToRetainFromNak {
         server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
             .try_into()
@@ -1406,6 +1455,7 @@ mod test {
         rebinding_time_secs: None,
         message: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
         yiaddr: net_types::ip::Ipv4Addr::from(YIADDR).try_into().expect("should be specified"),
         server_identifier: Some(
@@ -1431,6 +1481,7 @@ mod test {
             rebinding_time_secs: None,
             message: None,
             include_duplicate_option: false,
+        include_illegal_option: false,
         } => Err(IncomingResponseToRequestError::MissingRequiredOption(
             dhcp_protocol::OptionCode::SubnetMask
         )); "rejects DHCPACK without required subnet mask")]
@@ -1445,6 +1496,7 @@ mod test {
         rebinding_time_secs: Some(REBINDING_TIME_SECS),
         message: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::CommonError(
         CommonIncomingMessageError::UnspecifiedServerIdentifier,
     )); "rejects DHCPACK with unspecified server identifier")]
@@ -1459,6 +1511,7 @@ mod test {
         rebinding_time_secs: Some(REBINDING_TIME_SECS),
         message: None,
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::UnspecifiedYiaddr); "rejects DHCPACK with unspecified yiaddr")]
     #[test_case(VaryingReplyToRequestFields {
         op: dhcp_protocol::OpCode::BOOTREPLY,
@@ -1471,6 +1524,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::CommonError(
         CommonIncomingMessageError::UnspecifiedServerIdentifier,
     )); "rejects DHCPNAK with unspecified server identifier")]
@@ -1485,6 +1539,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::NoServerIdentifier) ; "rejects DHCPNAK with no server identifier")]
     #[test_case(VaryingReplyToRequestFields {
         op: dhcp_protocol::OpCode::BOOTREQUEST,
@@ -1497,6 +1552,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::CommonError(
         CommonIncomingMessageError::NotBootReply(dhcp_protocol::OpCode::BOOTREQUEST),
     )) ; "rejects non-bootreply")]
@@ -1511,6 +1567,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::NotDhcpAckOrNak(
         dhcp_protocol::MessageType::DHCPOFFER,
     )) ; "rejects non-DHCPACK or DHCPNAK")]
@@ -1525,6 +1582,7 @@ mod test {
         rebinding_time_secs: None,
         message: Some(MESSAGE.to_owned()),
         include_duplicate_option: false,
+        include_illegal_option: false,
     } => Err(IncomingResponseToRequestError::CommonError(
         CommonIncomingMessageError::BuilderMissingField("message_type"),
     )) ; "rejects missing DHCP message type")]
@@ -1539,6 +1597,7 @@ mod test {
             rebinding_time_secs: Some(REBINDING_TIME_SECS),
             message: None,
             include_duplicate_option: true,
+            include_illegal_option: false,
         } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
             yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
                 .try_into()
@@ -1556,6 +1615,35 @@ mod test {
             renewal_time_value_secs: Some(RENEWAL_TIME_SECS),
             rebinding_time_value_secs: Some(REBINDING_TIME_SECS),
         })); "accepts good DHCPACK with duplicate option")]
+    #[test_case( VaryingReplyToRequestFields {
+            op: dhcp_protocol::OpCode::BOOTREPLY,
+            yiaddr: YIADDR,
+            message_type: Some(dhcp_protocol::MessageType::DHCPACK),
+            server_identifier: Some(SERVER_IP),
+            subnet_mask: Some(TEST_SUBNET_MASK),
+            lease_length_secs: Some(LEASE_LENGTH_SECS),
+            renewal_time_secs: None,
+            rebinding_time_secs: None,
+            message: None,
+            include_duplicate_option: false,
+            include_illegal_option: true,
+        } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: Some(
+                net_types::ip::Ipv4Addr::from(SERVER_IP)
+                    .try_into()
+                    .expect("should be specified"),
+            ),
+            ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
+            parameters: vec![
+                dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
+                dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
+            ],
+            renewal_time_value_secs: None,
+            rebinding_time_value_secs: None,
+        })); "accepts good DHCPACK with illegal option")]
     fn fields_to_retain_during_requesting(
         incoming_fields: VaryingReplyToRequestFields,
     ) -> Result<
@@ -1576,6 +1664,7 @@ mod test {
             rebinding_time_secs,
             message,
             include_duplicate_option,
+            include_illegal_option,
         } = incoming_fields;
 
         let message = dhcp_protocol::Message {
@@ -1610,6 +1699,12 @@ mod test {
                     include_duplicate_option
                         .then_some(dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())),
                 )
+                .chain(
+                    include_illegal_option
+                        // It's illegal for the DHCP server to provide the
+                        // "Requested IP Address" option in any of its messages.
+                        .then_some(dhcp_protocol::DhcpOption::RequestedIpAddress(SERVER_IP)),
+                )
                 .collect(),
         };
 
@@ -1622,5 +1717,10 @@ mod test {
             .collect(),
             message,
         )
+        .map(|(fields, soft_errors)| {
+            let SoftParseErrors { illegal_option } = soft_errors;
+            assert_eq!(illegal_option, include_illegal_option);
+            fields
+        })
     }
 }

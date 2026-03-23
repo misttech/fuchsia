@@ -1229,7 +1229,10 @@ impl<I: deps::Instant> Selecting<I> {
                         .context("invalid DHCP message")?;
                     crate::parse::fields_to_retain_from_selecting(requested_parameters, message)
                         .inspect_err(|e| recv_error.increment(&e))
-                        .map(|fields| Some((src_addr, fields)))
+                        .map(|(fields, soft_errors)| {
+                            messaging.increment_soft_errors(soft_errors);
+                            Some((src_addr, fields))
+                        })
                         .context(
                             "error while retrieving fields to use in DHCPREQUEST from DHCP message",
                         )
@@ -1469,7 +1472,10 @@ impl<I: deps::Instant> Requesting<I> {
                     )
                     .inspect_err(|e| recv_error.increment(e))
                     .context("error extracting needed fields from DHCP message during Requesting")
-                    .map(|fields| Some((src_addr, fields)))
+                    .map(|(fields, soft_errors)| {
+                        messaging.increment_soft_errors(soft_errors);
+                        Some((src_addr, fields))
+                    })
                 },
                 *debug_log_prefix,
                 messaging
@@ -2023,7 +2029,10 @@ impl<I: deps::Instant> Renewing<I> {
                     )
                     .inspect_err(|e| recv_error.increment(e))
                     .context("error extracting needed fields from DHCP message during Renewing")
-                    .map(|fields_to_retain| (addr, fields_to_retain))
+                    .map(|(fields, soft_errors)| {
+                        messaging.increment_soft_errors(soft_errors);
+                        (addr, fields)
+                    })
                 },
                 debug_log_prefix,
                 messaging
@@ -2291,6 +2300,10 @@ impl<I: deps::Instant> Rebinding<I> {
                         &client_config.requested_parameters,
                         message,
                     )
+                    .map(|(response, soft_errors)| {
+                        messaging.increment_soft_errors(soft_errors);
+                        response
+                    })
                     .and_then(|response| match response {
                         crate::parse::IncomingResponseToRequest::Ack(ack) => {
                             // We need to enforce that DHCPACKs in REBINDING include

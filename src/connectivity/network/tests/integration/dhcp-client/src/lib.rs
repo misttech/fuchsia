@@ -9,18 +9,13 @@ use bstr::BString;
 use diagnostics_assertions::AnyUintProperty;
 use fidl::endpoints;
 use fidl::endpoints::Responder as _;
-use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcp::{
     self as fnet_dhcp, ClientEvent, ClientExitReason, ClientMarker, ClientProviderMarker,
     NewClientParams,
 };
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt as _};
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-use fidl_fuchsia_netemul_network as fnetemul_network;
 use fnet_dhcp_ext::ClientExt;
-use fuchsia_async as fasync;
 use futures::future::ready;
 use futures::{FutureExt, StreamExt, TryStreamExt, join};
 use net_declare::std_ip_v4;
@@ -33,6 +28,11 @@ use netstack_testing_common::{annotate, dhcpv4 as dhcpv4_helper};
 use netstack_testing_macros::netstack_test;
 use std::pin::pin;
 use test_case::test_case;
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_netemul_network as fnetemul_network, fuchsia_async as fasync,
+};
 
 const MAC: net_types::ethernet::Mac = net_declare::net_mac!("00:00:00:00:00:01");
 const SERVER_MAC: net_types::ethernet::Mac = net_declare::net_mac!("02:02:02:02:02:02");
@@ -1457,6 +1457,188 @@ async fn client_gracefully_handles_duplicate_options<N: Netstack>(name: &str) {
     assert_eq!(add_subnet_route, Some(true));
     // DHCP addresses should have DAD performed before being assigned.
     assert_eq!(perform_dad, Some(true));
+
+    let mut address_state_provider = address_state_provider.into_stream();
+    swallow_watch_address_assignment_state_request(&mut address_state_provider).await;
+    assert_client_shutdown(client, address_state_provider).await;
+}
+
+/// A regression test for https://fxbug.dev/493882212.
+///
+/// Verify that if the DHCP server sends an illegal option as part of it's
+/// DHCPOFFER, or DHCPACK, the client will ignore the option and continue
+/// to process the message.
+///
+/// Because Fuchsia's DHCP server implementation disallows sending illegal
+/// options, we instead impersonate a DHCP server by writing messages directly
+/// to the network.
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn client_gracefully_handles_illegal_options<N: Netstack>(name: &str) {
+    let sandbox: netemul::TestSandbox = netemul::TestSandbox::new().unwrap();
+    let DhcpTestRealm { client_realm, client_iface, server_realm, server_iface, _network: _ } =
+        &create_test_realm::<N>(&sandbox, name).await;
+
+    const SERVER_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.1");
+    const CLIENT_ADDR: std::net::Ipv4Addr = std_ip_v4!("192.168.0.2");
+    const PREFIX_LEN: u8 = 24;
+
+    let common_options = vec![
+        // NB: The DHCP server is required to provide these options.
+        dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_ADDR),
+        dhcp_protocol::DhcpOption::SubnetMask(
+            net_types::ip::PrefixLength::new(PREFIX_LEN).unwrap(),
+        ),
+        // Options that DHCP server's MUST NOT send, according to RFC 2131.
+        // We expect our client to ignore these.
+        dhcp_protocol::DhcpOption::RequestedIpAddress(CLIENT_ADDR),
+        dhcp_protocol::DhcpOption::ParameterRequestList(
+            dhcp_protocol::AtLeast::try_from(
+                dhcp_protocol::AtMostBytes::try_from(vec![
+                    dhcp_protocol::OptionCode::ServerIdentifier,
+                ])
+                .unwrap(),
+            )
+            .unwrap(),
+        ),
+        dhcp_protocol::DhcpOption::MaxDhcpMessageSize(1000),
+    ];
+
+    // We're going to drive the DHCP protocol ourselves, so don't start the DHCP
+    // server. Instead add the address and create a socket.
+    server_iface
+        .add_address_and_subnet_route(fnet::Subnet {
+            addr: fnet_ext::IpAddress(SERVER_ADDR.into()).into(),
+            prefix_len: PREFIX_LEN,
+        })
+        .await
+        .expect("add address should succeed");
+    let server_sock = fuchsia_async::net::UdpSocket::bind_in_realm(
+        &server_realm,
+        std::net::SocketAddr::new(
+            std::net::Ipv4Addr::UNSPECIFIED.into(),
+            dhcp_protocol::SERVER_PORT.get(),
+        ),
+    )
+    .await
+    .expect("failed to create server socket");
+
+    // NB: The real DHCP server uses packet sockets to avoid neighbor resolution,
+    // but for the purpose of the test it's far easier to add a static neighbor
+    // entry.
+    server_realm
+        .add_neighbor_entry(
+            server_iface.id(),
+            fnet_ext::IpAddress(CLIENT_ADDR.into()).into(),
+            fnet::MacAddress { octets: MAC.bytes() },
+        )
+        .await
+        .expect("failed to add static neighbor entry");
+
+    // Now, start the client.
+    let provider =
+        client_realm.connect_to_protocol::<ClientProviderMarker>().expect("connect should succeed");
+
+    let client = provider.new_client_ext(
+        client_iface.id().try_into().expect("should be nonzero"),
+        fnet_dhcp_ext::default_new_client_params(),
+    );
+
+    let config_stream = fnet_dhcp_ext::configuration_stream(client.clone()).fuse();
+    let mut config_stream = pin!(config_stream);
+
+    // Wait to observe the DHCPDISCOVER from the client.
+    let mut buf = vec![0; 1024];
+    let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
+    let discover =
+        dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
+    assert_eq!(discover.get_dhcp_type(), Ok(dhcp_protocol::MessageType::DHCPDISCOVER));
+
+    // Send a DHCPOffer to the client.
+    let mut offer_options = common_options.clone();
+    offer_options
+        .push(dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPOFFER));
+    let offer = dhcp_protocol::Message {
+        op: dhcp_protocol::OpCode::BOOTREPLY,
+        xid: discover.xid,
+        secs: 0,
+        bdcast_flag: false,
+        ciaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        yiaddr: CLIENT_ADDR,
+        siaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        giaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        chaddr: MAC,
+        sname: BString::default(),
+        file: BString::default(),
+        options: offer_options,
+    };
+    let offer = offer.serialize();
+    let sent_len = server_sock
+        .send_to(
+            &offer,
+            std::net::SocketAddr::new(CLIENT_ADDR.into(), dhcp_protocol::CLIENT_PORT.get()),
+        )
+        .await
+        .expect("failed to send DHCPOFFER");
+    assert_eq!(sent_len, offer.len());
+
+    // Wait to see a DHCPREQUEST from the client.
+    let request = loop {
+        let (len, _from) = server_sock.recv_from(&mut buf).await.expect("server receive failed");
+        let request =
+            dhcp_protocol::Message::from_buffer(&buf[..len]).expect("failed to parse DHCP message");
+        match request.get_dhcp_type().expect("get DHCP message type") {
+            // Ignore DHCPDISCOVERs which may have been retransmitted by the client.
+            dhcp_protocol::MessageType::DHCPDISCOVER => continue,
+            dhcp_protocol::MessageType::DHCPREQUEST => break request,
+            dhcp_type => panic!("unexpected DHCP message type: {dhcp_type}"),
+        }
+    };
+
+    // Send a DHCPACK to the client.
+    let mut ack_options = common_options;
+    ack_options
+        .push(dhcp_protocol::DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPACK));
+    let ack = dhcp_protocol::Message {
+        op: dhcp_protocol::OpCode::BOOTREPLY,
+        xid: request.xid,
+        secs: 0,
+        bdcast_flag: false,
+        ciaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        yiaddr: CLIENT_ADDR,
+        siaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        giaddr: std::net::Ipv4Addr::UNSPECIFIED,
+        chaddr: MAC,
+        sname: BString::default(),
+        file: BString::default(),
+        options: ack_options,
+    };
+    let ack = ack.serialize();
+    let sent_len = server_sock
+        .send_to(
+            &ack,
+            std::net::SocketAddr::new(CLIENT_ADDR.into(), dhcp_protocol::CLIENT_PORT.get()),
+        )
+        .await
+        .expect("failed to send DHCPACK");
+    assert_eq!(sent_len, ack.len());
+
+    // Expect the client to produce a configuration.
+    let fnet_dhcp_ext::Configuration { address, dns_servers: _, routers: _ } = config_stream
+        .try_next()
+        .await
+        .expect("watch configuration should succeed")
+        .expect("configuration stream should not have ended");
+
+    let fnet_dhcp_ext::Address { address, address_parameters: _, address_state_provider } =
+        address.expect("address should be present in response");
+    assert_eq!(
+        address,
+        fnet::Ipv4AddressWithPrefix {
+            addr: fnet_ext::Ipv4Address(CLIENT_ADDR).into(),
+            prefix_len: PREFIX_LEN
+        }
+    );
 
     let mut address_state_provider = address_state_provider.into_stream();
     swallow_watch_address_assignment_state_request(&mut address_state_provider).await;
