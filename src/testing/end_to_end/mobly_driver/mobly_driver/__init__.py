@@ -30,11 +30,27 @@ class MoblyTestFailureException(Exception):
 
 
 # The "final grace period" is how long we wait before killing the test in the
-# case that the cleanup period times out. Once tests have received two
-# SIGTERMs, they get this last chance to exit gracefully. In particular, tests
+# case that the cleanup period times out. Once a test has received a SIGTERM,
+# we give it several opportunities to exit gracefully. In particular, tests
 # shouldn't do anything during this period other than persist information they
 # have already collected and exit.
-FINAL_GRACE_PERIOD_TIMEOUT = timedelta(seconds=10)
+#
+# TODO(https://fxbug.dev/486240505): When a device locks up, we experience
+# hangs in each of the following places:
+#   - the test itself
+#   - teardown_test
+#   - teardown_class
+#   - cleanup
+#
+# The first SIGTERM aborts the test and begins the cleanup period. But if every
+# one of these methods hangs we'll still need three more SIGTERMs to get out of
+# lacewing code and back into Mobly, which can then persist the test results.
+#
+# So anyway, we give the test binary many opportunities to exit gracefully.
+# It'd be preferable for the test itself to not hang so many times on a device
+# that's clearly not responding. Once that's the case, we can make this tidier.
+FINAL_GRACE_PERIOD_WARNINGS = 8
+FINAL_GRACE_PERIOD_TIMEOUT = timedelta(seconds=5)
 
 
 def _execute_test(
@@ -101,7 +117,17 @@ def _execute_test(
             universal_newlines=True,
             env=test_env,
         ) as proc:
-            # Treat SIGTERM as SIGINT
+            # If we get SIGTERM or SIGINT (say, because the user hits CTRL+C),
+            # we want to do the following:
+            # - Handle it, because we don't want to quit and leave the test
+            #   subprocess as an orphan. If we don't handle the signal, we'll
+            #   quit by default.
+            # - Send the signal to the test subprocess, so that it knows to
+            #   wrap things up. Often the signal will be sent to the whole
+            #   process group, so this is redundant, but not always.
+            # - Advance the counter of the number of warnings we've sent.
+            #
+            # All that is handled in the InterruptedError exception handlers below.
             def sigterm_handler(signum: int, _: Any) -> None:
                 raise InterruptedError(
                     f"[Mobly Driver] - Received signal: {signum}, interrupting the mobly test"
@@ -115,7 +141,7 @@ def _execute_test(
                 main_test_timeout = (
                     timeout
                     - (cleanup_period or timedelta(0))
-                    - FINAL_GRACE_PERIOD_TIMEOUT
+                    - FINAL_GRACE_PERIOD_TIMEOUT * FINAL_GRACE_PERIOD_WARNINGS
                 )
             else:
                 main_test_timeout = None
@@ -140,7 +166,7 @@ def _execute_test(
                 )
             except InterruptedError:
                 print(
-                    "[Mobly Driver] - got SIGINT/SIGTERM while waiting for test to complete."
+                    "[Mobly Driver] - got out-of-band SIGINT/SIGTERM while waiting for test to complete."
                 )
 
             if cleanup_period is not None:
@@ -156,25 +182,27 @@ def _execute_test(
                     )
                 except InterruptedError:
                     print(
-                        "[Mobly Driver] - got SIGINT/SIGTERM during cleanup period."
+                        "[Mobly Driver] - got out-of-band SIGINT/SIGTERM during cleanup period."
                     )
 
-            print(
-                "[Mobly Driver] - Sending SIGTERM to begin final grace period."
-            )
-            proc.terminate()
-            try:
-                return proc.wait(
-                    timeout=FINAL_GRACE_PERIOD_TIMEOUT.total_seconds()
-                )
-            except subprocess.TimeoutExpired:
+            print("[Mobly Driver] - Begin final grace period.")
+            for i in range(FINAL_GRACE_PERIOD_WARNINGS):
                 print(
-                    f"[Mobly Driver] - final grace period timed out after {FINAL_GRACE_PERIOD_TIMEOUT}."
+                    f"[Mobly Driver] - Sending SIGTERM {i+1}/{FINAL_GRACE_PERIOD_WARNINGS}."
                 )
-            except InterruptedError:
-                print(
-                    "[Mobly Driver] - got SIGINT/SIGTERM during final grace period."
-                )
+                proc.terminate()
+                try:
+                    return proc.wait(
+                        timeout=FINAL_GRACE_PERIOD_TIMEOUT.total_seconds()
+                    )
+                except subprocess.TimeoutExpired:
+                    print(
+                        f"[Mobly Driver] - timed out after {FINAL_GRACE_PERIOD_TIMEOUT}."
+                    )
+                except InterruptedError:
+                    print(
+                        "[Mobly Driver] - got out-of-band SIGINT/SIGTERM during final grace period."
+                    )
 
             print("[Mobly Driver] - Sending SIGKILL")
             proc.kill()

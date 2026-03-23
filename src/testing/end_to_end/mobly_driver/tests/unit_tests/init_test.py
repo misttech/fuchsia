@@ -83,7 +83,14 @@ class MoblyDriverLibTest(unittest.TestCase):
         self.mock_process.wait.side_effect = [
             subprocess.TimeoutExpired("", 0),  # Main test times out
             # No cleanup period
-            subprocess.TimeoutExpired("", 0),  # Final warning times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 1 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 2 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 3 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 4 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 5 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 6 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 7 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 8 times out
             0,  # Kill wait succeeds
         ]
 
@@ -147,7 +154,14 @@ class MoblyDriverLibTest(unittest.TestCase):
         self.mock_process.wait.side_effect = [
             subprocess.TimeoutExpired("", 0),  # Main test times out
             subprocess.TimeoutExpired("", 0),  # Cleanup period times out
-            subprocess.TimeoutExpired("", 0),  # Final warning times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 1 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 2 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 3 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 4 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 5 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 6 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 7 times out
+            subprocess.TimeoutExpired("", 0),  # Final warning 8 times out
             0,  # Kill wait succeeds
         ]
 
@@ -161,7 +175,7 @@ class MoblyDriverLibTest(unittest.TestCase):
             )
 
         # It calls terminate for each timeout before the last one
-        self.assertEqual(self.mock_process.terminate.call_count, 2)
+        self.assertEqual(self.mock_process.terminate.call_count, 9)
         self.mock_process.kill.assert_called_once()
 
     @mock.patch("builtins.print")
@@ -174,7 +188,14 @@ class MoblyDriverLibTest(unittest.TestCase):
         self.mock_process.wait.side_effect = [
             InterruptedError,  # Main test interrupted
             InterruptedError,  # Cleanup period interrupted
-            InterruptedError,  # Final warning interrupted
+            InterruptedError,  # Final warning 1 interrupted
+            InterruptedError,  # Final warning 2 interrupted
+            InterruptedError,  # Final warning 3 interrupted
+            InterruptedError,  # Final warning 4 interrupted
+            InterruptedError,  # Final warning 5 interrupted
+            InterruptedError,  # Final warning 6 interrupted
+            InterruptedError,  # Final warning 7 interrupted
+            InterruptedError,  # Final warning 8 interrupted
             0,  # Kill wait succeeds
         ]
 
@@ -188,7 +209,7 @@ class MoblyDriverLibTest(unittest.TestCase):
             )
 
         # It calls terminate for each timeout before the last one
-        self.assertEqual(self.mock_process.terminate.call_count, 2)
+        self.assertEqual(self.mock_process.terminate.call_count, 9)
         self.mock_process.kill.assert_called_once()
 
     @mock.patch("builtins.print")
