@@ -14,10 +14,12 @@
 ## --lcov-output-path: path to write output lcov to
 ## -h|--help: prints help message
 
-set -euo pipefail
-
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
 fx-config-read
+
+# Turn on checking after reading config. Otherwise unbound variables in the config read
+# can cause the script to fail.
+set -euo pipefail
 
 function main() {
   local lcov_output_path=''
@@ -52,10 +54,9 @@ function main() {
   trap "rm -rf ${_TEST_OUT_DIR}" EXIT
 
   # Use `fxtest` to run test, which knows to how to fuzzy match test names, plus
-  # rebuild targets when necessary,
-  #
-  # Execute in subshell because `run-dart-tool` exits.
-  fx-command-run test --device --ffx-output-directory "${_TEST_OUT_DIR}" "${@}"
+  # rebuild targets when necessary.
+  fx-command-run test --device --no-timestamp-artifacts \
+   --ffx-output-directory "${_TEST_OUT_DIR}" "${@}"
 
   echo "Exporting coverage data ..."
 
@@ -71,6 +72,7 @@ function main() {
   # platform-neutral implementation instead.
   readonly _REL_BUILD_DIR="$(realpath -s --relative-to="${FUCHSIA_BUILD_DIR}" "${FUCHSIA_DIR}")"
 
+  readonly start_time=$SECONDS
   fx-command-run host-tool ffx \
     --config 'coverage=true' \
     coverage \
@@ -78,6 +80,8 @@ function main() {
     --test-output-dir "${_TEST_OUT_DIR}" ${ffx_cov_args[@]} \
     --path-remappings "${_REL_BUILD_DIR},${FUCHSIA_DIR}" \
     --compilation-dir "${FUCHSIA_BUILD_DIR}"
+  readonly duration=$((SECONDS - start_time))
+  echo "Coverage exported in ${duration} seconds."
 
   if [[ -n "${lcov_output_path}" ]]; then
     echo "Coverage LCOV exported to ${lcov_output_path}"
