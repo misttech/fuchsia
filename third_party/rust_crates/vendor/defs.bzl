@@ -700,6 +700,7 @@ _CONDITIONS = {
     "cfg(target_os = \"vxworks\")": [],
     "cfg(target_os = \"wasi\")": [],
     "cfg(target_os = \"windows\")": [],
+    "cfg(target_vendor = \"apple\")": ["@rules_rust//rust/platform:aarch64-apple-darwin", "@rules_rust//rust/platform:x86_64-apple-darwin"],
     "cfg(tokio_taskdump)": [],
     "cfg(unix)": ["@rules_rust//rust/platform:aarch64-apple-darwin", "@rules_rust//rust/platform:aarch64-unknown-fuchsia", "@rules_rust//rust/platform:x86_64-apple-darwin", "@rules_rust//rust/platform:x86_64-unknown-fuchsia", "@rules_rust//rust/platform:x86_64-unknown-linux-gnu"],
     "cfg(windows)": [],

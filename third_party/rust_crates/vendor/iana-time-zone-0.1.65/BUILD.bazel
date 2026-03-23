@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "chrono",
-    package_url = "https://github.com/chronotope/chrono",
-    package_version = "0.4.44",
+    package_name = "iana-time-zone",
+    package_url = "https://github.com/strawlab/iana-time-zone",
+    package_version = "0.1.65",
 )
 
 license(
@@ -31,11 +31,11 @@ license(
         "@rules_license//licenses/spdx:Apache-2.0",
         "@rules_license//licenses/spdx:MIT",
     ],
-    license_text = "LICENSE.txt",
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
-    name = "chrono",
+    name = "iana_time_zone",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,19 +53,7 @@ rust_library(
         ],
     ),
     crate_features = [
-        "alloc",
-        "clock",
-        "default",
-        "iana-time-zone",
-        "js-sys",
-        "now",
-        "oldtime",
-        "serde",
-        "std",
-        "wasm-bindgen",
-        "wasmbind",
-        "winapi",
-        "windows-link",
+        "fallback",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",
@@ -74,7 +62,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=chrono",
+        "crate-name=iana-time-zone",
         "manual",
         "noclippy",
         "norustfmt",
@@ -87,10 +75,14 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.4.44",
-    deps = [
-        "//third_party/rust_crates/vendor/iana-time-zone-0.1.65:iana_time_zone",
-        "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
-    ],
+    version = "0.1.65",
+    deps = select({
+        "@rules_rust//rust/platform:aarch64-apple-darwin": [
+            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(target_vendor = "apple")
+        ],
+        "@rules_rust//rust/platform:x86_64-apple-darwin": [
+            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(target_vendor = "apple")
+        ],
+        "//conditions:default": [],
+    }),
 )

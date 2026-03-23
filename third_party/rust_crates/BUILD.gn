@@ -3924,7 +3924,7 @@ rustc_library("chrono-v0_4_44") {
     deps += [ ":wasm-bindgen-v0_2_91" ]
   }
   if (true) {
-    deps += [ ":iana-time-zone-v0_1_61" ]
+    deps += [ ":iana-time-zone-v0_1_65" ]
   }
   if (false) {
     deps += [ ":windows-link-v0_2_1" ]
@@ -8850,20 +8850,20 @@ rustc_library("hyper-rustls-v0_24_2") {
   applicable_licenses = [ ":hyper-rustls-v0_24_2.license" ]
 }
 
-license("iana-time-zone-v0_1_61.license") {
+license("iana-time-zone-v0_1_65.license") {
   public_package_name = "iana_time_zone"
   license_files = [
-    "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/iana-time-zone-0.1.65/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/iana-time-zone-0.1.65/LICENSE-MIT",
   ]
 }
 
-rustc_library("iana-time-zone-v0_1_61") {
+rustc_library("iana-time-zone-v0_1_65") {
   crate_name = "iana_time_zone"
   source_root =
-      "//third_party/rust_crates/vendor/iana-time-zone-0.1.61/src/lib.rs"
-  output_name = "iana_time_zone-e8ca040359e09109"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/iana-time-zone-0.1.65/src/lib.rs"
+  output_name = "iana_time_zone-60a1089a23b5c388"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -8872,9 +8872,7 @@ rustc_library("iana-time-zone-v0_1_61") {
   if (current_cpu == "wasm32" && current_os == "unknown") {
     deps += [ ":js-sys-v0_3_68" ]
     deps += [ ":wasm-bindgen-v0_2_91" ]
-  }
-  if (current_os == "mac" || false) {
-    deps += [ ":core-foundation-sys-v0_8_7" ]
+    deps += [ ":log-v0_4_27" ]
   }
   if (false) {
     deps += [ ":android_system_properties-v0_1_5" ]
@@ -8883,21 +8881,24 @@ rustc_library("iana-time-zone-v0_1_61") {
     deps += [ ":iana-time-zone-haiku-v0_1_2" ]
   }
   if (false) {
-    deps += [ ":windows-core-v0_52_0" ]
+    deps += [ ":windows-core-v0_62_2" ]
+  }
+  if (false) {
+    deps += [ ":core-foundation-sys-v0_8_7" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e8ca040359e09109",
-    "-Cextra-filename=-e8ca040359e09109",
+    "-Cmetadata=60a1089a23b5c388",
+    "-Cextra-filename=-60a1089a23b5c388",
     "--cfg=feature=\"fallback\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":iana-time-zone-v0_1_61.license" ]
+  applicable_licenses = [ ":iana-time-zone-v0_1_65.license" ]
 }
 
 rustc_library("iana-time-zone-haiku-v0_1_2") {
@@ -21508,10 +21509,10 @@ rustc_library("windows-v0_61_3") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-core-v0_52_0") {
+rustc_library("windows-core-v0_62_2") {
   crate_name = "windows_core"
-  source_root = "//third_party/rust_crates/empty/windows-core-0.52.0/src/lib.rs"
-  output_name = "windows_core-fe71282da1ff9567"
+  source_root = "//third_party/rust_crates/empty/windows-core-0.62.2/src/lib.rs"
+  output_name = "windows_core-81216f0df9d137d8"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -21523,8 +21524,8 @@ rustc_library("windows-core-v0_52_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fe71282da1ff9567",
-    "-Cextra-filename=-fe71282da1ff9567",
+    "-Cmetadata=81216f0df9d137d8",
+    "-Cextra-filename=-81216f0df9d137d8",
   ]
 
   visibility = [ ":*" ]

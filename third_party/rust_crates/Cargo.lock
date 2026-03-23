@@ -2298,14 +2298,15 @@ dependencies = [
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.61"
+version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "235e081f3925a06703c2d0117ea8b91f042756fd6e7a6e5d901e8ca1a996b220"
+checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
  "iana-time-zone-haiku",
  "js-sys",
+ "log",
  "wasm-bindgen",
  "windows-core",
 ]
@@ -5681,7 +5682,7 @@ version = "0.61.3"
 
 [[package]]
 name = "windows-core"
-version = "0.52.0"
+version = "0.62.2"
 
 [[package]]
 name = "windows-link"
@@ -5838,8 +5839,3 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
-
-[[patch.unused]]
-name = "windows-sys"
-version = "0.59.0"
-

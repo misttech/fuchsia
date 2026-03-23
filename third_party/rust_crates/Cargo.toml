@@ -403,12 +403,11 @@ wasm-bindgen = { path = "empty/wasm-bindgen" }
 winapi = { path = "empty/winapi" }
 winapi-util = { path = "empty/winapi-util" }
 windows-0_61_3 = { package = "windows", path = "empty/windows-0.61.3" }
-windows-core-0_52_0 = { package = "windows-core", path = "empty/windows-core-0.52.0" }
+windows-core-0_62_2 = { package = "windows-core", path = "empty/windows-core-0.62.2" }
 windows-link-0_2_1 = { package = "windows-link", path = "empty/windows-link-0.2.1" }
 windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0" }
 windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
-windows-sys-0_59_0 = { package = "windows-sys", path = "empty/windows-sys-0.59.0" }
 windows-sys-0_60_2 = { package = "windows-sys", path = "empty/windows-sys-0.60.2" }
 windows-sys-0_61_2 = { package = "windows-sys", path = "empty/windows-sys-0.61.2" }
 # keep-sorted end
