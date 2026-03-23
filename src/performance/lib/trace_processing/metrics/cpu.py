@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import collections
+import dataclasses
 import itertools
 import logging
 import sys
@@ -13,10 +15,37 @@ from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _CPU_USAGE_EVENT_NAME = "cpu_usage"
+_PROCESSING_RATE_EVENT_NAME = "Processing Rate"
 _DEFAULT_PERCENT_CUTOFF = 0.0
-_ONE_S_IN_NS = 1000000000
+_ONE_S_IN_NS = 1_000_000_000
 
 Breakdown: TypeAlias = list[dict[str, metrics.JSON]]
+
+
+@dataclasses.dataclass
+class ProcessingRateStats:
+    """Aggregates durations spent at different processing rates."""
+
+    duration_per_rate: dict[str, float] = dataclasses.field(
+        default_factory=dict
+    )
+
+    def add(self, rate: float, duration: float) -> None:
+        rate_str = str(int(rate))  # One of "1000", "798", "506", and "360"
+        self.duration_per_rate[rate_str] = (
+            self.duration_per_rate.get(rate_str, 0.0) + duration
+        )
+
+
+@dataclasses.dataclass
+class ThreadCpuStats:
+    """Encapsulates CPU usage statistics for a single thread on a single CPU."""
+
+    duration: float = 0.0
+    normalized_duration: float = 0.0
+    rate_stats: ProcessingRateStats = dataclasses.field(
+        default_factory=ProcessingRateStats
+    )
 
 
 class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
@@ -54,7 +83,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
     @property
     def event_patterns(self) -> set[str]:
-        return {_CPU_USAGE_EVENT_NAME}
+        return {_CPU_USAGE_EVENT_NAME, f"{_PROCESSING_RATE_EVENT_NAME}.*"}
 
     def process_metrics(
         self, model: trace_model.Model
@@ -161,11 +190,14 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
         # If the percent spent is at or above our cutoff, add metric to
         # breakdown.
         full_breakdown: list[dict[str, metrics.JSON]] = []
-        for tid, breakdown in durations.tid_to_durations.items():
+        for tid, cpu_stats_map in durations.tid_to_stats.items():
             if tid in tid_to_thread_name:
-                for cpu, duration in breakdown.items():
+                for cpu, stats in cpu_stats_map.items():
+                    duration = stats.duration
                     percent = (
                         duration / durations.cpu_to_total_duration[cpu] * 100
+                        if durations.cpu_to_total_duration[cpu] > 0
+                        else 0.0
                     )
                     if percent >= self._percent_cutoff:
                         metric: dict[str, metrics.JSON] = {
@@ -194,10 +226,12 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
 class DurationsBreakdown:
     def __init__(self) -> None:
-        # Maps TID to a dict of CPUs to total duration (ms) on that CPU.
-        # E.g. For a TID of 1001 with 3 CPUs, this would be:
-        #   {1001: {0: 1123.123, 1: 123123.123, 3: 1231.23}}
-        self.tid_to_durations: dict[int, dict[int, float]] = {}
+        # Maps TID to a dict of CPUs to stats on that CPU.
+        self.tid_to_stats: collections.defaultdict[
+            int, collections.defaultdict[int, ThreadCpuStats]
+        ] = collections.defaultdict(
+            lambda: collections.defaultdict(ThreadCpuStats)
+        )
         # Map of CPU to total duration used (ms).
         self.cpu_to_total_duration: dict[int, float] = {}
         self.cpu_to_skipped_duration: dict[int, float] = {}
@@ -244,13 +278,9 @@ class DurationsBreakdown:
                 duration = stop_ts - start_ts
                 assert duration >= 0
                 if curr_record.outgoing_tid in tid_to_thread_name:
-                    # Add duration to the total duration for that tid and CPU.
-                    self.tid_to_durations.setdefault(
-                        curr_record.outgoing_tid, {}
-                    ).setdefault(cpu, 0)
-                    self.tid_to_durations[curr_record.outgoing_tid][
-                        cpu
-                    ] += duration
+                    # Add stats to the total duration for that tid and CPU.
+                    cpu_stats = self.tid_to_stats[curr_record.outgoing_tid][cpu]
+                    cpu_stats.duration += duration
 
         if skipped_duration > 0:
             self.cpu_to_skipped_duration[cpu] = skipped_duration
