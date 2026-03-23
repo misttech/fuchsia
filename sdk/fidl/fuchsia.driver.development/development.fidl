@@ -6,6 +6,7 @@ library fuchsia.driver.development;
 
 using fuchsia.component.sandbox;
 using fuchsia.driver.framework;
+using fuchsia.power.broker;
 using fuchsia.url;
 using zx;
 
@@ -149,6 +150,37 @@ open protocol Manager {
         moniker string:NODE_MONIKER_MAX;
         /// Dictionary to give to the drivers on and under the nodes.
         dictionary fuchsia.component.sandbox.DictionaryRef;
+    }) -> (resource struct {
+        /// The caller should keep this handle alive while the modified drivers are needed.
+        /// Releasing this will reset the operation.
+        release_fence zx.Handle:EVENTPAIR;
+    }) error zx.Status;
+
+    /// Restarts the driver components bound to the node identified by |moniker|,
+    /// providing it with the given dictionary and power dependencies.
+    /// All child nodes are also restarted and provided with the dictionary,
+    /// but only the node identified by |moniker| will be provided with the
+    /// power dependencies. An empty vector of power dependencies results in
+    /// the driver's power element having no dependencies other than a
+    /// dependency on CPU. The |cpu_token_override| will be used as the token
+    /// for making dependencies on the CPU power element. This override remains
+    /// in place for all restarted drivers until the fence is released.
+    ///
+    /// The effects of this call are temporary and are reversed by releasing
+    /// the |release_fence| that is returned.
+    /// TODO(https://fxbug.dev/494673577) Consolidate this API with
+    /// `RestartWithDictionary`.
+    @available(added=HEAD)
+    strict RestartWithDictionaryAndPowerDependencies(resource struct {
+        /// Moniker of the node to restart with the dictionary and power dependencies.
+        moniker string:NODE_MONIKER_MAX;
+        /// Dictionary to give to the drivers on and under the nodes.
+        dictionary fuchsia.component.sandbox.DictionaryRef;
+        /// Custom power dependencies to give to the restarted node.
+        power_dependencies
+                vector<fuchsia.power.broker.LevelDependency>:fuchsia.power.broker.MAX_DEPENDENCIES_IN_ADD_ELEMENT;
+        /// Custom cpu token to give to the restarted node.
+        cpu_token_override zx.Handle:<EVENT, optional>;
     }) -> (resource struct {
         /// The caller should keep this handle alive while the modified drivers are needed.
         /// Releasing this will reset the operation.

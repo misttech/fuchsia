@@ -1139,14 +1139,15 @@ void DriverRunner::FetchCpuToken() {
   }
 }
 
-void DriverRunner::CreatePowerElement(std::string_view name,
-                                      fuchsia_power_broker::DependencyToken element_token,
-                                      std::vector<fuchsia_power_broker::DependencyToken> deps,
-                                      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
-                                      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
-                                      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
-                                      Collection for_collection,
-                                      fit::callback<void(zx::result<bool>)> cb) {
+void DriverRunner::CreatePowerElement(
+    std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
+    std::string_view name, fuchsia_power_broker::DependencyToken element_token,
+    std::vector<fuchsia_power_broker::DependencyToken> deps,
+    fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+    fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+    fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
+    std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+    fit::callback<void(zx::result<bool>)> cb) {
   if (!power_topology_.is_valid()) {
     cb(zx::ok(false));
     return;
@@ -1155,18 +1156,21 @@ void DriverRunner::CreatePowerElement(std::string_view name,
   PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
   if (!cpu_token) {
     std::get<CallbackSet>(cpu_callbacks_or_token_)
-        .push_back([weak_self = weak_from_this(), name, element_token = std::move(element_token),
-                    deps = std::move(deps), control = std::move(control),
-                    runner = std::move(runner), lessor = std::move(lessor), for_collection,
+        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
+                    name, element_token = std::move(element_token), deps = std::move(deps),
+                    control = std::move(control), runner = std::move(runner),
+                    lessor = std::move(lessor), for_collection,
+                    cpu_token_override = std::move(cpu_token_override),
                     cb = std::move(cb)]() mutable {
           auto self = weak_self.lock();
           if (!self) {
             return;
           }
 
-          self->CreatePowerElement(name, std::move(element_token), std::move(deps),
-                                   std::move(control), std::move(runner), std::move(lessor),
-                                   for_collection, std::move(cb));
+          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
+                                   std::move(deps), std::move(control), std::move(runner),
+                                   std::move(lessor), for_collection, std::move(cpu_token_override),
+                                   std::move(cb));
         });
     return;
   }
@@ -1178,18 +1182,21 @@ void DriverRunner::CreatePowerElement(std::string_view name,
   PowerDependencyToken* token = std::get_if<PowerDependencyToken>(&storage_callbacks_or_token_);
   if (for_collection != Collection::kBoot && !token) {
     std::get<CallbackSet>(storage_callbacks_or_token_)
-        .push_back([weak_self = weak_from_this(), name, element_token = std::move(element_token),
-                    deps = std::move(deps), control = std::move(control),
-                    runner = std::move(runner), lessor = std::move(lessor), for_collection,
+        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
+                    name, element_token = std::move(element_token), deps = std::move(deps),
+                    control = std::move(control), runner = std::move(runner),
+                    lessor = std::move(lessor), for_collection,
+                    cpu_token_override = std::move(cpu_token_override),
                     cb = std::move(cb)]() mutable {
           auto self = weak_self.lock();
           if (!self) {
             return;
           }
 
-          self->CreatePowerElement(name, std::move(element_token), std::move(deps),
-                                   std::move(control), std::move(runner), std::move(lessor),
-                                   for_collection, std::move(cb));
+          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
+                                   std::move(deps), std::move(control), std::move(runner),
+                                   std::move(lessor), for_collection, std::move(cpu_token_override),
+                                   std::move(cb));
         });
     return;
   }
@@ -1215,8 +1222,14 @@ void DriverRunner::CreatePowerElement(std::string_view name,
   }
 
   fuchsia_power_broker::DependencyToken clone;
-  ZX_ASSERT(std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
-                .duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
+  if (cpu_token_override.has_value()) {
+    zx_status_t dupe_result =
+        cpu_token_override->duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone);
+    ZX_ASSERT(dupe_result == ZX_OK);
+  } else {
+    ZX_ASSERT(std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
+                  .duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone) == ZX_OK);
+  }
 
   std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
   reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
@@ -1257,8 +1270,29 @@ void DriverRunner::CreatePowerElement(std::string_view name,
   schema.element_control() = std::move(control);
   schema.element_runner() = std::move(runner);
 
-  power_topology_->AddElement(std::move(schema))
-      .Then([cb = std::move(cb)](
+  // Select the right fidl client to use. If we found a Topology instance in
+  // the driver's namespace, we want to use that one, otherwise use the
+  // instance routed to driver manager.
+  //
+  // If we use the driver-specific one we make a client. In both cases we pass
+  // a `shared_ptr` to the `AddElement` response callback. We need this for the
+  // driver-specific case to guarantee the client lives long enough. In the
+  // case we use the driver manager connection, this simply points to the
+  // client held in DriverRunner.
+  fidl::Client<fuchsia_power_broker::Topology>* topology_to_use = &power_topology_;
+  std::shared_ptr<fidl::Client<fuchsia_power_broker::Topology>> driver_specific_topology;
+  if (topology_client.has_value()) {
+    driver_specific_topology = std::make_shared<fidl::Client<fuchsia_power_broker::Topology>>(
+        std::move(topology_client.value()), dispatcher_);
+    topology_to_use = driver_specific_topology.get();
+  }
+
+  (*topology_to_use)
+      ->AddElement(std::move(schema))
+      // Move a pointer to the client into the callback. In the case we're
+      // using a client we just made above, this should keep it alive until
+      // we've completed the work.
+      .Then([cb = std::move(cb), topology_client = driver_specific_topology](
                 fidl::Result<fuchsia_power_broker::Topology::AddElement>& add_result) mutable {
         if (add_result.is_error() && add_result.error_value().is_framework_error()) {
           cb(zx::error(add_result.error_value().framework_error().status()));
@@ -1482,6 +1516,13 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
       }
     }
   });
+}
+
+void DriverRunner::RestartWithDictionaryAndPowerDependencies(
+    std::string moniker, fuchsia_component_sandbox::DictionaryRef dictionary,
+    std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
+    std::optional<zx::event> cpu_token_override, zx::eventpair release_fence) {
+  // TODO(https://fxbug.dev/477354367): Complete this implementation.
 }
 
 std::unordered_set<const DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std::string_view url) {

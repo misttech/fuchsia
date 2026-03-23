@@ -212,14 +212,16 @@ class FakeNodeManager : public TestNodeManagerBase {
     return nullptr;
   }
 
-  void CreatePowerElement(std::string_view name,
-                          fuchsia_power_broker::DependencyToken element_token,
-                          std::vector<fuchsia_power_broker::DependencyToken> deps,
-                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
-                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
-                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
-                          driver_manager::Collection for_collection,
-                          fit::callback<void(zx::result<bool>)> cb) override {
+  void CreatePowerElement(
+      std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
+      std::string_view name, fuchsia_power_broker::DependencyToken element_token,
+      std::vector<fuchsia_power_broker::DependencyToken> deps,
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+      driver_manager::Collection for_collection,
+      std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      fit::callback<void(zx::result<bool>)> cb) override {
     if (defer_power_element_creation_) {
       power_element_callbacks_.push_back(std::move(cb));
       return;

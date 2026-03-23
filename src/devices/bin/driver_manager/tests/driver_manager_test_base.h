@@ -22,14 +22,16 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  void CreatePowerElement(std::string_view name,
-                          fuchsia_power_broker::DependencyToken element_token,
-                          std::vector<fuchsia_power_broker::DependencyToken> deps,
-                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
-                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
-                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
-                          driver_manager::Collection for_collection,
-                          fit::callback<void(zx::result<bool>)> cb) override {
+  void CreatePowerElement(
+      std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
+      std::string_view name, fuchsia_power_broker::DependencyToken element_token,
+      std::vector<fuchsia_power_broker::DependencyToken> deps,
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+      driver_manager::Collection for_collection,
+      std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      fit::callback<void(zx::result<bool>)> cb) override {
     cb(zx::ok(false));
   }
 

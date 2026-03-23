@@ -157,14 +157,15 @@ class NodeManager {
   //   - `zx::ok(false)` if the power element could not be created because this is not a suspend-
   //     enabled platform.
   //   - `zx::error` if an error happens creating the element on a suspend-enabled platform.
-  virtual void CreatePowerElement(std::string_view name,
-                                  fuchsia_power_broker::DependencyToken element_token,
-                                  std::vector<fuchsia_power_broker::DependencyToken> deps,
-                                  fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
-                                  fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
-                                  fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
-                                  Collection for_collection,
-                                  fit::callback<void(zx::result<bool>)> cb) {
+  virtual void CreatePowerElement(
+      std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
+      std::string_view name, fuchsia_power_broker::DependencyToken element_token,
+      std::vector<fuchsia_power_broker::DependencyToken> deps,
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
+      std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      fit::callback<void(zx::result<bool>)> cb) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 

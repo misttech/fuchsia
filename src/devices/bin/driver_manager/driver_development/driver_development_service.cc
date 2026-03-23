@@ -486,6 +486,26 @@ void DriverDevelopmentService::RestartWithDictionary(
   completer.ReplySuccess(std::move(endpoint0));
 }
 
+void DriverDevelopmentService::RestartWithDictionaryAndPowerDependencies(
+    RestartWithDictionaryAndPowerDependenciesRequestView request,
+    RestartWithDictionaryAndPowerDependenciesCompleter::Sync& completer) {
+  zx::eventpair endpoint0, endpoint1;
+  zx_status_t status = zx::eventpair::create(0, &endpoint0, &endpoint1);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+
+  driver_runner_.RestartWithDictionaryAndPowerDependencies(
+      std::string(request->moniker.get()), fidl::ToNatural(std::move(request->dictionary)),
+      fidl::ToNatural(request->power_dependencies).value(),
+      request->cpu_token_override.is_valid()
+          ? std::make_optional(std::move(request->cpu_token_override))
+          : std::nullopt,
+      std::move(endpoint1));
+  completer.ReplySuccess(std::move(endpoint0));
+}
+
 void DriverDevelopmentService::RebindCompositesWithDriver(
     RebindCompositesWithDriverRequestView request,
     RebindCompositesWithDriverCompleter::Sync& completer) {

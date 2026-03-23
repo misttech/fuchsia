@@ -1791,8 +1791,8 @@ void Node::StartDriver(
 
   (*node_manager_)
       ->CreatePowerElement(
-          name_, std::move(clone), std::move(deps), std::move(element_control_server),
-          std::move(element_runner_client), std::move(lessor_server), collection(),
+          std::nullopt, name_, std::move(clone), std::move(deps), std::move(element_control_server),
+          std::move(element_runner_client), std::move(lessor_server), collection(), std::nullopt,
           [weak_self = weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
            use_dynamic_linker = use_dynamic_linker, url = url_str,
            found_driver_host = found_driver_host,

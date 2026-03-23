@@ -18,6 +18,7 @@ fidl("fuchsia.driver.development") {
     "//sdk/fidl/fuchsia.component.decl",
     "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.driver.framework",
+    "//sdk/fidl/fuchsia.power.broker",
     "//sdk/fidl/fuchsia.url",
     "//zircon/vdso/zx",
   ]

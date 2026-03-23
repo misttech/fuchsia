@@ -16,6 +16,7 @@ fidl("fuchsia.power.broker") {
     "//examples/power/*",
     "//sdk:*",
     "//sdk/fidl:*",
+    "//sdk/fidl/fuchsia.driver.development/*",
     "//sdk/fidl/fuchsia.driver.framework/*",
     "//sdk/fidl/fuchsia.hardware.hrtimer/*",
     "//sdk/fidl/fuchsia.power.system/*",

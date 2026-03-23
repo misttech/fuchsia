@@ -202,6 +202,11 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                              fuchsia_component_sandbox::wire::DictionaryRef dictionary,
                              zx::eventpair reset_eventpair);
 
+  void RestartWithDictionaryAndPowerDependencies(
+      std::string moniker, fuchsia_component_sandbox::DictionaryRef dictionary,
+      std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
+      std::optional<zx::event> cpu_token_override, zx::eventpair release_fence);
+
   std::unordered_set<const DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
 
   fpromise::promise<inspect::Inspector> Inspect() const;
@@ -283,14 +288,15 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                                          fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
                                          std::shared_ptr<bool> exposed_dir_connected,
                                          bool use_next_vdso);
-  void CreatePowerElement(std::string_view name,
-                          fuchsia_power_broker::DependencyToken element_token,
-                          std::vector<fuchsia_power_broker::DependencyToken> deps,
-                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
-                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
-                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
-                          Collection for_collection,
-                          fit::callback<void(zx::result<bool>)> cb) override;
+  void CreatePowerElement(
+      std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
+      std::string_view name, fuchsia_power_broker::DependencyToken element_token,
+      std::vector<fuchsia_power_broker::DependencyToken> deps,
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
+      std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      fit::callback<void(zx::result<bool>)> cb) override;
 
   void RegisterStorageWithSag();
 
