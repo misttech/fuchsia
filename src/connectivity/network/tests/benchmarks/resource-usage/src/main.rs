@@ -3,10 +3,6 @@
 // found in the LICENSE file.
 
 use argh::FromArgs;
-use async_trait::async_trait;
-use fidl_fuchsia_net_debug as fnet_debug;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fuchsiaperf::{Direction, Unit};
 use humansize::{BINARY, format_size};
 use netstack_testing_common::realms::{
@@ -15,6 +11,10 @@ use netstack_testing_common::realms::{
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use {
+    fidl_fuchsia_net_debug as fnet_debug, fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+};
 
 mod interfaces;
 mod sockets;
@@ -74,7 +74,6 @@ async fn main() {
     }
 }
 
-#[async_trait(?Send)]
 trait Workload {
     const NAME: &'static str;
 

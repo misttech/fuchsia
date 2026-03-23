@@ -15,25 +15,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
-use async_trait::async_trait;
-use fidl_fuchsia_hardware_network as fhardware_network;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::{IntoExt as _, IpExt as _};
-use fidl_fuchsia_net_filter as fnet_filter;
-use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
-use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_routes as fnet_routes;
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
-use fidl_fuchsia_net_tun as fnet_tun;
-use fidl_fuchsia_posix as fposix;
-use fidl_fuchsia_posix_socket as fposix_socket;
-use fidl_fuchsia_posix_socket_ext as fposix_socket_ext;
-use fidl_fuchsia_posix_socket_packet as fpacket;
-use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fuchsia_async::net::{DatagramSocket, UdpSocket};
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt as _};
 use futures::future::{self, LocalBoxFuture};
@@ -89,6 +71,19 @@ use sockaddr::{IntoSockAddr as _, PureIpSockaddr, TryToSockaddrLl};
 use socket2::{InterfaceIndexOrAddress, SockRef};
 use test_case::{test_case, test_matrix};
 use test_util::assert_gt;
+use {
+    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
+    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_tun as fnet_tun,
+    fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fposix_socket,
+    fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
+    fidl_fuchsia_posix_socket_packet as fpacket,
+    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
+};
 
 async fn run_udp_socket_test(
     server: &netemul::TestRealm<'_>,
@@ -2684,14 +2679,12 @@ async fn udp_sendto_unroutable_leaves_socket_bound<N: Netstack>(name: &str) {
     assert_ne!(bound_ipv4.port(), 0);
 }
 
-#[async_trait]
 trait MakeSocket: Sized {
     async fn new_in_realm<I: TestIpExt>(t: &netemul::TestRealm<'_>) -> Result<socket2::Socket>;
 
     fn from_socket(s: socket2::Socket) -> Result<Self>;
 }
 
-#[async_trait]
 impl MakeSocket for UdpSocket {
     async fn new_in_realm<I: TestIpExt>(t: &netemul::TestRealm<'_>) -> Result<socket2::Socket> {
         t.datagram_socket(I::DOMAIN, fposix_socket::DatagramSocketProtocol::Udp).await
@@ -2704,7 +2697,6 @@ impl MakeSocket for UdpSocket {
 
 struct TcpSocket(socket2::Socket);
 
-#[async_trait]
 impl MakeSocket for TcpSocket {
     async fn new_in_realm<I: TestIpExt>(t: &netemul::TestRealm<'_>) -> Result<socket2::Socket> {
         t.stream_socket(I::DOMAIN, fposix_socket::StreamSocketProtocol::Tcp).await

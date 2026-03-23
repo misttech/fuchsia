@@ -45,10 +45,6 @@ rustc_library("netlink") {
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_sock_diag",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
     "//third_party/rust_crates:assert_matches",
-
-    # TODO(https://github.com/rust-lang/rust/issues/91611): Replace this with
-    # #![feature(async_fn_in_trait)] once it supports `Send` bounds.
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:bit-set",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:either",

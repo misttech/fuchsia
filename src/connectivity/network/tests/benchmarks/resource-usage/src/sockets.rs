@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fuchsia_async::net::{TcpListener, UdpSocket};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, StreamExt as _};
 use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
@@ -19,7 +18,6 @@ const UNIT_TEST_MODE_ITERATIONS: usize = 1;
 
 pub struct TcpSockets;
 
-#[async_trait(?Send)]
 impl crate::Workload for TcpSockets {
     const NAME: &'static str = "Sockets/TCP";
 
@@ -59,7 +57,6 @@ impl crate::Workload for TcpSockets {
 
 pub struct UdpSockets;
 
-#[async_trait(?Send)]
 impl crate::Workload for UdpSockets {
     const NAME: &'static str = "Sockets/UDP";
 

@@ -28,12 +28,6 @@
 use std::marker::PhantomData;
 use std::num::{NonZeroU16, NonZeroU64};
 
-use async_trait::async_trait;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_matchers as fnet_matchers;
-use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_sockets as fnet_sockets;
-use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use futures::SinkExt;
 use futures::channel::{mpsc, oneshot};
 use net_types::SpecifiedAddress as _;
@@ -42,6 +36,11 @@ use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NetlinkMessage, NetlinkPayload}
 use netlink_packet_sock_diag::inet::bytecode::{self, Bytecode};
 use netlink_packet_sock_diag::inet::{ExtensionFlags, InetRequest, SocketId, StateFlags};
 use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse, TCP_CLOSE, TCP_ESTABLISHED};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
+};
 
 use crate::client::InternalClient;
 use crate::logging::{log_error, log_warn};
@@ -56,7 +55,6 @@ pub(crate) struct NetlinkSockDiagRequestHandler<S: Sender<SockDiagResponse>> {
     pub(crate) sock_diag_request_sink: mpsc::Sender<eventloop::Request<S>>,
 }
 
-#[async_trait]
 impl<S: Sender<SockDiagResponse>> NetlinkFamilyRequestHandler<NetlinkSockDiag, S>
     for NetlinkSockDiagRequestHandler<S>
 {

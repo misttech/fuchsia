@@ -15,11 +15,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
-// TODO(https://github.com/rust-lang/rust/issues/91611): Replace this with
-// #![feature(async_fn_in_trait)] once it supports `Send` bounds. See
-// https://blog.rust-lang.org/inside-rust/2023/05/03/stabilizing-async-fn-in-trait.html.
-use async_trait::async_trait;
-
 use crate::client::{AsyncWorkCompletionWaiter, ExternalClient, InternalClient};
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::{MessageWithPermission, Sender};
@@ -64,7 +59,6 @@ pub(crate) trait ProtocolFamily:
     ) -> Option<Self::NotifiedMulticastGroup>;
 }
 
-#[async_trait]
 /// A request handler implementation for a particular Netlink protocol family.
 pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::Response>>:
     Clone + Send
@@ -780,7 +774,6 @@ pub mod route {
         }
     }
 
-    #[async_trait]
     impl<S: Sender<RouteNetlinkMessage>> NetlinkFamilyRequestHandler<NetlinkRoute, S>
         for NetlinkRouteRequestHandler<S>
     {
@@ -1742,7 +1735,6 @@ pub(crate) mod testutil {
     #[derive(Clone)]
     pub(crate) struct FakeNetlinkRequestHandler;
 
-    #[async_trait]
     impl<S: Sender<FakeNetlinkInnerMessage>> NetlinkFamilyRequestHandler<FakeProtocolFamily, S>
         for FakeNetlinkRequestHandler
     {
@@ -1788,8 +1780,6 @@ mod test {
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net as fnet;
-    use fuchsia_async as fasync;
     use futures::SinkExt;
     use futures::channel::mpsc;
     use futures::future::FutureExt as _;
@@ -1807,6 +1797,7 @@ mod test {
     };
     use net_types::{SpecifiedAddr, Witness as _};
     use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
+    use {fidl_fuchsia_net as fnet, fuchsia_async as fasync};
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkMessage};
@@ -3711,14 +3702,18 @@ mod test {
 
         let header = header_with_flags(flags);
 
-        futures::select! {
-            () = handler.handle_request(
+        let handle_request_fut = handler
+            .handle_request(
                 NetlinkMessage::new(
                     header,
                     NetlinkPayload::InnerMessage(rule_fn(default_rule_for_family(address_family))),
                 ),
                 &mut client,
-            ).fuse() => {},
+            )
+            .fuse();
+
+        futures::select! {
+            () = pin!(handle_request_fut) => {},
             _rules_request_handler = unified_request_stream.fold(
                 rules_request_handler,
                 |mut rules_request_handler, req| async move {
@@ -3740,7 +3735,6 @@ mod test {
                 }
             ).fuse() => {},
         }
-
         assert_eq!(client_sink.take_messages(), expected_sent_messages(expected_response, header));
 
         drop(client);
@@ -5163,18 +5157,19 @@ mod test {
 
             let mut handler = NetlinkRouteRequestHandler::<FakeSender<_>> { unified_request_sink };
 
-            let mut handle_fut = handler.handle_request(request, &mut client).fuse();
+            let handle_request_fut = handler.handle_request(request, &mut client).fuse();
+            let mut handle_request_fut = pin!(handle_request_fut);
             let mut request_fut = unified_request_stream.next().fuse();
 
             futures::select! {
-                _ = handle_fut => assert_eq!(expected_request, None),
+                _ = handle_request_fut => assert_eq!(expected_request, None),
                 request = request_fut => match request.expect("request channel should be open") {
                     UnifiedRequest::NeighborsRequest(neigh_req) => {
                         let neighbors::Request { args, sequence_number: _, client: _, completer } =
                             neigh_req;
                         assert_eq!(expected_request, Some(args));
                         completer.send(Ok(())).expect("handler should be alive");
-                        handle_fut.await;
+                        handle_request_fut.await;
                     },
                     _ => panic!("received unexpected request"),
                 }
