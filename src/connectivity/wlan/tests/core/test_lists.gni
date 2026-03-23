@@ -13,10 +13,7 @@
 # the tests we choose to run here, ensuring they give us sufficient
 # signal for the amount of testbed load they'll require.
 # Consider instead putting your test in `tests_for_wlan_cq`
-core_tests_for_general_cq = [
-  "//src/connectivity/wlan/tests/core:connect_to_ap_test",
-  "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
-]
+core_tests_for_general_cq = []
 
 # Only tests which do not interact with a AP or SoftAP can be run
 # without a shield box. These tests can run against any DUT in
@@ -34,6 +31,7 @@ core_tests_for_general_cq_no_shield_box = [
 # we should optimize for maximum bang for our buck (e.g. add a
 # reboot test here, but only for wpa2, not for every single security type).
 core_tests_for_wlan_cq = [
+  "//src/connectivity/wlan/tests/core:connect_to_ap_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
   "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
   "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
