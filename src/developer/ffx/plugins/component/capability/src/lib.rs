@@ -4,12 +4,13 @@
 
 use async_trait::async_trait;
 use component_debug::cli::capability_cmd;
+use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_capability_args::ComponentCapabilityCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct CapabilityTool {
