@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, anyhow};
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
@@ -15,15 +14,75 @@ const SEQ_MIN: u16 = 1;
 const SEQ_MAX: u16 = 3;
 const TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(1);
 
-async fn ping<I>(interface_name: &str, addr: I::SockAddr) -> anyhow::Result<()>
+#[derive(Debug, thiserror::Error)]
+pub enum PingError {
+    #[error("failed to create socket")]
+    CreateSocket(#[source] std::io::Error),
+    #[error("failed to bind socket to device {interface_name}")]
+    BindSocket {
+        interface_name: String,
+        #[source]
+        err: std::io::Error,
+    },
+    #[error("failed to send ping (seq={seq})")]
+    SendPing {
+        seq: u16,
+        #[source]
+        err: ping::PingError,
+    },
+    #[error("timed out sending ping (seq={seq})")]
+    SendPingTimeout { seq: u16 },
+    #[error("failed to receive ping")]
+    ReceivePing(#[source] ping::PingError),
+    #[error("ping reply stream ended unexpectedly")]
+    StreamEndedUnexpectedly,
+    #[error("received unexpected ping sequence number; got: {got}, want: {min}..={max}")]
+    UnexpectedSequenceNumber { got: u16, min: u16, max: u16 },
+    #[error("no ping reply received")]
+    NoReply,
+}
+
+impl PingError {
+    /// Returns a short, simplified string describing the error.
+    pub fn short_name(&self) -> String {
+        let (name, os_err) = match self {
+            Self::CreateSocket(err) => ("CreateSocket", err.raw_os_error()),
+            Self::BindSocket { err, .. } => ("BindSocket", err.raw_os_error()),
+            Self::SendPing { err, .. } => {
+                let os_err = match err {
+                    ping::PingError::Send(io) => io.raw_os_error(),
+                    ping::PingError::Recv(io) => io.raw_os_error(),
+                    _ => None,
+                };
+                ("SendPing", os_err)
+            }
+            Self::SendPingTimeout { .. } => return "SendPingTimeout".to_string(),
+            Self::ReceivePing(err) => {
+                let os_err = match err {
+                    ping::PingError::Send(io) => io.raw_os_error(),
+                    ping::PingError::Recv(io) => io.raw_os_error(),
+                    _ => None,
+                };
+                ("ReceivePing", os_err)
+            }
+            Self::StreamEndedUnexpectedly => return "StreamEndedUnexpectedly".to_string(),
+            Self::UnexpectedSequenceNumber { .. } => return "UnexpectedSequenceNumber".to_string(),
+            Self::NoReply => return "NoReply".to_string(),
+        };
+
+        if let Some(code) = os_err { format!("{name}(os_err={code})") } else { name.to_string() }
+    }
+}
+
+async fn ping<I>(interface_name: &str, addr: I::SockAddr) -> Result<(), PingError>
 where
     I: ping::FuchsiaIpExt,
     I::SockAddr: std::fmt::Display + Copy,
 {
-    let socket = ping::new_icmp_socket::<I>().context("failed to create socket")?;
+    let socket = ping::new_icmp_socket::<I>().map_err(PingError::CreateSocket)?;
     let () = socket
         .bind_device(Some(interface_name.as_bytes()))
-        .with_context(|| format!("failed to bind socket to device {}", interface_name))?;
+        .map_err(|err| PingError::BindSocket { interface_name: interface_name.to_string(), err })?;
     let (mut sink, mut stream) = ping::new_unicast_sink_and_stream::<
         I,
         _,
@@ -34,62 +93,68 @@ where
         let deadline = fasync::MonotonicInstant::after(TIMEOUT);
         let () = sink
             .send(seq)
-            .map_err(anyhow::Error::new)
-            .on_timeout(deadline, || Err(anyhow!("timed out")))
-            .await
-            .with_context(|| format!("failed to send (seq={})", seq))?;
+            .map_err(|err| PingError::SendPing { seq, err })
+            .on_timeout(deadline, || Err(PingError::SendPingTimeout { seq }))
+            .await?;
         if match stream.try_next().map(Some).on_timeout(deadline, || None).await {
             None => Ok(false),
-            Some(Err(e)) => Err(anyhow!("failed to receive: {}", e)),
-            Some(Ok(None)) => Err(anyhow!("ping reply stream ended unexpectedly")),
+            Some(Err(err)) => Err(PingError::ReceivePing(err)),
+            Some(Ok(None)) => Err(PingError::StreamEndedUnexpectedly),
             Some(Ok(Some(got))) if got >= SEQ_MIN && got <= seq => Ok(true),
-            Some(Ok(Some(got))) => Err(anyhow!(
-                "received unexpected ping sequence number; got: {}, want: {}..={}",
-                got,
-                SEQ_MIN,
-                seq,
-            )),
+            Some(Ok(Some(got))) => {
+                Err(PingError::UnexpectedSequenceNumber { got, min: SEQ_MIN, max: seq })
+            }
         }? {
             return Ok(());
         }
     }
-    Err(anyhow!("no ping reply received"))
+    Err(PingError::NoReply)
 }
 
 /// Trait that can send ICMP echo requests, and receive and validate replies.
 #[async_trait]
 pub trait Ping {
-    /// Returns true if the address is reachable, false otherwise.
-    async fn ping(&self, interface_name: &str, addr: SocketAddr) -> bool;
+    /// Returns `Ok(())` if the address is reachable, or a `PingError` otherwise.
+    async fn ping(&self, interface_name: &str, addr: SocketAddr) -> Result<(), PingError>;
 }
 
 pub struct Pinger;
 
 #[async_trait]
 impl Ping for Pinger {
-    async fn ping(&self, interface_name: &str, addr: SocketAddr) -> bool {
+    async fn ping(&self, interface_name: &str, addr: SocketAddr) -> Result<(), PingError> {
         let r = match addr {
             SocketAddr::V4(addr_v4) => ping::<Ipv4>(interface_name, addr_v4).await,
             SocketAddr::V6(addr_v6) => ping::<Ipv6>(interface_name, addr_v6).await,
         };
         match r {
-            Ok(()) => true,
+            Ok(()) => Ok(()),
             Err(e) => {
                 // Check to see if the error is due to the host/network being
                 // unreachable. In that case, this error is likely unconcerning
                 // and signifies a network may not have connectivity across
                 // one of the IP protocols, which can be common for home
                 // network configurations.
-                if let Some(io_error) = e.root_cause().downcast_ref::<std::io::Error>() {
-                    if io_error.raw_os_error() == Some(libc::ENETUNREACH)
-                        || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
-                    {
-                        info!("err pinging {}: {:#}", addr, e);
-                        return false;
+                let mut source_opt: Option<&(dyn std::error::Error + 'static)> = Some(&e);
+                let mut is_unreachable = false;
+                while let Some(source) = source_opt {
+                    if let Some(io_error) = source.downcast_ref::<std::io::Error>() {
+                        if io_error.raw_os_error() == Some(libc::ENETUNREACH)
+                            || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
+                        {
+                            is_unreachable = true;
+                            break;
+                        }
                     }
+                    source_opt = source.source();
                 }
-                warn!("err pinging {}: {:#}", addr, e);
-                false
+
+                if is_unreachable {
+                    info!("error while pinging {}: {:#}", addr, e);
+                } else {
+                    warn!("error while pinging {}: {:#}", addr, e);
+                }
+                Err(e)
             }
         }
     }

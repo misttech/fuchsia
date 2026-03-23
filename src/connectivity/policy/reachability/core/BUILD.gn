@@ -25,6 +25,7 @@ rustc_library("lib") {
     "//src/connectivity/lib/ping",
     "//src/lib/cobalt/rust/builders",
     "//src/lib/diagnostics/inspect/contrib/rust",
+    "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fake-clock/named-timer",
     "//src/lib/fidl/rust/fidl",

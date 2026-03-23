@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, format_err};
 use async_trait::async_trait;
 use fuchsia_async::TimeoutExt;
 use fuchsia_async::net::TcpStream;
@@ -12,6 +11,57 @@ use log::log;
 use std::net;
 
 const FETCH_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
+
+#[derive(Debug, thiserror::Error)]
+pub enum FetchError {
+    #[error("failed to create socket")]
+    CreateSocket(#[source] std::io::Error),
+    #[error("failed to bind socket to device {interface_name}")]
+    BindSocket {
+        interface_name: String,
+        #[source]
+        err: std::io::Error,
+    },
+    #[error("failed to open TCP stream")]
+    ConnectTcpStream(#[source] std::io::Error),
+    #[error("timed out connecting TCP stream")]
+    ConnectTcpStreamTimeout,
+    #[error("failed to write to TCP stream")]
+    WriteTcpStream(#[source] std::io::Error),
+    #[error("timed out writing data to TCP stream")]
+    WriteTcpStreamTimeout,
+    #[error("failed to read response from TCP stream")]
+    ReadTcpStream(#[source] std::io::Error),
+    #[error("timed out reading response from TCP stream")]
+    ReadTcpStreamTimeout,
+    #[error("failed to parse string from UTF-8 bytes")]
+    ParseUtf8(#[from] std::string::FromUtf8Error),
+    #[error("response header malformed: {first_line}")]
+    MalformedHeader { first_line: String },
+    #[error("failed to parse status code")]
+    ParseStatusCode(#[source] std::num::ParseIntError),
+}
+
+impl FetchError {
+    /// Returns a short, simplified string describing the error.
+    pub fn short_name(&self) -> String {
+        let (name, os_err) = match self {
+            Self::CreateSocket(err) => ("CreateSocket", err.raw_os_error()),
+            Self::BindSocket { err, .. } => ("BindSocket", err.raw_os_error()),
+            Self::ConnectTcpStream(err) => ("ConnectTcpStream", err.raw_os_error()),
+            Self::ConnectTcpStreamTimeout => return "ConnectTcpStreamTimeout".to_string(),
+            Self::WriteTcpStream(err) => ("WriteTcpStream", err.raw_os_error()),
+            Self::WriteTcpStreamTimeout => return "WriteTcpStreamTimeout".to_string(),
+            Self::ReadTcpStream(err) => ("ReadTcpStream", err.raw_os_error()),
+            Self::ReadTcpStreamTimeout => return "ReadTcpStreamTimeout".to_string(),
+            Self::ParseUtf8(_) => return "ParseUtf8".to_string(),
+            Self::MalformedHeader { .. } => return "MalformedHeader".to_string(),
+            Self::ParseStatusCode(_) => return "ParseStatusCode".to_string(),
+        };
+
+        if let Some(code) = os_err { format!("{name}(os_err={code})") } else { name.to_string() }
+    }
+}
 
 fn http_request(path: &str, host: &str) -> String {
     [
@@ -29,7 +79,7 @@ async fn fetch<FA: FetchAddr + std::marker::Sync>(
     host: &str,
     path: &str,
     addr: &FA,
-) -> anyhow::Result<u16> {
+) -> Result<u16, FetchError> {
     let timeout = zx::MonotonicInstant::after(FETCH_TIMEOUT);
     let addr = addr.as_socket_addr();
     let socket = socket2::Socket::new(
@@ -40,35 +90,38 @@ async fn fetch<FA: FetchAddr + std::marker::Sync>(
         socket2::Type::STREAM,
         Some(socket2::Protocol::TCP),
     )
-    .context("while constructing socket")?;
-    socket.bind_device(Some(interface_name.as_bytes()))?;
+    .map_err(FetchError::CreateSocket)?;
+    socket.bind_device(Some(interface_name.as_bytes())).map_err(|err| FetchError::BindSocket {
+        interface_name: interface_name.to_string(),
+        err,
+    })?;
     let mut stream = TcpStream::connect_from_raw(socket, addr)
-        .context("while constructing tcp stream")?
-        .map_err(|e| format_err!("Opening TcpStream connection failed: {e:?}"))
-        .on_timeout(timeout, || Err(format_err!("Opening TcpStream timed out")))
+        .map_err(FetchError::ConnectTcpStream)?
+        .map_err(FetchError::ConnectTcpStream)
+        .on_timeout(timeout, || Err(FetchError::ConnectTcpStreamTimeout))
         .await?;
     let message = http_request(path, host);
     stream
         .write_all(message.as_bytes())
-        .map_err(|e| format_err!("Writing to TcpStream failed: {e:?}"))
-        .on_timeout(timeout, || Err(format_err!("Writing data to TcpStream timed out")))
+        .map_err(FetchError::WriteTcpStream)
+        .on_timeout(timeout, || Err(FetchError::WriteTcpStreamTimeout))
         .await?;
 
     let mut bytes = Vec::new();
     let _: usize = stream
         .read_to_end(&mut bytes)
-        .map_err(|e| format_err!("Reading response from TcpStream failed: {e:?}"))
-        .on_timeout(timeout, || Err(format_err!("Reading response from TcpStream timed out")))
+        .map_err(FetchError::ReadTcpStream)
+        .on_timeout(timeout, || Err(FetchError::ReadTcpStreamTimeout))
         .await?;
     let resp = String::from_utf8(bytes)?;
     let first_line = resp.split("\r\n").next().expect("split always returns at least one item");
     if let [http, code, ..] = first_line.split(' ').collect::<Vec<_>>().as_slice() {
         if !http.starts_with("HTTP/") {
-            return Err(format_err!("Response header malformed: {first_line}"));
+            return Err(FetchError::MalformedHeader { first_line: first_line.to_string() });
         }
-        Ok(code.parse().map_err(|e| format_err!("While parsing status code: {e:?}"))?)
+        Ok(code.parse().map_err(FetchError::ParseStatusCode)?)
     } else {
-        Err(format_err!("Response header malformed: {first_line}"))
+        Err(FetchError::MalformedHeader { first_line: first_line.to_string() })
     }
 }
 
@@ -96,7 +149,7 @@ pub trait Fetch {
         host: &str,
         path: &str,
         addr: &FA,
-    ) -> Option<u16>;
+    ) -> Result<u16, FetchError>;
 }
 
 pub struct Fetcher;
@@ -109,17 +162,18 @@ impl Fetch for Fetcher {
         host: &str,
         path: &str,
         addr: &FA,
-    ) -> Option<u16> {
+    ) -> Result<u16, FetchError> {
         let r = fetch(interface_name, host, path, addr).await;
         match r {
-            Ok(code) => Some(code),
+            Ok(code) => Ok(code),
             Err(e) => {
                 // Check to see if the error is due to the host/network being
                 // unreachable. In that case, this error is likely unconcerning
                 // and signifies a network may not have connectivity across
                 // one of the IP protocols, which can be common for home
                 // network configurations.
-                let level = if let Some(io_error) = e.downcast_ref::<std::io::Error>()
+                let level = if let Some(io_error) = std::error::Error::source(&e)
+                    .and_then(|err| err.downcast_ref::<std::io::Error>())
                     && (io_error.raw_os_error() == Some(libc::ENETUNREACH)
                         || io_error.raw_os_error() == Some(libc::EHOSTUNREACH))
                 {
@@ -135,7 +189,7 @@ impl Fetch for Fetcher {
                      through {interface_name}: {e:#}"
                 );
 
-                None
+                Err(e)
             }
         }
     }
@@ -145,6 +199,7 @@ impl Fetch for Fetcher {
 mod test {
     use super::*;
 
+    use anyhow::Context;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::pin::pin;
 

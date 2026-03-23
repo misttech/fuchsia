@@ -133,10 +133,10 @@ async fn handle_network_check_message<'a>(
     match action {
         NetworkCheckAction::Ping(parameters) => {
             netcheck_futures.push(Box::pin(async move {
-                let success = reachability_core::ping::Pinger
+                let result = reachability_core::ping::Pinger
                     .ping(&parameters.interface_name, parameters.addr)
                     .await;
-                (cookie, NetworkCheckResult::Ping { parameters, success })
+                (cookie, NetworkCheckResult::Ping { parameters, result })
             }));
         }
         NetworkCheckAction::ResolveDns(parameters) => {
@@ -149,7 +149,7 @@ async fn handle_network_check_message<'a>(
         }
         NetworkCheckAction::Fetch(parameters) => {
             netcheck_futures.push(Box::pin(async move {
-                let status = reachability_core::fetch::Fetcher
+                let result = reachability_core::fetch::Fetcher
                     .fetch(
                         &parameters.interface_name,
                         &parameters.domain,
@@ -157,7 +157,7 @@ async fn handle_network_check_message<'a>(
                         &parameters.ip,
                     )
                     .await;
-                (cookie, NetworkCheckResult::Fetch { parameters, status })
+                (cookie, NetworkCheckResult::Fetch { parameters, result })
             }));
         }
     }

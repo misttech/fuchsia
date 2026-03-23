@@ -35,7 +35,9 @@ use {
     fuchsia_async as fasync,
 };
 
+use crate::inspect::PerIfaceIdentifierInspectInfo;
 use std::net::IpAddr;
+use telemetry::processors::link_properties_state::InterfaceIdentifier;
 
 pub use neighbor_cache::{InterfaceNeighborCache, NeighborCache};
 
@@ -721,6 +723,10 @@ impl NetworkCheckContext {
                 }
             });
     }
+
+    fn preferred_interface_identifier(&self) -> Option<InterfaceIdentifier> {
+        self.persistent_context.telemetry.interface_identifiers.first().cloned()
+    }
 }
 
 impl Default for NetworkCheckContext {
@@ -761,11 +767,11 @@ pub struct NetworkCheckCookie {
     id: Id,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum NetworkCheckResult {
-    Ping { parameters: PingParameters, success: bool },
+    Ping { parameters: PingParameters, result: Result<(), ping::PingError> },
     ResolveDns { parameters: ResolveDnsParameters, ips: Option<ResolvedIps> },
-    Fetch { parameters: FetchParameters, status: Option<u16> },
+    Fetch { parameters: FetchParameters, result: Result<u16, fetch::FetchError> },
 }
 
 #[derive(Debug, Clone)]
@@ -815,9 +821,9 @@ impl NetworkCheckResult {
         }
     }
 
-    fn ping_result(self) -> Option<(PingParameters, bool)> {
+    fn ping_result(self) -> Option<(PingParameters, Result<(), ping::PingError>)> {
         match self {
-            NetworkCheckResult::Ping { parameters, success } => Some((parameters, success)),
+            NetworkCheckResult::Ping { parameters, result } => Some((parameters, result)),
             _ => None,
         }
     }
@@ -829,9 +835,9 @@ impl NetworkCheckResult {
         }
     }
 
-    fn fetch_result(self) -> Option<(FetchParameters, Option<u16>)> {
+    fn fetch_result(self) -> Option<(FetchParameters, Result<u16, fetch::FetchError>)> {
         match self {
-            NetworkCheckResult::Fetch { parameters, status } => Some((parameters, status)),
+            NetworkCheckResult::Fetch { parameters, result } => Some((parameters, result)),
             _ => None,
         }
     }
@@ -864,6 +870,7 @@ pub struct Monitor<Time = MonotonicInstant> {
     inspector: Option<&'static Inspector>,
     system_node: Option<InspectInfo>,
     nodes: HashMap<Id, InspectInfo>,
+    per_iface_identifier_nodes: HashMap<InterfaceIdentifier, PerIfaceIdentifierInspectInfo>,
     telemetry_sender: Option<TelemetrySender>,
     /// In `Monitor`'s implementation of NetworkChecker, the sender is used to dispatch network
     /// checks to the eventloop to be run concurrently. The network check then will be resumed with
@@ -884,6 +891,7 @@ impl<Time: TimeProvider + Default> Monitor<Time> {
             inspector: None,
             system_node: None,
             nodes: HashMap::new(),
+            per_iface_identifier_nodes: HashMap::new(),
             telemetry_sender: None,
             network_check_sender,
             interface_context: HashMap::new(),
@@ -904,6 +912,7 @@ impl<Time> Monitor<Time> {
             inspector: None,
             system_node: None,
             nodes: HashMap::new(),
+            per_iface_identifier_nodes: HashMap::new(),
             telemetry_sender: None,
             network_check_sender,
             interface_context: HashMap::new(),
@@ -942,6 +951,24 @@ impl<Time: TimeProvider> Monitor<Time> {
             self.nodes.entry(id).or_insert_with_key(|id| {
                 InspectInfo::new(inspector.root(), &format!("{:?}", id), name)
             })
+        })
+    }
+
+    fn per_iface_identifier_node<'a>(
+        ctx: &NetworkCheckContext,
+        inspector: Option<&'a Inspector>,
+        per_iface_identifier_nodes: &'a mut HashMap<
+            InterfaceIdentifier,
+            PerIfaceIdentifierInspectInfo,
+        >,
+    ) -> Option<&'a mut PerIfaceIdentifierInspectInfo> {
+        let interface_identifier = ctx.preferred_interface_identifier()?;
+        inspector.map(move |inspector| {
+            per_iface_identifier_nodes.entry(interface_identifier).or_insert_with_key(
+                |interface_identifier| {
+                    PerIfaceIdentifierInspectInfo::new(inspector.root(), interface_identifier)
+                },
+            )
         })
     }
 
@@ -1350,16 +1377,25 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 ));
             }
             NetworkCheckState::PingGateway | NetworkCheckState::PingInternet => {
-                let (PingParameters { interface_name, addr }, success) =
-                    result.ping_result().ok_or_else(|| {
-                        anyhow!(
-                            "resume: mismatched state and result {interface_name} ({})",
-                            cookie.id
-                        )
-                    })?;
+                let (parameters, result) = result.ping_result().ok_or_else(|| {
+                    anyhow!("resume: mismatched state and result {interface_name} ({})", cookie.id)
+                })?;
                 ctx.pings_completed = ctx.pings_completed + 1;
 
-                if success {
+                if let Some(node) = Self::per_iface_identifier_node(
+                    ctx,
+                    self.inspector,
+                    &mut self.per_iface_identifier_nodes,
+                ) {
+                    if let NetworkCheckState::PingInternet = ctx.checker_state {
+                        node.log_internet_ping_result(&parameters, &result);
+                    } else {
+                        node.log_gateway_ping_result(&parameters, &result);
+                    }
+                }
+
+                let PingParameters { interface_name, addr, .. } = parameters;
+                if result.is_ok() {
                     let () = Self::handle_ping_success(ctx, &addr);
                 }
 
@@ -1477,16 +1513,21 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 }
             }
             NetworkCheckState::FetchHttp => {
-                let (FetchParameters { interface_name, ip, expected_statuses, .. }, status) =
-                    result.fetch_result().ok_or_else(|| {
-                        anyhow!(
-                            "resume: mismatched state and result {interface_name} ({})",
-                            cookie.id
-                        )
-                    })?;
+                let (parameters, result) = result.fetch_result().ok_or_else(|| {
+                    anyhow!("resume: mismatched state and result {interface_name} ({})", cookie.id)
+                })?;
                 ctx.fetches_completed += 1;
 
-                if let Some(status) = status {
+                if let Some(node) = Self::per_iface_identifier_node(
+                    ctx,
+                    self.inspector,
+                    &mut self.per_iface_identifier_nodes,
+                ) {
+                    node.log_fetch_result(&parameters, &result);
+                }
+
+                let FetchParameters { interface_name, ip, expected_statuses, .. } = parameters;
+                if let Ok(status) = result {
                     if expected_statuses.contains(&status) {
                         let () = Self::handle_fetch_success(ctx, ip);
                     }
@@ -1736,18 +1777,26 @@ mod tests {
 
     #[async_trait]
     impl Ping for FakePing {
-        async fn ping(&self, _interface_name: &str, addr: std::net::SocketAddr) -> bool {
+        async fn ping(
+            &self,
+            _interface_name: &str,
+            addr: std::net::SocketAddr,
+        ) -> Result<(), crate::ping::PingError> {
             let Self { gateway_addrs, gateway_response, internet_response } = self;
             let ip = addr.ip();
-            if [IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS, IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS]
-                .contains(&ip)
+            let success = if [
+                IPV4_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+                IPV6_INTERNET_CONNECTIVITY_CHECK_ADDRESS,
+            ]
+            .contains(&ip)
             {
                 *internet_response
             } else if gateway_addrs.contains(&ip) {
                 *gateway_response
             } else {
                 false
-            }
+            };
+            if success { Ok(()) } else { Err(crate::ping::PingError::NoReply) }
         }
     }
 
@@ -1776,10 +1825,10 @@ mod tests {
         }
     }
 
-    #[derive(Default, Copy, Clone)]
+    #[derive(Default)]
     struct FakeFetch {
         expected_url: Option<&'static str>,
-        response: Option<u16>,
+        response: Option<Box<dyn Fn() -> Result<u16, fetch::FetchError> + Send + Sync>>,
     }
 
     #[async_trait]
@@ -1790,7 +1839,7 @@ mod tests {
             domain: &str,
             path: &str,
             _addr: &FA,
-        ) -> Option<u16> {
+        ) -> Result<u16, fetch::FetchError> {
             if let Some(expected) = self.expected_url {
                 assert_eq!(
                     format!("http://{domain}{path}"),
@@ -1798,7 +1847,11 @@ mod tests {
                     "Did not receive expected URL"
                 );
             }
-            self.response
+            if let Some(response) = &self.response {
+                response()
+            } else {
+                Err(fetch::FetchError::ReadTcpStreamTimeout)
+            }
         }
     }
 
@@ -1824,9 +1877,9 @@ mod tests {
                 if let Some((action, cookie)) = self.receiver.next().await {
                     match action {
                         NetworkCheckAction::Ping(parameters) => {
-                            let success = p.ping(&parameters.interface_name, parameters.addr).await;
+                            let result = p.ping(&parameters.interface_name, parameters.addr).await;
                             match monitor
-                                .resume(cookie, NetworkCheckResult::Ping { parameters, success })
+                                .resume(cookie, NetworkCheckResult::Ping { parameters, result })
                             {
                                 // Has reached final state.
                                 Ok(NetworkCheckerOutcome::Complete) => return,
@@ -1844,7 +1897,7 @@ mod tests {
                             }
                         }
                         NetworkCheckAction::Fetch(parameters) => {
-                            let status = f
+                            let result = f
                                 .fetch(
                                     &parameters.interface_name,
                                     &parameters.domain,
@@ -1853,7 +1906,7 @@ mod tests {
                                 )
                                 .await;
                             match monitor
-                                .resume(cookie, NetworkCheckResult::Fetch { parameters, status })
+                                .resume(cookie, NetworkCheckResult::Fetch { parameters, result })
                             {
                                 // Has reached final state.
                                 Ok(NetworkCheckerOutcome::Complete) => return,
@@ -2334,7 +2387,7 @@ mod tests {
                 FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]),
                 FakeFetch {
                     expected_url: Some("http://www.gstatic.com/generate_204"),
-                    response: Some(204)
+                    response: Some(Box::new(|| Ok(204))),
                 },
                 None,
                 ping_internet_addr,
@@ -2770,7 +2823,7 @@ mod tests {
                         FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]), // First, use a good digger
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: Some(204)
+                            response: Some(Box::new(|| Ok(204))),
                         },
                     ),
                     (
@@ -2782,7 +2835,7 @@ mod tests {
                         FakeDig { response: None }, // Then, use one that fails
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: Some(204)
+                            response: Some(Box::new(|| Ok(204))),
                         },
                     ),
                 ],
@@ -2825,7 +2878,7 @@ mod tests {
                         FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]), // First, use a good digger
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: Some(204)
+                            response: Some(Box::new(|| Ok(204))),
                         },
                     ),
                     (
@@ -2837,7 +2890,7 @@ mod tests {
                         FakeDig { response: None }, // Then, use one that fails
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: Some(204)
+                            response: Some(Box::new(|| Ok(204))),
                         },
                     ),
                 ],
@@ -2880,7 +2933,9 @@ mod tests {
                         FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]), // First, use a good digger
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: None
+                            response: Some(Box::new(|| Err(
+                                fetch::FetchError::ReadTcpStreamTimeout
+                            ))),
                         },
                     ),
                     (
@@ -2892,7 +2947,9 @@ mod tests {
                         FakeDig { response: None }, // Then, use one that fails
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: None,
+                            response: Some(Box::new(|| Err(
+                                fetch::FetchError::ReadTcpStreamTimeout
+                            ))),
                         },
                     ),
                 ],
@@ -2929,7 +2986,9 @@ mod tests {
                         FakeDig::new(vec![std_ip!("1.2.3.0"), std_ip!("123::")]), // First, use a good digger
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: None
+                            response: Some(Box::new(|| Err(
+                                fetch::FetchError::ReadTcpStreamTimeout
+                            ))),
                         },
                     ),
                     (
@@ -2941,7 +3000,9 @@ mod tests {
                         FakeDig { response: None }, // Then, use one that fails
                         FakeFetch {
                             expected_url: Some("http://www.gstatic.com/generate_204"),
-                            response: None
+                            response: Some(Box::new(|| Err(
+                                fetch::FetchError::ReadTcpStreamTimeout
+                            ))),
                         },
                     ),
                 ],
