@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use euclid::size2;
 use fidl::endpoints::{self};
 use fidl_fuchsia_hardware_display::{
-    CoordinatorListenerMarker, CoordinatorListenerRequest, CoordinatorMarker, CoordinatorProxy,
-    ProviderProxy, ServiceMarker as DisplayServiceMarker, VirtconMode,
+    ClientPriorityValue, CoordinatorListenerMarker, CoordinatorListenerRequest, CoordinatorMarker,
+    CoordinatorProxy, ProviderProxy, ServiceMarker as DisplayServiceMarker,
 };
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -113,21 +113,16 @@ pub struct DisplayCoordinator {
 impl DisplayCoordinator {
     pub(crate) async fn open(
         provider: ProviderProxy,
-        virtcon_mode: &Option<VirtconMode>,
+        client_priority: Option<ClientPriorityValue>,
         app_sender: &UnboundedSender<MessageInternal>,
     ) -> Result<Self, Error> {
         let (coordinator, coordinator_server) = endpoints::create_proxy::<CoordinatorMarker>();
         let (listener_client, mut listener_requests) =
             endpoints::create_request_stream::<CoordinatorListenerMarker>();
         let () = {
-            let priority = if virtcon_mode.is_some() {
-                fidl_fuchsia_hardware_display::ClientPriority {
-                    value: fidl_fuchsia_hardware_display::VIRTCON_CLIENT_PRIORITY_VALUE,
-                }
-            } else {
-                fidl_fuchsia_hardware_display::ClientPriority {
-                    value: fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE,
-                }
+            let priority = fidl_fuchsia_hardware_display::ClientPriority {
+                value: client_priority
+                    .unwrap_or(fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE),
             };
             provider
                 .open_coordinator(fidl_fuchsia_hardware_display::ProviderOpenCoordinatorRequest {
@@ -141,10 +136,6 @@ impl DisplayCoordinator {
         .context("failed to perform FIDL call")?
         .map_err(Status::from_raw)
         .context("failed to open display coordinator")?;
-
-        if let Some(virtcon_mode) = virtcon_mode {
-            coordinator.set_virtcon_mode(*virtcon_mode)?;
-        }
 
         let app_sender = app_sender.clone();
         let f = async move {
@@ -357,7 +348,7 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
     async fn handle_new_display_coordinator(&mut self, provider: ProviderProxy) {
         if self.display_coordinator.is_none() {
             let display_coordinator =
-                DisplayCoordinator::open(provider, &Config::get().virtcon_mode, &self.app_sender)
+                DisplayCoordinator::open(provider, Config::get().client_priority, &self.app_sender)
                     .await
                     .expect("DisplayCoordinator::open");
             self.display_coordinator = Some(display_coordinator);
@@ -387,15 +378,6 @@ impl<'a> AppStrategy for DisplayDirectAppStrategy<'a> {
                 panic!("Unknown method #{:}", ordinal);
             }
         }
-    }
-
-    fn set_virtcon_mode(&mut self, virtcon_mode: VirtconMode) {
-        self.display_coordinator
-            .as_ref()
-            .expect("display_coordinator")
-            .coordinator
-            .set_virtcon_mode(virtcon_mode)
-            .expect("set_virtcon_mode");
     }
 
     fn get_focused_view_key(&self) -> Option<ViewKey> {

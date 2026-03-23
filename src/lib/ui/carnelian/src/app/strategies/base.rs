@@ -4,15 +4,15 @@
 
 use crate::app::strategies::flatland::FlatlandAppStrategy;
 use crate::app::strategies::framebuffer::{
-    connect_to_display_provider, DisplayCoordinator, DisplayDirectAppStrategy, DisplayId,
+    DisplayCoordinator, DisplayDirectAppStrategy, DisplayId, connect_to_display_provider,
 };
 use crate::app::{Config, InternalSender, MessageInternal, ViewMode};
 use crate::input::{self};
-use crate::view::strategies::base::{ViewStrategyParams, ViewStrategyPtr};
 use crate::view::ViewKey;
+use crate::view::strategies::base::{ViewStrategyParams, ViewStrategyPtr};
 use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_hardware_display::{ProviderProxy, VirtconMode};
+use fidl_fuchsia_hardware_display::ProviderProxy;
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::channel::mpsc::UnboundedSender;
@@ -69,7 +69,7 @@ pub(crate) trait AppStrategy {
         _event: fidl_fuchsia_hardware_display::CoordinatorListenerRequest,
     ) {
     }
-    fn set_virtcon_mode(&mut self, _virtcon_mode: VirtconMode) {}
+
     fn handle_view_closed(&mut self, _view_key: ViewKey) {}
     fn get_focused_view_key(&self) -> Option<ViewKey> {
         panic!("get_focused_view_key not implemented");
@@ -113,7 +113,7 @@ pub(crate) async fn create_app_strategy(
             const TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
             let display_coordinator = match connect_to_display_provider(Some(TIMEOUT)).await {
                 Ok(provider) => {
-                    DisplayCoordinator::open(provider, &app_config.virtcon_mode, &internal_sender)
+                    DisplayCoordinator::open(provider, app_config.client_priority, &internal_sender)
                         .await
                         .ok()
                 }

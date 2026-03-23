@@ -13,7 +13,7 @@ use anyhow::Error;
 use carnelian::app::Config;
 use carnelian::{AppAssistant, AppSender, MessageTarget, ViewAssistantPtr, ViewKey, make_message};
 use fidl::prelude::*;
-use fidl_fuchsia_hardware_display::VirtconMode;
+use fidl_fuchsia_hardware_display::VIRTCON_CLIENT_PRIORITY_VALUE;
 use fidl_fuchsia_virtualconsole::SessionManagerMarker;
 use fuchsia_async as fasync;
 use pty::ServerPty;
@@ -201,7 +201,7 @@ impl AppAssistant for VirtualConsoleAppAssistant {
 
     fn filter_config(&mut self, config: &mut Config) {
         config.view_mode = carnelian::app::ViewMode::Direct;
-        config.virtcon_mode = Some(VirtconMode::Fallback);
+        config.client_priority = Some(VIRTCON_CLIENT_PRIORITY_VALUE);
         config.keyboard_autorepeat = self.args.keyrepeat;
         config.display_rotation = self.args.display_rotation;
         config.keymap_name = Some(self.args.keymap.clone());

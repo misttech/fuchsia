@@ -13,7 +13,9 @@ use crate::scene::facets::FacetId;
 use crate::view::strategies::base::ViewStrategyParams;
 use crate::view::{ViewAssistantPtr, ViewController, ViewKey};
 use anyhow::{Context as _, Error, bail, format_err};
-use fidl_fuchsia_hardware_display::{CoordinatorListenerRequest, ProviderProxy, VirtconMode};
+use fidl_fuchsia_hardware_display::{
+    ClientPriorityValue, CoordinatorListenerRequest, ProviderProxy,
+};
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use fuchsia_component::{self as component};
@@ -35,22 +37,6 @@ pub(crate) mod strategies;
 
 /// Type alias for a non-sync future
 pub type LocalBoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
-
-fn virtcon_mode_from_str(mode_str: &str) -> Result<Option<VirtconMode>, Error> {
-    match mode_str {
-        "forced" => Ok(Some(VirtconMode::Forced)),
-        "fallback" => Ok(Some(VirtconMode::Fallback)),
-        _ => Err(format_err!("Invalid VirtconMode {}", mode_str)),
-    }
-}
-
-fn deserialize_virtcon_mode<'de, D>(deserializer: D) -> Result<Option<VirtconMode>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let str = String::deserialize(deserializer)?;
-    virtcon_mode_from_str(&str).map_err(serde::de::Error::custom)
-}
 
 const fn keyboard_autorepeat_default() -> bool {
     true
@@ -134,9 +120,10 @@ pub struct Config {
     #[serde(default)]
     /// Whether to try to use hardware rendering (Spinel).
     pub use_spinel: bool,
-    /// What mode to use when acting as a virtual console.
-    #[serde(default, deserialize_with = "deserialize_virtcon_mode")]
-    pub virtcon_mode: Option<VirtconMode>,
+    /// Client priority when connecting to the display coordinator. If not set,
+    /// the client will use the priority value for primary clients.
+    #[serde(default)]
+    pub client_priority: Option<ClientPriorityValue>,
     /// What sort of view system to use.
     #[serde(default)]
     pub view_mode: ViewMode,
@@ -188,7 +175,7 @@ impl Default for Config {
             keyboard_autorepeat_slow_interval: keyboard_autorepeat_slow_interval_default(),
             keyboard_autorepeat_fast_interval: keyboard_autorepeat_fast_interval_default(),
             use_spinel: false,
-            virtcon_mode: None,
+            client_priority: None,
             view_mode: ViewMode::default(),
             display_rotation: DisplayRotation::Deg0,
             keymap_name: None,
@@ -239,14 +226,6 @@ impl AppSender {
         self.sender
             .unbounded_send(MessageInternal::RequestRender(target))
             .expect("AppSender::request_render - unbounded_send");
-    }
-
-    /// Mode for applications running directly on the display coordinator.
-    /// Used by Virtcon and the screen saver but not generally useful.
-    pub fn set_virtcon_mode(&self, virtcon_mode: VirtconMode) {
-        self.sender
-            .unbounded_send(MessageInternal::SetVirtconMode(virtcon_mode))
-            .expect("AppSender::set_virtcon_mode - unbounded_send");
     }
 
     /// Request the creation of an additional view.
@@ -425,7 +404,7 @@ pub(crate) enum MessageInternal {
     FlatlandOnError(ViewKey, fuchsia_scenic::flatland::FlatlandError),
     NewDisplayCoordinator(ProviderProxy),
     DisplayCoordinatorListenerRequest(CoordinatorListenerRequest),
-    SetVirtconMode(VirtconMode),
+
     UserInputMessage(ViewKey, UserInputMessage),
 }
 
@@ -611,9 +590,6 @@ impl App {
 
                 _ => self.strategy.handle_display_coordinator_event(request).await,
             },
-            MessageInternal::SetVirtconMode(virtcon_mode) => {
-                self.strategy.set_virtcon_mode(virtcon_mode);
-            }
         }
         Ok(())
     }
