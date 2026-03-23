@@ -79,6 +79,41 @@ pub struct TimekeeperConfig {
     /// to the current boot clock.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub rtc_allow_setting_past_utc: RtcInitializationPolicy,
+    /// The interval at which the RTC is updated from the UTC clock,
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub periodic_rtc_update: PeriodicRtcUpdate,
+}
+
+/// Used to turn on updating the UTC value recorded in the RTC with the most current UTC estimate
+/// on a periodic basis.
+///
+/// A periodic update is strictly in addition to the "as needed" basis, which is always done.
+/// Periodic update might be useful on systems where there is a weaker guarantee that RTC remains
+/// recording usable value.
+///
+/// Normally we rely on RTC making independent progress and tracking UTC
+/// as we record values to it. However, sometimes we want to make sure that any RTC drift with
+/// respect to our most current UTC estimate is neutralized, at which point we may want to order
+/// periodic updates. These updates come with a cost of more timekeeper activity, and hence more
+/// aggressive power usage. As a result, the resolution of this value is 1 minute, and it is
+/// recommended that the value is set to 10 minutes or more if a custom setting is needed.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PeriodicRtcUpdate {
+    /// Never update rtc periodically.
+    #[default]
+    Disabled,
+    /// Update every so many minutes.
+    Minutes(u32),
+}
+
+impl PeriodicRtcUpdate {
+    pub fn into_structured_config_value(self) -> u32 {
+        match self {
+            Self::Disabled => 0,
+            Self::Minutes(v) => v,
+        }
+    }
 }
 
 /// The policy for how to handle RTC readings that are in the past with respect
@@ -115,5 +150,16 @@ mod tests {
     #[test]
     fn test_default_serialization() {
         crate::common::tests::default_serialization_helper::<TimekeeperConfig>();
+    }
+
+    #[test]
+    fn test_periodic_rtc_update_parsing() {
+        let v: TimekeeperConfig =
+            serde_json::from_str(r#"{"periodic_rtc_update": "disabled"}"#).unwrap();
+        assert_eq!(v.periodic_rtc_update, PeriodicRtcUpdate::Disabled);
+
+        let v: TimekeeperConfig =
+            serde_json::from_str(r#"{"periodic_rtc_update": {"minutes": 10}}"#).unwrap();
+        assert_eq!(v.periodic_rtc_update, PeriodicRtcUpdate::Minutes(10));
     }
 }

@@ -109,6 +109,10 @@
         /// less than this amount of time away from backstop, we reject it.
         min_utc_reference_to_backstop_diff_minutes: { type: "uint64" },
 
+        /// The interval at which the RTC is updated from the UTC clock,
+        /// expressed in minutes. If set to 0, periodic updates are disabled.
+        periodic_rtc_update_interval_minutes: { type: "uint32" },
+
         /// The policy for how to handle RTC readings that are in the past with respect
         /// to the current boot clock.
         rtc_allow_setting_past_utc: {

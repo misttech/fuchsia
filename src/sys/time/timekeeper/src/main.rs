@@ -41,7 +41,7 @@ use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use time_adjust::Command;
 use time_metrics_registry::TimeMetricDimensionExperiment;
 use zx::BootTimeline;
@@ -203,6 +203,20 @@ impl Config {
         UtcDuration::from_minutes(
             self.source_config.min_utc_reference_to_backstop_diff_minutes as i64,
         )
+    }
+
+    fn get_periodic_rtc_update_interval(&self) -> Option<zx::BootDuration> {
+        let update_interval_minutes =
+            self.source_config.periodic_rtc_update_interval_minutes as i64;
+        // Intentional interval of zero is really an operator error, so make that a "None" value,
+        // to avoid catastrophic errors.
+        let update_interval = if update_interval_minutes == 0 {
+            None
+        } else {
+            Some(zx::BootDuration::from_minutes(update_interval_minutes))
+        };
+        debug!("Periodic RTC update inerval set to: {update_interval:?}");
+        update_interval
     }
 }
 
@@ -777,19 +791,17 @@ async fn maintain_utc<R: Rtc, D: 'static>(
         }
     });
 
-    let cmd_send_periodic = cmd_send.clone();
-    let periodic_rtc_update = Box::pin(periodic_rtc_update(cmd_send_periodic));
+    let periodic_rtc_update: OptionFuture<_> = config
+        .get_periodic_rtc_update_interval()
+        .map(|interval| periodic_rtc_update(cmd_send.clone(), interval))
+        .into();
 
     future::join4(fut1, fut2, oneshot, periodic_rtc_update).await;
 }
 
-/// The interval at which periodic RTC updates are triggered.
-static PERIODIC_RTC_UPDATE_INTERVAL: LazyLock<zx::BootDuration> =
-    LazyLock::new(|| zx::BootDuration::from_minutes(1000000));
-
-async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>) {
+async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>, interval: zx::BootDuration) {
     loop {
-        fasync::Timer::new(fasync::BootInstant::after(*PERIODIC_RTC_UPDATE_INTERVAL)).await;
+        fasync::Timer::new(fasync::BootInstant::after(interval)).await;
         if let Err(e) = cmd_send.send(Command::UpdateRtc).await {
             debug!("failed to send UpdateRtc command: {:?}", e);
             break;
@@ -941,6 +953,7 @@ mod tests {
             serve_test_protocols: false,
             use_connectivity: false,
             min_utc_reference_to_backstop_diff_minutes: 0,
+            periodic_rtc_update_interval_minutes: 0,
             rtc_allow_setting_past_utc: "default".to_string(),
         };
         Arc::new(Config::from(adjust_fn(config)))
@@ -1427,14 +1440,15 @@ mod tests {
     fn test_periodic_rtc_update() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let (tx, mut rx) = mpsc::channel(1);
-        let mut fut = pin!(periodic_rtc_update(tx));
+        let interval = zx::BootDuration::from_minutes(10);
+        let mut fut = pin!(periodic_rtc_update(tx, interval));
 
         // Let it run until it stalls on the first timer.
         assert!(executor.run_until_stalled(&mut fut).is_pending());
 
         // Advance by 10 minutes.
         executor.set_fake_time(fasync::MonotonicInstant::after(
-            zx::MonotonicDuration::from_minutes(PERIODIC_RTC_UPDATE_INTERVAL.into_minutes()),
+            zx::MonotonicDuration::from_minutes(interval.into_minutes()),
         ));
         assert!(executor.wake_expired_timers());
 

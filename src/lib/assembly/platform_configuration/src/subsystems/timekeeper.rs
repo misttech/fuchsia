@@ -129,6 +129,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             .field("utc_max_allowed_delta_future_sec", config.utc_max_allowed_delta_future_sec)?
             .field("use_connectivity", config.use_connectivity)?
             .field("min_utc_reference_to_backstop_diff_minutes", config.min_utc_reference_to_backstop_diff_minutes)?
+            .field("periodic_rtc_update_interval_minutes", config.periodic_rtc_update.into_structured_config_value())?
             .field("rtc_allow_setting_past_utc", String::from(config.rtc_allow_setting_past_utc))?
             .field("serve_fuchsia_time_alarms", serve_fuchsia_time_alarms)?;
 
