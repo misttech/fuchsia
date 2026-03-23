@@ -451,7 +451,11 @@ impl Policy {
                 &target_class,
             )
         } else {
-            AccessDecision::allow(AccessVector::NONE)
+            let mut decision = AccessDecision::allow(AccessVector::NONE);
+            if self.is_permissive(source_context.type_()) {
+                decision.flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
+            }
+            decision
         }
     }
 

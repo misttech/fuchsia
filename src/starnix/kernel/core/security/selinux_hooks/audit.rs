@@ -183,7 +183,7 @@ pub(super) fn audit_decision(
 ) {
     trace_instant!(
         CATEGORY_STARNIX_SECURITY,
-        match (result.permit, result.todo_bug) {
+        match (result.granted, result.todo_bug) {
             (true, None) => c"audit.granted",
             (true, Some(_)) => c"audit.todo_deny",
             _ => c"audit.denied",
@@ -204,7 +204,7 @@ pub(super) fn audit_decision(
         // The first few of each `todo_bug` are logged as "todo_deny", and the denial tracked.
         "todo_deny"
     } else {
-        if result.permit { "granted" } else { "denied" }
+        if result.granted { "granted" } else { "denied" }
     };
 
     // If there is an associated bug then add it to the audit context.
@@ -231,7 +231,10 @@ pub(super) fn audit_decision(
             // Gather details about the calling task.
             let pid = current_task.get_pid();
             let command = current_task.command();
-            format!("avc: {decision} {{ {permission_name} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
+
+            let is_permissive = result.permissive as u8;
+
+            format!("avc: {decision} {{ {permission_name} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass} permissive={is_permissive}")
         }
     );
 }

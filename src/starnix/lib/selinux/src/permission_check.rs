@@ -16,8 +16,8 @@ use std::num::NonZeroU64;
 /// Describes the result of a permission lookup between two Security Contexts.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PermissionCheckResult {
-    /// True if the specified permissions should be permitted.
-    pub permit: bool,
+    /// True if the specified permissions are granted by policy.
+    pub granted: bool,
 
     /// True if details of the check should be audit logged. Audit logs are by default only output
     /// when the policy defines that the permissions should be denied (whether or not the check is
@@ -25,9 +25,20 @@ pub struct PermissionCheckResult {
     /// permissions ("auditallow").
     pub audit: bool,
 
+    /// True if the access should be granted because either the security server is running in
+    /// permissive mode, or the subject domain is marked as permissive.
+    pub permissive: bool,
+
     /// If the `AccessDecision` indicates that permission denials should not be enforced then `permit`
     /// will be true, and this field will hold the Id of the bug to reference in audit logging.
     pub todo_bug: Option<NonZeroU64>,
+}
+
+impl PermissionCheckResult {
+    /// Returns true if the request was granted, or was made in permissive mode.
+    pub fn permit(&self) -> bool {
+        self.granted || self.permissive
+    }
 }
 
 /// Implements the `has_permission()` API, based on supplied `SecurityServer` and
@@ -154,38 +165,35 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
     let target_class = permission.class();
 
     let decision = query.compute_access_decision(source_sid, target_sid, target_class.into());
+    let permissive = decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
 
     let mut result = if let Some(permission_access_vector) =
         access_vector_computer.kernel_permissions_to_access_vector(&[permission])
     {
-        let permit = permission_access_vector & decision.allow == permission_access_vector;
-        let audit = if permit {
+        let granted = permission_access_vector & decision.allow == permission_access_vector;
+        let audit = if granted {
             permission_access_vector & decision.auditallow != AccessVector::NONE
         } else {
             permission_access_vector & decision.auditdeny != AccessVector::NONE
         };
-        PermissionCheckResult { permit, audit, todo_bug: None }
+        PermissionCheckResult { granted, audit, permissive, todo_bug: None }
     } else {
-        PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+        PermissionCheckResult { granted: false, audit: true, permissive, todo_bug: None }
     };
 
-    if !result.permit {
-        if decision.todo_bug.is_some() {
+    if !result.granted {
+        if !is_enforcing {
+            // If the security server is not currently enforcing then permit all access.
+            result.permissive = true;
+        } else if decision.todo_bug.is_some() {
             // If the access decision includes a `todo_bug` then permit the access and return the
             // bug Id to the caller, for audit logging.
             //
             // This is checked before the "permissive" settings because exceptions work-around
             // issues in our implementation, or policy builds, so permissive treatment can lead
             // to logspam as well as losing bug-tracking information.
-            result.permit = true;
+            result.granted = true;
             result.todo_bug = decision.todo_bug;
-        } else if !is_enforcing {
-            // If the security server is not currently enforcing then permit all access.
-            result.permit = true;
-        } else if decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0 {
-            // If the access decision indicates that the source domain is permissive then permit
-            // all access.
-            result.permit = true;
         }
     }
 
@@ -207,6 +215,7 @@ fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone +
     let target_class = ObjectClass::from(permission.class());
 
     let permission_decision = query.compute_access_decision(source_sid, target_sid, target_class);
+    let permissive = permission_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
 
     let [xperms_postfix, xperms_prefix] = xperm.to_le_bytes();
     let xperms_decision = query.compute_xperms_access_decision(
@@ -220,30 +229,28 @@ fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone +
     let mut result = if let Some(permission_access_vector) =
         access_vector_computer.kernel_permissions_to_access_vector(&[permission])
     {
-        let permit = (permission_access_vector & permission_decision.allow
+        let granted = (permission_access_vector & permission_decision.allow
             == permission_access_vector)
             && xperms_decision.allow.contains(xperms_postfix);
-        let audit = if permit {
+        let audit = if granted {
             (permission_access_vector & permission_decision.auditallow == permission_access_vector)
                 && xperms_decision.auditallow.contains(xperms_postfix)
         } else {
             (permission_access_vector & permission_decision.auditdeny == permission_access_vector)
                 && xperms_decision.auditdeny.contains(xperms_postfix)
         };
-        PermissionCheckResult { permit, audit, todo_bug: None }
+        PermissionCheckResult { granted, audit, permissive, todo_bug: None }
     } else {
-        PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+        PermissionCheckResult { granted: false, audit: true, permissive, todo_bug: None }
     };
 
-    if !result.permit {
+    if !result.granted {
         if !is_enforcing {
-            result.permit = true;
-        } else if permission_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0 {
-            result.permit = true;
+            result.permissive = true;
         } else if permission_decision.todo_bug.is_some() {
             // Currently we can make an exception for the base permission but not for specific
             // extended permissions.
-            result.permit = true;
+            result.granted = true;
             result.todo_bug = permission_decision.todo_bug;
         }
     }
@@ -532,29 +539,44 @@ mod tests {
         let permissions = [ProcessPermission::Fork, ProcessPermission::Transition];
         for permission in &permissions {
             // DenyAllPermissions denies.
-            assert_eq!(
-                PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-                has_permission(
-                    /*is_enforcing=*/ true,
-                    &deny_all,
-                    &deny_all,
-                    *A_TEST_SID,
-                    *A_TEST_SID,
-                    permission.clone()
-                )
+            let result = has_permission(
+                /*is_enforcing=*/ true,
+                &deny_all,
+                &deny_all,
+                *A_TEST_SID,
+                *A_TEST_SID,
+                permission.clone(),
             );
+            assert_eq!(
+                result,
+                PermissionCheckResult {
+                    granted: false,
+                    audit: true,
+                    permissive: false,
+                    todo_bug: None
+                }
+            );
+            assert!(!result.permit());
+
             // AllowAllPermissions allows.
-            assert_eq!(
-                PermissionCheckResult { permit: true, audit: false, todo_bug: None },
-                has_permission(
-                    /*is_enforcing=*/ true,
-                    &allow_all,
-                    &allow_all,
-                    *A_TEST_SID,
-                    *A_TEST_SID,
-                    permission.clone()
-                )
+            let result = has_permission(
+                /*is_enforcing=*/ true,
+                &allow_all,
+                &allow_all,
+                *A_TEST_SID,
+                *A_TEST_SID,
+                permission.clone(),
             );
+            assert_eq!(
+                result,
+                PermissionCheckResult {
+                    granted: true,
+                    audit: false,
+                    permissive: false,
+                    todo_bug: None
+                }
+            );
+            assert!(result.permit());
         }
     }
 
@@ -567,61 +589,92 @@ mod tests {
         let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
 
         // DenyAllPermissions denies.
-        assert_eq!(
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_extended_permission(
-                /*is_enforcing=*/ true,
-                &deny_all,
-                &deny_all,
-                XpermsKind::Ioctl,
-                *A_TEST_SID,
-                *A_TEST_SID,
-                permission.clone(),
-                0xabcd
-            )
+        let result = has_extended_permission(
+            /*is_enforcing=*/ true,
+            &deny_all,
+            &deny_all,
+            XpermsKind::Ioctl,
+            *A_TEST_SID,
+            *A_TEST_SID,
+            permission.clone(),
+            0xabcd,
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
+
         // AllowAllPermissions allows.
-        assert_eq!(
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None },
-            has_extended_permission(
-                /*is_enforcing=*/ true,
-                &allow_all,
-                &allow_all,
-                XpermsKind::Ioctl,
-                *A_TEST_SID,
-                *A_TEST_SID,
-                permission.clone(),
-                0xabcd
-            )
+        let result = has_extended_permission(
+            /*is_enforcing=*/ true,
+            &allow_all,
+            &allow_all,
+            XpermsKind::Ioctl,
+            *A_TEST_SID,
+            *A_TEST_SID,
+            permission.clone(),
+            0xabcd,
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(result.permit());
+
         // DenyPermissionsAllowXperms denies.
-        assert_eq!(
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_extended_permission(
-                /*is_enforcing=*/ true,
-                &deny_perms_allow_xperms,
-                &deny_perms_allow_xperms,
-                XpermsKind::Ioctl,
-                *A_TEST_SID,
-                *A_TEST_SID,
-                permission.clone(),
-                0xabcd
-            )
+        let result = has_extended_permission(
+            /*is_enforcing=*/ true,
+            &deny_perms_allow_xperms,
+            &deny_perms_allow_xperms,
+            XpermsKind::Ioctl,
+            *A_TEST_SID,
+            *A_TEST_SID,
+            permission.clone(),
+            0xabcd,
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
+
         // AllowPermissionsDenyXperms denies.
-        assert_eq!(
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_extended_permission(
-                /*is_enforcing=*/ true,
-                &allow_perms_deny_xperms,
-                &allow_perms_deny_xperms,
-                XpermsKind::Ioctl,
-                *A_TEST_SID,
-                *A_TEST_SID,
-                permission,
-                0xabcd
-            )
+        let result = has_extended_permission(
+            /*is_enforcing=*/ true,
+            &allow_perms_deny_xperms,
+            &allow_perms_deny_xperms,
+            XpermsKind::Ioctl,
+            *A_TEST_SID,
+            *A_TEST_SID,
+            permission,
+            0xabcd,
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
     }
 
     #[test]
@@ -631,18 +684,20 @@ mod tests {
 
         // DenyAllPermissions denies, but the permission is allowed when the security server
         // is not in enforcing mode. The decision should still be audited.
-        assert_eq!(
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None },
-            has_extended_permission(
-                /*is_enforcing=*/ false,
-                &deny_all,
-                &deny_all,
-                XpermsKind::Ioctl,
-                *A_TEST_SID,
-                *A_TEST_SID,
-                permission,
-                0xabcd
-            )
+        let result = has_extended_permission(
+            /*is_enforcing=*/ false,
+            &deny_all,
+            &deny_all,
+            XpermsKind::Ioctl,
+            *A_TEST_SID,
+            *A_TEST_SID,
+            permission,
+            0xabcd,
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+        );
+        assert!(result.permit());
     }
 }

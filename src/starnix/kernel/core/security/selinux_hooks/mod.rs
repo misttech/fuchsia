@@ -194,7 +194,7 @@ fn check_permission_and_xperms(
     );
 
     if result.audit {
-        if !result.permit {
+        if !result.permit() {
             current_task
                 .kernel()
                 .security_state
@@ -216,7 +216,7 @@ fn check_permission_and_xperms(
         );
     }
 
-    result.permit.then_some(()).ok_or_else(|| errno!(EACCES))
+    result.permit().then_some(()).ok_or_else(|| errno!(EACCES))
 }
 
 /// Checks that `current_task` has the specified `permissions` to the `node`, without auditing.
@@ -240,7 +240,7 @@ fn has_fs_node_permissions_dontaudit(
     for permission in permissions {
         if !permission_check
             .has_permission(subject_sid, target.sid, permission.for_class(target.class))
-            .permit
+            .permit()
         {
             return error!(EACCES);
         }
@@ -435,7 +435,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
     let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
 
     if result.audit {
-        if !result.permit {
+        if !result.permit() {
             current_task
                 .kernel()
                 .security_state
@@ -457,7 +457,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
         );
     };
 
-    result.permit.then_some(()).ok_or_else(|| errno!(EACCES))
+    result.permit().then_some(()).ok_or_else(|| errno!(EACCES))
 }
 
 /// Checks that `subject_sid` has the specified process `permission` on `self`.

@@ -1141,7 +1141,7 @@ mod tests {
         let sid = security_server.security_context_to_sid(context.into()).unwrap();
 
         // The minimal policy does not grant fork allowance.
-        assert!(!permission_check.has_permission(sid, sid, ProcessPermission::Fork).permit);
+        assert!(!permission_check.has_permission(sid, sid, ProcessPermission::Fork).granted);
 
         // Load a policy that does grant fork allowance.
         assert_eq!(
@@ -1150,7 +1150,7 @@ mod tests {
         );
 
         // The now-loaded "allow_fork" policy allows the context represented by `sid` to fork.
-        assert!(permission_check.has_permission(sid, sid, ProcessPermission::Fork).permit);
+        assert!(permission_check.has_permission(sid, sid, ProcessPermission::Fork).granted);
     }
 
     #[test]
@@ -1204,22 +1204,22 @@ mod tests {
         assert!(
             !permission_check
                 .has_permission(additional_type_sid, allowed_type_sid, ProcessPermission::GetSched)
-                .permit
+                .granted
         );
         assert!(
             !permission_check
                 .has_permission(additional_type_sid, allowed_type_sid, ProcessPermission::SetSched)
-                .permit
+                .granted
         );
         assert!(
             !permission_check
                 .has_permission(allowed_type_sid, additional_type_sid, ProcessPermission::GetSched)
-                .permit
+                .granted
         );
         assert!(
             !permission_check
                 .has_permission(allowed_type_sid, additional_type_sid, ProcessPermission::SetSched)
-                .permit
+                .granted
         );
 
         // We now flip back to the policy that does not recognize "additional_t"...
@@ -1236,12 +1236,12 @@ mod tests {
         assert!(
             permission_check
                 .has_permission(allowed_type_sid, additional_type_sid, ProcessPermission::GetSched)
-                .permit
+                .granted
         );
         assert!(
             !permission_check
                 .has_permission(allowed_type_sid, additional_type_sid, ProcessPermission::SetSched)
-                .permit
+                .granted
         );
 
         // ... and the now-loaded policy also allows "unlabeled_t" the process
@@ -1251,12 +1251,12 @@ mod tests {
         assert!(
             !permission_check
                 .has_permission(additional_type_sid, allowed_type_sid, ProcessPermission::GetSched)
-                .permit
+                .granted
         );
         assert!(
             permission_check
                 .has_permission(additional_type_sid, allowed_type_sid, ProcessPermission::SetSched)
-                .permit
+                .granted
         );
 
         // We also verify that we do not get a serialization for unrecognized "additional_t"...
@@ -1290,28 +1290,37 @@ mod tests {
         // Since the permission is granted by policy, the check will not be audit logged.
         assert_eq!(
             permission_check.has_permission(sid, sid, ProcessPermission::Fork),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
 
         // Test policy does not grant "type0" the process-getrlimit permission to itself, but
         // the security server is configured to be permissive. Because the permission was not
         // granted by the policy, the check will be audit logged.
+        let result = permission_check.has_permission(sid, sid, ProcessPermission::GetRlimit);
         assert_eq!(
-            permission_check.has_permission(sid, sid, ProcessPermission::GetRlimit),
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
         );
+        assert!(result.permit());
 
         // Test policy is built with "deny unknown" behaviour, and has no "blk_file" class defined.
         // This permission should be treated like a defined permission that is not allowed to the
         // source, and both allowed and audited here.
-        assert_eq!(
-            permission_check.has_permission(
-                sid,
-                sid,
-                CommonFsNodePermission::GetAttr.for_class(FileClass::Block)
-            ),
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None }
+        let result = permission_check.has_permission(
+            sid,
+            sid,
+            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+        );
+        assert!(result.permit());
     }
 
     #[test]
@@ -1325,28 +1334,49 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Test policy grants "type0" the process-fork permission to itself.
+        let result = permission_check.has_permission(sid, sid, ProcessPermission::Fork);
         assert_eq!(
-            permission_check.has_permission(sid, sid, ProcessPermission::Fork),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
 
         // Test policy does not grant "type0" the process-getrlimit permission to itself.
         // Permission denials are audit logged in enforcing mode.
+        let result = permission_check.has_permission(sid, sid, ProcessPermission::GetRlimit);
         assert_eq!(
-            permission_check.has_permission(sid, sid, ProcessPermission::GetRlimit),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Test policy is built with "deny unknown" behaviour, and has no "blk_file" class defined.
         // This permission should therefore be denied, and the denial audited.
-        assert_eq!(
-            permission_check.has_permission(
-                sid,
-                sid,
-                CommonFsNodePermission::GetAttr.for_class(FileClass::Block)
-            ),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+        let result = permission_check.has_permission(
+            sid,
+            sid,
+            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
         );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
     }
 
     #[test]
@@ -1365,62 +1395,89 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Test policy grants process-getsched permission to both of the test domains.
-        assert_eq!(
-            permission_check.has_permission(
-                permissive_sid,
-                permissive_sid,
-                ProcessPermission::GetSched
-            ),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+        let result = permission_check.has_permission(
+            permissive_sid,
+            permissive_sid,
+            ProcessPermission::GetSched,
         );
         assert_eq!(
-            permission_check.has_permission(
-                non_permissive_sid,
-                non_permissive_sid,
-                ProcessPermission::GetSched
-            ),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult { granted: true, audit: false, permissive: true, todo_bug: None }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(
+            non_permissive_sid,
+            non_permissive_sid,
+            ProcessPermission::GetSched,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(result.permit());
 
         // Test policy does not grant process-getsched permission to the test domains on one another.
         // The permissive domain will be granted the permission, since it is marked permissive.
-        assert_eq!(
-            permission_check.has_permission(
-                permissive_sid,
-                non_permissive_sid,
-                ProcessPermission::GetSched
-            ),
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None }
+        let result = permission_check.has_permission(
+            permissive_sid,
+            non_permissive_sid,
+            ProcessPermission::GetSched,
         );
         assert_eq!(
-            permission_check.has_permission(
-                non_permissive_sid,
-                permissive_sid,
-                ProcessPermission::GetSched
-            ),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(
+            non_permissive_sid,
+            permissive_sid,
+            ProcessPermission::GetSched,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
 
         // Test policy has "deny unknown" behaviour and does not define the "blk_file" class, so
         // access to a permission on it will depend on whether the source is permissive.
         // The target domain is irrelevant, since the class/permission do not exist, so the non-
         // permissive SID is used for both checks.
-        assert_eq!(
-            permission_check.has_permission(
-                permissive_sid,
-                non_permissive_sid,
-                CommonFsNodePermission::GetAttr.for_class(FileClass::Block)
-            ),
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None }
+        let result = permission_check.has_permission(
+            permissive_sid,
+            non_permissive_sid,
+            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
         );
         assert_eq!(
-            permission_check.has_permission(
-                non_permissive_sid,
-                non_permissive_sid,
-                CommonFsNodePermission::GetAttr.for_class(FileClass::Block)
-            ),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(
+            non_permissive_sid,
+            non_permissive_sid,
+            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
     }
 
     #[test]
@@ -1436,28 +1493,54 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Test policy grants the domain self-fork permission, and marks it audit-allow.
+        let result = permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::Fork);
         assert_eq!(
-            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::Fork),
-            PermissionCheckResult { permit: true, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult { granted: true, audit: true, permissive: false, todo_bug: None }
         );
+        assert!(result.permit());
 
         // Self-setsched permission is granted, and marked dont-audit, which takes no effect.
+        let result =
+            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::SetSched);
         assert_eq!(
-            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::SetSched),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
 
         // Self-getsched permission is denied, but marked dont-audit.
+        let result =
+            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::GetSched);
         assert_eq!(
-            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::GetSched),
-            PermissionCheckResult { permit: false, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Self-getpgid permission is denied, with neither audit-allow nor dont-audit.
+        let result =
+            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::GetPgid);
         assert_eq!(
-            permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::GetPgid),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
     }
 
     #[test]
@@ -1510,107 +1593,167 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Source SID has no "process" permissions to target SID, and no exceptions.
+        let result =
+            permission_check.has_permission(source_sid, target_sid, ProcessPermission::GetPgid);
         assert_eq!(
-            permission_check.has_permission(source_sid, target_sid, ProcessPermission::GetPgid),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Source SID has no "file:entrypoint" permission to target SID, but there is an exception defined.
+        let result =
+            permission_check.has_permission(source_sid, target_sid, FilePermission::Entrypoint);
         assert_eq!(
-            permission_check.has_permission(source_sid, target_sid, FilePermission::Entrypoint),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: false,
                 todo_bug: Some(NonZeroU64::new(1).unwrap())
             }
         );
+        assert!(result.permit());
 
         // Source SID has "file:execute_no_trans" permission to target SID.
+        let result =
+            permission_check.has_permission(source_sid, target_sid, FilePermission::ExecuteNoTrans);
         assert_eq!(
-            permission_check.has_permission(source_sid, target_sid, FilePermission::ExecuteNoTrans),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
 
         // Other SID has no "file:entrypoint" permissions to target SID, and the exception does not match "file" class.
+        let result =
+            permission_check.has_permission(other_sid, target_sid, FilePermission::Entrypoint);
         assert_eq!(
-            permission_check.has_permission(other_sid, target_sid, FilePermission::Entrypoint),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Other SID has no "chr_file" permissions to target SID, but there is an exception defined.
+        let result = permission_check.has_permission(
+            other_sid,
+            target_sid,
+            CommonFsNodePermission::Read.for_class(FileClass::Character),
+        );
         assert_eq!(
-            permission_check.has_permission(
-                other_sid,
-                target_sid,
-                CommonFsNodePermission::Read.for_class(FileClass::Character)
-            ),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: false,
                 todo_bug: Some(NonZeroU64::new(2).unwrap())
             }
         );
+        assert!(result.permit());
 
         // Source SID has no "file:entrypoint" permissions to unmatched SID, and no exception is defined.
+        let result =
+            permission_check.has_permission(source_sid, unmatched_sid, FilePermission::Entrypoint);
         assert_eq!(
-            permission_check.has_permission(source_sid, unmatched_sid, FilePermission::Entrypoint),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Unmatched SID has no "file:entrypoint" permissions to target SID, and no exception is defined.
+        let result =
+            permission_check.has_permission(unmatched_sid, target_sid, FilePermission::Entrypoint);
         assert_eq!(
-            permission_check.has_permission(unmatched_sid, target_sid, FilePermission::Entrypoint),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Todo-deny exceptions are processed before the permissive bit is handled.
+        let result =
+            permission_check.has_permission(permissive_sid, target_sid, FilePermission::Entrypoint);
         assert_eq!(
-            permission_check.has_permission(permissive_sid, target_sid, FilePermission::Entrypoint),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: true,
                 todo_bug: Some(NonZeroU64::new(4).unwrap())
             }
         );
+        assert!(result.permit());
 
         // Todo-permissive SID is not granted any permissions, so all permissions should be granted,
         // to all target domains and classes, and all grants should be associated with the bug.
+        let result = permission_check.has_permission(
+            todo_permissive_sid,
+            target_sid,
+            FilePermission::Entrypoint,
+        );
         assert_eq!(
-            permission_check.has_permission(
-                todo_permissive_sid,
-                target_sid,
-                FilePermission::Entrypoint
-            ),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: false,
                 todo_bug: Some(NonZeroU64::new(5).unwrap())
             }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(
+            todo_permissive_sid,
+            todo_permissive_sid,
+            FilePermission::Entrypoint,
+        );
         assert_eq!(
-            permission_check.has_permission(
-                todo_permissive_sid,
-                todo_permissive_sid,
-                FilePermission::Entrypoint
-            ),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: false,
                 todo_bug: Some(NonZeroU64::new(5).unwrap())
             }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(
+            todo_permissive_sid,
+            target_sid,
+            FilePermission::Entrypoint,
+        );
         assert_eq!(
-            permission_check.has_permission(
-                todo_permissive_sid,
-                target_sid,
-                FilePermission::Entrypoint
-            ),
+            result,
             PermissionCheckResult {
-                permit: true,
+                granted: true,
                 audit: true,
+                permissive: false,
                 todo_bug: Some(NonZeroU64::new(5).unwrap())
             }
         );
+        assert!(result.permit());
     }
 
     #[test]
@@ -1638,24 +1781,52 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Check against undefined classes or permissions should deny access and audit.
+        let result = permission_check.has_permission(sid, sid, ProcessPermission::GetSched);
         assert_eq!(
-            permission_check.has_permission(sid, sid, ProcessPermission::GetSched),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
+        let result = permission_check.has_permission(sid, sid, DirPermission::AddName);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::AddName),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Check that permissions that are defined are unaffected by handle-unknown.
+        let result = permission_check.has_permission(sid, sid, DirPermission::Search);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::Search),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(sid, sid, DirPermission::Reparent);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::Reparent),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
 
         // Load a policy that is missing some elements, and marked handle_unknown=allow.
         const ALLOW_POLICY: &[u8] = include_bytes!(
@@ -1665,23 +1836,51 @@ mod tests {
         let permission_check = security_server.as_permission_check();
 
         // Check against undefined classes or permissions should grant access without audit.
+        let result = permission_check.has_permission(sid, sid, ProcessPermission::GetSched);
         assert_eq!(
-            permission_check.has_permission(sid, sid, ProcessPermission::GetSched),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(sid, sid, DirPermission::AddName);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::AddName),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
 
         // Check that permissions that are defined are unaffected by handle-unknown.
+        let result = permission_check.has_permission(sid, sid, DirPermission::Search);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::Search),
-            PermissionCheckResult { permit: true, audit: false, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: false,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(result.permit());
+        let result = permission_check.has_permission(sid, sid, DirPermission::Reparent);
         assert_eq!(
-            permission_check.has_permission(sid, sid, DirPermission::Reparent),
-            PermissionCheckResult { permit: false, audit: true, todo_bug: None }
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: true,
+                permissive: false,
+                todo_bug: None
+            }
         );
+        assert!(!result.permit());
     }
 }

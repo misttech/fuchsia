@@ -809,7 +809,7 @@ pub(in crate::security) fn is_task_capable_noaudit(
     let sid = current_task_state(current_task).current_sid;
     let permission = permission_from_capability(capability);
     is_internal_operation(current_task)
-        || permission_check.has_permission(sid, sid, permission).permit
+        || permission_check.has_permission(sid, sid, permission).permit()
 }
 
 pub(in crate::security) fn check_task_capable(
@@ -918,7 +918,7 @@ pub(in crate::security) fn ptrace_access_check(
         };
     if mode.contains(PTRACE_MODE_NOAUDIT) {
         let result = permission_check.has_permission(tracer_sid, tracee_sid, permission);
-        return result.permit.then_some(()).ok_or_else(|| errno!(EACCES));
+        return result.permit().then_some(()).ok_or_else(|| errno!(EACCES));
     }
     check_permission(
         permission_check,
