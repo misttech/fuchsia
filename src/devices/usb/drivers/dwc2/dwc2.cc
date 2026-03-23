@@ -962,14 +962,32 @@ zx::result<> Dwc2::InitController() {
   auto fifo_base = metadata_.rx_fifo_size() + metadata_.nptx_fifo_size();
   auto dfifo_end = GHWCFG3::Get().ReadFrom(mmio).dfifo_depth();
 
+  // TODO(https://fxbug.dev/495423640): We should not be doing this based on
+  // static metadata sizes since it ends up encoding endpoint ordering at a
+  // distance, which can't be guaranteed by the rest of the stack.
+  uint32_t total_tx_fifo_size = 0;
   for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes()); i++) {
     auto fifo_size = metadata_.tx_fifo_sizes()[i];
 
     DTXFSIZ::Get(i + 1).FromValue(0).set_startaddr(fifo_base).set_depth(fifo_size).WriteTo(mmio);
     fifo_base += fifo_size;
+    total_tx_fifo_size += fifo_size;
   }
 
   GDFIFOCFG::Get().FromValue(0).set_gdfifocfg(dfifo_end).set_epinfobase(fifo_base).WriteTo(mmio);
+  // Guard against going past the total RAM we have.
+  if (fifo_base + metadata_.tx_fifo_sizes().size() > dfifo_end) {
+    fdf::error(
+        "Insufficient RAM for FIFO configuration: \
+            rx fifo size: {}\n \
+            nptx fifo size: {}\n \
+            total tx fifo size: {}\n \
+            epinfo_base {}\n \
+            dfifo_end: {}",
+        metadata_.rx_fifo_size(), metadata_.nptx_fifo_size(), total_tx_fifo_size, fifo_base,
+        dfifo_end);
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
 
   // Flush all FIFOs
   FlushTxFifo(0x10);
@@ -1356,6 +1374,27 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
     FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
+  }
+
+  // Check if there is enough TX FIFO space for the IN endpoint.
+  //
+  // TODO(https://fxbug.dev/495423640): We should not be doing this based on
+  // static metadata sizes.
+  if (is_in) {
+    if (ep_num > metadata_.tx_fifo_sizes().size()) {
+      FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: no allocated TX FIFO space for IN endpoint %d",
+              ep_num);
+      completer.Reply(zx::error(ZX_ERR_NO_RESOURCES));
+      return;
+    }
+    if (max_packet_size > (metadata_.tx_fifo_sizes()[ep_num - 1] * 4)) {
+      FDF_LOG(ERROR,
+              "Dwc2::ConfigureEndpoint: IN  endpoint %d max packet size %d is larger than "
+              "allocated TX FIFO space %d",
+              ep_num, max_packet_size, metadata_.tx_fifo_sizes()[ep_num - 1] * 4);
+      completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
   }
 
   auto& ep = endpoints_[ep_num];
