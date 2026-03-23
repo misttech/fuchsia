@@ -5,6 +5,7 @@
 use crate::common::*;
 use argh::{ArgsInfo, FromArgs};
 use blocking::Unblock;
+use fdomain_client::fidl::Proxy;
 use fho::{FfxContext, Result};
 use futures::future::FutureExt;
 use futures::join;
@@ -14,12 +15,12 @@ use serde::Serialize;
 use std::os::unix::io::FromRawFd;
 use termion::raw::IntoRawMode;
 use {
-    fidl_fuchsia_developer_remotecontrol as rc, fidl_fuchsia_starnix_container as fstarcontainer,
-    fuchsia_async as fasync,
+    fdomain_fuchsia_developer_remotecontrol as rc,
+    fdomain_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync,
 };
 
-fn forward_stdin(console_in: fidl::Socket) -> Result<()> {
-    let mut tx = fidl::AsyncSocket::from_socket(console_in);
+fn forward_stdin(console_in: fdomain_client::Socket) -> Result<()> {
+    let mut tx = console_in;
 
     // We spin off a separate thread to copy data from stdin into this console.
     //
@@ -35,8 +36,8 @@ fn forward_stdin(console_in: fidl::Socket) -> Result<()> {
     Ok(())
 }
 
-async fn forward_stdout(console_out: fidl::Socket) -> Result<()> {
-    let rx = fidl::AsyncSocket::from_socket(console_out);
+async fn forward_stdout(console_out: fdomain_client::Socket) -> Result<()> {
+    let rx = console_out;
 
     // We spin off a separate thread to copy data from this console to stdout.
     //
@@ -60,7 +61,10 @@ async fn forward_stdout(console_out: fidl::Socket) -> Result<()> {
     Ok(())
 }
 
-async fn forward_console(console_in: fidl::Socket, console_out: fidl::Socket) -> Result<()> {
+async fn forward_console(
+    console_in: fdomain_client::Socket,
+    console_out: fdomain_client::Socket,
+) -> Result<()> {
     forward_stdin(console_in)?;
     forward_stdout(console_out).await
 }
@@ -80,8 +84,8 @@ async fn run_console(
     argv: Vec<String>,
     env: Vec<String>,
 ) -> Result<u8> {
-    let (local_console_in, remote_console_in) = fidl::Socket::create_stream();
-    let (local_console_out, remote_console_out) = fidl::Socket::create_stream();
+    let (local_console_in, remote_console_in) = controller.domain().create_stream_socket();
+    let (local_console_out, remote_console_out) = controller.domain().create_stream_socket();
     let binary_path = argv[0].clone();
     let (cols, rows) = termion::terminal_size().bug_context("getting terminal size")?;
     let (x_pixels, y_pixels) = (0, 0); // TODO: Need a newer termion for `terminal_size_pixels()`.

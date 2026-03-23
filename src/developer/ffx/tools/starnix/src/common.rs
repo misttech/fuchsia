@@ -4,12 +4,15 @@
 
 use anyhow::{Context, Result, bail};
 use component_debug::cli;
-use fidl_fuchsia_developer_remotecontrol as rc;
-use fidl_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
+use fdomain_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
 use regex::Regex;
 use std::sync::LazyLock;
 use target_connector::Connector;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
+use {
+    component_debug_fdomain as component_debug, fdomain_fuchsia_developer_remotecontrol as rc,
+    rcs_fdomain as rcs,
+};
 
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 

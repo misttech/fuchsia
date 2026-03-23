@@ -4,12 +4,13 @@
 
 use anyhow::Context;
 use argh::{ArgsInfo, FromArgs};
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_starnix_container::ControllerProxy;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
 use fho::{FfxContext, Result, return_bug, return_user_error};
-use fidl_fuchsia_starnix_container::ControllerProxy;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
 use futures::{FutureExt, channel};
@@ -26,9 +27,10 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, SshAddrHolder};
+use target_holders::SshAddrHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use tokio::net::{TcpListener, TcpStream};
-use {fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
+use {fdomain_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
 
 use crate::common::*;
 
@@ -239,9 +241,9 @@ async fn get_emu_host_adb_port(context: &EnvironmentContext, name: &str) -> Resu
 
 async fn serve_adb_connection(
     mut stream: MultithreadedTokioAsyncWrapper<TcpStream>,
-    bridge_socket: fidl::Socket,
+    bridge_socket: fdomain_client::Socket,
 ) -> anyhow::Result<()> {
-    let mut bridge = fidl::AsyncSocket::from_socket(bridge_socket);
+    let mut bridge = bridge_socket;
     let (breader, mut bwriter) = (&mut bridge).split();
     let (sreader, mut swriter) = (&mut stream).split();
 
@@ -387,7 +389,7 @@ impl AdbProxyArgs {
             }
 
             let stream = stream.map_err(|e| fho::Error::Unexpected(e.into()))?;
-            let (sbridge, cbridge) = fidl::Socket::create_stream();
+            let (sbridge, cbridge) = controller_proxy.0.domain().create_stream_socket();
 
             controller_proxy
                 .0
@@ -420,7 +422,7 @@ mod test {
     use netext::{TcpListenerStream, TokioAsyncReadExt};
     use tokio::net::{TcpListener, TcpStream};
 
-    async fn run_connection(listener: TcpListener, socket: fidl::Socket) {
+    async fn run_connection(listener: TcpListener, socket: fdomain_client::Socket) {
         let mut listener = TcpListenerStream(listener);
         if let Some(stream) = listener.next().await {
             let stream = stream.unwrap();
@@ -438,7 +440,8 @@ mod test {
 
         let port = local_address.port();
 
-        let (sbridge, cbridge) = fidl::Socket::create_stream();
+        let client = fdomain_local::local_client_empty();
+        let (sbridge, cbridge) = client.create_stream_socket();
 
         fasync::Task::spawn(async move {
             run_connection(listener, sbridge).await;
@@ -452,7 +455,7 @@ mod test {
         stream.write_all(&test_data_1).await.unwrap();
 
         let mut buf = [0u8; 64];
-        let mut async_socket = fidl::AsyncSocket::from_socket(cbridge);
+        let mut async_socket = cbridge;
         let bytes_read = async_socket.read(&mut buf).await.unwrap();
         assert_eq!(test_data_1.len(), bytes_read);
         for (a, b) in test_data_1.iter().zip(buf[..bytes_read].iter()) {

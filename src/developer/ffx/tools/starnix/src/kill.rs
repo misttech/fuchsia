@@ -7,7 +7,8 @@ use fho::{FfxContext, Result};
 use schemars::JsonSchema;
 use serde::Serialize;
 use {
-    fidl_fuchsia_developer_remotecontrol as rc, fidl_fuchsia_starnix_container as fstarcontainer,
+    fdomain_fuchsia_developer_remotecontrol as rc,
+    fdomain_fuchsia_starnix_container as fstarcontainer,
 };
 
 use crate::common::*;
