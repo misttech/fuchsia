@@ -76,7 +76,7 @@ fn run_test_with_c_args(args: &[&CStr], expect_success: bool) {
 
     let child_job = runtime::job_default().create_child_job().unwrap();
     let bin = c"/pkg/bin/scoped_task_test_spawner";
-    let args: Vec<&CStr> = Some(bin).iter().chain(args.into_iter()).copied().collect();
+    let args: Vec<&CStr> = Some(bin).iter().chain(args.iter()).copied().collect();
 
     let process = fdio::spawn(
         &child_job,
