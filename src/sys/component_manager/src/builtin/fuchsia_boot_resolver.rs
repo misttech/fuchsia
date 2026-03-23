@@ -7,10 +7,6 @@ use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use directed_graph::DirectedGraph;
 use fidl::endpoints::{ClientEnd, Proxy};
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_resolution as fresolution;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl, ComponentUrl, PackageUrl};
 use futures::TryStreamExt;
 use futures::future::FutureExt;
@@ -19,6 +15,10 @@ use std::path::Path;
 use std::sync::Arc;
 use system_image::{Bootfs, PathHashMapping};
 use version_history::AbiRevision;
+use {
+    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
+    fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg,
+};
 
 pub const SCHEME: &str = "fuchsia-boot";
 
@@ -395,10 +395,20 @@ impl FuchsiaBootPackageResolver {
             fuchsia_url::PackageVariant::zero(),
         );
 
-        let meta_hash = self
-            .boot_package_index
-            .hash_for_package(&package_path)
-            .ok_or(fpkg::ResolveError::PackageNotFound)?;
+        let meta_hash =
+            self.boot_package_index.hash_for_package(&package_path).ok_or_else(|| {
+                static INDEX_LOGGED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if INDEX_LOGGED.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+                    log::warn!(url:?; "'{package_path}' not in bootfs index");
+                } else {
+                    log::warn!(
+                     url:?; "'{package_path}' not in bootfs index. Options are: {}",
+                     itertools::join(self.boot_package_index.contents().map(|(path, _)| path), ", ")
+                    );
+                }
+                fpkg::ResolveError::PackageNotFound
+            })?;
 
         let root_dir = self.root_dir_cache.get_or_insert(meta_hash, None).await.map_err(|e| {
             log::warn!(url:?; "creating RootDir for {meta_hash} {:#}", anyhow!(e));
@@ -654,8 +664,6 @@ mod tests {
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
     use fidl::endpoints::create_proxy;
     use fidl::persist;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_data as fdata;
     use fuchsia_async::Task;
     use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
@@ -666,6 +674,7 @@ mod tests {
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
     use vfs::{ToObjectRequest, pseudo_directory};
+    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata};
 
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {
         let fs_scope = ExecutionScope::new();
