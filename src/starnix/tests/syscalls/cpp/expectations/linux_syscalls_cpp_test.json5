@@ -9,6 +9,9 @@
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.ProcfsCgroup",
 
+                // TODO(https://fxbug.dev/437153843): Flaking, albeit very infrequently.
+                "FuseTest.Stats",
+
                 // TODO(https://fxbug.dev/437167254)
                 "IoctlTest.SIOCSIFADDR_Success",
                 "IoctlTest.EVIOCGNAME_Success",
@@ -43,6 +46,7 @@
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_1",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_0",
                 "RouteNetlinkSocket/RouteNetlinkSocketNewAddr.AddSubnetRoute/v6_prefix_128",
+                "RouteNetlinkSocketTestWithInterface.CreateAndProbeNeighbor",
 
                 // TODO(https://fxbug.dev/436916785): These tests actually suspend the system,
                 // and in Machina this results in the tests timing out after 180s.
