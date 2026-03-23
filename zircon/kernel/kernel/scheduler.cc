@@ -2518,14 +2518,14 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
   if (placement != Placement::Adjustment) {
     if (placement == Placement::Migration) {
       // Connect the flow into the previous queue to the new queue.
-      LOCAL_KTRACE_FLOW_STEP(FLOW, "sched_latency", state->flow_id(), ("tid", thread->tid()));
+      LOCAL_KTRACE_FLOW_STEP(FLOW, "sched_latency", state->flow_id());
     } else {
       // Reuse this member to track the time the thread enters the run queue. It
       // is not read outside of the scheduler unless the thread state is
       // THREAD_RUNNING.
       state->last_started_running_ = now;
       state->flow_id_ = NextFlowId();
-      LOCAL_KTRACE_FLOW_BEGIN(FLOW, "sched_latency", state->flow_id(), ("tid", thread->tid()));
+      LOCAL_KTRACE_FLOW_BEGIN(FLOW, "sched_latency", state->flow_id());
     }
   }
 
@@ -2713,7 +2713,7 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
       QueueThread(thread, placement, now);
     } else {
       // Connect the flow into the previous queue to the new queue.
-      LOCAL_KTRACE_FLOW_STEP(FLOW, "sched_latency", state.flow_id(), ("tid", thread->tid()));
+      LOCAL_KTRACE_FLOW_STEP(FLOW, "sched_latency", state.flow_id());
     }
   }
 }
