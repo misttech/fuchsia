@@ -110,6 +110,5 @@ def _rustfmt(ctx):
         )
 
 def register_rust_checks():
-    # TODO: Re-enable once clippy is fixed.
-    # shac.register_check(shac.check(_clippy))
+    shac.register_check(shac.check(_clippy))
     shac.register_check(shac.check(_rustfmt, formatter = True))
