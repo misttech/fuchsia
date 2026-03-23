@@ -78,6 +78,12 @@ macro_rules! atomic_bitflags {
                     }).map($BitFlags::from_bits_truncate).unwrap()
                 }
             }
+
+            impl From<$BitFlags> for [<Atomic $BitFlags>] {
+                fn from(initial: $BitFlags) -> Self {
+                    Self::new(initial)
+                }
+            }
         }
     };
 }
@@ -136,5 +142,11 @@ mod tests {
         );
         assert_eq!(prev, TestFlags::A | TestFlags::B);
         assert_eq!(atomic.load(Ordering::Relaxed), TestFlags::empty());
+    }
+
+    #[test]
+    fn test_from() {
+        let atomic: AtomicTestFlags = TestFlags::A.into();
+        assert_eq!(atomic.load(Ordering::Relaxed), TestFlags::A);
     }
 }

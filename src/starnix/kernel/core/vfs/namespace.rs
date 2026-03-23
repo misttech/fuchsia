@@ -32,7 +32,7 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::{AtomicMountFlags, MountFlags};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::unmount_flags::UnmountFlags;
 use starnix_uapi::vfs::{FdEvents, ResolveFlags};
@@ -42,6 +42,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 /// A mount namespace.
@@ -140,8 +141,13 @@ type MountClientMarker = Arc<()>;
 /// `submounts` pointing to the children.
 pub struct Mount {
     root: DirEntryHandle,
-    flags: Mutex<MountFlags>,
     fs: FileSystemHandle,
+
+    /// Holds the flags specific to this mount of the underlying filesystem.
+    flags: AtomicMountFlags,
+
+    /// Lock used to serialize updates of `flags` to ensure consistency during remount operations.
+    flags_lock: Mutex<()>,
 
     /// A unique identifier for this mount reported in /proc/pid/mountinfo.
     id: u64,
@@ -297,7 +303,8 @@ impl Mount {
         let kernel = fs.kernel.upgrade().expect("can't create mount without kernel");
         Arc::new(Self {
             id: kernel.get_next_mount_id(),
-            flags: Mutex::new(flags),
+            flags: flags.into(),
+            flags_lock: Mutex::new(()),
             root,
             active_client_counter: Default::default(),
             fs,
@@ -444,7 +451,7 @@ impl Mount {
     }
 
     fn flags(&self) -> MountFlags {
-        *self.flags.lock()
+        self.flags.load(Ordering::Relaxed)
     }
 
     pub fn update_flags(self: &MountHandle, mut flags: MountFlags) {
@@ -453,17 +460,17 @@ impl Mount {
             | MountFlags::NODIRATIME
             | MountFlags::RELATIME
             | MountFlags::STRICTATIME;
-        let mut stored_flags = self.flags.lock();
+        let _lock = self.flags_lock.lock();
         if !flags.intersects(atime_flags) {
             // Since Linux 3.17, if none of MS_NOATIME, MS_NODIRATIME,
             // MS_RELATIME, or MS_STRICTATIME is specified in mountflags, then
             // the remount operation preserves the existing values of these
             // flags (rather than defaulting to MS_RELATIME).
-            flags |= *stored_flags & atime_flags;
+            flags |= self.flags.load(Ordering::Relaxed) & atime_flags;
         }
         // The "effect [of MS_STRICTATIME] is to clear the MS_NOATIME and MS_RELATIME flags."
         flags &= !MountFlags::STRICTATIME;
-        *stored_flags = flags;
+        self.flags.store(flags, Ordering::Relaxed);
     }
 
     /// The number of active clients of this mount.

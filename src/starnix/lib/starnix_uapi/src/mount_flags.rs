@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::uapi;
-use bitflags::bitflags;
+use atomic_bitflags::atomic_bitflags;
 
-bitflags! {
+atomic_bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MountFlags: u32 {
         // per-mountpoint flags
