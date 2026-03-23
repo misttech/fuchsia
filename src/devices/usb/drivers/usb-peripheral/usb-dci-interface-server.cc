@@ -17,34 +17,20 @@ namespace usb_peripheral {
 
 void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  fidl::Arena arena;
-  fidl::VectorView<uint8_t> read_data(arena, req->setup.w_length);  // May be 0.
 
-  // convert the FIDL ::UsbSetup struct into a banjo usb_setup_t.
-  // clang-format off
-  usb_setup_t bsetup{
-      req->setup.bm_request_type,
-      req->setup.b_request,
-      req->setup.w_value,
-      req->setup.w_index,
-      req->setup.w_length,
-  };
-  // clang-format on
-
-  // Some lightweight spans for convenience.
   cpp20::span<uint8_t> span_write = req->write.get();
-  cpp20::span<uint8_t> span_read = read_data.get();
 
-  size_t actual = 0;  // Unused by FIDL, size encoded in returned read_data vector.
-  zx_status_t status = drv_->CommonControl(&bsetup, span_write.data(), span_write.size_bytes(),
-                                           span_read.data(), span_read.size_bytes(), &actual);
-
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
-  } else {
-    read_data.set_size(actual);
-    completer.buffer(arena).ReplySuccess(read_data);
-  }
+  drv_->CommonControl(
+      req->setup, span_write,
+      [completer = completer.ToAsync()](zx::result<std::vector<uint8_t>> result) mutable {
+        if (result.is_error()) {
+          completer.ReplyError(result.error_value());
+          return;
+        }
+        fidl::Arena arena;
+        completer.buffer(arena).ReplySuccess(
+            fidl::VectorView<uint8_t>::FromExternal(result.value()));
+      });
 }
 
 void UsbDciInterfaceServer::SetConnected(SetConnectedRequestView req,

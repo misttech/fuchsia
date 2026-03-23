@@ -5,6 +5,7 @@
 #include "src/devices/usb/drivers/usb-peripheral/usb-function.h"
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/metadata.h>
 #include <lib/trace/event.h>
 
@@ -72,18 +73,11 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     // Which also means that we need to close our connection with the function
     // interface to make sure that resources are not used after they've been
     // released.
-    if (function_intf_fidl_closed_.has_value()) {
-      function_intf_fidl_closed_->Cancel();
+    if (function_intf_fidl_.is_valid()) {
+      function_intf_fidl_.AsyncTeardown();
+      function_intf_fidl_ = {};
     }
-    bool valid_fidl = function_intf_fidl_.is_valid();
-    if (valid_fidl) {
-      function_intf_fidl_.TakeClientEnd();
-    }
-    descriptors_.reset();
     peripheral_->ReleaseResources(index_);
-    if (valid_fidl) {
-      peripheral_->DeviceStateChanged();
-    }
   });
 
   zx::result result = outgoing->AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
@@ -393,138 +387,166 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   num_interfaces_ = validate_result.value();
 
   descriptors_.reset(descriptors, length);
-  function_intf_fidl_.Bind(std::move(request.iface()));
+  function_intf_fidl_.Bind(std::move(request.iface()), dispatcher_, this);
   zx_status_t status = peripheral_->FunctionRegistered();
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
     fdf::error("FunctionRegistered failed: {}", zx_status_get_string(status));
-    function_intf_fidl_.TakeClientEnd();
+    function_intf_fidl_ = {};
     descriptors_.reset();
     return;
   }
-  // Listen for the close event to discard our channel.
-  function_intf_fidl_closed_.emplace(function_intf_fidl_.client_end().channel().get(),
-                                     ZX_CHANNEL_PEER_CLOSED);
-  function_intf_fidl_closed_->Begin(
-      dispatcher_, [this](async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
-                          const zx_packet_signal_t* signal) {
-        switch (status) {
-          case ZX_ERR_CANCELED:
-            return;
-          case ZX_OK:
-            break;
-          default:
-            fdf::error("Dispatcher error observing peer closed for function: {}",
-                       zx_status_get_string(status));
-            return;
-        }
-        function_intf_fidl_.TakeClientEnd();
-        descriptors_.reset();
-        peripheral_->DeviceStateChanged();
-      });
 
   completer.Reply(fit::ok());
 }
 
-zx_status_t UsbFunction::SetConfigured(bool configured, usb_speed_t speed) {
+void UsbFunction::on_fidl_error(fidl::UnbindInfo info) {
+  switch (info.status()) {
+    case ZX_ERR_PEER_CLOSED:
+    case ZX_OK:
+    case ZX_ERR_CANCELED:
+      break;
+    default:
+      fdf::error("Unexpected FIDL error on function interface: {}",
+                 zx_status_get_string(info.status()));
+      return;
+  }
+  function_intf_fidl_ = {};
+  descriptors_.reset();
+  peripheral_->DeviceStateChanged();
+}
+
+void UsbFunction::handle_unknown_event(
+    fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata) {
+  fdf::error("Unknown event on function interface: {}", metadata.event_ordinal);
+}
+
+void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
+                                fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  if (function_intf_fidl_.is_valid()) {
+  if (function_intf_fidl_) {
     fdescriptor::wire::UsbSpeed fspeed = static_cast<fdescriptor::wire::UsbSpeed>(speed);
-    fidl::WireResult result = function_intf_fidl_->SetConfigured(configured, fspeed);
-    if (!result.ok()) {
-      fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}", result.status_string());
-      return result.status();
-    }
-    if (result->is_error()) {
-      fdf::error("UsbFunctionInterface.SetConfigured error: {}",
-                 zx_status_get_string(result->error_value()));
-      return result->error_value();
-    }
-    return ZX_OK;
+    function_intf_fidl_->SetConfigured(configured, fspeed)
+        .ThenExactlyOnce(
+            [completer = std::move(completer)](
+                fidl::WireUnownedResult<
+                    fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
+                    result) mutable {
+              if (!result.ok()) {
+                fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}",
+                           result.FormatDescription());
+                completer(result.status());
+                return;
+              }
+              if (result->is_error()) {
+                fdf::error("UsbFunctionInterface.SetConfigured error: {}",
+                           zx_status_get_string(result->error_value()));
+                completer(result->error_value());
+                return;
+              }
+              completer(ZX_OK);
+            });
+    return;
   }
   if (function_intf_.is_valid()) {
     fdf::warn("{}: FIDL client not valid, falling back to banjo", __func__);
-    return function_intf_.SetConfigured(configured, speed);
+    completer(function_intf_.SetConfigured(configured, speed));
+    return;
   }
   fdf::error("SetConfigured failed as the interface is invalid.");
-  return ZX_ERR_BAD_STATE;
+  completer(ZX_ERR_BAD_STATE);
 }
 
-zx_status_t UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting) {
+void UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting,
+                               fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  if (function_intf_fidl_.is_valid()) {
-    fidl::WireResult result = function_intf_fidl_->SetInterface(interface, alt_setting);
-    if (!result.ok()) {
-      fdf::error("UsbFunctionInterface.SetInterface FIDL call failed: {}", result.status_string());
-      return result.status();
-    }
-    if (result->is_error()) {
-      fdf::error("UsbFunctionInterface.SetInterface error: {}",
-                 zx_status_get_string(result->error_value()));
-      return result->error_value();
-    }
-    return ZX_OK;
+  if (function_intf_fidl_) {
+    function_intf_fidl_->SetInterface(interface, alt_setting)
+        .ThenExactlyOnce([completer = std::move(completer)](
+                             fidl::WireUnownedResult<
+                                 fuchsia_hardware_usb_function::UsbFunctionInterface::SetInterface>&
+                                 result) mutable {
+          if (!result.ok()) {
+            fdf::error("UsbFunctionInterface.SetInterface FIDL call failed: {}",
+                       result.FormatDescription());
+            completer(result.status());
+            return;
+          }
+          if (result->is_error()) {
+            fdf::error("UsbFunctionInterface.SetInterface error: {}",
+                       zx_status_get_string(result->error_value()));
+            completer(result->error_value());
+            return;
+          }
+          completer(ZX_OK);
+        });
+    return;
   }
   if (function_intf_.is_valid()) {
     fdf::warn("{}: FIDL client not valid, falling back to banjo", __func__);
-    return function_intf_.SetInterface(interface, alt_setting);
+    completer(function_intf_.SetInterface(interface, alt_setting));
+    return;
   }
   fdf::error("SetInterface failed as the interface is invalid.");
-  return ZX_ERR_BAD_STATE;
+  completer(ZX_ERR_BAD_STATE);
 }
 
-zx_status_t UsbFunction::Control(const usb_setup_t* setup, const void* write_buffer,
-                                 size_t write_size, void* read_buffer, size_t read_size,
-                                 size_t* out_read_actual) {
+// TODO(https://fxbug.dev/493657863): This call should be async like
+// SetConfigured and SetInterface once we can guarantee a single-dispatch of
+// USB_RECIP_DEVICE requests to bound functions.
+zx::result<std::vector<uint8_t>> UsbFunction::Control(
+    const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
+    cpp20::span<uint8_t> write_buffer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  if (function_intf_fidl_.is_valid()) {
-    fdescriptor::wire::UsbSetup fsetup;
-    fsetup.bm_request_type = setup->bm_request_type;
-    fsetup.b_request = setup->b_request;
-    fsetup.w_value = setup->w_value;
-    fsetup.w_index = setup->w_index;
-    fsetup.w_length = setup->w_length;
+  if (function_intf_fidl_) {
+    fidl::VectorView<uint8_t> write_data =
+        fidl::VectorView<uint8_t>::FromExternal(write_buffer.data(), write_buffer.size());
+    size_t expected_read_size = le16toh(setup.w_length);
 
-    fidl::VectorView<uint8_t> write_data;
-    if (write_size > 0 && write_buffer != nullptr) {
-      write_data = fidl::VectorView<uint8_t>::FromExternal(
-          static_cast<uint8_t*>(const_cast<void*>(write_buffer)), write_size);
-    }
-
-    fidl::WireResult result = function_intf_fidl_->Control(fsetup, write_data);
+    auto result = function_intf_fidl_.sync()->Control(setup, write_data);
     if (!result.ok()) {
-      fdf::error("UsbFunctionInterface.Control FIDL call failed: {}", result.status_string());
-      return result.status();
+      fdf::error("UsbFunctionInterface.Control FIDL call failed: {}", result.FormatDescription());
+      return zx::error(result.status());
     }
     if (result->is_error()) {
       fdf::error("UsbFunctionInterface.Control error: {}",
                  zx_status_get_string(result->error_value()));
-      return result->error_value();
+      return zx::error(result->error_value());
     }
 
     fuchsia_hardware_usb_function::wire::UsbFunctionInterfaceControlResponse* response =
         result->value();
     size_t actual_read = response->read.size();
-    if (actual_read > read_size) {
-      fdf::error("Control read too much data: {} > {}", actual_read, read_size);
-      return ZX_ERR_BUFFER_TOO_SMALL;
+    if (actual_read > expected_read_size) {
+      fdf::error("Control read too much data: {} > {}", actual_read, expected_read_size);
+      return zx::error(ZX_ERR_BUFFER_TOO_SMALL);
     }
-    if (actual_read > 0 && read_buffer != nullptr) {
-      memcpy(read_buffer, response->read.data(), actual_read);
-    }
-    if (out_read_actual) {
-      *out_read_actual = actual_read;
-    }
-    return ZX_OK;
+
+    std::vector<uint8_t> read_data_vec(response->read.begin(), response->read.end());
+    return zx::ok(std::move(read_data_vec));
   }
   if (function_intf_.is_valid()) {
     fdf::warn("{}: FIDL client not valid, falling back to banjo", __func__);
-    return function_intf_.Control(setup, reinterpret_cast<const uint8_t*>(write_buffer), write_size,
-                                  reinterpret_cast<uint8_t*>(read_buffer), read_size,
-                                  out_read_actual);
+    uint8_t direction = setup.bm_request_type & USB_DIR_MASK;
+    size_t expected_read_size = (direction == USB_DIR_IN) ? le16toh(setup.w_length) : 0;
+    std::vector<uint8_t> read_data_vec(expected_read_size);
+    size_t actual_read = 0;
+
+    zx_status_t status = function_intf_.Control(
+        reinterpret_cast<const usb_setup_t*>(&setup), write_buffer.data(), write_buffer.size(),
+        read_data_vec.data(), expected_read_size, &actual_read);
+
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    if (actual_read > expected_read_size) {
+      return zx::error(ZX_ERR_BUFFER_TOO_SMALL);
+    }
+    read_data_vec.resize(actual_read);
+    return zx::ok(std::move(read_data_vec));
   }
   fdf::error("Control failed as the interface is invalid.");
-  return ZX_ERR_BAD_STATE;
+  return zx::error(ZX_ERR_BAD_STATE);
 }
 
 }  // namespace usb_peripheral

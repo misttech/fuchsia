@@ -26,8 +26,10 @@ class UsbPeripheral;
 
 // This class represents a USB function in the peripheral role configurations.
 // USB function drivers bind to this.
-class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
-                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunction> {
+class UsbFunction
+    : public ddk::UsbFunctionProtocol<UsbFunction>,
+      public fidl::Server<fuchsia_hardware_usb_function::UsbFunction>,
+      public fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   UsbFunction(size_t index, UsbPeripheral* peripheral,
               fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor desc, uint8_t configuration,
@@ -52,11 +54,20 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   zx_status_t UsbFunctionEpClearStall(uint8_t ep_address);
   size_t UsbFunctionGetRequestSize();
 
-  zx_status_t SetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t SetInterface(uint8_t interface, uint8_t alt_setting);
-  zx_status_t Control(const usb_setup_t* setup, const void* write_buffer, size_t write_size,
-                      void* read_buffer, size_t read_size, size_t* out_read_actual);
+  void SetConfigured(bool configured, usb_speed_t speed,
+                     fit::callback<void(zx_status_t)> completer);
+  void SetInterface(uint8_t interface, uint8_t alt_setting,
+                    fit::callback<void(zx_status_t)> completer);
+  zx::result<std::vector<uint8_t>> Control(
+      const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
+      cpp20::span<uint8_t> write_buffer);
   uint8_t configuration() const { return configuration_; }
+
+  // fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface>
+  void on_fidl_error(fidl::UnbindInfo info) override;
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata)
+      override;
 
   inline const usb_descriptor_header_t* GetDescriptors(size_t* out_length) const {
     *out_length = descriptors_.size();
@@ -99,11 +110,7 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   bool alloc_resources_over_fidl_ = false;
   UsbPeripheral* peripheral_;
   ddk::UsbFunctionInterfaceProtocolClient function_intf_;
-  // TODO(https://fxbug.dev/492519815): We're assuming a synchronous call into
-  // functions is okay as a first step as part of the Banjo to FIDL migration.
-  // We should revisit and prefer an async client here.
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
-  std::optional<async::WaitOnce> function_intf_fidl_closed_;
+  fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
   thrd_t thread_;
   int CompletionThread();
   const fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor function_descriptor_;

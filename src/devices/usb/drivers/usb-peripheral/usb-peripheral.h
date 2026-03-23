@@ -10,12 +10,16 @@
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/fpromise/bridge.h>
+#include <lib/fpromise/promise.h>
 #include <lib/trace/event.h>
 #include <lib/zx/channel.h>
 #include <zircon/errors.h>
 
+#include <optional>
 #include <utility>
 
 #include <fbl/mutex.h>
@@ -169,7 +173,8 @@ class UsbPeripheral : public fdf::DriverBase,
     auto result = dci_new_->ConnectToEndpoint(ep_address, std::move(ep));
     if (!result.ok()) {
       return ZX_ERR_INTERNAL;  // framework error.
-    } else if (result->is_error()) {
+    }
+    if (result->is_error()) {
       return result->error_value();
     }
     return ZX_OK;
@@ -184,9 +189,9 @@ class UsbPeripheral : public fdf::DriverBase,
 
   // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
   // here can be folded into the FIDL endpoint implementation and calling code.
-  zx_status_t CommonControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                            size_t write_size, uint8_t* read_buffer, size_t read_size,
-                            size_t* out_read_actual);
+  void CommonControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
+                     cpp20::span<uint8_t> write_buffer,
+                     fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
   void CommonSetConnected(bool connected);
   // SetSpeed() is trivial and warrants no common impl.
 
@@ -212,8 +217,10 @@ class UsbPeripheral : public fdf::DriverBase,
   zx_status_t AddFunctionDevices() __TA_REQUIRES(lock_);
   zx_status_t GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index, void* buffer,
                             size_t length, size_t* out_actual);
-  zx_status_t SetConfiguration(uint8_t configuration);
-  zx_status_t SetInterface(uint8_t interface, uint8_t alt_setting);
+  void SetInterface(uint8_t interface, uint8_t alt_setting,
+                    fit::callback<void(zx_status_t)> completer) __TA_EXCLUDES(lock_);
+  void SetConfiguration(uint8_t configuration, fit::callback<void(zx_status_t)> completer)
+      __TA_EXCLUDES(lock_);
   zx_status_t SetDefaultConfig(std::vector<FunctionDescriptor>& functions);
   void RequestComplete(usb_request_t* req);
 
@@ -293,6 +300,8 @@ class UsbPeripheral : public fdf::DriverBase,
   usb::BorrowedRequestList<void> pending_requests_ __TA_GUARDED(pending_requests_lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
+
+  std::optional<async::Executor> executor_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
