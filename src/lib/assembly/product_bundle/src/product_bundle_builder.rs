@@ -447,6 +447,7 @@ async fn write_repositories(
         targets_private_key_path: copy_file(tuf_keys.join("targets.json"), &keys_path).ok(),
         snapshot_private_key_path: copy_file(tuf_keys.join("snapshot.json"), &keys_path).ok(),
         timestamp_private_key_path: copy_file(tuf_keys.join("timestamp.json"), &keys_path).ok(),
+        ota_manifest_signature_path: None,
     }])
 }
 
@@ -808,6 +809,7 @@ mod test {
                 targets_private_key_path: Some(product_bundle_path.join("keys/targets.json")),
                 snapshot_private_key_path: Some(product_bundle_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(product_bundle_path.join("keys/timestamp.json")),
+                ota_manifest_signature_path: None,
             }],
             update_package_hash: Some(
                 "4198e7b88cc98aa87b16afa134e1f1ec8580fd9105f7db399adf6ff65426b49c".parse().unwrap(),
