@@ -28,8 +28,12 @@ type ChargeStatus = strict enum {
     FULL = 4;
 };
 
-/// The power source for an actively charging battery.
+/// The power source kind.
 type ChargeSource = strict enum {
+    /// Indicates the power source cannot be determined (for example, due to an error).
+    ///
+    /// Clients should handle this state conservatively. When determining if the device
+    /// is connected to an external power source, treat `UNKNOWN` as `NONE`.
     UNKNOWN = 0;
     NONE = 1;
     AC_ADAPTER = 2;
@@ -92,9 +96,11 @@ type BatteryInfo = table {
     /// The current state of the battery with respect to charging.
     2: charge_status ChargeStatus;
 
-    /// The charge source while battery is actively charging.
-    /// When not actively charging, this will reflect that the source is
-    /// NONE (not charging) or UNKNOWN.
+    /// The current power source for the device.
+    ///
+    /// A connected power source does not guarantee the battery is actively charging
+    /// (for example, if the battery is full, does not need charging, or has a fault).
+    /// See `charge_status` for the current charging state.
     3: charge_source ChargeSource;
 
     /// Battery level in percentage. Level percent is only available if
@@ -145,7 +151,7 @@ closed protocol BatteryInfoProvider {
     });
 
     /// Registers a watcher for battery info changes.
-    /// Will receive an `OnChangeBatteryInfo` call with intial values upon registration.
+    /// Will receive an `OnChangeBatteryInfo` call with initial values upon registration.
     strict Watch(resource struct {
         watcher client_end:BatteryInfoWatcher;
     });
