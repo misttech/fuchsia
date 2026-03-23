@@ -7,12 +7,13 @@ use component_debug::cli::{
     storage_copy_cmd, storage_delete_all_cmd, storage_delete_cmd, storage_list_cmd,
     storage_make_directory_cmd,
 };
+use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_storage_args::{StorageCommand, SubCommandEnum};
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct StorageTool {
