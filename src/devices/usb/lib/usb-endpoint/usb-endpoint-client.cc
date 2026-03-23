@@ -86,6 +86,7 @@ size_t EndpointClientBase::AddRequests(size_t req_count, size_t size,
 
 zx_status_t EndpointClientBase::DeleteRequest(usb::FidlRequest&& request) {
   zx_status_t ret_status = ZX_OK;
+  std::vector<uint64_t> vmo_ids;
   for (auto& d : *request->data()) {
     auto status = Unmap(d);
     if (status != ZX_OK) {
@@ -96,17 +97,26 @@ zx_status_t EndpointClientBase::DeleteRequest(usb::FidlRequest&& request) {
     }
 
     if (d.buffer()->Which() == fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) {
-      sync_completion_t wait;
-      client_->UnregisterVmos(std::vector<uint64_t>{d.buffer()->vmo_id().value()})
-          .Then([&wait](
-                    fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::UnregisterVmos>& result) {
-            if (result.is_error()) {
-              zxlogf(ERROR, "Failed to unregister vmo %s",
-                     result.error_value().FormatDescription().c_str());
-            }
-            sync_completion_signal(&wait);
-          });
-      sync_completion_wait(&wait, ZX_TIME_INFINITE);
+      vmo_ids.push_back(d.buffer()->vmo_id().value());
+    }
+  }
+
+  if (!vmo_ids.empty()) {
+    fidl::WireResult result = client_.wire_sync()->UnregisterVmos(
+        fidl::VectorView<uint64_t>::FromExternal(vmo_ids.data(), vmo_ids.size()));
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to unregister vmo %s", result.FormatDescription().c_str());
+      return result.status();
+    }
+    if (result->failed_vmo_ids.size() != result->errors.size()) {
+      zxlogf(ERROR, "Inconsistent failed vmo ids and errors");
+      return ZX_ERR_INTERNAL;
+    }
+    for (size_t i = 0; i < result->failed_vmo_ids.size(); i++) {
+      zx_status_t status = result->errors.at(i);
+      zxlogf(ERROR, "Failed to unregister vmo %lu: %s", result->failed_vmo_ids.at(i),
+             zx_status_get_string(status));
+      ret_status = status;
     }
   }
 
@@ -134,43 +144,41 @@ zx_status_t EndpointClientBase::Close() {
 }
 
 size_t EndpointClientBase::RegisterVmos(size_t vmo_count, size_t vmo_size) {
-  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
-  vmo_info.reserve(vmo_count);
+  fidl::Arena arena;
+  fidl::VectorView<fuchsia_hardware_usb_endpoint::wire::VmoInfo> vmo_info(arena, vmo_count);
   for (uint32_t i = 0; i < vmo_count; i++) {
-    vmo_info.emplace_back(
-        std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(buffer_id_++).size(vmo_size)));
+    vmo_info.at(i) = fuchsia_hardware_usb_endpoint::wire::VmoInfo::Builder(arena)
+                         .id(buffer_id_++)
+                         .size(vmo_size)
+                         .Build();
   }
 
-  sync_completion_t wait;
   size_t actual = 0;
-  client_->RegisterVmos(std::move(vmo_info))
-      .Then([&](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
-        if (result.is_error()) {
-          zxlogf(ERROR, "Failed to register VMOs %s",
-                 result.error_value().FormatDescription().c_str());
-          sync_completion_signal(&wait);
-          return;
-        }
+  fidl::WireResult result = client_.wire_sync()->RegisterVmos(vmo_info);
+  if (!result.ok()) {
+    zxlogf(ERROR, "Failed to register VMOs %s", result.FormatDescription().c_str());
+    return 0;
+  }
 
-        actual = result->vmos().size();
-        for (const auto& vmo : result->vmos()) {
-          free_reqs_.Add(std::move(usb::FidlRequest(ep_type_).add_vmo_id(*vmo.id(), vmo_size)));
+  fidl::VectorView<fuchsia_hardware_usb_endpoint::wire::VmoHandle>& vmos = result->vmos;
+  actual = vmos.size();
+  for (const auto& vmo : vmos) {
+    free_reqs_.Add(std::move(usb::FidlRequest(ep_type_).add_vmo_id(vmo.id(), vmo_size)));
 
-          zx_vaddr_t mapped_addr;
-          auto status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0,
-                                                   *vmo.vmo(), 0, vmo_size, &mapped_addr);
-          if (status != ZX_OK) {
-            zxlogf(ERROR, "Failed to map the vmo: %d", status);
-            // Try for the next one.
-            continue;
-          }
-          std::lock_guard<std::mutex> _(mutex());
-          vmo_mapped_addrs_.emplace(*vmo.id(), usb::MappedVmo{mapped_addr, vmo_size});
-        }
-        sync_completion_signal(&wait);
-      });
-  sync_completion_wait(&wait, ZX_TIME_INFINITE);
-
+    zx_vaddr_t mapped_addr;
+    auto status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo.vmo(), 0,
+                                             vmo_size, &mapped_addr);
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to map the vmo: %d", status);
+      // Try for the next one.
+      continue;
+    }
+    std::lock_guard<std::mutex> _(mutex());
+    vmo_mapped_addrs_.emplace(vmo.id(), usb::MappedVmo{
+                                            .addr = mapped_addr,
+                                            .size = vmo_size,
+                                        });
+  }
   return actual;
 }
 

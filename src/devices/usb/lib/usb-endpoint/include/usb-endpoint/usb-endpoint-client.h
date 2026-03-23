@@ -151,6 +151,12 @@ class EndpointClient : public internal::EndpointClientBase,
   zx_status_t Init(uint8_t ep_addr, fidl::ClientEnd<ProtocolType>& client,
                    async_dispatcher_t* dispatcher);
 
+  zx_status_t Init(fidl::ClientEnd<fuchsia_hardware_usb_endpoint::Endpoint> client_end,
+                   async_dispatcher_t* dispatcher) {
+    client_.Bind(std::move(client_end), dispatcher, this);
+    return ZX_OK;
+  }
+
   // fidl::AsyncEventHandler implementation.
   // OnCompletion: handles completed requests by calling on_completion_ for each request completed.
   void OnCompletion(
