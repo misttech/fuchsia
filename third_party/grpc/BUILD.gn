@@ -8,7 +8,7 @@
 #
 # See README.md for more information.
 
-source_root = "//third_party/grpc-migrating/src"
+source_root = "src"
 
 declare_args() {
   # Compiles with ares.

@@ -49,8 +49,7 @@
           },
           {
             "projects": [
-              "third_party/grpc",
-	      "third_party/grpc-migrating"
+              "third_party/grpc"
             ],
             "bug": "",
             "notes": []
