@@ -6,6 +6,7 @@ use ebpf::{
     CallingContext, CbpfConfig, CbpfLenInstruction, FieldDescriptor, FieldType, FunctionSignature,
     MapSchema, MemoryId, MemoryParameterSize, StructDescriptor, Type,
 };
+use fidl_fuchsia_ebpf as febpf;
 use linux_uapi::{
     __sk_buff, bpf_attach_type_BPF_CGROUP_DEVICE, bpf_attach_type_BPF_CGROUP_GETSOCKOPT,
     bpf_attach_type_BPF_CGROUP_INET_EGRESS, bpf_attach_type_BPF_CGROUP_INET_INGRESS,
@@ -631,6 +632,79 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
         ]
     });
 
+/// A type of a struct that may be passed to eBPF programs.
+#[derive(Copy, Clone)]
+pub enum StructId {
+    SkBuff = 1,
+    XdpMd = 2,
+    BpfUserPtRegs = 3,
+    BpfSock = 4,
+    BpfSockOpt = 5,
+    BpfSockAddr = 6,
+    BpfFuse = 7,
+}
+
+impl StructId {
+    pub const fn as_memory_id(self) -> MemoryId {
+        MemoryId::from_raw(self as u64)
+    }
+}
+
+impl From<StructId> for febpf::StructId {
+    fn from(value: StructId) -> Self {
+        match value {
+            StructId::SkBuff => febpf::StructId::SkBuff,
+            StructId::XdpMd => febpf::StructId::XdpMd,
+            StructId::BpfUserPtRegs => febpf::StructId::BpfUserPtRegs,
+            StructId::BpfSock => febpf::StructId::BpfSock,
+            StructId::BpfSockOpt => febpf::StructId::BpfSockOpt,
+            StructId::BpfSockAddr => febpf::StructId::BpfSockAddr,
+            StructId::BpfFuse => febpf::StructId::BpfFuse,
+        }
+    }
+}
+
+impl TryFrom<&MemoryId> for StructId {
+    type Error = ();
+
+    fn try_from(value: &MemoryId) -> Result<Self, Self::Error> {
+        if *value == StructId::SkBuff.as_memory_id() {
+            Ok(StructId::SkBuff)
+        } else if *value == StructId::XdpMd.as_memory_id() {
+            Ok(StructId::XdpMd)
+        } else if *value == StructId::BpfUserPtRegs.as_memory_id() {
+            Ok(StructId::BpfUserPtRegs)
+        } else if *value == StructId::BpfSock.as_memory_id() {
+            Ok(StructId::BpfSock)
+        } else if *value == StructId::BpfSockOpt.as_memory_id() {
+            Ok(StructId::BpfSockOpt)
+        } else if *value == StructId::BpfSockAddr.as_memory_id() {
+            Ok(StructId::BpfSockAddr)
+        } else if *value == StructId::BpfFuse.as_memory_id() {
+            Ok(StructId::BpfFuse)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl From<febpf::StructId> for StructId {
+    fn from(value: febpf::StructId) -> Self {
+        match value {
+            febpf::StructId::SkBuff => StructId::SkBuff,
+            febpf::StructId::XdpMd => StructId::XdpMd,
+            febpf::StructId::BpfUserPtRegs => StructId::BpfUserPtRegs,
+            febpf::StructId::BpfSock => StructId::BpfSock,
+            febpf::StructId::BpfSockOpt => StructId::BpfSockOpt,
+            febpf::StructId::BpfSockAddr => StructId::BpfSockAddr,
+            febpf::StructId::BpfFuse => StructId::BpfFuse,
+            febpf::StructId::__SourceBreaking { unknown_ordinal } => {
+                panic!("Invalid struct id: {}", unknown_ordinal)
+            }
+        }
+    }
+}
+
 fn scalar_field(offset: usize, size: usize) -> FieldDescriptor {
     FieldDescriptor { offset, field_type: FieldType::Scalar { size } }
 }
@@ -706,7 +780,7 @@ fn ptr_to_mem_type<T: IntoBytes>(id: MemoryId) -> Type {
 
 static RING_BUFFER_RESERVATION: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
 
-pub static SK_BUF_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+pub static SK_BUF_ID: MemoryId = StructId::SkBuff.as_memory_id();
 
 /// Type for the `__sk_buff` passed to `BPF_PROG_TYPE_SOCKET_FILTER` programs.
 pub static SOCKET_FILTER_SK_BUF_TYPE: LazyLock<Type> = LazyLock::new(|| {
@@ -787,7 +861,7 @@ pub static CGROUP_SKB_SK_BUF_TYPE: LazyLock<Type> = LazyLock::new(|| {
 pub static CGROUP_SKB_ARGS: LazyLock<Vec<Type>> =
     LazyLock::new(|| vec![CGROUP_SKB_SK_BUF_TYPE.clone()]);
 
-static XDP_MD_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+static XDP_MD_ID: MemoryId = StructId::XdpMd.as_memory_id();
 static XDP_MD_TYPE: LazyLock<Type> = LazyLock::new(|| {
     let data_id = MemoryId::new();
 
@@ -806,16 +880,16 @@ static XDP_MD_TYPE: LazyLock<Type> = LazyLock::new(|| {
 });
 static XDP_MD_ARGS: LazyLock<Vec<Type>> = LazyLock::new(|| vec![XDP_MD_TYPE.clone()]);
 
-pub static BPF_USER_PT_REGS_T_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+pub static BPF_USER_PT_REGS_T_ID: MemoryId = StructId::BpfUserPtRegs.as_memory_id();
 pub static BPF_USER_PT_REGS_T_ARGS: LazyLock<Vec<Type>> =
     LazyLock::new(|| vec![ptr_to_mem_type::<bpf_user_pt_regs_t>(BPF_USER_PT_REGS_T_ID.clone())]);
 
-pub static BPF_SOCK_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+pub static BPF_SOCK_ID: MemoryId = StructId::BpfSock.as_memory_id();
 pub static BPF_SOCK_TYPE: LazyLock<Type> =
     LazyLock::new(|| ptr_to_mem_type::<bpf_sock>(BPF_SOCK_ID.clone()));
 pub static BPF_SOCK_ARGS: LazyLock<Vec<Type>> = LazyLock::new(|| vec![BPF_SOCK_TYPE.clone()]);
 
-pub static BPF_SOCKOPT_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+pub static BPF_SOCKOPT_ID: MemoryId = StructId::BpfSockOpt.as_memory_id();
 pub static BPF_SOCKOPT_TYPE: LazyLock<Type> = LazyLock::new(|| {
     let optval_id = MemoryId::new();
     ptr_to_struct_type(
@@ -847,7 +921,7 @@ pub static BPF_SOCKOPT_ARGS: LazyLock<Vec<Type>> = LazyLock::new(|| vec![BPF_SOC
 // the struct. This allows to share the `EbpfProgramContext` for all programs
 // that take `bpf_sock_addr`. Linkers considers `BPF_SOCK_ADDR_TYPE` as is
 // a subtype of both INET4 and INET6 versions.
-pub static BPF_SOCK_ADDR_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+pub static BPF_SOCK_ADDR_ID: MemoryId = StructId::BpfSockAddr.as_memory_id();
 pub static BPF_SOCK_ADDR_TYPE: LazyLock<Type> = LazyLock::new(|| {
     ptr_to_struct_type(
         BPF_SOCK_ADDR_ID.clone(),
@@ -897,7 +971,7 @@ pub static BPF_SOCK_ADDR_INET6_TYPE: LazyLock<Type> = LazyLock::new(|| {
 pub static BPF_SOCK_ADDR_INET6_ARGS: LazyLock<Vec<Type>> =
     LazyLock::new(|| vec![BPF_SOCK_ADDR_INET6_TYPE.clone()]);
 
-static BPF_FUSE_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+static BPF_FUSE_ID: MemoryId = StructId::BpfFuse.as_memory_id();
 static BPF_FUSE_TYPE: LazyLock<Type> = LazyLock::new(|| {
     ptr_to_struct_type(
         BPF_FUSE_ID.clone(),

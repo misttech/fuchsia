@@ -13,12 +13,8 @@ use ebpf_api::{
     __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
     PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF,
     SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext,
-    uid_t,
+    StructId, uid_t,
 };
-use fidl_fuchsia_ebpf as febpf;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_filter as fnet_filter;
-use fidl_fuchsia_posix as fposix;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
@@ -37,6 +33,10 @@ use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
+use {
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_posix as fposix,
+};
 
 fn get_linux_packet_mark(marks: &Marks) -> u32 {
     let Mark(mark) = marks.get(fnet::MARK_DOMAIN_SO_MARK.into_core());
@@ -541,7 +541,7 @@ fn parse_verified_program_fidl(
         .iter()
         .map(|value| ebpf::StructAccess {
             pc: value.pc.try_into().unwrap(),
-            memory_id: value.struct_memory_id.into(),
+            memory_id: StructId::from(value.struct_id).as_memory_id(),
             field_offset: value.field_offset.try_into().unwrap(),
             is_32_bit_ptr_load: value.is_32_bit_ptr_load,
         })

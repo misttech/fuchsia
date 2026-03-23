@@ -85,6 +85,30 @@ type Map = resource table {
     // LINT.ThenChange(//src/starnix/lib/ebpf_api/src/maps/mod.rs:map_rights)
 };
 
+/// An identifier of a struct that may be passed to an eBPF program.
+type StructId = flexible enum {
+    // `struct __sk_buff`.
+    SK_BUFF = 1;
+
+    // `struct xdp_md`.
+    XDP_MD = 2;
+
+    // `struct bpf_user_pt_regs_t`.
+    BPF_USER_PT_REGS = 3;
+
+    // `struct bpf_sock`.
+    BPF_SOCK = 4;
+
+    // `struct bpf_sockopt`.
+    BPF_SOCK_OPT = 5;
+
+    // `struct bpf_sock_addr`.
+    BPF_SOCK_ADDR = 6;
+
+    // `struct bpf_fuse`.
+    BPF_FUSE = 7;
+};
+
 /// Describes location of an instruction that accesses a struct field.
 ///
 /// This is used as auxiliary information passed from the verifier to the
@@ -94,7 +118,7 @@ type StructAccess = struct {
     pc uint32;
 
     /// Id of the struct being accessed.
-    struct_memory_id uint64;
+    struct_id StructId;
 
     /// Offset of the field being accessed.
     field_offset uint32;

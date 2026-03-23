@@ -13,7 +13,7 @@ use ebpf::{
     EbpfProgramContext, StaticHelperSet, VerifiedEbpfProgram, VerifierLogger, link_program,
     verify_program,
 };
-use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType};
+use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
 use starnix_lifecycle::{AtomicU32Counter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, log_warn, track_stub};
@@ -272,18 +272,17 @@ impl TryFrom<&Program> for febpf::VerifiedProgram {
 
         let code_u64: &[u64] = zerocopy::transmute_ref!(program.program.code());
 
-        let struct_access_instructions = program
-            .program
-            .struct_access_instructions()
-            .iter()
-            .map(|v| febpf::StructAccess {
+        let mut struct_access_instructions =
+            Vec::with_capacity(program.program.struct_access_instructions().len());
+        for v in program.program.struct_access_instructions() {
+            let struct_id = StructId::try_from(&v.memory_id).map_err(|()| errno!(EINVAL))?.into();
+            struct_access_instructions.push(febpf::StructAccess {
                 pc: v.pc.try_into().unwrap(),
-                struct_memory_id: v.memory_id.id(),
+                struct_id,
                 field_offset: v.field_offset.try_into().unwrap(),
                 is_32_bit_ptr_load: v.is_32_bit_ptr_load,
             })
-            .collect();
-
+        }
         Ok(febpf::VerifiedProgram {
             code: Some(code_u64.to_vec()),
             struct_access_instructions: Some(struct_access_instructions),

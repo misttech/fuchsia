@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ebpf_api::{AttachType, ProgramType};
+use ebpf_api::{AttachType, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zx::HandleBased;
@@ -109,7 +109,7 @@ impl TestProgram {
             .iter()
             .map(|s| febpf::StructAccess {
                 pc: s.pc.try_into().unwrap(),
-                struct_memory_id: s.memory_id.id(),
+                struct_id: StructId::try_from(&s.memory_id).unwrap().into(),
                 field_offset: s.field_offset.try_into().unwrap(),
                 is_32_bit_ptr_load: s.is_32_bit_ptr_load,
             })

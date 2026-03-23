@@ -63,6 +63,10 @@ static BPF_TYPE_IDENTIFIER_COUNTER: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(u64::MAX / 2);
 
 impl MemoryId {
+    pub const fn from_raw(id: u64) -> MemoryId {
+        Self { id, parent: None }
+    }
+
     pub fn new() -> MemoryId {
         Self {
             id: BPF_TYPE_IDENTIFIER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
