@@ -155,5 +155,12 @@ group("tests_for_wlan_cq") {
 # provide much of a safety net. Consider moving it to one of the CQ groups above.
 group("tests_for_fyi") {
   testonly = true
+  public_deps = []
+}
+
+# These tests don't cause alerting if they break, and are configured to
+# upload performance data to fuchsiaperf via Catapult.
+group("tests_for_fyi_performance") {
+  testonly = true
   public_deps = [ ":create_client_iface_benchmark_test" ]
 }
