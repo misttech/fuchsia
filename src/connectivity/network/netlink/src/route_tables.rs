@@ -7,10 +7,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_interfaces_ext::admin::TerminalError;
 use fidl_fuchsia_net_routes_admin::GetInterfaceLocalTableError;
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use {
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+};
 
 use assert_matches::assert_matches;
 use net_types::ip::{GenericOverIp, Ip};
@@ -465,7 +467,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
                 let fidl_table_id = table.fidl_table_id();
                 self.by_tables.get(&fidl_table_id).map(|routes| {
                     routes
-                        .into_iter()
+                        .iter()
                         .map(move |(route, props)| fnet_routes_ext::InstalledRoute {
                             route: *route,
                             table_id: fidl_table_id,
@@ -494,8 +496,6 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
 mod test {
     use std::collections::HashSet;
 
-    use fidl_fuchsia_net_routes as fnet_routes;
-    use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
     use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
     use itertools::Itertools as _;
     use net_types::ip::Ipv6;
@@ -503,6 +503,7 @@ mod test {
     use proptest::prelude::*;
     use proptest::test_runner::Config;
     use proptest_support::failed_seeds;
+    use {fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext};
 
     use super::*;
 

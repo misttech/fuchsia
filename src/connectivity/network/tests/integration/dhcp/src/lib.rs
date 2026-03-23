@@ -13,12 +13,7 @@ use std::time::Duration;
 use assert_matches::assert_matches;
 use async_utils::async_once::Once;
 use dhcpv4::protocol::IntoFidlExt as _;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_ext::{self as fnet_ext, FromExt as _, IntoExt as _};
-use fidl_fuchsia_net_routes as fnet_routes;
-use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fuchsia_async::net::DatagramSocket;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::future::TryFutureExt as _;
@@ -42,6 +37,11 @@ use packet_formats::arp::{ArpOp, ArpPacketBuilder};
 use packet_formats::ethernet::EtherType;
 use sockaddr::{EthernetSockaddr, IntoSockAddr as _, TryToSockaddrLl as _};
 use test_case::test_case;
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
+    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+};
 
 const DEFAULT_NETWORK_NAME: &str = "net1";
 
@@ -830,7 +830,7 @@ fn test_dhcp<'a, D: DhcpClient>(
     expect_client_renews: bool,
 ) -> impl futures::Future<Output = Vec<TestDhcpRealmAndInterfaces<'a>>> + 'a {
     async move {
-        let dhcp_objects = stream::iter(netstack_configs.into_iter())
+        let dhcp_objects = stream::iter(netstack_configs.iter_mut())
             .enumerate()
             .then(|(id, netstack)| async move {
                 let TestNetstackRealmConfig { servers, clients, netstack_version } = netstack;
@@ -849,7 +849,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                     .expect("failed to create netstack realm");
                 let netstack_realm_ref = &netstack_realm;
 
-                let servers = stream::iter(servers.into_iter())
+                let servers = stream::iter(servers.iter_mut())
                     .then(|server| async move {
                         let TestServerConfig {
                             endpoints,
@@ -859,7 +859,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                         let (ifaces, names_to_bind): (
                             Vec<netemul::TestInterface<'_>>,
                             Vec<String>,
-                        ) = stream::iter(endpoints.into_iter())
+                        ) = stream::iter(endpoints.iter())
                             .enumerate()
                             .then(|(idx, endpoint)| async move {
                                 let DhcpTestEndpointConfig { ep_type, network } = endpoint;
@@ -889,7 +889,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                                         (static_addrs, false)
                                     }
                                 };
-                                for subnet in static_addrs.into_iter().copied() {
+                                for subnet in static_addrs.iter().copied() {
                                     let address_state_provider = interfaces::add_address_wait_assigned(
                                         iface.control(),
                                         subnet,
@@ -944,7 +944,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                     .collect::<Vec<_>>()
                     .await;
 
-                let clients = stream::iter(clients.into_iter())
+                let clients = stream::iter(clients.iter())
                     .then(|client| async move {
                         let DhcpTestEndpointConfig { ep_type, network } = client;
                         let endpoint = network

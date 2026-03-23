@@ -1595,7 +1595,7 @@ impl<
         debug_assert!(!options_to_request.contains(&v6::OptionCode::SolMaxRt));
         let oro = [v6::OptionCode::SolMaxRt]
             .into_iter()
-            .chain(options_to_request.into_iter().cloned())
+            .chain(options_to_request.iter().cloned())
             .collect::<Vec<_>>();
 
         // Adds IA_{NA,PD} options: one IA_{NA,PD} per hint, plus options
@@ -8863,11 +8863,11 @@ mod tests {
         fn single_value_per_ia() -> RenewRebindSendTestCase {
             RenewRebindSendTestCase {
                 ia_nas: CONFIGURED_NON_TEMPORARY_ADDRESSES[0..2]
-                    .into_iter()
+                    .iter()
                     .map(|&addr| TestIaNa::new_default(addr))
                     .collect(),
                 ia_pds: CONFIGURED_DELEGATED_PREFIXES[0..2]
-                    .into_iter()
+                    .iter()
                     .map(|&addr| TestIaPd::new_default(addr))
                     .collect(),
             }
@@ -8942,7 +8942,7 @@ mod tests {
             &(CLIENT_ID.into()),
             SERVER_ID[0],
             CONFIGURED_NON_TEMPORARY_ADDRESSES[0..2]
-                .into_iter()
+                .iter()
                 .map(|&addr| TestIaNa::new_default(addr))
                 .collect(),
             Default::default(), /* delegated_prefixes_to_assign */
@@ -9170,11 +9170,11 @@ mod tests {
         }: RenewRebindTest,
     ) {
         let non_temporary_addresses_to_assign = CONFIGURED_NON_TEMPORARY_ADDRESSES[0..2]
-            .into_iter()
+            .iter()
             .map(|&addr| TestIaNa::new_default(addr))
             .collect::<Vec<_>>();
         let delegated_prefixes_to_assign = CONFIGURED_DELEGATED_PREFIXES[0..2]
-            .into_iter()
+            .iter()
             .map(|&addr| TestIaPd::new_default(addr))
             .collect::<Vec<_>>();
         let time = Instant::now();
@@ -11177,11 +11177,11 @@ mod tests {
         }: RenewRebindTest,
     ) {
         let non_temporary_addresses_to_assign = CONFIGURED_NON_TEMPORARY_ADDRESSES[0..2]
-            .into_iter()
+            .iter()
             .map(|&addr| TestIaNa::new_default(addr))
             .collect::<Vec<_>>();
         let delegated_prefixes_to_assign = CONFIGURED_DELEGATED_PREFIXES[0..2]
-            .into_iter()
+            .iter()
             .map(|&addr| TestIaPd::new_default(addr))
             .collect::<Vec<_>>();
         let client = send_and_assert(

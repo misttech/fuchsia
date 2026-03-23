@@ -683,7 +683,7 @@ impl FakeBindingsCtx {
         self.with_inner_mut(|ctx| {
             ctx.frames
                 .frames()
-                .into_iter()
+                .iter()
                 .map(|(meta, frame)| match meta {
                     DispatchedFrame::Ethernet(eth) => (eth.clone(), frame.clone()),
                     DispatchedFrame::PureIp(ip) => panic!("unexpected IP packet {ip:?}: {frame:?}"),

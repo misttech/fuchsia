@@ -276,7 +276,7 @@ impl<'a, const N: usize> FragmentedPayload<'a, N> {
         mut dst: &mut [T],
         apply: F,
     ) {
-        let mut slices = self.slices().into_iter();
+        let mut slices = self.slices().iter();
         while let Some(sl) = slices.next() {
             let l = sl.len();
             if offset >= l {
@@ -302,7 +302,7 @@ impl<'a, const N: usize> FragmentedPayload<'a, N> {
 
 impl<'a, const N: usize> PayloadLen for FragmentedPayload<'a, N> {
     fn len(&self) -> usize {
-        self.slices().into_iter().map(|s| s.len()).sum()
+        self.slices().iter().map(|s| s.len()).sum()
     }
 }
 
@@ -315,7 +315,7 @@ impl<'a, const N: usize> Payload for FragmentedPayload<'a, N> {
         let byte_end = usize::try_from(byte_end).expect("range end index out of range for usize");
         assert!(byte_end >= byte_start);
         let mut storage_iter =
-            (&mut storage[self_start..self_end]).into_iter().scan(0, |total_len, slice| {
+            (&mut storage[self_start..self_end]).iter_mut().scan(0, |total_len, slice| {
                 let slice_len = slice.len();
                 let item = Some((*total_len, slice));
                 *total_len += slice_len;

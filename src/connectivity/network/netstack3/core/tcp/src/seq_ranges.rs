@@ -428,7 +428,7 @@ mod test {
     #[test_case(&[10..20, 30..40], 15 =>  vec![30..40]; "mid 1")]
     #[test_case(&[10..20, 30..40], 35 =>  Vec::<Range<u32>>::new(); "mid 2")]
     fn discard_starting_at_or_before(ranges: &[Range<u32>], discard: u32) -> Vec<Range<u32>> {
-        let mut sr = ranges.into_iter().cloned().collect::<SeqRanges<()>>();
+        let mut sr = ranges.iter().cloned().collect::<SeqRanges<()>>();
         sr.discard_starting_at_or_before(SeqNum::new(discard));
         sr.iter()
             .map(|seq_range| u32::from(seq_range.start())..u32::from(seq_range.end()))
@@ -446,7 +446,7 @@ mod test {
     #[test_case(&[10..20, 30..40, 50..60], 40 => (Some(40), Some(50)))]
     fn first_hole_on_or_after(ranges: &[Range<u32>], marker: u32) -> (Option<u32>, Option<u32>) {
         match ranges
-            .into_iter()
+            .iter()
             .cloned()
             .collect::<SeqRanges<()>>()
             .first_hole_on_or_after(SeqNum::new(marker))

@@ -1561,7 +1561,7 @@ mod test {
 
         let expect = TEST_PAYLOAD
             .into_iter()
-            .chain((&TEST_PAYLOAD[..extra.unwrap_or(0)]).into_iter().copied())
+            .chain((&TEST_PAYLOAD[..extra.unwrap_or(0)]).iter().copied())
             .collect::<Vec<_>>();
         let mut read = vec![0xBB; expect.len()];
 

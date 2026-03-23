@@ -459,7 +459,7 @@ pub(crate) mod testutil {
                 storage,
                 (*head + offset) % storage.len(),
                 *len - offset,
-                |readable| f(readable.into_iter().map(|x| *x).collect()),
+                |readable| f(readable.iter().map(|x| *x).collect()),
             )
         }
     }

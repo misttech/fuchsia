@@ -85,7 +85,7 @@ impl<'a> Node<'a> {
         interface: &'a netemul::TestInterface<'_>,
     ) -> Result<Node<'a>> {
         Self::new_with_wait_addr(realm, interface, |addresses| {
-            let (v4, v6) = addresses.into_iter().fold(
+            let (v4, v6) = addresses.iter().fold(
                 (None, None),
                 |(v4, v6),
                  &fidl_fuchsia_net_interfaces_ext::Address {

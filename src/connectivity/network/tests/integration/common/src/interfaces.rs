@@ -133,7 +133,7 @@ pub async fn wait_for_v4_and_v6_ll(
     id: u64,
 ) -> Result<(net_types::ip::Ipv4Addr, net_types::ip::Ipv6Addr)> {
     wait_for_addresses(interfaces_state, id, |addresses| {
-        let (v4, v6) = addresses.into_iter().fold(
+        let (v4, v6) = addresses.iter().fold(
             (None, None),
             |(v4, v6),
              &fidl_fuchsia_net_interfaces_ext::Address {
@@ -180,7 +180,7 @@ pub async fn wait_for_v6_ll(
     id: u64,
 ) -> Result<net_types::ip::Ipv6Addr> {
     wait_for_addresses(interfaces_state, id, |addresses| {
-        addresses.into_iter().find_map(
+        addresses.iter().find_map(
             |&fidl_fuchsia_net_interfaces_ext::Address {
                  addr: fidl_fuchsia_net::Subnet { addr, prefix_len: _ },
                  valid_until: _,

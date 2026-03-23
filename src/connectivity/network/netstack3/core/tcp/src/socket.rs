@@ -9541,8 +9541,7 @@ mod tests {
             let nread = net
                 .with_context(REMOTE, |ctx| {
                     ctx.tcp_api::<I>().with_receive_buffer(&accepted, |buf| {
-                        buf.lock()
-                            .read_with(|readable| readable.into_iter().map(|buf| buf.len()).sum())
+                        buf.lock().read_with(|readable| readable.iter().map(|buf| buf.len()).sum())
                     })
                 })
                 .unwrap();

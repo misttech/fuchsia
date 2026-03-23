@@ -7,12 +7,6 @@
 use std::borrow::Cow;
 use std::pin::pin;
 
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_filter_deprecated as fnetfilter;
-use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
-use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
-use fidl_fuchsia_net_root as fnet_root;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use net_declare::fidl_subnet;
 use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
@@ -22,6 +16,12 @@ use netstack_testing_common::realms::{Netstack2, TestSandboxExt as _};
 use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, ping as ping_helper};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
+    fidl_fuchsia_net_filter_deprecated as fnetfilter,
+    fidl_fuchsia_net_interfaces_admin as finterfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_root as fnet_root,
+};
 
 pub enum NatNic {
     RouterNic1,
@@ -342,7 +342,7 @@ pub async fn setup_masquerade_nat_network<'a>(
             )][..],
         ),
     ] {
-        for (interface, addr, mac) in neighbors.into_iter().copied() {
+        for (interface, addr, mac) in neighbors.iter().copied() {
             realm
                 .add_neighbor_entry(interface, addr, mac)
                 .await

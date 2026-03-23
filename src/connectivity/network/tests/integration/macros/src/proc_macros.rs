@@ -195,7 +195,7 @@ fn permutations_over_type_generics<'a>(
         PassThroughGeneric(&'a syn::TypeParam),
         Instantiated(Implementation),
     }
-    let piece_iterators = type_generics.into_iter().map(|type_param| {
+    let piece_iterators = type_generics.iter().map(|type_param| {
         // If there are multiple implementations, produce an iterator that
         // will yield them all. Otherwise produce an iterator that will
         // yield the generic parameter once.
