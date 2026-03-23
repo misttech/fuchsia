@@ -147,7 +147,7 @@ void VirtualAudioPacketStream::RegisterVmos(RegisterVmosRequest& request,
       completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
       return;
     }
-    if (registered_vmos_.count(*info.id())) {
+    if (registered_vmos_.contains(*info.id())) {
       fdf::error("RegisterVmos: VMO ID {} already registered", *info.id());
       completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
       return;

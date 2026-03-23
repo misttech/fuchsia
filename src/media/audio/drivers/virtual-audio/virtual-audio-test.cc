@@ -11,6 +11,8 @@
 
 namespace virtual_audio::test {
 
+namespace {
+
 class Environment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override { return zx::ok(); }
@@ -57,8 +59,9 @@ TEST_F(VirtualAudioTest, Start) {}
 TEST_F(VirtualAudioTest, GetDefaultConfig) {
   // Test composite default config.
   {
-    fidl::Result result = control_client()->GetDefaultConfiguration(
-        {{.type = fuchsia_virtualaudio::DeviceType::kComposite}});
+    fidl::Result result = control_client()->GetDefaultConfiguration({{
+        .type = fuchsia_virtualaudio::DeviceType::kComposite,
+    }});
     ASSERT_TRUE(result.is_ok());
     auto& default_config = result->config();
     ASSERT_EQ(default_config, VirtualAudioComposite::GetDefaultConfig());
@@ -66,8 +69,9 @@ TEST_F(VirtualAudioTest, GetDefaultConfig) {
 
   // Test DAI default config.
   {
-    fidl::Result result = control_client()->GetDefaultConfiguration(
-        {{.type = fuchsia_virtualaudio::DeviceType::kDai}});
+    fidl::Result result = control_client()->GetDefaultConfiguration({{
+        .type = fuchsia_virtualaudio::DeviceType::kDai,
+    }});
     ASSERT_TRUE(result.is_error());
     ASSERT_TRUE(result.error_value().is_domain_error());
     ASSERT_EQ(result.error_value().domain_error(), fuchsia_virtualaudio::Error::kNotSupported);
@@ -75,8 +79,9 @@ TEST_F(VirtualAudioTest, GetDefaultConfig) {
 
   // Test stream config default config.
   {
-    fidl::Result result = control_client()->GetDefaultConfiguration(
-        {{.type = fuchsia_virtualaudio::DeviceType::kStreamConfig}});
+    fidl::Result result = control_client()->GetDefaultConfiguration({{
+        .type = fuchsia_virtualaudio::DeviceType::kStreamConfig,
+    }});
     ASSERT_TRUE(result.is_error());
     ASSERT_TRUE(result.error_value().is_domain_error());
     ASSERT_EQ(result.error_value().domain_error(), fuchsia_virtualaudio::Error::kNotSupported);
@@ -84,12 +89,15 @@ TEST_F(VirtualAudioTest, GetDefaultConfig) {
 
   // Test codec default config.
   {
-    fidl::Result result = control_client()->GetDefaultConfiguration(
-        {{.type = fuchsia_virtualaudio::DeviceType::kDai}});
+    fidl::Result result = control_client()->GetDefaultConfiguration({{
+        .type = fuchsia_virtualaudio::DeviceType::kDai,
+    }});
     ASSERT_TRUE(result.is_error());
     ASSERT_TRUE(result.error_value().is_domain_error());
     ASSERT_EQ(result.error_value().domain_error(), fuchsia_virtualaudio::Error::kNotSupported);
   }
 }
+
+}  // namespace
 
 }  // namespace virtual_audio::test

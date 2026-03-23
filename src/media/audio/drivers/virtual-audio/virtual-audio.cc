@@ -64,7 +64,7 @@ void VirtualAudio::AddDevice(AddDeviceRequestView request, AddDeviceCompleter::S
 
   auto device_instance_id = next_device_instance_id_++;
   zx::result device = VirtualAudioComposite::Create(
-      device_instance_id, std::move(config), dispatcher(), std::move(request->server),
+      device_instance_id, config, dispatcher(), std::move(request->server),
       [this, device_instance_id](auto _) {
         fdf::info("Removing device {}: Device's binding closed", device_instance_id);
         devices_.erase(device_instance_id);

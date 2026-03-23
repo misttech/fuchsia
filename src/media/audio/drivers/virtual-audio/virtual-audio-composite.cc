@@ -43,8 +43,12 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
   format.min_channels(2);
   format.max_channels(2);
   format.rate_family_flags(ASF_RANGE_FLAG_FPS_48000_FAMILY);
-  ring_buffer.supported_formats(
-      std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{std::in_place, {format}});
+  ring_buffer.supported_formats(std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{
+      std::in_place,
+      {
+          format,
+      },
+  });
 
   // Default FIFO is 250 usec, at 48k stereo 16, no external delay specified.
   ring_buffer.driver_transfer_bytes(48);
@@ -78,15 +82,23 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
 
   // By default we expose one DAI format: 48kHz I2S (stereo 16-in-32, 8 bytes/frame total).
   dai_interconnect.dai_supported_formats(
-      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
-                                                                              {format_set}});
+      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{
+          std::in_place,
+          {
+              format_set,
+          },
+      });
   composite_dai_interconnect.id(kDaiId);
   composite_dai_interconnect.dai_interconnect(std::move(dai_interconnect));
   composite_dai_interconnects.push_back(std::move(composite_dai_interconnect));
 
   single_dai_interconnect.dai_supported_formats(
-      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
-                                                                              {format_set}});
+      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{
+          std::in_place,
+          {
+              format_set,
+          },
+      });
   composite_single_dai_interconnect.id(kSingleDaiId);
   composite_single_dai_interconnect.dai_interconnect(std::move(single_dai_interconnect));
   composite_dai_interconnects.push_back(std::move(composite_single_dai_interconnect));
@@ -108,7 +120,11 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
       {std::move(edge_rb_to_gain), std::move(edge_gain_to_dai), std::move(edge_ps_to_dai)}));
   composite.topologies(
       std::optional<std::vector<fuchsia_hardware_audio_signalprocessing::Topology>>{
-          std::in_place, {std::move(topology)}});
+          std::in_place,
+          {
+              std::move(topology),
+          },
+      });
 
   fuchsia_virtualaudio::CompositePacketStream composite_packet_stream = {};
   fuchsia_virtualaudio::PacketStream packet_stream = {};
@@ -158,8 +174,12 @@ zx::result<> VirtualAudioComposite::Init(
     return connector.take_error();
   }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector.value()), .class_name{kClassName}}};
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{{
+      .connector = std::move(connector.value()),
+      .class_name{
+          kClassName,
+      },
+  }};
 
   zx::result child =
       fdf::AddOwnedChild(parent, *fdf::Logger::GlobalInstance(), child_node_name, devfs_args);
@@ -197,11 +217,12 @@ void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
 
   auto sample_format = audio::utils::GetSampleFormat(pcm_format->valid_bits_per_sample(),
                                                      pcm_format->bytes_per_sample() * 8);
-  fuchsia_virtualaudio::DeviceGetFormatResponse response{
-      {.frames_per_second = pcm_format->frame_rate(),
-       .sample_format = sample_format,
-       .num_channels = pcm_format->number_of_channels(),
-       .external_delay = external_delay}};
+  fuchsia_virtualaudio::DeviceGetFormatResponse response{{
+      .frames_per_second = pcm_format->frame_rate(),
+      .sample_format = sample_format,
+      .num_channels = pcm_format->number_of_channels(),
+      .external_delay = external_delay,
+  }};
   completer.Reply(fit::ok(std::move(response)));
 }
 
@@ -702,7 +723,13 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
       .type(fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream)
       .description("Packet Stream Endpoint");
 
-  elements_ = {{ring_buffer, dai, gain, single_dai, packet_stream}};
+  elements_ = {{
+      ring_buffer,
+      dai,
+      gain,
+      single_dai,
+      packet_stream,
+  }};
   for (auto& el : elements_) {
     element_map_.insert({*el.id(), &el});
   }

@@ -58,7 +58,7 @@ void VirtualAudioRingBuffer::GetVmo(GetVmoRequest& request, GetVmoCompleter::Syn
   // The ring buffer must be at least min_frames + fifo_frames.
   num_ring_buffer_frames_ =
       request.min_frames() +
-      (config_.driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_;
+      ((config_.driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_);
 
   num_ring_buffer_frames_ = std::max(
       min_frames, fbl::round_up<uint32_t, uint32_t>(num_ring_buffer_frames_, modulo_frames));
