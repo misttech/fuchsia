@@ -12,18 +12,18 @@ use block_server::{BlockServer, RequestId};
 use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_driver_framework::{NodeAddArgs, NodeControllerMarker, NodeError};
-use fidl_fuchsia_hardware_block_volume as fvolume;
-use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::BlockInfo;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
-use fidl_next_fuchsia_hardware_rpmb as rpmb;
-use fuchsia_async as fasync;
 use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
 use log::{debug, error, info, warn};
 use zx::{HandleBased as _, Status};
+use {
+    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_storage_block as fblock,
+    fidl_next_fuchsia_hardware_rpmb as rpmb, fuchsia_async as fasync,
+};
 
 mod command_queue;
 mod dma_buffer;
@@ -160,14 +160,17 @@ impl rpmb::RpmbServerHandler for RpmbConnection {
         request: fidl_next::Request<rpmb::rpmb::Request>,
         responder: fidl_next::Responder<rpmb::rpmb::Request>,
     ) {
-        let request = request.payload();
-        let res = match self.command_queue.rpmb_request(request.request).await {
-            Ok(()) => responder.respond(()).await,
-            Err(status) => responder.respond_err(status.into_raw()).await,
-        };
-        if let Err(err) = res {
-            log::warn!(err:?; "Failed to send rpmb response");
-        }
+        self.command_queue.rpmb_request(
+            request.payload().request,
+            async |result: Result<(), zx::Status>| {
+                if let Err(error) = match result {
+                    Ok(()) => responder.respond(()).await,
+                    Err(status) => responder.respond_err(status.into_raw()).await,
+                } {
+                    log::warn!(error:?; "Failed to send rpmb response");
+                };
+            },
+        );
     }
 }
 

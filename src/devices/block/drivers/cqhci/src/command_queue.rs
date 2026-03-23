@@ -10,7 +10,7 @@ use std::thread::JoinHandle;
 use anyhow::Context as _;
 use async_trait::async_trait;
 use block_server::RequestId;
-use event_listener::{Event, IntoNotification as _, Listener as _};
+use event_listener::{Event, Listener as _};
 use fdf_fidl::DriverChannel;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
 use fuchsia_sync::Mutex;
@@ -172,9 +172,17 @@ pub struct CommandQueueResources {
     pub interrupt: zx::Interrupt,
 }
 
-pub trait TaskStatusReceiver: Send + Sync {
+pub trait TaskStatusReceiver: Send + Sync + 'static {
     /// A callback to invoke upon task completion.
     fn complete(&self, request_id: RequestId, status: zx::Status);
+}
+
+impl<T: TaskStatusReceiver + ?Sized> TaskStatusReceiver for Weak<T> {
+    fn complete(&self, request_id: RequestId, status: zx::Status) {
+        if let Some(r) = self.upgrade() {
+            r.complete(request_id, status);
+        }
+    }
 }
 
 /// Helper to complete a request if the receiver is still running.
@@ -306,9 +314,52 @@ impl State {
     }
 }
 
+/// AsyncTask encapsulates asynchronous tasks that need to run with exclusive access
+/// to the command queue.  Concrete implementations will typically want to implement
+/// Drop to clean up in the case that tasks are dropped.
+#[async_trait]
+trait AsyncTask: Send + 'static {
+    /// Called to execute the task.
+    async fn run(self: Box<Self>, cq: CommandQueueExcl);
+}
+
+/// Returns an asynchronous task that runs `func`.  `callback` will be called with
+/// the result.
+fn into_async_task<Fut: Future<Output = Result<(), zx::Status>> + Send + 'static>(
+    func: impl FnOnce(CommandQueueExcl) -> Fut + Send + 'static,
+    callback: impl FnOnce(Result<(), zx::Status>) + Send + 'static,
+) -> impl AsyncTask {
+    struct Wrapper<F, C: FnOnce(Result<(), zx::Status>)> {
+        func: Option<F>,
+        callback: Option<C>,
+    }
+
+    #[async_trait]
+    impl<
+        F: FnOnce(CommandQueueExcl) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<(), zx::Status>> + Send + 'static,
+        C: FnOnce(Result<(), zx::Status>) + Send + 'static,
+    > AsyncTask for Wrapper<F, C>
+    {
+        async fn run(mut self: Box<Self>, cq: CommandQueueExcl) {
+            (self.callback.take().unwrap())((self.func.take().unwrap())(cq).await);
+        }
+    }
+
+    impl<F, C: FnOnce(Result<(), zx::Status>)> Drop for Wrapper<F, C> {
+        fn drop(&mut self) {
+            if let Some(cb) = self.callback.take() {
+                cb(Err(zx::Status::CANCELED));
+            }
+        }
+    }
+
+    Wrapper { func: Some(func), callback: Some(callback) }
+}
+
 struct Inner {
     state: State,
-    async_task_queue: VecDeque<AsyncTask>,
+    async_task_queue: VecDeque<Box<dyn AsyncTask>>,
     /// An event which is used to wake up various tasks when the queue state changes.
     /// Specifically, the event is fired in all of the following scenarios (and possibly more):
     /// - When `state` changes.
@@ -322,7 +373,7 @@ struct Inner {
     pending_tasks: PendingTasks,
     cqhci_mmio: Box<dyn Mmio + Send + Sync>,
     sdhci_mmio: Box<dyn Mmio + Send + Sync>,
-    /// Runs [`AsyncTask`] in a loop.
+    /// Runs async tasks in a loop.
     async_task_loop: Option<fasync::Task<()>>,
     /// Drop to signal the SDHCI driver to resume handling physical interrupts.
     virtual_irq_lifeline: Option<zx::EventPair>,
@@ -463,23 +514,17 @@ impl Inner {
     }
 
     /// Submits an async task to the command queue.
-    ///
-    /// Returns a listener that can be used to wait for the task to complete.
-    fn submit_async_task(
-        &mut self,
-        mut task: AsyncTask,
-    ) -> Result<event_listener::EventListener<zx::Status>, zx::Status> {
+    fn submit_async_task(&mut self, task: impl AsyncTask) {
         if self.state.should_reject_tasks() {
-            task.status = zx::Status::UNAVAILABLE;
-            return Err(zx::Status::UNAVAILABLE);
+            // Tasks need to handle drop to return errors as needed.
+            return;
         }
         debug_assert!(self.async_task_loop.is_some());
-        let listener = task.event.listen();
-        self.async_task_queue.push_back(task);
+
+        self.async_task_queue.push_back(Box::new(task));
         if self.async_task_queue.len() == 1 {
             self.event.notify_additional(usize::MAX);
         }
-        Ok(listener)
     }
 }
 
@@ -545,6 +590,32 @@ struct SwitchAndSubmitTask {
     receiver: Weak<dyn TaskStatusReceiver>,
 }
 
+#[async_trait]
+impl AsyncTask for SwitchAndSubmitTask {
+    async fn run(mut self: Box<Self>, mut cq: CommandQueueExcl) {
+        debug!("switch_partition {:?}", self.partition);
+        let partition_config_value = cq.ext_csd[EXT_CSD_PARTITION_CONFIG]
+            & EXT_CSD_PARTITION_ACCESS_MASK
+            | self.partition as u8;
+        let res = cq.do_switch(EXT_CSD_PARTITION_CONFIG, partition_config_value).await;
+        let mut inner = cq.inner.lock();
+        if res.is_ok() {
+            inner.active_partition = Some(self.partition);
+            let task = self.task.take().unwrap();
+            let tdl = task.transfer.tdl_slot();
+            inner.submit_transfer(tdl, task, cq.host.as_ref());
+        } else {
+            let Some(receiver) = inner.partition_status_receivers.get(&self.partition) else {
+                panic!("No receiver was registered for partition {:?}", self.partition);
+            };
+            let task = self.task.take().unwrap();
+            // SAFETY: We never submitted the transfer.
+            unsafe { task.complete(receiver.clone(), res.clone().into()) };
+        }
+        debug!("switch_partition {:?} done: {res:?}", self.partition);
+    }
+}
+
 impl Drop for SwitchAndSubmitTask {
     fn drop(&mut self) {
         if let Some(task) = self.task.take() {
@@ -554,104 +625,13 @@ impl Drop for SwitchAndSubmitTask {
     }
 }
 
-/// Disable CQE, submit the RPMB request, and enable CQE.
-struct RpmbRequestTask(rpmb::Request);
+struct RecoveryTask;
 
-/// Execute a cache flush command.
-struct FlushTask {
-    trace_flow_id: Option<NonZero<u64>>,
-}
-
-/// Execute a trim command.
-struct TrimTask {
-    tdl_slot: TransferSlot,
-    partition: EmmcPartitionId,
-    block_offset: u64,
-    block_count: u32,
-    trace_flow_id: Option<NonZero<u64>>,
-}
-
-/// A blocking, asynchronous task.
-struct AsyncTask {
-    task: Option<AsyncTaskInner>,
-    event: event_listener::Event<zx::Status>,
-    status: zx::Status,
-    request_and_receiver: Option<(RequestId, Weak<dyn TaskStatusReceiver>)>,
-}
-
-impl AsyncTask {
-    fn new(task: AsyncTaskInner) -> Self {
-        Self {
-            task: Some(task),
-            event: Event::with_tag(),
-            status: zx::Status::CANCELED,
-            request_and_receiver: None,
-        }
-    }
-
-    /// Creates a task that will complete `request` on drop.
-    fn new_with_request(
-        task: AsyncTaskInner,
-        request_id: RequestId,
-        receiver: Weak<dyn TaskStatusReceiver>,
-    ) -> Self {
-        Self {
-            task: Some(task),
-            event: Event::with_tag(),
-            status: zx::Status::CANCELED,
-            request_and_receiver: Some((request_id, receiver)),
-        }
-    }
-
-    fn take_task(&mut self) -> AsyncTaskInner {
-        self.task.take().unwrap()
-    }
-
-    /// Whether the queue must be drained before running the task.
-    fn should_block_transfers(&self) -> bool {
-        self.task.as_ref().map_or(true, |task| task.should_block_transfers())
-    }
-}
-
-impl Drop for AsyncTask {
-    fn drop(&mut self) {
-        self.event.notify(usize::MAX.tag(self.status));
-        if let Some((request_id, receiver)) = self.request_and_receiver.take() {
-            complete_request(receiver.upgrade(), request_id, self.status);
-        }
-    }
-}
-
-enum AsyncTaskInner {
-    /// Performs shutdown for the CQE.
-    Shutdown,
-    /// Switch to the target partition and submit a single transfer request.
-    SwitchAndSubmit(SwitchAndSubmitTask),
-    /// Disable CQE, submit the RPMB request, and enable CQE.
-    RpmbRequest(RpmbRequestTask),
-    /// Execute a cache flush command.
-    Flush(FlushTask),
-    /// Execute a trim command.
-    Trim(TrimTask),
-    /// Perform device recovery.
-    Recovery,
-}
-
-impl AsyncTaskInner {
-    /// Whether the queue must be drained before running the task.
-    fn should_block_transfers(&self) -> bool {
-        match self {
-            // Shutdown will cancel all tasks.
-            AsyncTaskInner::Shutdown => false,
-            AsyncTaskInner::SwitchAndSubmit(_) => true,
-            AsyncTaskInner::RpmbRequest(_) => true,
-            AsyncTaskInner::Flush(_) => true,
-            // TODO(https://fxbug.dev/490482696): The spec suggests that we should be able to
-            // implement TRIM without blocking submission of new tasks, by instead HALTing the queue
-            // while the DMS runs.  This may be slightly more efficient.
-            AsyncTaskInner::Trim(_) => true,
-            // Recovery will cancel all tasks, and we can't assume they will complete anyways.
-            AsyncTaskInner::Recovery => false,
+#[async_trait]
+impl AsyncTask for RecoveryTask {
+    async fn run(self: Box<Self>, mut cq: CommandQueueExcl) {
+        if let Err(error) = cq.run_recovery().await {
+            warn!(error:?; "Recovery failed");
         }
     }
 }
@@ -660,9 +640,6 @@ impl AsyncTaskInner {
 ///
 /// Only one of this struct may exist at any time, so the caller has unique access to modify the
 /// state of the command queue while holding this struct.
-///
-/// Note that the guard may or may not block data transfers, as some async tasks may proceed without
-/// draining in-flight data transfers.  See [`AsyncTask::should_block_transfers`].
 ///
 /// This guard serves two purposes:
 ///
@@ -981,32 +958,7 @@ impl CommandQueueExcl {
         Ok(())
     }
 
-    async fn switch_and_submit(&mut self, mut task: SwitchAndSubmitTask) -> Result<(), zx::Status> {
-        debug!("switch_partition {:?}", task.partition);
-        let partition_config_value = self.ext_csd[EXT_CSD_PARTITION_CONFIG]
-            & EXT_CSD_PARTITION_ACCESS_MASK
-            | task.partition as u8;
-        let res = self.do_switch(EXT_CSD_PARTITION_CONFIG, partition_config_value).await;
-        let mut inner = self.inner.lock();
-        if res.is_ok() {
-            inner.active_partition = Some(task.partition);
-            let task = task.task.take().unwrap();
-            let tdl = task.transfer.tdl_slot();
-            inner.submit_transfer(tdl, task, self.host.as_ref());
-        } else {
-            let Some(receiver) = inner.partition_status_receivers.get(&task.partition) else {
-                panic!("No receiver was registered for partition {:?}", task.partition);
-            };
-            let task = task.task.take().unwrap();
-            // SAFETY: We never submitted the transfer.
-            unsafe { task.complete(receiver.clone(), res.clone().into()) };
-        }
-        debug!("switch_partition {:?} done: {res:?}", task.partition);
-        res
-    }
-
-    async fn rpmb_request(&mut self, task: RpmbRequestTask) -> Result<(), zx::Status> {
-        let request = task.0;
+    async fn rpmb_request(&mut self, request: rpmb::Request) -> Result<(), zx::Status> {
         // The RPMB partition can only be accessed while command queueing is disabled.
         debug!("rpmb request {request:?}");
         self.disable().await;
@@ -1019,28 +971,20 @@ impl CommandQueueExcl {
             .flatten();
         if let Err(err) = self.enable().await {
             error!(err:?; "Failed to re-enable CQE!");
-            return Err(zx::Status::IO);
+            Err(zx::Status::IO)
         } else {
             res
         }
     }
 
-    async fn flush(&mut self, task: FlushTask) -> Result<(), zx::Status> {
-        let status =
-            zx::Status::from(self.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await);
-        fuchsia_trace::duration!(
-                    "sdmmc", "cqhci::complete_flush", "status" => status.into_raw());
-        if let Some(trace_flow_id) = task.trace_flow_id {
-            fuchsia_trace::flow_step!(
-                "storage",
-                "cqhci::complete_flush",
-                trace_flow_id.get().into()
-            );
-        }
-        status.into()
-    }
-
-    async fn trim(&mut self, task: TrimTask) -> Result<(), zx::Status> {
+    async fn trim(
+        &mut self,
+        tdl_slot: TransferSlot,
+        partition: EmmcPartitionId,
+        block_offset: u64,
+        block_count: u32,
+        trace_flow_id: Option<NonZero<u64>>,
+    ) -> Result<(), zx::Status> {
         // TODO(https://fxbug.dev/490482696): To handle larger TRIM requests, we can't use DMS, we
         // instead have to execute the usual ERASE commands via DCMD (which is slightly less
         // efficient because it requires a partition switch, which blocks the queue, and a queue
@@ -1048,19 +992,15 @@ impl CommandQueueExcl {
         //
         // This is OK for now, as in practice filesystems send small trims, and we don't support
         // devices large enough to overflow u32 offsets.
-        let Ok(block_offset) = u32::try_from(task.block_offset) else {
+        let Ok(block_offset) = u32::try_from(block_offset) else {
             log::warn!("Trim block offset too large; CQHCI trim only supports 32-bit offsets");
             return Err(zx::Status::INVALID_ARGS);
         };
-        let Ok(block_count) = u16::try_from(task.block_count) else {
+        let Ok(block_count) = u16::try_from(block_count) else {
             log::warn!("Trim block count too large; CQHCI trim only supports 16-bit counts");
             return Err(zx::Status::INVALID_ARGS);
         };
-        debug!(
-            "Trim {block_offset:x} {block_count:x} {} {:?}",
-            task.tdl_slot.raw(),
-            task.partition
-        );
+        debug!("Trim {block_offset:x} {block_count:x} {} {:?}", tdl_slot.raw(), partition);
         // NOTE: This implements a DISCARD, not a TRIM.  The difference is that DISCARD does not
         // guarantee that the data will be 0 or 1 when read back.  This is more efficient, and
         // neither is secure anyways.
@@ -1069,8 +1009,8 @@ impl CommandQueueExcl {
                 MmcCommand::QueuedTaskParams,
                 DeviceManagementOpDiscardCmd44Args::new(
                     block_count,
-                    task.tdl_slot.raw(),
-                    emmc_partition_index(task.partition),
+                    tdl_slot.raw(),
+                    emmc_partition_index(partition),
                 )
                 .raw(),
             )
@@ -1083,7 +1023,7 @@ impl CommandQueueExcl {
                 .execute_dcmd(
                     MmcCommand::CommandQueueTaskManagement,
                     CommandQueueTaskManagementArgs::new(
-                        task.tdl_slot.raw(),
+                        tdl_slot.raw(),
                         DeviceManagementOpcode::Discard,
                     )
                     .raw(),
@@ -1093,7 +1033,7 @@ impl CommandQueueExcl {
         let res = res.map(|_| ());
         fuchsia_trace::duration!(
                     "sdmmc", "cqhci::complete_trim", "status" => zx::Status::from(res).into_raw());
-        if let Some(trace_flow_id) = task.trace_flow_id {
+        if let Some(trace_flow_id) = trace_flow_id {
             fuchsia_trace::flow_step!(
                 "storage",
                 "cqhci::complete_trim",
@@ -1420,12 +1360,7 @@ impl CommandQueue {
         } else {
             // Slow path, we have to switch partitions before we can submit.
             let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-            // Unwrap is OK since we've already checked that we can submit transfers.
-            let _ = inner
-                .submit_async_task(AsyncTask::new(AsyncTaskInner::SwitchAndSubmit(
-                    SwitchAndSubmitTask { partition, task: Some(task), receiver },
-                )))
-                .unwrap();
+            inner.submit_async_task(SwitchAndSubmitTask { partition, task: Some(task), receiver });
             SubmitResult::Done(zx::Status::OK)
         }
     }
@@ -1558,11 +1493,23 @@ impl CommandQueue {
         }
         let mut inner = self.inner.lock();
         let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-        // Response will be sent by [`AsyncTask::drop`].
-        let _ = inner.submit_async_task(AsyncTask::new_with_request(
-            AsyncTaskInner::Flush(FlushTask { trace_flow_id }),
-            request_id,
-            receiver,
+        inner.submit_async_task(into_async_task(
+            async move |mut cq| {
+                let result = cq.do_switch(EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH).await;
+                fuchsia_trace::duration!(
+                    "sdmmc", "cqhci::complete_flush", "status"
+                        => zx::Status::from(result).into_raw()
+                );
+                if let Some(trace_flow_id) = trace_flow_id {
+                    fuchsia_trace::flow_step!(
+                        "storage",
+                        "cqhci::complete_flush",
+                        trace_flow_id.get().into()
+                    );
+                }
+                result
+            },
+            move |result| receiver.complete(request_id, zx::Status::from(result)),
         ));
     }
 
@@ -1589,17 +1536,12 @@ impl CommandQueue {
                     break;
                 }
                 if let Some(tdl_slot) = slot {
-                    // Response will be sent by [`AsyncTask::drop`].
-                    let _ = inner.submit_async_task(AsyncTask::new_with_request(
-                        AsyncTaskInner::Trim(TrimTask {
-                            tdl_slot,
-                            partition,
-                            block_offset,
-                            block_count,
-                            trace_flow_id,
-                        }),
-                        request_id,
-                        receiver,
+                    inner.submit_async_task(into_async_task(
+                        async move |mut cq| {
+                            cq.trim(tdl_slot, partition, block_offset, block_count, trace_flow_id)
+                                .await
+                        },
+                        move |result| receiver.complete(request_id, zx::Status::from(result)),
                     ));
                     break;
                 } else {
@@ -1614,101 +1556,83 @@ impl CommandQueue {
         Ok(self.rpmb.get_device_info().await.map_err(|_| zx::Status::INTERNAL)?.info)
     }
 
-    pub async fn rpmb_request(self: &Arc<Self>, request: rpmb::Request) -> Result<(), zx::Status> {
-        let listener = self.inner.lock().submit_async_task(AsyncTask::new(
-            AsyncTaskInner::RpmbRequest(RpmbRequestTask(request)),
-        ))?;
-        listener.await.into()
+    pub fn rpmb_request<Fut: Future<Output = ()> + Send + 'static>(
+        self: &Arc<Self>,
+        request: rpmb::Request,
+        callback: impl FnOnce(Result<(), zx::Status>) -> Fut + Send + 'static,
+    ) {
+        self.inner.lock().submit_async_task(into_async_task(
+            async |mut cq| cq.rpmb_request(request).await,
+            |result| {
+                fasync::Task::spawn(async move {
+                    callback(result).await;
+                })
+                .detach()
+            },
+        ));
     }
 
     /// Pops the next task, returning it and an [`CommandQueueExcl`] representing unique access to
     /// the command queue.
     ///
     /// Returns None when the command queue is shutting down and there are no more tasks.
-    async fn get_next_task(self: &Arc<Self>) -> Option<(AsyncTask, CommandQueueExcl)> {
-        let mut task_and_excl: Option<(AsyncTask, CommandQueueExcl)> = None;
+    async fn get_next_task(self: &Arc<Self>) -> Option<(Box<dyn AsyncTask>, CommandQueueExcl)> {
+        let mut excl = None;
 
         loop {
-            let listener = 'inner: {
+            let listener = {
                 let mut inner = self.inner.lock();
 
                 if inner.state.shutting_down {
-                    let excl = match task_and_excl.take() {
-                        Some((mut task, excl)) => {
-                            task.status = zx::Status::CANCELED;
-                            excl
-                        }
-                        // NB: We don't need to block transfers since we're about to shutdown and
-                        // cancel all in-flight transfers.
-                        None => CommandQueueExcl::new(self.clone(), &mut inner, false),
-                    };
-                    return Some((AsyncTask::new(AsyncTaskInner::Shutdown), excl));
-                }
-
-                if inner.state.running_recovery {
-                    let excl = match task_and_excl.take() {
-                        Some((task, excl)) => {
-                            inner.async_task_queue.push_front(task);
-                            excl
-                        }
-                        // NB: We don't need to block transfers since we're about to run recovery
-                        // and cancel all in-flight transfers.
-                        None => CommandQueueExcl::new(self.clone(), &mut inner, false),
-                    };
-                    return Some((AsyncTask::new(AsyncTaskInner::Recovery), excl));
-                }
-
-                if inner.state.should_reject_tasks() {
-                    if let Some((mut task, _)) = task_and_excl.take() {
-                        task.status = zx::Status::UNAVAILABLE;
-                    }
                     return None;
                 }
 
-                if task_and_excl.is_none() {
-                    if let Some(task) = inner.async_task_queue.pop_front() {
-                        let should_block_transfers = task.should_block_transfers();
-                        task_and_excl = Some((
-                            task,
-                            CommandQueueExcl::new(self.clone(), &mut inner, should_block_transfers),
+                if inner.state.running_recovery {
+                    // NB: We don't need to block transfers since we're about to run recovery and
+                    // cancel all in-flight transfers.
+                    return Some((
+                        Box::new(RecoveryTask),
+                        excl.unwrap_or_else(|| {
+                            CommandQueueExcl::new(self.clone(), &mut inner, false)
+                        }),
+                    ));
+                }
+
+                if inner.state.should_reject_tasks() {
+                    return None;
+                }
+
+                if inner.async_task_queue.is_empty() {
+                    excl = None;
+                } else {
+                    // Block the queue.
+                    excl.get_or_insert_with(|| {
+                        CommandQueueExcl::new(self.clone(), &mut inner, true)
+                    });
+
+                    // Return if there are no pending tasks.
+                    if inner.pending_tasks.is_empty() {
+                        return Some((
+                            inner.async_task_queue.pop_front().unwrap(),
+                            excl.take().unwrap(),
                         ));
-                    } else {
-                        break 'inner Some(inner.event.listen());
                     }
                 }
 
-                if task_and_excl.as_ref().unwrap().0.should_block_transfers()
-                    && !inner.pending_tasks.is_empty()
-                {
-                    // Wait for in-flight transfers to drain.
-                    break 'inner Some(inner.event.listen());
-                }
-
-                return task_and_excl;
+                inner.event.listen()
             };
 
-            if let Some(l) = listener {
-                l.await;
-            }
+            listener.await;
         }
     }
 
     async fn async_task_loop(self: &Arc<Self>) {
-        while let Some((mut task, mut this)) = self.get_next_task().await {
-            // Completion is handled in [`AsyncTask::drop`].
-            task.status = zx::Status::from(match task.take_task() {
-                AsyncTaskInner::Shutdown => {
-                    debug!("AsyncTaskInner::Shutdown");
-                    let _ = this.shutdown().await;
-                    break;
-                }
-                AsyncTaskInner::SwitchAndSubmit(t) => this.switch_and_submit(t).await,
-                AsyncTaskInner::RpmbRequest(t) => this.rpmb_request(t).await,
-                AsyncTaskInner::Flush(t) => this.flush(t).await,
-                AsyncTaskInner::Trim(t) => this.trim(t).await,
-                AsyncTaskInner::Recovery => this.run_recovery().await,
-            });
+        while let Some((task, cq)) = self.get_next_task().await {
+            task.run(cq).await;
         }
+
+        let _ = CommandQueueExcl { queue: self.clone() }.shutdown().await;
+
         self.inner.lock().async_task_queue.clear();
         debug!("async_task_loop completed");
     }
