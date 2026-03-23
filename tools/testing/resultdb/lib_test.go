@@ -168,6 +168,48 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 	}
 }
 
+func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:        "foo",
+		GNLabel:     "some label",
+		SourceLabel: "some source label",
+		Status:      runtests.TestFailure,
+		TestResult: runtests.TestResult{
+			OutputDir: "foo",
+			Cases: []runtests.TestCaseResult{
+				{
+					CaseName: "failed_case",
+					Status:   runtests.TestFailure,
+				},
+				{
+					CaseName:   "skipped_with_reason",
+					Status:     runtests.TestSkipped,
+					FailReason: "skipped for some reason",
+				},
+				{
+					CaseName: "skipped_without_reason",
+					Status:   runtests.TestSkipped,
+				},
+			},
+		},
+	}
+
+	extraTags := []*resultpb.StringPair{}
+	result, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
+	if err != nil {
+		t.Fatalf("Cannot parse test detail. got %s", err)
+	}
+
+	expectedFailureReason := "failed_case: test case failed\nskipped_with_reason: skipped for some reason"
+	if result.FailureReason == nil {
+		t.Fatalf("Expected FailureReason to be non-nil")
+	}
+	if result.FailureReason.PrimaryErrorMessage != expectedFailureReason {
+		t.Errorf("Expected failure reason %q, got %q", expectedFailureReason, result.FailureReason.PrimaryErrorMessage)
+	}
+}
+
 func TestSetTestCaseToResultSink(t *testing.T) {
 	outputRoot := t.TempDir()
 	detail := createTestDetailWithTestCase(5, outputRoot)

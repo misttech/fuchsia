@@ -289,14 +289,19 @@ func hasFailedTest(topLevelTest *runtests.TestDetails) bool {
 func createDefaultTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 	var builder strings.Builder
 	for _, testCase := range topLevelTest.Cases {
-		if testCase.Status == runtests.TestFailure {
-			if builder.Len() > 0 {
-				builder.WriteString("\n")
-			}
+		if testCase.Status != runtests.TestSuccess {
+			var text string
 			if testCase.FailReason != "" {
-				builder.WriteString(fmt.Sprintf("%s: %s", testCase.CaseName, testCase.FailReason))
-			} else {
-				builder.WriteString(fmt.Sprintf("%s: test case failed", testCase.CaseName))
+				text = fmt.Sprintf("%s: %s", testCase.CaseName, testCase.FailReason)
+			} else if testCase.Status == runtests.TestFailure {
+				text = fmt.Sprintf("%s: test case failed", testCase.CaseName)
+			}
+
+			if text != "" {
+				if builder.Len() > 0 {
+					builder.WriteString("\n")
+				}
+				builder.WriteString(text)
 			}
 		}
 	}
