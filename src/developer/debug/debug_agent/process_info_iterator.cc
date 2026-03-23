@@ -24,6 +24,7 @@ ProcessInfoIterator::ProcessInfoIterator(
   if (!processes_.empty()) {
     current_process_ = processes_[process_index_];
     if (current_process_) {
+      current_process_->PopulateCurrentThreads();
       current_process_threads_ = current_process_->GetThreads();
       auto component_info =
           debug_agent_->system_interface().GetComponentManager().FindComponentInfo(
@@ -86,6 +87,7 @@ bool ProcessInfoIterator::Advance() {
     // |current_process_| in the constructor.
     current_process_ = processes_[++process_index_];
     FX_DCHECK(current_process_);
+    current_process_->PopulateCurrentThreads();
     current_process_threads_ = current_process_->GetThreads();
 
     // Reset the thread index for the new process.
