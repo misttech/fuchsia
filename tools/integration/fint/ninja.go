@@ -298,7 +298,7 @@ func ninjaFailureMessage(buildDir string, ninjaStderr string) (string, error) {
 			// (which can be long and wrapped across multiple lines) from the
 			// output containing the actual error message.
 			msgLines = append(msgLines, "")
-			msgLines = append(msgLines, strings.TrimRight(f.Output, " \n\t\r"))
+			msgLines = append(msgLines, strings.Trim(f.Output, "\n"))
 		}
 		msgLines = append(msgLines, "\n")
 	}
