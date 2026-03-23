@@ -41,6 +41,7 @@ fuchsia_microbenchmark_shared_process_sources = [ "main.cc" ]
 
 if (is_linux) {
   fuchsia_microbenchmark_sources += [
+    "clone.cc",
     "fork.cc",
 
     # The getpid() microbenchmark would work on Fuchsia, but it is

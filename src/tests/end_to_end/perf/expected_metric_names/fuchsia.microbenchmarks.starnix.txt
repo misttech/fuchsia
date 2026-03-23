@@ -4,6 +4,12 @@ fuchsia.microbenchmarks.starnix: Atomic/Increment/32bit
 fuchsia.microbenchmarks.starnix: Atomic/Increment/64bit
 fuchsia.microbenchmarks.starnix: ClockGettimeMonotonic
 fuchsia.microbenchmarks.starnix: ClockGettimeRealTime
+fuchsia.microbenchmarks.starnix: CloneWithMappings/1024.sys_clone
+fuchsia.microbenchmarks.starnix: CloneWithMappings/1024.wait
+fuchsia.microbenchmarks.starnix: CloneWithMappings/128.sys_clone
+fuchsia.microbenchmarks.starnix: CloneWithMappings/128.wait
+fuchsia.microbenchmarks.starnix: CloneWithMappings/4096.sys_clone
+fuchsia.microbenchmarks.starnix: CloneWithMappings/4096.wait
 fuchsia.microbenchmarks.starnix: ExampleNoOpLoop
 fuchsia.microbenchmarks.starnix: Filesystem_Fstat
 fuchsia.microbenchmarks.starnix: Filesystem_Fstat_Ext4
