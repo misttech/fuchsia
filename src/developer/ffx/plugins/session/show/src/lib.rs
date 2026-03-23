@@ -8,7 +8,8 @@ use component_debug::cli::show_cmd_print;
 use ffx_session_show_args::SessionShowCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
+use {component_debug_fdomain as component_debug, rcs_fdomain as rcs};
 
 const DETAILS_FAILURE: &str = "Could not get session information from the target. This may be
 because there are no running sessions, or because the target is using a product configuration

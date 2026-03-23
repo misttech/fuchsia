@@ -12,10 +12,10 @@ ffx_plugin("ffx_session_show") {
 
   deps = [
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/rcs:lib",
+    "//src/developer/ffx/lib/rcs:lib_fdomain",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/sys/lib/component_debug",
+    "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:termion",
