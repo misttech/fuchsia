@@ -23,6 +23,7 @@ typedef uint32_t zbi_hw_reboot_reason_t;
 #define ZBI_HW_REBOOT_REASON_WARM ((zbi_hw_reboot_reason_t)(2u))
 #define ZBI_HW_REBOOT_REASON_BROWNOUT ((zbi_hw_reboot_reason_t)(3u))
 #define ZBI_HW_REBOOT_REASON_WATCHDOG ((zbi_hw_reboot_reason_t)(4u))
+#define ZBI_HW_REBOOT_REASON_USER_HARD_RESET ((zbi_hw_reboot_reason_t)(5u))
 
 #if defined(__cplusplus)
 }

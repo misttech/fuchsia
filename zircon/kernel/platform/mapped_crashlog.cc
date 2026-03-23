@@ -84,6 +84,9 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
     case ZBI_HW_REBOOT_REASON_WATCHDOG:
       str_hw_reason = "HW WATCHDOG";
       break;
+    case ZBI_HW_REBOOT_REASON_USER_HARD_RESET:
+      str_hw_reason = "USER HARD RESET";
+      break;
     default:
       snprintf(str_hw_reason_buf, sizeof(str_hw_reason_buf), "0x%08x",
                static_cast<uint32_t>(hw_reason));

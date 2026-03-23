@@ -679,6 +679,7 @@ pub const ZBI_HW_REBOOT_REASON_COLD: zbi_hw_reboot_reason_t = 1;
 pub const ZBI_HW_REBOOT_REASON_WARM: zbi_hw_reboot_reason_t = 2;
 pub const ZBI_HW_REBOOT_REASON_BROWNOUT: zbi_hw_reboot_reason_t = 3;
 pub const ZBI_HW_REBOOT_REASON_WATCHDOG: zbi_hw_reboot_reason_t = 4;
+pub const ZBI_HW_REBOOT_REASON_USER_HARD_RESET: zbi_hw_reboot_reason_t = 5;
 pub const ZBI_ALIGNMENT: u32 = 8;
 pub const ZBI_TYPE_KERNEL_PREFIX: u32 = 5132875;
 pub const ZBI_TYPE_KERNEL_MASK: u32 = 16777215;

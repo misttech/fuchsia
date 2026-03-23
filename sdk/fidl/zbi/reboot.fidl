@@ -13,4 +13,5 @@ type HwRebootReason = flexible enum : uint32 {
     WARM = 2;
     BROWNOUT = 3;
     WATCHDOG = 4;
+    USER_HARD_RESET = 5;
 };
