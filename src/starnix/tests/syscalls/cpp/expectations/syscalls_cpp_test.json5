@@ -6,9 +6,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/42179751): Make these tests pass in Starnix then enable.
-                "MapGrowsdownTest.Syscall*",
-
                 // TODO(https://fxbug.dev/42080092): This test causes the test suite to fail on NUC.
                 "RestartRead.ReadFromPipeRestarts",
 
@@ -68,6 +65,10 @@
 
                 // TODO(https://fxbug.dev/411617451)
                 "MMapProcTest.MProtectAppliedPartially",
+
+                // TODO(https://fxbug.dev/42179751): Make these tests pass in Starnix.
+                "MapGrowsdownTest.SyscallReadsBelowGrowsdown",
+                "MapGrowsdownTest.SyscallWritesBelowGrowsdown",
 
                 // TODO(https://fxbug.dev/297438799)
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_rwx",

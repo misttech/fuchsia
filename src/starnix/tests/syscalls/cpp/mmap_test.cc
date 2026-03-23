@@ -1030,7 +1030,7 @@ TEST_F(MapGrowsdownTest, SyscallReadsBelowGrowsdown) {
   SAFE_SYSCALL(pipe(fds));
   // This syscall should grow the region to include the address read from and insert a '\0' into the
   // pipe.
-  SAFE_SYSCALL(write(fds[1], address_below_growsdown, 1));
+  ASSERT_THAT(write(fds[1], address_below_growsdown, 1), SyscallSucceeds());
   char buf;
   SAFE_SYSCALL(read(fds[0], &buf, 1));
   EXPECT_EQ(buf, '\0');
@@ -1043,7 +1043,7 @@ TEST_F(MapGrowsdownTest, SyscallWritesBelowGrowsdown) {
   int fds[2];
   SAFE_SYSCALL(pipe(fds));
   char buf = 'a';
-  SAFE_SYSCALL(write(fds[1], &buf, 1));
+  ASSERT_THAT(write(fds[1], &buf, 1), SyscallSucceeds());
   // This syscall should grow the region to include the address written to and read an 'a' from the
   // pipe.
   SAFE_SYSCALL(read(fds[0], address_below_growsdown, 1));
