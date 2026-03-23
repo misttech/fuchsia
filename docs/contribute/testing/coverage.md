@@ -77,7 +77,7 @@ examples that we'll use to demonstrate the workflow.
 * {C++}
 
   ```posix-terminal
-  fx set core.x64 --variant coverage --with examples/hello_world
+  fx set core.x64 --variant coverage --with examples/hello_world --include-clippy=false
   fx build
   ```
 
