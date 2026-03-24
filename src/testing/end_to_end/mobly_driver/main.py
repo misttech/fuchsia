@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 import traceback
@@ -124,6 +125,11 @@ def main() -> None:
     based on the execution environment, and uses the Mobly Driver to run the
     underlying Mobly test.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[Mobly Driver] %(asctime)s %(levelname)s %(message)s",
+    )
+
     factory = driver_factory.DriverFactory(
         honeydew_config=generate_honeydew_config(),
         multi_device=args.multi_device,

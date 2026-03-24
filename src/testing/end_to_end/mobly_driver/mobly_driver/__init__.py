@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Mobly Driver module."""
 
+import logging
 import os
 import signal
 import subprocess
@@ -13,6 +14,8 @@ from typing import Any, Optional
 
 from mobly_driver.api import api_infra
 from mobly_driver.driver import base
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class MoblyTestTimeoutException(Exception):
@@ -110,7 +113,7 @@ def _execute_test(
                 cmd.append("-v")
 
         cmd_str = " ".join(cmd)
-        print(f'[Mobly Driver] - Executing Mobly test via cmd:\n"$ {cmd_str}"')
+        _LOGGER.info(f'Executing Mobly test via cmd:\n"$ {cmd_str}"')
 
         with subprocess.Popen(
             cmd,
@@ -147,13 +150,11 @@ def _execute_test(
                 main_test_timeout = None
 
             if main_test_timeout is not None:
-                print(
-                    f"[Mobly Driver] - Waiting {main_test_timeout} for test to complete."
+                _LOGGER.info(
+                    f"Waiting {main_test_timeout} for test to complete."
                 )
             else:
-                print(
-                    f"[Mobly Driver] - Waiting indefinitely for test to complete."
-                )
+                _LOGGER.info("Waiting indefinitely for test to complete.")
             try:
                 return proc.wait(
                     timeout=main_test_timeout.total_seconds()
@@ -161,34 +162,30 @@ def _execute_test(
                     else None
                 )
             except subprocess.TimeoutExpired:
-                print(
-                    f"[Mobly Driver] - test timed out after {main_test_timeout}."
-                )
+                _LOGGER.warning(f"test timed out after {main_test_timeout}.")
             except InterruptedError:
-                print(
-                    "[Mobly Driver] - got out-of-band SIGINT/SIGTERM while waiting for test to complete."
+                _LOGGER.warning(
+                    "got out-of-band SIGINT/SIGTERM while waiting for test to complete."
                 )
 
             if cleanup_period is not None:
-                print(
-                    "[Mobly Driver] - Sending SIGTERM to begin cleanup period."
-                )
+                _LOGGER.info("Sending SIGTERM to begin cleanup period.")
                 proc.terminate()
                 try:
                     return proc.wait(timeout=cleanup_period.total_seconds())
                 except subprocess.TimeoutExpired:
-                    print(
-                        f"[Mobly Driver] - cleanup period timed out after {cleanup_period}."
+                    _LOGGER.warning(
+                        f"cleanup period timed out after {cleanup_period}."
                     )
                 except InterruptedError:
-                    print(
-                        "[Mobly Driver] - got out-of-band SIGINT/SIGTERM during cleanup period."
+                    _LOGGER.warning(
+                        "got out-of-band SIGINT/SIGTERM during cleanup period."
                     )
 
-            print("[Mobly Driver] - Begin final grace period.")
+            _LOGGER.info("Begin final grace period.")
             for i in range(FINAL_GRACE_PERIOD_WARNINGS):
-                print(
-                    f"[Mobly Driver] - Sending SIGTERM {i+1}/{FINAL_GRACE_PERIOD_WARNINGS}."
+                _LOGGER.info(
+                    f"Sending SIGTERM {i+1}/{FINAL_GRACE_PERIOD_WARNINGS}."
                 )
                 proc.terminate()
                 try:
@@ -196,15 +193,15 @@ def _execute_test(
                         timeout=FINAL_GRACE_PERIOD_TIMEOUT.total_seconds()
                     )
                 except subprocess.TimeoutExpired:
-                    print(
-                        f"[Mobly Driver] - timed out after {FINAL_GRACE_PERIOD_TIMEOUT}."
+                    _LOGGER.warning(
+                        f"timed out after {FINAL_GRACE_PERIOD_TIMEOUT}."
                     )
                 except InterruptedError:
-                    print(
-                        "[Mobly Driver] - got out-of-band SIGINT/SIGTERM during final grace period."
+                    _LOGGER.warning(
+                        "got out-of-band SIGINT/SIGTERM during final grace period."
                     )
 
-            print("[Mobly Driver] - Sending SIGKILL")
+            _LOGGER.info("Sending SIGKILL")
             proc.kill()
             proc.wait()
             raise MoblyTestTimeoutException("Mobly test had to be killed.")
@@ -259,7 +256,7 @@ def run(
         )
     if cleanup_period is not None and timeout is None:
         raise ValueError("|cleanup_period| must be None if |timeout| is None.")
-    print(f"Running [{driver.__class__.__name__}]")
+    _LOGGER.info(f"Running [{driver.__class__.__name__}]")
     try:
         return_code = _execute_test(
             python_path=python_path,
