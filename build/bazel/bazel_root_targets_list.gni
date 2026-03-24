@@ -32,6 +32,15 @@ declare_args() {
   #
   default_bazel_root_host_targets = sdk_host_tool_bazel_targets + [
                                       {
+                                        bazel_label = "//tools/rust_test_parser:rust_test_parser"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
+                                            ninja = "rust_test_parser"
+                                          },
+                                        ]
+                                      },
+                                      {
                                         bazel_label = "//tools/go_test_parser:go_test_parser"
                                         copy_outputs = [
                                           {

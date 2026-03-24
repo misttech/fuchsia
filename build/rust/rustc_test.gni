@@ -106,8 +106,10 @@ template("rustc_test_internal") {
     }
 
     host_test(target_name) {
-      binary_path = get_label_info("//tools/rust_test_parser", "root_out_dir") +
-                    "/rust_test_parser"
+      binary_path =
+          get_label_info(
+              "//build/bazel/host:bazel_root_host_tools.rust_test_parser",
+              "root_out_dir") + "/rust_test_parser"
 
       if (defined(test_name)) {
         name = test_name
@@ -131,7 +133,7 @@ template("rustc_test_internal") {
       deps = [
         ":${_test_data_target}",
         ":${exe_target_name}",
-        "//tools/rust_test_parser",
+        "//build/bazel/host:bazel_root_host_tools.rust_test_parser",
       ]
 
       if (use_unstripped_binary_for_host_tests) {

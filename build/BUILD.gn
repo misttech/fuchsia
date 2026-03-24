@@ -158,6 +158,7 @@ if (is_host) {
       "//tools/net/sshutil:verify_bazel2gn",
       "//tools/net/tftp:verify_bazel2gn",
       "//tools/pretty_serial:verify_bazel2gn",
+      "//tools/rust_test_parser:verify_bazel2gn",
       "//tools/testing/runtests:verify_bazel2gn",
       "//tools/testing/tap:verify_bazel2gn",
       "//tools/testing/testparser:verify_bazel2gn",
