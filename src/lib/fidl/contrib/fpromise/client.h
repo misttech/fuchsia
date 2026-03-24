@@ -24,6 +24,15 @@ struct ValueTypeOrVoid<T, std::void_t<typename T::value_type>> {
   using type = typename T::value_type;
 };
 
+template <typename T, typename V = void>
+struct ErrorTypeOrVoid {
+  using type = V;
+};
+template <typename T>
+struct ErrorTypeOrVoid<T, std::void_t<typename T::error_type>> {
+  using type = typename T::error_type;
+};
+
 }  // namespace internal
 
 // |as_promise| converts a FIDL asynchronous call in the new C++ bindings
@@ -71,6 +80,31 @@ auto as_promise(::fidl::internal::NaturalThenable<FidlMethod>&& thenable) {
           }
         } else {
           completer.complete_error(std::move(result.error_value()));
+        }
+      });
+  return bridge.consumer.promise();
+}
+
+template <typename FidlMethod, typename EncodedRequestMessage>
+auto as_promise(::fidl::internal::WireThenableImpl<FidlMethod, EncodedRequestMessage>&& thenable) {
+  using ResultType = typename ::fidl::internal::WireResultUnwrap<FidlMethod>::Type;
+  using E = typename internal::ErrorTypeOrVoid<ResultType>::type;
+  using V = typename internal::ValueTypeOrVoid<ResultType, ResultType>::type;
+  ::fpromise::bridge<V, E> bridge;
+  std::move(thenable).ThenExactlyOnce(
+      [completer = std::move(bridge.completer)](auto&& result) mutable {
+        if (result.ok()) {
+          if constexpr (std::is_same_v<V, void>) {
+            completer.complete_ok();
+          } else {
+            completer.complete_ok(std::move(result.value()));
+          }
+        } else {
+          if constexpr (std::is_same_v<E, void>) {
+            completer.complete_error();
+          } else {
+            completer.complete_error(std::move(result.error_value()));
+          }
         }
       });
   return bridge.consumer.promise();
