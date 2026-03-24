@@ -1337,9 +1337,7 @@ mod tests {
                 if count > 0 {
                     let (lock, cvar) = &*pair;
                     let mut closed = lock.lock();
-                    while !*closed {
-                        cvar.wait(&mut closed);
-                    }
+                    cvar.wait_while(&mut closed, |closed| !*closed);
                 }
                 count += 1;
             }));
