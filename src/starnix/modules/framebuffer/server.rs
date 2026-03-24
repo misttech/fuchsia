@@ -36,6 +36,7 @@ use starnix_uapi::errors::Errno;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::mpsc::channel;
+use std::thread;
 use {
     fidl_fuchsia_element as felement, fidl_fuchsia_images2 as fimages2, fidl_fuchsia_math as fmath,
     fidl_fuchsia_ui_composition as fuicomposition, fidl_fuchsia_ui_views as fuiviews,
@@ -143,7 +144,7 @@ fn init_fb_scene(
         .set_root_transform(&ROOT_TRANSFORM_ID)
         .map_err(|_| anyhow!("error setting root transform"))?;
 
-    let (collection_sender, collection_receiver) = channel();
+    let buffer_tokens = BufferCollectionTokenPair::new();
     let (allocation_sender, allocation_receiver) = channel();
     // This thread is spawned to deal with the mix of asynchronous and synchronous proxies.
     // In particular, we want to keep Framebuffer creation synchronous, while still making use of
@@ -151,54 +152,47 @@ fn init_fb_scene(
     //
     // The spawned thread will execute the futures and send results back to this thread via a
     // channel.
-    std::thread::Builder::new()
-        .name("kthread-fb-alloc".to_string())
-        .spawn(move || -> Result<(), anyhow::Error> {
-            let mut executor = fasync::LocalExecutor::default();
+    thread::scope(|s| {
+        thread::Builder::new()
+            .name("kthread-fb-alloc".to_string())
+            .spawn_scoped(s, move || -> Result<(), anyhow::Error> {
+                let mut executor = fasync::LocalExecutor::default();
 
-            let mut buffer_allocator = BufferCollectionAllocator::new(
-                width,
-                height,
-                fimages2::PixelFormat::R8G8B8A8,
-                FrameUsage::Cpu,
-                1,
-            )?;
-            buffer_allocator.set_name(100, "Starnix View")?;
+                let mut buffer_allocator = BufferCollectionAllocator::new(
+                    width,
+                    height,
+                    fimages2::PixelFormat::R8G8B8A8,
+                    FrameUsage::Cpu,
+                    1,
+                )?;
+                buffer_allocator.set_name(100, "Starnix View")?;
 
-            let sysmem_buffer_collection_token =
-                executor.run_singlethreaded(buffer_allocator.duplicate_token())?;
-            // Notify the async code that the sysmem buffer collection token is available.
-            collection_sender
-                .send(sysmem_buffer_collection_token)
-                .expect("Failed to send collection");
+                let sysmem_buffer_collection_token =
+                    executor.run_singlethreaded(buffer_allocator.duplicate_token())?;
 
-            let allocation =
-                executor.run_singlethreaded(buffer_allocator.allocate_buffers(true))?;
-            // Notify the async code that the buffer allocation completed.
-            allocation_sender.send(allocation).expect("Failed to send allocation");
+                let args = fuicomposition::RegisterBufferCollectionArgs {
+                    export_token: Some(buffer_tokens.export_token),
+                    buffer_collection_token2: Some(sysmem_buffer_collection_token),
+                    ..Default::default()
+                };
 
-            Ok(())
-        })
-        .expect("able to create threads");
+                allocator
+                    .register_buffer_collection(args, zx::MonotonicInstant::INFINITE)
+                    .map_err(|_| anyhow!("FIDL error registering buffer collection"))?
+                    .map_err(|_| anyhow!("Error registering buffer collection"))?;
 
-    // Wait for the async code to generate the buffer collection token.
-    let sysmem_buffer_collection_token = collection_receiver
-        .recv()
-        .map_err(|_| anyhow!("Error receiving buffer collection token"))?;
+                let allocation =
+                    executor.run_singlethreaded(buffer_allocator.allocate_buffers(true))?;
 
-    let buffer_tokens = BufferCollectionTokenPair::new();
-    let args = fuicomposition::RegisterBufferCollectionArgs {
-        export_token: Some(buffer_tokens.export_token),
-        buffer_collection_token2: Some(sysmem_buffer_collection_token),
-        ..Default::default()
-    };
+                // Notify the main thread that the buffer allocation completed.
+                allocation_sender.send(allocation).expect("Failed to send allocation");
 
-    allocator
-        .register_buffer_collection(args, zx::MonotonicInstant::INFINITE)
-        .map_err(|_| anyhow!("FIDL error registering buffer collection"))?
-        .map_err(|_| anyhow!("Error registering buffer collection"))?;
+                Ok(())
+            })
+            .expect("able to create threads");
+    });
 
-    // Now that the buffer collection is registered, wait for the buffer allocation to happen.
+    // Wait for the buffer allocation to complete.
     let allocation =
         allocation_receiver.recv().map_err(|_| anyhow!("Error receiving buffer allocation"))?;
 
