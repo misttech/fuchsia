@@ -96,4 +96,4 @@
   </div>
 </div>
 
-<meta name="keywords" value="RFC{{ rfc.name|trim('RFC-')|int }}, RFC {{ rfc.name|trim('RFC-')|int }}" />
+<meta name="keywords_public" value="RFC{{ rfc.name|trim('RFC-')|int }}, RFC {{ rfc.name|trim('RFC-')|int }}, {{ rfc.area|join(', ') }}" />
