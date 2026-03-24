@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/host_tests:host_test_data.bzl", "CollectedFuchsiaHostTestDataInfo", "collect_fuchsia_host_test_data_aspect")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules/python:py_toolchain.bzl", "PY_TOOLCHAIN_ATTRS", "generate_python_build_action")
 
@@ -45,6 +46,44 @@ def _host_test_impl(ctx):
     binary_info = ctx.attr.binary[DefaultInfo]
     binary_runfiles_manifest = binary_info.files_to_run.runfiles_manifest
     binary_repo_mapping_manifest = binary_info.files_to_run.repo_mapping_manifest
+
+    # Get the FuchsiaHostTestDataInfo from the aspect on the binary and the data dependencies,
+    # and write them to a single file. This will be processed to add new runtime dependencies
+    # that do not appear in the test's runfiles manifest, as they should be accessed directly
+    # by the test binaries, with paths relative to the test runtime directory.
+    #
+    # Collect the source files to add them to this target's runfiles though, to allow
+    # running it with `bazel run` and `bazel test` properly.
+    host_test_data_manifest = ctx.actions.declare_file(ctx.attr.name + ".host_test_data_manifest.json")
+
+    # host_test_data_info is a list of FuchsiaHostTestDataInfo providers from the binary
+    # and the test's data dependencies.
+    host_test_data_infos = depset(transitive = [
+        target[CollectedFuchsiaHostTestDataInfo].infos
+        for target in [ctx.attr.binary] + ctx.attr.data
+        if CollectedFuchsiaHostTestDataInfo in target
+    ]).to_list()
+
+    host_test_data_sources = set()
+    for info in host_test_data_infos:
+        host_test_data_sources.update(info.files.values())
+    host_test_data_runtime_files = sorted(host_test_data_sources)
+
+    ctx.actions.write(
+        output = host_test_data_manifest,
+        content = json.encode([
+            {
+                "label": str(info.label),
+                "files": {
+                    dest_path: source.path
+                    for dest_path, source in info.files.items()
+                },
+            }
+            for info in host_test_data_infos
+        ]),
+        #mnemonic = "FuchsiaHostTestDataManifest",
+    )
+
     inputs = (
         binary_info.files.to_list() +
         binary_info.default_runfiles.files.to_list() +
@@ -53,7 +92,8 @@ def _host_test_impl(ctx):
     ) + [
         binary_runfiles_manifest,
         binary_repo_mapping_manifest,
-    ]
+        host_test_data_manifest,
+    ] + host_test_data_runtime_files
 
     entry_point = binary_info.files_to_run.executable
 
@@ -90,6 +130,7 @@ def _host_test_impl(ctx):
         print("runtime_dir path: {}".format(runtime_dir.path))
         print("test_args: {}".format(test_args))
         print(files_list_dump("data_runfiles", data_runfiles.files.to_list()))
+        print(files_list_dump("host_test_data_runtime_files", host_test_data_runtime_files))
 
     generate_python_build_action(
         ctx = ctx,
@@ -102,6 +143,7 @@ def _host_test_impl(ctx):
             "--output-runtime-dir={}".format(runtime_dir.path),
             "--output-test-runtime-deps-json={}".format(test_runtime_deps_json.path),
             "--bazel-execroot={}".format(ctx.label.workspace_root),
+            "--host-test-data-manifest={}".format(host_test_data_manifest.path),
         ] + [
             "--data-runfile={}".format(f.path)
             for f in data_runfiles.files.to_list()
@@ -120,7 +162,7 @@ def _host_test_impl(ctx):
     )
 
     runfiles = ctx.runfiles(
-        files = [launcher, runtime_dir],
+        files = [launcher, runtime_dir] + host_test_data_runtime_files,
     ).merge_all([binary_info.default_runfiles, data_runfiles])
 
     current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
@@ -164,9 +206,16 @@ host_test = rule(
     The resulting target *is* also a Bazel test that can be invoked locally using
     `fx bazel test --config=host <label>`.
 
-    This rule does *not* work like the GN host_test() template, because runtime dependencies are
-    specified using regular `data` label lists, and the test binary *must* use a runfiles library
-    to access these at runtime. For more information, see //build/bazel/BAZEL_RUNFILES.md.
+    Runtime dependencies are specified with the 'data' attribute. As a convenience, any
+    data dependencies declared through `host_test_data_xxx()` targets will appear at a fixed
+    path in the test's runtime directory. This lets the test binary to access them easily.
+
+    Otherwise, test binaries can still rely on runfiles to access their runtime dependencies,
+    but this requires linking a third-party runfiles library, and using hard-coded rlocation
+    paths.
+
+    Both ways to declare and access runtime dependencies are supported both with
+    `bazel test` and with Fuchsia test runners.
     """,
     test = True,
     executable = True,
@@ -175,6 +224,7 @@ host_test = rule(
             doc = "The test binary to wrap. This can be any executable target, including a Bazel " +
                   "test target, as long as it doesn't have its own `args` attribute values.",
             mandatory = True,
+            aspects = [collect_fuchsia_host_test_data_aspect],
         ),
         "test_name": attr.string(
             doc = "Optional override for the name of the test, as seen by `fx test` and `botanist`. " +
@@ -185,10 +235,11 @@ host_test = rule(
             default = [],
         ),
         "data": attr.label_list(
-            doc = "Data files to include in the test's runfiles. Note that the test should always " +
-                  "use a runfiles library to access these at runtime.",
+            doc = "Data files to include at runtime. Collected from runfiles and " +
+                  "host_test_data_xxx() target definitions reachable from this label list.",
             default = [],
             allow_files = True,
+            aspects = [collect_fuchsia_host_test_data_aspect],
         ),
         "_generate_host_test_wrapper": attr.label(
             doc = "Internal script used to generate the final test wrapper script.",

@@ -6,16 +6,108 @@
 """Generate a host test wrapper and associated runtime directory and runtime deps list."""
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
 import shutil
 import sys
+import typing as T
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent / "../scripts"))
 import build_utils
 import runfiles_utils
+
+
+@dataclasses.dataclass
+class FuchsiaHostTestDataInfo:
+    """Represents a single FuchsiaHostTestDataInfo provider."""
+
+    # LINT.IfChange(FuchsiaHostTestDataInfo)
+    label: str
+    files: dict[str, str] = dataclasses.field(default_factory=dict)
+    # LINT.ThenChange(//build/bazel/host_tests/host_test_data.bzl:FuchsiaHostTestDataInfo)
+
+    @staticmethod
+    def from_json(json_value: T.Any) -> "FuchsiaHostTestDataInfo":
+        assert isinstance(
+            json_value, dict
+        ), f"Input must be dictionary, got {type(json_value)}"
+
+        label = json_value.get("label", "")
+        assert label and isinstance(
+            label, str
+        ), f"Input must have a non-empty string label, got {label}"
+
+        files = json_value.get("files", {})
+        assert files and isinstance(
+            files, dict
+        ), f"Input must have a non-empty dictionary of files, got {files}"
+
+        return FuchsiaHostTestDataInfo(
+            label=label,
+            files=files,
+        )
+
+
+class FuchsiaHostTestDataManifest:
+    """A list of FuchsiaHostTestDataInfo providers."""
+
+    def __init__(self, infos: list[FuchsiaHostTestDataInfo]):
+        self.infos = infos
+
+    def generate_final_map(self, bazel_execroot: Path) -> dict[str, Path]:
+        """Generate final { dest_path -> source_path } map.
+
+        Returns:
+           A { dest_path -> source_path } map, where keys are path strings relative
+           to the test runtime directory, and source_path is a Path object pointing to the
+           actual file.
+
+        Raises:
+            ValueError: If there are duplicate destination paths with different source paths.
+        """
+        # Check fo duplicates.
+        # Map dest_path to (label, source_path)
+        result: dict[str, Path] = {}
+        labels_map: dict[str, str] = {}  # maps dest_path -> label
+        for info in self.infos:
+            for dest_path, source_path in info.files.items():
+                source_path = bazel_execroot / source_path
+                cur_source = result.setdefault(dest_path, source_path)
+                if cur_source != source_path:
+                    raise ValueError(
+                        """
+Conflict for destination path with multiple sources: {dest_path}
+Labels:
+    {labels_map[dest_path]}
+    {info.label}
+Sources:
+    {cur_source}
+    {source_path}
+
+"""
+                    )
+        return result
+
+    @staticmethod
+    def from_json(json_value: T.Any) -> "FuchsiaHostTestDataManifest":
+        assert isinstance(
+            json_value, list
+        ), f"Input must be a list, got: {type(json_value)}"
+        if json_value:
+            assert isinstance(
+                json_value[0], dict
+            ), f"Input must be a list of dicts, got: list of {type(json_value[0])}"
+            infos = [
+                FuchsiaHostTestDataInfo.from_json(info_dict)
+                for info_dict in json_value
+            ]
+        else:
+            infos = []
+
+        return FuchsiaHostTestDataManifest(infos)
 
 
 def find_ninja_build_dir() -> Path:
@@ -92,6 +184,7 @@ def generate_test_wrapper(
     output_launcher: Path,
     output_runtime_dir: Path,
     output_test_runtime_deps_json: Path,
+    host_test_data_manifest: T.Optional[Path],
     data_runfiles: list[str],
     test_args: list[str],
     bazel_execroot: Path,
@@ -260,6 +353,30 @@ exec ./{entry_point_location} {test_args_prefix}"$@"
     )
     output_launcher.chmod(0o755)
 
+    # Add all host_test_data() runtime dependencies to the runtime directory
+    # and the runtimes_deps list, but do not add them to the generated
+    # Bazel runfiles manifest.
+    if host_test_data_manifest:
+        try:
+            with host_test_data_manifest.open() as f:
+                host_test_data_manifest = FuchsiaHostTestDataManifest.from_json(
+                    json.load(f)
+                )
+        except Exception as e:
+            print(
+                f"ERROR: Failed to parse host_test_data_manifest: {e}",
+                sys.stderr,
+            )
+            return 1
+
+        host_test_data_map = host_test_data_manifest.generate_final_map(
+            bazel_execroot
+        )
+        for dest_path, source_path in host_test_data_map.items():
+            dest_path = output_runtime_dir / dest_path
+            make_runtime_symlink(dest_path, source_path)
+            runtime_deps_paths.append(dest_path)
+
     # Generate the test_runtime_deps.json file.
     output_test_runtime_deps_json.parent.mkdir(parents=True, exist_ok=True)
     output_test_runtime_deps_json.write_text(
@@ -318,6 +435,11 @@ def main() -> int:
         help="Data runfiles to include in the test's runfiles.",
     )
     parser.add_argument(
+        "--host-test-data-manifest",
+        type=Path,
+        help="An input manifest describing host_test_data() runtime dependencies.",
+    )
+    parser.add_argument(
         "--test-arg",
         action="append",
         type=str,
@@ -338,6 +460,7 @@ def main() -> int:
         args.output_launcher,
         args.output_runtime_dir,
         args.output_test_runtime_deps_json,
+        args.host_test_data_manifest,
         args.data_runfile,
         args.test_arg,
         args.bazel_execroot,

@@ -6,6 +6,7 @@
 
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinaryInfo")
 load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
+load("//build/bazel/aspects:utils.bzl", "get_target_deps_from_attributes")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 
 DebugSymbolManifestEntryInfo = provider(
@@ -29,29 +30,6 @@ DebugSymbolManifestInfo = provider(
                       "their Fuchsia destination path, if available.",
     },
 )
-
-def _get_target_deps_from_attributes(rule_attr):
-    """Return all dependencies from a given target context during analysis.
-
-    Args:
-        rule_attr: The ctx.attr value for the current target.
-    Returns:
-        A list of Target values corresponding to the dependencies of the current
-        target.
-    """
-    result = {}
-    for attr_name in dir(rule_attr):
-        attr_value = getattr(rule_attr, attr_name, None)
-        if not attr_value:
-            continue
-        if type(attr_value) == "Target":
-            result[attr_value] = True
-            continue
-        if type(attr_value) == "list" and type(attr_value[0]) == "Target":
-            for target in attr_value:
-                result[target] = True
-            continue
-    return result.keys()
 
 # First, an aspect used to identify debug binaries and propagate them
 # up the dependency tree through DebugSymbolManifestInfo values.
@@ -138,7 +116,7 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
 
     dep_infos = [
         dep[DebugSymbolManifestInfo]
-        for dep in _get_target_deps_from_attributes(aspect_ctx.rule.attr)
+        for dep in get_target_deps_from_attributes(aspect_ctx.rule.attr)
         if DebugSymbolManifestInfo in dep
     ]
 
