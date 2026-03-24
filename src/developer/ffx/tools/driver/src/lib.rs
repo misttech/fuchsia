@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 use anyhow::{Context, Result};
 use component_debug::capability;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker};
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
-use fidl_fuchsia_developer_remotecontrol as rc;
-use fidl_fuchsia_driver_development as fdd;
-use fidl_fuchsia_driver_registrar as fdr;
-use fidl_fuchsia_sys2 as fsys;
-use fidl_fuchsia_test_manager as ftm;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
+use {
+    component_debug_fdomain as component_debug, driver_connector_fdomain as driver_connector,
+    fdomain_fuchsia_driver_development as fdd, fdomain_fuchsia_driver_registrar as fdr,
+    fdomain_fuchsia_sys2 as fsys, fdomain_fuchsia_test_manager as ftm, fidl as _,
+    rcs_fdomain as rcs,
+};
 
 mod args;
 
@@ -106,33 +107,6 @@ impl DriverConnector {
         capability_options: impl Into<CapabilityOptions>,
         select: bool,
     ) -> Result<S::Proxy> {
-        async fn remotecontrol_connect<S: ProtocolMarker>(
-            remote_control: &rc::RemoteControlProxy,
-            moniker: &str,
-            capability: &str,
-        ) -> Result<S::Proxy> {
-            // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-            let (proxy, server) = fidl::endpoints::create_proxy::<S>();
-            remote_control
-                .connect_capability(
-                    moniker,
-                    fsys::OpenDirType::ExposedDir,
-                    capability,
-                    server.into_channel(),
-                )
-                .await?
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "failed to connect to {} at {} as {}: {:?}",
-                        S::DEBUG_NAME,
-                        moniker,
-                        capability,
-                        e
-                    )
-                })?;
-            return Ok(proxy);
-        }
-
         let CapabilityOptions { capability_name, default_capability_name_for_query } =
             capability_options.into();
 
@@ -149,7 +123,13 @@ impl DriverConnector {
             }
             false => (moniker.to_string(), default_capability_name_for_query),
         };
-        remotecontrol_connect::<S>(&remote_control, &moniker, &capability).await
+        rcs::connect_with_timeout_at::<S>(
+            std::time::Duration::from_secs(15),
+            &moniker,
+            &capability,
+            &remote_control,
+        )
+        .await
     }
 }
 
@@ -199,18 +179,18 @@ impl FfxMain for DriverTool {
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let DriverTool { remote_control, cmd } = self;
-        let tool_cmd: driver_tools::args::DriverCommand = cmd.into();
+        let tool_cmd: driver_tools_fdomain::args::DriverCommand = cmd.into();
 
-        if writer.is_machine() && driver_tools::is_machine_supported(&tool_cmd) {
+        if writer.is_machine() && driver_tools_fdomain::is_machine_supported(&tool_cmd) {
             let connector = DriverConnector::new(remote_control);
-            if let Some(value) = driver_tools::driver_machine(tool_cmd, connector).await? {
+            if let Some(value) = driver_tools_fdomain::driver_machine(tool_cmd, connector).await? {
                 writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
                 return Ok(());
             }
             return Err(anyhow::anyhow!("Machine output supported but returned None").into());
         }
 
-        driver_tools::driver(tool_cmd, DriverConnector::new(remote_control), &mut writer)
+        driver_tools_fdomain::driver(tool_cmd, DriverConnector::new(remote_control), &mut writer)
             .await
             .map_err(Into::into)
     }
