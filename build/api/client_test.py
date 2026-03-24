@@ -744,6 +744,75 @@ Done!
             expected_err,
         )
 
+    def test_target_metadata(self) -> None:
+        self.maxDiff = None
+
+        # Create a fake gn executable
+        gn_path = self._top_dir / f"prebuilt/third_party/gn/{self._host_tag}/gn"
+        gn_path.parent.mkdir(parents=True, exist_ok=True)
+        gn_path.write_text(
+            f"""#!{sys.executable}
+import sys
+import json
+
+args = sys.argv[1:]
+if b"deps" in " ".join(args).encode():
+    print(json.dumps({{
+        "//foo:bar": {{"deps": ["//baz:qux"]}},
+        "//foo:baz": {{"deps": []}}
+    }}))
+elif b"sources" in " ".join(args).encode():
+    print(json.dumps({{
+        "//foo:bar": {{"sources": ["//foo/bar.cc"]}},
+        "//foo:baz": {{"sources": ["//foo/baz.cc"]}}
+    }}))
+elif b"inputs" in " ".join(args).encode():
+    print(json.dumps({{
+        "//foo:bar": {{"inputs": ["//foo/bar.h"]}},
+        "//foo:baz": {{"inputs": []}}
+    }}))
+"""
+        )
+        gn_path.chmod(0o755)
+
+        output_file = self._top_dir / "target_metadata.json"
+
+        # Test command execution
+        ret = self.run_client(
+            [
+                "target_metadata",
+                f"--output={output_file}",
+            ]
+        )
+
+        self.assertEqual(
+            ret.returncode, 0, msg=f"Command failed with:\n{ret.stderr}"
+        )
+
+        expected_metadata = {
+            "$schema": "target_metadata.schema.json",
+            "version": 1,
+            "targets": {
+                "//foo:bar": {
+                    "deps": ["//baz:qux"],
+                    "sources": ["foo/bar.cc"],
+                    "inputs": ["foo/bar.h"],
+                    "source_dir": "foo",
+                },
+                "//foo:baz": {
+                    "deps": [],
+                    "sources": ["foo/baz.cc"],
+                    "inputs": [],
+                    "source_dir": "foo",
+                },
+            },
+        }
+
+        self.assertTrue(output_file.exists())
+        with output_file.open("r") as f:
+            actual_metadata = json.load(f)
+        self.assertEqual(actual_metadata, expected_metadata)
+
 
 class ShouldFileChangesTriggerBuildClientTest(ClientTestBase):
     def setUp(self) -> None:
@@ -854,7 +923,7 @@ default $:default
         )
 
     def test_no_changes_needed(self) -> None:
-        TEST_CASES = (
+        TEST_CASES: T.Sequence[list[str]] = (
             # No changed files at all.
             [],
             # Changed files are sources that are not inputs in the current build plan.
@@ -890,7 +959,7 @@ default $:default
             )
 
     def test_source_file_changes(self) -> None:
-        TEST_CASES = (
+        TEST_CASES: T.Sequence[tuple[list[str], str]] = (
             # Sources that are dependencies of :default should trigger a rebuild.
             (["src/lib.cc"], "YES: Sources updated for target: :default\n"),
             # Sources that are not dependencies of :default should not trigger a rebuild.

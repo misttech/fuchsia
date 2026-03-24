@@ -660,3 +660,25 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/tools/zbi:*",
   ]
 }
+
+action("target_metadata") {
+  target_metadata_file = "${root_build_dir}/target_metadata.json"
+  target_metadata_depfile = "${root_build_dir}/target_metadata.d"
+
+  script = "//build/scripts/generate_target_metadata.py"
+  inputs = [ "//build/api/client.py" ]
+  outputs = [ target_metadata_file ]
+  args = [
+    "--client-binary",
+    rebase_path("//build/api/client.py", root_build_dir),
+    "--fuchsia-dir",
+    rebase_path("//", root_build_dir),
+    "--output",
+    rebase_path(target_metadata_file, root_build_dir),
+    "--depfile",
+    rebase_path(target_metadata_depfile, root_build_dir),
+    "--quiet",
+  ]
+  depfile = target_metadata_depfile
+  check_for_output_dir_leaks = false
+}

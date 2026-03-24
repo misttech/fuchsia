@@ -767,7 +767,7 @@ def resolve_gn_labels_to_ninja_paths(
     build_dir: Path,
     host_tag: str,
     allow_unknown: bool = False,
-) -> (str, list[str]):
+) -> tuple[str, list[str]]:
     """Resolve a list of GN labels to their Ninja path if possible.
 
     Args:
@@ -994,17 +994,17 @@ return correct results, as depfile dependencies will be missing.
 
         import ninja_artifacts
 
-        root_targets = None
+        root_targets: list[str] = []
         for target in args.root_target:
             if target.startswith("//"):
                 # A GN target label - convert its first Ninja output path.
-                error_message, ninja_paths = resolve_gn_label_to_ninja_paths(
+                error_message, ninja_paths = resolve_gn_labels_to_ninja_paths(
                     [target], args.build_dir, args.host_tag
                 )
                 if error_message:
                     _error(error_message)
                     return 1
-                root_targets.append(ninja_paths[0])
+                root_targets.extend(ninja_paths[:1])
             elif target.startswith("@"):
                 # A Bazel target label - not supported at the moment.
                 _error(
@@ -1013,7 +1013,7 @@ return correct results, as depfile dependencies will be missing.
                 return 1
             else:
                 # Assume a Ninja target
-                root_target.append(target)
+                root_targets.append(target)
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
@@ -1021,7 +1021,7 @@ return correct results, as depfile dependencies will be missing.
             changed_files,
             args.fuchsia_dir,
             ninja_runner,
-            root_targets=root_targets,
+            root_targets=root_targets if root_targets else None,
         )
         if result:
             print(f"YES: {reason}")
@@ -1120,7 +1120,7 @@ class FileToTestPackageCache(object):
         """
         return self.cache.get(source_path)
 
-    def set(self, source_path: str, packages: list[str]):
+    def set(self, source_path: str, packages: list[str]) -> None:
         """Sets the list of test packages associated with a source file.
 
         Args:
@@ -1153,11 +1153,11 @@ class FileToTestPackageCommand(ScriptCommandBase):
 
     def run(self, args: argparse.Namespace) -> int:
         import json
-        import sys
         import time
 
-        def _log(msg: str):
-            print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
+        def _log(msg: str) -> None:
+            if not args.quiet:
+                print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
 
         cache = FileToTestPackageCache(args.build_dir)
         cached_result = cache.get(args.source_path)
@@ -1214,6 +1214,166 @@ class FileToTestPackageCommand(ScriptCommandBase):
 ###########################################################################################
 ###########################################################################################
 #####
+#####   COMMAND: target_metadata
+#####
+
+
+def _run_gn_desc_task(
+    gn_path: str, build_dir: str, type_arg: str, quiet: bool
+) -> tuple[str, dict[str, T.Any]]:
+    import json
+    import subprocess
+    import time
+
+    def _log(msg: str) -> None:
+        if not quiet:
+            print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
+
+    _log(f"Running gn desc for {type_arg}...")
+    cmd = [
+        gn_path,
+        "desc",
+        build_dir,
+        "//*",
+        type_arg,
+        "--format=json",
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        _log(f"Finished gn desc for {type_arg}.")
+        return type_arg, json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        _log(f"Error running gn desc for {type_arg}: {e.stderr}")
+        return type_arg, {}
+    except json.JSONDecodeError as e:
+        _log(f"Error parsing JSON output for {type_arg}: {e}")
+        return type_arg, {}
+
+
+class TargetMetadataCommand(ScriptCommandBase):
+    """Collects target metadata for the build.
+
+    The schema of the output is defined in target_metadata.schema.json.
+    """
+
+    DESCRIPTION = """
+Runs queries against the build graph to collect deps, sources, and inputs for all targets,
+and merges them into a single JSON file along with their source directories.
+"""
+
+    TARGET_METADATA_VERSION = 1
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--output",
+            type=Path,
+            required=True,
+            help="The output JSON file path.",
+        )
+
+    def run(self, args: argparse.Namespace) -> int:
+        import json
+        import multiprocessing
+        import time
+
+        def _log(msg: str) -> None:
+            if not args.quiet:
+                print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
+
+        gn_path = (
+            args.fuchsia_dir / f"prebuilt/third_party/gn/{args.host_tag}/gn"
+        )
+        if not gn_path.exists():
+            _error(f"GN executable not found at: {gn_path}")
+            return 1
+
+        _log("Running queries in parallel...")
+        types = ["deps", "sources", "inputs"]
+
+        args_list = [
+            (str(gn_path), str(args.build_dir), t, args.quiet) for t in types
+        ]
+
+        with multiprocessing.Pool(processes=len(types)) as pool:
+            results = pool.starmap(_run_gn_desc_task, args_list)
+
+        data = dict(results)
+
+        deps_data = data.get("deps", {})
+        sources_data = data.get("sources", {})
+        inputs_data = data.get("inputs", {})
+
+        _log("Merging data...")
+        merged_data: dict[str, dict[str, T.Any]] = {}
+
+        all_targets = (
+            set(deps_data.keys())
+            | set(sources_data.keys())
+            | set(inputs_data.keys())
+        )
+
+        def strip_label_to_file_or_dir_name(labels: list[str]) -> list[str]:
+            """Strips a target label to a file or directory name.
+
+            This strips toolchains, target names, and preceding label identifiers to get
+            a relative file path.
+
+            //foo/bar:baz($host_toolchain) -> foo/bar
+            //foo/bar/host_file.py -> foo/bar/host_file.py
+            """
+            return [
+                label.split(":")[0].lstrip("@").lstrip("//") for label in labels
+            ]
+
+        for target in all_targets:
+            target_info: dict[str, T.Any] = {}
+            # Target is a target label in either GN or Bazel format, and the correspond to
+            # the same label in the keys of the output dictionary.
+            if target in deps_data:
+                target_info["deps"] = deps_data[target].get("deps", [])
+            # Sources are paths from the root of the source tree to files.
+            if target in sources_data:
+                target_info["sources"] = strip_label_to_file_or_dir_name(
+                    sources_data[target].get("sources", [])
+                )
+            # Inputs are paths from the root of the source tree to files.
+            if target in inputs_data:
+                target_info["inputs"] = strip_label_to_file_or_dir_name(
+                    inputs_data[target].get("inputs", [])
+                )
+
+            # Extract source_dir from the GN label: //foo/bar:baz(...) -> foo/bar
+            target_info["source_dir"] = strip_label_to_file_or_dir_name(
+                [target]
+            )[0]
+
+            merged_data[target] = target_info
+
+        _log(f"Writing output to {args.output}...")
+        output_dict = {
+            "$schema": "target_metadata.schema.json",
+            "version": self.TARGET_METADATA_VERSION,
+            "targets": merged_data,
+        }
+        try:
+            with args.output.open("w") as f:
+                json.dump(output_dict, f, indent=2)
+            _log("Done.")
+            return 0
+        except Exception as e:
+            _log(f"Failed to write output to {args.output}: {e}")
+            return 1
+
+
+###########################################################################################
+###########################################################################################
+#####
 #####   Main program
 #####
 
@@ -1239,6 +1399,12 @@ def main(main_args: T.Sequence[str]) -> int:
         # NOTE: Do not set a default with _get_host_tag() here for faster startup,
         # since the //build/api/client wrapper script will always set this option.
     )
+    parser.add_argument(
+        "--quiet",
+        help="If True, suppress informational output.",
+        default=False,
+        action="store_true",
+    )
 
     commands = ScriptCommandList(parser)
     commands.add_command(ListCommand())
@@ -1253,6 +1419,7 @@ def main(main_args: T.Sequence[str]) -> int:
     commands.add_command(ShouldFileChangesTriggerBuildCommand())
     commands.add_command(AffectedTestsCommand())
     commands.add_command(FileToTestPackageCommand())
+    commands.add_command(TargetMetadataCommand())
 
     args = parser.parse_args(main_args)
 

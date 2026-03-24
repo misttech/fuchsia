@@ -28,6 +28,7 @@ if (is_host) {
       "gn_ninja_outputs.py",
       "ninja_artifacts.py",
       "script_commands.py",
+      "target_metadata.schema.json",
 
       # Ninja is accessed implicitly by the test now.
       "//prebuilt/third_party/ninja/${host_os}-${host_cpu}/ninja",
