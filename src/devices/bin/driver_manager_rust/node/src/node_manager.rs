@@ -44,6 +44,12 @@ pub trait NodeManager {
         &self,
         driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status>;
+    async fn destroy_driver_host(
+        &self,
+        _driver_host_name_for_colocation: String,
+    ) -> Result<(), zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
     fn is_test_shutdown_delay_enabled(&self) -> bool;
     fn get_shutdown_test_rng(&self) -> Weak<RefCell<rand::rngs::StdRng>>;
     async fn wait_for_bootup(&self);

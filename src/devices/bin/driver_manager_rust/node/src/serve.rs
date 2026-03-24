@@ -375,7 +375,13 @@ impl Node {
 
             if this.host_restart_on_crash() {
                 warn!("Restarting node {moniker} because of unexpected driver channel shutdown.");
-                this.restart_node();
+                let host_name = this.driver_host_name_for_colocation();
+                if let Err(e) = this.node_manager.destroy_driver_host(host_name).await {
+                    log::error!("Failed to destroy old driver host during restart: {:?}", e);
+                }
+                if let Some(this) = weak_self.upgrade() {
+                    this.restart_node();
+                }
                 return;
             }
 
@@ -410,7 +416,17 @@ impl Node {
             // the node if it has the host_restart_on_crash_ enabled on it.
             if self.host_restart_on_crash() {
                 warn!("Restarting node {} due to node closure while running.", self.name());
-                self.restart_node();
+                let host_name = self.driver_host_name_for_colocation();
+                let node_manager = self.node_manager.clone_box();
+                let weak_self = Rc::downgrade(self);
+                self.scope.spawn_local(async move {
+                    if let Err(e) = node_manager.destroy_driver_host(host_name).await {
+                        log::error!("Failed to destroy old driver host during restart: {:?}", e);
+                    }
+                    if let Some(this) = weak_self.upgrade() {
+                        this.restart_node();
+                    }
+                });
                 return;
             }
 

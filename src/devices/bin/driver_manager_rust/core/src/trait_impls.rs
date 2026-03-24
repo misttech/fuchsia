@@ -116,6 +116,17 @@ impl NodeManager for DriverRunnerBridge {
         }
     }
 
+    async fn destroy_driver_host(
+        &self,
+        driver_host_name_for_colocation: String,
+    ) -> Result<(), zx::Status> {
+        if let Some(runner) = self.0.upgrade() {
+            runner.destroy_driver_host(driver_host_name_for_colocation).await
+        } else {
+            Err(zx::Status::UNAVAILABLE)
+        }
+    }
+
     fn is_test_shutdown_delay_enabled(&self) -> bool {
         if let Some(runner) = self.0.upgrade() { runner.enable_test_shutdown_delays } else { false }
     }

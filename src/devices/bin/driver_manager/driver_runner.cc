@@ -1473,6 +1473,49 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
   return zx::ok();
 }
 
+void DriverRunner::DestroyDriverHostComponent(std::string_view driver_host_name_for_colocation,
+                                              fit::callback<void(zx::result<>)> completion_cb) {
+  std::string name;
+  if (!driver_host_name_for_colocation.empty()) {
+    std::string_view suffix = driver_host_name_for_colocation;
+    suffix = suffix.starts_with("#") ? suffix.substr(1) : suffix;
+    name = std::format("driver-host-{}", suffix);
+  } else {
+    // Cannot reliably destroy an unnamed host here by name.
+    completion_cb(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
+  fdecl::wire::ChildRef child_ref{
+      .name = fidl::StringView::FromExternal(name),
+      .collection = "driver-hosts",
+  };
+  runner_.realm()->DestroyChild(child_ref).Then(
+      [completion_cb = std::move(completion_cb), moniker = std::move(name)](
+          fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) mutable {
+        if (!result.ok()) {
+          fdf_log::error("Failed to destroy driver host '{}': {}", moniker,
+                         result.FormatDescription());
+          completion_cb(zx::error(result.status()));
+          return;
+        }
+        if (result->is_error()) {
+          // If the component has already been cleaned up by component_manager
+          // or is not found, we treat it as success.
+          if (result->error_value() == fcomponent::wire::Error::kInstanceNotFound ||
+              result->error_value() == fcomponent::wire::Error::kInstanceDied) {
+            completion_cb(zx::ok());
+          } else {
+            fdf_log::error("Failed to destroy driver host '{}': {}", moniker,
+                           static_cast<uint32_t>(result->error_value()));
+            completion_cb(zx::error(ZX_ERR_INTERNAL));
+          }
+          return;
+        }
+        completion_cb(zx::ok());
+      });
+}
+
 zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
     std::string_view url, fdd::RestartRematchFlags rematch_flags) {
   auto driver_hosts = DriverHostsWithDriverUrl(url);

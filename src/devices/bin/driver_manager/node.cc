@@ -2704,7 +2704,21 @@ void Node::OnDriverHostFidlError(fidl::UnbindInfo info) {
 
   if (host_restart_on_crash_) {
     fdf_log::warn("Restarting node {} because of unexpected driver channel shutdown.", name());
-    RestartNode();
+    if (node_manager_.has_value()) {
+      node_manager_.value()->DestroyDriverHostComponent(
+          driver_host_name_for_colocation_, [weak_self = weak_from_this()](zx::result<> result) {
+            if (result.is_error()) {
+              // We log the error but still attempt the restart so we don't hang indefinitely.
+              fdf_log::error("Failed to destroy old driver host during restart. Status: {}",
+                             result.status_string());
+            }
+            if (auto self = weak_self.lock()) {
+              self->RestartNode();
+            }
+          });
+    } else {
+      RestartNode();
+    }
     return;
   }
 

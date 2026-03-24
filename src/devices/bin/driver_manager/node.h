@@ -128,6 +128,12 @@ class NodeManager {
     completion_cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
+  // Destroys the driver host component asynchronously. Calls |cb| on completion.
+  virtual void DestroyDriverHostComponent(std::string_view driver_host_name_for_colocation,
+                                          fit::callback<void(zx::result<>)> completion_cb) {
+    completion_cb(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
   // DriverHost lifetimes are managed through a linked list, and they will delete themselves
   // when the FIDL connection is closed. Currently in the Node class we store a raw pointer to the
   // DriverHost object, and do not have a way to remove it from the class when the underlying

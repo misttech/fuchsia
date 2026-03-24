@@ -264,6 +264,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void CreateDriverHostDynamicLinker(
       std::string_view driver_host_name_for_colocation,
       fit::callback<void(zx::result<DriverHost*>)> completion_cb) override;
+  void DestroyDriverHostComponent(std::string_view driver_host_name_for_colocation,
+                                  fit::callback<void(zx::result<>)> completion_cb) override;
   bool IsDriverHostValid(DriverHost* driver_host) const override;
 
   DictionaryUtil& dictionary_util() override { return dictionary_util_; }
