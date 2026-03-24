@@ -94,13 +94,17 @@ impl PlaceholderOwner<'_> {
 
 impl Drop for PlaceholderOwner<'_> {
     fn drop(&mut self) {
-        let mut p = self.inner.0.lock();
-        if !self.committed {
-            // If the placeholder is dropped before it was committed, remove the cache entry so that
-            // another caller blocked in NodeCache::get_or_reserve can take the slot.
-            self.cache.0.lock().map.remove(&p.object_id);
-        }
-        for waker in p.wakers.drain(..) {
+        let wakers = {
+            let mut cache_guard = (!self.committed).then(|| self.cache.0.lock());
+            let mut p = self.inner.0.lock();
+            if let Some(cache) = &mut cache_guard {
+                // If the placeholder is dropped before it was committed, remove the cache entry
+                // so that another caller blocked in NodeCache::get_or_reserve can take the slot.
+                cache.map.remove(&p.object_id);
+            }
+            std::mem::take(&mut p.wakers)
+        };
+        for waker in wakers {
             waker.wake();
         }
     }
