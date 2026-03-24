@@ -68,17 +68,6 @@ template("virtual_device_specification") {
     units = "pixels"
   }
 
-  if (emu_window_size_width != false) {
-    assert(emu_window_size_width > 0,
-           "The window width must be > 0 in order to be visible")
-    emu_window_size.width = emu_window_size_width
-  }
-  if (emu_window_size_height != false) {
-    assert(emu_window_size_height > 0,
-           "The window height must be > 0 in order to be visible")
-    emu_window_size.height = emu_window_size_height
-  }
-
   _description = board_description
   if (defined(invoker.description)) {
     _description = invoker.description

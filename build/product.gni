@@ -7,14 +7,6 @@ declare_args() {
   # one or the bringup one?
   use_bringup_assembly = false
 
-  # A human readable product description.
-  product_description = ""
-
-  # Determines whether the fuchsia_async library used by many Rust targets will be compiled
-  # with TRACE level log statements that increase binary size a measurable amount.
-  # TODO(https://fxbug.dev/42161120) move this to a toolchain to allow multiple products to build together
-  fuchsia_async_trace_level_logging = true
-
   # The product assembly config used to configure the main Fuchsia image.
   # For GN products, this is required.
   # For Bazel products, this is optional.
@@ -23,10 +15,6 @@ declare_args() {
 
   # The product assembly config used to configure the Zedboot image.
   zedboot_product_assembly_config_label = false
-
-  # Configuration to override the default window size for the virtual device in pixels.
-  emu_window_size_width = false
-  emu_window_size_height = false
 
   # Targets to be traversed by //:cipd_assembly_artifacts for GN metadata only.
   # These targets are expected to set "assembly_inputs" in metadata, which can
