@@ -1406,17 +1406,16 @@ pub fn resolve_output_route_to_destination<
         StrongForDevice(D),
     }
 
-    // Check if locally destined. If the destination is an address assigned
-    // on an interface, and an egress interface wasn't specifically
-    // selected, route via the loopback device. This lets us operate as a
-    // strong host when an outgoing interface is explicitly requested while
-    // still enabling local delivery via the loopback interface, which is
-    // acting as a weak host. Note that if the loopback interface is
-    // requested as an outgoing interface, route selection is still
-    // performed as a strong host! This makes the loopback interface behave
-    // more like the other interfaces on the system.
+    // Check if locally destined. If the destination is an address assigned on
+    // an interface, and an egress interface wasn't specifically selected, route
+    // via the loopback device. This lets us operate as a strong host when an
+    // outgoing interface is explicitly requested while still enabling local
+    // delivery via the loopback interface, which is acting as a weak host. Note
+    // that if the loopback interface is requested as an outgoing interface,
+    // route selection is still performed as a strong host! This makes the
+    // loopback interface behave more like the other interfaces on the system.
     //
-    // TODO(https://fxbug.dev/42175703): Encode the delivery of locally-
+    // TODO(https://fxbug.dev/42065870): Encode the delivery of locally-
     // destined packets to loopback in the route table.
     //
     // TODO(https://fxbug.dev/322539434): Linux is more permissive about
@@ -4377,16 +4376,16 @@ where
     };
 
     // If the packet arrived at the loopback interface, check if any local
-    // interface has the destination address assigned. This effectively lets
-    // the loopback interface operate as a weak host for incoming packets.
+    // interface has the destination address assigned. This effectively lets the
+    // loopback interface operate as a weak host for incoming packets.
     //
     // Note that (as of writing) the stack sends all locally destined traffic to
     // the loopback interface so we need this hack to allow the stack to accept
     // packets that arrive at the loopback interface (after being looped back)
     // but destined to an address that is assigned to another local interface.
     //
-    // TODO(https://fxbug.dev/42175703): This should instead be controlled by the
-    // routing table.
+    // TODO(https://fxbug.dev/42065870): This should instead be controlled by
+    // the routing table.
 
     let highest_priority = if device.is_loopback() {
         core_ctx.with_address_statuses(dst_ip, |it| {
