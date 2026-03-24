@@ -6,9 +6,9 @@ pub mod args;
 
 use anyhow::{Context, Result};
 use args::ListCompositesCommand;
-use fidl_fuchsia_driver_development as fdd;
-use fidl_fuchsia_driver_framework as fdf;
+use flex_client::ProxyHasDomain;
 use std::io::Write;
+use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 pub async fn list_composites(
     cmd: ListCompositesCommand,
@@ -21,7 +21,7 @@ pub async fn list_composites(
     )?;
 
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::CompositeInfoIteratorMarker>();
+        proxy.domain().create_proxy::<fdd::CompositeInfoIteratorMarker>();
     proxy.get_composite_info(iterator_server).context("GetCompositeInfo() failed")?;
 
     loop {

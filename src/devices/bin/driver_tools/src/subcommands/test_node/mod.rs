@@ -8,7 +8,7 @@ mod subcommands;
 
 use anyhow::{Context, Result};
 use args::{TestNodeCommand, TestNodeSubcommand};
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 
 pub async fn test_node(
     cmd: &TestNodeCommand,

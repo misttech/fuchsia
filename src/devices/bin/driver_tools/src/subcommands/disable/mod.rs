@@ -4,9 +4,9 @@
 
 pub mod args;
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use args::DisableCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 use std::io::Write;
 use zx_status::Status;
 

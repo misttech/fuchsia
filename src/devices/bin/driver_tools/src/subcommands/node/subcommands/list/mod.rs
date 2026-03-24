@@ -8,7 +8,9 @@ use crate::subcommands::node::common;
 
 use anyhow::{Result, anyhow};
 use args::ListNodeCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Table, cell, row};
 use serde::Serialize;

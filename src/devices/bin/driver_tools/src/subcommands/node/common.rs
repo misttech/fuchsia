@@ -5,7 +5,7 @@
 use crate::common;
 use ansi_term::Colour;
 use anyhow::{Result, anyhow, bail, format_err};
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 use itertools::Itertools;
 use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;

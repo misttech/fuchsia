@@ -8,10 +8,12 @@ use crate::common::{node_property_key_to_string, node_property_value_to_string};
 use anyhow::{Result, anyhow};
 use args::ListDevicesCommand;
 use fuchsia_driver_dev::Device;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
 use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_framework as fdf,
+    fidl_fuchsia_component_decl as fdecl, flex_fuchsia_driver_development as fdd,
+    flex_fuchsia_driver_framework as fdf,
 };
 
 trait DevicePrinter {
@@ -138,7 +140,7 @@ pub async fn list_devices(
     .map(|device_info| Device::from(device_info))
     .collect();
 
-    if devices.len() > 0 {
+    if !devices.is_empty() {
         if cmd.verbose {
             for device in devices {
                 device.print_verbose()?;

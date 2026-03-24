@@ -4,9 +4,9 @@
 
 pub mod args;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use args::RemoveNodeCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 
 pub async fn remove_node(
     cmd: &RemoveNodeCommand,

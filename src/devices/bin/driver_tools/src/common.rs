@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use bind::compiler::symbol_table::get_deprecated_key_identifier;
-use fidl_fuchsia_driver_framework as fdf;
+use flex_fuchsia_driver_framework as fdf;
 use std::io::Write;
 
 pub fn node_property_key_to_string(key: &fdf::NodePropertyKey) -> String {

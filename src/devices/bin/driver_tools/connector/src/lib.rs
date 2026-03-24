@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_registrar as fdr,
-    fidl_fuchsia_test_manager as ftm,
+    flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_registrar as fdr,
+    flex_fuchsia_test_manager as ftm,
 };
 
 #[async_trait::async_trait]

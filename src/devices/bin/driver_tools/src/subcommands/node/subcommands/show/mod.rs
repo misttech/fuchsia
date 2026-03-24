@@ -8,12 +8,14 @@ use crate::subcommands::node::common;
 
 use anyhow::Result;
 use args::ShowNodeCommand;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use serde::Serialize;
 use std::io::Write;
-use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
+use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 #[derive(Serialize)]
 pub struct NodeDetails {

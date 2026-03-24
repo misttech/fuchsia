@@ -6,9 +6,11 @@ pub mod args;
 use crate::subcommands::node::common;
 use crate::subcommands::node::subcommands::graph::args::GraphOrientation;
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use args::GraphNodeCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
 
@@ -98,7 +100,7 @@ pub async fn graph_node(
                         node,
                         format!(
                             "{}({})",
-                            offer_svc.source_name.expect("name").as_str(),
+                            offer_svc.source_name.as_deref().expect("name"),
                             offer_svc
                                 .renamed_instances
                                 .unwrap_or_default()
@@ -128,9 +130,9 @@ pub async fn graph_node(
 
         for (driver, cluster_nodes) in &cluster_drivers {
             // Get just the last bit of the url.
-            let driver = driver.rsplit_once('/').unwrap_or(("", &driver)).1;
-            writeln!(writer, "{TAB}{TAB}subgraph \"cluster_{}_{}\" {{", koid, driver)?;
-            writeln!(writer, "{TAB}{TAB}{TAB}label = \"{}\";", driver)?;
+            let driver_name = driver.rsplit_once('/').unwrap_or(("", &driver)).1;
+            writeln!(writer, "{TAB}{TAB}subgraph \"cluster_{}_{}\" {{", koid, driver_name)?;
+            writeln!(writer, "{TAB}{TAB}{TAB}label = \"{}\";", driver_name)?;
             writeln!(writer, "{TAB}{TAB}{TAB}style = \"filled,rounded\";")?;
             writeln!(writer, r#"{TAB}{TAB}{TAB}fillcolor = " #dce0e3";"#)?;
 

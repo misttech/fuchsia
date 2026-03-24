@@ -9,7 +9,7 @@ pub mod subcommands;
 
 use anyhow::{Context, Result};
 use args::{NodeCommand, NodeSubcommand};
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 use std::io::Write;
 
 pub async fn node(

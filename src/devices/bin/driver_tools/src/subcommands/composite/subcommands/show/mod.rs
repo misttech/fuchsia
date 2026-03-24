@@ -7,7 +7,10 @@ pub mod args;
 use crate::common::{node_property_value_to_string, write_node_properties};
 use anyhow::{Context, Result, bail};
 use args::ShowCompositeCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use std::io::Write;
 
 pub async fn show(
@@ -68,7 +71,7 @@ pub async fn show(
 
     // Query for existing composite nodes to get their topological paths or monikers
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::CompositeInfoIteratorMarker>();
+        driver_development_proxy.domain().create_proxy::<fdd::CompositeInfoIteratorMarker>();
     driver_development_proxy
         .get_composite_info(iterator_server)
         .context("Failed to call GetCompositeInfo(). This may be because the driver development component is not reachable.")?;
@@ -183,11 +186,10 @@ async fn get_moniker_from_path(path: &str, proxy: &fdd::ManagerProxy) -> Result<
 mod tests {
     use super::*;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_driver_framework as fdf;
-    use fuchsia_async as fasync;
+    use flex_client::fidl::ServerEnd;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `show` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
@@ -201,8 +203,12 @@ mod tests {
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         // Run the command and mock driver development server.
         let mut writer = Vec::new();

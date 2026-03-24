@@ -4,10 +4,12 @@
 
 pub mod args;
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use args::DumpCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 use fuchsia_driver_dev::Device;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Write;
 
@@ -157,18 +159,26 @@ mod tests {
     use super::*;
     use anyhow::Context;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
+    use flex_client::fidl::ServerEnd;
     use fuchsia_async as fasync;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    #[cfg(feature = "fdomain")]
+    use std::sync::Arc;
 
-    async fn test_dump<F, Fut>(cmd: DumpCommand, on_driver_development_request: F) -> Result<String>
+    async fn test_dump<F, Fut>(
+        #[cfg(feature = "fdomain")] client: Arc<flex_client::Client>,
+        cmd: DumpCommand,
+        on_driver_development_request: F,
+    ) -> Result<String>
     where
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         // Run the command and mock driver development server.
         let mut writer = Vec::new();
@@ -211,52 +221,59 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_simple() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = DumpCommand::from_args(&["dump"], &[]).unwrap();
 
-        let output = test_dump(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetNodeInfo {
-                    node_filter: _,
-                    iterator,
-                    control_handle: _,
-                    exact_match: _,
-                } => {
-                    let parent_id = 0;
-                    let child_id = 1;
-                    run_device_info_iterator_server(
-                        vec![
-                            fdd::NodeInfo {
-                                id: Some(parent_id),
-                                parent_ids: Some(Vec::new()),
-                                child_ids: Some(vec![child_id]),
-                                driver_host_koid: Some(0),
-                                bound_driver_url: Some(String::from(
-                                    "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm",
-                                )),
-                                moniker: Some(String::from("foo")),
-                                ..Default::default()
-                            },
-                            fdd::NodeInfo {
-                                id: Some(child_id),
-                                parent_ids: Some(vec![parent_id]),
-                                child_ids: Some(Vec::new()),
-                                driver_host_koid: Some(0),
-                                bound_driver_url: Some(String::from(
-                                    "fuchsia-pkg://fuchsia.com/bar-package#meta/bar.cm",
-                                )),
-                                moniker: Some(String::from("foo.bar")),
-                                ..Default::default()
-                            },
-                        ],
+        let output = test_dump(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
                         iterator,
-                    )
-                    .await
-                    .context("Failed to run device info iterator server")?;
+                        control_handle: _,
+                        exact_match: _,
+                    } => {
+                        let parent_id = 0;
+                        let child_id = 1;
+                        run_device_info_iterator_server(
+                            vec![
+                                fdd::NodeInfo {
+                                    id: Some(parent_id),
+                                    parent_ids: Some(Vec::new()),
+                                    child_ids: Some(vec![child_id]),
+                                    driver_host_koid: Some(0),
+                                    bound_driver_url: Some(String::from(
+                                        "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm",
+                                    )),
+                                    moniker: Some(String::from("foo")),
+                                    ..Default::default()
+                                },
+                                fdd::NodeInfo {
+                                    id: Some(child_id),
+                                    parent_ids: Some(vec![parent_id]),
+                                    child_ids: Some(Vec::new()),
+                                    driver_host_koid: Some(0),
+                                    bound_driver_url: Some(String::from(
+                                        "fuchsia-pkg://fuchsia.com/bar-package#meta/bar.cm",
+                                    )),
+                                    moniker: Some(String::from("foo.bar")),
+                                    ..Default::default()
+                                },
+                            ],
+                            iterator,
+                        )
+                        .await
+                        .context("Failed to run device info iterator server")?;
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 
@@ -270,24 +287,31 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_duplicates_are_filtered() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = DumpCommand::from_args(&["dump"], &[]).unwrap();
 
-        let output = test_dump(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetNodeInfo {
-                    node_filter: _,
-                    iterator,
-                    control_handle: _,
-                    exact_match: _,
-                } => {
-                    run_device_info_iterator_server(make_test_devices(), iterator)
-                        .await
-                        .context("Failed to run device info iterator server")?;
+        let output = test_dump(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
+                        iterator,
+                        control_handle: _,
+                        exact_match: _,
+                    } => {
+                        run_device_info_iterator_server(make_test_devices(), iterator)
+                            .await
+                            .context("Failed to run device info iterator server")?;
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 
@@ -304,24 +328,31 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_with_node_filter() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = DumpCommand::from_args(&["dump"], &["parent"]).unwrap();
 
-        let output = test_dump(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetNodeInfo {
-                    node_filter: _,
-                    iterator,
-                    control_handle: _,
-                    exact_match: _,
-                } => {
-                    run_device_info_iterator_server(make_test_devices(), iterator)
-                        .await
-                        .context("Failed to run device info iterator server")?;
+        let output = test_dump(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
+                        iterator,
+                        control_handle: _,
+                        exact_match: _,
+                    } => {
+                        run_device_info_iterator_server(make_test_devices(), iterator)
+                            .await
+                            .context("Failed to run device info iterator server")?;
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 

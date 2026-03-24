@@ -8,7 +8,9 @@ use crate::common;
 use ansi_term::Colour;
 use anyhow::Result;
 use args::{CompositeFilter, ListCompositeCommand};
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Table, cell, row};
 use std::collections::HashMap;
@@ -144,11 +146,10 @@ mod tests {
     use super::*;
     use anyhow::Context;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_driver_framework as fdf;
-    use fuchsia_async as fasync;
+    use flex_client::fidl::ServerEnd;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     async fn test_list_composite<F, Fut>(
         cmd: ListCompositeCommand,
@@ -158,8 +159,12 @@ mod tests {
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         let mut writer = Vec::new();
         let request_handler_task = fasync::Task::spawn(async move {

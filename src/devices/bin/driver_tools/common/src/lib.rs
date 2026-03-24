@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow, format_err};
-use fidl_fuchsia_driver_development as fdd;
-use fidl_fuchsia_driver_framework as fdf;
+use flex_client::ProxyHasDomain;
+use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 #[derive(Debug)]
 pub struct Device(pub fdd::NodeInfo);
@@ -12,7 +12,7 @@ pub struct Device(pub fdd::NodeInfo);
 impl Device {
     /// Gets the full moniker name of the device.
     pub fn get_moniker(&self) -> Result<&str> {
-        let moniker = self.0.moniker.as_ref();
+        let moniker = self.0.moniker.as_deref();
         Ok(moniker.ok_or_else(|| format_err!("Missing moniker"))?)
     }
 
@@ -44,7 +44,7 @@ pub async fn get_device_info(
     exact_match: bool,
 ) -> Result<Vec<fdd::NodeInfo>> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::NodeInfoIteratorMarker>();
+        service.domain().create_proxy::<fdd::NodeInfoIteratorMarker>();
 
     service
         .get_node_info(device_filter, iterator_server, exact_match)
@@ -70,8 +70,9 @@ pub async fn get_device_info(
         ];
         let device_info_result = futures::future::join_all(device_info_futures).await;
         for result in device_info_result {
-            let mut device_info = result.context("FIDL call to get device info failed")?;
-            if device_info.len() == 0 {
+            let mut device_info: Vec<fdd::NodeInfo> =
+                result.context("FIDL call to get device info failed")?;
+            if device_info.is_empty() {
                 break 'outer;
             }
             info_result.append(&mut device_info)
@@ -86,7 +87,7 @@ pub async fn get_driver_info(
     driver_filter: &[String],
 ) -> Result<Vec<fdf::DriverInfo>> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::DriverInfoIteratorMarker>();
+        service.domain().create_proxy::<fdd::DriverInfoIteratorMarker>();
 
     service
         .get_driver_info(driver_filter, iterator_server)
@@ -107,8 +108,9 @@ pub async fn get_driver_info(
         ];
         let driver_info_result = futures::future::join_all(driver_info_futures).await;
         for result in driver_info_result {
-            let mut driver_info = result.context("FIDL call to get driver info failed")?;
-            if driver_info.len() == 0 {
+            let mut driver_info: Vec<fdf::DriverInfo> =
+                result.context("FIDL call to get driver info failed")?;
+            if driver_info.is_empty() {
                 break 'outer;
             }
             info_result.append(&mut driver_info)
@@ -215,7 +217,7 @@ pub async fn get_composite_info(
     service: &fdd::ManagerProxy,
 ) -> Result<Vec<fdd::CompositeNodeInfo>> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::CompositeInfoIteratorMarker>();
+        service.domain().create_proxy::<fdd::CompositeInfoIteratorMarker>();
 
     service
         .get_composite_info(iterator_server)
@@ -236,7 +238,7 @@ pub async fn get_composite_info(
 /// Combines pagination results into a single vector.
 pub async fn get_driver_host_info(service: &fdd::ManagerProxy) -> Result<Vec<fdd::DriverHostInfo>> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::DriverHostInfoIteratorMarker>();
+        service.domain().create_proxy::<fdd::DriverHostInfoIteratorMarker>();
 
     service
         .get_driver_host_info(iterator_server)
@@ -244,7 +246,7 @@ pub async fn get_driver_host_info(service: &fdd::ManagerProxy) -> Result<Vec<fdd
 
     let mut info_result = Vec::new();
     loop {
-        let mut info =
+        let mut info: Vec<fdd::DriverHostInfo> =
             iterator.get_next().await.context("FIDL call to get driver host info failed")?;
         if info.is_empty() {
             break;
@@ -260,7 +262,7 @@ pub async fn get_composite_node_specs(
     name_filter: Option<String>,
 ) -> Result<Vec<fdf::CompositeInfo>> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::CompositeNodeSpecIteratorMarker>();
+        service.domain().create_proxy::<fdd::CompositeNodeSpecIteratorMarker>();
 
     service
         .get_composite_node_specs(name_filter.as_deref(), iterator_server)
@@ -268,7 +270,7 @@ pub async fn get_composite_node_specs(
 
     let mut info_result = Vec::new();
     loop {
-        let mut node_groups =
+        let mut node_groups: Vec<fdf::CompositeInfo> =
             iterator.get_next().await.context("FIDL call to get node groups failed")?;
         if node_groups.is_empty() {
             break;
@@ -286,11 +288,11 @@ pub async fn get_composite_node_specs(
 /// # Arguments
 /// * `driver_filter` - Filter to the driver that matches the given filter.
 pub async fn get_driver_by_filter(
-    driver_filter: &String,
+    driver_filter: &str,
     driver_development_proxy: &fdd::ManagerProxy,
 ) -> Result<fdf::DriverInfo> {
     let filter_list: [String; 1] = [driver_filter.to_string()];
-    let driver_list = get_driver_info(&driver_development_proxy, &filter_list).await?;
+    let driver_list = get_driver_info(driver_development_proxy, &filter_list).await?;
     if driver_list.len() != 1 {
         return Err(anyhow!(
             "There should be exactly one match for '{}'. Found {}.",
@@ -321,20 +323,20 @@ pub async fn get_driver_by_filter(
 /// # Arguments
 /// * `device_topo_path` - The device's topological path. e.g. sys/platform/.../device
 pub async fn get_driver_by_device(
-    device_topo_path: &String,
+    device_topo_path: &str,
     driver_development_proxy: &fdd::ManagerProxy,
 ) -> Result<fdf::DriverInfo> {
     let device_filter: [String; 1] = [device_topo_path.to_string()];
     let mut device_list =
-        get_device_info(&driver_development_proxy, &device_filter, /* exact_match= */ true).await?;
+        get_device_info(driver_development_proxy, &device_filter, /* exact_match= */ true).await?;
     if device_list.len() != 1 {
         let fuzzy_device_list = get_device_info(
-            &driver_development_proxy,
+            driver_development_proxy,
             &device_filter,
             /* exact_match= */ false,
         )
         .await?;
-        if fuzzy_device_list.len() == 0 {
+        if fuzzy_device_list.is_empty() {
             return Err(anyhow!("No devices matched the query: {}", device_topo_path));
         } else if fuzzy_device_list.len() > 1 {
             let mut builder = "Found multiple matches. Did you mean one of these?\n\n".to_string();
@@ -351,7 +353,7 @@ pub async fn get_driver_by_device(
     let found_device = device_list.remove(0);
     match found_device.bound_driver_url {
         Some(ref driver_filter) => {
-            get_driver_by_filter(&driver_filter, &driver_development_proxy).await
+            get_driver_by_filter(driver_filter, driver_development_proxy).await
         }
         _ => Err(anyhow!("Did not find driver for device {}", &device_topo_path)),
     }
@@ -365,23 +367,23 @@ pub async fn get_driver_by_device(
 /// # Arguments
 /// * `driver_filter` - Filter to the driver that matches the given filter.
 pub async fn get_devices_by_driver(
-    driver_filter: &String,
+    driver_filter: &str,
     driver_development_proxy: &fdd::ManagerProxy,
 ) -> Result<Vec<Device>> {
-    let driver_info = get_driver_by_filter(driver_filter, &driver_development_proxy);
+    let driver_info_fut = get_driver_by_filter(driver_filter, driver_development_proxy);
     let empty: [String; 0] = [];
-    let device_list =
-        get_device_info(&driver_development_proxy, &empty, /* exact_match= */ false);
+    let device_list_fut =
+        get_device_info(driver_development_proxy, &empty, /* exact_match= */ false);
 
-    let (driver_info, device_list) = futures::join!(driver_info, device_list);
+    let (driver_info, device_list) = futures::join!(driver_info_fut, device_list_fut);
     let (driver_info, device_list) = (driver_info?, device_list?);
 
     let mut matches: Vec<Device> = Vec::new();
-    for device_item in device_list.into_iter() {
+    for device_item in device_list {
         let device: Device = device_item.into();
         if let (Some(bound_driver_url), Some(url)) = (&device.0.bound_driver_url, &driver_info.url)
         {
-            if &url == &bound_driver_url {
+            if url == bound_driver_url {
                 matches.push(device);
             }
         }

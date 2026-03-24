@@ -6,7 +6,9 @@ pub mod args;
 
 use anyhow::Result;
 use args::ListHostsCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub async fn list_hosts(

@@ -6,7 +6,9 @@ pub mod args;
 
 use anyhow::{Context, Result};
 use args::ListCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use futures::join;
 use std::collections::HashSet;
 use std::io::Write;
@@ -75,29 +77,36 @@ pub async fn list(
 mod tests {
     use super::*;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_driver_framework as fdf;
-    use fuchsia_async as fasync;
+    use flex_client::fidl::ServerEnd;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    #[cfg(feature = "fdomain")]
+    use std::sync::Arc;
+    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `list` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
     /// The output of `list` that is normally written to its `writer` parameter
     /// is returned.
-    async fn test_list<F, Fut>(cmd: ListCommand, on_driver_development_request: F) -> Result<String>
+    async fn test_list<F, Fut>(
+        #[cfg(feature = "fdomain")] client: Arc<flex_client::Client>,
+        cmd: ListCommand,
+        on_driver_development_request: F,
+    ) -> Result<String>
     where
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         // Run the command and mock driver development server.
         let mut writer = Vec::new();
         let request_handler_task = fasync::Task::spawn(async move {
             while let Some(res) = driver_development_requests.next().await {
-                let request = res.context("Failed to get next request")?;
+                let request = res.unwrap();
                 on_driver_development_request(request).await.context("Failed to handle request")?;
             }
             anyhow::bail!("Driver development request stream unexpectedly closed");
@@ -119,12 +128,10 @@ mod tests {
     ) -> Result<()> {
         let mut iterator = iterator.into_stream();
         while let Some(res) = iterator.next().await {
-            let request = res.context("Failed to get request")?;
+            let request = res.unwrap();
             match request {
                 fdd::DriverInfoIteratorRequest::GetNext { responder } => {
-                    responder
-                        .send(&driver_infos)
-                        .context("Failed to send driver infos to responder")?;
+                    responder.send(&driver_infos).unwrap();
                     driver_infos.clear();
                 }
             }
@@ -134,28 +141,37 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_list_all() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ListCommand::from_args(&["list"], &[]).unwrap();
 
-        let output = test_list(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetDriverInfo {
-                    driver_filter: _,
-                    iterator,
-                    control_handle: _,
-                } => run_driver_info_iterator_server(
-                    vec![fdf::DriverInfo {
-                        name: Some("foo".to_owned()),
-                        url: Some("fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned()),
-                        ..Default::default()
-                    }],
-                    iterator,
-                )
-                .await
-                .context("Failed to run driver info iterator server")?,
-                _ => {}
-            }
-            Ok(())
-        })
+        let output = test_list(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo {
+                        driver_filter: _,
+                        iterator,
+                        control_handle: _,
+                    } => run_driver_info_iterator_server(
+                        vec![fdf::DriverInfo {
+                            name: Some("foo".to_owned()),
+                            url: Some(
+                                "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
+                            ),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .context("Failed to run driver info iterator server")?,
+                    _ => {}
+                }
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 
@@ -167,28 +183,37 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_verbose_deprecated() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ListCommand::from_args(&["list"], &["--verbose"]).unwrap();
 
-        let output = test_list(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetDriverInfo {
-                    driver_filter: _,
-                    iterator,
-                    control_handle: _,
-                } => run_driver_info_iterator_server(
-                    vec![fdf::DriverInfo {
-                        name: Some("foo".to_owned()),
-                        url: Some("fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned()),
-                        ..Default::default()
-                    }],
-                    iterator,
-                )
-                .await
-                .context("Failed to run driver info iterator server")?,
-                _ => {}
-            }
-            Ok(())
-        })
+        let output = test_list(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo {
+                        driver_filter: _,
+                        iterator,
+                        control_handle: _,
+                    } => run_driver_info_iterator_server(
+                        vec![fdf::DriverInfo {
+                            name: Some("foo".to_owned()),
+                            url: Some(
+                                "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
+                            ),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .context("Failed to run driver info iterator server")?,
+                    _ => {}
+                }
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 

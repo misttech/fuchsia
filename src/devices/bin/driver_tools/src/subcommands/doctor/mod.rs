@@ -11,12 +11,14 @@ use bind::compiler::symbol_table::get_deprecated_key_identifier;
 use bind::interpreter::common::{BytecodeIter, next_u8, next_u32};
 use bind::interpreter::decode_bind_rules::{DecodedCompositeBindRules, DecodedRules};
 use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, PropertyKey, match_bind};
-use fidl_fuchsia_driver_development as fdd;
-use fidl_fuchsia_driver_framework as fdf;
+#[cfg(not(feature = "fdomain"))]
 use fuchsia_driver_dev as fdev;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fdev;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::io;
+use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 trait DiagnosableParent {
     fn to_properties(&self) -> DeviceProperties;

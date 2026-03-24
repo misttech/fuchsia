@@ -7,8 +7,10 @@ pub mod args;
 use anyhow::Result;
 use args::ShowCommand;
 use bind::debugger::debug_dump::dump_bind_rules;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
 use fuchsia_driver_dev::GetSingleDriverError;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -113,17 +115,17 @@ mod tests {
     use super::*;
     use anyhow::Context;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_driver_framework as fdf;
-    use fuchsia_async as fasync;
+    use flex_client::fidl::ServerEnd;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `show` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
     /// The output of `show` that is normally written to its `writer` parameter
     /// is returned.
     async fn run_test_show<F, Fut>(
+        #[cfg(feature = "fdomain")] client: std::sync::Arc<flex_client::Client>,
         cmd: ShowCommand,
         on_driver_development_request: F,
     ) -> Result<String>
@@ -131,8 +133,10 @@ mod tests {
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         // Run the command and mock driver development server.
         let mut writer = Vec::new();
@@ -194,65 +198,74 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_show() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ShowCommand::from_args(&["show"], &["foo"]).unwrap();
 
-        let output = run_test_show(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetDriverInfo {
-                    driver_filter,
-                    iterator,
-                    control_handle: _,
-                } => {
-                    let mut infos = vec![fdf::DriverInfo {
-                        name: Some("foo".to_owned()),
-                        url: Some("fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned()),
-                        package_type: Some(fdf::DriverPackageType::Base),
-                        device_categories: Some(vec![
-                            fdf::DeviceCategory {
-                                category: Some("connectivity".to_string()),
-                                subcategory: Some("ethernet".to_string()),
-                                ..Default::default()
-                            },
-                            fdf::DeviceCategory {
-                                category: Some("usb".to_string()),
-                                subcategory: None,
-                                ..Default::default()
-                            },
-                        ]),
-                        ..Default::default()
-                    }];
-                    if !driver_filter.is_empty()
-                        && !infos[0].url.as_ref().unwrap().contains(&driver_filter[0])
-                        && !infos[0].name.as_ref().unwrap().contains(&driver_filter[0])
-                    {
-                        infos.clear();
-                    }
+        let output = run_test_show(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo {
+                        driver_filter,
+                        iterator,
+                        control_handle: _,
+                    } => {
+                        let mut infos = vec![fdf::DriverInfo {
+                            name: Some("foo".to_owned()),
+                            url: Some(
+                                "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
+                            ),
+                            package_type: Some(fdf::DriverPackageType::Base),
+                            device_categories: Some(vec![
+                                fdf::DeviceCategory {
+                                    category: Some("connectivity".to_string()),
+                                    subcategory: Some("ethernet".to_string()),
+                                    ..Default::default()
+                                },
+                                fdf::DeviceCategory {
+                                    category: Some("usb".to_string()),
+                                    subcategory: None,
+                                    ..Default::default()
+                                },
+                            ]),
+                            ..Default::default()
+                        }];
+                        if !driver_filter.is_empty()
+                            && !infos[0].url.as_ref().unwrap().contains(&driver_filter[0])
+                            && !infos[0].name.as_ref().unwrap().contains(&driver_filter[0])
+                        {
+                            infos.clear();
+                        }
 
-                    run_driver_info_iterator_server(infos, iterator)
-                        .await
-                        .context("Failed to run driver info iterator server")?
+                        run_driver_info_iterator_server(infos, iterator)
+                            .await
+                            .context("Failed to run driver info iterator server")?
+                    }
+                    fdd::ManagerRequest::GetNodeInfo {
+                        node_filter: _,
+                        iterator,
+                        control_handle: _,
+                        exact_match: _,
+                    } => run_device_info_iterator_server(
+                        vec![fdd::NodeInfo {
+                            bound_driver_url: Some(
+                                "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
+                            ),
+                            moniker: Some("dev.sys.foo".to_owned()),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .context("Failed to run device info iterator server")?,
+                    _ => {}
                 }
-                fdd::ManagerRequest::GetNodeInfo {
-                    node_filter: _,
-                    iterator,
-                    control_handle: _,
-                    exact_match: _,
-                } => run_device_info_iterator_server(
-                    vec![fdd::NodeInfo {
-                        bound_driver_url: Some(
-                            "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
-                        ),
-                        moniker: Some("dev.sys.foo".to_owned()),
-                        ..Default::default()
-                    }],
-                    iterator,
-                )
-                .await
-                .context("Failed to run device info iterator server")?,
-                _ => {}
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .await
         .unwrap();
 
@@ -272,16 +285,23 @@ Issue parsing the bind rules bytecode
 
     #[fasync::run_singlethreaded(test)]
     async fn test_show_no_match() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ShowCommand::from_args(&["show"], &["nonexistent"]).unwrap();
 
-        let result = run_test_show(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetDriverInfo { iterator, .. } => {
-                    run_driver_info_iterator_server(vec![], iterator).await
+        let result = run_test_show(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo { iterator, .. } => {
+                        run_driver_info_iterator_server(vec![], iterator).await
+                    }
+                    _ => Ok(()),
                 }
-                _ => Ok(()),
-            }
-        })
+            },
+        )
         .await;
 
         assert!(result.is_err());
@@ -293,31 +313,42 @@ Issue parsing the bind rules bytecode
 
     #[fasync::run_singlethreaded(test)]
     async fn test_show_ambiguous() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ShowCommand::from_args(&["show"], &["foo"]).unwrap();
 
-        let result = run_test_show(cmd, |request: fdd::ManagerRequest| async move {
-            match request {
-                fdd::ManagerRequest::GetDriverInfo { iterator, .. } => {
-                    run_driver_info_iterator_server(
-                        vec![
-                            fdf::DriverInfo {
-                                name: Some("foo1".to_owned()),
-                                url: Some("fuchsia-pkg://fuchsia.com/foo1#meta/foo1.cm".to_owned()),
-                                ..Default::default()
-                            },
-                            fdf::DriverInfo {
-                                name: Some("foo2".to_owned()),
-                                url: Some("fuchsia-pkg://fuchsia.com/foo2#meta/foo2.cm".to_owned()),
-                                ..Default::default()
-                            },
-                        ],
-                        iterator,
-                    )
-                    .await
+        let result = run_test_show(
+            #[cfg(feature = "fdomain")]
+            client,
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetDriverInfo { iterator, .. } => {
+                        run_driver_info_iterator_server(
+                            vec![
+                                fdf::DriverInfo {
+                                    name: Some("foo1".to_owned()),
+                                    url: Some(
+                                        "fuchsia-pkg://fuchsia.com/foo1#meta/foo1.cm".to_owned(),
+                                    ),
+                                    ..Default::default()
+                                },
+                                fdf::DriverInfo {
+                                    name: Some("foo2".to_owned()),
+                                    url: Some(
+                                        "fuchsia-pkg://fuchsia.com/foo2#meta/foo2.cm".to_owned(),
+                                    ),
+                                    ..Default::default()
+                                },
+                            ],
+                            iterator,
+                        )
+                        .await
+                    }
+                    _ => Ok(()),
                 }
-                _ => Ok(()),
-            }
-        })
+            },
+        )
         .await;
 
         assert!(result.is_err());

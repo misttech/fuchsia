@@ -8,10 +8,14 @@ pub mod subcommands;
 
 use anyhow::{Context, Result};
 use args::{DriverCommand, DriverSubCommand};
-use driver_connector::DriverConnector;
 use std::io;
 use subcommands::host::args::HostSubcommand;
 use subcommands::node::args::NodeSubcommand;
+
+#[cfg(feature = "fdomain")]
+use driver_connector_fdomain as driver_connector;
+
+use driver_connector::DriverConnector;
 
 pub async fn driver(
     cmd: DriverCommand,

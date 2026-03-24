@@ -7,7 +7,9 @@ pub mod args;
 use crate::common::{node_property_value_to_string, write_node_properties};
 use anyhow::{Context, Result};
 use args::ListCompositeNodeSpecsCommand;
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use std::io::Write;
 
 pub async fn list_composite_node_specs(
@@ -124,17 +126,19 @@ pub async fn list_composite_node_specs(
 mod tests {
     use super::*;
     use argh::FromArgs;
-    use fidl::endpoints::ServerEnd;
-    use fidl_fuchsia_driver_framework as fdf;
-    use fuchsia_async as fasync;
+    use flex_client::fidl::ServerEnd;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
+    #[cfg(feature = "fdomain")]
+    use std::sync::Arc;
+    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `list_composite_node_specs` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
     /// The output of `list_composite_node_specs` that is normally written to its `writer` parameter
     /// is returned.
     async fn test_list_composite_node_specs<F, Fut>(
+        #[cfg(feature = "fdomain")] client: Arc<flex_client::Client>,
         cmd: ListCompositeNodeSpecsCommand,
         on_driver_development_request: F,
     ) -> Result<String>
@@ -142,14 +146,16 @@ mod tests {
         F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + Sync,
     {
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
         let (driver_development_proxy, mut driver_development_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdd::ManagerMarker>();
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
 
         // Run the command and mock driver development server.
         let mut writer = Vec::new();
         let request_handler_task = fasync::Task::spawn(async move {
             while let Some(res) = driver_development_requests.next().await {
-                let request = res.context("Failed to get next request")?;
+                let request = res.unwrap();
                 on_driver_development_request(request).await.context("Failed to handle request")?;
             }
             anyhow::bail!("Driver development request stream unexpectedly closed");
@@ -172,12 +178,10 @@ mod tests {
     ) -> Result<()> {
         let mut iterator = iterator.into_stream();
         while let Some(res) = iterator.next().await {
-            let request = res.context("Failed to get request")?;
+            let request = res.unwrap();
             match request {
                 fdd::CompositeNodeSpecIteratorRequest::GetNext { responder } => {
-                    responder
-                        .send(&specs)
-                        .context("Failed to send composite node specs to responder")?;
+                    responder.send(&specs).unwrap();
                     specs.clear();
                 }
             }
@@ -187,14 +191,19 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_verbose() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
         let cmd = ListCompositeNodeSpecsCommand::from_args(
             &["list-composite-node-specs"],
             &["--verbose"],
         )
         .unwrap();
 
-        let output =
-            test_list_composite_node_specs(cmd, |request: fdd::ManagerRequest| async move {
+        let output = test_list_composite_node_specs(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
                 match request {
                     fdd::ManagerRequest::GetCompositeNodeSpecs {
                         name_filter: _,
@@ -313,9 +322,10 @@ mod tests {
                     _ => {}
                 }
                 Ok(())
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             output,

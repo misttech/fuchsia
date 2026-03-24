@@ -6,7 +6,9 @@ pub mod args;
 
 use anyhow::Result;
 use args::{PidOrName, ShowCommand};
-use fidl_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_development as fdd;
+#[cfg(feature = "fdomain")]
+use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::io::Write;
