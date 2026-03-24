@@ -621,6 +621,11 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
   return zx::ok(std::move(allocations));
 }
 
+bool UsbPeripheral::ValidateEndpoint(size_t function_index, uint8_t ep_address) const {
+  uint8_t index = EpAddressToIndex(ep_address);
+  return index != 0 && index < std::size(endpoint_map_) && endpoint_map_[index] == function_index;
+}
+
 zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index,
                                          void* buffer, size_t length, size_t* out_actual) {
   TRACE_DURATION("usb-peripheral", __func__, "request_type", request_type, "value", value, "index",

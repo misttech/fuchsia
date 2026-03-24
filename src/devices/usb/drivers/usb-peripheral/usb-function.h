@@ -89,6 +89,10 @@ class UsbFunction
   void Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) override;
   void AllocResources(AllocResourcesRequest& request,
                       AllocResourcesCompleter::Sync& completer) override;
+  void EndpointSetStall(EndpointSetStallRequest& request,
+                        EndpointSetStallCompleter::Sync& completer) override;
+  void EndpointClearStall(EndpointClearStallRequest& request,
+                          EndpointClearStallCompleter::Sync& completer) override;
 
   zx::result<> AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                         const std::string& child_node_name,
@@ -97,6 +101,9 @@ class UsbFunction
   bool registered() const { return function_intf_.is_valid() || function_intf_fidl_.is_valid(); }
 
  private:
+  zx_status_t CommonEndpointSetStall(uint8_t ep_address);
+  zx_status_t CommonEndpointClearStall(uint8_t ep_address);
+
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbFunction);
 
   const size_t index_;

@@ -104,12 +104,22 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
 
   void EndpointSetStall(EndpointSetStallRequestView req,
                         EndpointSetStallCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (fail_stall_) {
+      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+    } else {
+      set_stalls_.push_back(req->ep_address);
+      completer.ReplySuccess();
+    }
   }
 
   void EndpointClearStall(EndpointClearStallRequestView req,
                           EndpointClearStallCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (fail_stall_) {
+      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+    } else {
+      clear_stalls_.push_back(req->ep_address);
+      completer.ReplySuccess();
+    }
   }
 
   void CancelAll(CancelAllRequestView req, CancelAllCompleter::Sync& completer) override {
@@ -149,6 +159,10 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
     endpoints_.erase(it);
     return ep;
   }
+
+  bool fail_stall_ = false;
+  std::vector<uint8_t> set_stalls_;
+  std::vector<uint8_t> clear_stalls_;
 
  private:
   usb_dci_protocol_t proto_;
@@ -935,6 +949,95 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   EXPECT_EQ(allocations.interface_nums, initial.interface_nums);
   EXPECT_EQ(allocations.endpoint_addrs, initial.endpoint_addrs);
   EXPECT_EQ(allocations.string_indices, initial.string_indices);
+}
+
+TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res = function_client->AllocResources(0, endpoints, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+
+  // Test setting a stall on an allocated endpoint.
+  auto res = function_client->EndpointSetStall(ep_addr);
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_OK(res.value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().set_stalls_.size(), 1u);
+    EXPECT_EQ(env.dci().set_stalls_[0], ep_addr);
+  });
+
+  // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_ = true; });
+
+  auto res2 = function_client->EndpointSetStall(ep_addr);
+  ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
+  EXPECT_STATUS(res2.value(), ZX_ERR_IO_NOT_PRESENT);
+
+  // Test setting a stall on an unallocated endpoint.
+  uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
+  auto res3 = function_client->EndpointSetStall(unallocated_ep_addr);
+  ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
+  EXPECT_STATUS(res3.value(), ZX_ERR_NOT_FOUND);
+}
+
+TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res =
+      function_client->AllocResources(0, endpoints, fidl::VectorView<fidl::StringView>());
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+
+  // Test clearing a stall on an allocated endpoint.
+  auto res = function_client->EndpointClearStall(ep_addr);
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_OK(res.value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().clear_stalls_.size(), 1u);
+    EXPECT_EQ(env.dci().clear_stalls_[0], ep_addr);
+  });
+
+  // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_ = true; });
+
+  auto res2 = function_client->EndpointClearStall(ep_addr);
+  ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
+  EXPECT_STATUS(res2.value(), ZX_ERR_IO_NOT_PRESENT);
+
+  // Test clearing a stall on an unallocated endpoint.
+  uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
+  auto res3 = function_client->EndpointClearStall(unallocated_ep_addr);
+  ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
+  EXPECT_STATUS(res3.value(), ZX_ERR_NOT_FOUND);
 }
 
 }  // namespace

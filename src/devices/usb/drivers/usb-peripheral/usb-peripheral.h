@@ -151,6 +151,8 @@ class UsbPeripheral : public fdf::DriverBase,
       std::span<fuchsia_hardware_usb_function::EndpointResource> endpoints,
       std::span<std::string> strings);
 
+  bool ValidateEndpoint(size_t function_index, uint8_t ep_address) const;
+
   void ReleaseResources(size_t function_index) __TA_EXCLUDES(lock_);
 
   // Returns currently allocated resources for the given function.

@@ -79,6 +79,29 @@ closed protocol UsbFunction {
         endpoint_addrs vector<uint8>:MAX_ENDPOINTS;
         string_indices vector<uint8>:MAX_STRINGS;
     }) error zx.Status;
+
+    /// Sets stall state in an endpoint.
+    ///
+    /// Returns
+    /// * `ZX_ERR_IO_NOT_PRESENT`: If device is not running, disconnected, or
+    ///    inactive.
+    /// * `ZX_ERR_NOT_FOUND`: If endpoint address does not exist.
+    strict EndpointSetStall(struct {
+        endpoint_address uint8;
+    }) -> () error zx.Status;
+
+    /// Clears stall state in an endpoint.
+    ///
+    /// Returns
+    /// * `ZX_ERR_IO_NOT_PRESENT`: If device is not running, disconnected, or
+    ///    inactive.
+    /// * `ZX_ERR_NOT_FOUND`: If endpoint address does not exist.
+    strict EndpointClearStall(struct {
+        endpoint_address uint8;
+    }) -> () error zx.Status;
+
+    // TODO(https://fxbug.dev/42178882): More functions to come. Equivalents to
+    // //sdk/banjo/fuchsia.hardware.usb.function/usb-function.fidl
 };
 
 /// Protocol offered to [`UsbFunction`] instances to handle host-initiated

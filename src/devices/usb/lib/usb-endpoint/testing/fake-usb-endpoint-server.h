@@ -251,6 +251,20 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
     response.string_indices() = {};
     completer.Reply(fit::ok(std::move(response)));
   }
+
+  void EndpointSetStall(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::EndpointSetStall>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::EndpointSetStall>::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+  void EndpointClearStall(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::EndpointClearStall>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::EndpointClearStall>::Sync& completer)
+      override {
+    completer.Reply(fit::ok());
+  }
 };
 
 }  // namespace fake_usb_endpoint

@@ -285,40 +285,12 @@ void UsbFunction::UsbFunctionRequestQueue(usb_request_t* usb_request,
 
 zx_status_t UsbFunction::UsbFunctionEpSetStall(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
-  fidl::Arena arena;
-  auto result = peripheral_->dci_new().buffer(arena)->EndpointSetStall(ep_address);
-
-  if (!result.ok()) {
-    fdf::debug("Failed to send EndpointSetStall request: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-    fdf::debug("Failed to set stall: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return result->error_value();
-  } else {
-    return ZX_OK;
-  }
-
-  fdf::debug("could not EndointSetStall() over FIDL, falling back to banjo");
-  return peripheral_->dci().EpSetStall(ep_address);
+  return CommonEndpointSetStall(ep_address);
 }
 
 zx_status_t UsbFunction::UsbFunctionEpClearStall(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
-  fidl::Arena arena;
-  auto result = peripheral_->dci_new().buffer(arena)->EndpointClearStall(ep_address);
-
-  if (!result.ok()) {
-    fdf::debug("Failed to send EndpointClearStall request: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-    fdf::debug("Failed to clear stall): {}", result.status_string());
-  } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return result->error_value();
-  } else {
-    return ZX_OK;
-  }
-
-  fdf::debug("could not EndointClearStall() over FIDL, falling back to banjo");
-  return peripheral_->dci().EpClearStall(ep_address);
+  return CommonEndpointClearStall(ep_address);
 }
 
 size_t UsbFunction::UsbFunctionGetRequestSize() {
@@ -354,6 +326,28 @@ void UsbFunction::AllocResources(AllocResourcesRequest& request,
   response.string_indices(std::move(result->string_indices));
   alloc_resources_over_fidl_ = true;
   completer.Reply(fit::ok(std::move(response)));
+}
+
+void UsbFunction::EndpointSetStall(EndpointSetStallRequest& request,
+                                   EndpointSetStallCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  zx_status_t status = CommonEndpointSetStall(request.endpoint_address());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbFunction::EndpointClearStall(EndpointClearStallRequest& request,
+                                     EndpointClearStallCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  zx_status_t status = CommonEndpointClearStall(request.endpoint_address());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
 }
 
 void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) {
@@ -547,6 +541,58 @@ zx::result<std::vector<uint8_t>> UsbFunction::Control(
   }
   fdf::error("Control failed as the interface is invalid.");
   return zx::error(ZX_ERR_BAD_STATE);
+}
+
+zx_status_t UsbFunction::CommonEndpointSetStall(uint8_t ep_address) {
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  fidl::Arena arena;
+  if (peripheral_->dci_new().is_valid()) {
+    auto result = peripheral_->dci_new().buffer(arena)->EndpointSetStall(ep_address);
+
+    if (!result.ok()) {
+      fdf::error("Failed to send EndpointSetStall request: {}", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+        fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
+      }
+      return result->error_value();
+    }
+    return ZX_OK;
+  }
+
+  fdf::warn("could not EndointSetStall() over FIDL, falling back to banjo");
+  return peripheral_->dci().EpSetStall(ep_address);
+}
+
+zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  fidl::Arena arena;
+  if (peripheral_->dci_new().is_valid()) {
+    auto result = peripheral_->dci_new().buffer(arena)->EndpointClearStall(ep_address);
+
+    if (!result.ok()) {
+      fdf::error("Failed to send EndpointClearStall request: {}", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+        fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
+      }
+      return result->error_value();
+    }
+    return ZX_OK;
+  }
+
+  fdf::warn("could not EndointClearStall() over FIDL, falling back to banjo");
+  return peripheral_->dci().EpClearStall(ep_address);
 }
 
 }  // namespace usb_peripheral
