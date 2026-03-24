@@ -38,7 +38,11 @@ impl From<RuleParseError> for RuleDecodeError {
 #[derive(Debug, Error)]
 pub enum EditTransactionError {
     #[error("internal fidl error")]
-    Fidl(#[from] fidl::Error),
+    Fidl(#[from] flex_client::Error),
+
+    #[cfg(feature = "fdomain")]
+    #[error("native fidl error")]
+    NativeFidl(#[source] ::fidl::Error),
 
     #[error("commit error")]
     CommitError(#[source] zx::Status),
@@ -48,4 +52,11 @@ pub enum EditTransactionError {
 
     #[error("rule decode error")]
     RuleDecodeError(#[from] RuleDecodeError),
+}
+
+#[cfg(feature = "fdomain")]
+impl From<::fidl::Error> for EditTransactionError {
+    fn from(e: ::fidl::Error) -> Self {
+        Self::NativeFidl(e)
+    }
 }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::{RuleDecodeError, RuleParseError};
-use fidl_fuchsia_pkg_rewrite as fidl;
+use flex_fuchsia_pkg_rewrite as fidl;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use fuchsia_url::{ParseError, RepositoryUrl};
 use serde::{Deserialize, Serialize};

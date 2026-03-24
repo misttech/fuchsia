@@ -4,9 +4,10 @@
 
 use crate::errors::EditTransactionError;
 use crate::rule::Rule;
-use fidl_fuchsia_pkg_rewrite::{EditTransactionProxy, EngineProxy};
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_pkg_rewrite::{EditTransactionProxy, EngineProxy};
 use std::future::Future;
-use zx_status as zx;
+use {flex_fuchsia_pkg_rewrite as rewrite, zx_status as zx};
 
 const RETRY_ATTEMPTS: usize = 100;
 
@@ -19,14 +20,15 @@ impl EditTransaction {
     /// Removes all dynamically configured rewrite rules, leaving only any
     /// statically configured rules.
     pub fn reset_all(&self) -> Result<(), EditTransactionError> {
-        self.transaction.reset_all().map_err(EditTransactionError::Fidl)
+        self.transaction.reset_all().map_err(EditTransactionError::from)
     }
 
     /// Returns a vector of all dynamic (editable) rewrite rules. The
     /// vector will reflect any changes made to the rewrite rules so far in
     /// this transaction.
     pub async fn list_dynamic(&self) -> Result<Vec<Rule>, EditTransactionError> {
-        let (iter, iter_server_end) = fidl::endpoints::create_proxy();
+        let (iter, iter_server_end) =
+            self.transaction.domain().create_proxy::<rewrite::RuleIteratorMarker>();
         self.transaction.list_dynamic(iter_server_end)?;
 
         let mut rules = Vec::new();
@@ -67,16 +69,17 @@ where
 {
     // Make a reasonable effort to retry the edit after a concurrent edit, but don't retry forever.
     for _ in 0..RETRY_ATTEMPTS {
-        let (transaction, transaction_server_end) = fidl::endpoints::create_proxy();
+        let (transaction, transaction_server_end) =
+            engine.domain().create_proxy::<rewrite::EditTransactionMarker>();
 
         let () = engine
             .start_edit_transaction(transaction_server_end)
-            .map_err(EditTransactionError::Fidl)?;
+            .map_err(EditTransactionError::from)?;
 
         let transaction = cb(EditTransaction { transaction }).await?;
 
         let response =
-            transaction.transaction.commit().await.map_err(EditTransactionError::Fidl)?;
+            transaction.transaction.commit().await.map_err(EditTransactionError::from)?;
 
         // Retry edit transaction on concurrent edit
         return match response.map_err(zx::Status::from_raw) {
@@ -95,8 +98,7 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_pkg_rewrite::{
+    use flex_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineMarker, EngineRequest, RuleIteratorRequest,
     };
     use fuchsia_async as fasync;
@@ -117,6 +119,8 @@ mod tests {
     struct Engine {
         engine: EngineProxy,
         events: Arc<Mutex<Vec<Event>>>,
+        #[cfg(feature = "fdomain")]
+        _client: Arc<flex_client::Client>,
     }
 
     macro_rules! rule {
@@ -133,10 +137,14 @@ mod tests {
         }
 
         fn with_fail_attempts(mut fail_attempts: usize, fail_status: zx::Status) -> Self {
+            #[cfg(feature = "fdomain")]
+            let client = fdomain_local::local_client_empty();
+            #[cfg(not(feature = "fdomain"))]
+            let client = flex_client::fidl::ZirconClient;
             let events = Arc::new(Mutex::new(Vec::new()));
             let events_task = Arc::clone(&events);
 
-            let (engine, mut engine_stream) = create_proxy_and_stream::<EngineMarker>();
+            let (engine, mut engine_stream) = client.create_proxy_and_stream::<EngineMarker>();
 
             fasync::Task::local(async move {
                 while let Some(req) = engine_stream.try_next().await.unwrap() {
@@ -201,7 +209,12 @@ mod tests {
             })
             .detach();
 
-            Self { engine, events }
+            Self {
+                engine,
+                events,
+                #[cfg(feature = "fdomain")]
+                _client: client,
+            }
         }
 
         fn take_events(&self) -> Vec<Event> {
