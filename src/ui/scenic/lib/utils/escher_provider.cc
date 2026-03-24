@@ -15,19 +15,13 @@
 #include "fidl/fuchsia.io/cpp/natural_types.h"
 #include "src/ui/lib/escher/escher_process_init.h"
 #include "src/ui/lib/escher/fs/hack_filesystem.h"
-#include "src/ui/lib/escher/hmd/pose_buffer_latching_shader.h"
-#include "src/ui/lib/escher/paper/paper_renderer_static_config.h"
 #include "src/ui/lib/escher/vk/vulkan_device_queues.h"
 #include "src/ui/lib/escher/vk/vulkan_instance.h"
 
 namespace utils {
 
-escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
-#ifdef __Fuchsia__
-                                     ,
-                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir
-#endif
-) {
+escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context,
+                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir) {
   // Initialize Vulkan.
   constexpr bool kRequiresSurface = false;
   escher::VulkanInstance::Params instance_params({
@@ -88,7 +82,6 @@ escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
 
   auto shader_fs = escher::HackFilesystem::New(debug_dir);
   {
-#ifdef __Fuchsia__
     zx::channel client, server;
     zx::channel::create(0, &client, &server);
     fuchsia_io::DirectoryOpenRequest request;
@@ -101,45 +94,18 @@ escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
       FX_LOGS(ERROR) << "Failed to open /pkg/data: " << res.error_value();
     }
     fidl::ClientEnd<fuchsia_io::Directory> dir(std::move(client));
-#endif
 
-#if ESCHER_USE_RUNTIME_GLSL
-    auto paths = escher::kPaperRendererShaderPaths;
-    paths.insert(paths.end(), escher::hmd::kPoseBufferLatchingPaths.begin(),
-                 escher::hmd::kPoseBufferLatchingPaths.end());
-#ifdef __Fuchsia__
-    bool success = shader_fs->InitializeWithRealFilesInDir(paths, std::move(dir));
-#else
-    bool success = shader_fs->InitializeWithRealFiles(paths);
-#endif
-#else
-    auto paths = escher::kPaperRendererShaderSpirvPaths;
-    paths.insert(paths.end(), escher::hmd::kPoseBufferLatchingSpirvPaths.begin(),
-                 escher::hmd::kPoseBufferLatchingSpirvPaths.end());
-#ifdef __Fuchsia__
-    bool success = shader_fs->InitializeWithRealFilesInDir(paths, std::move(dir));
-#else
-    bool success = shader_fs->InitializeWithRealFiles(paths);
-#endif
-#endif
+    bool success = shader_fs->InitializeWithRealFilesInDir({}, std::move(dir));
     FX_DCHECK(success) << "Failed to init shader files.";
   }
 
   // Initialize Escher.
-#if ESCHER_USE_RUNTIME_GLSL
-  escher::GlslangInitializeProcess();
-#endif
   return escher::EscherUniquePtr(
       new escher::Escher(vulkan_device_queues, std::move(shader_fs), /*gpu_allocator*/ nullptr),
       // Custom deleter.
       // The vulkan instance is a stack variable, but it is a
       // fxl::RefPtr, so we can store by value.
-      [=](escher::Escher* escher) {
-#if ESCHER_USE_RUNTIME_GLSL
-        escher::GlslangFinalizeProcess();
-#endif
-        delete escher;
-      });
+      [=](escher::Escher* escher) { delete escher; });
 }
 
 VkBool32 HandleDebugUtilsMessage(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,

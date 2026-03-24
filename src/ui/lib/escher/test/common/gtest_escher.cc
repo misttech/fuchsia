@@ -28,7 +28,8 @@ static void LoadShadersFromDisk(HackFilesystemPtr fs) {
       "shaders/shaders_flatland_flat_color_correction_frag14695981039346656037.spirv",
       "shaders/shaders_flatland_flat_color_correction_vert14695981039346656037.spirv",
 
-      // Paper renderer.
+      // Paper renderer (kept around to test that ShaderVariantArgs are processed correctly,
+      // see shader_program_unittest.cc).
       "shaders/shaders_model_renderer_main_vert15064700897732225279.spirv",
       "shaders/shaders_model_renderer_main_vert4304586084079301274.spirv",
       "shaders/shaders_model_renderer_main_vert7456302057085141907.spirv",
@@ -38,9 +39,6 @@ static void LoadShadersFromDisk(HackFilesystemPtr fs) {
       "shaders/shaders_paper_frag_main_point_light_frag15064700897732225279.spirv",
       "shaders/shaders_paper_vert_main_shadow_volume_extrude_vert15276133142244279294.spirv",
       "shaders/shaders_paper_vert_main_shadow_volume_extrude_vert9217636760892358205.spirv",
-
-      // Pose buffer latching compute shader, from pose_buffer_latching_shader.cc.
-      "shaders/shaders_compute_pose_buffer_latching_comp14695981039346656037.spirv",
 
       // Test-only
       "shaders/shaders_model_renderer_main_vert12890958529260787213.spirv",

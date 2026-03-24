@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
-#include "src/ui/lib/escher/renderer/render_queue_context.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/vk/color_space.h"
 

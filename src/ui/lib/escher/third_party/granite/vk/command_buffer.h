@@ -27,7 +27,6 @@
 #define SRC_UI_LIB_ESCHER_THIRD_PARTY_GRANITE_VK_COMMAND_BUFFER_H_
 
 #include "src/ui/lib/escher/base/reffable.h"
-#include "src/ui/lib/escher/shape/mesh.h"
 #include "src/ui/lib/escher/third_party/granite/vk/command_buffer_pipeline_state.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
 #include "src/ui/lib/escher/util/enum_cast.h"

@@ -10,8 +10,6 @@
 #include "src/ui/lib/escher/flatland/flatland_static_config.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/fs/hack_filesystem.h"
-#include "src/ui/lib/escher/hmd/pose_buffer_latching_shader.h"
-#include "src/ui/lib/escher/paper/paper_renderer_config.h"
 #include "src/ui/lib/escher/paper/paper_renderer_static_config.h"
 #include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
 #include "src/ui/lib/escher/vk/shader_program.h"
@@ -69,8 +67,7 @@ int main(int argc, const char** argv) {
   auto paths = escher::kPaperRendererShaderPaths;
   paths.insert(paths.end(), escher::kFlatlandShaderPaths.begin(),
                escher::kFlatlandShaderPaths.end());
-  paths.insert(paths.end(), escher::hmd::kPoseBufferLatchingPaths.begin(),
-               escher::hmd::kPoseBufferLatchingPaths.end());
+
   bool success = filesystem->InitializeWithRealFiles(paths, "./../../../../src/ui/lib/escher/");
   FX_CHECK(success);
   FX_CHECK(filesystem->base_path());
@@ -94,10 +91,6 @@ int main(int argc, const char** argv) {
   }
 
   if (!CompileAndWriteShader(filesystem, escher::kShadowVolumeGeometryDebugProgramData)) {
-    return EXIT_FAILURE;
-  }
-
-  if (!CompileAndWriteShader(filesystem, escher::hmd::kPoseBufferLatchingProgramData)) {
     return EXIT_FAILURE;
   }
 

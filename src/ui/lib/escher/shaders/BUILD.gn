@@ -25,9 +25,6 @@ shader_files = [
   "test/main.frag",
   "test/shadow_map_generation.frag",
   "test/shadow_map_lighting.frag",
-
-  # Compute shaders.
-  "compute/pose_buffer_latching.comp",
 ]
 
 spirv_files = [
@@ -49,9 +46,6 @@ spirv_files = [
   "shaders_paper_frag_main_point_light_frag15064700897732225279.spirv",
   "shaders_paper_vert_main_shadow_volume_extrude_vert15276133142244279294.spirv",
   "shaders_paper_vert_main_shadow_volume_extrude_vert9217636760892358205.spirv",
-
-  # Pose buffer latching compute shader, from pose_buffer_latching_shader.cc.
-  "shaders_compute_pose_buffer_latching_comp14695981039346656037.spirv",
 
   # Tests
   "shaders_model_renderer_main_vert12890958529260787213.spirv",

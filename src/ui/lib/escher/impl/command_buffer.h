@@ -13,7 +13,6 @@
 #include "src/lib/fxl/macros.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/renderer/semaphore.h"
-#include "src/ui/lib/escher/scene/camera.h"
 #include "src/ui/lib/escher/vk/vulkan_context.h"
 
 namespace escher {

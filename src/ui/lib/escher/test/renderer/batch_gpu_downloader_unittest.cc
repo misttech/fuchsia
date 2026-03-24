@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/util/image_utils.h"

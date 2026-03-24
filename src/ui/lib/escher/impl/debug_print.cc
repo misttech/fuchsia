@@ -6,11 +6,7 @@
 
 #include <ios>
 
-#include "src/ui/lib/escher/geometry/bounding_box.h"
-#include "src/ui/lib/escher/geometry/transform.h"
-#include "src/ui/lib/escher/paper/paper_renderer_config.h"
-#include "src/ui/lib/escher/scene/camera.h"
-#include "src/ui/lib/escher/scene/viewing_volume.h"
+#include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/lib/escher/shape/mesh_spec.h"
 #include "src/ui/lib/escher/third_party/granite/vk/command_buffer_pipeline_state.h"
 #include "src/ui/lib/escher/third_party/granite/vk/descriptor_set_layout.h"
@@ -23,11 +19,6 @@
 #include "src/ui/lib/escher/vk/vulkan_device_queues.h"
 
 namespace escher {
-
-std::ostream& operator<<(std::ostream& str, const Transform& transform) {
-  return str << "Transform[t: " << transform.translation << " s: " << transform.scale
-             << " r: " << transform.rotation << " a: " << transform.anchor << "]";
-}
 
 std::ostream& operator<<(std::ostream& str, const mat2& m) {
   str << "mat2[";
@@ -160,24 +151,6 @@ std::ostream& operator<<(std::ostream& str, const ImageInfo& info) {
   return str << " " << vk::to_string(info.usage) << "]";
 }
 
-std::ostream& operator<<(std::ostream& str, const ViewingVolume& volume) {
-  return str << "ViewingVolume[w:" << volume.width() << " h:" << volume.height()
-             << " t:" << volume.top() << " b:" << volume.bottom() << "]";
-}
-
-std::ostream& operator<<(std::ostream& str, const BoundingBox& box) {
-  if (box.is_empty()) {
-    return str << "BoundingBox[empty]";
-  } else {
-    return str << "BoundingBox[min" << box.min() << ", max" << box.max() << "]";
-  }
-}
-
-std::ostream& operator<<(std::ostream& str, const Camera& camera) {
-  return str << "Camera[\ntransform: " << camera.transform()
-             << "\nprojection: " << camera.projection() << "]";
-}
-
 std::ostream& operator<<(std::ostream& str, const impl::DescriptorSetLayout& layout) {
   return str << "DescriptorSetLayout[\n\tsampled_image_mask: " << std::hex
              << layout.sampled_image_mask << "\n\tstorage_image_mask: " << layout.storage_image_mask
@@ -229,33 +202,6 @@ std::ostream& operator<<(std::ostream& str, const impl::PipelineLayoutSpec& spec
   });
 
   return str << "\n]";
-}
-
-static const char* PaperRendererShadowTypeString(const PaperRendererShadowType& shadow_type) {
-  switch (shadow_type) {
-    case PaperRendererShadowType::kNone:
-      return "kNone";
-    case PaperRendererShadowType::kSsdo:
-      return "kSsdo";
-    case PaperRendererShadowType::kShadowMap:
-      return "kShadowMap";
-    case PaperRendererShadowType::kMomentShadowMap:
-      return "kMomentShadowMap";
-    case PaperRendererShadowType::kShadowVolume:
-      return "kShadowVolume";
-    case PaperRendererShadowType::kEnumCount:
-      return "kEnumCount(INVALID)";
-  }
-}
-
-std::ostream& operator<<(std::ostream& str, const PaperRendererShadowType& shadow_type) {
-  return str << "PaperRendererShadowType::" << PaperRendererShadowTypeString(shadow_type);
-}
-
-std::ostream& operator<<(std::ostream& str, const PaperRendererConfig& config) {
-  return str << "PaperRendererConfig[shadow_type:"
-             << PaperRendererShadowTypeString(config.shadow_type)
-             << " sample_count:" << unsigned{config.msaa_sample_count} << "]";
 }
 
 std::ostream& operator<<(std::ostream& str, const VulkanDeviceQueues::Caps& caps) {

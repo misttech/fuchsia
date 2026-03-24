@@ -10,7 +10,7 @@ static_library("shader_utils") {
 
   deps = [
     "//src/lib/vulkan",
-    "//src/ui/examples/escher/common",
+    "//src/ui/lib/escher:escher_with_glslang",
     "//third_party/glm",
   ]
 

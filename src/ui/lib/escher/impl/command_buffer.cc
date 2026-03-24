@@ -6,9 +6,7 @@
 
 #include "src/lib/fxl/macros.h"
 #include "src/ui/lib/escher/impl/descriptor_set_pool.h"
-#include "src/ui/lib/escher/impl/mesh_shader_binding.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
-#include "src/ui/lib/escher/shape/mesh.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/lib/escher/vk/buffer.h"
 #include "src/ui/lib/escher/vk/framebuffer.h"

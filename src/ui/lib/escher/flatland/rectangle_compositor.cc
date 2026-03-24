@@ -5,9 +5,8 @@
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 
 #include "src/ui/lib/escher/impl/naive_image.h"
-#include "src/ui/lib/escher/mesh/indexed_triangle_mesh_upload.h"
-#include "src/ui/lib/escher/mesh/tessellation.h"
 #include "src/ui/lib/escher/renderer/render_funcs.h"
+#include "src/ui/lib/escher/resources/resource_recycler.h"
 #include "src/ui/lib/escher/third_party/granite/vk/render_pass.h"
 #include "src/ui/lib/escher/util/image_utils.h"
 #include "src/ui/lib/escher/util/trace_macros.h"

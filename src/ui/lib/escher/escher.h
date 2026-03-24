@@ -11,7 +11,6 @@
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/impl/image_cache.h"
-#include "src/ui/lib/escher/shape/mesh_builder_factory.h"
 #include "src/ui/lib/escher/status.h"
 #include "src/ui/lib/escher/util/hash.h"
 #include "src/ui/lib/escher/util/hash_map.h"
@@ -26,7 +25,7 @@ namespace escher {
 //
 // Escher is currently not thread-safe; it (and all objects obtained from it)
 // must be used from a single thread.
-class Escher final : public MeshBuilderFactory, public ShaderProgramFactory {
+class Escher final : public ShaderProgramFactory {
  public:
   // Escher does not take ownership of the objects in the Vulkan context.  It is
   // up to the application to eventually destroy them, and also to ensure that
@@ -38,10 +37,6 @@ class Escher final : public MeshBuilderFactory, public ShaderProgramFactory {
   ~Escher();
 
   EscherWeakPtr GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
-
-  // Implement MeshBuilderFactory interface.
-  MeshBuilderPtr NewMeshBuilder(BatchGpuUploader* gpu_uploader, const MeshSpec& spec,
-                                size_t max_vertex_count, size_t max_index_count) override;
 
   // Return new Image containing the provided pixels.
   ImagePtr NewRgbaImage(BatchGpuUploader* gpu_uploader, uint32_t width, uint32_t height,
@@ -130,7 +125,7 @@ class Escher final : public MeshBuilderFactory, public ShaderProgramFactory {
   ImageFactory* image_cache() { return image_cache_.get(); }
   BufferCache* buffer_cache() { return buffer_cache_.get(); }
   SamplerCache* sampler_cache() { return sampler_cache_.get(); }
-  impl::MeshManager* mesh_manager() { return mesh_manager_.get(); }
+
   impl::PipelineLayoutCache* pipeline_layout_cache() { return pipeline_layout_cache_.get(); }
   impl::DescriptorSetAllocatorCache* descriptor_set_allocator_cache() {
     return descriptor_set_allocator_cache_.get();
@@ -185,7 +180,7 @@ class Escher final : public MeshBuilderFactory, public ShaderProgramFactory {
   std::unique_ptr<impl::ImageCache> image_cache_;
   std::unique_ptr<BufferCache> buffer_cache_;
   std::unique_ptr<SamplerCache> sampler_cache_;
-  std::unique_ptr<impl::MeshManager> mesh_manager_;
+
   std::unique_ptr<DefaultShaderProgramFactory> shader_program_factory_;
   std::unique_ptr<PipelineBuilder> pipeline_builder_;
 

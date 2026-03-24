@@ -15,7 +15,6 @@ class BatchGpuUploader;
 class BlockAllocator;
 class Buffer;
 class BufferCache;
-class Camera;
 class CommandBuffer;
 class DebugFont;
 class DefaultShaderProgramFactory;
@@ -29,36 +28,24 @@ class Image;
 class ImageFactory;
 class ImageLayoutUpdater;
 class ImageView;
-class MeshBuilder;
-class MeshBuilderFactory;
 struct MeshSpec;
-class Material;
-class Mesh;
-class Model;
-class Object;
 class PipelineBuilder;
 // TODO(https://fxbug.dev/42151125): move to vk/impl.  Cannot do this yet because there is already
 // a PipelineLayout in impl/vk.
 class PipelineLayout;
-class PaperRenderer;
-class PaperRenderQueue;
-class PaperShapeCache;
+
 class Resource;
 class ResourceRecycler;
 class Renderer;
 class RenderPass;
 struct RenderPassInfo;
-struct RenderQueueItem;
 class Sampler;
 class SamplerCache;
 class Semaphore;
 class ShaderProgram;
-class Shape;
-class Stage;
 class Texture;
 class TimestampProfiler;
 struct UniformAllocation;
-class ViewingVolume;
 struct VulkanContext;
 struct VulkanSwapchain;
 
@@ -72,10 +59,6 @@ using GpuMemPtr = fxl::RefPtr<GpuMem>;
 using HackFilesystemPtr = fxl::RefPtr<HackFilesystem>;
 using ImagePtr = fxl::RefPtr<Image>;
 using ImageViewPtr = fxl::RefPtr<ImageView>;
-using MaterialPtr = fxl::RefPtr<Material>;
-using MeshPtr = fxl::RefPtr<Mesh>;
-using MeshBuilderPtr = fxl::RefPtr<MeshBuilder>;
-using PaperRendererPtr = fxl::RefPtr<PaperRenderer>;
 // TODO(https://fxbug.dev/42151125): move to vk/impl.  Cannot do this yet because there is already
 // a PipelineLayout in impl/vk.
 using PipelineLayoutPtr = fxl::RefPtr<PipelineLayout>;
@@ -88,10 +71,6 @@ using ShaderProgramPtr = fxl::RefPtr<ShaderProgram>;
 using TexturePtr = fxl::RefPtr<Texture>;
 using TimestampProfilerPtr = fxl::RefPtr<TimestampProfiler>;
 
-namespace hmd {
-class PoseBufferLatchingShader;
-}  // namespace hmd
-
 namespace impl {
 // From deprecated escher/impl directory.
 class CommandBuffer;
@@ -100,13 +79,9 @@ class CommandBufferSequencer;
 class ComputeShader;
 class FrameManager;
 class ImageCache;
-class MeshManager;
-class MeshShaderBinding;
-class ModelData;
 class Pipeline;
 class UniformBufferPool;
 
-using ModelDataPtr = fxl::RefPtr<ModelData>;
 using PipelinePtr = fxl::RefPtr<Pipeline>;
 using UniformBufferPoolWeakPtr = fxl::WeakPtr<UniformBufferPool>;
 

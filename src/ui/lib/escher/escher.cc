@@ -12,7 +12,6 @@
 #include <shaderc/shaderc.hpp>  // nogncheck
 #endif
 #include "src/ui/lib/escher/impl/image_cache.h"
-#include "src/ui/lib/escher/impl/mesh_manager.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
 #include "src/ui/lib/escher/renderer/buffer_cache.h"
@@ -56,15 +55,6 @@ std::unique_ptr<impl::CommandBufferPool> NewTransferCommandBufferPool(
         context.device, context.transfer_queue, context.transfer_queue_family_index, sequencer,
         /*supports_graphics_and_compute=*/false, use_protected_memory);
   }
-}
-
-// Constructor helper.
-std::unique_ptr<impl::MeshManager> NewMeshManager(impl::CommandBufferPool* main_pool,
-                                                  impl::CommandBufferPool* transfer_pool,
-                                                  GpuAllocator* allocator,
-                                                  ResourceRecycler* resource_recycler) {
-  return std::make_unique<impl::MeshManager>(transfer_pool ? transfer_pool : main_pool, allocator,
-                                             resource_recycler);
 }
 
 }  // anonymous namespace
@@ -112,8 +102,7 @@ Escher::Escher(VulkanDeviceQueuesPtr device, HackFilesystemPtr filesystem,
   image_cache_ = std::make_unique<impl::ImageCache>(GetWeakPtr(), gpu_allocator());
   buffer_cache_ = std::make_unique<BufferCache>(GetWeakPtr());
   sampler_cache_ = std::make_unique<SamplerCache>(resource_recycler_->GetWeakPtr());
-  mesh_manager_ = NewMeshManager(command_buffer_pool(), transfer_command_buffer_pool(),
-                                 gpu_allocator(), resource_recycler());
+
   descriptor_set_allocator_cache_ =
       std::make_unique<impl::DescriptorSetAllocatorCache>(vk_device());
   pipeline_layout_cache_ = std::make_unique<impl::PipelineLayoutCache>(resource_recycler());
@@ -150,7 +139,7 @@ Escher::~Escher() {
   framebuffer_allocator_.reset();
   render_pass_cache_.reset();
   pipeline_layout_cache_.reset();
-  mesh_manager_.reset();
+
   descriptor_set_allocator_cache_.reset();
   sampler_cache_.reset();
 
@@ -184,11 +173,6 @@ impl::CommandBufferPool* Escher::protected_command_buffer_pool() {
         NewCommandBufferPool(vulkan_context_, command_buffer_sequencer_.get(), true);
   }
   return protected_command_buffer_pool_.get();
-}
-
-MeshBuilderPtr Escher::NewMeshBuilder(BatchGpuUploader* gpu_uploader, const MeshSpec& spec,
-                                      size_t max_vertex_count, size_t max_index_count) {
-  return mesh_manager()->NewMeshBuilder(gpu_uploader, spec, max_vertex_count, max_index_count);
 }
 
 ImagePtr Escher::NewRgbaImage(BatchGpuUploader* gpu_uploader, uint32_t width, uint32_t height,

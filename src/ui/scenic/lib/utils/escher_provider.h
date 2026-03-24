@@ -16,12 +16,8 @@
 
 namespace utils {
 
-escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
-#ifdef __Fuchsia__
-                                     ,
-                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir
-#endif
-);
+escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context,
+                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir);
 
 VkBool32 HandleDebugUtilsMessage(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                  VkDebugUtilsMessageTypeFlagsEXT message_types,

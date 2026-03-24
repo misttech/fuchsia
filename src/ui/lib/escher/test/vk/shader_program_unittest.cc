@@ -7,14 +7,14 @@
 #include "src/ui/lib/escher/defaults/default_shader_program_factory.h"
 #include "src/ui/lib/escher/flatland/flatland_static_config.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
-#include "src/ui/lib/escher/mesh/tessellation.h"
-// TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-#include "src/ui/lib/escher/paper/paper_render_funcs.h"
+// TODO(https://fxbug.dev/42152212): We are keeping paper_renderer_static_config.h and its
+// associated GLSL/spirv shaders around specifically for testing ShaderVariantArgs. This is
+// because Flatland programs don't currently have variants where the same shader files are
+// compiled with different arguments (e.g. kAmbientLightProgramData and kNoLightingProgramData
+// use the same files but different args). These should be removed if/when Flatland has them.
 #include "src/ui/lib/escher/paper/paper_renderer_static_config.h"
-#include "src/ui/lib/escher/paper/paper_shape_cache.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
-#include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
-#include "src/ui/lib/escher/shape/mesh.h"
+#include "src/ui/lib/escher/shape/mesh_spec.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/vk/vulkan_tester.h"
 #include "src/ui/lib/escher/third_party/granite/vk/render_pass.h"
@@ -56,9 +56,9 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
                 &vk_debug_utils_message_collector_),
             {}),
         vk_debug_utils_message_collector_() {}
-  const MeshPtr& ring_mesh1() const { return ring_mesh1_; }
-  const MeshPtr& ring_mesh2() const { return ring_mesh2_; }
-  const MeshPtr& sphere_mesh() const { return sphere_mesh_; }
+  const MeshSpec& mesh_spec1() const { return mesh_spec1_; }
+  const MeshSpec& mesh_spec2() const { return mesh_spec2_; }
+  const BufferPtr& dummy_buffer() const { return dummy_buffer_; }
 
   test::impl::VkDebugUtilsMessengerCallbackRegistry& vk_debug_utils_message_callback_registry() {
     return vk_debug_utils_message_callback_registry_;
@@ -84,22 +84,19 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     });
     EXPECT_TRUE(success);
 
-    BatchGpuUploader gpu_uploader(escher->GetWeakPtr());
-    ring_mesh1_ = NewRingMesh(escher, &gpu_uploader,
-                              MeshSpec{MeshAttribute::kPosition2D | MeshAttribute::kUV}, 8,
-                              vec2(0.f, 0.f), 300.f, 200.f);
-    ring_mesh2_ = NewRingMesh(escher, &gpu_uploader,
-                              MeshSpec{MeshAttribute::kPosition2D | MeshAttribute::kUV}, 8,
-                              vec2(0.f, 0.f), 400.f, 300.f);
-    sphere_mesh_ = NewSphereMesh(escher, &gpu_uploader,
-                                 MeshSpec{MeshAttribute::kPosition3D | MeshAttribute::kUV}, 8,
-                                 vec3(0.f, 0.f, 0.f), 300.f);
-    gpu_uploader.Submit();
+    mesh_spec1_ = MeshSpec{MeshAttribute::kPosition2D | MeshAttribute::kUV};
+    mesh_spec2_ = MeshSpec{MeshAttribute::kPosition3D | MeshAttribute::kUV};
+
+    dummy_buffer_ = escher->gpu_allocator()->AllocateBuffer(
+        escher->resource_recycler(), 4096,
+        vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
     escher->vk_device().waitIdle();
   }
 
   void TearDown() override {
-    ring_mesh1_ = ring_mesh2_ = sphere_mesh_ = nullptr;
+    dummy_buffer_ = nullptr;
 
     auto escher = test::GetEscher();
     escher->vk_device().waitIdle();
@@ -111,17 +108,19 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     vk_debug_utils_message_callback_registry().DeregisterDebugUtilsMessengerCallbacks();
   }
 
-  MeshPtr ring_mesh1_;
-  MeshPtr ring_mesh2_;
-  MeshPtr sphere_mesh_;
+  MeshSpec mesh_spec1_;
+  MeshSpec mesh_spec2_;
+  BufferPtr dummy_buffer_;
 
   test::impl::VkDebugUtilsMessengerCallbackRegistry vk_debug_utils_message_callback_registry_;
   test::impl::VkDebugUtilsMessageCollector vk_debug_utils_message_collector_;
 };
 
-// Test to make sure that the shader data constants located in
-// paper_renderer_static_config.h can be used to properly load
-// vulkan shader programs.
+// Test to make sure that the shader data constants located in paper_renderer_static_config.h
+// can be used to properly load Vulkan shader programs.
+//
+// NOTE: since PaperRenderer was deleted, these remain solely for testing that
+// ShaderVariantArgs are correctly applied during shader compilation.
 VK_TEST_F(ShaderProgramTest, ShaderConstantsTest) {
   auto escher = test::GetEscher();
 
@@ -316,12 +315,12 @@ impl::RenderPassPtr CreateRenderPassForTest() {
 // in tests.  It doesn't really matter what vertex format is used, so we just use the standard one
 // used by PaperShapeCache.
 void SetupVertexAttributeBindingsForTest(CommandBufferPipelineState* cbps) {
-  MeshSpec mesh_spec = PaperShapeCache::kStandardMeshSpec();
+  MeshSpec mesh_spec{MeshAttribute::kPosition2D | MeshAttribute::kUV};
   const uint32_t total_attribute_count = mesh_spec.total_attribute_count();
   BlockAllocator allocator(512);
-  RenderFuncs::VertexAttributeBinding* attribute_bindings =
-      RenderFuncs::NewVertexAttributeBindings(PaperRenderFuncs::kMeshAttributeBindingLocations,
-                                              &allocator, mesh_spec, total_attribute_count);
+  MeshAttributeBindingLocations binding_locations = {0, 0, 1, 2, 3, 4};
+  RenderFuncs::VertexAttributeBinding* attribute_bindings = RenderFuncs::NewVertexAttributeBindings(
+      binding_locations, &allocator, mesh_spec, total_attribute_count);
 
   for (uint32_t i = 0; i < total_attribute_count; ++i) {
     attribute_bindings[i].Bind(cbps);
@@ -816,16 +815,16 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
   // We'll use the same texture for both meshes.
   cb->BindTexture(1, 1, noise_texture);
 
-  auto mesh = ring_mesh1();
-  auto ab = &mesh->attribute_buffer(0);
+  auto spec = mesh_spec1();
+  auto buffer = dummy_buffer();
 
-  cb->BindIndices(mesh->index_buffer(), mesh->index_buffer_offset(), vk::IndexType::eUint32);
+  cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
 
-  cb->BindVertices(0, ab->buffer, ab->offset, ab->stride);
+  cb->BindVertices(0, buffer, 0, spec.stride(0));
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kPosition2D));
+                          spec.attribute_offset(0, MeshAttribute::kPosition2D));
   cb->SetVertexAttributes(0, 2, vk::Format::eR32G32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kUV));
+                          spec.attribute_offset(0, MeshAttribute::kUV));
 
   // Set the command buffer to a known default state, and obtain a pipeline.
   cb->SetToDefaultState(CommandBuffer::DefaultState::kOpaque);
@@ -849,32 +848,32 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
 
   // Changing to a different mesh with the same layout doesn't change the
   // obtained pipeline.
-  mesh = ring_mesh2();
-  ab = &mesh->attribute_buffer(0);
 
-  cb->BindIndices(mesh->index_buffer(), mesh->index_buffer_offset(), vk::IndexType::eUint32);
+  // Using the same MeshSpec again, as if binding the same mesh structure
+  spec = mesh_spec1();
 
-  cb->BindVertices(0, ab->buffer, ab->offset, ab->stride);
+  cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
+
+  cb->BindVertices(0, buffer, 0, spec.stride(0));
 
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kPosition2D));
+                          spec.attribute_offset(0, MeshAttribute::kPosition2D));
   cb->SetVertexAttributes(0, 2, vk::Format::eR32G32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kUV));
+                          spec.attribute_offset(0, MeshAttribute::kUV));
 
   EXPECT_EQ(depth_readonly_pipeline, ObtainGraphicsPipeline(cb));
 
   // Changing to a mesh with a different layout results in a different pipeline.
-  mesh = sphere_mesh();
-  ab = &mesh->attribute_buffer(0);
+  spec = mesh_spec2();
 
-  cb->BindIndices(mesh->index_buffer(), mesh->index_buffer_offset(), vk::IndexType::eUint32);
+  cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
 
-  cb->BindVertices(0, ab->buffer, ab->offset, ab->stride);
+  cb->BindVertices(0, buffer, 0, spec.stride(0));
 
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32B32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kPosition3D));
+                          spec.attribute_offset(0, MeshAttribute::kPosition3D));
   cb->SetVertexAttributes(2, 0, vk::Format::eR32G32Sfloat,
-                          mesh->spec().attribute_offset(0, MeshAttribute::kUV));
+                          spec.attribute_offset(0, MeshAttribute::kUV));
 
   EXPECT_NE(depth_readonly_pipeline, ObtainGraphicsPipeline(cb));
   EXPECT_NE(vk::Pipeline(), ObtainGraphicsPipeline(cb));

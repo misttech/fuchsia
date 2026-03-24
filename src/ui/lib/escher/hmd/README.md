@@ -1,3 +1,0 @@
-# escher/hmd/
-
-Obsolete.

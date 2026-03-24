@@ -42,28 +42,12 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
     sources = [
       "flatland/rectangle_compositor_unittest.cc",
       "fs/hack_filesystem_unittest.cc",
-      "geometry/bounding_box_unittest.cc",
-      "geometry/indexed_triangle_mesh_clip_unittest.cc",
-      "geometry/intersection_unittest.cc",
-      "geometry/interval_unittest.cc",
-      "geometry/plane_unittest.cc",
-      "geometry/transform_unittest.cc",
-      "hmd/pose_buffer_latching_test.cc",
       "impl/image_cache_unittest.cc",
-      "math/rotations_unittest.cc",
-      "paper/paper_draw_call_factory_unittest.cc",
-      "paper/paper_shape_cache_unittest.cc",
-      "paper/paper_tester.h",
-      "paper/paper_transform_stack_unittest.cc",
       "renderer/batch_gpu_downloader_unittest.cc",
       "renderer/buffer_cache_unittest.cc",
-      "renderer/render_queue_unittest.cc",
       "renderer/sampler_cache_unittest.cc",
       "run_all_unittests.cc",
-      "scene/directional_light_unittest.cc",
-      "scene/object_unittest.cc",
       "shape/mesh_spec_unittest.cc",
-      "shape/rounded_rect_unittest.cc",
       "util/align_unittest.cc",
       "util/bit_ops_unittest.cc",
       "util/bitmap_unittest.cc",
@@ -154,7 +138,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
   # Add all test cases which are expected to fail here
   vulkan_test("escher_unittests_expected_failure") {
     sources = [
-      "paper/paper_render_config_unittest.cc",
       "renderer/batch_gpu_uploader_unittest.cc",
       "renderer/frame_unittest.cc",
       "renderer/protected_memory_unittest.cc",
@@ -182,11 +165,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
   vulkan_test("escher_renderer_tests") {
     sources = [
       "integration/debug_font_unittest.cc",
-      "integration/debug_shape_unittest.cc",
-      "integration/gamma_correction_unittest.cc",
-      "integration/lazy_memory_unittest.cc",
-      "integration/opacity_unittest.cc",
-      "integration/yuv_unittest.cc",
       "run_all_unittests.cc",
     ]
 
