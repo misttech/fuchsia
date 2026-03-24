@@ -245,8 +245,6 @@ class PlatformBusTest : public ::testing::Test {
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
 };
 
-uint32_t g_bti_created = 0;
-
 // Verify that the platform bus can create a platform device that exposes an empty partition map
 // found in boot args as metadata.
 TEST_F(PlatformBusTest, EmptyPartitionMapMetadata) {
@@ -422,6 +420,5 @@ TEST(PlatformBusTest2, GetMmioIndexNoMmios) {
 
 __EXPORT
 zx_status_t zx_bti_create(zx_handle_t handle, uint32_t options, uint64_t bti_id, zx_handle_t* out) {
-  g_bti_created++;
   return fake_bti_create(out);
 }
