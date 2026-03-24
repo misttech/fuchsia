@@ -639,4 +639,45 @@ TEST(BTreeTest, IntegralTypes) {
     tree.erase(it);
   }
 }
+
+TEST(BTreeTest, Update) {
+  HeapTestingAllocator alloc;
+  {
+    BTree<uint64_t> tree(IndirectAllocator{alloc});
+    auto it = tree.insert(10, 20);
+    EXPECT_TRUE(it != tree.end());
+    tree.update(it, 30);
+    EXPECT_EQ((*it).second, 30u);
+    // Iterator is still valid, can update twice.
+    tree.update(it, 40);
+    EXPECT_EQ((*it).second, 40u);
+
+    it = tree.find(10);
+    EXPECT_TRUE(it != tree.end());
+    EXPECT_EQ((*it).second, 40u);
+  }
+  {
+    BTree<std::unique_ptr<DestructionTracker>> tree(IndirectAllocator{alloc});
+    bool destroyed1 = false;
+    bool destroyed2 = false;
+
+    auto val1 = std::make_unique<DestructionTracker>(&destroyed1);
+    auto it = tree.insert(1, std::move(val1));
+    EXPECT_TRUE(it != tree.end());
+    EXPECT_FALSE(destroyed1);
+
+    auto val2 = std::make_unique<DestructionTracker>(&destroyed2);
+    tree.update(it, std::move(val2));
+
+    // The first value should be destroyed upon being overwritten.
+    EXPECT_TRUE(destroyed1);
+    EXPECT_FALSE(destroyed2);
+
+    tree.erase(it);
+
+    // The second value should be destroyed upon erasure.
+    EXPECT_TRUE(destroyed2);
+    EXPECT_TRUE(tree.is_empty());
+  }
+}
 }  // namespace

@@ -77,6 +77,11 @@ class Node {
     items_[index].key = key;
   }
 
+  void update_value(uint32_t index, uint64_t value) {
+    BTREE_CHECK(valid_index(index));
+    items_[index].value = value;
+  }
+
   // Returns the index of the upper bound of key, or count() if key is beyond this node. Due to how
   // intermediate nodes are represented there is no equivalent lower_bound operation as it does not
   // have a symmetric implementation for both intermediate and leaf nodes.

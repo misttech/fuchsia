@@ -237,6 +237,21 @@ class BTree {
   iterator insert(iterator hint, uint64_t key, const ValueType& value) __WARN_UNUSED_RESULT {
     return insert(hint, key, ValueType(value));
   }
+
+  // Updates the value of the item referenced by the iterator.
+  // The iterator is assumed to be valid. The old value is reclaimed (if managed), and the new value
+  // takes its place.
+  //
+  // As this does not change the structure of the tree this does not invalidate any iterators.
+  void update(iterator iter, ValueType&& value) {
+    ZX_ASSERT(iter.IsValid());
+    auto old_v = std::bit_cast<typename Traits::RawType>(iter.node_->get(iter.index_).value);
+    Traits::Reclaim(old_v);
+    typename Traits::RawType new_raw = Traits::Leak(value);
+    iter.node_->update_value(iter.index_, std::bit_cast<uint64_t>(new_raw));
+  }
+  void update(iterator iter, const ValueType& value) { update(iter, ValueType(value)); }
+
   // Removes the item (key/value pair) referenced by the iterator. If storing managed pointers the
   // item is released.
   //
