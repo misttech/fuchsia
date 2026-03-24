@@ -5,7 +5,12 @@
 "immutable_heads()" = "remote_bookmarks() | tags()"
 
 [aliases]
-upload = [ "util", "exec", "jiri", "upload" ]
+upload = ["gerrit", "upload"]
+cq = ["gerrit", "upload", "--label=Commit-Queue"]
+wip = ["gerrit", "upload", "--wip"]
+
+[gerrit]
+default-remote-branch = "main"  # target branch in Gerrit
 
 [git]
 auto-local-bookmark = false
