@@ -50,11 +50,10 @@ impl FxSymlink {
 
     async fn get_properties(&self) -> Result<ObjectProperties, Error> {
         let store = self.handle.store();
-        let fs = store.filesystem();
-        let _guard = fs
-            .lock_manager()
-            .read_lock(lock_keys![LockKey::object(store.store_object_id(), self.object_id())])
-            .await;
+        // We don't take a transaction lock here because the lifetime of the symlink object
+        // (and its records in the LSM tree) is guaranteed for as long as this FxSymlink
+        // handle is open. Even if the symlink is unlinked, it is kept in the graveyard
+        // until the handle is closed, meaning its object ID and records are stable.
         let item = store
             .tree()
             .find(&ObjectKey::object(self.object_id()))
