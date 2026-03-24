@@ -12,6 +12,8 @@ pub use error::Error;
 pub use port_forwarder::PortForwarder;
 pub use socket_provider::{SocketProvider, TargetTcpListener, TargetTcpStream};
 
+pub mod socket_provider_fdomain;
+
 pub type Counters = port_forwarder::Counters<usize>;
 pub type Bidirectional = port_forwarder::Bidirectional<usize>;
 

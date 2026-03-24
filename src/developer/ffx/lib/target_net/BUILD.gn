@@ -13,10 +13,16 @@ rustc_library("lib") {
 
   deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
+    "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust_fdomain",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust_fdomain",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
     "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/rcs:lib",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/network/fidl_fuchsia_net_ext",
@@ -33,6 +39,7 @@ rustc_library("lib") {
     "src/lib.rs",
     "src/port_forwarder.rs",
     "src/socket_provider.rs",
+    "src/socket_provider_fdomain.rs",
   ]
 
   configs += [ "//build/config/rust/lints:deny_unused_results" ]

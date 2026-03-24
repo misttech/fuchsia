@@ -134,13 +134,13 @@ impl TargetTcpListener {
                 incoming_signal | fidl::Signals::OBJECT_PEER_CLOSED,
             )
             .await
-            .map_err(Error::WaitingSignal)?;
+            .map_err(Error::WaitingSignalOvernet)?;
             if !signals.contains(incoming_signal) {
                 return Err(Error::Hangup);
             }
             socket
                 .signal(incoming_signal, fidl::Signals::empty())
-                .map_err(Error::ClearingSignal)?;
+                .map_err(Error::ClearingSignalOvernet)?;
         }
     }
 
@@ -221,13 +221,13 @@ impl SocketProvider {
                 connected_signal | fidl::Signals::OBJECT_PEER_CLOSED,
             )
             .await
-            .map_err(Error::WaitingSignal)?;
+            .map_err(Error::WaitingSignalOvernet)?;
             if !signals.contains(connected_signal) {
                 return Err(Error::Hangup);
             }
             socket
                 .signal(connected_signal, fidl::Signals::empty())
-                .map_err(Error::ClearingSignal)?;
+                .map_err(Error::ClearingSignalOvernet)?;
         }
 
         let SocketAddressExt(addr) =
