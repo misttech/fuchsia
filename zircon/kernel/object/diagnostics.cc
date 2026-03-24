@@ -157,6 +157,8 @@ const char* ObjectTypeToString(zx_obj_type_t type) {
       return "counter";
     case ZX_OBJ_TYPE_IOB_SHARED_REGION:
       return "iob-shared-region";
+    case ZX_OBJ_TYPE_SAMPLER:
+      return "sampler";
     default:
       return "???";
   }
@@ -382,7 +384,7 @@ constexpr ktl::array<JobPolicyNameValue, ZX_POL_MAX> kJobPolicies = {
     ENTRY(ZX_POL_NEW_FIFO),    ENTRY(ZX_POL_NEW_TIMER),
     ENTRY(ZX_POL_NEW_PROCESS), ENTRY(ZX_POL_NEW_PROFILE),
     ENTRY(ZX_POL_NEW_PAGER),   ENTRY(ZX_POL_AMBIENT_MARK_VMO_EXEC),
-    ENTRY(ZX_POL_NEW_IOB),
+    ENTRY(ZX_POL_NEW_IOB),     ENTRY(ZX_POL_NEW_SAMPLER),
 };
 
 static_assert(kJobPolicies.size() == ZX_POL_MAX, "Missing Policy Id");

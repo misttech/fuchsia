@@ -84,6 +84,7 @@ __BEGIN_CDECLS
 // have fully migrated to HandleTableV3.
 #define ZX_EXCP_POLICY_CODE_HANDLE_LEAK             20u
 #define ZX_EXCP_POLICY_CODE_NEW_IOB                 21u
+#define ZX_EXCP_POLICY_CODE_NEW_SAMPLER             22u
 
 // A process is starting.
 // This exception is sent to job debuggers only

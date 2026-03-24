@@ -66,6 +66,7 @@ const uint32_t kPolicyIdToPolicyException[] = {
     ZX_EXCP_POLICY_CODE_NEW_PAGER,              // ZX_POL_NEW_PAGER
     ZX_EXCP_POLICY_CODE_AMBIENT_MARK_VMO_EXEC,  // ZX_POL_AMBIENT_MARK_VMO_EXEC
     ZX_EXCP_POLICY_CODE_NEW_IOB,                // ZX_POL_NEW_IOB
+    ZX_EXCP_POLICY_CODE_NEW_SAMPLER,            // ZX_POL_NEW_SAMPLER
 };
 
 static_assert(std::size(kPolicyIdToPolicyException) == ZX_POL_MAX,

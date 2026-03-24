@@ -490,6 +490,7 @@ typedef uint32_t zx_obj_type_t;
 #define ZX_OBJ_TYPE_IOB               ((zx_obj_type_t)33u)
 #define ZX_OBJ_TYPE_COUNTER           ((zx_obj_type_t)34u)
 #define ZX_OBJ_TYPE_IOB_SHARED_REGION ((zx_obj_type_t)35u)
+#define ZX_OBJ_TYPE_SAMPLER           ((zx_obj_type_t)36u)
 
 // For backwards compatibility.
 #define ZX_OBJ_TYPE_LOG             ZX_OBJ_TYPE_DEBUGLOG

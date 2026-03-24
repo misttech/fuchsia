@@ -26,6 +26,7 @@ constexpr uint32_t kNewObjectPolicies[]{
     ZX_POL_NEW_VMO,     ZX_POL_NEW_CHANNEL, ZX_POL_NEW_EVENT, ZX_POL_NEW_EVENTPAIR,
     ZX_POL_NEW_PORT,    ZX_POL_NEW_SOCKET,  ZX_POL_NEW_FIFO,  ZX_POL_NEW_TIMER,
     ZX_POL_NEW_PROCESS, ZX_POL_NEW_PROFILE, ZX_POL_NEW_PAGER, ZX_POL_NEW_IOB,
+    ZX_POL_NEW_SAMPLER,
 };
 static_assert(
     ktl::size(kNewObjectPolicies) + 5 == ZX_POL_MAX,
@@ -202,6 +203,7 @@ bool JobPolicy::operator!=(const JobPolicy& rhs) const { return !operator==(rhs)
   DEFINE_COUNTER(action, new_pager)                                             \
   DEFINE_COUNTER(action, ambient_mark_vmo_exec)                                 \
   DEFINE_COUNTER(action, new_iob)                                               \
+  DEFINE_COUNTER(action, new_sampler)                                           \
   static constexpr const Counter* const COUNTER_ARRAY(action)[] = {             \
       [ZX_POL_BAD_HANDLE] = &COUNTER(action, bad_handle),                       \
       [ZX_POL_WRONG_OBJECT] = &COUNTER(action, wrong_object),                   \
@@ -220,6 +222,7 @@ bool JobPolicy::operator!=(const JobPolicy& rhs) const { return !operator==(rhs)
       [ZX_POL_NEW_PAGER] = &COUNTER(action, new_pager),                         \
       [ZX_POL_AMBIENT_MARK_VMO_EXEC] = &COUNTER(action, ambient_mark_vmo_exec), \
       [ZX_POL_NEW_IOB] = &COUNTER(action, new_iob),                             \
+      [ZX_POL_NEW_SAMPLER] = &COUNTER(action, new_sampler),                     \
   };                                                                            \
   static_assert(ktl::size(COUNTER_ARRAY(action)) == ZX_POL_MAX);
 
