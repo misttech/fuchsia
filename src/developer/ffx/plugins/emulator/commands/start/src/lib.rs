@@ -63,11 +63,7 @@ async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
         })
         .await?;
 
-    let mut p = structured_ui::Progress::builder();
-    p.title("Downloading product bundle from GCS");
-    let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
-    p.entry(object, size, size, "bytes");
-    ui.present(&structured_ui::Presentation::Progress(p))?;
+    ui.clear_progress()?;
 
     log::debug!("Downloaded to {}", local_path.display());
 
