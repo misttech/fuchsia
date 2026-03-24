@@ -70,9 +70,6 @@ class UsbPeripheralConfigurableTests : public ::zxtest::Test {
   inline static TransferOptions retest_config_ = TransferOptions::BULK;
   inline static int retest_iterations_ = 1;
   static zx_status_t SetRetestConfigFromString(const std::string& str);
-
-  // Help option.
-  inline static bool help_ = false;
 };
 
 zx_status_t UsbPeripheralConfigurableTests::SetRetestConfigFromString(const std::string& str) {
@@ -588,7 +585,6 @@ int main(int argc, char** argv) {
         UsbPeripheralConfigurableTests::retest_iterations_ = std::stoi(optarg);
         break;
       case 'h':
-        UsbPeripheralConfigurableTests::help_ = true;
         fprintf(stderr, kUsageMsg);
         return 0;
     }
