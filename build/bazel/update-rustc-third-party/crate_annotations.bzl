@@ -79,12 +79,12 @@ CRATE_ANNOTATIONS = {
                 common = [],
                 selects = {
                     "x86_64-unknown-linux-gnu": [
-                        "//third_party/rust_crates/vendor/bytes-1.11.0:bytes",
-                        "//third_party/rust_crates/vendor/libc-0.2.174:libc",
+                        "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+                        "//third_party/rust_crates/vendor/libc-0.2.183:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
                         "//third_party/rust_crates/vendor/mio-0.8.11:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus",
-                        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.1:signal_hook_registry",
+                        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
                         "//third_party/rust_crates/vendor/socket2-0.5.9:socket2",
                     ],
                 },
