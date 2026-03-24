@@ -34,6 +34,16 @@ antlion_host_test("wlan_driver_restart_test") {
   ]
 }
 
+antlion_host_test("wifi_chip_restart_test") {
+  main_source = "//src/connectivity/wlan/tests/wlanix/WifiChipRestartTest.py"
+  libraries = [
+    "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
+    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
+    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+  ]
+}
+
 antlion_host_test("wifi_chip_correctness_and_consistency_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/WifiChipCorrectnessAndConsistencyTest.py"
   libraries = [
@@ -134,6 +144,7 @@ group("tests_for_general_cq_no_shield_box") {
     ":iface_lifecycle_test",
     ":wifi_chip_correctness_and_consistency_test",
     ":wifi_chip_existence_test",
+    ":wifi_chip_restart_test",
     ":wlan_canary_test",
     ":wlan_driver_restart_test",
   ]
