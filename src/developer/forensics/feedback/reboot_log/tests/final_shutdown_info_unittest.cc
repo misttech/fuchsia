@@ -145,6 +145,21 @@ TEST(FinalShutdownInfoTest, HardwareWatchdogTimeout) {
             fuchsia::feedback::RebootReason::HARDWARE_WATCHDOG_TIMEOUT);
 }
 
+TEST(FinalShutdownInfoTest, UserHardReset) {
+  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
+      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kUserHardReset);
+
+  EXPECT_TRUE(final_shutdown_info->IsCrash());
+  EXPECT_EQ(
+      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
+      "fuchsia-hard-reset-user-requested");
+  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
+  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
+            cobalt::LastRebootReason::kUserHardReset);
+  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
+            fuchsia::feedback::RebootReason::USER_HARD_RESET);
+}
+
 TEST(FinalShutdownInfoTest, SoftwareWatchdogTimeout) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
       std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kSwWatchdog);

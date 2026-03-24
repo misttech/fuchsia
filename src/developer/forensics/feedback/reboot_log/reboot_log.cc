@@ -47,6 +47,8 @@ HwShutdownReason ExtractHwShutdownReason(const std::string_view line) {
     return HwShutdownReason::kBrownout;
   } else if (line == "HW REBOOT REASON (HW WATCHDOG)") {
     return HwShutdownReason::kWatchdog;
+  } else if (line == "HW REBOOT REASON (USER HARD RESET)") {
+    return HwShutdownReason::kUserHardReset;
   } else if (line == "HW REBOOT REASON (UNKNOWN)") {
     return HwShutdownReason::kUndefined;
   }

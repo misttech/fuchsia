@@ -243,6 +243,19 @@ INSTANTIATE_TEST_SUITE_P(
             "ROOT JOB TERMINATION",
         },
         {
+            "UserHardReset",
+            "HW REBOOT REASON (USER HARD RESET)\n\n",
+            std::nullopt,
+            "USER HARD RESET",
+        },
+        {
+            "UserHardResetTrumpsKernelPanic",
+            "HW REBOOT REASON (USER HARD RESET)\n\n"
+            "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
+            std::nullopt,
+            "USER HARD RESET",
+        },
+        {
             "NotParseable",
             "NOT PARSEABLE",
             ShutdownReason::USER_REQUEST,

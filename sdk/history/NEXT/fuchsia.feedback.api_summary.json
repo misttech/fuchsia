@@ -755,6 +755,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.feedback/RebootReason.USER_HARD_RESET",
+        "value": "28"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.feedback/RebootReason.USER_REQUEST",
         "value": "9"
     },

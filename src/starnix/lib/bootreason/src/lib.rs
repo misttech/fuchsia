@@ -78,6 +78,7 @@ pub async fn update_android_bootreason(
         Some(RebootReason::RootJobTermination) => "kernel_panic",
         Some(RebootReason::UserRequest) => "reboot,userrequested",
         Some(RebootReason::UserRequestDeviceStuck) => "reboot,userrequested",
+        Some(RebootReason::UserHardReset) => "reboot,longkey,s2",
         Some(RebootReason::DeveloperRequest) => "reboot,shell",
         Some(RebootReason::RetrySystemUpdate) => "reboot,ota",
         Some(RebootReason::HighTemperature) => "shutdown,thermal",

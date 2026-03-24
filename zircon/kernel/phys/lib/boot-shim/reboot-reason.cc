@@ -37,6 +37,7 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
 
     {.reason = "watchdog", .value = ZBI_HW_REBOOT_REASON_WATCHDOG},
     {.reason = "reboot,uvlo", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
+    {.reason = "reboot,longkey,s2", .value = ZBI_HW_REBOOT_REASON_USER_HARD_RESET},
 });
 
 }  // namespace

@@ -16,6 +16,7 @@ enum class HwShutdownReason : std::uint8_t {
   kWarm,
   kBrownout,
   kWatchdog,
+  kUserHardReset,
   kNotParseable,
 };
 

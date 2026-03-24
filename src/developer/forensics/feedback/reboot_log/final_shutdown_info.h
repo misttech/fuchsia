@@ -27,6 +27,7 @@ enum class FinalShutdownReason : std::uint8_t {
   kCold,
   kBrownout,
   kHwWatchdog,
+  kUserHardReset,
 
   // Should map to ZirconShutdownReason without kNotSet, kNoCrash and kNotParseable.
   kSpontaneousReboot,

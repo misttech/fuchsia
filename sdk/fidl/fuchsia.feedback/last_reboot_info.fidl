@@ -91,6 +91,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     /// of its critical processes crashed.
     ROOT_JOB_TERMINATION = 19;
 
+    /// The device rebooted because the user intentionally held the power button to hard reset it.
+    @available(added=NEXT)
+    USER_HARD_RESET = 28;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Graceful reboot reasons
     // |graceful| has a value of true in LastReboot above.

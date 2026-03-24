@@ -48,6 +48,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
     case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kUserHardReset:
     case FinalShutdownReason::kNotParseable:
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
@@ -84,6 +85,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
     case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kUserHardReset:
       return false;
     case FinalShutdownReason::kNotParseable:
       return std::nullopt;
@@ -120,6 +122,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
     case FinalShutdownReason::kRootJobTermination:
+    case FinalShutdownReason::kUserHardReset:
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
     case FinalShutdownReason::kUserRequest:
@@ -168,6 +171,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "SPONTANEOUS";
     case FinalShutdownReason::kRootJobTermination:
       return "ROOT JOB TERMINATION";
+    case FinalShutdownReason::kUserHardReset:
+      return "USER HARD RESET";
     case FinalShutdownReason::kNotParseable:
       return "NOT PARSEABLE";
     case FinalShutdownReason::kGenericGraceful:
@@ -229,6 +234,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS;
     case FinalShutdownReason::kRootJobTermination:
       return fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION;
+    case FinalShutdownReason::kUserHardReset:
+      return fuchsia::feedback::RebootReason::USER_HARD_RESET;
     case FinalShutdownReason::kNotParseable:
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
@@ -288,6 +295,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kBriefPowerLoss;
     case FinalShutdownReason::kRootJobTermination:
       return cobalt::LastRebootReason::kRootJobTermination;
+    case FinalShutdownReason::kUserHardReset:
+      return cobalt::LastRebootReason::kUserHardReset;
     case FinalShutdownReason::kNotParseable:
       return cobalt::LastRebootReason::kUnknown;
     case FinalShutdownReason::kGenericGraceful:
@@ -340,6 +349,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kHwWatchdog:
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kUserHardReset:
       return "device";
     case FinalShutdownReason::kOom:
     case FinalShutdownReason::kSwWatchdog:
@@ -394,6 +404,8 @@ std::string FinalShutdownInfo::ToCrashSignature(
       return (!critical_process.has_value())
                  ? "fuchsia-root-job-termination"
                  : std::string("fuchsia-reboot-").append(*critical_process).append("-terminated");
+    case FinalShutdownReason::kUserHardReset:
+      return "fuchsia-hard-reset-user-requested";
     case FinalShutdownReason::kRetrySystemUpdate:
       return "fuchsia-retry-system-update";
     case FinalShutdownReason::kHighTemperature:
@@ -513,6 +525,8 @@ std::unique_ptr<FinalShutdownInfo> FinalShutdownInfo::MakeFinalShutdownInfo(
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kHwWatchdog);
     case HwShutdownReason::kBrownout:
       return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kBrownout);
+    case HwShutdownReason::kUserHardReset:
+      return std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kUserHardReset);
     case HwShutdownReason::kNotSet:
     case HwShutdownReason::kUndefined:
     case HwShutdownReason::kCold:
