@@ -63,7 +63,6 @@ struct eth_buffer_t {
 static efi_physical_addr eth_buffers_base = 0;
 static eth_buffer* eth_buffers = NULL;
 static int num_eth_buffers = 0;
-static int eth_buffers_avail = 0;
 
 void* eth_get_buffer(size_t sz) {
   eth_buffer* buf;
@@ -76,7 +75,6 @@ void* eth_get_buffer(size_t sz) {
   buf = eth_buffers;
   eth_buffers = buf->next;
   buf->next = NULL;
-  eth_buffers_avail--;
   return buf->data;
 }
 
@@ -97,7 +95,6 @@ void eth_put_buffer(void* data) {
   }
 
   buf->next = eth_buffers;
-  eth_buffers_avail++;
   eth_buffers = buf;
 }
 
