@@ -287,29 +287,6 @@ impl AssembledSystem {
         Ok(self)
     }
 
-    /// Construct an AssembledSystem from a config file with relative paths.
-    pub fn from_relative_config_path(path: impl AsRef<Utf8Path>) -> Result<Self> {
-        // Read the config to a string first because it offers better
-        // performance for serde.
-        let data = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Reading config: {}", path.as_ref()))?;
-        let mut config: Self = serde_json5::from_str(&data)
-            .with_context(|| format!("Parsing config: {}", path.as_ref()))?;
-
-        // Make all the paths absolute.
-        let dir = path
-            .as_ref()
-            .parent()
-            .with_context(|| format!("Getting parent directory for: {}", path.as_ref()))?;
-        config
-            .walk_paths(&mut |path: &mut Utf8PathBuf, _dest: Utf8PathBuf, _filetype: FileType| {
-                *path = dir.join(&path);
-                Ok(())
-            })
-            .context("Making all config paths absolute")?;
-        Ok(config)
-    }
-
     /// Write an assembly manifest to a directory on disk at `path` using the 'old' format.
     /// Make the paths recorded in the file relative to the file's location
     /// so it is portable.

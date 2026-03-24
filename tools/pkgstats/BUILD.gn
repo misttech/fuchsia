@@ -17,6 +17,7 @@ if (is_host) {
     deps = [
       "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
       "//src/lib/assembly/assembled_system",
+      "//src/lib/assembly/container",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-sync",

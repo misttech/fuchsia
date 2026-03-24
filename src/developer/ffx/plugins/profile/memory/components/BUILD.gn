@@ -26,6 +26,7 @@ ffx_plugin("ffx_profile_memory_components") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/assembly/assembled_system",
+    "//src/lib/assembly/container",
     "//src/lib/fidl/rust/fidl",
     "//src/performance/memory/attribution/processing",
     "//src/storage/fxfs/platform",

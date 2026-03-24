@@ -46,6 +46,26 @@ pub trait AssemblyContainer {
         Ok(config)
     }
 
+    /// Construct an assembly container from a config file, where the paths
+    /// inside the config file are relative to the config file's directory.
+    fn from_config_path_relative_paths(config_path: impl AsRef<Utf8Path>) -> Result<Self>
+    where
+        Self: Sized + WalkPaths + DeserializeOwned,
+    {
+        let mut config = Self::from_config_path(&config_path)?;
+        if let Some(dir) = config_path.as_ref().parent() {
+            config
+                .walk_paths(&mut |path: &mut Utf8PathBuf,
+                                  _dest: Utf8PathBuf,
+                                  _filetype: FileType| {
+                    *path = dir.join(&path);
+                    Ok(())
+                })
+                .context("Making all config paths absolute")?;
+        }
+        Ok(config)
+    }
+
     /// Parse an assembly container from a hermetic directory on disk.
     /// It is assumed that the paths in the config file are relative, and when
     /// parsing them they will be transformed to absolute to make them easier

@@ -6,6 +6,7 @@ use crate::operations::size_check::breakdown::{SizeBreakdown, SizeResult};
 use crate::operations::size_check::visualization::generate_visualization;
 use anyhow::{Context, Result, format_err};
 use assembled_system::{AssembledSystem, BlobfsContents, Image};
+use assembly_container::AssemblyContainer;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_assembly_args::{AuthMode, ProductSizeCheckArgs};
 use serde_json::json;
@@ -25,9 +26,9 @@ pub async fn verify_product_budgets(args: ProductSizeCheckArgs) -> Result<bool> 
         let output_path = gcs_download(bucket, object, args.auth.clone())
             .await
             .context("download assembly manifest")?;
-        AssembledSystem::from_relative_config_path(output_path)?
+        AssembledSystem::from_config_path_relative_paths(output_path)?
     } else {
-        AssembledSystem::from_relative_config_path(&args.assembly_manifest)?
+        AssembledSystem::from_config_path_relative_paths(&args.assembly_manifest)?
     };
 
     let blobfs_contents = match extract_blob_contents(&assembled_system) {
@@ -61,9 +62,9 @@ pub async fn verify_product_budgets(args: ProductSizeCheckArgs) -> Result<bool> 
             let output_path = gcs_download(bucket, object, args.auth)
                 .await
                 .context("download base assembly manifest")?;
-            AssembledSystem::from_relative_config_path(output_path)?
+            AssembledSystem::from_config_path_relative_paths(output_path)?
         } else {
-            AssembledSystem::from_relative_config_path(&base_assembly_manifest)?
+            AssembledSystem::from_config_path_relative_paths(&base_assembly_manifest)?
         };
 
         let other_blobfs_contents =

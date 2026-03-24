@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::developer_overrides::DeveloperOverrides;
 use assembly_config_schema::{BoardConfig, ProductConfig};
-use assembly_container::{AssemblyContainer, WalkPaths};
+use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;
 use assembly_tool::PlatformToolProvider;
 use camino::Utf8PathBuf;
@@ -140,21 +140,8 @@ fn load_developer_overrides(
     overrides_path: &Utf8PathBuf,
     suppress_overrides_warning: bool,
 ) -> Result<DeveloperOverrides> {
-    let mut developer_overrides = DeveloperOverrides::from_config_path(overrides_path)
+    let developer_overrides = DeveloperOverrides::from_config_path_relative_paths(overrides_path)
         .context("Reading developer overrides")?;
-
-    if let Some(dir) = overrides_path.parent() {
-        developer_overrides
-            .walk_paths(
-                &mut |path: &mut Utf8PathBuf,
-                      _dest: Utf8PathBuf,
-                      _filetype: assembly_container::FileType| {
-                    *path = dir.join(&path);
-                    Ok(())
-                },
-            )
-            .context("Resolving paths in developer overrides")?;
-    }
 
     let developer_overrides = developer_overrides
         .merge_developer_provided_files()

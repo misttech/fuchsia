@@ -12,6 +12,7 @@ mod statistics;
 extern crate prettytable;
 use crate::resource_annotator::ResourceAnnotator;
 use anyhow::{Result, anyhow};
+use assembly_container::AssemblyContainer;
 use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
 use attribution_processing::{AttributionData, Principal, Resource, ZXName, digest};
@@ -144,7 +145,7 @@ impl MemoryComponentsTool {
     ) -> std::result::Result<(), fho::Error> {
         let resource_annotator = match &self.cmd.assembly_manifest {
             Some(path) => ResourceAnnotator::new_from(
-                assembled_system::AssembledSystem::from_relative_config_path(path).map_err(
+                assembled_system::AssembledSystem::from_config_path_relative_paths(path).map_err(
                     |err| ffx_error!("Failed to load assembly manifest: {err:?} :{err}"),
                 )?,
             )?,
