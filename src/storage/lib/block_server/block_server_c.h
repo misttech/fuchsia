@@ -173,13 +173,16 @@ void block_server_thread_delete(const void *arg);
 
 /// # Safety
 ///
-/// `block_server` must be valid.
-void block_server_delete(BlockServer *block_server);
+/// `block_server` must be valid and either `block_server_delete` or `block_server_delete_async` may
+/// only be called once.
+void block_server_delete(const BlockServer *block_server);
 
 /// # Safety
 ///
-/// `block_server` must be valid.
-void block_server_delete_async(BlockServer *block_server, ShutdownCallback callback, void *arg);
+/// `block_server` must be valid and either `block_server_delete` or `block_server_delete_async` may
+/// only be called once.
+void block_server_delete_async(const BlockServer *block_server, ShutdownCallback callback,
+                               void *arg);
 
 /// Serves the Volume protocol for this server.  `handle` is consumed.
 ///

@@ -500,8 +500,8 @@ impl<I: Interface + ?Sized> Session<I> {
 
 impl<I: Interface + ?Sized> Drop for Session<I> {
     fn drop(&mut self) {
-        let mut inner = self.helper.session_manager().inner.lock();
         let notify = {
+            let mut inner = self.helper.session_manager().inner.lock();
             inner.open_sessions.remove(&(self as *const _ as usize));
             inner.open_sessions.is_empty()
         };

@@ -178,23 +178,17 @@ impl ExecutorMailbox {
 
 type ShutdownCallback = unsafe extern "C" fn(*mut c_void);
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-struct ContextPtr(*mut c_void);
-
-// SAFETY: `ContextPtr` wraps a `*mut c_void` representing an opaque context pointer. Thread safety
-// for this pointer is guaranteed by the caller's C API contract.
-unsafe impl Send for ContextPtr {}
-unsafe impl Sync for ContextPtr {}
-
 #[derive(Default)]
 enum Mail {
     #[default]
     None,
     Initialized(EHandle, AbortHandle),
-    AsyncShutdown(Box<BlockServer>, ShutdownCallback, ContextPtr),
+    AsyncShutdown(*const BlockServer, ShutdownCallback, *mut c_void),
     Finished,
 }
+
+// SAFETY: `Mail::AsyncShutdown` is thread-safe.
+unsafe impl Send for Mail {}
 
 pub struct Orchestrator {
     session_manager: callback_interface::SessionManager<InterfaceAdapter>,
@@ -220,19 +214,6 @@ pub struct BlockServer {
     ehandle: EHandle,
     abort_handle: AbortHandle,
     orchestrator: Arc<Orchestrator>,
-}
-
-impl Drop for BlockServer {
-    fn drop(&mut self) {
-        self.abort_handle.abort();
-        Borrow::<callback_interface::SessionManager<InterfaceAdapter>>::borrow(
-            self.orchestrator.as_ref(),
-        )
-        .terminate();
-        let mbox = &self.orchestrator.mbox;
-        let mut mail = mbox.0.lock();
-        mbox.1.wait_while(&mut mail, |mbox| !matches!(mbox, Mail::Finished));
-    }
 }
 
 /// # Safety
@@ -303,41 +284,86 @@ pub unsafe extern "C" fn block_server_thread(arg: *const c_void) {
 /// `arg` must be the value passed to the `start_thread` callback.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_thread_delete(arg: *const c_void) {
-    let mail = {
-        let orchestrator = unsafe { Arc::from_raw(arg as *const Orchestrator) };
-        orchestrator.mbox.post(Mail::Finished)
-    };
+    // SAFETY: This balances the `into_raw` in `block_server_new`.
+    let orchestrator = unsafe { Arc::from_raw(arg as *const Orchestrator) };
 
-    if let Mail::AsyncShutdown(server, callback, arg) = mail {
-        std::mem::drop(server);
+    let mail = orchestrator.mbox.post(Mail::Finished);
+
+    if let Mail::AsyncShutdown(block_server, callback, arg) = mail {
+        // No more sessions can be created.  Before we drop the `BlockServer` instance we must make
+        // sure there are no sessions running because otherwise there could be outstanding responses
+        // that would result in `block_server_send_reply` being called.
+        orchestrator.session_manager.terminate();
+
+        // SAFETY: No other threads are running now, so it should be safe to drop the `BlockServer`
+        // instance.
+        let _ = unsafe { Box::from_raw(block_server as *mut BlockServer) };
+
         // SAFETY: Whoever supplied the callback must guarantee it's safe.
         unsafe {
-            callback(arg.0);
+            callback(arg);
         }
     }
 }
 
 /// # Safety
 ///
-/// `block_server` must be valid.
+/// `block_server` must be valid and either `block_server_delete` or `block_server_delete_async` may
+/// only be called once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn block_server_delete(block_server: *mut BlockServer) {
-    let _ = unsafe { Box::from_raw(block_server) };
+pub unsafe extern "C" fn block_server_delete(block_server: *const BlockServer) {
+    {
+        // SAFETY: The caller asserts that `block_server` is valid.
+        let server = unsafe { &*block_server };
+
+        // NOTE: The order here is important.  We must terminate the server's main thread first
+        // before terminating sessions to avoid races that can happen when a session has been just
+        // created.
+
+        // Start by terminating the main server thread.
+        server.abort_handle.abort();
+        {
+            let mbox = &server.orchestrator.mbox;
+            let mut mail = mbox.0.lock();
+            mbox.1.wait_while(&mut mail, |mbox| !matches!(mbox, Mail::Finished));
+        }
+
+        // Now that is done, no more sessions can be created, so now we can terminate all sessions.
+        Borrow::<callback_interface::SessionManager<InterfaceAdapter>>::borrow(
+            server.orchestrator.as_ref(),
+        )
+        .terminate();
+    }
+
+    // SAFETY: No other threads are running, so we can drop the `BlockServer` instance.
+    let _ = unsafe { Box::from_raw(block_server as *mut BlockServer) };
 }
 
 /// # Safety
 ///
-/// `block_server` must be valid.
+/// `block_server` must be valid and either `block_server_delete` or `block_server_delete_async` may
+/// only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_delete_async(
-    block_server: *mut BlockServer,
+    block_server: *const BlockServer,
     callback: ShutdownCallback,
     arg: *mut c_void,
 ) {
-    let block_server = unsafe { Box::from_raw(block_server) };
-    let orchestrator = block_server.orchestrator.clone();
-    let abort_handle = block_server.abort_handle.clone();
-    orchestrator.mbox.post(Mail::AsyncShutdown(block_server, callback, ContextPtr(arg)));
+    let abort_handle = {
+        // SAFETY: The caller asserts that `block_server` is valid.
+        let server = unsafe { &*block_server };
+
+        // We must post to the mailbox before we call abort to ensure that the callback is correctly
+        // called.
+        assert!(!matches!(
+            server.orchestrator.mbox.post(Mail::AsyncShutdown(block_server, callback, arg)),
+            Mail::Finished
+        ));
+
+        server.abort_handle.clone()
+    };
+
+    // As soon as we call `abort`, we must assume the `BlockServer` instance has been dropped.
     abort_handle.abort();
 }
 
