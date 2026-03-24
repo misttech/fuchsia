@@ -396,8 +396,8 @@ impl Topology {
     ) -> Vec<Dependency> {
         // We need to inspect the required level of every dependency encountered for any transitive
         // dependencies.
-        let mut dependencies = std::collections::HashSet::<Dependency>::new();
-        let mut visited = std::collections::HashSet::<ElementLevel>::new();
+        let mut dependencies = rustc_hash::FxHashSet::<Dependency>::default();
+        let mut visited = rustc_hash::FxHashSet::<ElementLevel>::default();
         let mut element_levels_to_inspect = vec![element_level.clone()];
         while let Some(element_level) = element_levels_to_inspect.pop() {
             if visited.contains(&element_level) {
